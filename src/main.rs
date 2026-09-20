@@ -1465,6 +1465,8 @@ pub fn run(config: crate::cli::CliConfig) {
     // before the render root exists; subsequent auth reads are memory hits.
     utils::secure_storage::keychain_prefetch::ensure_keychain_prefetch_completed();
     utils::managed_env::apply_safe_config_environment_variables();
+    // Cometix extension (no CC counterpart): apply active proxy channel env overrides.
+    crate::services::proxy_channel::apply_active_channel_env();
     // Maps to CC main.tsx:1273-1274 preAction; setup.ts:371 uses the same
     // idempotent sink entry. Run before subcommands and MCP startup producers.
     if let Err(error) = utils::sinks::init_sinks() {

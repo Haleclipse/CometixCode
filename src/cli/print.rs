@@ -117,6 +117,8 @@ pub fn run(config: &CliConfig) -> i32 {
     // here. Maps to: CC `main.tsx:3657-3660` (and the equivalent
     // non-interactive apply at `main.tsx:2866-2879`).
     crate::utils::managed_env::apply_config_environment_variables();
+    // Cometix extension (no CC counterpart): apply active proxy channel env overrides.
+    crate::services::proxy_channel::apply_active_channel_env();
     crate::utils::workload_context::set_process_workload(config.workload.clone());
     crate::bootstrap::state::set_session_persistence_disabled(
         config.session_persistence == Some(false),

@@ -27,3 +27,4 @@ pub mod tool_use_summary;
 pub mod tools;
 
 pub mod plugins;
+pub mod proxy_channel;

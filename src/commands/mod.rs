@@ -42,6 +42,7 @@ pub mod output_style;
 pub mod permissions;
 pub mod plan;
 pub mod plugin;
+pub mod provider;
 pub mod reload_plugins;
 pub mod rename;
 pub mod resume;
@@ -709,6 +710,7 @@ fn commands() -> Vec<Command> {
         .enabled_when(remote_env_enabled)
         .hidden_when(|| !remote_env_enabled()),
         plugin::command(),
+        provider::command(),
         Command::prompt("pr-comments", "Get comments from a GitHub pull request")
             .prompt_metadata("fetching PR comments", 0),
         Command::local("release-notes", "View release notes").supports_non_interactive(),
