@@ -1,0 +1,179 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: 检查格式
+        run: cargo fmt --all -- --check
+
+  check:
+    name: Check (${{ matrix.os }}, Rust ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            toolchain: "1.87.0"
+          - os: ubuntu-latest
+            toolchain: stable
+          - os: macos-15
+            toolchain: stable
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+      - name: 安装 ICU4C（Ubuntu）
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libicu-dev pkg-config
+      - name: 安装 ICU4C（macOS）
+        if: runner.os == 'macOS'
+        run: |
+          brew install icu4c
+          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig" >> "$GITHUB_ENV"
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - name: 缓存 Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.toolchain }}-
+      - name: 编译检查
+        run: cargo check --locked --all-targets --all-features
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+      - name: 安装 ICU4C
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libicu-dev pkg-config
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy
+      - name: 缓存 Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-stable-
+      - name: 运行 Clippy
+        run: cargo clippy --locked --all-targets --all-features
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+      - name: 安装 ICU4C（Ubuntu）
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libicu-dev pkg-config
+      - name: 安装 ICU4C（macOS）
+        if: runner.os == 'macOS'
+        run: |
+          brew install icu4c
+          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig" >> "$GITHUB_ENV"
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: 缓存 Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-stable-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-stable-
+      - name: 安装 just 和 cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest
+      - name: 运行测试
+        run: just test
+      - name: 运行 doctest
+        run: just test-doc
+
+  test-internal:
+    name: Tests (anthropic_internal)
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+      - name: 安装 ICU4C
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libicu-dev pkg-config
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - name: 缓存 Cargo
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-stable-internal-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-stable-internal-
+      - name: 安装 just 和 cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-nextest
+      - name: 运行内部特性测试
+        run: just test-ant
