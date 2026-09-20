@@ -102,7 +102,7 @@ jobs:
           restore-keys: |
             cargo-${{ runner.os }}-${{ runner.arch }}-stable-
       - name: 运行 Clippy
-        run: cargo clippy --locked --all-targets --all-features
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
   test:
     name: Tests (${{ matrix.os }})
