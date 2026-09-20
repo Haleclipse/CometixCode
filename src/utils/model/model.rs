@@ -110,9 +110,23 @@ pub fn parse_user_specified_model(model_input: &str) -> String {
 
     match model_string.as_str() {
         "opusplan" => format!("{}{}", get_default_sonnet_model(), suffix),
-        "sonnet" => format!("{}{}", get_default_sonnet_model(), suffix),
+        "sonnet" => {
+            if has_1m_tag {
+                if let Some(custom_1m) = truthy_env_var("ANTHROPIC_DEFAULT_SONNET_1M_MODEL") {
+                    return custom_1m;
+                }
+            }
+            format!("{}{}", get_default_sonnet_model(), suffix)
+        }
         "haiku" => format!("{}{}", get_default_haiku_model(), suffix),
-        "opus" => format!("{}{}", get_default_opus_model(), suffix),
+        "opus" => {
+            if has_1m_tag {
+                if let Some(custom_1m) = truthy_env_var("ANTHROPIC_DEFAULT_OPUS_1M_MODEL") {
+                    return custom_1m;
+                }
+            }
+            format!("{}{}", get_default_opus_model(), suffix)
+        }
         "best" => get_default_opus_model(),
         _ if has_1m_tag => {
             let without_tag = trimmed

@@ -157,6 +157,8 @@ pub fn on_change_app_state(new: &AppState, old: &AppState) {
         // applyConfigEnvironmentVariables when those owners land).
         if new.settings.env.is_some() || old.settings.env.is_some() {
             crate::utils::managed_env::apply_config_environment_variables();
+            // Cometix extension (no CC counterpart): keep active proxy channel env overrides.
+            crate::services::proxy_channel::apply_active_channel_env();
         }
     }
 }

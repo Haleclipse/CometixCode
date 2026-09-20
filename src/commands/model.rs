@@ -28,10 +28,21 @@ use iocraft::prelude::*;
 
 /// Maps to: CC `commands/model/index.ts:8-10` `get description()`.
 pub fn description() -> String {
-    format!(
-        "Set the AI model for Claude Code (currently {})",
-        render_model_name(&get_main_loop_model())
-    )
+    if let Some(active_id) = crate::services::proxy_channel::get_active_channel_id() {
+        let name = crate::services::proxy_channel::get_channel(&active_id)
+            .map(|c| c.display_name())
+            .unwrap_or(active_id.as_str());
+        format!(
+            "Set the AI model for Claude Code (currently {} · Proxy: {})",
+            render_model_name(&get_main_loop_model()),
+            name
+        )
+    } else {
+        format!(
+            "Set the AI model for Claude Code (currently {})",
+            render_model_name(&get_main_loop_model())
+        )
+    }
 }
 
 /// Maps to: CC `commands/model/model.tsx:332-337` `renderModelLabel`.

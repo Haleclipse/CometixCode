@@ -54,45 +54,222 @@ fn model_option(
     }
 }
 
-pub(crate) fn model_picker_options(max_description_chars: usize) -> Vec<SelectOptionData> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RemapTier {
+    Default,
+    Sonnet,
+    Sonnet1M,
+    Opus,
+    Opus1M,
+    Haiku,
+}
+
+impl RemapTier {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Default => "Default (默认)",
+            Self::Sonnet => "Sonnet",
+            Self::Sonnet1M => "Sonnet (1M context)",
+            Self::Opus => "Opus",
+            Self::Opus1M => "Opus (1M context)",
+            Self::Haiku => "Haiku",
+        }
+    }
+
+    pub fn env_key(&self) -> &'static str {
+        match self {
+            Self::Default | Self::Sonnet => "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            Self::Sonnet1M => "ANTHROPIC_DEFAULT_SONNET_1M_MODEL",
+            Self::Opus => "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            Self::Opus1M => "ANTHROPIC_DEFAULT_OPUS_1M_MODEL",
+            Self::Haiku => "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        }
+    }
+}
+
+pub(crate) fn get_candidate_models_for_active_channel(
+    active_id: &str,
+) -> Vec<crate::services::proxy_channel::types::DiscoveredModel> {
+    use crate::services::proxy_channel::types::DiscoveredModel;
+
+    if let Some(cache) = crate::services::proxy_channel::load_channel_models_cache(active_id) {
+        if !cache.models.is_empty() {
+            return cache.models;
+        }
+    }
     vec![
-        model_option(
-            "Default (recommended)",
-            MODEL_NO_PREFERENCE,
-            "Use the default model (currently Sonnet 4.6)",
-            max_description_chars,
-        ),
-        model_option(
-            "Sonnet",
-            "sonnet",
-            "Sonnet 4.6 · Best for everyday tasks",
-            max_description_chars,
-        ),
-        model_option(
-            "Sonnet (1M context)",
-            "sonnet[1m]",
-            "Sonnet 4.6 for long sessions",
-            max_description_chars,
-        ),
-        model_option(
-            "Opus",
-            "opus",
-            "Opus 4.6 · Most capable for complex work",
-            max_description_chars,
-        ),
-        model_option(
-            "Opus (1M context)",
-            "opus[1m]",
-            "Opus 4.6 for long sessions",
-            max_description_chars,
-        ),
-        model_option(
-            "Haiku",
-            "haiku",
-            "Haiku 4.5 · Fastest for quick answers",
-            max_description_chars,
-        ),
+        DiscoveredModel {
+            id: "claude-3-7-sonnet".to_string(),
+            name: "Claude 3.7 Sonnet".to_string(),
+            description: Some("Anthropic flagship".to_string()),
+        },
+        DiscoveredModel {
+            id: "claude-3-5-sonnet".to_string(),
+            name: "Claude 3.5 Sonnet".to_string(),
+            description: None,
+        },
+        DiscoveredModel {
+            id: "claude-3-opus".to_string(),
+            name: "Claude 3 Opus".to_string(),
+            description: None,
+        },
+        DiscoveredModel {
+            id: "claude-3-5-haiku".to_string(),
+            name: "Claude 3.5 Haiku".to_string(),
+            description: None,
+        },
+        DiscoveredModel {
+            id: "gemini-2.5-pro".to_string(),
+            name: "Gemini 2.5 Pro".to_string(),
+            description: None,
+        },
+        DiscoveredModel {
+            id: "gemini-2.5-flash".to_string(),
+            name: "Gemini 2.5 Flash".to_string(),
+            description: None,
+        },
+        DiscoveredModel {
+            id: "gpt-4o".to_string(),
+            name: "GPT-4o".to_string(),
+            description: None,
+        },
+        DiscoveredModel {
+            id: "deepseek-chat".to_string(),
+            name: "DeepSeek Chat (V3)".to_string(),
+            description: None,
+        },
     ]
+}
+
+pub(crate) fn model_picker_options(max_description_chars: usize) -> Vec<SelectOptionData> {
+    if let Some(active_id) = crate::services::proxy_channel::get_active_channel_id() {
+        let cfg = crate::services::proxy_channel::load_channel_config(&active_id);
+        let sonnet_mapping = cfg
+            .as_ref()
+            .and_then(|c| c.env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"))
+            .cloned()
+            .or_else(|| std::env::var("ANTHROPIC_DEFAULT_SONNET_MODEL").ok());
+        let sonnet_1m_mapping = cfg
+            .as_ref()
+            .and_then(|c| c.env.get("ANTHROPIC_DEFAULT_SONNET_1M_MODEL"))
+            .cloned()
+            .or_else(|| std::env::var("ANTHROPIC_DEFAULT_SONNET_1M_MODEL").ok())
+            .or_else(|| sonnet_mapping.as_ref().map(|s| format!("{s}[1m]")));
+
+        let opus_mapping = cfg
+            .as_ref()
+            .and_then(|c| c.env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"))
+            .cloned()
+            .or_else(|| std::env::var("ANTHROPIC_DEFAULT_OPUS_MODEL").ok());
+        let opus_1m_mapping = cfg
+            .as_ref()
+            .and_then(|c| c.env.get("ANTHROPIC_DEFAULT_OPUS_1M_MODEL"))
+            .cloned()
+            .or_else(|| std::env::var("ANTHROPIC_DEFAULT_OPUS_1M_MODEL").ok())
+            .or_else(|| opus_mapping.as_ref().map(|s| format!("{s}[1m]")));
+
+        let haiku_mapping = cfg
+            .as_ref()
+            .and_then(|c| c.env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"))
+            .cloned()
+            .or_else(|| std::env::var("ANTHROPIC_DEFAULT_HAIKU_MODEL").ok());
+
+        vec![
+            model_option(
+                "Default (recommended)",
+                MODEL_NO_PREFERENCE,
+                &format!(
+                    "{} · [修改模型 (按 M / Tab)]",
+                    sonnet_mapping.as_deref().unwrap_or("Sonnet (默认)")
+                ),
+                max_description_chars,
+            ),
+            model_option(
+                "Sonnet",
+                "sonnet",
+                &format!(
+                    "{} · [修改模型 (按 M / Tab)]",
+                    sonnet_mapping.as_deref().unwrap_or("Sonnet 4.6")
+                ),
+                max_description_chars,
+            ),
+            model_option(
+                "Sonnet (1M context)",
+                "sonnet[1m]",
+                &format!(
+                    "{} · [修改模型 (按 M / Tab)]",
+                    sonnet_1m_mapping.as_deref().unwrap_or("Sonnet 4.6 (1M)")
+                ),
+                max_description_chars,
+            ),
+            model_option(
+                "Opus",
+                "opus",
+                &format!(
+                    "{} · [修改模型 (按 M / Tab)]",
+                    opus_mapping.as_deref().unwrap_or("Opus 4.6")
+                ),
+                max_description_chars,
+            ),
+            model_option(
+                "Opus (1M context)",
+                "opus[1m]",
+                &format!(
+                    "{} · [修改模型 (按 M / Tab)]",
+                    opus_1m_mapping.as_deref().unwrap_or("Opus 4.6 (1M)")
+                ),
+                max_description_chars,
+            ),
+            model_option(
+                "Haiku",
+                "haiku",
+                &format!(
+                    "{} · [修改模型 (按 M / Tab)]",
+                    haiku_mapping.as_deref().unwrap_or("Haiku 4.5")
+                ),
+                max_description_chars,
+            ),
+        ]
+    } else {
+        vec![
+            model_option(
+                "Default (recommended)",
+                MODEL_NO_PREFERENCE,
+                "Use the default model (currently Sonnet 4.6)",
+                max_description_chars,
+            ),
+            model_option(
+                "Sonnet",
+                "sonnet",
+                "Sonnet 4.6 · Best for everyday tasks",
+                max_description_chars,
+            ),
+            model_option(
+                "Sonnet (1M context)",
+                "sonnet[1m]",
+                "Sonnet 4.6 for long sessions",
+                max_description_chars,
+            ),
+            model_option(
+                "Opus",
+                "opus",
+                "Opus 4.6 · Most capable for complex work",
+                max_description_chars,
+            ),
+            model_option(
+                "Opus (1M context)",
+                "opus[1m]",
+                "Opus 4.6 for long sessions",
+                max_description_chars,
+            ),
+            model_option(
+                "Haiku",
+                "haiku",
+                "Haiku 4.5 · Fastest for quick answers",
+                max_description_chars,
+            ),
+        ]
+    }
 }
 
 fn next_index(index: usize, count: usize) -> usize {
@@ -460,6 +637,64 @@ fn focused_model_label(options: &[SelectOptionData], focused_index: usize) -> Op
         .map(|option| option.label.as_str())
 }
 
+fn render_remap_tier_picker(
+    tier: RemapTier,
+    candidates: &[crate::services::proxy_channel::types::DiscoveredModel],
+    focused_index: usize,
+    theme: Theme,
+) -> AnyElement<'static> {
+    let count = candidates.len();
+    let focused = focused_index.min(count.saturating_sub(1));
+    let visible_count = 8usize.min(count.max(1));
+    let visible_from = visible_from_index(focused, count, visible_count);
+
+    let options: Vec<SelectOptionData> = candidates
+        .iter()
+        .map(|m| SelectOptionData {
+            label: m.name.clone(),
+            value: m.id.clone(),
+            description: m.description.clone(),
+            dim_description: true,
+            disabled: false,
+            input: None,
+        })
+        .collect();
+
+    element! {
+        View(flex_direction: FlexDirection::Column) {
+            View(margin_bottom: 1u32, flex_direction: FlexDirection::Column) {
+                Text(
+                    content: format!("配置 [{}] 档位对应模型", tier.label()),
+                    color: theme.remember,
+                    weight: Weight::Bold,
+                )
+                Text(
+                    content: "从代理渠道拉取的可用远端模型列表中点选绑定：".to_string(),
+                    dim: true,
+                )
+            }
+            View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
+                Select(
+                    is_disabled: false,
+                    hide_indexes: false,
+                    visible_option_count: visible_count,
+                    options: options,
+                    focused_index: focused,
+                    selected_value: None::<String>,
+                    visible_from_index: visible_from,
+                    layout: SelectLayout::Compact,
+                )
+            }
+            Text(
+                content: "↑/↓ 移动选择 · Enter 确认绑定并生效 · Esc 取消返回".to_string(),
+                dim: true,
+                italic: true,
+            )
+        }
+    }
+    .into_any()
+}
+
 fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElement<'static> {
     let count = props.options.len();
     let focused_index = props.focused_index.min(count.saturating_sub(1));
@@ -603,8 +838,19 @@ pub(crate) fn ModelPicker<'a>(
     let has_toggled_effort = hooks.use_state(|| false);
     let mut should_close = hooks.use_state(|| false);
     let mut pending_selection = hooks.use_state(|| Option::<ModelPickerSelection>::None);
+    let mut remap_tier = hooks.use_state(|| Option::<RemapTier>::None);
+    let mut remap_focus = hooks.use_state(|| 0usize);
     let skip_settings_write = props.skip_settings_write;
     let event_options = options.clone();
+
+    let active_channel_id = crate::services::proxy_channel::get_active_channel_id();
+    let candidate_models = active_channel_id
+        .as_deref()
+        .map(get_candidate_models_for_active_channel)
+        .unwrap_or_default();
+    let candidate_count = candidate_models.len();
+    let event_candidate_models = candidate_models.clone();
+    let event_active_channel_id = active_channel_id.clone();
 
     use_model_picker_effort_keybindings(
         &mut hooks,
@@ -646,9 +892,65 @@ pub(crate) fn ModelPicker<'a>(
         if *kind == KeyEventKind::Release {
             return;
         }
+
+        // Sub-view: In remap mode (Screen 2)
+        if let Some(tier) = remap_tier.get() {
+            let remap_idx = remap_focus.get().min(candidate_count.saturating_sub(1));
+            match code {
+                KeyCode::Esc => {
+                    remap_tier.set(None);
+                }
+                KeyCode::Down => {
+                    remap_focus.set(next_index(remap_idx, candidate_count));
+                }
+                KeyCode::Up => {
+                    remap_focus.set(previous_index(remap_idx, candidate_count));
+                }
+                KeyCode::Enter => {
+                    if let Some(chosen) = event_candidate_models.get(remap_idx) {
+                        if let Some(active_id) = event_active_channel_id.as_deref() {
+                            let env_key = tier.env_key();
+                            let _ = crate::services::proxy_channel::update_channel_env(
+                                active_id,
+                                &[(env_key, &chosen.id)],
+                            );
+                            crate::utils::process_env::set(env_key, &chosen.id);
+                            unsafe {
+                                std::env::set_var(env_key, &chosen.id);
+                            }
+                        }
+                    }
+                    remap_tier.set(None);
+                }
+                _ => {}
+            }
+            event.stop_propagation();
+            return;
+        }
+
+        // Main view: In standard model picker (Screen 1)
         let focused = focused_index.get().min(option_count.saturating_sub(1));
         match code {
             KeyCode::Esc => should_close.set(true),
+            KeyCode::Char('m') | KeyCode::Char('M') | KeyCode::Tab => {
+                if event_active_channel_id.is_some() {
+                    if let Some(option) = event_options.get(focused) {
+                        let tier = match option.value.as_str() {
+                            MODEL_NO_PREFERENCE => Some(RemapTier::Default),
+                            "sonnet" => Some(RemapTier::Sonnet),
+                            "sonnet[1m]" => Some(RemapTier::Sonnet1M),
+                            "opus" => Some(RemapTier::Opus),
+                            "opus[1m]" => Some(RemapTier::Opus1M),
+                            "haiku" => Some(RemapTier::Haiku),
+                            _ => None,
+                        };
+                        if let Some(t) = tier {
+                            remap_tier.set(Some(t));
+                            remap_focus.set(0);
+                        }
+                    }
+                }
+            }
             KeyCode::Down => {
                 let next = next_index(focused, option_count);
                 focused_index.set(next);
@@ -734,27 +1036,31 @@ pub(crate) fn ModelPicker<'a>(
     }
 
     let focused = focused_index.get().min(option_count.saturating_sub(1));
-    let content = render_model_picker_content(
-        &ModelPickerView {
-            options,
-            focused_index: focused,
-            selected_value: props
-                .initial
-                .clone()
-                .or_else(|| Some(MODEL_NO_PREFERENCE.to_string())),
-            visible_from_index: visible_from_index(focused, option_count, visible_count),
-            effort: effort.get(),
-            header_text: props.header_text.clone(),
-            session_model_label: props.session_model_label.clone(),
-            is_standalone_command: props.is_standalone_command,
-            show_fast_mode_notice: props.show_fast_mode_notice,
-            show_fast_mode_available_hint: props.show_fast_mode_available_hint,
-            fast_mode_is_on: props.fast_mode_is_on,
-            exit_pending: props.exit_pending,
-            exit_key_name: props.exit_key_name.clone(),
-        },
-        theme,
-    );
+    let content = if let Some(tier) = remap_tier.get() {
+        render_remap_tier_picker(tier, &candidate_models, remap_focus.get(), theme)
+    } else {
+        render_model_picker_content(
+            &ModelPickerView {
+                options,
+                focused_index: focused,
+                selected_value: props
+                    .initial
+                    .clone()
+                    .or_else(|| Some(MODEL_NO_PREFERENCE.to_string())),
+                visible_from_index: visible_from_index(focused, option_count, visible_count),
+                effort: effort.get(),
+                header_text: props.header_text.clone(),
+                session_model_label: props.session_model_label.clone(),
+                is_standalone_command: props.is_standalone_command,
+                show_fast_mode_notice: props.show_fast_mode_notice,
+                show_fast_mode_available_hint: props.show_fast_mode_available_hint,
+                fast_mode_is_on: props.fast_mode_is_on,
+                exit_pending: props.exit_pending,
+                exit_key_name: props.exit_key_name.clone(),
+            },
+            theme,
+        )
+    };
 
     if props.is_standalone_command {
         element! {
