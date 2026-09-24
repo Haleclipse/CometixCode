@@ -1048,16 +1048,53 @@ pub fn LogSelector<'a>(
             .display()
             .to_string()
     });
-    let current_branch = hooks.use_const(|| {
-        let branch = crate::utils::git::get_branch();
-        (!branch.is_empty()).then_some(branch)
+    // Maps to: CC LogSelector.tsx:203,206,277-282 — `currentBranch` starts
+    // null and `hasMultipleWorktrees` false; a mount effect fills them from two
+    // independent `getBranch().then(...)` / `getWorktreePaths(currentCwd)
+    // .then(...)` promises. Both Rust projections spawn git synchronously, so
+    // each runs on its own worker thread and lands through `use_future` on the
+    // render thread (Contract C: no cross-thread `State::set`). A sync call
+    // inside the async block would still block rendering, since `use_future`
+    // is polled in the render loop. Calling them from the render body froze
+    // the picker for the whole git round-trip on mount.
+    let mut current_branch_state = hooks.use_state(|| Option::<String>::None);
+    let mut has_multiple_worktrees_state = hooks.use_state(|| false);
+    let branch_receiver = hooks.use_const(|| {
+        let (sender, receiver) = async_channel::bounded(1);
+        let _ = std::thread::Builder::new()
+            .name("log-selector-branch".to_string())
+            .spawn(move || {
+                let branch = crate::utils::git::get_branch();
+                let _ = sender.send_blocking((!branch.is_empty()).then_some(branch));
+            });
+        std::sync::Arc::new(receiver)
     });
-    let has_multiple_worktrees = hooks.use_const({
-        let current_project_path = current_project_path.clone();
-        move || {
-            crate::utils::get_worktree_paths::get_worktree_paths(&current_project_path).len() > 1
+    hooks.use_future(async move {
+        if let Ok(branch) = branch_receiver.recv().await {
+            current_branch_state.set(branch);
         }
     });
+    let worktrees_receiver = hooks.use_const({
+        let current_project_path = current_project_path.clone();
+        move || {
+            let (sender, receiver) = async_channel::bounded(1);
+            let _ = std::thread::Builder::new()
+                .name("log-selector-worktrees".to_string())
+                .spawn(move || {
+                    let paths =
+                        crate::utils::get_worktree_paths::get_worktree_paths(&current_project_path);
+                    let _ = sender.send_blocking(paths.len() > 1);
+                });
+            std::sync::Arc::new(receiver)
+        }
+    });
+    hooks.use_future(async move {
+        if let Ok(multiple) = worktrees_receiver.recv().await {
+            has_multiple_worktrees_state.set(multiple);
+        }
+    });
+    let current_branch = current_branch_state.read().clone();
+    let has_multiple_worktrees = has_multiple_worktrees_state.get();
 
     let (terminal_width, terminal_rows) = hooks.use_terminal_size();
     let theme = hooks.use_context::<Theme>();

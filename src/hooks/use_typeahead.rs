@@ -1402,6 +1402,14 @@ fn visible_file_suggestions(
 pub struct TypeaheadState {
     pub suggestions: Arc<Vec<SuggestionItem>>,
     pub selected: State<i32>,
+    /// Maps to CC `onChange → setSelectedSuggestion(0)`: set it when the
+    /// input text changes and the next suggestion recompute preserves the
+    /// selection from index 0 instead of the current one. A flag rather than
+    /// a write of `selected`: the recompute runs during render and writes
+    /// `selected` only when the preserved index differs, so a keystroke
+    /// whose suggestions stay empty (or keep the same item first) does not
+    /// force the settle pass to re-run the update.
+    pub selection_reset: Ref<bool>,
     pub has_suggestions: bool,
     /// Maps to CC `maxColumnWidth` state (`useTypeahead.tsx:490`), *not* the
     /// `allCommandsMaxWidth` memo behind it.
@@ -1459,7 +1467,11 @@ pub fn use_typeahead(
         })
         .unwrap_or_default();
     let mut selected = hooks.use_state(|| 0i32);
-    let previous_suggestions = hooks.use_state(|| Arc::<Vec<SuggestionItem>>::default());
+    // A ref: only the suggestion memo reads it, to preserve the selected item
+    // across producer refreshes. As a `State` it was written on every
+    // recompute — a render-phase write that forced a second update pass.
+    let previous_suggestions = hooks.use_ref(|| Arc::<Vec<SuggestionItem>>::default());
+    let selection_reset = hooks.use_ref(|| false);
     let file_requests =
         hooks.use_const(|| Arc::new(async_channel::unbounded::<FileSuggestionRequest>()));
     // Monotonic request generation mirrors the source's latestSearchTokenRef:
@@ -1814,11 +1826,14 @@ pub fn use_typeahead(
             let file_query = file_query.clone();
             let direct_agents = direct_agents.clone();
             let mut previous_suggestions = previous_suggestions;
+            let mut selection_reset = selection_reset;
             move || {
                 // Maps to: CC useTypeahead.tsx:684-688 — suppression clears
                 // suggestions before every consumer, including keybindings.
                 if suppress_suggestions {
-                    selected.set(-1);
+                    if selected.get() != -1 {
+                        selected.set(-1);
+                    }
                     return Arc::new(Vec::new());
                 }
                 let suggestions = if !direct_agents.is_empty() {
@@ -1862,11 +1877,24 @@ pub fn use_typeahead(
                 // item by id whenever a producer refreshes its result list.
                 let suggestions = Arc::new(suggestions);
                 let previous = previous_suggestions.read().clone();
-                selected.set(get_preserved_selection(
-                    previous.as_slice(),
-                    selected.get(),
-                    suggestions.as_slice(),
-                ));
+                // Only write when the preserved index actually moves: the
+                // memo recomputes during render, and a `State` write there is
+                // a render-phase update. Typing usually keeps the selection at
+                // the same index, so this stays silent on most keystrokes.
+                // CC onChange resets the selection to 0 before
+                // `updateSuggestions` preserves it; the flag carries that
+                // reset here without a state write of its own.
+                let base = if selection_reset.get() {
+                    selection_reset.set(false);
+                    0
+                } else {
+                    selected.get()
+                };
+                let preserved =
+                    get_preserved_selection(previous.as_slice(), base, suggestions.as_slice());
+                if preserved != selected.get() {
+                    selected.set(preserved);
+                }
                 previous_suggestions.set(Arc::clone(&suggestions));
                 suggestions
             }
@@ -1919,6 +1947,7 @@ pub fn use_typeahead(
     TypeaheadState {
         suggestions,
         selected,
+        selection_reset,
         has_suggestions,
         max_column_width,
         kind,

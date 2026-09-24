@@ -154,8 +154,11 @@ fn normalize_unicode(path: PathBuf) -> PathBuf {
 
 /// Synchronous Rust projection of CC `utils/git.ts::getBranch()`.
 ///
-/// CC resolves the cached branch asynchronously. The retained TUI snapshots the
-/// same original working directory once when `LogSelector` mounts.
+/// CC resolves the branch asynchronously; this projection blocks on a git
+/// subprocess. UI callers must run it off the render thread and land the
+/// result through `use_future` (as `LogSelector` does for CC's mount-effect
+/// `getBranch().then(setCurrentBranch)`) — calling it from a render body
+/// freezes the TUI for the whole git round-trip.
 pub fn get_branch() -> String {
     let cwd = crate::bootstrap::state::get_original_cwd();
     Command::new("git")

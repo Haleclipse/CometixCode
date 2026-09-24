@@ -967,9 +967,13 @@ mod tests {
             };
             wait_probe_frame(&mut frames, "Shell details").await;
             send(KeyCode::F(3)); // a second task arrives after initial direct detail
-            wait_probe_frame(&mut frames, "Shell details").await;
+            // A second task arriving leaves the directly-opened detail view
+            // unchanged, so there is no new frame to wait for here — waiting
+            // used to pass only on the 80→100 divider re-layout frame, not on
+            // F3's effect. The list reached via Back proves F3 landed.
             send(KeyCode::Left);
-            wait_probe_frame(&mut frames, "Background tasks").await;
+            let list = wait_probe_frame(&mut frames, "Background tasks").await;
+            assert!(list.contains("Shells (2)"), "F3 task missing from list: {list}");
             send(KeyCode::F(4));
             wait_probe_frame(&mut frames, "Shells (1)").await;
             send(KeyCode::Enter);

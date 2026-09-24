@@ -24,6 +24,25 @@ pub struct ResumeCommandProps<'a> {
 }
 
 const NO_CONVERSATIONS_NOTICE: &str = "No conversations found to resume";
+const LOAD_FAILED_NOTICE: &str = "Failed to load conversations";
+
+/// Runs `work` on a named worker thread and resolves with its result — the
+/// thread+channel carrier (see `FileEditToolDiff`) for CC `await`s whose Rust
+/// projection blocks. Resolves `None` if the worker could not start or died,
+/// which callers map onto the CC promise's rejection branch.
+async fn run_off_render_thread<T: Send + 'static>(
+    name: &str,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (sender, receiver) = async_channel::bounded(1);
+    std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(move || {
+            let _ = sender.send_blocking(work());
+        })
+        .ok()?;
+    receiver.recv().await.ok()
+}
 
 /// Maps to: CC `commands/resume/resume.tsx::filterResumableSessions`.
 /// Team sessions remain resumable; only sidechains and the current session are
@@ -116,6 +135,10 @@ pub fn ResumeCommand<'a>(
     let load_rx = load_channel.1.clone();
     let current_session_id = props.current_session_id.clone();
 
+    // This future is polled on the render loop, so every blocking call below
+    // (git subprocess, session-file scan) runs on a worker thread and only its
+    // result lands here (Contract C: no cross-thread `State::set`). Running
+    // them inline froze the "Loading conversations…" frame for the whole scan.
     hooks.use_future({
         let project_path = project_path;
         let mut sessions = sessions;
@@ -123,21 +146,42 @@ pub fn ResumeCommand<'a>(
         let mut is_loading = is_loading;
         let mut pending_result = pending_result;
         async move {
+            // Maps to: CC resume.tsx:115-122 `init` — `getWorktreePaths` runs
+            // once on mount; every later `loadLogs` (toggle, onLogsChanged)
+            // reuses the stored paths instead of re-running git.
+            let project_path = project_path.read().clone();
+            let paths = run_off_render_thread("resume-worktree-paths", move || {
+                get_worktree_paths(&project_path)
+            })
+            .await
+            .unwrap_or_default();
+            worktree_paths.set(paths.clone());
+            // Maps to: CC resume.tsx:93-113 `loadLogs(allProjects, paths)`.
             while let Ok(show_all_projects) = load_rx.recv().await {
                 is_loading.set(true);
-                let project_path = project_path.read().clone();
-                let paths = get_worktree_paths(&project_path);
-                let all_logs = if show_all_projects {
-                    load_all_projects_message_logs()
-                } else {
-                    load_same_repo_message_logs(&paths)
+                let paths = paths.clone();
+                let current_session_id = current_session_id.clone();
+                let resumable = run_off_render_thread("resume-load-logs", move || {
+                    let all_logs = if show_all_projects {
+                        load_all_projects_message_logs()
+                    } else {
+                        load_same_repo_message_logs(&paths)
+                    };
+                    filter_resumable_sessions(all_logs, current_session_id.as_deref())
+                })
+                .await;
+                let Some(resumable) = resumable else {
+                    // Maps to: CC resume.tsx:106-107 `catch → onDone('Failed
+                    // to load conversations')`; the worker dying is the
+                    // Rust-side failure surface of the awaited load.
+                    pending_result.set(Some(LOAD_FAILED_NOTICE.to_string()));
+                    is_loading.set(false);
+                    continue;
                 };
-                let resumable = filter_resumable_sessions(all_logs, current_session_id.as_deref());
                 if let Some(result) = picker_empty_notice(resumable.len()) {
                     pending_result.set(Some(result.to_string()));
                 }
                 sessions.set(resumable);
-                worktree_paths.set(paths);
                 is_loading.set(false);
             }
         }
@@ -227,6 +271,20 @@ pub fn ResumeCommand<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn off_render_thread_load_resolves_result_or_rejection() {
+        // The worker's result lands in the awaiting future; a dying worker
+        // resolves None, which the load loop maps to CC's catch branch
+        // (resume.tsx:106-107 'Failed to load conversations').
+        let loaded = futures::executor::block_on(run_off_render_thread("resume-test", || 7));
+        assert_eq!(loaded, Some(7));
+        let failed = futures::executor::block_on(run_off_render_thread("resume-test", || {
+            panic!("worker died")
+        }));
+        assert_eq!(failed, None::<()>);
+        assert_eq!(LOAD_FAILED_NOTICE, "Failed to load conversations");
+    }
 
     #[test]
     fn picker_empty_notice_matches_official_resume_command_copy() {

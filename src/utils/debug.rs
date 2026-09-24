@@ -9,6 +9,13 @@
 //! - `--debug-to-stderr` / `-d2e` → stderr instead of file
 //! - `--debug-file <path>` → explicit file (implies debug mode)
 //! - `--debug=api,hooks` / `-d api,hooks` → category filter
+//!
+//! Cometix-only render profilers (CC has no equivalent; see
+//! [`ProfileSelection`]): `--debug=frame,component,query-pump` or
+//! `--debug=perf`, the argv flags `--debug-*-profile`, or the environment
+//! variable `COMETIX_DEBUG_PROFILES` with the same list syntax.
+//! `COMETIX_FRAME_TIMING_LOG` / `COMETIX_FRAME_TIMING_SAMPLE_EVERY` are the
+//! twins of CC's `CLAUDE_CODE_FRAME_TIMING_LOG` / `_SAMPLE_EVERY` bench JSONL.
 
 use crate::utils::debug_filter::{DebugFilter, parse_debug_filter, should_show_debug_message};
 use std::io::Write;
@@ -168,15 +175,77 @@ fn update_latest_debug_log_symlink(debug_log_path: &Path) {
     }
 }
 
+/// Which render-side profilers are on. Cometix-only (CC has no equivalent of
+/// these probes); each costs per frame, so all are off by default.
+///
+/// One comma-separated list syntax selects them in three places: the
+/// `--debug=` filter (profiler names sit beside the log categories), the argv
+/// flags `--debug-frame-profile` / `--debug-component-profile` /
+/// `--debug-query-pump-profile` / `--debug-perf`, and `COMETIX_DEBUG_PROFILES`
+/// for launching under a profiler without touching argv (bench scripts).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProfileSelection {
+    /// Per-frame phase timings (`frame_profile_enabled`).
+    pub frame: bool,
+    /// Per-component update timings (`component_profile_enabled`).
+    pub component: bool,
+    /// Query pump iteration timings (`query_pump_profile_enabled`).
+    pub query_pump: bool,
+}
+
+impl ProfileSelection {
+    pub const ALL: Self = Self {
+        frame: true,
+        component: true,
+        query_pump: true,
+    };
+
+    /// Parse a profiler list. `frame`, `component` and `query-pump` each
+    /// select one profiler; `all`, `perf`, `profile`, `profiles`, or a bare
+    /// truthy value (`1`, `true`) select every profiler. Anything else is
+    /// ignored: the filter's `!name` exclusion spelling and the log categories
+    /// that share the `--debug=` list never select a profiler.
+    fn parse(list: Option<&str>) -> Self {
+        let Some(list) = list else {
+            return Self::default();
+        };
+        if crate::utils::env_utils::is_env_truthy(Some(list)) {
+            return Self::ALL;
+        }
+        let mut selection = Self::default();
+        for token in list.split(',').map(str::trim) {
+            match token.to_ascii_lowercase().as_str() {
+                "frame" => selection.frame = true,
+                "component" => selection.component = true,
+                "query-pump" | "query_pump" => selection.query_pump = true,
+                "all" | "perf" | "profile" | "profiles" => selection = Self::ALL,
+                _ => {}
+            }
+        }
+        selection
+    }
+
+    /// `COMETIX_DEBUG_PROFILES`: the same list, from the environment.
+    fn from_env() -> Self {
+        Self::parse(std::env::var("COMETIX_DEBUG_PROFILES").ok().as_deref())
+    }
+
+    fn or(self, other: Self) -> Self {
+        Self {
+            frame: self.frame || other.frame,
+            component: self.component || other.component,
+            query_pump: self.query_pump || other.query_pump,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DebugConfig {
     pub debug: bool,
     pub debug_to_stderr: bool,
     pub debug_file: Option<PathBuf>,
     pub filter: Option<DebugFilter>,
-    pub frame_profile: bool,
-    pub component_profile: bool,
-    pub query_pump_profile: bool,
+    pub profiles: ProfileSelection,
 }
 
 static DEBUG_CONFIG: OnceLock<DebugConfig> = OnceLock::new();
@@ -252,15 +321,65 @@ pub fn is_debug_to_stderr() -> bool {
 }
 
 pub fn frame_profile_enabled() -> bool {
-    config().frame_profile
+    config().profiles.frame
+}
+
+/// Maps to: CC `interactiveHelpers.tsx:427` `CLAUDE_CODE_FRAME_TIMING_LOG` —
+/// bench-only per-frame JSONL for offline analysis. The Rust twin uses the
+/// same record shape so one analysis script can consume both sides.
+pub fn frame_timing_log_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("COMETIX_FRAME_TIMING_LOG")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
+/// Maps to: CC `main.tsx` `CLAUDE_CODE_FRAME_TIMING_SAMPLE_EVERY` — record the
+/// heavyweight rss/cpu samples only every Nth frame (default 1: every frame).
+/// Returns true when this frame should carry the samples.
+pub fn frame_timing_sample_tick() -> bool {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    let every = *EVERY.get_or_init(|| {
+        std::env::var("COMETIX_FRAME_TIMING_SAMPLE_EVERY")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|&value| value >= 1)
+            .unwrap_or(1)
+    });
+    COUNTER.fetch_add(1, Ordering::Relaxed) % every == 0
+}
+
+/// Cumulative process CPU time in microseconds, the Rust twin of Node
+/// `process.cpuUsage()` (which CC's frame-timing log records per frame; the
+/// bench side computes deltas).
+pub fn process_cpu_usage_micros() -> (u64, u64) {
+    #[cfg(unix)]
+    {
+        let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+        // SAFETY: RUSAGE_SELF with a zeroed out-param is the documented usage.
+        let result = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
+        if result != 0 {
+            return (0, 0);
+        }
+        // SAFETY: getrusage returned success, so the struct is initialized.
+        let usage = unsafe { usage.assume_init() };
+        let to_micros =
+            |time: libc::timeval| time.tv_sec as u64 * 1_000_000 + time.tv_usec as u64;
+        (to_micros(usage.ru_utime), to_micros(usage.ru_stime))
+    }
+    #[cfg(not(unix))]
+    {
+        (0, 0)
+    }
 }
 
 pub fn component_profile_enabled() -> bool {
-    config().component_profile
+    config().profiles.component
 }
 
 pub fn query_pump_profile_enabled() -> bool {
-    config().query_pump_profile
+    config().profiles.query_pump
 }
 
 fn config() -> &'static DebugConfig {
@@ -288,21 +407,7 @@ impl DebugConfig {
                 std::env::var("CLAUDE_CODE_DEBUG").ok().as_deref(),
             );
 
-        let perf_from_filter = debug_filter.is_some_and(|f| {
-            f.split(',').map(str::trim).any(|part| {
-                matches!(
-                    part.trim_start_matches('!'),
-                    "perf" | "profile" | "profiles" | "frame" | "component" | "query-pump" | "all"
-                )
-            })
-        });
-        let profile_all = perf_from_filter
-            || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILE").ok().as_deref(),
-            )
-            || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILES").ok().as_deref(),
-            );
+        let profiles = ProfileSelection::parse(debug_filter).or(ProfileSelection::from_env());
 
         Self {
             debug,
@@ -311,18 +416,7 @@ impl DebugConfig {
             debug_to_stderr,
             debug_file,
             filter,
-            frame_profile: profile_all
-                || crate::utils::env_utils::is_env_truthy(
-                    std::env::var("COMETIX_FRAME_PROFILE").ok().as_deref(),
-                ),
-            component_profile: profile_all
-                || crate::utils::env_utils::is_env_truthy(
-                    std::env::var("COMETIX_COMPONENT_PROFILE").ok().as_deref(),
-                ),
-            query_pump_profile: profile_all
-                || crate::utils::env_utils::is_env_truthy(
-                    std::env::var("COMETIX_QUERY_PUMP_PROFILE").ok().as_deref(),
-                ),
+            profiles,
         }
     }
 
@@ -343,38 +437,16 @@ impl DebugConfig {
             || has_exact_flag(argv, "--debug-query-pump-profile");
 
         let mut cfg = Self::from_parts(debug_flag, debug_to_stderr, debug_file, filter_raw);
-        // Argv-only profile flag variants (also covered by filter "perf").
-        let profile_all = filter_raw.is_some_and(|f| {
-            f.split(',').map(str::trim).any(|part| {
-                matches!(
-                    part.trim_start_matches('!'),
-                    "perf" | "profile" | "profiles" | "frame" | "component" | "query-pump" | "all"
-                )
-            })
-        }) || has_exact_flag(argv, "--debug-profile")
+        // Argv-only spellings of the same selection; the filter and the
+        // environment were already folded in by `from_parts`.
+        let all = has_exact_flag(argv, "--debug-profile")
             || has_exact_flag(argv, "--debug-profiles")
-            || has_exact_flag(argv, "--debug-perf")
-            || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILE").ok().as_deref(),
-            )
-            || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILES").ok().as_deref(),
-            );
-        cfg.frame_profile = profile_all
-            || has_exact_flag(argv, "--debug-frame-profile")
-            || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_FRAME_PROFILE").ok().as_deref(),
-            );
-        cfg.component_profile = profile_all
-            || has_exact_flag(argv, "--debug-component-profile")
-            || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_COMPONENT_PROFILE").ok().as_deref(),
-            );
-        cfg.query_pump_profile = profile_all
-            || has_exact_flag(argv, "--debug-query-pump-profile")
-            || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_QUERY_PUMP_PROFILE").ok().as_deref(),
-            );
+            || has_exact_flag(argv, "--debug-perf");
+        cfg.profiles = cfg.profiles.or(ProfileSelection {
+            frame: all || has_exact_flag(argv, "--debug-frame-profile"),
+            component: all || has_exact_flag(argv, "--debug-component-profile"),
+            query_pump: all || has_exact_flag(argv, "--debug-query-pump-profile"),
+        });
         cfg
     }
 }
@@ -466,7 +538,7 @@ mod tests {
         let config = DebugConfig::from_argv(&argv(&["--debug"]));
         assert!(config.debug);
         assert!(!config.debug_to_stderr);
-        assert!(!config.frame_profile);
+        assert_eq!(config.profiles, ProfileSelection::default());
         assert!(config.debug_file.is_none());
     }
 
@@ -499,9 +571,65 @@ mod tests {
     fn debug_profile_enables_perf_probes() {
         let config = DebugConfig::from_argv(&argv(&["--debug=perf"]));
         assert!(config.debug);
-        assert!(config.frame_profile);
-        assert!(config.component_profile);
-        assert!(config.query_pump_profile);
+        assert_eq!(config.profiles, ProfileSelection::ALL);
+    }
+
+    #[test]
+    fn filter_names_select_single_profilers_beside_log_categories() {
+        let config = DebugConfig::from_argv(&argv(&["--debug=api,frame"]));
+        assert_eq!(
+            config.profiles,
+            ProfileSelection {
+                frame: true,
+                component: false,
+                query_pump: false,
+            }
+        );
+        // The exclusion spelling never selects a profiler.
+        let config = DebugConfig::from_argv(&argv(&["--debug=!perf"]));
+        assert_eq!(config.profiles, ProfileSelection::default());
+    }
+
+    #[test]
+    fn argv_profile_flags_add_to_the_filter_selection() {
+        let config = DebugConfig::from_argv(&argv(&["--debug-query-pump-profile"]));
+        assert!(config.debug);
+        assert_eq!(
+            config.profiles,
+            ProfileSelection {
+                frame: false,
+                component: false,
+                query_pump: true,
+            }
+        );
+        let config = DebugConfig::from_argv(&argv(&["--debug=component", "--debug-perf"]));
+        assert_eq!(config.profiles, ProfileSelection::ALL);
+    }
+
+    #[test]
+    fn profile_list_syntax() {
+        let one = |frame, component, query_pump| ProfileSelection {
+            frame,
+            component,
+            query_pump,
+        };
+        assert_eq!(ProfileSelection::parse(None), ProfileSelection::default());
+        assert_eq!(ProfileSelection::parse(Some("")), ProfileSelection::default());
+        assert_eq!(ProfileSelection::parse(Some("1")), ProfileSelection::ALL);
+        assert_eq!(ProfileSelection::parse(Some("true")), ProfileSelection::ALL);
+        assert_eq!(
+            ProfileSelection::parse(Some(" Frame , query-pump ")),
+            one(true, false, true)
+        );
+        assert_eq!(
+            ProfileSelection::parse(Some("component,all")),
+            ProfileSelection::ALL
+        );
+        // Retired spellings and unknown tokens select nothing.
+        assert_eq!(
+            ProfileSelection::parse(Some("frame-profile,COMETIX_FRAME_PROFILE")),
+            ProfileSelection::default()
+        );
     }
 
     #[test]

@@ -142,12 +142,6 @@ rmcp = { version = "2.1.0", default-features = false, optional = true, features 
     "transport-streamable-http-client-reqwest",
 ] }
 
-# ── Platform TLS backends ────────────────────────────────────────────────
-# Android/Termux: native-tls (OpenSSL). reqwest's rustls* features always
-# enable rustls-platform-verifier, which panics without JNI context.
-# Desktop: rustls-no-provider + ring (installed by utils/tls_provider.rs). Keep anthropic-sdk
-# on rustls-no-provider too — reqwest feature "rustls" would union aws-lc-sys.
-
 # CC `asciicast.ts:118-125` reads `process.stdout.columns/rows`, which Node
 # services with ioctl(TIOCGWINSZ) on Unix and GetConsoleScreenBufferInfo on
 # Windows. utils/asciicast.rs calls libc directly for the first; the second
@@ -157,28 +151,24 @@ rmcp = { version = "2.1.0", default-features = false, optional = true, features 
 [target.'cfg(not(unix))'.dependencies]
 crossterm = "0.29"
 
+# ── Platform TLS backends ────────────────────────────────────────────────
+# Android/Termux: native-tls (OpenSSL). reqwest's rustls* features always
+# enable rustls-platform-verifier, which panics without JNI context.
+# Desktop: rustls-no-provider + ring (installed by utils/tls_provider.rs). Keep anthropic-sdk
+# on rustls-no-provider too — reqwest feature "rustls" would union aws-lc-sys.
+# Target tables only add the TLS feature; shared features stay in [dependencies].
 [target.'cfg(target_os = "android")'.dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "native-tls"] }
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "native-tls"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["native-tls"], optional = true }
 rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
-    "auth",
-    "client",
-    "elicitation",
     "reqwest-native-tls",
-    "transport-child-process",
-    "transport-streamable-http-client-reqwest",
 ] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls-no-provider"] }
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["rustls-tls-webpki-roots"], optional = true }
 rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
-    "auth",
-    "client",
-    "elicitation",
     "reqwest-tls-no-provider",
-    "transport-child-process",
-    "transport-streamable-http-client-reqwest",
 ] }
 # ring crypto provider for rustls — tls_provider installs it before HTTPS.
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
@@ -193,3 +183,13 @@ codegen-units = 16
 strip = true
 opt-level = "s"
 panic = "abort"
+
+# Release-shaped build that external sampling profilers can read: same
+# optimization level, but full debug info and symbols kept. Use for CPU
+# investigations (`cargo build --profile profiling`, then macOS `sample`
+# / samply / Instruments on the running process). `panic = "abort"` is
+# inherited; only symbol visibility differs from what ships.
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = true

@@ -535,11 +535,13 @@ fn set_from_cursor(
     mut retained: Ref<Option<(String, usize, Cursor)>>,
     cursor: Cursor,
 ) {
+    // Cursor first: `on_change` observers report the edit's full state (text
+    // and caret) to their owner, and must not see the previous caret.
+    options.cursor_offset.set(cursor.offset());
     if options.value.read().as_str() != cursor.text() {
         options.value.set(cursor.text().to_string());
         (options.on_change)(cursor.text().to_string());
     }
-    options.cursor_offset.set(cursor.offset());
     *retained.write() = Some((cursor.text().to_string(), cursor.offset(), cursor));
 }
 

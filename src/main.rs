@@ -1703,29 +1703,85 @@ pub fn run(config: crate::cli::CliConfig) {
         .into_any()
     };
 
-    if utils::debug::frame_profile_enabled() {
+    if utils::debug::frame_profile_enabled() || utils::debug::frame_timing_log_path().is_some() {
         let stats = Arc::new(Mutex::new(RenderFrameProfileStats::default()));
         let stats_for_callback = Arc::clone(&stats);
+        let profile_to_stderr = utils::debug::frame_profile_enabled();
+        // Maps to: CC `interactiveHelpers.tsx:427-450` — bench-only JSONL,
+        // same record shape (CC field names; sync append so no frames are
+        // dropped on abrupt exit) so one analysis script consumes both
+        // sides. Fields CC has and iocraft does not (optimize, patches,
+        // yogaVisited/CacheHits/Live) are omitted rather than faked;
+        // canvasHeight/changedCells/layoutMeasures are the Rust extras.
+        let mut timing_log = utils::debug::frame_timing_log_path().and_then(|path| {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .ok()
+        });
         let render_result = rt.block_on(async {
             start_settings_change_detector();
             let result = mount()
                 .render_loop()
                 .stdout(utils::asciicast::RecordingStdout(std::io::stdout()))
                 .on_frame_profile(move |event| {
-                    eprintln!(
-                        "cometix-frame duration={:?} update={:?} layout={:?} draw={:?} repaint_check={:?} write={:?} canvas={}x{} changed_cells={} diff_rows={} repaint={:?}",
-                        event.duration,
-                        event.phases.update,
-                        event.phases.layout,
-                        event.phases.draw,
-                        event.phases.repaint_check,
-                        event.phases.terminal_write,
-                        event.phases.canvas_width,
-                        event.phases.canvas_height,
-                        event.phases.changed_cells,
-                        event.phases.diff_rows_scanned,
-                        event.repaint.as_ref().map(|repaint| repaint.reason),
-                    );
+                    if profile_to_stderr {
+                        eprintln!(
+                            "cometix-frame duration={:?} update={:?} layout={:?} draw={:?} repaint_check={:?} write={:?} canvas={}x{} changed_cells={} diff_rows={} measures={} repaint={:?}",
+                            event.duration,
+                            event.phases.update,
+                            event.phases.layout,
+                            event.phases.draw,
+                            event.phases.repaint_check,
+                            event.phases.terminal_write,
+                            event.phases.canvas_width,
+                            event.phases.canvas_height,
+                            event.phases.changed_cells,
+                            event.phases.diff_rows_scanned,
+                            event.phases.layout_measures,
+                            event.repaint.as_ref().map(|repaint| repaint.reason),
+                        );
+                    }
+                    if let Some(file) = timing_log.as_mut() {
+                        use std::io::Write as _;
+                        let millis = |duration: std::time::Duration| duration.as_secs_f64() * 1e3;
+                        // CC gates the expensive rss/cpu samples behind
+                        // CLAUDE_CODE_FRAME_TIMING_SAMPLE_EVERY; mirror it so
+                        // long captures can trade sample density for overhead.
+                        let sample = utils::debug::frame_timing_sample_tick();
+                        let mut line = serde_json::json!({
+                            "total": millis(event.duration),
+                            "commit": millis(event.phases.update),
+                            "yoga": millis(event.phases.layout),
+                            "renderer": millis(event.phases.draw),
+                            "diff": millis(event.phases.repaint_check),
+                            "cellScan": millis(event.phases.changed_cell_scan),
+                            "write": millis(event.phases.terminal_write),
+                            "taffyMeasured": event.phases.layout_measures,
+                            "taffyLive": event.phases.layout_nodes,
+                            "eventSnapshot": millis(event.phases.event_snapshot),
+                            "canvasAlloc": millis(event.phases.canvas_alloc),
+                            "canvasSwap": millis(event.phases.canvas_swap),
+                            "syncWrap": millis(event.phases.sync_wrap),
+                            "settleRounds": event.phases.settle_rounds,
+                            "diffRows": event.phases.diff_rows_scanned,
+                            "canvasWidth": event.phases.canvas_width,
+                            "canvasHeight": event.phases.canvas_height,
+                            "changedCells": event.phases.changed_cells,
+                        });
+                        if sample {
+                            let (cpu_user, cpu_system) =
+                                utils::debug::process_cpu_usage_micros();
+                            line["rss"] = serde_json::json!(
+                                crate::hooks::use_memory_usage::process_rss_bytes()
+                            );
+                            line["cpu"] = serde_json::json!(
+                                {"user": cpu_user, "system": cpu_system}
+                            );
+                        }
+                        let _ = writeln!(file, "{line}");
+                    }
                     stats_for_callback.lock().unwrap().record(&event);
                 })
                 .await;

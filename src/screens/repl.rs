@@ -9816,11 +9816,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         initial_input: Some(prompt_input_snapshot.read().clone()),
                         controlled_input: restored_input.read().clone(),
                         on_input_state_change: move |next: crate::components::prompt_input::PromptInputTextUpdate| {
+                            let mut restored_input = restored_input;
                             if restored_input.read().as_ref() != Some(&next) {
                                 restored_input.set(Some(next));
                             }
                         },
                         on_input_change: move |next: String| {
+                            let mut prompt_input_snapshot = prompt_input_snapshot;
                             if *prompt_input_snapshot.read() != next {
                                 // Maps to: CC REPL.tsx:1855
                                 // `setIsPromptInputActive(value.trim().length > 0)`
@@ -13811,6 +13813,92 @@ mod tests {
             .collect()
     }
 
+    /// One step of an event-driven REPL script: wait until a frame rendered
+    /// after the previous step's input contains every `wait_for` needle (an
+    /// empty list waits for any such frame), then send `send`.
+    struct ReplScriptStep {
+        wait_for: Vec<String>,
+        send: Vec<TerminalEvent>,
+    }
+
+    fn script_step(wait_for: &[&str], send: Vec<TerminalEvent>) -> ReplScriptStep {
+        ReplScriptStep {
+            wait_for: wait_for.iter().map(|needle| needle.to_string()).collect(),
+            send,
+        }
+    }
+
+    /// Drives `app` through `steps`, sending each step's input only once the
+    /// UI it targets is on screen, then collects the frames the last input
+    /// settles into. Unlike a `timed_stream` script, input can never race
+    /// ahead of an asynchronously mounted view (an Enter sent before a picker
+    /// finishes loading is consumed by whatever else is focused), so the
+    /// script holds under any load. End each script with a step whose
+    /// `wait_for` names the expected final state and whose `send` is empty.
+    fn run_repl_script(mut app: AnyElement<'static>, steps: Vec<ReplScriptStep>) -> Vec<Canvas> {
+        // Generous: only reached when the awaited state never renders.
+        const STEP_BUDGET: Duration = Duration::from_secs(15);
+        const SETTLE: Duration = Duration::from_millis(300);
+        const MAX_FRAMES: usize = 400;
+        let render_frames = |canvases: &[Canvas]| {
+            canvases
+                .iter()
+                .map(canvas_lines)
+                .map(|lines| lines.join("\n"))
+                .collect::<Vec<_>>()
+                .join("\n--- frame ---\n")
+        };
+        futures::executor::block_on(async {
+            let (event_tx, event_rx) = futures::channel::mpsc::unbounded::<TerminalEvent>();
+            let mut render_loop =
+                Box::pin(app.mock_terminal_render_loop(MockTerminalConfig::with_events(event_rx)));
+            let mut canvases: Vec<Canvas> = Vec::new();
+            let mut since = 0usize;
+            for (index, step) in steps.into_iter().enumerate() {
+                let deadline = std::time::Instant::now() + STEP_BUDGET;
+                while !canvases[since..].iter().any(|canvas| {
+                    let text = canvas_lines(canvas).join("\n");
+                    step.wait_for.iter().all(|needle| text.contains(needle.as_str()))
+                }) {
+                    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                    let next = if remaining.is_zero() || canvases.len() >= MAX_FRAMES {
+                        None
+                    } else {
+                        crate::utils::race(render_loop.next(), async move {
+                            futures_timer::Delay::new(remaining).await;
+                            None
+                        })
+                        .await
+                    };
+                    let Some(canvas) = next else {
+                        panic!(
+                            "script step {index} never rendered {:?}; frames=\n{}",
+                            step.wait_for,
+                            render_frames(&canvases)
+                        );
+                    };
+                    canvases.push(canvas);
+                }
+                since = canvases.len();
+                for event in step.send {
+                    let _ = event_tx.unbounded_send(event);
+                }
+            }
+            while canvases.len() < MAX_FRAMES {
+                let next = crate::utils::race(render_loop.next(), async {
+                    futures_timer::Delay::new(SETTLE).await;
+                    None
+                })
+                .await;
+                let Some(canvas) = next else {
+                    break;
+                };
+                canvases.push(canvas);
+            }
+            canvases
+        })
+    }
+
     fn collect_repl_canvases<S>(events: S, timeout_ms: u64, max_frames: usize) -> Vec<Canvas>
     where
         S: Stream<Item = TerminalEvent> + Send + 'static,
@@ -16775,7 +16863,21 @@ mod tests {
         );
         let _write_guard = EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
 
-        let text = last_repl_text(stream::iter(text_input_events("/resume")), 200, 40);
+        // The picker loads on worker threads now (CC awaits it), so wait for
+        // the onDone output instead of an idle window the load can outlast.
+        let canvases = run_repl_script(
+            element!(ReplHarness).into_any(),
+            vec![
+                script_step(&[], text_input_events("/resume")),
+                script_step(&["No conversations found to resume"], Vec::new()),
+            ],
+        );
+        let text = canvas_lines(
+            canvases
+                .last()
+                .expect("mock render should produce a final canvas"),
+        )
+        .join("\n");
         let _ = std::fs::remove_dir_all(&config_home);
 
         assert!(
@@ -16826,12 +16928,16 @@ mod tests {
         let before = std::fs::read_to_string(&session_file)
             .expect("session fixture should be readable before resume");
 
-        let mut events = text_input_events("/resume")
-            .into_iter()
-            .map(|event| (event, 0))
-            .collect::<Vec<_>>();
-        events.push((key(KeyCode::Enter), 250));
-        let canvases = collect_repl_canvases(timed_stream(events), 250, 80);
+        let focused_fixture = format!("❯ {prompt_text}");
+        let canvases = run_repl_script(
+            element!(ReplHarness).into_any(),
+            vec![
+                script_step(&[], text_input_events("/resume")),
+                // Enter only once the loaded picker has the fixture focused.
+                script_step(&["Resume Session", &focused_fixture], vec![key(KeyCode::Enter)]),
+                script_step(&[assistant_text], Vec::new()),
+            ],
+        );
         let rendered = canvases
             .iter()
             .map(canvas_lines)
@@ -16895,12 +17001,16 @@ mod tests {
         let before = std::fs::read_to_string(&session_file)
             .expect("empty session fixture should be readable before picker selection");
 
-        let mut events = text_input_events("/resume")
-            .into_iter()
-            .map(|event| (event, 0))
-            .collect::<Vec<_>>();
-        events.push((key(KeyCode::Enter), 250));
-        let canvases = collect_repl_canvases(timed_stream(events), 250, 80);
+        let canvases = run_repl_script(
+            element!(ReplHarness).into_any(),
+            vec![
+                script_step(&[], text_input_events("/resume")),
+                // The picker only mounts once loading finished, with the lone
+                // fixture focused.
+                script_step(&["Resume Session"], vec![key(KeyCode::Enter)]),
+                script_step(&["Failed to resume"], Vec::new()),
+            ],
+        );
         let rendered = canvases
             .iter()
             .map(canvas_lines)
@@ -17254,18 +17364,21 @@ mod tests {
         let current_before = std::fs::read_to_string(&current_file)
             .expect("current session fixture should be readable before resume");
 
-        let mut events = text_input_events("/resume")
-            .into_iter()
-            .map(|event| (event, 0))
-            .collect::<Vec<_>>();
-        events.push((key(KeyCode::Enter), 250));
-        let mut reopen_events = text_input_events("/resume");
-        if let Some(first) = reopen_events.first_mut() {
-            events.push((first.clone(), 500));
-            events.extend(reopen_events.into_iter().skip(1).map(|event| (event, 0)));
-        }
-
-        let canvases = collect_repl_canvases(timed_stream(events), 500, 120);
+        // Newest first: the restored-to-be current session is the focused row.
+        let focused_current = format!("❯ {current_prompt}");
+        let canvases = run_repl_script(
+            element!(ReplHarness).into_any(),
+            vec![
+                script_step(&[], text_input_events("/resume")),
+                script_step(&["Resume Session", &focused_current], vec![key(KeyCode::Enter)]),
+                // Reopen only after the selection restored the transcript.
+                script_step(
+                    &["restored current session assistant reply"],
+                    text_input_events("/resume"),
+                ),
+                script_step(&["Resume Session", older_prompt], Vec::new()),
+            ],
+        );
         let rendered = canvases
             .iter()
             .map(canvas_lines)
@@ -17357,42 +17470,39 @@ mod tests {
         let other_before = std::fs::read_to_string(&other_file)
             .expect("cross project fixture should be readable before resume");
 
-        let mut events = text_input_events("/resume")
-            .into_iter()
-            .map(|event| (event, 0))
-            .collect::<Vec<_>>();
-        events.push((ctrl_key('a'), 250));
-        events.extend(other_prompt.chars().map(|ch| (key(KeyCode::Char(ch)), 5)));
-        events.push((key(KeyCode::Down), 250));
-        events.push((key(KeyCode::Down), 250));
-        events.push((key(KeyCode::Enter), 1_000));
-
         // Match the retained production root's imported clipboard executor;
         // SSH + no tmux exercises OSC without touching the system clipboard.
-        let canvases = futures::executor::block_on(async {
-            let app = element! { ReplHarness };
-            let mut app = element! {
-                ContextProvider(value: Context::owned(iocraft::Clipboard::new(Arc::new(crate::utils::exec_file_no_throw::ExecFileClipboardBackend)))) { #(app) }
-            };
-            let mut frames = Box::pin(
-                app.mock_terminal_render_loop(MockTerminalConfig::with_events(timed_stream(
-                    events,
-                ))),
-            );
-            let mut canvases = Vec::new();
-            while canvases.len() < 100 {
-                let next = crate::utils::race(frames.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(1_500)).await;
-                    None
-                })
-                .await;
-                let Some(canvas) = next else {
-                    break;
-                };
-                canvases.push(canvas);
-            }
-            canvases
-        });
+        let app = element! { ReplHarness };
+        let app = element! {
+            ContextProvider(value: Context::owned(iocraft::Clipboard::new(Arc::new(crate::utils::exec_file_no_throw::ExecFileClipboardBackend)))) { #(app) }
+        };
+        let search_query = format!("⌕ {other_prompt}");
+        let focused_other = format!("❯ {other_prompt}");
+        let canvases = run_repl_script(
+            app.into_any(),
+            vec![
+                script_step(&[], text_input_events("/resume")),
+                script_step(
+                    &["Resume Session", "current project resume prompt"],
+                    vec![ctrl_key('a')],
+                ),
+                // The all-projects reload has landed once the other project's
+                // session is listed; only then type the search.
+                script_step(
+                    &["Resume Session", &other_prompt],
+                    other_prompt.chars().map(|ch| key(KeyCode::Char(ch))).collect(),
+                ),
+                script_step(
+                    &[&search_query],
+                    vec![key(KeyCode::Down), key(KeyCode::Down)],
+                ),
+                script_step(&[&focused_other], vec![key(KeyCode::Enter)]),
+                script_step(
+                    &["This conversation is from a different directory."],
+                    Vec::new(),
+                ),
+            ],
+        );
         let rendered = canvases
             .iter()
             .map(canvas_lines)
@@ -17609,9 +17719,32 @@ mod tests {
                     for event in text_input_events("/resume") {
                         sender.send(event).await.unwrap();
                     }
-                    futures_timer::Delay::new(Duration::from_millis(250)).await;
+                    // Both picker loads run on worker threads (CC awaits
+                    // them), so gate each key on the view it targets instead
+                    // of a fixed sleep the load can outlast.
+                    for _ in 0..1500 {
+                        if frames
+                            .lock()
+                            .unwrap()
+                            .last()
+                            .is_some_and(|text| text.contains("Resume Session"))
+                        {
+                            break;
+                        }
+                        futures_timer::Delay::new(Duration::from_millis(10)).await;
+                    }
                     sender.send(ctrl_key('a')).await.unwrap();
-                    futures_timer::Delay::new(Duration::from_millis(200)).await;
+                    // The all-projects reload has landed once the newest row —
+                    // the other project's session — is listed and focused.
+                    for _ in 0..1500 {
+                        if frames.lock().unwrap().last().is_some_and(|text| {
+                            text.lines()
+                                .any(|line| line.trim() == "❯ newest cross-project target")
+                        }) {
+                            break;
+                        }
+                        futures_timer::Delay::new(Duration::from_millis(10)).await;
+                    }
                     sender.send(key(KeyCode::Enter)).await.unwrap();
                     for _ in 0..100 {
                         if clipboard_input.lock().unwrap().is_some() {

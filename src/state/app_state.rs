@@ -1080,7 +1080,7 @@ mod tests {
     /// observed it — not merely "eventually".
     ///
     /// Counting canvases is the durable form of that obligation.
-    /// `COMETIX_FRAME_PROFILE` measures frame DURATIONS, which says nothing
+    /// `COMETIX_DEBUG_PROFILES=frame` measures frame DURATIONS, which says nothing
     /// about how many frames a value took to appear, and a hand-run trace
     /// cannot regress a future change. This can.
     ///

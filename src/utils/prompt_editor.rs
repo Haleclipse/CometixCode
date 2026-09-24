@@ -154,7 +154,21 @@ fn command_exists(command: &str) -> bool {
 
 /// Resolves `$VISUAL`, `$EDITOR`, then the official `code`, `vi`, `nano`
 /// fallback order. The returned argv is executed directly, never by a shell.
+///
+/// Maps to: CC `utils/editor.ts:164` `getExternalEditor = memoize(...)` —
+/// resolved once per process. The fallback probe stats every `PATH`
+/// directory, and `PromptInput` asks on every render (to decide whether the
+/// external-editor keybinding is live); unmemoized, that probe was about a
+/// fifth of each keystroke's update. Tests that vary `$VISUAL`/`$EDITOR`
+/// rely on nextest's per-test process, exactly as CC's tests do on a fresh
+/// module instance.
 pub fn external_editor_command() -> Option<(String, Vec<String>)> {
+    static RESOLVED: std::sync::OnceLock<Option<(String, Vec<String>)>> =
+        std::sync::OnceLock::new();
+    RESOLVED.get_or_init(resolve_external_editor_command).clone()
+}
+
+fn resolve_external_editor_command() -> Option<(String, Vec<String>)> {
     let configured = std::env::var("VISUAL")
         .ok()
         .filter(|value| !value.trim().is_empty())
