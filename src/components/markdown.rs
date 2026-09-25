@@ -279,6 +279,59 @@ fn markdown_tokens_to_lines(tokens: &[MarkedToken], terminal_width: usize) -> Ve
     lines
 }
 
+/// One element of a rendered `Markdown`, mirroring CC `Markdown.tsx`
+/// `MarkdownBody` (`flushNonTableContent`, :112-121): every run of non-table
+/// tokens is a single `<Ansi>` — one text node however many lines it spans —
+/// and each table is its own element. The column's `gap={1}` separates them.
+///
+/// The line-based [`markdown_to_lines_with_width`] splits the same run into
+/// one node per line; a 400-line reply became ~1700 layout nodes where CC
+/// has one, which is what made long sessions lay out slowly.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MarkdownRenderBlock {
+    Ansi(String),
+    Table(Vec<MarkdownLine>),
+}
+
+pub fn markdown_to_blocks_with_width(
+    content: &str,
+    terminal_width: usize,
+) -> Vec<MarkdownRenderBlock> {
+    let tokens = cached_parse_markdown(content);
+    let mut blocks = Vec::new();
+    let mut non_table_content = String::new();
+
+    fn flush(non_table_content: &mut String, blocks: &mut Vec<MarkdownRenderBlock>) {
+        // CC: `{nonTableContent.trim()}`.
+        let trimmed = non_table_content.trim();
+        if !trimmed.is_empty() {
+            blocks.push(MarkdownRenderBlock::Ansi(trimmed.to_string()));
+        }
+        non_table_content.clear();
+    }
+
+    for token in &tokens {
+        if let MarkedToken::Table {
+            align,
+            header,
+            rows,
+            ..
+        } = token
+        {
+            flush(&mut non_table_content, &mut blocks);
+            let table_lines = render_marked_table_lines(align, header, rows, terminal_width);
+            if !table_lines.is_empty() {
+                blocks.push(MarkdownRenderBlock::Table(table_lines));
+            }
+        } else {
+            non_table_content.push_str(&format_token(token, 0, None, None));
+        }
+    }
+
+    flush(&mut non_table_content, &mut blocks);
+    blocks
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StreamingMarkdownParts {
     pub stable_prefix: String,
@@ -762,6 +815,21 @@ fn apply_inline_color_markers(
         .replace(PERMISSION_COLOR_END, &permission_end)
 }
 
+/// Coloring for a whole non-table block: the optional foreground wraps the
+/// block once (ANSI color persists across newlines) and the permission-color
+/// markers are substituted, exactly what the per-line path did to each line.
+fn markdown_block_ansi_content(
+    text: &str,
+    color: Option<Color>,
+    permission_color: Color,
+) -> String {
+    apply_inline_color_markers(
+        &apply_optional_foreground(text, color),
+        color,
+        permission_color,
+    )
+}
+
 fn markdown_line_ansi_content(
     line: &MarkdownLine,
     color: Option<Color>,
@@ -863,25 +931,34 @@ pub fn Markdown(props: &MarkdownProps, mut hooks: Hooks) -> impl Into<AnyElement
     let theme = hooks.use_context::<Theme>();
     let (terminal_width, _) = hooks.use_terminal_size();
     let convert_start = component_profile_enabled().then(Instant::now);
-    let lines = markdown_to_lines_with_width(&props.content, terminal_width as usize);
+    let blocks = markdown_to_blocks_with_width(&props.content, terminal_width as usize);
     let convert_elapsed = convert_start.map(|start| start.elapsed());
-    let line_count = lines.len();
+    let block_count = blocks.len();
     let content_len = props.content.len();
 
+    // CC `MarkdownBody`: `<Box flexDirection="column" gap={1}>{elements}</Box>`
+    // where each non-table run is one `<Ansi>` and each table one element.
     let rendered = element! {
-        View(flex_direction: FlexDirection::Column) {
-            #(lines.into_iter().map(|line| {
-                if line.text.is_empty() {
-                    element! { View(height: 1u32) {} }.into_any()
-                } else {
-                    element! {
-                        Ansi(
-                            content: markdown_line_ansi_content(&line, props.color, theme.permission),
-                            dim_color: props.dim_color,
-                        )
-                    }
-                    .into_any()
+        View(flex_direction: FlexDirection::Column, row_gap: 1) {
+            #(blocks.into_iter().map(|block| match block {
+                MarkdownRenderBlock::Ansi(text) => element! {
+                    Ansi(
+                        content: markdown_block_ansi_content(&text, props.color, theme.permission),
+                        dim_color: props.dim_color,
+                    )
                 }
+                .into_any(),
+                MarkdownRenderBlock::Table(lines) => element! {
+                    View(flex_direction: FlexDirection::Column) {
+                        #(lines.into_iter().map(|line| element! {
+                            Ansi(
+                                content: markdown_line_ansi_content(&line, props.color, theme.permission),
+                                dim_color: props.dim_color,
+                            )
+                        }))
+                    }
+                }
+                .into_any(),
             }))
         }
     };
@@ -890,11 +967,11 @@ pub fn Markdown(props: &MarkdownProps, mut hooks: Hooks) -> impl Into<AnyElement
         let elapsed = start.elapsed();
         if elapsed >= Duration::from_millis(5) {
             eprintln!(
-                "cometix-component name=Markdown elapsed={:?} convert={:?} content_len={} lines={} width={} dim={}",
+                "cometix-component name=Markdown elapsed={:?} convert={:?} content_len={} blocks={} width={} dim={}",
                 elapsed,
                 convert_elapsed.unwrap_or_default(),
                 content_len,
-                line_count,
+                block_count,
                 terminal_width,
                 props.dim_color,
             );

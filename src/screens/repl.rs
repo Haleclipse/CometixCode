@@ -1005,10 +1005,95 @@ enum StreamingTextDisplayMode {
     Character,
 }
 
-// Code-level switch for the streaming preview presentation. The state model
-// stays aligned with CC either way: deltas update `StreamingTextPreview`, and
-// only completed assistant blocks enter transcript history.
-const STREAMING_TEXT_DISPLAY_MODE: StreamingTextDisplayMode = StreamingTextDisplayMode::Character;
+/// The streaming preview presentation, from the `streamingTextDisplay`
+/// setting (`/settings` → "Streaming text"). The state model stays aligned
+/// with CC either way: deltas update `StreamingTextPreview`, and only
+/// completed assistant blocks enter transcript history. Unset or unknown
+/// values keep the Cometix default (character); CC's own behavior is `line`.
+fn streaming_text_display_mode(
+    settings: &crate::utils::settings::SettingsJson,
+) -> StreamingTextDisplayMode {
+    match settings.streaming_text_display.as_deref() {
+        Some("line") => StreamingTextDisplayMode::Line,
+        _ => StreamingTextDisplayMode::Character,
+    }
+}
+
+/// Maps to: CC `REPL.tsx:1987` `showStreamingText = !reducedMotion && ...`.
+/// With reduce motion on, the preview is hidden and `onStreamingText`
+/// drops every delta without touching state (`:1990`), so streaming
+/// produces no frames at all. (`hasCursorUpViewportYankBug` is not ported.)
+fn show_streaming_text(settings: &crate::utils::settings::SettingsJson) -> bool {
+    !settings.prefers_reduced_motion.unwrap_or(false)
+}
+
+/// Maps to: CC 2.1.280 streaming-text coalescer `flushIntervalMs = 100`
+/// (`chunk-13g94vqq.js:61764` `K5e`). 2.1.88 sets state per delta
+/// (`REPL.tsx:1981`); 2.1.280 accumulates deltas and writes the preview
+/// store once per 100ms. Line mode adopts that: its visible text only
+/// changes at a newline, so per-delta frames were pure cost (measured 24.7
+/// frames/s for no visible change). Character mode keeps per-delta writes,
+/// as 2.1.88 and Pi do — a typewriter that only moves every 100ms stutters.
+const STREAMING_PREVIEW_FLUSH_INTERVAL: Duration = Duration::from_millis(100);
+
+/// What the pump should do after a delta was pushed.
+#[derive(Debug, PartialEq, Eq)]
+enum StreamingPreviewWrite {
+    /// Write the preview now (character mode: every delta is visible).
+    Now(StreamingTextPreview),
+    /// Line mode, nothing armed: arm one flush timer.
+    Arm,
+    /// Line mode, a flush is already armed: the delta rides along.
+    Wait,
+}
+
+/// The pump-side twin of CC 2.1.280's `$5e`: `apply` accumulates into
+/// `pending` and arms one timer, `flush` hands back what to write, `clear`
+/// drops everything at a turn boundary. Kept free of hooks so the policy is
+/// unit-testable; the loop owns the timer and the `State`.
+#[derive(Default)]
+struct StreamingPreviewCoalescer {
+    pending: Option<StreamingTextPreview>,
+    armed: bool,
+}
+
+impl StreamingPreviewCoalescer {
+    fn push(
+        &mut self,
+        base: impl FnOnce() -> StreamingTextPreview,
+        delta: &str,
+        mode: StreamingTextDisplayMode,
+    ) -> StreamingPreviewWrite {
+        let pending = self.pending.get_or_insert_with(base);
+        pending.raw.push_str(delta);
+        match mode {
+            StreamingTextDisplayMode::Character => {
+                self.armed = false;
+                StreamingPreviewWrite::Now(pending.clone())
+            }
+            StreamingTextDisplayMode::Line if self.armed => StreamingPreviewWrite::Wait,
+            StreamingTextDisplayMode::Line => {
+                self.armed = true;
+                StreamingPreviewWrite::Arm
+            }
+        }
+    }
+
+    /// The timer fired. Returns the preview to write, or `None` when the
+    /// completed-line prefix the user can see has not changed since the
+    /// last write — then no state write, so no frame.
+    fn flush(&mut self, current_visible: Option<&str>) -> Option<StreamingTextPreview> {
+        self.armed = false;
+        let pending = self.pending.as_ref()?;
+        let next_visible = visible_streaming_text(&pending.raw, StreamingTextDisplayMode::Line);
+        (next_visible.as_deref() != current_visible).then(|| pending.clone())
+    }
+
+    fn clear(&mut self) {
+        self.pending = None;
+        self.armed = false;
+    }
+}
 
 /// Maps to: CC REPL.tsx:1403 `PROMPT_SUPPRESSION_MS = 1500` — how long after
 /// the last keystroke interrupt dialogs stay suppressed.
@@ -4750,6 +4835,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         hooks.use_const(|| std::sync::Arc::new(async_channel::unbounded::<()>()));
     let mock_pump_tx = mock_pump_channel.0.clone();
     let mock_pump_rx = mock_pump_channel.1.clone();
+    // The tree's animation clock (iocraft's root provides it, as Ink's root
+    // App mounts ClockProvider). The pump aims the line-mode preview flush at
+    // its 100ms grid so the flush shares a frame with the spinner row's tick.
+    let animation_clock = hooks.use_context::<iocraft::components::Clock>().clone();
     let mut active_prompt_shell_command = hooks.use_state(|| Option::<String>::None);
     let prompt_shell_channel = hooks.use_const(|| {
         std::sync::Arc::new(async_channel::unbounded::<(
@@ -4872,6 +4961,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         let mut content_replacement_state = content_replacement_state;
         let mut pending_responses = pending_responses;
         let mut streaming_text_preview = streaming_text_preview;
+        // Read at delta time (not captured at pump start) so a `/settings`
+        // change to reduce motion applies to the stream in progress.
+        let app_store_for_pump = app_store.clone();
+        let animation_clock = animation_clock.clone();
         let mut stream_mode = stream_mode;
         let mut response_length_ref = response_length_ref;
         let mut stop_hook_spinner_state = stop_hook_spinner_state;
@@ -4886,6 +4979,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         let query_pump_profile = crate::utils::debug::query_pump_profile_enabled();
         async move {
             let mut query_pump_burst = QueryPumpBurstProfile::default();
+            // Line-mode preview coalescing (CC 2.1.280, 100ms). The timer is
+            // raced against the next event only while a flush is armed.
+            let mut preview_coalescer = StreamingPreviewCoalescer::default();
+            let mut preview_flush_timer: Option<futures_timer::Delay> = None;
             loop {
                 if !permission_queue.read().is_empty() {
                     // Mirrors CC query/canUseTool gating: once a permission
@@ -4899,7 +4996,35 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
 
                 let active_handle = { active_query.read().clone() };
                 if let Some(handle) = active_handle {
-                    let event = handle.events.recv().await;
+                    let event = match preview_flush_timer.as_mut() {
+                        Some(timer) => {
+                            let recv = handle.events.recv();
+                            futures::pin_mut!(recv);
+                            match futures::future::select(recv, timer).await {
+                                futures::future::Either::Left((event, _)) => event,
+                                futures::future::Either::Right(((), _)) => {
+                                    // CC 2.1.280 `$5e.flush` → `previewStore.setRaw`.
+                                    preview_flush_timer = None;
+                                    let current_visible = streaming_text_preview
+                                        .read()
+                                        .as_ref()
+                                        .and_then(|preview| {
+                                            visible_streaming_text(
+                                                &preview.raw,
+                                                StreamingTextDisplayMode::Line,
+                                            )
+                                        });
+                                    if let Some(preview) =
+                                        preview_coalescer.flush(current_visible.as_deref())
+                                    {
+                                        streaming_text_preview.set(Some(preview));
+                                    }
+                                    continue;
+                                }
+                            }
+                        }
+                        None => handle.events.recv().await,
+                    };
                     let still_active = {
                         active_query
                             .read()
@@ -4931,6 +5056,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                                 stream_mode.set(SpinnerMode::Responding);
                             } else if let Some(block_type) = stream_event_content_block_start_type(&event) {
                                 streaming_text_preview.set(None);
+                                preview_coalescer.clear();
+                                preview_flush_timer = None;
                                 stream_mode.set(stream_block_type_to_spinner_mode(block_type));
                             }
 
@@ -4940,14 +5067,42 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                                 response_length_ref += delta.encode_utf16().count();
                             }
                             if let Some(delta) = stream_event_text_delta(&event) {
-                                let mut next =
-                                    streaming_text_preview.read().clone().unwrap_or_default();
-                                next.raw.push_str(&delta);
-                                streaming_text_preview.set(Some(next));
+                                // CC REPL.tsx:1990 `onStreamingText`: with reduce
+                                // motion on the delta is dropped before any
+                                // state write, so the stream renders no frames.
+                                let settings = app_store_for_pump.get().settings.clone();
+                                if show_streaming_text(&settings) {
+                                    let base = || {
+                                        streaming_text_preview.read().clone().unwrap_or_default()
+                                    };
+                                    match preview_coalescer.push(
+                                        base,
+                                        &delta,
+                                        streaming_text_display_mode(&settings),
+                                    ) {
+                                        StreamingPreviewWrite::Now(preview) => {
+                                            preview_flush_timer = None;
+                                            streaming_text_preview.set(Some(preview));
+                                        }
+                                        StreamingPreviewWrite::Arm => {
+                                            // Aimed at the tree clock's 100ms grid
+                                            // so the flush lands in the same frame
+                                            // as the spinner row's 100ms tick
+                                            // (CC: one ClockContext per tree).
+                                            preview_flush_timer = Some(futures_timer::Delay::new(
+                                                animation_clock
+                                                    .delay_to_next(STREAMING_PREVIEW_FLUSH_INTERVAL),
+                                            ));
+                                        }
+                                        StreamingPreviewWrite::Wait => {}
+                                    }
+                                }
                             }
                         }
                         Ok(QueryEvent::ClearStreamingPreview) => {
                             streaming_text_preview.set(None);
+                            preview_coalescer.clear();
+                            preview_flush_timer = None;
                         }
                         Ok(QueryEvent::ToolUseSummary(_summary)) => {}
                         Ok(QueryEvent::Message(message)) => {
@@ -4956,6 +5111,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             // enters the ONE history — render rows and API
                             // history are projections of the same entry.
                             streaming_text_preview.set(None);
+                            preview_coalescer.clear();
+                            preview_flush_timer = None;
                             // CC REPL.tsx:3440-3526: producers update history;
                             // useLogMessages owns transcript parent selection and writes.
                             if crate::utils::messages::is_compact_boundary_message(&message) {
@@ -8213,10 +8370,20 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             .as_ref()
             .is_some_and(|initial| initial.len() == model_messages.len()),
     );
+    // CC REPL.tsx:1997 `visibleStreamingText`: gated by showStreamingText,
+    // then cut to the presentation mode (CC: completed lines only).
+    let (streaming_preview_shown, streaming_display_mode) =
+        crate::state::app_state::use_app_state(&mut hooks, |state| {
+            (
+                show_streaming_text(&state.settings),
+                streaming_text_display_mode(&state.settings),
+            )
+        });
     let streaming_text = streaming_text_preview
         .read()
         .as_ref()
-        .and_then(|preview| visible_streaming_text(&preview.raw, STREAMING_TEXT_DISPLAY_MODE));
+        .filter(|_| streaming_preview_shown)
+        .and_then(|preview| visible_streaming_text(&preview.raw, streaming_display_mode));
     let active_local_command_ui_snapshot = active_local_command_ui.read().clone();
     // Maps to CC processSlashCommand.tsx:733-813 and REPL.tsx:4336-4404.
     // Each invocation captures its own args/result route. Source immediate
@@ -15256,6 +15423,100 @@ mod tests {
         assert_ne!(key(&["Bash", "Read"]), key(&["Bash"]));
         // CC compares position-by-position, so order is part of the identity.
         assert_ne!(key(&["Bash", "Read"]), key(&["Read", "Bash"]));
+    }
+
+    #[test]
+    fn streaming_preview_coalescer_writes_per_delta_in_character_mode() {
+        let mut coalescer = StreamingPreviewCoalescer::default();
+        let base = StreamingTextPreview::default;
+        let write = coalescer.push(base, "he", StreamingTextDisplayMode::Character);
+        assert_eq!(
+            write,
+            StreamingPreviewWrite::Now(StreamingTextPreview {
+                raw: "he".to_string()
+            })
+        );
+        let write = coalescer.push(base, "llo", StreamingTextDisplayMode::Character);
+        assert_eq!(
+            write,
+            StreamingPreviewWrite::Now(StreamingTextPreview {
+                raw: "hello".to_string()
+            })
+        );
+        assert!(!coalescer.armed);
+    }
+
+    #[test]
+    fn streaming_preview_coalescer_arms_once_per_flush_window_in_line_mode() {
+        let mut coalescer = StreamingPreviewCoalescer::default();
+        let base = StreamingTextPreview::default;
+        assert_eq!(
+            coalescer.push(base, "one", StreamingTextDisplayMode::Line),
+            StreamingPreviewWrite::Arm
+        );
+        assert_eq!(
+            coalescer.push(base, "\ntwo", StreamingTextDisplayMode::Line),
+            StreamingPreviewWrite::Wait
+        );
+        assert_eq!(
+            coalescer.push(base, " more", StreamingTextDisplayMode::Line),
+            StreamingPreviewWrite::Wait
+        );
+        // Timer fires: the completed line is new, so the preview is written.
+        let flushed = coalescer.flush(None).expect("a completed line appeared");
+        assert_eq!(flushed.raw, "one\ntwo more");
+        assert!(!coalescer.armed);
+        // The next delta arms again.
+        assert_eq!(
+            coalescer.push(base, " still", StreamingTextDisplayMode::Line),
+            StreamingPreviewWrite::Arm
+        );
+        // No newline arrived: the visible prefix is unchanged, no write.
+        assert_eq!(coalescer.flush(Some("one\n")), None);
+        // A newline arrives and the next flush writes again.
+        coalescer.push(base, "\n", StreamingTextDisplayMode::Line);
+        let flushed = coalescer.flush(Some("one\n")).expect("second line completed");
+        assert_eq!(flushed.raw, "one\ntwo more still\n");
+        coalescer.clear();
+        assert_eq!(coalescer.flush(None), None);
+    }
+
+    #[test]
+    fn streaming_preview_coalescer_switching_to_character_mode_writes_the_backlog() {
+        let mut coalescer = StreamingPreviewCoalescer::default();
+        let base = StreamingTextPreview::default;
+        coalescer.push(base, "a", StreamingTextDisplayMode::Line);
+        coalescer.push(base, "b", StreamingTextDisplayMode::Line);
+        // /settings flipped the mode mid-stream: the accumulated text is written now.
+        assert_eq!(
+            coalescer.push(base, "c", StreamingTextDisplayMode::Character),
+            StreamingPreviewWrite::Now(StreamingTextPreview {
+                raw: "abc".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn streaming_text_display_mode_reads_the_setting_and_reduce_motion_hides_the_preview() {
+        let mut settings = crate::utils::settings::SettingsJson::default();
+        assert_eq!(
+            streaming_text_display_mode(&settings),
+            StreamingTextDisplayMode::Character
+        );
+        settings.streaming_text_display = Some("line".to_string());
+        assert_eq!(
+            streaming_text_display_mode(&settings),
+            StreamingTextDisplayMode::Line
+        );
+        settings.streaming_text_display = Some("nonsense".to_string());
+        assert_eq!(
+            streaming_text_display_mode(&settings),
+            StreamingTextDisplayMode::Character
+        );
+        // CC REPL.tsx:1987: reduce motion hides the preview in every mode.
+        assert!(show_streaming_text(&settings));
+        settings.prefers_reduced_motion = Some(true);
+        assert!(!show_streaming_text(&settings));
     }
 
     #[test]

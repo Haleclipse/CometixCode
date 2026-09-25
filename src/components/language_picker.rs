@@ -55,9 +55,15 @@ pub(crate) struct LanguagePickerProps {
 #[component]
 pub(crate) fn LanguagePicker(
     props: &LanguagePickerProps,
-    hooks: Hooks,
+    mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let theme = *hooks.use_context::<Theme>();
+    // CC renders the field through TextInput, whose cursor inversion is
+    // `isTerminalFocused && !accessibilityEnabled` (TextInput.tsx:82).
+    let can_show_cursor = crate::components::text_input::text_input_can_show_cursor(
+        hooks.use_terminal_focus(),
+        crate::components::text_input::accessibility_enabled_from_env(),
+    );
     let language_is_empty = props.language.is_empty();
     let (language_before, language_cursor, language_after) =
         cursor_parts(&props.language, props.cursor_offset);
@@ -77,14 +83,22 @@ pub(crate) fn LanguagePicker(
                     Text(content: MAIN_SYMBOLS.pointer.to_string(), wrap: TextWrap::NoWrap)
                 }
                 View(flex_direction: FlexDirection::Row, width: columns, overflow: Overflow::Hidden, height: 1u32) {
-                    #(if language_is_empty {
+                    // CC renderPlaceholder: cursor on the first placeholder
+                    // character while the cursor can show, the whole
+                    // placeholder dim otherwise.
+                    #(if language_is_empty && can_show_cursor {
                         Some(element! {
                             Text(content: language_placeholder_first.clone(), invert: true, wrap: TextWrap::NoWrap)
                         })
                     } else { None })
-                    #(if language_is_empty {
+                    #(if language_is_empty && can_show_cursor {
                         Some(element! {
                             Text(content: language_placeholder_rest.clone(), color: theme.inactive, wrap: TextWrap::NoWrap)
+                        })
+                    } else { None })
+                    #(if language_is_empty && !can_show_cursor {
+                        Some(element! {
+                            Text(content: LANGUAGE_PICKER_PLACEHOLDER.to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
                         })
                     } else { None })
                     #(if !language_is_empty {
@@ -94,7 +108,7 @@ pub(crate) fn LanguagePicker(
                     } else { None })
                     #(if !language_is_empty {
                         Some(element! {
-                            Text(content: language_cursor.clone(), invert: true, wrap: TextWrap::NoWrap)
+                            Text(content: language_cursor.clone(), invert: can_show_cursor, wrap: TextWrap::NoWrap)
                         })
                     } else { None })
                     #(if !language_is_empty {

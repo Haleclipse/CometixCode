@@ -1020,6 +1020,8 @@ pub fn LogSelector<'a>(
     let mut focused_index = hooks.use_state(|| 0usize);
     let mut visible_from_index = hooks.use_state(|| 0usize);
     let mut view_mode = hooks.use_state(|| ViewMode::List);
+    // Maps to: CC LogSelector.tsx:192 `useTerminalFocus()` → SearchBox.
+    let is_terminal_focused = hooks.use_terminal_focus();
     let search = use_search_input(
         &mut hooks,
         props.initial_search_query.as_deref().unwrap_or_default(),
@@ -1761,7 +1763,7 @@ pub fn LogSelector<'a>(
             SearchBox(
                 query: query.clone(),
                 is_focused: is_search,
-                is_terminal_focused: true,
+                is_terminal_focused: is_terminal_focused,
                 cursor_offset: Some(search.offset()),
             )
             #(if show_additional_filter_line {

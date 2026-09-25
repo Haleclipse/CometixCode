@@ -1751,6 +1751,12 @@ pub fn run(config: crate::cli::CliConfig) {
                         // long captures can trade sample density for overhead.
                         let sample = utils::debug::frame_timing_sample_tick();
                         let mut line = serde_json::json!({
+                            // CC records `at: Date.now()`; frame cadence
+                            // (inter-frame gaps) is read off this field.
+                            "at": std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_millis() as u64)
+                                .unwrap_or(0),
                             "total": millis(event.duration),
                             "commit": millis(event.phases.update),
                             "yoga": millis(event.phases.layout),

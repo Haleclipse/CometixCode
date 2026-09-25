@@ -47,6 +47,12 @@ pub fn PromptInputFooterLeftSide(
     let selected_footer_item = crate::state::app_state::use_app_state(&mut hooks, |state| {
         state.footer_selection.map(|item| item.as_str().to_string())
     });
+    // CC HistorySearchInput renders its field through TextInput, whose cursor
+    // inversion is `isTerminalFocused && !accessibilityEnabled`.
+    let history_cursor_shown = crate::components::text_input::text_input_can_show_cursor(
+        hooks.use_terminal_focus(),
+        crate::components::text_input::accessibility_enabled_from_env(),
+    );
 
     // Source ordering is significant: exit and active paste replace every
     // other left-side item rather than being appended to the status row.
@@ -84,7 +90,7 @@ pub fn PromptInputFooterLeftSide(
                     View(flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
                         Text(content: format!("{label} "), color: theme.inactive, wrap: TextWrap::NoWrap)
                         Text(content: props.history_query.clone(), color: theme.inactive, wrap: TextWrap::NoWrap)
-                        Text(content: " ".to_string(), invert: true, wrap: TextWrap::NoWrap)
+                        Text(content: " ".to_string(), invert: history_cursor_shown, wrap: TextWrap::NoWrap)
                     }
                 })
             } else {

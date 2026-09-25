@@ -299,6 +299,21 @@ fn format_duration_ms(ms: u64) -> String {
     }
 }
 
+/// The animation row's clock interval; `None` freezes it. Reduced motion
+/// still ticks once a second so wall-elapsed text refreshes (Cometix keeps
+/// the timer live where CC relies on parent re-renders).
+fn spinner_row_interval(mode: SpinnerMode, reduced_motion: bool, frozen: bool) -> Option<Duration> {
+    if frozen {
+        None
+    } else if reduced_motion {
+        Some(Duration::from_millis(1_000))
+    } else if mode == SpinnerMode::Requesting {
+        Some(Duration::from_millis(50))
+    } else {
+        Some(Duration::from_millis(100))
+    }
+}
+
 fn compute_glimmer_index(mode: SpinnerMode, time_ms: u64, message_width: usize) -> isize {
     let glimmer_speed = if mode == SpinnerMode::Requesting {
         50
@@ -762,13 +777,20 @@ pub fn SpinnerWithVerb(
     let anim_paused = reduced_motion || props.disable_animation || props.time_ms_override.is_some();
     // Still tick under reduced_motion (1s) so wall-elapsed UI can refresh;
     // official relies on parent re-renders, but we keep the timer live.
-    let frame_interval = if props.time_ms_override.is_some() || props.disable_animation {
-        None
-    } else if reduced_motion {
-        Some(Duration::from_millis(1_000))
-    } else {
-        Some(Duration::from_millis(50))
-    };
+    // Row clock. CC 2.1.88 `SpinnerAnimationRow` ticks at a flat 50ms;
+    // CC 2.1.280 (`chunk-dgxaxeme.js:841`) ticks at 50ms only while
+    // requesting — the one mode whose glimmer steps every 50ms — and at
+    // 100ms otherwise, since the glimmer then steps every 200ms and the
+    // glyph every 120ms, so a 50ms clock rendered frames nothing moved in.
+    // Adopted here (deliberate 2.1.280 alignment): with the streaming
+    // preview coalesced at 100ms this is what puts streaming near CC's
+    // ~9 frames/s. 280's `glimmerParked` prop (defaults to false) has no
+    // 2.1.88 counterpart and is treated as false.
+    let frame_interval = spinner_row_interval(
+        props.mode,
+        reduced_motion,
+        props.time_ms_override.is_some() || props.disable_animation,
+    );
     let frame = hooks.use_animation_frame(frame_interval);
     let loading_start = hooks.use_const(|| Instant::now());
     // Depend on the frame tick so each interval re-samples wall time.
@@ -1191,6 +1213,27 @@ pub fn SpinnerWithVerb(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spinner_row_clock_matches_cc_2_1_280_cadence() {
+        // chunk-dgxaxeme.js:841: `Li(t ? null : l === "requesting" && !R ? 50 : 100)`.
+        assert_eq!(
+            spinner_row_interval(SpinnerMode::Requesting, false, false),
+            Some(Duration::from_millis(50))
+        );
+        for mode in [SpinnerMode::Responding, SpinnerMode::Thinking, SpinnerMode::ToolUse] {
+            assert_eq!(
+                spinner_row_interval(mode, false, false),
+                Some(Duration::from_millis(100)),
+                "{mode:?}"
+            );
+        }
+        assert_eq!(
+            spinner_row_interval(SpinnerMode::Responding, true, false),
+            Some(Duration::from_millis(1_000))
+        );
+        assert_eq!(spinner_row_interval(SpinnerMode::Requesting, false, true), None);
+    }
 
     fn render_text(element: impl Into<AnyElement<'static>>) -> String {
         let canvas = element.into().render(None);

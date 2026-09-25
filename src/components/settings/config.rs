@@ -187,6 +187,25 @@ fn preview_runtime_display_setting(
     }
 }
 
+fn preview_streaming_text_display_setting(
+    store: Option<crate::state::store::AppStore>,
+    item: &SettingItem,
+) {
+    if item.id != "streamingTextDisplay" {
+        return;
+    }
+    let value = item.display_value();
+    // Same in-memory preview route as `prefersReducedMotion`: REPL reads the
+    // AppState settings snapshot, so the next stream uses the new mode.
+    if let Some(store) = store {
+        store.replace_with(|state| {
+            let mut settings = (*state.settings).clone();
+            settings.streaming_text_display = Some(value.clone());
+            state.settings = std::sync::Arc::new(settings);
+        });
+    }
+}
+
 fn preview_verbose_setting(store: Option<crate::state::store::AppStore>, item: &SettingItem) {
     if item.id != "verbose" {
         return;
@@ -508,6 +527,7 @@ fn config_summary_label(item: &SettingItem) -> &'static str {
         "autoCompactEnabled" => "auto-compact",
         "spinnerTipsEnabled" => "tips",
         "prefersReducedMotion" => "reduce motion",
+        "streamingTextDisplay" => "streaming text",
         "thinkingEnabled" => "thinking mode",
         "fastMode" => "fast mode",
         "promptSuggestionEnabled" => "prompt suggestions",
@@ -583,6 +603,12 @@ fn revert_runtime_previews(
         .find(|item| item.id == "prefersReducedMotion")
     {
         preview_runtime_display_setting(store.clone(), item);
+    }
+    if let Some(item) = initial_items
+        .iter()
+        .find(|item| item.id == "streamingTextDisplay")
+    {
+        preview_streaming_text_display_setting(store.clone(), item);
     }
     if let Some(item) = initial_items.iter().find(|item| item.id == "verbose") {
         preview_verbose_setting(store.clone(), item);
@@ -663,6 +689,7 @@ fn activate_focused_config_item(
     let mut all = items.read().clone();
     all[real_idx].toggle();
     preview_runtime_display_setting(runtime_display_context.clone(), &all[real_idx]);
+    preview_streaming_text_display_setting(runtime_display_context.clone(), &all[real_idx]);
     preview_verbose_setting(runtime_display_context.clone(), &all[real_idx]);
     preview_expand_display_setting(runtime_display_context.clone(), &all[real_idx]);
     preview_prompt_suggestion_setting(runtime_display_context, &all[real_idx]);
@@ -714,6 +741,9 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     let search = use_search_input(&mut hooks, "");
     // Maps to: CC Config.tsx isSearchMode — default true (search box focused)
     let mut is_search_mode = hooks.use_state(|| true);
+    // Maps to: CC Config.tsx:197 `useTerminalFocus()`, handed to SearchBox so
+    // the cursor cell disappears while the terminal is blurred.
+    let is_terminal_focused = hooks.use_terminal_focus();
     // Maps to: CC Config.tsx `showSubmenu`. Submenus are UI-only previews:
     // selecting an option updates this in-memory Config item list only.
     let mut submenu = hooks.use_state(|| None::<SettingsSubmenu>);
@@ -1599,33 +1629,47 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     )
                     View(flex_direction: FlexDirection::Row, flex_grow: 1.0f32, overflow: Overflow::Hidden, height: 1u32) {
                         // Focused + empty: cursor sits on the first
-                        // placeholder character, exactly like CC.
-                        #(if is_search_focused && query_is_empty {
+                        // placeholder character, exactly like CC. A blurred
+                        // terminal shows the whole placeholder dim instead
+                        // (CC SearchBox.tsx:54-60).
+                        #(if is_search_focused && query_is_empty && is_terminal_focused {
                             Some(element! {
                                 Text(content: placeholder_first.clone(), invert: true, wrap: TextWrap::NoWrap)
                             })
                         } else { None })
-                        #(if is_search_focused && query_is_empty {
+                        #(if is_search_focused && query_is_empty && is_terminal_focused {
                             Some(element! {
                                 Text(content: placeholder_rest.clone(), color: theme.inactive, wrap: TextWrap::NoWrap)
                             })
                         } else { None })
+                        #(if is_search_focused && query_is_empty && !is_terminal_focused {
+                            Some(element! {
+                                Text(content: PLACEHOLDER, color: theme.inactive, wrap: TextWrap::NoWrap)
+                            })
+                        } else { None })
 
                         // Focused + query: render query around the inverse
-                        // cursor cell. At EOL the cursor cell is a space.
-                        #(if is_search_focused && !query_is_empty {
+                        // cursor cell. At EOL the cursor cell is a space. A
+                        // blurred terminal shows the plain query (CC
+                        // SearchBox.tsx:41-53).
+                        #(if is_search_focused && !query_is_empty && is_terminal_focused {
                             Some(element! {
                                 Text(content: before_cursor.clone(), wrap: TextWrap::NoWrap)
                             })
                         } else { None })
-                        #(if is_search_focused && !query_is_empty {
+                        #(if is_search_focused && !query_is_empty && is_terminal_focused {
                             Some(element! {
                                 Text(content: cursor_cell.clone(), invert: true, wrap: TextWrap::NoWrap)
                             })
                         } else { None })
-                        #(if is_search_focused && !query_is_empty {
+                        #(if is_search_focused && !query_is_empty && is_terminal_focused {
                             Some(element! {
                                 Text(content: after_cursor.clone(), wrap: TextWrap::NoWrap)
+                            })
+                        } else { None })
+                        #(if is_search_focused && !query_is_empty && !is_terminal_focused {
+                            Some(element! {
+                                Text(content: search_query.clone(), wrap: TextWrap::NoWrap)
                             })
                         } else { None })
 
@@ -2781,8 +2825,11 @@ mod tests {
 
     #[test]
     fn config_verbose_preview_updates_app_state_for_footer() {
+        // Six Downs from the top reached "Verbose output" before the
+        // Cometix-only "Streaming text" row was added above it.
         let events = stream::iter([
             press(KeyCode::Enter),
+            press(KeyCode::Down),
             press(KeyCode::Down),
             press(KeyCode::Down),
             press(KeyCode::Down),

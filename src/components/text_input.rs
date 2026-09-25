@@ -57,7 +57,7 @@ pub fn text_input_hide_placeholder_text(voice_recording: bool) -> bool {
     voice_recording
 }
 
-fn accessibility_enabled_from_env() -> bool {
+pub(crate) fn accessibility_enabled_from_env() -> bool {
     crate::utils::env_utils::is_env_truthy(
         std::env::var("CLAUDE_CODE_ACCESSIBILITY").ok().as_deref(),
     )

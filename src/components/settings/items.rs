@@ -145,6 +145,24 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
             search_text: "animation motion reduce accessibility",
             visible: true,
         },
+        // @cometix offset: not an official setting. CC previews only completed
+        // lines while streaming; Cometix also offers character streaming.
+        // Reduce motion hides the preview regardless (CC REPL.tsx:1987).
+        SettingItem {
+            id: "streamingTextDisplay",
+            label: "Streaming text",
+            value: {
+                let options = vec!["character".to_string(), "line".to_string()];
+                let current = settings
+                    .streaming_text_display
+                    .as_deref()
+                    .and_then(|mode| options.iter().position(|o| o == mode))
+                    .unwrap_or(0);
+                SettingValue::Enum { options, current }
+            },
+            search_text: "streaming text character line typewriter preview",
+            visible: true,
+        },
         SettingItem {
             id: "thinkingEnabled",
             label: "Thinking mode",
@@ -596,5 +614,29 @@ mod tests {
             .find(|item| item.id == "autoUpdatesChannel")
             .expect("auto-update channel row should exist");
         assert_eq!(row.display_value(), "disabled");
+    }
+
+    #[test]
+    fn streaming_text_display_row_reads_the_setting_and_defaults_to_character() {
+        let config = GlobalConfig::default();
+        let mut settings = SettingsJson::default();
+        let row = |settings: &SettingsJson| {
+            build_items(&config, settings)
+                .into_iter()
+                .find(|item| item.id == "streamingTextDisplay")
+                .expect("streaming text row should exist")
+        };
+        assert_eq!(row(&settings).display_value(), "character");
+        settings.streaming_text_display = Some("line".to_string());
+        assert_eq!(row(&settings).display_value(), "line");
+        // Unknown values fall back to the default rather than hiding the row.
+        settings.streaming_text_display = Some("words".to_string());
+        assert_eq!(row(&settings).display_value(), "character");
+        // Enter cycles through both modes.
+        let mut item = row(&settings);
+        item.toggle();
+        assert_eq!(item.display_value(), "line");
+        item.toggle();
+        assert_eq!(item.display_value(), "character");
     }
 }
