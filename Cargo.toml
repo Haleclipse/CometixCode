@@ -44,11 +44,12 @@ strip-ansi-escapes = "0.2.1"
 # UAX #29 segmentation with compiled-in data, including the dictionary models
 # for Chinese, Japanese, Khmer, Lao, Myanmar and Thai. No system ICU.
 icu_segmenter = { version = "2.3.0", features = ["auto"] }
-# iocraft fork carrying the CC Ink parity primitives (row-level diff, event
-# propagation, SIGCONT self-healing, IME cursor, bracketed paste, grid layout).
+# iocraft fork with CC Ink parity primitives. This and the three other
+# sibling checkouts below are `path` here and `git` in the public mirror;
+# scripts/sync-public-cargo.sh derives the mirror's manifest and lock.
 iocraft = { git = "https://github.com/Haleclipse/CometixTUI", features = ["unstable-output-streams"] }
-# Rust port of chalk, a member of the same workspace as the iocraft fork; owns
-# color-level detection and string styling, matching the source's chalk import.
+# Rust port of chalk (same workspace as the iocraft fork); owns color-level
+# detection and string styling, matching the source's chalk import.
 chalk = { git = "https://github.com/Haleclipse/CometixTUI" }
 
 # Rust port of @anthropic-ai/sdk.
