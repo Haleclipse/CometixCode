@@ -5,7 +5,7 @@
 
 use crate::commands::resume;
 use crate::components::log_selector::LogSelector;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::utils::cross_project_resume::{CrossProjectResumeResult, check_cross_project_resume};
 use crate::utils::get_worktree_paths::get_worktree_paths;
 use crate::utils::session_storage::{
@@ -235,7 +235,7 @@ pub fn ResumeCommand<'a>(
         let message = resume_progress_message(is_resuming.get()).to_string();
         return element! {
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(content: format!(" {message}"), wrap: TextWrap::NoWrap)
             }
         }

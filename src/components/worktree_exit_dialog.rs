@@ -10,7 +10,7 @@
 
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::dialog::Dialog;
-use crate::components::spinner::glyph::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::utils::worktree::{
     CommandResultDisplay, WorktreeExitAction, WorktreeExitDone, WorktreeSession,
     worktree_exit_action_from_value, worktree_exit_options, worktree_exit_result_message,
@@ -79,7 +79,7 @@ pub fn WorktreeExitDialog<'a>(
         WorktreeExitStatus::Keeping => {
             return element! {
                 View(flex_direction: FlexDirection::Row, margin_y: 1u32) {
-                    SpinnerGlyph(frame: 0usize)
+                    Spinner
                     Text(content: "Keeping worktree…".to_string())
                 }
             }
@@ -88,7 +88,7 @@ pub fn WorktreeExitDialog<'a>(
         WorktreeExitStatus::Removing => {
             return element! {
                 View(flex_direction: FlexDirection::Row, margin_y: 1u32) {
-                    SpinnerGlyph(frame: 0usize)
+                    Spinner
                     Text(content: "Removing worktree…".to_string())
                 }
             }

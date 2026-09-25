@@ -10,7 +10,7 @@ use crate::components::custom_select::select::{Select, SelectLayout, SelectOptio
 use crate::components::design_system::byline::Byline;
 use crate::components::design_system::dialog::Dialog;
 use crate::components::design_system::keyboard_shortcut_hint::KeyboardShortcutHint;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::constants::figures;
 use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig, Transport};
 use iocraft::prelude::*;
@@ -290,7 +290,7 @@ pub fn MCPAgentServerMenu<'a>(
             View(flex_direction: FlexDirection::Column, padding: 1u32) {
                 Text(content: format!("Authenticating with {}…", agent_server.name), color: theme.claude, wrap: TextWrap::NoWrap)
                 View(flex_direction: FlexDirection::Row) {
-                    SpinnerGlyph()
+                    Spinner
                     Text(content: " A browser window will open for authentication".to_string(), wrap: TextWrap::NoWrap)
                 }
                 #(authorization_url_value.map(|url| element! {

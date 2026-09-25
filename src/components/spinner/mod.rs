@@ -51,9 +51,15 @@ pub fn Spinner(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         .try_use_context::<Theme>()
         .map(|theme| *theme)
         .unwrap_or_else(|| *crate::utils::theme::current());
-    let reduced_motion = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.settings.prefers_reduced_motion.unwrap_or(false)
-    });
+    // CC reads `useSettings()`, whose provider wraps every screen. Here the
+    // startup screens (main.rs's "Resuming conversation…", "Loading
+    // commands…") mount outside `AppStateProvider` (Contract B), so the
+    // setting is read provider-optionally and defaults to animated there.
+    let reduced_motion = crate::state::app_state::use_app_state_maybe_outside_of_provider(
+        &mut hooks,
+        |state| state.settings.prefers_reduced_motion.unwrap_or(false),
+    )
+    .unwrap_or(false);
     let frame = hooks.use_animation_frame(if reduced_motion {
         None
     } else {
@@ -1220,6 +1226,56 @@ pub fn SpinnerWithVerb(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // CC `Spinner()` (Spinner.tsx:578) advances its glyph every 120ms on the
+    // shared clock. The startup screens used to mount a static
+    // `SpinnerGlyph(frame: 0)` in its place, which never moved; this mounts
+    // the real thing with no AppStateProvider, as main.rs's resume screen
+    // does, and expects the glyph to change over ~500ms.
+    #[component]
+    fn PlainSpinnerHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let done = hooks.use_state(|| false);
+        let mut done_for_future = done;
+        hooks.use_future(async move {
+            futures_timer::Delay::new(Duration::from_millis(500)).await;
+            done_for_future.set(true);
+        });
+        if done.get() {
+            system.exit();
+        }
+        element! {
+            View(flex_direction: FlexDirection::Row) {
+                Spinner
+                Text(content: " Resuming conversation…")
+            }
+        }
+    }
+
+    #[test]
+    fn plain_spinner_animates_without_an_app_state_provider() {
+        use futures::StreamExt;
+        let canvases: Vec<_> = futures::executor::block_on(
+            element!(PlainSpinnerHarness)
+                .mock_terminal_render_loop(MockTerminalConfig::default())
+                .collect(),
+        );
+        let glyphs: std::collections::BTreeSet<String> = canvases
+            .iter()
+            .filter_map(|canvas| {
+                canvas
+                    .to_string()
+                    .lines()
+                    .next()
+                    .and_then(|line| line.trim_start().chars().next())
+                    .map(|glyph| glyph.to_string())
+            })
+            .collect();
+        assert!(
+            glyphs.len() >= 2,
+            "the plain spinner should advance through the official frames: {glyphs:?}"
+        );
+    }
 
     #[test]
     fn spinner_row_clock_matches_cc_2_1_280_cadence() {

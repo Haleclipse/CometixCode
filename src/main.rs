@@ -11,7 +11,7 @@
 
 use crate::bootstrap;
 use crate::commands;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::hooks::notifs::startup::startup_notifications;
 use crate::hooks::notifs::statusline::status_line_trust_blocked_notification;
 use crate::interactive_helpers::{
@@ -1087,7 +1087,7 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     } else if resolved_commands.read().is_none() || resolved_initial_tools.read().is_none() {
         element! {
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(content: " Loading commands…".to_string(), wrap: TextWrap::NoWrap)
             }
         }
@@ -1258,7 +1258,7 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                         }
                         element! {
                             View(flex_direction: FlexDirection::Row) {
-                                SpinnerGlyph(frame: 0usize)
+                                Spinner
                                 Text(
                                     content: " Resuming conversation…".to_string(),
                                     wrap: TextWrap::NoWrap,

@@ -1,7 +1,7 @@
 //! Maps to: CC `components/design-system/LoadingState.tsx`.
 //! Main-screen loading row: spinner glyph, message, and optional subtitle.
 
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
@@ -25,7 +25,7 @@ pub fn LoadingState(props: &LoadingStateProps, hooks: Hooks) -> impl Into<AnyEle
     element! {
         View(flex_direction: FlexDirection::Column, flex_shrink: 0.0f32) {
             View(flex_direction: FlexDirection::Row, flex_shrink: 0.0f32) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(
                     content: format!(" {}", props.message),
                     color: color,

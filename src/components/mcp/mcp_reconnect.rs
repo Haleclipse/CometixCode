@@ -5,7 +5,7 @@
 //! reconnect/not-found/failure copy through `on_complete`. Transport lifecycle
 //! remains in `services/mcp/*`.
 
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::constants::figures;
 use crate::services::mcp::types::McpServerConnectionType;
 use iocraft::prelude::*;
@@ -101,7 +101,7 @@ pub fn MCPReconnect(props: &MCPReconnectProps, mut hooks: Hooks) -> impl Into<An
                     Text(content: props.server_name.clone(), color: theme.text, weight: Weight::Bold, wrap: TextWrap::NoWrap)
                 }
                 View(flex_direction: FlexDirection::Row) {
-                    SpinnerGlyph()
+                    Spinner
                     Text(content: " Establishing connection to MCP server".to_string(), wrap: TextWrap::NoWrap)
                 }
             }

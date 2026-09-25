@@ -10,7 +10,7 @@ use crate::components::configurable_shortcut_hint::ConfigurableShortcutHint;
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::byline::Byline;
 use crate::components::design_system::keyboard_shortcut_hint::KeyboardShortcutHint;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::components::teleport_error::{TeleportError, TeleportLocalErrorType};
 use crate::components::teleport_stash::TeleportStashState;
 use crate::utils::format::format_relative_time_ago_millis;
@@ -265,7 +265,7 @@ pub fn ResumeTask(props: &ResumeTaskProps) -> impl Into<AnyElement<'static>> {
         ResumeTaskState::Loading { retrying } => element! {
             View(flex_direction: FlexDirection::Column, padding: 1u32) {
                 View(flex_direction: FlexDirection::Row) {
-                    SpinnerGlyph(frame: 0usize)
+                    Spinner
                     Text(content: "Loading Claude Code sessions…".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap)
                 }
                 Text(content: if *retrying { "Retrying…".to_string() } else { "Fetching your Claude Code sessions…".to_string() }, dim: true, wrap: TextWrap::NoWrap)
