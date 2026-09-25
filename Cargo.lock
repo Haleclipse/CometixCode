@@ -334,7 +334,7 @@ dependencies = [
 [[package]]
 name = "chalk"
 version = "0.1.0"
-source = "git+https://github.com/Haleclipse/CometixTUI#76e613583df50d3726cf4ade0703728fc30c9942"
+source = "git+https://github.com/Haleclipse/CometixTUI#165ef8d87b3e006b383d2a10391b22fad1238121"
 
 [[package]]
 name = "chrono"
@@ -1645,7 +1645,7 @@ dependencies = [
 [[package]]
 name = "iocraft"
 version = "0.9.1"
-source = "git+https://github.com/Haleclipse/CometixTUI#76e613583df50d3726cf4ade0703728fc30c9942"
+source = "git+https://github.com/Haleclipse/CometixTUI#165ef8d87b3e006b383d2a10391b22fad1238121"
 dependencies = [
  "bitflags",
  "chalk",
@@ -1665,7 +1665,7 @@ dependencies = [
 [[package]]
 name = "iocraft-macros"
 version = "0.2.4"
-source = "git+https://github.com/Haleclipse/CometixTUI#76e613583df50d3726cf4ade0703728fc30c9942"
+source = "git+https://github.com/Haleclipse/CometixTUI#165ef8d87b3e006b383d2a10391b22fad1238121"
 dependencies = [
  "proc-macro2",
  "quote",
