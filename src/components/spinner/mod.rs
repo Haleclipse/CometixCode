@@ -671,7 +671,12 @@ pub fn SpinnerWithVerb(
     // Maps to CC `useStalledAnimation`: mutable timing values are refs and
     // must not schedule a render while being refreshed by the render itself.
     let mut stalled_state = hooks.use_ref(StalledState::default);
-    let mut thinking_status_state = hooks.use_state(ThinkingStatusState::default);
+    // Refs, not States: CC's SpinnerAnimationRow keeps its thinking status
+    // and token counter in `useRef` and steps them during render, so a step
+    // never schedules a render of its own — the next one comes from the row
+    // clock. As States they re-rendered on every step and, while the token
+    // counter was catching up, that meant a frame every ~20ms.
+    let mut thinking_status_state = hooks.use_ref(ThinkingStatusState::default);
     let settings_reduced_motion = crate::state::app_state::use_app_state(&mut hooks, |state| {
         state.settings.prefers_reduced_motion.unwrap_or(false)
     });
@@ -813,7 +818,9 @@ pub fn SpinnerWithVerb(
         .response_length_ref
         .map(|response_length_ref| response_length_ref.get())
         .unwrap_or(props.response_length);
-    let mut displayed_response_length_state = hooks.use_state(|| current_response_length);
+    // CC SpinnerAnimationRow.tsx:155-169 `tokenCounterRef` ("driven by 50ms
+    // clock"): one increment per row tick, held in a ref.
+    let mut displayed_response_length_state = hooks.use_ref(|| current_response_length);
     let token_animation_paused = anim_paused;
     let displayed_response_length = next_displayed_response_length(
         displayed_response_length_state.get(),
