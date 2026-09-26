@@ -9,6 +9,7 @@
 //! ANT coordinator/Tungsten, proactive/Kairos, PR polling, remote-session links,
 //! fullscreen selection hints, and production voice state are not synthesized.
 
+use super::history_search_input::HistorySearchInput;
 use super::input_modes::PromptInputMode;
 use crate::types::permissions::PermissionMode;
 use crate::utils::permissions::permission_mode::{
@@ -25,7 +26,9 @@ pub struct PromptInputFooterLeftSideProps {
     pub mode: PromptInputMode,
     pub suppress_hint: bool,
     pub is_searching: bool,
-    pub history_query: String,
+    /// Maps to: CC `historyQuery` + `setHistoryQuery`: the search query
+    /// State, written by `HistorySearchInput`'s TextInput.
+    pub history_query: Option<State<String>>,
     pub history_failed_match: bool,
     pub is_loading: bool,
     pub permission_mode: PermissionMode,
@@ -47,13 +50,6 @@ pub fn PromptInputFooterLeftSide(
     let selected_footer_item = crate::state::app_state::use_app_state(&mut hooks, |state| {
         state.footer_selection.map(|item| item.as_str().to_string())
     });
-    // CC HistorySearchInput renders its field through TextInput, whose cursor
-    // inversion is `isTerminalFocused && !accessibilityEnabled`.
-    let history_cursor_shown = crate::components::text_input::text_input_can_show_cursor(
-        hooks.use_terminal_focus(),
-        crate::components::text_input::accessibility_enabled_from_env(),
-    );
-
     // Source ordering is significant: exit and active paste replace every
     // other left-side item rather than being appended to the status row.
     if let Some(ref hint) = props.exit_hint {
@@ -80,22 +76,15 @@ pub fn PromptInputFooterLeftSide(
             flex_shrink: 1.0f32,
             overflow: Overflow::Hidden,
         ) {
-            #(if props.is_searching {
-                let label = if props.history_failed_match {
-                    "no matching prompt:"
-                } else {
-                    "search prompts:"
-                };
-                Some(element! {
-                    View(flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
-                        Text(content: format!("{label} "), color: theme.inactive, wrap: TextWrap::NoWrap)
-                        Text(content: props.history_query.clone(), color: theme.inactive, wrap: TextWrap::NoWrap)
-                        Text(content: " ".to_string(), invert: history_cursor_shown, wrap: TextWrap::NoWrap)
-                    }
-                })
-            } else {
-                None
-            })
+            // Maps to: CC PromptInputFooterLeftSide.tsx:165-171
+            // `{isSearching && <HistorySearchInput value={historyQuery}
+            // onChange={setHistoryQuery} historyFailedMatch />}`.
+            #(props.is_searching.then(|| element! {
+                HistorySearchInput(
+                    value: props.history_query,
+                    history_failed_match: props.history_failed_match,
+                )
+            }))
             #(if show_vim {
                 Some(element! {
                     Text(content: "-- INSERT --".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
@@ -281,7 +270,7 @@ mod tests {
                             mode: props.mode,
                             suppress_hint: props.suppress_hint,
                             is_searching: props.is_searching,
-                            history_query: props.history_query.clone(),
+                            history_query: props.history_query,
                             history_failed_match: props.history_failed_match,
                             is_loading: props.is_loading,
                             permission_mode: props.permission_mode,
@@ -353,14 +342,54 @@ mod tests {
         });
         assert!(!normal.contains("-- NORMAL --"));
 
-        let search = render(PromptInputFooterLeftSideProps {
-            vim_mode: Some("INSERT".to_string()),
-            is_searching: true,
-            history_query: "abc".to_string(),
-            ..Default::default()
-        });
-        assert!(search.contains("search prompts: abc"));
+        let search = render_searching("abc");
+        assert!(search.contains("search prompts: abc"), "canvas=\n{search}");
         assert!(!search.contains("-- INSERT --"));
+    }
+
+    #[derive(Default, Props)]
+    struct SearchingLeftSideProps {
+        query: String,
+    }
+
+    // The query is a State owned above the footer (useHistorySearch's
+    // `historyQuery`), so the search case needs a component to hold it.
+    #[component]
+    fn SearchingLeftSide(
+        props: &SearchingLeftSideProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        let initial = props.query.clone();
+        let query = hooks.use_state(move || initial);
+        element! {
+            PromptInputFooterLeftSide(
+                vim_mode: Some("INSERT".to_string()),
+                is_searching: true,
+                history_query: Some(query),
+            )
+        }
+    }
+
+    fn render_searching(query: &str) -> String {
+        let query = query.to_string();
+        let mut app = element! {
+            ContextProvider(value: Context::owned(*theme::current())) {
+                crate::state::app_state::AppStateProvider(
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        SearchingLeftSide(query: query.clone())
+                    }.into_any()),
+                )
+            }
+        };
+        let canvas = futures::executor::block_on(async {
+            let mut render_loop = Box::pin(
+                app.mock_terminal_render_loop(MockTerminalConfig::default().with_size(100, 8)),
+            );
+            render_loop.next().await.expect("footer should render")
+        });
+        // `to_string`, not per-cell text: the label and the input are
+        // separated by the row's `gap={1}`, an empty cell.
+        canvas.to_string()
     }
 
     #[test]

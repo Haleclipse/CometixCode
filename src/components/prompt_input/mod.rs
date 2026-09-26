@@ -3101,7 +3101,7 @@ pub fn PromptInput<'a>(
         cursor_offset.get(),
         &slash_command_triggers,
     );
-    let history_query = history_search.query.read().clone();
+    let history_query = history_search.query;
     let history_failed_match = history_search.failed_match.get();
     let input_row_height = rendered_lines.len().max(1);
     let terminal_focus = hooks.use_terminal_focus();
