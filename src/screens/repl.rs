@@ -897,11 +897,112 @@ impl ReplStartupDialogSnapshot {
     }
 }
 
+/// Maps to: CC `screens/REPL.tsx`:2664-2683, the return type of
+/// `getFocusedInputDialog()`: the one dialog that owns input focus, if any.
+///
+/// Only the members this REPL has state for are listed, in CC's order. CC's
+/// `prompt` (hook PromptDialog queue), `cost`, `idle-return`,
+/// `ultraplan-choice` / `ultraplan-launch`, `ide-onboarding`, `model-switch`,
+/// `undercover-callout`, `effort-callout` and `lsp-recommendation` have no
+/// producing state here yet; each joins at its CC position when that state is
+/// ported. (`init-onboarding` is in CC's union but the function never returns
+/// it.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ReplStartupDialogKind {
+enum FocusedInputDialog {
+    MessageSelector,
+    SandboxPermission,
+    ToolPermission,
+    WorkerSandboxPermission,
+    Elicitation,
     RemoteCallout,
     PluginHint,
     DesktopUpsell,
+}
+
+impl FocusedInputDialog {
+    /// CC's string literal for this member, which is what `useInboxPoller`
+    /// receives as `focusedInputDialog`.
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::MessageSelector => "message-selector",
+            Self::SandboxPermission => "sandbox-permission",
+            Self::ToolPermission => "tool-permission",
+            Self::WorkerSandboxPermission => "worker-sandbox-permission",
+            Self::Elicitation => "elicitation",
+            Self::RemoteCallout => "remote-callout",
+            Self::PluginHint => "plugin-hint",
+            Self::DesktopUpsell => "desktop-upsell",
+        }
+    }
+}
+
+/// The REPL state `getFocusedInputDialog()` closes over (REPL.tsx:2684-2760).
+#[derive(Clone, Copy, Debug, Default)]
+struct FocusedInputDialogInput {
+    /// CC `exitFlow`. CC's other exit state, `isExiting`, is this REPL's
+    /// immediate `should_exit` return, so a render that gets here never has it.
+    exit_flow: bool,
+    is_message_selector_visible: bool,
+    is_prompt_input_active: bool,
+    /// `sandboxPermissionRequestQueue[0]`
+    has_sandbox_permission_request: bool,
+    /// `!toolJSX || toolJSX.shouldContinueAnimation` (:2696-2697).
+    allow_dialogs_with_animation: bool,
+    /// `toolUseConfirmQueue[0]`
+    has_tool_use_confirm: bool,
+    /// `workerSandboxPermissions.queue[0]`
+    has_worker_sandbox_permission: bool,
+    /// `elicitation.queue[0]`
+    has_elicitation: bool,
+    show_remote_callout: bool,
+    /// `hintRecommendation`
+    has_hint_recommendation: bool,
+    show_desktop_upsell_startup: bool,
+}
+
+/// Maps to: CC `screens/REPL.tsx`:2684-2760 `getFocusedInputDialog()`.
+///
+/// Like CC's, the answer does not depend on which screen is showing: the
+/// transcript screen simply has no dialog slot to mount it in (:5850-5989),
+/// while the inbox poller still reads it.
+fn get_focused_input_dialog(input: &FocusedInputDialogInput) -> Option<FocusedInputDialog> {
+    use FocusedInputDialog::*;
+    // Exit states always take precedence.
+    if input.exit_flow {
+        return None;
+    }
+    // High priority dialogs (always show regardless of typing).
+    if input.is_message_selector_visible {
+        return Some(MessageSelector);
+    }
+    // Suppress interrupt dialogs while user is actively typing.
+    if input.is_prompt_input_active {
+        return None;
+    }
+    if input.has_sandbox_permission_request {
+        return Some(SandboxPermission);
+    }
+    // Permission/interactive dialogs (show unless blocked by toolJSX).
+    let allow = input.allow_dialogs_with_animation;
+    if allow && input.has_tool_use_confirm {
+        return Some(ToolPermission);
+    }
+    if allow && input.has_worker_sandbox_permission {
+        return Some(WorkerSandboxPermission);
+    }
+    if allow && input.has_elicitation {
+        return Some(Elicitation);
+    }
+    if allow && input.show_remote_callout {
+        return Some(RemoteCallout);
+    }
+    if allow && input.has_hint_recommendation {
+        return Some(PluginHint);
+    }
+    if allow && input.show_desktop_upsell_startup {
+        return Some(DesktopUpsell);
+    }
+    None
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -6981,6 +7082,12 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         });
     }
 
+    // Maps to: CC REPL.tsx:1397-1399 `focusedInputDialogRef` — "Ref to track
+    // current focusedInputDialog for use in callbacks". Written where
+    // `get_focused_input_dialog` runs below (:2778); the inbox poll reads it,
+    // since its interval callback is built before this render computes it.
+    let mut focused_input_dialog_ref = hooks.use_ref(|| None::<FocusedInputDialog>);
+
     // Maps to: CC `REPL.tsx` `useInboxPoller({ enabled, isLoading,
     // focusedInputDialog, onSubmitMessage: handleIncomingPrompt })`.
     let inbox_poll_interval = crate::utils::agent_swarms_enabled::is_agent_swarms_enabled()
@@ -7003,10 +7110,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             let loaded_nested_memory_paths = loaded_nested_memory_paths;
             let main_thread_agent_definition = main_thread_agent_definition;
             let system_prompt_overrides = system_prompt_overrides.clone();
-            let active_local_command_ui = active_local_command_ui;
-            let show_desktop_upsell_startup = show_desktop_upsell_startup;
-            let hint_recommendation = hint_recommendation;
-            let exit_flow_active = exit_flow_active;
+            let focused_input_dialog_ref = focused_input_dialog_ref;
             let channel_permission_callbacks_for_inbox = channel_permission_callbacks.clone();
             let permission_sink_for_inbox = interactive_permission_sink.clone();
             let app_store_for_inbox = app_store.clone();
@@ -7025,17 +7129,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 let is_loading_now = !pending_responses.read().is_empty()
                     || active_query.read().is_some()
                     || !permission_queue.read().is_empty();
-                let show_remote_callout = app_store_for_inbox.get().show_remote_callout;
-                let focused_input_dialog = (!permission_queue.read().is_empty()
-                    // CC useInboxPoller receives 'sandbox-permission' via
-                    // focusedInputDialog (use_inbox_poller.tsx:572,597).
-                    || !sandbox_permission_request_queue.read().is_empty()
-                    || active_local_command_ui.read().is_some()
-                    || show_remote_callout
-                    || show_desktop_upsell_startup.get()
-                    || hint_recommendation.read().is_some()
-                    || exit_flow_active.get())
-                .then_some("dialog".to_string());
+                // CC hands the hook `getFocusedInputDialog()`'s value itself.
+                let focused_input_dialog = focused_input_dialog_ref
+                    .get()
+                    .map(|dialog| dialog.as_str().to_string());
 
                 let poller_local = inbox_poller_state.read().clone();
                 let app_snapshot = app_store_for_inbox.get();
@@ -8484,18 +8581,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     );
     let active_prompt_shell_command_snapshot = active_prompt_shell_command.read().clone();
     let exit_flow_active_snapshot = exit_flow_active.get();
-    // Maps to: CC REPL.tsx:2689 `getFocusedInputDialog() === 'message-selector'`.
+    // Maps to: CC `isMessageSelectorVisible`, the input behind
+    // `getFocusedInputDialog()`'s 'message-selector' (REPL.tsx:2689).
     let message_selector_visible_snapshot = message_selector_visible.get();
     let hint_recommendation_snapshot = hint_recommendation.read().clone();
-    let active_startup_dialog = if show_remote_callout {
-        Some(ReplStartupDialogKind::RemoteCallout)
-    } else if hint_recommendation_snapshot.is_some() {
-        Some(ReplStartupDialogKind::PluginHint)
-    } else if show_desktop_upsell_startup.get() {
-        Some(ReplStartupDialogKind::DesktopUpsell)
-    } else {
-        None
-    };
     let current_permission = permission_queue.read().first().cloned();
     let query_is_loading = !pending_responses.read().is_empty() || active_query.read().is_some();
     let user_input_on_processing_active = user_input_on_processing
@@ -8668,58 +8757,52 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     });
     let elicitation_queued = current_elicitation.is_some();
 
-    // Maps to: CC `getFocusedInputDialog()` (REPL.tsx:2664-2760) for the
-    // dialogs this REPL holds in its own queues. Exit states always take
-    // precedence, then the message selector, and interrupt dialogs are
-    // suppressed while the user is actively typing (`isPromptInputActive`);
-    // then `sandboxPermissionRequestQueue[0]` focuses, outranking
-    // tool-permission. Tool permission, worker sandbox, elicitation and the
-    // startup callouts also need `allowDialogsWithAnimation` (`!toolJSX ||
-    // toolJSX.shouldContinueAnimation`, :2697). Both of this REPL's toolJSX
-    // stand-ins lack the flag: local-jsx command panels
-    // (processSlashCommand.tsx:836-842) and the `!` bash-mode progress row
-    // (processBashCommand.tsx:58-92 sets toolJSX without it, and its inner
-    // override keeps only `.jsx`, dropping BashTool's). (CC `isExiting`
-    // corresponds to the immediate `should_exit` exit above; `exitFlow` to
-    // `exit_flow_active`.) The transcript screen shows none of them: CC's
-    // transcript return (:5850-5989) has no dialog slot. At most one is
-    // focused; each renders at its CC slot in the single tree below, inside
-    // MCPConnectionManager.
-    let focus_suppressed = screen.get() != Screen::Prompt
-        || exit_flow_active_snapshot
-        || message_selector_visible_snapshot
-        || is_prompt_input_active.get();
+    // Maps to: CC REPL.tsx:2696-2697 `allowDialogsWithAnimation = !toolJSX ||
+    // toolJSX.shouldContinueAnimation`. Both of this REPL's toolJSX stand-ins
+    // lack the flag: local-jsx command panels (processSlashCommand.tsx:836-842)
+    // and the `!` bash-mode progress row (processBashCommand.tsx:58-92 sets
+    // toolJSX without it, and its inner override keeps only `.jsx`, dropping
+    // BashTool's).
     let allow_dialogs_with_animation = active_local_command_ui_snapshot.is_none()
         && active_prompt_shell_command_snapshot.is_none();
-    let current_local_sandbox_ask = if focus_suppressed {
-        None
-    } else {
-        sandbox_permission_request_queue.read().first().cloned()
-    };
-    let focused_tool_permission =
-        if focus_suppressed || current_local_sandbox_ask.is_some() || !allow_dialogs_with_animation {
-            None
-        } else {
-            current_permission.clone()
-        };
-    let focused_worker_sandbox_permission = if focus_suppressed
-        || current_local_sandbox_ask.is_some()
-        || focused_tool_permission.is_some()
-        || !allow_dialogs_with_animation
-    {
-        None
-    } else {
-        current_sandbox_permission.clone()
-    };
-    let focused_elicitation = if focus_suppressed
-        || current_local_sandbox_ask.is_some()
-        || focused_tool_permission.is_some()
-        || focused_worker_sandbox_permission.is_some()
-        || !allow_dialogs_with_animation
-    {
-        None
-    } else {
+    // Maps to: CC REPL.tsx:2765 `const focusedInputDialog =
+    // getFocusedInputDialog()` and :2778 `focusedInputDialogRef.current = ...`.
+    let focused_input_dialog = get_focused_input_dialog(&FocusedInputDialogInput {
+        exit_flow: exit_flow_active_snapshot,
+        is_message_selector_visible: message_selector_visible_snapshot,
+        is_prompt_input_active: is_prompt_input_active.get(),
+        has_sandbox_permission_request: !sandbox_permission_request_queue.read().is_empty(),
+        allow_dialogs_with_animation,
+        has_tool_use_confirm: current_permission.is_some(),
+        has_worker_sandbox_permission: current_sandbox_permission.is_some(),
+        has_elicitation: elicitation_queued,
+        show_remote_callout,
+        has_hint_recommendation: hint_recommendation_snapshot.is_some(),
+        show_desktop_upsell_startup: show_desktop_upsell_startup.get(),
+    });
+    focused_input_dialog_ref.set(focused_input_dialog);
+    // The dialog slots exist only in CC's prompt-screen return; the transcript
+    // return (:5850-5989) has none. So the focused dialog is mounted only on
+    // the prompt screen, each at its CC slot in the single tree below, inside
+    // MCPConnectionManager — while `focused_input_dialog` itself stays
+    // screen-independent, as CC's is.
+    let mounted_input_dialog = focused_input_dialog.filter(|_| screen.get() == Screen::Prompt);
+    let current_local_sandbox_ask = (mounted_input_dialog
+        == Some(FocusedInputDialog::SandboxPermission))
+    .then(|| sandbox_permission_request_queue.read().first().cloned())
+    .flatten();
+    let focused_tool_permission = (mounted_input_dialog
+        == Some(FocusedInputDialog::ToolPermission))
+    .then(|| current_permission.clone())
+    .flatten();
+    let focused_worker_sandbox_permission = (mounted_input_dialog
+        == Some(FocusedInputDialog::WorkerSandboxPermission))
+    .then(|| current_sandbox_permission.clone())
+    .flatten();
+    let focused_elicitation = if mounted_input_dialog == Some(FocusedInputDialog::Elicitation) {
         current_elicitation
+    } else {
+        None
     };
     // Maps to: CC `AssistantToolUseMessage.tsx:58-59,122`
     // `isWaitingForPermission = pendingWorkerRequest?.toolUseId === param.id`:
@@ -8986,30 +9069,15 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             .into_any(),
         );
     }
-    // CC `focusedInputDialog` set: PromptInput (REPL.tsx:6733 `!focusedInputDialog`)
-    // and the lower-priority startup callouts yield to it.
-    let focused_input_dialog_active = sandbox_permission_dialog.is_some()
-        || tool_permission_overlay.is_some()
-        || worker_sandbox_permission_dialog.is_some()
-        || elicitation_dialog.is_some();
-    // The startup callouts are `focusedInputDialog` values ranked below every
-    // permission dialog and behind the same gates (REPL.tsx:2686-2760): the
-    // exit flow, the message selector, typing, and `allowDialogsWithAnimation`.
-    // A callout that does not have focus is not shown and does not hide
-    // PromptInput; one that has focus does (:6733 `!focusedInputDialog`).
-    let rendered_startup_dialog = active_startup_dialog.filter(|_| {
-        !focus_suppressed && allow_dialogs_with_animation && !focused_input_dialog_active
-    });
-
     let active_is_resume = active_local_command_ui_snapshot
         .as_ref()
         .is_some_and(ActiveLocalCommandUi::is_resume);
     let should_render_prompt_input = screen.get() == Screen::Prompt
         && !exit_flow_active_snapshot
-        && rendered_startup_dialog.is_none()
-        && !focused_input_dialog_active
-        // CC: PromptInput unmounts while the message selector is active.
-        && !message_selector_visible_snapshot
+        // CC REPL.tsx:6733 `!focusedInputDialog`: any focused dialog — the
+        // message selector, a permission dialog, a startup callout — takes
+        // PromptInput's place.
+        && focused_input_dialog.is_none()
         && active_local_command_ui_snapshot
             .as_ref()
             .is_none_or(|active| !active.should_hide_prompt_input);
@@ -9843,11 +9911,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             #(worker_sandbox_permission_dialog)
             #(elicitation_dialog)
 
-            #(match rendered_startup_dialog {
-                Some(ReplStartupDialogKind::RemoteCallout) => Some(element! {
+            // Maps to: CC REPL.tsx:6607-6653 `{focusedInputDialog ===
+            // 'remote-callout' / 'plugin-hint' / 'desktop-upsell' && ...}`.
+            #(match mounted_input_dialog {
+                Some(FocusedInputDialog::RemoteCallout) => Some(element! {
                     RemoteCallout(on_done: on_remote_callout_done)
                 }.into_any()),
-                Some(ReplStartupDialogKind::PluginHint) => hint_recommendation_snapshot.clone().map(|recommendation| element! {
+                Some(FocusedInputDialog::PluginHint) => hint_recommendation_snapshot.clone().map(|recommendation| element! {
                     crate::components::claude_code_hint::PluginHintMenu(
                         plugin_name: recommendation.plugin_name,
                         plugin_description: recommendation.plugin_description,
@@ -9856,7 +9926,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         on_response: on_plugin_hint_response,
                     )
                 }.into_any()),
-                Some(ReplStartupDialogKind::DesktopUpsell) => Some(element! {
+                Some(FocusedInputDialog::DesktopUpsell) => Some(element! {
                     DesktopUpsellStartup(
                         handoff_state: startup_dialog_snapshot.desktop_handoff_state,
                         handoff_error: startup_dialog_snapshot.desktop_handoff_error.clone(),
@@ -9864,7 +9934,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         on_done: on_desktop_upsell_done,
                     )
                 }.into_any()),
-                None => None,
+                _ => None,
             })
 
             #(if exit_flow_active_snapshot {
@@ -9879,9 +9949,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 None
             })
 
-            // Maps to: CC REPL.tsx:6876 `<MessageSelector messages={...}/>`
+            // Maps to: CC REPL.tsx:6875-6876 `{focusedInputDialog ===
+            // 'message-selector' && <MessageSelector messages={...}/>}`
             // (rewind dialog; /rewind command or empty-input double-Escape).
-            #(if message_selector_visible_snapshot {
+            #(if mounted_input_dialog == Some(FocusedInputDialog::MessageSelector) {
                 let selector_messages = Arc::clone(&model_messages);
                 let store_for_restore_code = app_store.clone();
                 let mut message_selector_visible_for_close = message_selector_visible;
@@ -15636,6 +15707,88 @@ mod tests {
             visible_streaming_text("hello\npartial", StreamingTextDisplayMode::Character),
             Some("hello\npartial".to_string())
         );
+    }
+
+    #[test]
+    fn focused_input_dialog_follows_official_priority_and_gates() {
+        use FocusedInputDialog::*;
+        let every_dialog = FocusedInputDialogInput {
+            exit_flow: false,
+            is_message_selector_visible: true,
+            is_prompt_input_active: false,
+            has_sandbox_permission_request: true,
+            allow_dialogs_with_animation: true,
+            has_tool_use_confirm: true,
+            has_worker_sandbox_permission: true,
+            has_elicitation: true,
+            show_remote_callout: true,
+            has_hint_recommendation: true,
+            show_desktop_upsell_startup: true,
+        };
+
+        // CC REPL.tsx:2684-2760 order: peel the winner off one at a time.
+        let mut input = every_dialog;
+        let mut order = Vec::new();
+        while let Some(dialog) = get_focused_input_dialog(&input) {
+            order.push(dialog);
+            match dialog {
+                MessageSelector => input.is_message_selector_visible = false,
+                SandboxPermission => input.has_sandbox_permission_request = false,
+                ToolPermission => input.has_tool_use_confirm = false,
+                WorkerSandboxPermission => input.has_worker_sandbox_permission = false,
+                Elicitation => input.has_elicitation = false,
+                RemoteCallout => input.show_remote_callout = false,
+                PluginHint => input.has_hint_recommendation = false,
+                DesktopUpsell => input.show_desktop_upsell_startup = false,
+            }
+        }
+        assert_eq!(
+            order,
+            vec![
+                MessageSelector,
+                SandboxPermission,
+                ToolPermission,
+                WorkerSandboxPermission,
+                Elicitation,
+                RemoteCallout,
+                PluginHint,
+                DesktopUpsell,
+            ]
+        );
+
+        // Exit states always take precedence, even over the message selector.
+        let exiting = FocusedInputDialogInput { exit_flow: true, ..every_dialog };
+        assert_eq!(get_focused_input_dialog(&exiting), None);
+
+        // Typing suppresses everything below the message selector.
+        let typing = FocusedInputDialogInput {
+            is_message_selector_visible: false,
+            is_prompt_input_active: true,
+            ..every_dialog
+        };
+        assert_eq!(get_focused_input_dialog(&typing), None);
+        let typing_with_selector = FocusedInputDialogInput {
+            is_prompt_input_active: true,
+            ..every_dialog
+        };
+        assert_eq!(get_focused_input_dialog(&typing_with_selector), Some(MessageSelector));
+
+        // toolJSX without shouldContinueAnimation blocks everything after the
+        // sandbox permission, which is not behind that gate.
+        let tool_jsx = FocusedInputDialogInput {
+            is_message_selector_visible: false,
+            allow_dialogs_with_animation: false,
+            ..every_dialog
+        };
+        assert_eq!(get_focused_input_dialog(&tool_jsx), Some(SandboxPermission));
+        let tool_jsx_no_sandbox = FocusedInputDialogInput {
+            has_sandbox_permission_request: false,
+            ..tool_jsx
+        };
+        assert_eq!(get_focused_input_dialog(&tool_jsx_no_sandbox), None);
+
+        assert_eq!(ToolPermission.as_str(), "tool-permission");
+        assert_eq!(WorkerSandboxPermission.as_str(), "worker-sandbox-permission");
     }
 
     fn spinner_input() -> ShowSpinnerInput {
