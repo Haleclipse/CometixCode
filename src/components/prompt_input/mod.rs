@@ -570,6 +570,10 @@ pub struct PromptInputProps<'a> {
     /// Shift+Tab intent callback. REPL owns the actual permission-mode cycle
     /// via `utils::permissions::get_next_permission_mode`.
     pub on_permission_mode_cycle: HandlerMut<'a, ()>,
+    /// Maps to: CC `PromptInputProps.hasSuppressedDialogs` (PromptInput.tsx:301):
+    /// permission prompts are queued but held back while the user types
+    /// (REPL.tsx:2768-2775), so the prompt says it is waiting for them.
+    pub has_suppressed_dialogs: bool,
 }
 
 /// Maps to: CC PromptInput.tsx:1148-1160 `onChange` — cancel pending prompt
@@ -3215,7 +3219,14 @@ pub fn PromptInput<'a>(
         };
     let input_box_height = input_row_height + 2;
     let stash_height = usize::from(stashed_prompt.read().is_some());
-    let prompt_height = queue_height + stash_height + input_box_height + footer_height;
+    // CC PromptInput.tsx:2981-2985: `<Box marginTop={1} marginLeft={2}>` + one
+    // dim line.
+    let suppressed_dialogs_height = if props.has_suppressed_dialogs { 2 } else { 0 };
+    let prompt_height = queue_height
+        + suppressed_dialogs_height
+        + stash_height
+        + input_box_height
+        + footer_height;
     // Fill viewing fields from AppState (not REPL dual props).
     let mut swarm_banner_input = props.swarm_banner_input.clone();
     if effective_viewing_agent_name.is_some() {
@@ -3357,6 +3368,13 @@ pub fn PromptInput<'a>(
                 viewing_agent: effective_viewing_agent_name.is_some(),
                 use_brief_layout: use_brief_layout,
             )
+            // Maps to: CC PromptInput.tsx:2981-2985, between the queued
+            // commands and the stash notice.
+            #(props.has_suppressed_dialogs.then(|| element! {
+                View(margin_top: 1u32, margin_left: 2u32) {
+                    Text(content: "Waiting for permission…", dim: true, wrap: TextWrap::NoWrap)
+                }
+            }))
             PromptInputStashNotice(has_stash: stashed_prompt.read().is_some())
             #(prompt_input_box)
 
@@ -5033,6 +5051,60 @@ mod tests {
             !rendered.contains("/old:prompt (MCP)"),
             "canvas=\n{rendered}"
         );
+    }
+
+    #[derive(Default, Props)]
+    struct PromptSuppressedDialogsHarnessProps {
+        suppressed: bool,
+    }
+
+    #[component]
+    fn PromptSuppressedDialogsHarness(
+        props: &PromptSuppressedDialogsHarnessProps,
+        hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        let _ = hooks;
+        let suppressed = props.suppressed;
+        element! {
+            ContextProvider(value: Context::owned(*theme::current())) {
+                crate::state::app_state::AppStateProvider(
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        View(width: 80u32) {
+                            PromptInput(
+                                on_submit: move |_| {},
+                                on_exit: move |_| {},
+                                has_suppressed_dialogs: suppressed,
+                            )
+                        }
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    // CC PromptInput.tsx:2981-2985: a permission dialog held back while the
+    // user types leaves a dim "Waiting for permission…" above the input box.
+    #[test]
+    fn prompt_input_says_it_is_waiting_while_dialogs_are_suppressed() {
+        let shown = element!(PromptSuppressedDialogsHarness(suppressed: true))
+            .render(Some(80))
+            .to_string();
+        let lines: Vec<&str> = shown.lines().collect();
+        let hint = lines
+            .iter()
+            .position(|line| line.trim() == "Waiting for permission…")
+            .unwrap_or_else(|| panic!("hint missing:\n{shown}"));
+        assert!(lines[hint].starts_with("  Waiting"), "marginLeft 2:\n{shown}");
+        let prompt = lines
+            .iter()
+            .position(|line| line.contains(PROMPT_CHAR))
+            .expect("prompt line");
+        assert!(hint < prompt, "hint sits above the input box:\n{shown}");
+
+        let hidden = element!(PromptSuppressedDialogsHarness(suppressed: false))
+            .render(Some(80))
+            .to_string();
+        assert!(!hidden.contains("Waiting for permission"), "canvas=\n{hidden}");
     }
 
     #[test]

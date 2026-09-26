@@ -60,10 +60,17 @@ pub struct McpConnectionManagerProps<'a> {
 #[derive(Default)]
 pub struct McpConnectionManager;
 
+/// How many times a manager has been mounted in this process — the REPL
+/// tests assert a dialog coming and going does not remount it.
+#[cfg(test)]
+pub(crate) static MOUNTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl Component for McpConnectionManager {
     type Props<'a> = McpConnectionManagerProps<'a>;
 
     fn new(_props: &Self::Props<'_>) -> Self {
+        #[cfg(test)]
+        MOUNTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Self
     }
 

@@ -2038,6 +2038,7 @@ fn messages_memo_key(
         columns,
         rows,
         pending_permission_tool_use_id,
+        false,
         classifier_checking_tool_use_id,
         classifier_checking_is_auto,
         status_notice_context,
@@ -2060,6 +2061,7 @@ fn messages_memo_key_for_screen(
     columns: u16,
     rows: u16,
     pending_permission_tool_use_id: Option<&str>,
+    animation_blocked: bool,
     classifier_checking_tool_use_id: Option<&str>,
     classifier_checking_is_auto: bool,
     status_notice_context: &StatusNoticeContext,
@@ -2085,7 +2087,7 @@ fn messages_memo_key_for_screen(
     // identity, so a rebuilt pool with the same names keeps the memo.
     let tool_pool = crate::components::messages_list::tool_pool_memo_key(tools);
     format!(
-        "messages:{:p}:{}:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{:?}:{:?}:{}:{:?}:{:?}:{:?}:{}:{:?}:{:?}:{}",
+        "messages:{:p}:{}:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{:?}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}:{:?}:{:?}:{}",
         Arc::as_ptr(messages),
         messages.len(),
         conversation_id,
@@ -2097,6 +2099,7 @@ fn messages_memo_key_for_screen(
         columns,
         rows,
         pending_permission_tool_use_id,
+        animation_blocked,
         classifier_checking_tool_use_id,
         classifier_checking_is_auto,
         status_notice_context,
@@ -2161,6 +2164,10 @@ fn AnimatedTerminalTitle(
     element!(View(width: 0u32, height: 0u32))
 }
 
+/// Prompt-screen shorthand for [`memoized_messages_for_screen`], kept for the
+/// test harnesses: the REPL itself mounts its one Messages site through the
+/// screen-aware form in its single tree.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn memoized_messages(
     messages: Arc<Vec<RenderableMessage>>,
@@ -2187,6 +2194,7 @@ fn memoized_messages(
         columns,
         rows,
         pending_permission_tool_use_id,
+        false,
         classifier_approvals,
         status_notice_context,
         streaming_text,
@@ -2211,6 +2219,9 @@ fn memoized_messages_for_screen(
     columns: u16,
     rows: u16,
     pending_permission_tool_use_id: Option<String>,
+    // See `MessagesProps::animation_blocked`: CC `canAnimate`'s
+    // toolUseConfirmQueue / message-selector / toolJSX terms.
+    animation_blocked: bool,
     classifier_approvals: ClassifierApprovalsState,
     status_notice_context: StatusNoticeContext,
     streaming_text: Option<String>,
@@ -2234,6 +2245,7 @@ fn memoized_messages_for_screen(
         columns,
         rows,
         pending_permission_tool_use_id.as_deref(),
+        animation_blocked,
         classifier_approvals.checking_tool_use_id(),
         classifier_approvals.checking_is_auto(),
         &status_notice_context,
@@ -2263,6 +2275,7 @@ fn memoized_messages_for_screen(
                 show_all_in_transcript: show_all_in_transcript,
                 hide_logo: hide_logo,
                 pending_permission_tool_use_id: pending_permission_tool_use_id,
+                animation_blocked: animation_blocked,
                 classifier_checking_tool_use_id: classifier_checking_tool_use_id,
                 classifier_checking_is_auto: classifier_checking_is_auto,
                 status_notice_context: status_notice_context,
@@ -8516,8 +8529,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         tool_jsx_allows_spinner: active_local_command_ui_snapshot.is_none()
             && active_prompt_shell_command_snapshot.is_none(),
         tool_use_confirm_queue_empty: current_permission.is_none(),
-        // Prompt requests that need input share the focused permission/dialog
-        // branches in this port and return before the main-screen spinner.
+        // CC `promptQueue` (hook prompt requests, `components/hooks/PromptDialog`)
+        // is an unported seam: `components/hooks/prompt_dialog.rs` has no
+        // producer or mount yet, so the queue is always empty.
         prompt_queue_empty: true,
         is_loading: query_is_loading,
         user_input_on_processing: user_input_on_processing_active,
@@ -8630,21 +8644,112 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         ),
     );
 
-    // Maps to: CC `getFocusedInputDialog()` head (REPL.tsx:2686-2694): exit
-    // states always take precedence, then the message selector, and interrupt
-    // dialogs are suppressed while the user is actively typing
-    // (`isPromptInputActive`); only then does
-    // `sandboxPermissionRequestQueue[0]` focus, outranking tool-permission.
-    // (CC `isExiting` corresponds to the immediate `should_exit` exit above;
-    // `exitFlow` to `exit_flow_active`.)
-    let current_local_sandbox_ask = if exit_flow_active_snapshot
+    // The queues behind the dialogs below, read before any dialog is chosen so
+    // every render calls the same hooks. These reads used to sit after the
+    // sandbox and tool-permission branches, which returned early, so a render
+    // with either dialog up skipped them.
+    let current_sandbox_permission = crate::state::app_state::use_app_state(&mut hooks, |state| {
+        state.worker_sandbox_permissions.queue.first().cloned()
+    });
+    // Maps to: CC REPL `{pendingWorkerRequest && <WorkerPendingPermission .../>}`.
+    let pending_worker_request = crate::state::app_state::use_app_state(&mut hooks, |state| {
+        state.pending_worker_request.clone()
+    });
+    // Maps to: CC REPL `{pendingSandboxRequest && <WorkerPendingPermission toolName="Network Access" .../>}`.
+    let pending_sandbox_request = crate::state::app_state::use_app_state(&mut hooks, |state| {
+        state.pending_sandbox_request.clone()
+    });
+    // Maps to: CC `const elicitation = useAppState(s => s.elicitation)`
+    // (REPL.tsx:990) — a subscription, so an elicitation arriving re-renders
+    // the REPL. (This was a snapshot read, which showed a new request only
+    // when something else happened to re-render.)
+    let current_elicitation = crate::state::app_state::use_app_state(&mut hooks, |state| {
+        state.elicitation.queue.first().cloned()
+    });
+    let elicitation_queued = current_elicitation.is_some();
+
+    // Maps to: CC `getFocusedInputDialog()` (REPL.tsx:2664-2760) for the
+    // dialogs this REPL holds in its own queues. Exit states always take
+    // precedence, then the message selector, and interrupt dialogs are
+    // suppressed while the user is actively typing (`isPromptInputActive`);
+    // then `sandboxPermissionRequestQueue[0]` focuses, outranking
+    // tool-permission. Tool permission, worker sandbox, elicitation and the
+    // startup callouts also need `allowDialogsWithAnimation` (`!toolJSX ||
+    // toolJSX.shouldContinueAnimation`, :2697). Both of this REPL's toolJSX
+    // stand-ins lack the flag: local-jsx command panels
+    // (processSlashCommand.tsx:836-842) and the `!` bash-mode progress row
+    // (processBashCommand.tsx:58-92 sets toolJSX without it, and its inner
+    // override keeps only `.jsx`, dropping BashTool's). (CC `isExiting`
+    // corresponds to the immediate `should_exit` exit above; `exitFlow` to
+    // `exit_flow_active`.) The transcript screen shows none of them: CC's
+    // transcript return (:5850-5989) has no dialog slot. At most one is
+    // focused; each renders at its CC slot in the single tree below, inside
+    // MCPConnectionManager.
+    let focus_suppressed = screen.get() != Screen::Prompt
+        || exit_flow_active_snapshot
         || message_selector_visible_snapshot
-        || is_prompt_input_active.get()
-    {
+        || is_prompt_input_active.get();
+    let allow_dialogs_with_animation = active_local_command_ui_snapshot.is_none()
+        && active_prompt_shell_command_snapshot.is_none();
+    let current_local_sandbox_ask = if focus_suppressed {
         None
     } else {
         sandbox_permission_request_queue.read().first().cloned()
     };
+    let focused_tool_permission =
+        if focus_suppressed || current_local_sandbox_ask.is_some() || !allow_dialogs_with_animation {
+            None
+        } else {
+            current_permission.clone()
+        };
+    let focused_worker_sandbox_permission = if focus_suppressed
+        || current_local_sandbox_ask.is_some()
+        || focused_tool_permission.is_some()
+        || !allow_dialogs_with_animation
+    {
+        None
+    } else {
+        current_sandbox_permission.clone()
+    };
+    let focused_elicitation = if focus_suppressed
+        || current_local_sandbox_ask.is_some()
+        || focused_tool_permission.is_some()
+        || focused_worker_sandbox_permission.is_some()
+        || !allow_dialogs_with_animation
+    {
+        None
+    } else {
+        current_elicitation
+    };
+    // Maps to: CC `AssistantToolUseMessage.tsx:58-59,122`
+    // `isWaitingForPermission = pendingWorkerRequest?.toolUseId === param.id`:
+    // the "Waiting for permission…" tool row belongs to a swarm worker waiting
+    // on its leader, read from AppState on either screen. A local permission
+    // dialog does not change the row; it only stops rows animating (below).
+    let pending_permission_tool_use_id_for_messages =
+        pending_worker_request.as_ref().map(|pending| pending.tool_use_id.clone());
+    // Maps to: CC `Messages.tsx:764-767` `canAnimate`, from the props REPL
+    // hands the prompt-screen Messages (REPL.tsx:6160-6190):
+    // `toolUseConfirmQueue`, `isMessageSelectorVisible`, `toolJSX`. The
+    // transcript site passes `[]`, `false` and `null` (:5819-5843).
+    let messages_animation_blocked = screen.get() == Screen::Prompt
+        && (current_permission.is_some()
+            || message_selector_visible_snapshot
+            || !allow_dialogs_with_animation);
+    // Maps to: CC REPL.tsx:2768-2775 `hasSuppressedDialogs` — permission
+    // prompts exist but are held back because the user is typing; PromptInput
+    // says so (PromptInput.tsx:2981-2985). CC's `promptQueue` and cost dialog
+    // have no counterpart here.
+    let has_suppressed_dialogs = is_prompt_input_active.get()
+        && (!sandbox_permission_request_queue.read().is_empty()
+            || current_permission.is_some()
+            || current_sandbox_permission.is_some()
+            || elicitation_queued);
+
+    let mut sandbox_permission_dialog: Option<AnyElement<'static>> = None;
+    let mut tool_permission_overlay: Option<AnyElement<'static>> = None;
+    let mut worker_sandbox_permission_dialog: Option<AnyElement<'static>> = None;
+    let mut elicitation_dialog: Option<AnyElement<'static>> = None;
     if let Some(current_ask) = current_local_sandbox_ask {
         let permission_store_for_local_sandbox = permission_store.clone();
         let mut sandbox_queue_for_response = sandbox_permission_request_queue;
@@ -8703,30 +8808,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             );
             sandbox_queue_for_response.set(queue);
         };
-        return element! {
-            View(flex_direction: FlexDirection::Column, width: main_screen_width) {
-                ClearTerminalOnResize(cols: terminal_cols, rows: terminal_rows)
-                ClearScreenOnGeneration(generation: redraw_generation.get())
-                #(if !messages.is_empty() {
-                    Some(memoized_messages(
-                        messages.clone(),
-                        conversation_generation,
-                        false,
-                        verbose,
-                        false,
-                        terminal_cols,
-                        terminal_rows,
-                        None,
-                        classifier_approvals.read().clone(),
-                        status_notice_context.clone(),
-                        None,
-                        Arc::clone(&in_progress_tool_use_ids_value),
-                        Arc::clone(&streaming_tool_use_ids_value),
-                        Arc::clone(&tools),
-                    ))
-                } else {
-                    None
-                })
+        sandbox_permission_dialog = Some(
+            element! {
                 SandboxPermissionRequest(
                     // Maps to: CC REPL.tsx:6290
                     // `key={sandboxPermissionRequestQueue[0]!.hostPattern.host}`
@@ -8736,45 +8819,21 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     on_user_response: on_local_sandbox_response,
                 )
             }
-        }
-        .into_any();
+            .into_any(),
+        );
     }
 
-    if let Some(confirm) = current_permission.clone() {
+    if let Some(confirm) = focused_tool_permission {
         let worker_badge = confirm.worker_badge.map(permission_worker_badge_to_ui);
         let request = confirm.request;
         let permission_context_snapshot = permission_store.tool_permission_context();
-        let pending_permission_tool_use_id = request.tool_use_id.clone();
         // Maps to: CC `screens/REPL.tsx:6034-6035` permission overlay remount key.
         let permission_request_key = request.tool_use_id.clone();
-        // Main-screen/native-scrollback path only. Keep the official
-        // sequential order explicitly in REPL: {scrollable}{overlay}.
-        // PromptInput is hidden while the permission dialog is focused,
-        // matching CC's focusedInputDialog behavior.
-        return element! {
-            View(flex_direction: FlexDirection::Column, width: main_screen_width) {
-                ClearTerminalOnResize(cols: terminal_cols, rows: terminal_rows)
-                ClearScreenOnGeneration(generation: redraw_generation.get())
-                #(if !messages.is_empty() {
-                    Some(memoized_messages(
-                        messages.clone(),
-                        conversation_generation,
-                        false,
-                        verbose,
-                        false,
-                        terminal_cols,
-                        terminal_rows,
-                        Some(pending_permission_tool_use_id.clone()),
-                        classifier_approvals.read().clone(),
-                        status_notice_context.clone(),
-                        None,
-                        Arc::clone(&in_progress_tool_use_ids_value),
-                        Arc::clone(&streaming_tool_use_ids_value),
-                        Arc::clone(&tools),
-                    ))
-                } else {
-                    None
-                })
+        // Maps to: CC `toolPermissionOverlay` (REPL.tsx:6032-6051), handed to
+        // FullscreenLayout as `overlay`; outside fullscreen that renders after
+        // `bottom` (FullscreenLayout.tsx:`{scrollable}{bottom}{overlay}`).
+        tool_permission_overlay = Some(
+            element! {
                 PermissionRequest(
                     key: permission_request_key,
                     request: Some(request),
@@ -8789,132 +8848,61 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     on_cancel: on_permission_cancel,
                 )
             }
-        }
-        .into_any();
+            .into_any(),
+        );
     }
 
-    let current_sandbox_permission = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.worker_sandbox_permissions.queue.first().cloned()
-    });
-    if let Some(sandbox_request) = current_sandbox_permission {
-        let pending_permission_tool_use_id = format!("sandbox:{}", sandbox_request.request_id);
-        return element! {
-                View(flex_direction: FlexDirection::Column, width: main_screen_width) {
-                    ClearTerminalOnResize(cols: terminal_cols, rows: terminal_rows)
-                    ClearScreenOnGeneration(generation: redraw_generation.get())
-                    #(if !messages.is_empty() {
-                        Some(memoized_messages(
-                            messages.clone(),
-                            conversation_generation,
-                            false,
-                            verbose,
-                            false,
-                            terminal_cols,
-                            terminal_rows,
-                            Some(pending_permission_tool_use_id.clone()),
-                            classifier_approvals.read().clone(),
-                            status_notice_context.clone(),
-                            None,
-                            Arc::clone(&in_progress_tool_use_ids_value),
-                            Arc::clone(&streaming_tool_use_ids_value),
-                            Arc::clone(&tools),
-                        ))
-                    } else {
-                        None
-                    })
-                    SandboxPermissionRequest(
-                        host_pattern: Some(crate::utils::sandbox::sandbox_adapter::NetworkHostPattern::new(sandbox_request.host)),
-                        on_user_response: on_sandbox_permission_response,
-                    )
-                }
+    // Maps to: CC `focusedInputDialog === 'worker-sandbox-permission'`
+    // (REPL.tsx:6396-6459).
+    if let Some(sandbox_request) = focused_worker_sandbox_permission {
+        worker_sandbox_permission_dialog = Some(
+            element! {
+                SandboxPermissionRequest(
+                    // Maps to: CC REPL.tsx:6398 `key={…queue[0]!.requestId}` —
+                    // a new request gets a fresh dialog, not the last one's
+                    // selection.
+                    key: sandbox_request.request_id.clone(),
+                    host_pattern: Some(crate::utils::sandbox::sandbox_adapter::NetworkHostPattern::new(sandbox_request.host)),
+                    on_user_response: on_sandbox_permission_response,
+                )
             }
-        .into_any();
+            .into_any(),
+        );
     }
 
-    // Maps to: CC REPL `{pendingWorkerRequest && <WorkerPendingPermission .../>}`.
-    let pending_worker_request = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.pending_worker_request.clone()
-    });
-    if let Some(pending) = pending_worker_request {
-        let pending_permission_tool_use_id = pending.tool_use_id.clone();
-        return element! {
-            View(flex_direction: FlexDirection::Column, width: main_screen_width) {
-                ClearTerminalOnResize(cols: terminal_cols, rows: terminal_rows)
-                ClearScreenOnGeneration(generation: redraw_generation.get())
-                #(if !messages.is_empty() {
-                    Some(memoized_messages(
-                        messages.clone(),
-                        conversation_generation,
-                        false,
-                        verbose,
-                        false,
-                        terminal_cols,
-                        terminal_rows,
-                        Some(pending_permission_tool_use_id.clone()),
-                        classifier_approvals.read().clone(),
-                        status_notice_context.clone(),
-                        None,
-                        Arc::clone(&in_progress_tool_use_ids_value),
-                        Arc::clone(&streaming_tool_use_ids_value),
-                        Arc::clone(&tools),
-                    ))
-                } else {
-                    None
-                })
+    // Maps to: CC REPL.tsx:6382-6394 — the worker-side pending indicators are
+    // not focused dialogs: they render whenever their request is pending,
+    // alongside PromptInput. Main screen only, like every dialog slot.
+    let worker_pending_permission = pending_worker_request
+        .as_ref()
+        .filter(|_| screen.get() == Screen::Prompt)
+        .map(|pending| {
+            element! {
                 WorkerPendingPermission(
                     tool_name: pending.tool_name.clone(),
                     description: pending.description.clone(),
                 )
             }
-        }
-        .into_any();
-    }
-
-    // Maps to: CC REPL `{pendingSandboxRequest && <WorkerPendingPermission toolName="Network Access" .../>}`.
-    let pending_sandbox_request = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.pending_sandbox_request.clone()
-    });
-    if let Some(pending) = pending_sandbox_request {
-        let pending_permission_tool_use_id = format!("sandbox:{}", pending.request_id);
-        let description = format!(
-            "Waiting for leader to approve network access to {}",
-            pending.host
-        );
-        return element! {
-            View(flex_direction: FlexDirection::Column, width: main_screen_width) {
-                ClearTerminalOnResize(cols: terminal_cols, rows: terminal_rows)
-                ClearScreenOnGeneration(generation: redraw_generation.get())
-                #(if !messages.is_empty() {
-                    Some(memoized_messages(
-                        messages.clone(),
-                        conversation_generation,
-                        false,
-                        verbose,
-                        false,
-                        terminal_cols,
-                        terminal_rows,
-                        Some(pending_permission_tool_use_id.clone()),
-                        classifier_approvals.read().clone(),
-                        status_notice_context.clone(),
-                        None,
-                        Arc::clone(&in_progress_tool_use_ids_value),
-                        Arc::clone(&streaming_tool_use_ids_value),
-                        Arc::clone(&tools),
-                    ))
-                } else {
-                    None
-                })
+            .into_any()
+        });
+    let worker_sandbox_pending_permission = pending_sandbox_request
+        .as_ref()
+        .filter(|_| screen.get() == Screen::Prompt)
+        .map(|pending| {
+            element! {
                 WorkerPendingPermission(
                     tool_name: "Network Access".to_string(),
-                    description: description,
+                    description: format!(
+                        "Waiting for leader to approve network access to {}",
+                        pending.host
+                    ),
                 )
             }
-        }
-        .into_any();
-    }
+            .into_any()
+        });
 
-    let current_elicitation = app_store.get().elicitation.queue.first().cloned();
-    if let Some(elicitation_event) = current_elicitation {
+    // Maps to: CC `focusedInputDialog === 'elicitation'` (REPL.tsx:6460-6498).
+    if let Some(elicitation_event) = focused_elicitation {
         let response_server_name = elicitation_event.server_name.clone();
         let response_request_id = elicitation_event.request_id.clone();
         let waiting_server_name = elicitation_event.server_name.clone();
@@ -8981,46 +8969,45 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 app.elicitation = std::sync::Arc::new(state);
             });
         };
-        return element! {
-            View(flex_direction: FlexDirection::Column, width: main_screen_width) {
-                ClearTerminalOnResize(cols: terminal_cols, rows: terminal_rows)
-                ClearScreenOnGeneration(generation: redraw_generation.get())
-                #(if !messages.is_empty() {
-                    Some(memoized_messages(
-                        messages.clone(),
-                        conversation_generation,
-                        false,
-                        verbose,
-                        false,
-                        terminal_cols,
-                        terminal_rows,
-                        None,
-                        classifier_approvals.read().clone(),
-                        status_notice_context.clone(),
-                        None,
-                        Arc::clone(&in_progress_tool_use_ids_value),
-                        Arc::clone(&streaming_tool_use_ids_value),
-                        Arc::clone(&tools),
-                    ))
-                } else {
-                    None
-                })
+        // Maps to: CC REPL.tsx:6461-6465 `key={serverName + ':' + requestId}`.
+        let elicitation_key = format!(
+            "{}:{}",
+            elicitation_event.server_name, elicitation_event.request_id
+        );
+        elicitation_dialog = Some(
+            element! {
                 ElicitationDialog(
+                    key: elicitation_key,
                     event: Some(elicitation_event),
                     on_response: on_elicitation_response,
                     on_waiting_dismiss: on_elicitation_waiting_dismiss,
                 )
             }
-        }
-        .into_any();
+            .into_any(),
+        );
     }
+    // CC `focusedInputDialog` set: PromptInput (REPL.tsx:6733 `!focusedInputDialog`)
+    // and the lower-priority startup callouts yield to it.
+    let focused_input_dialog_active = sandbox_permission_dialog.is_some()
+        || tool_permission_overlay.is_some()
+        || worker_sandbox_permission_dialog.is_some()
+        || elicitation_dialog.is_some();
+    // The startup callouts are `focusedInputDialog` values ranked below every
+    // permission dialog and behind the same gates (REPL.tsx:2686-2760): the
+    // exit flow, the message selector, typing, and `allowDialogsWithAnimation`.
+    // A callout that does not have focus is not shown and does not hide
+    // PromptInput; one that has focus does (:6733 `!focusedInputDialog`).
+    let rendered_startup_dialog = active_startup_dialog.filter(|_| {
+        !focus_suppressed && allow_dialogs_with_animation && !focused_input_dialog_active
+    });
 
     let active_is_resume = active_local_command_ui_snapshot
         .as_ref()
         .is_some_and(ActiveLocalCommandUi::is_resume);
     let should_render_prompt_input = screen.get() == Screen::Prompt
         && !exit_flow_active_snapshot
-        && active_startup_dialog.is_none()
+        && rendered_startup_dialog.is_none()
+        && !focused_input_dialog_active
         // CC: PromptInput unmounts while the message selector is active.
         && !message_selector_visible_snapshot
         && active_local_command_ui_snapshot
@@ -9242,7 +9229,32 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         None
     };
 
+    // This is the REPL's only return: every screen state, every dialog and
+    // every panel is a child of the one tree below, so a dialog appearing is a
+    // child being added, never the tree being swapped for another. CC has one
+    // more top-level tree, the transcript return (REPL.tsx:5805-5989), which
+    // mounts no MCPConnectionManager; here the transcript screen lives in the
+    // same tree, so toggling it keeps the manager mounted as well.
     element! {
+        Fragment {
+            // CC mounts AnimatedTerminalTitle before, not inside,
+            // MCPConnectionManager (REPL.tsx:6084 vs :6134), in both the
+            // transcript and main returns; this single tree parents both
+            // screens, so one mount is the same coverage. isAnimating mirrors
+            // :1578-1589: loading, not waiting for approval (confirm queue,
+            // worker, sandbox), and no local-JSX command showing. noPrefix
+            // maps to showStatusInTerminalTab — the tab-status feature is an
+            // unported seam, so it stays false.
+            AnimatedTerminalTitle(
+                is_animating: is_loading
+                    && current_permission.is_none()
+                    && spinner_app_snapshot.pending_worker_request.is_none()
+                    && spinner_app_snapshot.pending_sandbox_request.is_none()
+                    && active_local_command_ui_snapshot.is_none(),
+                title: terminal_tab_title.clone(),
+                disabled: terminal_title_disabled,
+                no_prefix: false,
+            )
         // Maps to: CC `REPL.tsx:6134-6138` — `<MCPConnectionManager
         // dynamicMcpConfig isStrictMcpConfig>` WRAPS the rest of the tree. It
         // owns the connection effect and publishes the context that
@@ -9253,25 +9265,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             mcp_startup: props.mcp_startup.clone(),
         ) {
             View(flex_direction: FlexDirection::Column, width: main_screen_width) {
-                // CC mounts AnimatedTerminalTitle in both the transcript and
-                // main returns (:5852, :6084) because they are separate JSX
-                // trees; this single tree parents both screens, so one mount
-                // is the same coverage. isAnimating mirrors :1578-1589:
-                // loading, not waiting for approval (confirm queue, worker,
-                // sandbox; the prompt queue shares the focused dialog branch
-                // here), and no local-JSX command showing. noPrefix maps to
-                // showStatusInTerminalTab — the tab-status feature is an
-                // unported seam, so it stays false.
-                AnimatedTerminalTitle(
-                    is_animating: is_loading
-                        && current_permission.is_none()
-                        && spinner_app_snapshot.pending_worker_request.is_none()
-                        && spinner_app_snapshot.pending_sandbox_request.is_none()
-                        && active_local_command_ui_snapshot.is_none(),
-                    title: terminal_tab_title.clone(),
-                    disabled: terminal_title_disabled,
-                    no_prefix: false,
-                )
                 ClearTerminalOnResize(cols: terminal_cols, rows: terminal_rows)
                 ClearScreenOnGeneration(generation: redraw_generation.get())
 
@@ -9289,6 +9282,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     terminal_cols,
                     terminal_rows,
                     None,
+                    messages_animation_blocked,
                     classifier_approvals.read().clone(),
                     status_notice_context.clone(),
                     None,
@@ -9313,7 +9307,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     active_is_resume,
                     terminal_cols,
                     terminal_rows,
-                    None,
+                    pending_permission_tool_use_id_for_messages.clone(),
+                    messages_animation_blocked,
                     classifier_approvals.read().clone(),
                     status_notice_context.clone(),
                     streaming_text_for_messages.clone(),
@@ -9838,7 +9833,17 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 }
             }))
 
-            #(match active_startup_dialog {
+            // Maps to: CC FullscreenLayout `bottom` (REPL.tsx:6288-6498), in
+            // source order: the focused sandbox-permission dialog, the
+            // worker-side pending indicators, the focused worker-sandbox
+            // dialog, the focused elicitation dialog.
+            #(sandbox_permission_dialog)
+            #(worker_pending_permission)
+            #(worker_sandbox_pending_permission)
+            #(worker_sandbox_permission_dialog)
+            #(elicitation_dialog)
+
+            #(match rendered_startup_dialog {
                 Some(ReplStartupDialogKind::RemoteCallout) => Some(element! {
                     RemoteCallout(on_done: on_remote_callout_done)
                 }.into_any()),
@@ -10021,6 +10026,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         permission_mode: permission_store.tool_permission_context().mode,
                         swarm_banner_input: swarm_banner_input.clone(),
                         on_permission_mode_cycle: on_permission_mode_cycle,
+                        has_suppressed_dialogs: has_suppressed_dialogs,
                     )
                     // CC REPL.tsx:6865: same visibility/lifetime as PromptInput,
                     // after it in sibling order; never a global Task context.
@@ -10032,7 +10038,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             } else {
                 None
             })
+
+            // Maps to: CC FullscreenLayout `overlay={toolPermissionOverlay}`
+            // (REPL.tsx:6140); outside fullscreen it renders after `bottom`
+            // (FullscreenLayout.tsx `{scrollable}{bottom}{overlay}{modal}`).
+            #(tool_permission_overlay)
             }
+        }
         }
     }
     .into_any()
@@ -13731,6 +13743,89 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(text.contains("Authorize docs"), "canvas=\n{text}");
+    }
+
+    // A dialog arriving and leaving must be a child added to and removed from
+    // the REPL's one tree, as in CC (REPL.tsx:6134 wraps every dialog slot in
+    // MCPConnectionManager). The REPL used to return a separate tree for each
+    // dialog, which unmounted the manager — aborting its connection work — and
+    // remounted the whole transcript on the way in and again on the way out.
+    #[component]
+    fn ReplDialogRemountHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let current_theme = *theme::current();
+        let store = hooks.use_state(|| {
+            crate::state::store::AppStore::new(
+                crate::state::app_state_store::AppState::default(),
+                None,
+            )
+        });
+        let phase = hooks.use_state(|| 0u8);
+        let store_for_future = store.read().clone();
+        let mut phase_for_future = phase;
+        hooks.use_future(async move {
+            futures_timer::Delay::new(Duration::from_millis(300)).await;
+            store_for_future.replace_with(|app| {
+                app.elicitation =
+                    std::sync::Arc::new(crate::state::app_state_store::ElicitationState {
+                        queue: vec![
+                            crate::services::mcp::elicitation_handler::ElicitationRequestEvent::new(
+                                "docs",
+                                "request-1",
+                                crate::services::mcp::elicitation_handler::ElicitationRequestParams::Url {
+                                    message: "Authorize docs".to_string(),
+                                    url: "https://example.com/auth".to_string(),
+                                    elicitation_id: Some("elicit-1".to_string()),
+                                },
+                            ),
+                        ],
+                    });
+            });
+            phase_for_future.set(1);
+            futures_timer::Delay::new(Duration::from_millis(300)).await;
+            store_for_future.replace_with(|app| {
+                app.elicitation =
+                    std::sync::Arc::new(crate::state::app_state_store::ElicitationState {
+                        queue: Vec::new(),
+                    });
+            });
+            phase_for_future.set(2);
+            futures_timer::Delay::new(Duration::from_millis(300)).await;
+            phase_for_future.set(3);
+        });
+        if phase.get() == 3 {
+            system.exit();
+        }
+        element! {
+            ContextProvider(value: Context::owned(current_theme)) {
+                IsolatedAuthRepl(app_store: Some(store.read().clone()))
+            }
+        }
+    }
+
+    #[test]
+    fn repl_dialog_coming_and_going_does_not_remount_the_mcp_connection_manager() {
+        crate::utils::process_runtime::initialize_test_process_runtime();
+        let canvases = futures::executor::block_on(
+            element!(ReplDialogRemountHarness)
+                .mock_terminal_render_loop(MockTerminalConfig::default().with_size(120, 30))
+                .collect::<Vec<_>>(),
+        );
+        let texts: Vec<String> = canvases.iter().map(|canvas| canvas.to_string()).collect();
+        assert!(
+            texts.iter().any(|text| text.contains("Authorize docs")),
+            "the elicitation dialog never rendered"
+        );
+        assert!(
+            !texts.last().expect("frames").contains("Authorize docs"),
+            "the dialog should be gone once its queue is empty"
+        );
+        assert_eq!(
+            crate::services::mcp::mcp_connection_manager::MOUNTS
+                .load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "MCPConnectionManager must stay mounted while a dialog comes and goes"
+        );
     }
 
     #[derive(Default, Props)]

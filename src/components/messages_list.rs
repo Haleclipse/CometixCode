@@ -1105,7 +1105,15 @@ struct MessagesImplProps {
     pub status_notice_context: StatusNoticeContext,
     /// Pending permission request tool-use id, used to render the official
     /// "Waiting for permission…" auxiliary row next to the matching tool use.
+    /// CC derives that row from `pendingWorkerRequest.toolUseId` only
+    /// (`AssistantToolUseMessage.tsx:58-59,122`).
     pub pending_permission_tool_use_id: Option<String>,
+    /// The terms of CC `canAnimate` (`Messages.tsx:764-767`) other than
+    /// loading: a tool-permission request is queued, the message selector is
+    /// showing, or a toolJSX without `shouldContinueAnimation` is up. Rows
+    /// then stop animating, which is what keeps a transcript still under a
+    /// permission dialog.
+    pub animation_blocked: bool,
     /// Transient assistant text preview. Maps to CC `Messages.streamingText`:
     /// it is rendered after formal rows and never participates in message
     /// normalization/grouping/lookups.
@@ -1156,6 +1164,7 @@ struct MessageRowsMemoKey {
     expand_collapsed_read_search: bool,
     columns: u16,
     pending_permission_tool_use_id: Option<String>,
+    animation_blocked: bool,
     classifier_checking_tool_use_id: Option<String>,
     classifier_checking_is_auto: bool,
     /// CC has no `MessageRows` component — this memo boundary is a port L1
@@ -1204,6 +1213,8 @@ fn message_rows_memo_key(
         expand_collapsed_read_search,
         columns,
         pending_permission_tool_use_id: pending_permission_tool_use_id.map(str::to_string),
+        // Set by the caller, like `render_range`.
+        animation_blocked: false,
         classifier_checking_tool_use_id: classifier_checking_tool_use_id.map(str::to_string),
         classifier_checking_is_auto,
     }
@@ -1224,6 +1235,8 @@ struct MessageRowsProps {
     pub expand_collapsed_read_search: bool,
     pub columns: u16,
     pub pending_permission_tool_use_id: Option<String>,
+    /// See [`MessagesImplProps::animation_blocked`].
+    pub animation_blocked: bool,
     pub classifier_checking_tool_use_id: Option<String>,
     pub classifier_checking_is_auto: bool,
     /// Maps to: CC `Messages.tsx:260` `inProgressToolUseIDs: Set<string>`.
@@ -1275,6 +1288,7 @@ impl Component for MessageRows {
         );
 
         next_key.render_range = props.render_range;
+        next_key.animation_blocked = props.animation_blocked;
 
         // Match CC's Messages-level memo boundary for the native scrollback
         // path: ordinary PromptInput state changes do not change transcript
@@ -1331,6 +1345,8 @@ impl Component for MessageRows {
         let expand_thinking = props.expand_thinking;
         let expand_collapsed_read_search = props.expand_collapsed_read_search;
         let is_loading = props.is_loading;
+        // CC `canAnimate` (Messages.tsx:764-767) with this port's loading term.
+        let can_animate = is_loading && !props.animation_blocked;
         let pending_permission_tool_use_id = props.pending_permission_tool_use_id.clone();
         let in_progress_tool_use_ids = Arc::clone(&props.in_progress_tool_use_ids);
         let streaming_tool_use_ids = Arc::clone(&props.streaming_tool_use_ids);
@@ -1387,7 +1403,7 @@ impl Component for MessageRows {
                             add_margin: add_margin,
                             is_user_continuation: is_user_continuation,
                             has_content_after: has_content_after,
-                            can_animate: is_loading,
+                            can_animate: can_animate,
                             is_loading: is_loading,
                             lookups: Some(Arc::clone(&lookups)),
                             verbose: verbose,
@@ -1459,6 +1475,7 @@ struct MessagesMemoKey {
     status_notice_context: StatusNoticeContext,
     columns: u16,
     pending_permission_tool_use_id: Option<String>,
+    animation_blocked: bool,
     classifier_checking_tool_use_id: Option<String>,
     classifier_checking_is_auto: bool,
     streaming_text: Option<String>,
@@ -1607,6 +1624,7 @@ impl Component for MessagesImpl {
             status_notice_context: props.status_notice_context.clone(),
             columns: terminal_cols,
             pending_permission_tool_use_id: props.pending_permission_tool_use_id.clone(),
+            animation_blocked: props.animation_blocked,
             classifier_checking_tool_use_id: props.classifier_checking_tool_use_id.clone(),
             classifier_checking_is_auto: props.classifier_checking_is_auto,
             streaming_text: props.streaming_text.clone(),
@@ -1712,24 +1730,22 @@ impl Component for MessagesImpl {
         // `components/Messages.tsx`, the preview is rendered as a sibling after
         // `messageRows`, so text deltas do not re-run message normalization,
         // grouping, or row construction.
-        let rows_memo_key = format!(
-            "{:?}:{:?}",
-            props.render_range,
-            message_rows_memo_key(
-                &prepared,
-                props.conversation_id,
-                props.is_loading,
-                props.verbose,
-                props.is_transcript_mode,
-                expand_thinking,
-                expand_collapsed_read_search,
-                terminal_cols,
-                props.pending_permission_tool_use_id.as_deref(),
-                props.classifier_checking_tool_use_id.as_deref(),
-                props.classifier_checking_is_auto,
-                &props.tools,
-            )
+        let mut rows_key = message_rows_memo_key(
+            &prepared,
+            props.conversation_id,
+            props.is_loading,
+            props.verbose,
+            props.is_transcript_mode,
+            expand_thinking,
+            expand_collapsed_read_search,
+            terminal_cols,
+            props.pending_permission_tool_use_id.as_deref(),
+            props.classifier_checking_tool_use_id.as_deref(),
+            props.classifier_checking_is_auto,
+            &props.tools,
         );
+        rows_key.animation_blocked = props.animation_blocked;
+        let rows_memo_key = format!("{:?}:{:?}", props.render_range, rows_key);
         children.push(
             element! {
                 Memo(key: "message-rows".to_string(), memo_key: rows_memo_key, compare: memo_key_eq as MemoComparator) {
@@ -1745,6 +1761,7 @@ impl Component for MessagesImpl {
                             expand_collapsed_read_search: expand_collapsed_read_search,
                             columns: terminal_cols,
                             pending_permission_tool_use_id: props.pending_permission_tool_use_id.clone(),
+                            animation_blocked: props.animation_blocked,
                             classifier_checking_tool_use_id: props.classifier_checking_tool_use_id.clone(),
                             classifier_checking_is_auto: props.classifier_checking_is_auto,
                             in_progress_tool_use_ids: Arc::clone(&props.in_progress_tool_use_ids),
@@ -1817,6 +1834,11 @@ pub struct MessagesProps {
     pub is_loading: bool,
     pub status_notice_context: StatusNoticeContext,
     pub pending_permission_tool_use_id: Option<String>,
+    /// See [`MessagesImplProps::animation_blocked`]. The REPL derives it from
+    /// the props CC hands `Messages`: `toolUseConfirmQueue`,
+    /// `isMessageSelectorVisible` and `toolJSX` (REPL.tsx:6160-6190); the
+    /// transcript site passes none of them (`[]`/`false`/`null`, :5819-5843).
+    pub animation_blocked: bool,
     pub streaming_text: Option<String>,
     pub classifier_checking_tool_use_id: Option<String>,
     pub classifier_checking_is_auto: bool,
@@ -1852,6 +1874,7 @@ pub fn Messages(props: &MessagesProps) -> impl Into<AnyElement<'static>> {
             show_logo: !props.hide_logo,
             status_notice_context: props.status_notice_context.clone(),
             pending_permission_tool_use_id: props.pending_permission_tool_use_id.clone(),
+            animation_blocked: props.animation_blocked,
             streaming_text: props.streaming_text.clone(),
             classifier_checking_tool_use_id: props.classifier_checking_tool_use_id.clone(),
             classifier_checking_is_auto: props.classifier_checking_is_auto,
@@ -2967,6 +2990,17 @@ mod tests {
                 true,
                 &pool
             )
+        );
+        // CC Messages.tsx:764-767: `canAnimate` flipping (a permission dialog
+        // queued, the selector opening) must reach the rows.
+        let mut blocked =
+            message_rows_memo_key(&prepared, 0, true, false, false, true, true, 120, None, None, false, &pool);
+        blocked.animation_blocked = true;
+        assert_ne!(
+            message_rows_memo_key(
+                &prepared, 0, true, false, false, true, true, 120, None, None, false, &pool
+            ),
+            blocked
         );
         // CC Messages.tsx:792-795: a conversationId bump alone must change the
         // row keys (compact-reset remount, REPL.tsx:3461-3463).
