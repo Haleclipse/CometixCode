@@ -317,8 +317,12 @@ pub fn CollapsedReadSearchContent(
                 Some(element! {
                     View(flex_direction: FlexDirection::Row) {
                         #(if message.active {
+                            // CC `CollapsedReadSearchContent.tsx:575`: the
+                            // summary loader is `shouldAnimate` literally —
+                            // the prop only reaches the expanded entries
+                            // (:97, :251).
                             Some(element! {
-                                ToolUseLoader(should_animate: props.can_animate, is_unresolved: true, is_error: message.errored)
+                                ToolUseLoader(should_animate: true, is_unresolved: true, is_error: message.errored)
                             }.into_any())
                         } else {
                             Some(element! { View(min_width: 2u32, flex_shrink: 0.0f32) {} }.into_any())

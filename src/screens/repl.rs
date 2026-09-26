@@ -753,6 +753,7 @@ fn apply_repl_query_turn_context(
     >,
     interactive_permission_sink: &crate::tool::InteractivePermissionSink,
     has_interruptible_tool_in_progress: &Arc<std::sync::atomic::AtomicBool>,
+    set_in_progress_tool_use_ids: &crate::tool::SetInProgressToolUseIds,
     thinking_config: &crate::utils::thinking::ThinkingConfig,
     shell_context_seed: Option<std::collections::HashSet<String>>,
 ) -> Option<crate::utils::tool_result_storage::ContentReplacementState> {
@@ -868,6 +869,9 @@ fn apply_repl_query_turn_context(
         &mut params.tool_use_context,
         has_interruptible_tool_in_progress,
     );
+    // Maps to CC `REPL.tsx:3296` handing `setInProgressToolUseIDs` to the
+    // turn's `ToolUseContext`.
+    params.tool_use_context.set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
 
     query_content_replacement_state
 }
@@ -3717,11 +3721,52 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // `const [inProgressToolUseIDs, setInProgressToolUseIDs] = useState<Set<string>>(new Set())`.
     //
     // The REPL owns this set; tool execution writes it through the setter
-    // `ToolUseContext` carries (`Tool.ts:227`). Cometix runs tool execution on
-    // the query actor, so the writes arrive as `QueryEvent::SetInProgressToolUse`
-    // deltas instead of in-process `setState` calls.
+    // `ToolUseContext` carries (`Tool.ts:227`).
     let mut in_progress_tool_use_ids =
         hooks.use_state(|| Arc::new(std::collections::HashSet::<String>::new()));
+    // That setter, handed to every turn's context by
+    // `apply_repl_query_turn_context`. Like CC's `setState` it writes this
+    // REPL's set whichever query calls it, including a replaced query whose
+    // tools finish after the next one started. Tool execution runs on the
+    // query actor, so the writes cross over a REPL-owned channel rather than
+    // the calling query's event stream, which stops being read once that
+    // query is replaced.
+    let in_progress_updates = hooks.use_const(|| {
+        let (sender, receiver) = futures::channel::mpsc::unbounded::<(String, bool)>();
+        (sender, Arc::new(std::sync::Mutex::new(Some(receiver))))
+    });
+    let set_in_progress_tool_use_ids = {
+        let sender = in_progress_updates.0.clone();
+        crate::tool::SetInProgressToolUseIds(Some(Arc::new(
+            move |tool_use_id: &str, in_progress: bool| {
+                let _ = sender.unbounded_send((tool_use_id.to_string(), in_progress));
+            },
+        )))
+    };
+    hooks.use_future({
+        let receiver = in_progress_updates
+            .1
+            .lock()
+            .expect("in-progress receiver lock")
+            .take();
+        async move {
+            use futures::StreamExt as _;
+            let Some(mut receiver) = receiver else {
+                return;
+            };
+            while let Some((tool_use_id, in_progress)) = receiver.next().await {
+                let mut ids = in_progress_tool_use_ids.read().as_ref().clone();
+                let changed = if in_progress {
+                    ids.insert(tool_use_id)
+                } else {
+                    ids.remove(&tool_use_id)
+                };
+                if changed {
+                    in_progress_tool_use_ids.set(Arc::new(ids));
+                }
+            }
+        }
+    });
     // Maps to CC `REPL.tsx:1900` `hasInterruptibleToolInProgressRef`. This
     // ref is read by `handlePromptSubmit` before it decides whether a new
     // prompt may abort the current query.
@@ -4235,6 +4280,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     let speculation_acceptance_rx = speculation_acceptance_channel.1.clone();
     hooks.use_future({
         let app_store = app_store.clone();
+        let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
         async move {
             while let Ok(outcome) = speculation_acceptance_rx.recv().await {
                 let is_complete = matches!(
@@ -4381,6 +4427,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     tool_use_context.loaded_nested_memory_paths =
                         loaded_nested_memory_paths.read().clone();
                     tool_use_context.resume_restore_stores = resume_restore_stores.read().clone();
+                    // The cached context may carry an earlier query's setter;
+                    // this turn writes the REPL's set like every other turn.
+                    tool_use_context.set_in_progress_tool_use_ids =
+                        set_in_progress_tool_use_ids.clone();
                     let params = crate::query::QueryParams {
                         turn_id: Uuid::new_v4().to_string(),
                         // The accepted user turn is already in typed history;
@@ -5713,6 +5763,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         let initial_tools_for_mcp = initial_tools.clone();
         let has_interruptible_tool_in_progress =
             Arc::clone(&has_interruptible_tool_in_progress);
+        let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
         move |submit: McpPromptSlashCommandSubmit| {
             let runtime_mcp_context = runtime_mcp_context.clone();
             let prompt_submit_for_mcp = prompt_submit_for_mcp.clone();
@@ -5726,6 +5777,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             let initial_tools_for_mcp = initial_tools_for_mcp.clone();
             let has_interruptible_tool_in_progress =
                 Arc::clone(&has_interruptible_tool_in_progress);
+            let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
             async move {
                 let blocks = match crate::services::mcp::client::get_mcp_prompt_for_command(
                 &submit.server_name,
@@ -5811,6 +5863,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 channel_permission_callbacks_for_mcp.as_ref(),
                 &permission_sink_for_mcp,
                 &has_interruptible_tool_in_progress,
+                &set_in_progress_tool_use_ids,
                 thinking_config_for_mcp.as_ref(),
                 // The one path whose context never met the builder:
                 // `submit_processed_prompt_deferred_query` builds it from
@@ -6201,6 +6254,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         let mut exit_flow_active = exit_flow_active;
         let ide_selection_for_submit = ide_selection;
         let has_interruptible_tool_in_progress = Arc::clone(&has_interruptible_tool_in_progress);
+        let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
         move |request: PromptQuerySubmit| {
             #[cfg(test)]
             let query_probe = query_probe.clone();
@@ -6236,6 +6290,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             let mock_pump_tx_for_submit = mock_pump_tx_for_submit.clone();
             let has_interruptible_tool_in_progress =
                 Arc::clone(&has_interruptible_tool_in_progress);
+            let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
             async move {
                 let PromptQuerySubmit {
                     text,
@@ -6468,6 +6523,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             channel_permission_callbacks_for_submit.as_ref(),
                             &permission_sink_for_submit,
                             &has_interruptible_tool_in_progress,
+                            &set_in_progress_tool_use_ids,
                             thinking_config_for_submit.as_ref(),
                             // Context came from `build_repl_process_user_input_context`
                             // above, which already applied the builder-owned fields.
@@ -7132,6 +7188,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             let response_length_ref_for_inbox = response_length_ref;
             let has_interruptible_tool_in_progress =
                 Arc::clone(&has_interruptible_tool_in_progress);
+            let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
             move || {
                 let enabled = crate::utils::agent_swarms_enabled::is_agent_swarms_enabled();
                 if !enabled {
@@ -7325,6 +7382,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     channel_permission_callbacks_for_inbox.as_ref(),
                     &permission_sink_for_inbox,
                     &has_interruptible_tool_in_progress,
+                    &set_in_progress_tool_use_ids,
                     thinking_config_for_inbox.as_ref(),
                     // Context came from `build_repl_process_user_input_context`
                     // above, which already applied the builder-owned fields.
@@ -7391,6 +7449,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             let mut active_prompt_shell_for_cron = active_prompt_shell_command;
             let has_interruptible_tool_in_progress =
                 Arc::clone(&has_interruptible_tool_in_progress);
+            let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
             move || {
                 // Maps to: CC `useScheduledTasks` — cron only. The queue drain
                 // below is CC `useQueueProcessor`, a SEPARATE effect with no
@@ -7859,6 +7918,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     channel_permission_callbacks_for_cron.as_ref(),
                     &permission_sink_for_cron,
                     &has_interruptible_tool_in_progress,
+                    &set_in_progress_tool_use_ids,
                     thinking_config_for_cron.as_ref(),
                     // Context came from `build_repl_process_user_input_context`
                     // above, which already applied the builder-owned fields.
@@ -12467,6 +12527,8 @@ mod tests {
         let thinking = crate::utils::thinking::ThinkingConfig::Adaptive;
         let has_interruptible_tool_in_progress =
             Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let repl_in_progress_setter =
+            crate::tool::SetInProgressToolUseIds(Some(Arc::new(|_: &str, _: bool| {})));
         let make_params = |context: ToolUseContext| crate::query::QueryParams {
             turn_id: "turn-1".to_string(),
             input: "/mcp-prompt".to_string(),
@@ -12514,6 +12576,7 @@ mod tests {
             None,
             &crate::tool::InteractivePermissionSink::default(),
             &has_interruptible_tool_in_progress,
+            &repl_in_progress_setter,
             &thinking,
             None,
         );
@@ -12540,6 +12603,7 @@ mod tests {
             None,
             &crate::tool::InteractivePermissionSink::default(),
             &has_interruptible_tool_in_progress,
+            &repl_in_progress_setter,
             &thinking,
             Some(loaded_nested_memory_paths.clone()),
         );
@@ -12548,6 +12612,19 @@ mod tests {
         let shell = &shell_params.tool_use_context;
         assert!(builder.set_has_interruptible_tool_in_progress.0.is_some());
         assert!(shell.set_has_interruptible_tool_in_progress.0.is_some());
+        // CC REPL.tsx:3296: every turn's context carries the REPL's own
+        // `setInProgressToolUseIDs`, not a per-query forwarder.
+        for context in [builder, shell] {
+            assert!(
+                context
+                    .set_in_progress_tool_use_ids
+                    .0
+                    .as_ref()
+                    .zip(repl_in_progress_setter.0.as_ref())
+                    .is_some_and(|(installed, repl)| Arc::ptr_eq(installed, repl)),
+                "the turn context must carry the REPL's in-progress setter"
+            );
+        }
         (builder
             .set_has_interruptible_tool_in_progress
             .0
@@ -12778,6 +12855,7 @@ mod tests {
                 None,
                 &crate::tool::InteractivePermissionSink::default(),
                 &has_interruptible_tool_in_progress,
+                &crate::tool::SetInProgressToolUseIds::default(),
                 &thinking,
                 shell_context_seed.clone(),
             );
@@ -12833,6 +12911,7 @@ mod tests {
                 None,
                 &crate::tool::InteractivePermissionSink::default(),
                 &has_interruptible_tool_in_progress,
+                &crate::tool::SetInProgressToolUseIds::default(),
                 &thinking,
                 shell_context_seed.clone(),
             );

@@ -8,8 +8,8 @@ use super::message::Message;
 use super::messages_list::MessageLookups;
 use crate::types::message::{RenderableMessage, RenderableMessageKind, SystemMessage};
 use iocraft::prelude::*;
-use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
+use std::collections::{BTreeSet, HashSet};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -109,7 +109,14 @@ impl Component for MessageRow {
         };
 
         let next_static_key = message_row_static_key(&message, props);
-        if next_static_key.is_some() && self.last_static_key.as_ref() == next_static_key.as_ref() {
+        // Contract D (PORTING.md `iocraft selected external-store subscription
+        // carrier`): a manual bailout must still let a descendant's own
+        // AppState subscription through, as CC's `useSyncExternalStore`
+        // re-renders a subscriber past any memoized ancestor.
+        if next_static_key.is_some()
+            && self.last_static_key.as_ref() == next_static_key.as_ref()
+            && !updater.children_have_pending_change()
+        {
             return;
         }
         let static_cache_key = next_static_key.as_ref().map(message_row_cache_key);
@@ -228,13 +235,23 @@ fn message_row_static_key_from_parts(
     in_progress_tool_use_ids: &HashSet<String>,
     streaming_tool_use_ids: &HashSet<String>,
 ) -> Option<MessageRowRenderKey> {
-    should_render_statically(
-        message,
-        lookups,
-        is_transcript_mode,
-        in_progress_tool_use_ids,
-        streaming_tool_use_ids,
-    )
+    // A row may skip re-rendering only when it renders statically AND CC's
+    // memo comparator would bail: `if (isStreaming || !isResolved) return
+    // false` (`MessageRow.tsx:340-351`). The two are separate questions in
+    // CC — transcript mode renders every row statically (`Messages.tsx:1101`)
+    // while an unresolved one there still re-renders on every change.
+    // `lookups: None` mounts keep `should_render_statically`'s existing
+    // treat-as-resolved extension.
+    let memo_may_bail = !is_message_streaming(message, streaming_tool_use_ids)
+        && lookups.is_none_or(|lookups| all_tools_resolved(message, &lookups.resolved_tool_use_ids));
+    (memo_may_bail
+        && should_render_statically(
+            message,
+            lookups,
+            is_transcript_mode,
+            in_progress_tool_use_ids,
+            streaming_tool_use_ids,
+        ))
     .then(|| MessageRowRenderKey {
         message: message.clone(),
         conversation_id,
@@ -282,6 +299,65 @@ pub(crate) fn message_row_static_memo_key(
     )
     .as_ref()
     .map(message_row_cache_key)
+}
+
+/// Maps to: CC `utils/messages.ts:2765-2793` `getToolUseID`, over the kinds a
+/// render row carries. Two CC sources have no field on the Rust carriers yet —
+/// a user message's `sourceToolUseID` and a hook attachment's `toolUseID` —
+/// so those rows answer as CC does when the field is absent (seam).
+fn get_tool_use_id(message: &RenderableMessage) -> Option<&str> {
+    match &message.kind {
+        RenderableMessageKind::Assistant { .. } => assistant_tool_use_id(message),
+        RenderableMessageKind::User { message } => match message.first_content_block() {
+            Some(crate::types::message::UserContent::ToolResult(tool_result))
+                if !tool_result.tool_use_id.0.is_empty() =>
+            {
+                Some(tool_result.tool_use_id.0.as_str())
+            }
+            _ => None,
+        },
+        RenderableMessageKind::Progress { tool_use_id, .. } => Some(tool_use_id.as_str()),
+        RenderableMessageKind::System(SystemMessage::Informational { tool_use_id, .. }) => {
+            tool_use_id.as_deref()
+        }
+        _ => None,
+    }
+}
+
+/// Maps to: CC `MessageRow.tsx:255-271` `isMessageStreaming`.
+fn is_message_streaming(message: &RenderableMessage, streaming_tool_use_ids: &HashSet<String>) -> bool {
+    match &message.kind {
+        RenderableMessageKind::GroupedToolUse(group) => group.messages.iter().any(|member| {
+            assistant_tool_use_id(member).is_some_and(|id| streaming_tool_use_ids.contains(id))
+        }),
+        RenderableMessageKind::CollapsedReadSearch(group) => {
+            crate::utils::collapse_read_search::tool_use_ids_from_collapsed_group(group)
+                .any(|id| streaming_tool_use_ids.contains(id))
+        }
+        _ => get_tool_use_id(message).is_some_and(|id| streaming_tool_use_ids.contains(id)),
+    }
+}
+
+/// Maps to: CC `MessageRow.tsx:277-298` `allToolsResolved`.
+fn all_tools_resolved(message: &RenderableMessage, resolved_tool_use_ids: &BTreeSet<String>) -> bool {
+    match &message.kind {
+        RenderableMessageKind::GroupedToolUse(group) => group.messages.iter().all(|member| {
+            assistant_tool_use_id(member).is_some_and(|id| resolved_tool_use_ids.contains(id))
+        }),
+        RenderableMessageKind::CollapsedReadSearch(group) => {
+            crate::utils::collapse_read_search::tool_use_ids_from_collapsed_group(group)
+                .all(|id| resolved_tool_use_ids.contains(id))
+        }
+        RenderableMessageKind::Assistant { message: assistant } => {
+            if let Some(crate::types::message::AssistantContent::ServerToolUse(block)) =
+                assistant.first_content_block()
+            {
+                return resolved_tool_use_ids.contains(block.id.0.as_str());
+            }
+            get_tool_use_id(message).is_none_or(|id| resolved_tool_use_ids.contains(id))
+        }
+        _ => get_tool_use_id(message).is_none_or(|id| resolved_tool_use_ids.contains(id)),
+    }
 }
 
 /// The row's block is the first non-identity block — normalize
@@ -451,8 +527,9 @@ pub(crate) fn should_render_statically(
 /// }
 /// ```
 ///
-/// `canAnimate` is the outer gate (the query is running); which rows actually
-/// animate is a per-row question answered by the live set. Cometix passed the
+/// `canAnimate` is the outer gate (no permission dialog, message selector or
+/// local command UI holds animation, `Messages.tsx:764-767`); which rows
+/// actually animate is a per-row question answered by the live set. Cometix passed the
 /// gate straight through, so every row spun for the duration of a turn instead
 /// of only the row whose tool was executing.
 ///
@@ -599,6 +676,36 @@ mod tests {
             BTreeSet::from([tool_use_id.to_string()]),
         );
         lookups
+    }
+
+    #[test]
+    fn transcript_row_memo_bails_only_like_official_are_message_row_props_equal() {
+        // CC MessageRow.tsx:340-351: transcript renders every row statically,
+        // yet an in-flight or unresolved row still re-renders.
+        let key = |lookups: &MessageLookups, streaming: &HashSet<String>| {
+            message_row_static_memo_key(
+                &tool_use("tool1", "toolu_1"),
+                0,
+                true,
+                false,
+                false,
+                Some(lookups),
+                false,
+                true,
+                true,
+                true,
+                100,
+                &HashSet::new(),
+                streaming,
+            )
+        };
+        let unresolved = MessageLookups::default();
+        let resolved = resolved_lookup("toolu_1");
+        let streaming: HashSet<String> = ["toolu_1".to_string()].into_iter().collect();
+
+        assert!(key(&unresolved, &HashSet::new()).is_none());
+        assert!(key(&resolved, &streaming).is_none());
+        assert!(key(&resolved, &HashSet::new()).is_some());
     }
 
     #[test]

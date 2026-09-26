@@ -3319,6 +3319,27 @@ where
                                 // (`toolExecution.ts:1589`) starts after the
                                 // permission decision (`:921`) at the `try` on
                                 // `:1206`.
+                                // CC never leaves a tool in the REPL's
+                                // in-progress set after an interrupt: the
+                                // aborted permission resolves the tool call,
+                                // and `markToolUseAsComplete` follows every
+                                // `runToolUse` (`toolOrchestration.ts:148,173`,
+                                // `StreamingToolExecutor.ts:525`). This branch
+                                // returns before that bookkeeping, so it
+                                // completes the waiting tool and any still
+                                // marked in progress here.
+                                let mut still_in_progress: Vec<String> = tool_use_context
+                                    .in_progress_tool_use_ids
+                                    .iter()
+                                    .chain(current_tool_use_context.in_progress_tool_use_ids.iter())
+                                    .cloned()
+                                    .chain(std::iter::once(permission_request.tool_use_id.clone()))
+                                    .collect();
+                                still_in_progress.sort_unstable();
+                                still_in_progress.dedup();
+                                for tool_use_id in &still_in_progress {
+                                    tool_use_context.mark_complete(tool_use_id);
+                                }
                                 let unresolved_assistant_messages =
                                     assistant_messages_with_unresolved_tool_uses(
                                         &assistant_messages,
@@ -4495,9 +4516,12 @@ fn install_tool_progress_sink(
     )));
 
     // Maps to: CC `Tool.ts:227` `setInProgressToolUseIDs`, whose official
-    // implementation is the REPL's `setState` (`REPL.tsx:1897`). The actor runs
-    // off the render thread, so the setter forwards over the same event channel.
-    if !event_tx.is_pull() {
+    // implementation is the REPL's `setState` (`REPL.tsx:1897`). The REPL
+    // hands in its own setter (`apply_repl_query_turn_context`), which keeps
+    // working after this query is replaced, as CC's does. Only a caller that
+    // brought none gets the fallback that forwards over this query's event
+    // channel.
+    if !event_tx.is_pull() && context.set_in_progress_tool_use_ids.0.is_none() {
         let in_progress_tx = event_tx.clone();
         context.set_in_progress_tool_use_ids = crate::tool::SetInProgressToolUseIds(Some(
             std::sync::Arc::new(move |tool_use_id: &str, in_progress: bool| {
@@ -9056,8 +9080,25 @@ mod tests {
             command_rx,
         ));
 
+        // The REPL's in-progress set as the actor's setter leaves it.
+        fn track_in_progress(set: &mut std::collections::HashSet<String>, event: &QueryEvent) {
+            if let QueryEvent::SetInProgressToolUse {
+                tool_use_id,
+                in_progress,
+            } = event
+            {
+                if *in_progress {
+                    set.insert(tool_use_id.clone());
+                } else {
+                    set.remove(tool_use_id);
+                }
+            }
+        }
+        let mut in_progress = std::collections::HashSet::new();
         loop {
-            match event_rx.recv().await.unwrap() {
+            let event = event_rx.recv().await.unwrap();
+            track_in_progress(&mut in_progress, &event);
+            match event {
                 QueryEvent::PermissionRequest(request) => {
                     assert_eq!(request.tool_use_id, "toolu_abort_permission_1");
                     break;
@@ -9065,12 +9106,14 @@ mod tests {
                 _ => {}
             }
         }
+        let waiting_tool_was_in_progress = in_progress.contains("toolu_abort_permission_1");
         command_tx.send(QueryCommand::Abort).await.unwrap();
         let terminal = actor.await.unwrap();
 
         assert_eq!(terminal.reason, "aborted_tools");
         let mut tool_result_ids = std::collections::HashSet::new();
         while let Ok(event) = event_rx.try_recv() {
+            track_in_progress(&mut in_progress, &event);
             if let QueryEvent::ModelMessage(crate::types::message::Message::User(user)) = event {
                 for content in user.content {
                     if let crate::types::message::UserContent::ToolResult(result) = content {
@@ -9083,6 +9126,16 @@ mod tests {
         }
         assert!(tool_result_ids.contains("toolu_abort_permission_1"));
         assert!(tool_result_ids.contains("toolu_abort_permission_2"));
+        // CC runs `markToolUseAsComplete` after every tool call, interrupted
+        // ones included, so nothing outlives the aborted turn in the set.
+        assert!(
+            waiting_tool_was_in_progress,
+            "precondition: the tool waiting on permission is in progress"
+        );
+        assert!(
+            in_progress.is_empty(),
+            "tools left in progress after the abort: {in_progress:?}"
+        );
     }
 
     #[tokio::test]

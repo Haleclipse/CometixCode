@@ -1303,7 +1303,12 @@ impl Component for MessageRows {
         // props, so the retained row subtree is reused without rebuilding rows
         // or dirtying layout. While loading, keep entering rows so dynamic
         // in-progress rows can be gated individually by MessageRow/OffscreenFreeze.
-        if !props.is_loading && self.last_key.as_ref() == Some(&next_key) {
+        // A row's own AppState subscription still gets through (Contract D:
+        // a manual bailout checks `children_have_pending_change`).
+        if !props.is_loading
+            && self.last_key.as_ref() == Some(&next_key)
+            && !updater.children_have_pending_change()
+        {
             if let Some(start) = profile_start {
                 let elapsed = start.elapsed();
                 if elapsed >= Duration::from_millis(5) {
@@ -1639,8 +1644,14 @@ impl Component for MessagesImpl {
         };
 
         // Match official `Messages = React.memo(...)`: prompt-only frames keep
-        // the message subtree mounted without touching layout or children.
-        if !props.is_loading && self.last_key.as_ref() == Some(&next_key) {
+        // the message subtree mounted without touching layout or children —
+        // except that a descendant's own AppState subscription still gets
+        // through, as React re-renders a subscriber past a memoized ancestor
+        // (Contract D: a manual bailout checks `children_have_pending_change`).
+        if !props.is_loading
+            && self.last_key.as_ref() == Some(&next_key)
+            && !updater.children_have_pending_change()
+        {
             if let Some(start) = profile_start {
                 let elapsed = start.elapsed();
                 if elapsed >= Duration::from_millis(5) {
@@ -2291,6 +2302,95 @@ mod tests {
             )),
             ..Default::default()
         }
+    }
+
+    #[derive(Default, Props)]
+    struct PendingWorkerRequestFlipProbeProps {
+        pub store: Option<crate::state::store::AppStore>,
+    }
+
+    /// A sibling subscriber whose text always changes with the probe's write,
+    /// so that write is guaranteed to produce a frame whether or not the tool
+    /// row updates.
+    #[component]
+    fn VerboseEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let verbose =
+            crate::state::app_state::use_app_state(&mut hooks, |state| state.verbose);
+        element! { Text(content: format!("verbose={verbose}")) }
+    }
+
+    /// A running tool row while the worker waits on it. The test drives the
+    /// store from outside between captured frames, so Messages' props and the
+    /// idle `is_loading` never change and every memo above the row bails.
+    #[component]
+    fn PendingWorkerRequestFlipProbe(
+        props: &PendingWorkerRequestFlipProbeProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        let store = props.store.clone().expect("probe store");
+        let messages = hooks.use_const(|| {
+            Arc::new(vec![tool_use_named_with_input(
+                "assistant-tool",
+                "toolu_1",
+                "Bash",
+                None,
+                "echo permission-gated",
+            )])
+        });
+        let in_progress = hooks.use_const(|| {
+            Arc::new(["toolu_1".to_string()].into_iter().collect::<HashSet<_>>())
+        });
+        let current_theme = *theme::current();
+        element! {
+            ContextProvider(value: Context::owned(current_theme)) {
+                crate::state::app_state::AppStateProvider(
+                    prebuilt_store: Some(store),
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        View(flex_direction: FlexDirection::Column) {
+                            Messages(
+                                messages: Arc::clone(&messages),
+                                is_loading: false,
+                                in_progress_tool_use_ids: Arc::clone(&in_progress),
+                            )
+                            VerboseEcho
+                        }
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn messages_idle_tool_row_follows_a_pending_worker_request_store_write() {
+        // Contract D: the row's own AppState subscription gets past the
+        // MessagesImpl / MessageRows / MessageRow bailouts, as CC's
+        // `useSyncExternalStore` subscriber re-renders past memoized parents.
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let store = crate::state::store::AppStore::new(worker_waiting_on("toolu_1"), None);
+        // Frame-driven, no timers: take the mount frame, answer the worker
+        // request, then take the frame that write produces. The same write
+        // flips `verbose` for the sibling echo, so a frame always follows.
+        let (mounted, answered) = futures::executor::block_on(async {
+            let mut probe = element!(PendingWorkerRequestFlipProbe(store: Some(store.clone())));
+            let frames = probe
+                .mock_terminal_render_loop(MockTerminalConfig::default().with_size(100, 24));
+            futures::pin_mut!(frames);
+            let mounted = frames.next().await.expect("mount frame").to_string();
+            store.replace_with(|state| {
+                state.pending_worker_request = None;
+                state.verbose = true;
+            });
+            let mut answered = frames.next().await.expect("frame after the write").to_string();
+            // Settle past any intermediate frame to the one showing the write.
+            while !answered.contains("verbose=true") {
+                answered = frames.next().await.expect("frame showing the write").to_string();
+            }
+            (mounted, answered)
+        });
+        assert!(mounted.contains("Waiting for permission…"), "mount frame:\n{mounted}");
+        assert!(mounted.contains("verbose=false"), "mount frame:\n{mounted}");
+        assert!(!answered.contains("Waiting for permission…"), "frame after the write:\n{answered}");
     }
 
     #[test]
