@@ -943,8 +943,12 @@ impl FocusedInputDialog {
 /// The REPL state `getFocusedInputDialog()` closes over (REPL.tsx:2684-2760).
 #[derive(Clone, Copy, Debug, Default)]
 struct FocusedInputDialogInput {
-    /// CC `exitFlow`. CC's other exit state, `isExiting`, is this REPL's
-    /// immediate `should_exit` return, so a render that gets here never has it.
+    /// CC `isExiting` (REPL.tsx:2655, set by `handleExit` :4861) — this
+    /// REPL's `should_exit`. Setting it does not end the render: the frame it
+    /// is set in is still drawn, and stays in inline scrollback, so it must
+    /// clear the focus like CC's does.
+    is_exiting: bool,
+    /// CC `exitFlow`.
     exit_flow: bool,
     is_message_selector_visible: bool,
     is_prompt_input_active: bool,
@@ -972,7 +976,7 @@ struct FocusedInputDialogInput {
 fn get_focused_input_dialog(input: &FocusedInputDialogInput) -> Option<FocusedInputDialog> {
     use FocusedInputDialog::*;
     // Exit states always take precedence.
-    if input.exit_flow {
+    if input.is_exiting || input.exit_flow {
         return None;
     }
     // High priority dialogs (always show regardless of typing).
@@ -7150,10 +7154,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         });
     }
 
-    // Maps to: CC REPL.tsx:1397-1399 `focusedInputDialogRef` — "Ref to track
-    // current focusedInputDialog for use in callbacks". Written where
-    // `get_focused_input_dialog` runs below (:2778); the inbox poll reads it,
-    // since its interval callback is built before this render computes it.
+    // Transport for the value CC hands `useInboxPoller` (REPL.tsx:5390-5395
+    // `focusedInputDialog,`), which its poll callback closes over through its
+    // dependencies (useInboxPoller.ts:867-873). This interval callback is
+    // built before this render computes the value, so the value crosses in a
+    // ref written where `get_focused_input_dialog` runs below — the same
+    // shape as CC's own `focusedInputDialogRef` (:1397-1399, :2778), whose
+    // one reader, the idle-notification timer (:5229-5262), is not ported.
     let mut focused_input_dialog_ref = hooks.use_ref(|| None::<FocusedInputDialog>);
 
     // Maps to: CC `REPL.tsx` `useInboxPoller({ enabled, isLoading,
@@ -7195,9 +7202,27 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     return;
                 }
 
+                // CC REPL.tsx:1336 `isLoading = isQueryActive ||
+                // isExternalLoading`: the query guard, reservation included
+                // (`user_input_on_processing`). A queued permission request is
+                // not loading — CC's poll pushes worker requests into
+                // `toolUseConfirmQueue` while the leader stays idle.
                 let is_loading_now = !pending_responses.read().is_empty()
                     || active_query.read().is_some()
-                    || !permission_queue.read().is_empty();
+                    || user_input_on_processing
+                        .read()
+                        .as_ref()
+                        .is_some_and(|input| !input.is_empty());
+                // CC `handleIncomingPrompt` (REPL.tsx:5347-5365) is the
+                // poll's `onSubmitMessage`: it refuses while the query guard is
+                // active or a typed prompt/bash command is queued, and a
+                // refused message stays queued in the inbox
+                // (useInboxPoller.ts). The poll core takes that answer up
+                // front as `idle_submit_accepted`.
+                let idle_submit_accepted = !is_loading_now
+                    && !crate::utils::message_queue_manager::get_command_queue()
+                        .iter()
+                        .any(|command| command.mode == "prompt" || command.mode == "bash");
                 // CC hands the hook `getFocusedInputDialog()`'s value itself.
                 let focused_input_dialog = focused_input_dialog_ref
                     .get()
@@ -7225,7 +7250,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     enabled,
                     is_loading_now,
                     focused_input_dialog.as_deref(),
-                    true,
+                    idle_submit_accepted,
                 );
                 let outcome = crate::hooks::use_inbox_poller::poll_inbox_once(
                     &mut state,
@@ -7235,7 +7260,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         enabled,
                         is_loading: is_loading_now || delivered.is_some(),
                         focused_input_dialog: focused_input_dialog.clone(),
-                        idle_submit_accepted: true,
+                        idle_submit_accepted,
                     },
                 );
 
@@ -7310,15 +7335,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     }
                 });
                 inbox_poller_state.set(state.poller);
+                // Only an accepted message comes back as `submitted` (see
+                // `idle_submit_accepted` above); a refused one is already in
+                // the inbox queue. A second check here, after the message was
+                // marked read, would drop it.
                 let Some(content) = submitted else {
                     return;
                 };
-                if !pending_responses.read().is_empty()
-                    || active_query.read().is_some()
-                    || !permission_queue.read().is_empty()
-                {
-                    return;
-                }
 
                 let mcp_state_for_input = runtime_mcp_context
                     .as_ref()
@@ -8840,6 +8863,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // Maps to: CC REPL.tsx:2765 `const focusedInputDialog =
     // getFocusedInputDialog()` and :2778 `focusedInputDialogRef.current = ...`.
     let focused_input_dialog = get_focused_input_dialog(&FocusedInputDialogInput {
+        is_exiting: should_exit.get(),
         exit_flow: exit_flow_active_snapshot,
         is_message_selector_visible: message_selector_visible_snapshot,
         is_prompt_input_active: is_prompt_input_active.get(),
@@ -9154,6 +9178,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         // message selector, a permission dialog, a startup callout — takes
         // PromptInput's place.
         && focused_input_dialog.is_none()
+        // CC :6734 `!isExiting`: the exiting frame, which stays in inline
+        // scrollback, carries no prompt box.
+        && !should_exit.get()
         && active_local_command_ui_snapshot
             .as_ref()
             .is_none_or(|active| !active.should_hide_prompt_input);
@@ -15803,6 +15830,7 @@ mod tests {
     fn focused_input_dialog_follows_official_priority_and_gates() {
         use FocusedInputDialog::*;
         let every_dialog = FocusedInputDialogInput {
+            is_exiting: false,
             exit_flow: false,
             is_message_selector_visible: true,
             is_prompt_input_active: false,
@@ -15846,8 +15874,11 @@ mod tests {
             ]
         );
 
-        // Exit states always take precedence, even over the message selector.
-        let exiting = FocusedInputDialogInput { exit_flow: true, ..every_dialog };
+        // Exit states always take precedence, even over the message selector
+        // (CC :2686 `if (isExiting || exitFlow) return undefined`).
+        let exit_flow = FocusedInputDialogInput { exit_flow: true, ..every_dialog };
+        assert_eq!(get_focused_input_dialog(&exit_flow), None);
+        let exiting = FocusedInputDialogInput { is_exiting: true, ..every_dialog };
         assert_eq!(get_focused_input_dialog(&exiting), None);
 
         // Typing suppresses everything below the message selector.

@@ -1307,6 +1307,58 @@ mod tests {
     }
 
     #[test]
+    fn refused_idle_submit_keeps_a_regular_message_queued_beside_a_permission_request() {
+        // CC: when `onSubmitMessage` (REPL `handleIncomingPrompt`) refuses —
+        // a typed prompt/bash command is queued — the teammate message stays
+        // in the inbox for the idle delivery; it is never marked read and
+        // dropped. The REPL answers that question before the poll.
+        let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
+            .lock()
+            .unwrap();
+        let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
+            .lock()
+            .unwrap();
+        crate::utils::teammate_mailbox::clear_mailboxes_for_test();
+        clear_dynamic_team_context();
+
+        let (mut state, mut team_context) = base_team_state();
+        let mut permission_context = ToolPermissionContext::default();
+        let request = crate::utils::teammate_mailbox::create_permission_request_message(
+            "perm-1",
+            "reviewer@alpha",
+            "Bash",
+            "toolu_perm",
+            "Run tests",
+            serde_json::json!({"command": "cargo test"}),
+            Vec::new(),
+        );
+        write_message(TEAM_LEAD_NAME, "reviewer", request.to_string());
+        write_message(TEAM_LEAD_NAME, "reviewer", "please inspect src/lib.rs");
+
+        let outcome = poll_inbox_once(
+            &mut state,
+            &mut team_context,
+            &mut permission_context,
+            &InboxPollerConfig {
+                idle_submit_accepted: false,
+                ..InboxPollerConfig::default()
+            },
+        );
+        assert_eq!(outcome.permission_request_count, 1);
+        assert!(outcome.submitted.is_none());
+        assert_eq!(outcome.queued_count, 1);
+        assert!(
+            state
+                .inbox
+                .messages
+                .iter()
+                .any(|message| message.text.contains("please inspect src/lib.rs")),
+            "the refused message waits in the inbox: {:?}",
+            state.inbox.messages
+        );
+    }
+
+    #[test]
     fn leader_permission_requests_queue_tool_use_confirm_with_worker_mailbox_target() {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
