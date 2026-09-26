@@ -112,6 +112,41 @@ pub fn use_global_keybindings(
     );
 }
 
+/// Props of CC `GlobalKeybindingHandlers` (`useGlobalKeybindings.tsx:21-31`)
+/// that this REPL owns: its `screen` / `showAllInTranscript` states, which
+/// double as their setters, and the redraw generation `app:redraw` bumps.
+#[derive(Default, Props)]
+pub struct GlobalKeybindingHandlersProps {
+    pub redraw_generation: Option<State<u64>>,
+    pub screen: Option<State<crate::screens::repl::Screen>>,
+    pub show_all_in_transcript: Option<State<bool>>,
+}
+
+/// Maps to: CC `useGlobalKeybindings.tsx:40-264` `GlobalKeybindingHandlers`,
+/// the null-rendering component REPL mounts inside `KeybindingSetup`
+/// (REPL.tsx:5858, :6090), ahead of PromptInput.
+#[component]
+pub fn GlobalKeybindingHandlers(
+    props: &GlobalKeybindingHandlersProps,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
+    let runtime = hooks
+        .try_use_context::<KeybindingRuntime>()
+        .map(|runtime| runtime.clone());
+    let app_store = crate::state::app_state::use_set_app_state(&mut hooks);
+    use_global_keybindings(
+        &mut hooks,
+        runtime,
+        app_store,
+        props.redraw_generation.expect("GlobalKeybindingHandlers redraw_generation"),
+        props.screen.expect("GlobalKeybindingHandlers screen"),
+        props
+            .show_all_in_transcript
+            .expect("GlobalKeybindingHandlers show_all_in_transcript"),
+    );
+    element!(View(width: 0u32, height: 0u32))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

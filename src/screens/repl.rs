@@ -2279,6 +2279,69 @@ fn AnimatedTerminalTitle(
     element!(View(width: 0u32, height: 0u32))
 }
 
+#[derive(Default, Props)]
+struct TranscriptModeFooterProps {
+    show_all_in_transcript: bool,
+}
+
+/// Maps to: CC `screens/REPL.tsx:614-690` `TranscriptModeFooter` — "must be
+/// rendered inside KeybindingSetup to access keybinding context". The search
+/// badge, virtual-scroll hints and status slot belong to fullscreen paths this
+/// inline REPL does not take.
+#[component]
+fn TranscriptModeFooter(
+    props: &TranscriptModeFooterProps,
+    hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
+    let theme = hooks
+        .try_use_context::<crate::utils::theme::Theme>()
+        .map(|theme| *theme)
+        .unwrap_or_else(|| *crate::utils::theme::current());
+    // CC :637-646 `useShortcutDisplay(...)`.
+    let bindings = hooks
+        .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
+        .map(|runtime| runtime.bindings());
+    let shortcut = |action: &str, context: crate::keybindings::types::ContextName, fallback: &str| {
+        bindings.as_ref().map_or_else(
+            || fallback.to_string(),
+            |bindings| {
+                crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
+                    action, &context, fallback, bindings,
+                )
+            },
+        )
+    };
+    let toggle = shortcut(
+        "app:toggleTranscript",
+        crate::keybindings::types::ContextName::Global,
+        "ctrl+o",
+    );
+    let show_all = shortcut(
+        "transcript:toggleShowAll",
+        crate::keybindings::types::ContextName::Transcript,
+        "ctrl+e",
+    );
+    let text = format!(
+        "Showing detailed transcript · {toggle} to toggle · {show_all} to {}",
+        if props.show_all_in_transcript {
+            "collapse"
+        } else {
+            "show all"
+        }
+    );
+    element! {
+        View(
+            margin_top: 1u32,
+            padding_left: 2u32,
+            border_style: BorderStyle::Single,
+            border_edges: Edges::Top,
+        ) {
+            // CC :661 `<Text dimColor>` is ThemedText: the inactive foreground.
+            Text(content: text, color: theme.inactive)
+        }
+    }
+}
+
 /// Prompt-screen shorthand for [`memoized_messages_for_screen`], kept for the
 /// test harnesses: the REPL itself mounts its one Messages site through the
 /// screen-aware form in its single tree.
@@ -4225,8 +4288,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     let keybinding_runtime_for_reload = hooks
         .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
         .map(|runtime| runtime.clone());
-    let keybinding_runtime_for_command_handlers = keybinding_runtime_for_reload.clone();
-    let keybinding_runtime_for_transcript_display = keybinding_runtime_for_reload.clone();
     let channel_permission_callbacks =
         crate::state::app_state::use_app_state(&mut hooks, |state| {
             state.channel_permission_callbacks.clone()
@@ -5051,14 +5112,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             active_prompt_shell_command.set(None);
         }
     });
-    crate::hooks::use_global_keybindings::use_global_keybindings(
-        &mut hooks,
-        keybinding_runtime_for_reload.clone(),
-        app_store.clone(),
-        redraw_generation,
-        screen,
-        show_all_in_transcript,
-    );
 
     let active_query_for_on_cancel = active_query;
     let active_compact_for_on_cancel = active_compact_abort;
@@ -5100,37 +5153,28 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         }
     };
 
-    // Maps to: CC REPL.tsx:5891 mounting `<CancelRequestHandler {...props}/>`
-    // inside KeybindingSetup; the handler itself lives in
-    // hooks/use_cancel_request.rs (CC hooks/useCancelRequest.ts).
-    {
+    // Maps to: CC REPL.tsx:2901-2918 `cancelRequestProps`, handed to the
+    // `<CancelRequestHandler {...cancelRequestProps}/>` mounted in the tree
+    // below (:5891, :6133; hooks/use_cancel_request.rs).
+    let cancel_request_can_cancel: Arc<dyn Fn() -> bool + Send + Sync> = {
         let active_query_for_cancel = active_query;
         let active_compact_for_cancel = active_compact_abort;
-        let is_context_blocked = {
-            // Maps to: CC isContextActive guards (:141-148). Messages
-            // screen and local command panels own their own Escape.
-            let showing_local_command_ui = active_local_command_ui.read().is_some();
-            showing_local_command_ui || screen.get() == Screen::Transcript
-        };
-        crate::hooks::use_cancel_request::use_cancel_request(
-            &mut hooks,
-            crate::hooks::use_cancel_request::UseCancelRequestOptions {
-                app_store: app_store.clone(),
-                can_cancel_running_task: move || {
-                    active_query_for_cancel
-                        .read()
-                        .as_ref()
-                        .is_some_and(|handle| !handle.abort_controller.is_aborted())
-                        || active_compact_for_cancel
-                            .read()
-                            .as_ref()
-                            .is_some_and(|abort| !abort.is_aborted())
-                },
-                on_cancel,
-                is_context_blocked,
-            },
-        );
-    }
+        Arc::new(move || {
+            active_query_for_cancel
+                .read()
+                .as_ref()
+                .is_some_and(|handle| !handle.abort_controller.is_aborted())
+                || active_compact_for_cancel
+                    .read()
+                    .as_ref()
+                    .is_some_and(|abort| !abort.is_aborted())
+        })
+    };
+    let cancel_request_on_cancel: Arc<dyn Fn() + Send + Sync> = Arc::new(on_cancel);
+    // Maps to: CC isContextActive guards (useCancelRequest.ts:141-148).
+    // Messages screen and local command panels own their own Escape.
+    let cancel_request_context_blocked =
+        active_local_command_ui.read().is_some() || screen.get() == Screen::Transcript;
 
     hooks.use_future({
         let runtime_mcp_context = runtime_mcp_context.clone();
@@ -7119,14 +7163,14 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         });
     };
 
-    // Maps to: CC `CommandKeybindingHandlers` in both REPL render branches.
-    // The hook records `/<name>`; invoking the normal submit owner here keeps
-    // PromptInput's existing buffer mounted and therefore preserves it.
-    // Hoisted out of the `&&` chain below: `&&` short-circuits, and this is a
-    // hook — iocraft resolves hooks by call index, so a skipped call shifts
-    // every later hook in the component and panics at render.
-    let modal_overlay_active =
-        crate::context::overlay_context::use_is_modal_overlay_active(&mut hooks);
+    // Maps to: CC `<CommandKeybindingHandlers onSubmit isActive/>` in both
+    // REPL render branches (REPL.tsx:5867-5870, :6099-6102), mounted in the
+    // tree below. It records `/<name>` in this State; invoking the normal
+    // submit owner here keeps PromptInput's existing buffer mounted and
+    // therefore preserves it. The component reads the modal overlay itself
+    // (useCommandKeybindings.tsx:48,76). The rest of this gate is the known
+    // focus approximation — CC's is `!toolJSX?.isLocalJSXCommand` alone.
+    let mut pending_keybinding_command = hooks.use_state(|| Option::<String>::None);
     let command_keybindings_active = active_local_command_ui
         .read()
         .as_ref()
@@ -7138,15 +7182,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         && !show_remote_callout
         && !show_desktop_upsell_startup.get()
         && hint_recommendation.read().is_none()
-        && !prompt_modal_overlay_active.get()
-        && !modal_overlay_active;
-    let mut command_keybinding_handlers =
-        crate::hooks::use_command_keybindings::use_command_keybinding_handlers(
-            &mut hooks,
-            keybinding_runtime_for_command_handlers,
-            command_keybindings_active,
-        );
-    if let Some(command) = command_keybinding_handlers.take_pending_command() {
+        && !prompt_modal_overlay_active.get();
+    let pending_command = pending_keybinding_command.read().clone();
+    if let Some(command) = pending_command {
+        pending_keybinding_command.set(None);
         on_submit(PromptSubmission {
             text: command,
             pasted_contents: std::collections::BTreeMap::new(),
@@ -9362,43 +9401,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         let _done = done;
         show_desktop_upsell_startup.set(false);
     };
-    let transcript_footer_text = if screen.get() == Screen::Transcript {
-        let runtime_bindings = keybinding_runtime_for_transcript_display
-            .as_ref()
-            .map(|runtime| runtime.bindings());
-        let toggle = runtime_bindings.as_ref().map_or_else(
-            || "ctrl+o".to_string(),
-            |bindings| {
-                crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
-                    "app:toggleTranscript",
-                    &crate::keybindings::types::ContextName::Global,
-                    "ctrl+o",
-                    bindings,
-                )
-            },
-        );
-        let show_all = runtime_bindings.as_ref().map_or_else(
-            || "ctrl+e".to_string(),
-            |bindings| {
-                crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
-                    "transcript:toggleShowAll",
-                    &crate::keybindings::types::ContextName::Transcript,
-                    "ctrl+e",
-                    bindings,
-                )
-            },
-        );
-        Some(format!(
-            "Showing detailed transcript · {toggle} to toggle · {show_all} to {}",
-            if show_all_in_transcript.get() {
-                "collapse"
-            } else {
-                "show all"
-            }
-        ))
-    } else {
-        None
-    };
 
     // This is the REPL's only return: every screen state, every dialog and
     // every panel is a child of the one tree below, so a dialog appearing is a
@@ -9426,6 +9428,26 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 disabled: terminal_title_disabled,
                 no_prefix: false,
             )
+        // Maps to: CC REPL.tsx:6090-6133 (and :5858-5891) — the keybinding
+        // handler components, in CC's order, ahead of the rest of the tree.
+        // Earlier siblings are polled first, so like CC's listeners — which
+        // registered before PromptInput's — they see a key before
+        // PromptInput does. (Voice, Scroll and MessageActions handlers are
+        // not ported.)
+        crate::hooks::use_global_keybindings::GlobalKeybindingHandlers(
+            redraw_generation: Some(redraw_generation),
+            screen: Some(screen),
+            show_all_in_transcript: Some(show_all_in_transcript),
+        )
+        crate::hooks::use_command_keybindings::CommandKeybindingHandlers(
+            pending_command: Some(pending_keybinding_command),
+            is_active: command_keybindings_active,
+        )
+        crate::hooks::use_cancel_request::CancelRequestHandler(
+            can_cancel_running_task: Some(cancel_request_can_cancel.clone()),
+            on_cancel: Some(cancel_request_on_cancel.clone()),
+            is_context_blocked: cancel_request_context_blocked,
+        )
         // Maps to: CC `REPL.tsx:6134-6138` — `<MCPConnectionManager
         // dynamicMcpConfig isStrictMcpConfig>` WRAPS the rest of the tree. It
         // owns the connection effect and publishes the context that
@@ -10098,15 +10120,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 )
             }.into_any()))
 
-            #(transcript_footer_text.map(|text| element! {
-                View(
-                    margin_top: 1u32,
-                    padding_left: 2u32,
-                    border_style: BorderStyle::Single,
-                    border_edges: Edges::Top,
-                ) {
-                    Text(content: text, dim: true)
-                }
+            #((screen.get() == Screen::Transcript).then(|| element! {
+                TranscriptModeFooter(show_all_in_transcript: show_all_in_transcript.get())
             }))
 
             #(if should_render_prompt_input {

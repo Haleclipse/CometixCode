@@ -29,12 +29,55 @@ impl CommandKeybindingHandlersState {
     }
 }
 
-/// Maps to: CC `CommandKeybindingHandlers`.
+/// Maps to: CC `CommandKeybindingHandlers`, with the pending command held here.
 pub fn use_command_keybinding_handlers(
     hooks: &mut Hooks,
     runtime: Option<KeybindingRuntime>,
     is_active: bool,
 ) -> CommandKeybindingHandlersState {
+    let pending_command = hooks.use_state(|| Option::<String>::None);
+    register_command_keybinding_handlers(hooks, runtime, is_active, pending_command);
+    CommandKeybindingHandlersState { pending_command }
+}
+
+/// Props of CC `CommandKeybindingHandlers` (`useCommandKeybindings.tsx:17-30`).
+/// `pending_command` carries CC's `onSubmit`: the handler records `/<name>`
+/// and REPL submits it, because a handler cannot capture REPL's submit owner.
+#[derive(Default, Props)]
+pub struct CommandKeybindingHandlersProps {
+    pub pending_command: Option<State<Option<String>>>,
+    pub is_active: bool,
+}
+
+/// Maps to: CC `useCommandKeybindings.tsx:43-82` `CommandKeybindingHandlers`,
+/// the null-rendering component REPL mounts inside `KeybindingSetup`
+/// (REPL.tsx:5867-5870, :6099-6102).
+#[component]
+pub fn CommandKeybindingHandlers(
+    props: &CommandKeybindingHandlersProps,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
+    let runtime = hooks
+        .try_use_context::<KeybindingRuntime>()
+        .map(|runtime| runtime.clone());
+    // CC :48,76 — `isActive && !isModalOverlayActive`, read here.
+    let modal_overlay_active =
+        crate::context::overlay_context::use_is_modal_overlay_active(&mut hooks);
+    register_command_keybinding_handlers(
+        &mut hooks,
+        runtime,
+        props.is_active && !modal_overlay_active,
+        props.pending_command.expect("CommandKeybindingHandlers pending_command"),
+    );
+    element!(View(width: 0u32, height: 0u32))
+}
+
+fn register_command_keybinding_handlers(
+    hooks: &mut Hooks,
+    runtime: Option<KeybindingRuntime>,
+    is_active: bool,
+    pending_command: State<Option<String>>,
+) {
     let empty_bindings =
         hooks.use_const(Arc::<Vec<crate::keybindings::types::ParsedBinding>>::default);
     let bindings = runtime
@@ -61,7 +104,6 @@ pub fn use_command_keybinding_handlers(
         bindings_identity,
     );
 
-    let pending_command = hooks.use_state(|| Option::<String>::None);
     let handlers: KeybindingHandlers = command_actions
         .iter()
         .map(|action| {
@@ -77,8 +119,6 @@ pub fn use_command_keybinding_handlers(
     use_keybindings(hooks, runtime, handlers, ContextName::Chat, move || {
         is_active
     });
-
-    CommandKeybindingHandlersState { pending_command }
 }
 
 #[cfg(test)]
