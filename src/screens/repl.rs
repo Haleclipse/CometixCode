@@ -1216,7 +1216,10 @@ fn visible_streaming_text(raw: &str, mode: StreamingTextDisplayMode) -> Option<S
 /// owner; REPL still owns all live inputs.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct ShowSpinnerInput {
-    tool_jsx_allows_spinner: bool,
+    /// CC `!toolJSX || toolJSX.showSpinner === true` (REPL.tsx:2245-2263),
+    /// named for this port's toolJSX counterpart, the local command UI
+    /// (CC local-jsx, `CommandKind::LocalUi`) or the `!` shell row.
+    local_command_ui_allows_spinner: bool,
     tool_use_confirm_queue_empty: bool,
     prompt_queue_empty: bool,
     is_loading: bool,
@@ -1231,7 +1234,7 @@ struct ShowSpinnerInput {
 
 /// Maps to: CC `screens/REPL.tsx#showSpinner`.
 fn should_show_spinner(input: ShowSpinnerInput) -> bool {
-    input.tool_jsx_allows_spinner
+    input.local_command_ui_allows_spinner
         && input.tool_use_confirm_queue_empty
         && input.prompt_queue_empty
         && (input.is_loading
@@ -2121,7 +2124,6 @@ fn messages_memo_key(
     hide_logo: bool,
     columns: u16,
     rows: u16,
-    pending_permission_tool_use_id: Option<&str>,
     classifier_checking_tool_use_id: Option<&str>,
     classifier_checking_is_auto: bool,
     status_notice_context: &StatusNoticeContext,
@@ -2138,7 +2140,8 @@ fn messages_memo_key(
         hide_logo,
         columns,
         rows,
-        pending_permission_tool_use_id,
+        false,
+        0,
         false,
         classifier_checking_tool_use_id,
         classifier_checking_is_auto,
@@ -2161,8 +2164,10 @@ fn messages_memo_key_for_screen(
     hide_logo: bool,
     columns: u16,
     rows: u16,
-    pending_permission_tool_use_id: Option<&str>,
-    animation_blocked: bool,
+    // CC `Messages` props compared by its memo (Messages.tsx:1038-1052).
+    local_command_ui_pauses_animation: bool,
+    tool_use_confirm_queue_len: usize,
+    is_message_selector_visible: bool,
     classifier_checking_tool_use_id: Option<&str>,
     classifier_checking_is_auto: bool,
     status_notice_context: &StatusNoticeContext,
@@ -2188,7 +2193,7 @@ fn messages_memo_key_for_screen(
     // identity, so a rebuilt pool with the same names keeps the memo.
     let tool_pool = crate::components::messages_list::tool_pool_memo_key(tools);
     format!(
-        "messages:{:p}:{}:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{:?}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}:{:?}:{:?}:{}",
+        "messages:{:p}:{}:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{:?}:{}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}:{:?}:{:?}:{}",
         Arc::as_ptr(messages),
         messages.len(),
         conversation_id,
@@ -2199,8 +2204,9 @@ fn messages_memo_key_for_screen(
         hide_logo,
         columns,
         rows,
-        pending_permission_tool_use_id,
-        animation_blocked,
+        local_command_ui_pauses_animation,
+        tool_use_confirm_queue_len,
+        is_message_selector_visible,
         classifier_checking_tool_use_id,
         classifier_checking_is_auto,
         status_notice_context,
@@ -2278,7 +2284,6 @@ fn memoized_messages(
     hide_logo: bool,
     columns: u16,
     rows: u16,
-    pending_permission_tool_use_id: Option<String>,
     classifier_approvals: ClassifierApprovalsState,
     status_notice_context: StatusNoticeContext,
     streaming_text: Option<String>,
@@ -2294,7 +2299,8 @@ fn memoized_messages(
         hide_logo,
         columns,
         rows,
-        pending_permission_tool_use_id,
+        false,
+        0,
         false,
         classifier_approvals,
         status_notice_context,
@@ -2319,10 +2325,14 @@ fn memoized_messages_for_screen(
     hide_logo: bool,
     columns: u16,
     rows: u16,
-    pending_permission_tool_use_id: Option<String>,
-    // See `MessagesProps::animation_blocked`: CC `canAnimate`'s
-    // toolUseConfirmQueue / message-selector / toolJSX terms.
-    animation_blocked: bool,
+    // CC `toolJSX` (this port's local command UI, projected to whether it
+    // pauses animation), `toolUseConfirmQueue` (its length) and
+    // `isMessageSelectorVisible`: the prompt site passes REPL's
+    // (REPL.tsx:6165-6172), the transcript site `null` / `[]` / `false`
+    // (:5824-5827). Messages turns them into `canAnimate` itself.
+    local_command_ui_pauses_animation: bool,
+    tool_use_confirm_queue_len: usize,
+    is_message_selector_visible: bool,
     classifier_approvals: ClassifierApprovalsState,
     status_notice_context: StatusNoticeContext,
     streaming_text: Option<String>,
@@ -2345,8 +2355,9 @@ fn memoized_messages_for_screen(
         hide_logo,
         columns,
         rows,
-        pending_permission_tool_use_id.as_deref(),
-        animation_blocked,
+        local_command_ui_pauses_animation,
+        tool_use_confirm_queue_len,
+        is_message_selector_visible,
         classifier_approvals.checking_tool_use_id(),
         classifier_approvals.checking_is_auto(),
         &status_notice_context,
@@ -2375,8 +2386,9 @@ fn memoized_messages_for_screen(
                 screen: screen,
                 show_all_in_transcript: show_all_in_transcript,
                 hide_logo: hide_logo,
-                pending_permission_tool_use_id: pending_permission_tool_use_id,
-                animation_blocked: animation_blocked,
+                local_command_ui_pauses_animation: local_command_ui_pauses_animation,
+                tool_use_confirm_queue_len: tool_use_confirm_queue_len,
+                is_message_selector_visible: is_message_selector_visible,
                 classifier_checking_tool_use_id: classifier_checking_tool_use_id,
                 classifier_checking_is_auto: classifier_checking_is_auto,
                 status_notice_context: status_notice_context,
@@ -8615,7 +8627,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // branches. Local command/shell panels are the Rust toolJSX projection;
     // none currently opt into `showSpinner: true`.
     let show_spinner = should_show_spinner(ShowSpinnerInput {
-        tool_jsx_allows_spinner: active_local_command_ui_snapshot.is_none()
+        local_command_ui_allows_spinner: active_local_command_ui_snapshot.is_none()
             && active_prompt_shell_command_snapshot.is_none(),
         tool_use_confirm_queue_empty: current_permission.is_none(),
         // CC `promptQueue` (hook prompt requests, `components/hooks/PromptDialog`)
@@ -8804,21 +8816,25 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     } else {
         None
     };
-    // Maps to: CC `AssistantToolUseMessage.tsx:58-59,122`
-    // `isWaitingForPermission = pendingWorkerRequest?.toolUseId === param.id`:
-    // the "Waiting for permission…" tool row belongs to a swarm worker waiting
-    // on its leader, read from AppState on either screen. A local permission
-    // dialog does not change the row; it only stops rows animating (below).
-    let pending_permission_tool_use_id_for_messages =
-        pending_worker_request.as_ref().map(|pending| pending.tool_use_id.clone());
-    // Maps to: CC `Messages.tsx:764-767` `canAnimate`, from the props REPL
-    // hands the prompt-screen Messages (REPL.tsx:6160-6190):
-    // `toolUseConfirmQueue`, `isMessageSelectorVisible`, `toolJSX`. The
-    // transcript site passes `[]`, `false` and `null` (:5819-5843).
-    let messages_animation_blocked = screen.get() == Screen::Prompt
-        && (current_permission.is_some()
-            || message_selector_visible_snapshot
-            || !allow_dialogs_with_animation);
+    // Maps to: CC REPL.tsx:6165-6172 — the prompt-screen Messages receives
+    // REPL's `toolJSX`, `toolUseConfirmQueue` and `isMessageSelectorVisible`,
+    // and turns them into `canAnimate` itself (Messages.tsx:764-767); the
+    // transcript site passes `null`, `[]` and `false` (:5824-5827). This
+    // REPL's toolJSX counterparts — a local command UI or the `!` shell row —
+    // never let animation continue, which is `!allow_dialogs_with_animation`.
+    let (
+        messages_local_command_ui_pauses_animation,
+        messages_tool_use_confirm_queue_len,
+        messages_selector_visible,
+    ) = if screen.get() == Screen::Prompt {
+        (
+            !allow_dialogs_with_animation,
+            permission_queue.read().len(),
+            message_selector_visible_snapshot,
+        )
+    } else {
+        (false, 0, false)
+    };
     // Maps to: CC REPL.tsx:2768-2775 `hasSuppressedDialogs` — permission
     // prompts exist but are held back because the user is typing; PromptInput
     // says so (PromptInput.tsx:2981-2985). CC's `promptQueue` and cost dialog
@@ -9349,8 +9365,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     active_is_resume,
                     terminal_cols,
                     terminal_rows,
-                    None,
-                    messages_animation_blocked,
+                    messages_local_command_ui_pauses_animation,
+                    messages_tool_use_confirm_queue_len,
+                    messages_selector_visible,
                     classifier_approvals.read().clone(),
                     status_notice_context.clone(),
                     None,
@@ -9375,8 +9392,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     active_is_resume,
                     terminal_cols,
                     terminal_rows,
-                    pending_permission_tool_use_id_for_messages.clone(),
-                    messages_animation_blocked,
+                    messages_local_command_ui_pauses_animation,
+                    messages_tool_use_confirm_queue_len,
+                    messages_selector_visible,
                     classifier_approvals.read().clone(),
                     status_notice_context.clone(),
                     streaming_text_for_messages.clone(),
@@ -13199,7 +13217,6 @@ mod tests {
                                 false,
                                 cols,
                                 rows,
-                                None,
                                 ClassifierApprovalsState::default(),
                                 StatusNoticeContext::default(),
                                 None,
@@ -13967,7 +13984,6 @@ mod tests {
                                 false,
                                 cols,
                                 rows,
-                                None,
                                 ClassifierApprovalsState::default(),
                                 StatusNoticeContext::default(),
                                 None,
@@ -15431,7 +15447,6 @@ mod tests {
             80,
             24,
             None,
-            None,
             false,
             &status_notice_context,
             None,
@@ -15447,7 +15462,6 @@ mod tests {
             true,
             80,
             24,
-            None,
             None,
             false,
             &status_notice_context,
@@ -15487,7 +15501,6 @@ mod tests {
                 true,
                 80,
                 24,
-                None,
                 None,
                 false,
                 &status_notice_context,
@@ -15534,7 +15547,6 @@ mod tests {
                 80,
                 24,
                 None,
-                None,
                 false,
                 &status_notice_context,
                 None,
@@ -15574,7 +15586,6 @@ mod tests {
                 true,
                 80,
                 24,
-                None,
                 None,
                 false,
                 &status_notice_context,
@@ -15773,19 +15784,20 @@ mod tests {
         };
         assert_eq!(get_focused_input_dialog(&typing_with_selector), Some(MessageSelector));
 
-        // toolJSX without shouldContinueAnimation blocks everything after the
-        // sandbox permission, which is not behind that gate.
-        let tool_jsx = FocusedInputDialogInput {
+        // A local command UI (CC toolJSX without shouldContinueAnimation)
+        // blocks everything after the sandbox permission, which is not behind
+        // that gate.
+        let local_command_ui = FocusedInputDialogInput {
             is_message_selector_visible: false,
             allow_dialogs_with_animation: false,
             ..every_dialog
         };
-        assert_eq!(get_focused_input_dialog(&tool_jsx), Some(SandboxPermission));
-        let tool_jsx_no_sandbox = FocusedInputDialogInput {
+        assert_eq!(get_focused_input_dialog(&local_command_ui), Some(SandboxPermission));
+        let local_command_ui_no_sandbox = FocusedInputDialogInput {
             has_sandbox_permission_request: false,
-            ..tool_jsx
+            ..local_command_ui
         };
-        assert_eq!(get_focused_input_dialog(&tool_jsx_no_sandbox), None);
+        assert_eq!(get_focused_input_dialog(&local_command_ui_no_sandbox), None);
 
         assert_eq!(ToolPermission.as_str(), "tool-permission");
         assert_eq!(WorkerSandboxPermission.as_str(), "worker-sandbox-permission");
@@ -15793,7 +15805,7 @@ mod tests {
 
     fn spinner_input() -> ShowSpinnerInput {
         ShowSpinnerInput {
-            tool_jsx_allows_spinner: true,
+            local_command_ui_allows_spinner: true,
             tool_use_confirm_queue_empty: true,
             prompt_queue_empty: true,
             ..Default::default()
@@ -15818,7 +15830,7 @@ mod tests {
         assert!(should_show_spinner(input));
 
         for suppress in [
-            |value: &mut ShowSpinnerInput| value.tool_jsx_allows_spinner = false,
+            |value: &mut ShowSpinnerInput| value.local_command_ui_allows_spinner = false,
             |value: &mut ShowSpinnerInput| value.tool_use_confirm_queue_empty = false,
             |value: &mut ShowSpinnerInput| value.prompt_queue_empty = false,
             |value: &mut ShowSpinnerInput| value.pending_worker_request = true,

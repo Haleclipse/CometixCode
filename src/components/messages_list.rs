@@ -1077,6 +1077,19 @@ fn LogoHeader(props: &LogoHeaderProps) -> impl Into<AnyElement<'static>> {
     }
 }
 
+/// Maps to: CC `Messages.tsx:764-767` `canAnimate`. Its first term,
+/// `!toolJSX || !!toolJSX.shouldContinueAnimation`, is the negation of
+/// `local_command_ui_pauses_animation`.
+fn can_animate(
+    local_command_ui_pauses_animation: bool,
+    tool_use_confirm_queue_len: usize,
+    is_message_selector_visible: bool,
+) -> bool {
+    !local_command_ui_pauses_animation
+        && tool_use_confirm_queue_len == 0
+        && !is_message_selector_visible
+}
+
 #[derive(Default, Props)]
 struct MessagesImplProps {
     /// Maps to: CC `Messages.tsx:314-320,677-684` post-collapse export slice.
@@ -1103,17 +1116,17 @@ struct MessagesImplProps {
     /// reads; Cometix accepts a pure startup snapshot to preserve safe UI
     /// boundaries until runtime producers are wired.
     pub status_notice_context: StatusNoticeContext,
-    /// Pending permission request tool-use id, used to render the official
-    /// "Waiting for permission…" auxiliary row next to the matching tool use.
-    /// CC derives that row from `pendingWorkerRequest.toolUseId` only
-    /// (`AssistantToolUseMessage.tsx:58-59,122`).
-    pub pending_permission_tool_use_id: Option<String>,
-    /// The terms of CC `canAnimate` (`Messages.tsx:764-767`) other than
-    /// loading: a tool-permission request is queued, the message selector is
-    /// showing, or a toolJSX without `shouldContinueAnimation` is up. Rows
-    /// then stop animating, which is what keeps a transcript still under a
-    /// permission dialog.
-    pub animation_blocked: bool,
+    /// Maps to: CC `Messages.tsx:254-258` `toolJSX`, of which Messages reads
+    /// only `shouldContinueAnimation` (`:764-765`). This port's counterpart
+    /// is an active local command UI (CC local-jsx, `CommandKind::LocalUi`)
+    /// or the `!` shell row; true when one is up without letting animation
+    /// continue.
+    pub local_command_ui_pauses_animation: bool,
+    /// Maps to: CC `Messages.tsx:259` `toolUseConfirmQueue` — Messages reads
+    /// only its length (`:766`).
+    pub tool_use_confirm_queue_len: usize,
+    /// Maps to: CC `Messages.tsx:261` `isMessageSelectorVisible`.
+    pub is_message_selector_visible: bool,
     /// Transient assistant text preview. Maps to CC `Messages.streamingText`:
     /// it is rendered after formal rows and never participates in message
     /// normalization/grouping/lookups.
@@ -1163,8 +1176,7 @@ struct MessageRowsMemoKey {
     expand_thinking: bool,
     expand_collapsed_read_search: bool,
     columns: u16,
-    pending_permission_tool_use_id: Option<String>,
-    animation_blocked: bool,
+    can_animate: bool,
     classifier_checking_tool_use_id: Option<String>,
     classifier_checking_is_auto: bool,
     /// CC has no `MessageRows` component — this memo boundary is a port L1
@@ -1186,7 +1198,6 @@ fn message_rows_memo_key(
     expand_thinking: bool,
     expand_collapsed_read_search: bool,
     columns: u16,
-    pending_permission_tool_use_id: Option<&str>,
     classifier_checking_tool_use_id: Option<&str>,
     classifier_checking_is_auto: bool,
     tools: &[crate::types::tools::Tool],
@@ -1212,9 +1223,8 @@ fn message_rows_memo_key(
         expand_thinking,
         expand_collapsed_read_search,
         columns,
-        pending_permission_tool_use_id: pending_permission_tool_use_id.map(str::to_string),
         // Set by the caller, like `render_range`.
-        animation_blocked: false,
+        can_animate: true,
         classifier_checking_tool_use_id: classifier_checking_tool_use_id.map(str::to_string),
         classifier_checking_is_auto,
     }
@@ -1234,9 +1244,8 @@ struct MessageRowsProps {
     pub expand_thinking: bool,
     pub expand_collapsed_read_search: bool,
     pub columns: u16,
-    pub pending_permission_tool_use_id: Option<String>,
-    /// See [`MessagesImplProps::animation_blocked`].
-    pub animation_blocked: bool,
+    /// Maps to: CC `Messages.tsx:832` `canAnimate={canAnimate}` on each row.
+    pub can_animate: bool,
     pub classifier_checking_tool_use_id: Option<String>,
     pub classifier_checking_is_auto: bool,
     /// Maps to: CC `Messages.tsx:260` `inProgressToolUseIDs: Set<string>`.
@@ -1281,14 +1290,13 @@ impl Component for MessageRows {
             props.expand_thinking,
             props.expand_collapsed_read_search,
             props.columns,
-            props.pending_permission_tool_use_id.as_deref(),
             props.classifier_checking_tool_use_id.as_deref(),
             props.classifier_checking_is_auto,
             &props.tools,
         );
 
         next_key.render_range = props.render_range;
-        next_key.animation_blocked = props.animation_blocked;
+        next_key.can_animate = props.can_animate;
 
         // Match CC's Messages-level memo boundary for the native scrollback
         // path: ordinary PromptInput state changes do not change transcript
@@ -1345,9 +1353,7 @@ impl Component for MessageRows {
         let expand_thinking = props.expand_thinking;
         let expand_collapsed_read_search = props.expand_collapsed_read_search;
         let is_loading = props.is_loading;
-        // CC `canAnimate` (Messages.tsx:764-767) with this port's loading term.
-        let can_animate = is_loading && !props.animation_blocked;
-        let pending_permission_tool_use_id = props.pending_permission_tool_use_id.clone();
+        let can_animate = props.can_animate;
         let in_progress_tool_use_ids = Arc::clone(&props.in_progress_tool_use_ids);
         let streaming_tool_use_ids = Arc::clone(&props.streaming_tool_use_ids);
         let tools = Arc::clone(&props.tools);
@@ -1411,7 +1417,6 @@ impl Component for MessageRows {
                             expand_thinking: expand_thinking,
                             expand_collapsed_read_search: expand_collapsed_read_search,
                             columns: columns,
-                            pending_permission_tool_use_id: pending_permission_tool_use_id.clone(),
                             in_progress_tool_use_ids: Arc::clone(&in_progress_tool_use_ids),
                             streaming_tool_use_ids: Arc::clone(&streaming_tool_use_ids),
                             // CC `Messages.tsx:822` `tools={tools}`.
@@ -1474,8 +1479,9 @@ struct MessagesMemoKey {
     show_logo: bool,
     status_notice_context: StatusNoticeContext,
     columns: u16,
-    pending_permission_tool_use_id: Option<String>,
-    animation_blocked: bool,
+    local_command_ui_pauses_animation: bool,
+    tool_use_confirm_queue_len: usize,
+    is_message_selector_visible: bool,
     classifier_checking_tool_use_id: Option<String>,
     classifier_checking_is_auto: bool,
     streaming_text: Option<String>,
@@ -1623,8 +1629,9 @@ impl Component for MessagesImpl {
             show_logo: props.show_logo,
             status_notice_context: props.status_notice_context.clone(),
             columns: terminal_cols,
-            pending_permission_tool_use_id: props.pending_permission_tool_use_id.clone(),
-            animation_blocked: props.animation_blocked,
+            local_command_ui_pauses_animation: props.local_command_ui_pauses_animation,
+            tool_use_confirm_queue_len: props.tool_use_confirm_queue_len,
+            is_message_selector_visible: props.is_message_selector_visible,
             classifier_checking_tool_use_id: props.classifier_checking_tool_use_id.clone(),
             classifier_checking_is_auto: props.classifier_checking_is_auto,
             streaming_text: props.streaming_text.clone(),
@@ -1730,6 +1737,12 @@ impl Component for MessagesImpl {
         // `components/Messages.tsx`, the preview is rendered as a sibling after
         // `messageRows`, so text deltas do not re-run message normalization,
         // grouping, or row construction.
+        // Maps to: CC `Messages.tsx:764-767`.
+        let can_animate = can_animate(
+            props.local_command_ui_pauses_animation,
+            props.tool_use_confirm_queue_len,
+            props.is_message_selector_visible,
+        );
         let mut rows_key = message_rows_memo_key(
             &prepared,
             props.conversation_id,
@@ -1739,12 +1752,11 @@ impl Component for MessagesImpl {
             expand_thinking,
             expand_collapsed_read_search,
             terminal_cols,
-            props.pending_permission_tool_use_id.as_deref(),
             props.classifier_checking_tool_use_id.as_deref(),
             props.classifier_checking_is_auto,
             &props.tools,
         );
-        rows_key.animation_blocked = props.animation_blocked;
+        rows_key.can_animate = can_animate;
         let rows_memo_key = format!("{:?}:{:?}", props.render_range, rows_key);
         children.push(
             element! {
@@ -1760,8 +1772,7 @@ impl Component for MessagesImpl {
                             expand_thinking: expand_thinking,
                             expand_collapsed_read_search: expand_collapsed_read_search,
                             columns: terminal_cols,
-                            pending_permission_tool_use_id: props.pending_permission_tool_use_id.clone(),
-                            animation_blocked: props.animation_blocked,
+                            can_animate: can_animate,
                             classifier_checking_tool_use_id: props.classifier_checking_tool_use_id.clone(),
                             classifier_checking_is_auto: props.classifier_checking_is_auto,
                             in_progress_tool_use_ids: Arc::clone(&props.in_progress_tool_use_ids),
@@ -1833,12 +1844,17 @@ pub struct MessagesProps {
     pub hide_logo: bool,
     pub is_loading: bool,
     pub status_notice_context: StatusNoticeContext,
-    pub pending_permission_tool_use_id: Option<String>,
-    /// See [`MessagesImplProps::animation_blocked`]. The REPL derives it from
-    /// the props CC hands `Messages`: `toolUseConfirmQueue`,
-    /// `isMessageSelectorVisible` and `toolJSX` (REPL.tsx:6160-6190); the
-    /// transcript site passes none of them (`[]`/`false`/`null`, :5819-5843).
-    pub animation_blocked: bool,
+    /// Maps to: CC `Messages.tsx:254-258` `toolJSX` — see
+    /// `MessagesImplProps::local_command_ui_pauses_animation`. The prompt site
+    /// passes REPL's (REPL.tsx:6165); the transcript site passes `null`
+    /// (:5824), which is this field's default.
+    pub local_command_ui_pauses_animation: bool,
+    /// Maps to: CC `Messages.tsx:259` `toolUseConfirmQueue`, of which only
+    /// the length is read. Transcript site: `[]` (:5825).
+    pub tool_use_confirm_queue_len: usize,
+    /// Maps to: CC `Messages.tsx:261` `isMessageSelectorVisible`. Transcript
+    /// site: `false` (:5827).
+    pub is_message_selector_visible: bool,
     pub streaming_text: Option<String>,
     pub classifier_checking_tool_use_id: Option<String>,
     pub classifier_checking_is_auto: bool,
@@ -1873,8 +1889,9 @@ pub fn Messages(props: &MessagesProps) -> impl Into<AnyElement<'static>> {
             show_all_in_transcript: props.show_all_in_transcript,
             show_logo: !props.hide_logo,
             status_notice_context: props.status_notice_context.clone(),
-            pending_permission_tool_use_id: props.pending_permission_tool_use_id.clone(),
-            animation_blocked: props.animation_blocked,
+            local_command_ui_pauses_animation: props.local_command_ui_pauses_animation,
+            tool_use_confirm_queue_len: props.tool_use_confirm_queue_len,
+            is_message_selector_visible: props.is_message_selector_visible,
             streaming_text: props.streaming_text.clone(),
             classifier_checking_tool_use_id: props.classifier_checking_tool_use_id.clone(),
             classifier_checking_is_auto: props.classifier_checking_is_auto,
@@ -2261,8 +2278,25 @@ mod tests {
         );
     }
 
+    /// AppState of a swarm worker waiting on its leader for `tool_use_id`
+    /// (swarmWorkerHandler.ts:62-65).
+    fn worker_waiting_on(tool_use_id: &str) -> crate::state::app_state_store::AppState {
+        crate::state::app_state_store::AppState {
+            pending_worker_request: Some(Arc::new(
+                crate::hooks::use_inbox_poller::PendingWorkerRequest {
+                    tool_name: "Bash".to_string(),
+                    tool_use_id: tool_use_id.to_string(),
+                    description: "echo permission-gated".to_string(),
+                },
+            )),
+            ..Default::default()
+        }
+    }
+
     #[test]
-    fn messages_pending_permission_tool_use_renders_waiting_permission_row() {
+    fn messages_tool_use_reads_pending_worker_request_for_waiting_permission_row() {
+        // CC AssistantToolUseMessage.tsx:58-60,122: the row reads
+        // `pendingWorkerRequest` from AppState; Messages passes nothing.
         let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
         let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let current_theme = *theme::current();
@@ -2277,11 +2311,16 @@ mod tests {
         let rendered = element! {
             ContextProvider(value: Context::owned(current_theme)) {
                 crate::state::app_state::AppStateProvider(
+                    initial_state: Some(worker_waiting_on("toolu_1")),
                     children: crate::state::app_state::ProviderChildren::new(move || element! {
                         Messages(
                             messages: Arc::clone(&messages),
                             is_loading: false,
-                            pending_permission_tool_use_id: Some("toolu_1".to_string()),
+                            // The worker's tool is running while it waits
+                            // (CC :204 `!isResolved && !isQueued`).
+                            in_progress_tool_use_ids: Arc::new(
+                                ["toolu_1".to_string()].into_iter().collect::<HashSet<_>>(),
+                            ),
                         )
                     }.into_any()),
                 )
@@ -2313,13 +2352,13 @@ mod tests {
         let rendered = element! {
             ContextProvider(value: Context::owned(current_theme)) {
                 crate::state::app_state::AppStateProvider(
+                    initial_state: Some(worker_waiting_on("toolu_1")),
                     children: crate::state::app_state::ProviderChildren::new(move || element! {
                         Messages(
                             messages: Arc::clone(&messages),
                             is_loading: false,
                             classifier_checking_tool_use_id: Some("toolu_1".to_string()),
                             classifier_checking_is_auto: true,
-                            pending_permission_tool_use_id: Some("toolu_1".to_string()),
                             // Liveness is set membership (CC `REPL.tsx:1897`),
                             // not a status stored on the row.
                             in_progress_tool_use_ids: Arc::new(
@@ -2907,153 +2946,58 @@ mod tests {
         let rebuilt_pool = tools(&["Bash", "Read"]);
         let narrowed_pool = tools(&["Bash"]);
 
-        assert_eq!(
+        // The terms each assertion varies; the rest stay at one baseline
+        // (not transcript mode, both expand preferences on, 120 columns).
+        let key = |prepared: &MessagesPreparedPipeline,
+                   conversation_id: u64,
+                   verbose: bool,
+                   classifier: Option<&str>,
+                   classifier_is_auto: bool,
+                   pool: &[crate::types::tools::Tool]| {
             message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &same_prepared,
-                0,
+                prepared,
+                conversation_id,
                 false,
-                false,
+                verbose,
                 false,
                 true,
                 true,
                 120,
-                None,
-                None,
-                false,
-                &pool
+                classifier,
+                classifier_is_auto,
+                pool,
             )
-        );
-        assert_ne!(
-            message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &rebuilt_prepared,
-                0,
-                false,
-                false,
-                false,
-                true,
-                true,
-                120,
-                None,
-                None,
-                false,
-                &pool
-            )
-        );
-        assert_ne!(
-            message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &prepared, 0, false, true, false, true, true, 120, None, None, false, &pool
-            )
-        );
-        assert_ne!(
-            message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &prepared,
-                0,
-                false,
-                false,
-                false,
-                true,
-                true,
-                120,
-                Some("toolu_1"),
-                None,
-                false,
-                &pool
-            )
-        );
-        assert_ne!(
-            message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &prepared,
-                0,
-                false,
-                false,
-                false,
-                true,
-                true,
-                120,
-                None,
-                Some("toolu_1"),
-                true,
-                &pool
-            )
-        );
+        };
+        let baseline = key(&prepared, 0, false, None, false, &pool);
+
+        assert_eq!(baseline, key(&same_prepared, 0, false, None, false, &pool));
+        assert_ne!(baseline, key(&rebuilt_prepared, 0, false, None, false, &pool));
+        assert_ne!(baseline, key(&prepared, 0, true, None, false, &pool));
+        assert_ne!(baseline, key(&prepared, 0, false, Some("toolu_1"), true, &pool));
         // CC Messages.tsx:764-767: `canAnimate` flipping (a permission dialog
         // queued, the selector opening) must reach the rows.
-        let mut blocked =
-            message_rows_memo_key(&prepared, 0, true, false, false, true, true, 120, None, None, false, &pool);
-        blocked.animation_blocked = true;
-        assert_ne!(
-            message_rows_memo_key(
-                &prepared, 0, true, false, false, true, true, 120, None, None, false, &pool
-            ),
-            blocked
-        );
+        let mut blocked = key(&prepared, 0, false, None, false, &pool);
+        blocked.can_animate = false;
+        assert_ne!(baseline, blocked);
         // CC Messages.tsx:792-795: a conversationId bump alone must change the
         // row keys (compact-reset remount, REPL.tsx:3461-3463).
-        assert_ne!(
-            message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &prepared, 1, false, false, false, true, true, 120, None, None, false, &pool
-            )
-        );
+        assert_ne!(baseline, key(&prepared, 1, false, None, false, &pool));
         // CC Messages.tsx:1079-1087: a rebuilt pool with the SAME names is
         // equal, a pool that lost a tool is not — the rows must re-render so a
         // narrowed-out tool stops reading its own members
         // (`AgentTool/UI.tsx:1096-1098`).
-        assert_eq!(
-            message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &prepared,
-                0,
-                false,
-                false,
-                false,
-                true,
-                true,
-                120,
-                None,
-                None,
-                false,
-                &rebuilt_pool
-            )
-        );
-        assert_ne!(
-            message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, None, false, &pool
-            ),
-            message_rows_memo_key(
-                &prepared,
-                0,
-                false,
-                false,
-                false,
-                true,
-                true,
-                120,
-                None,
-                None,
-                false,
-                &narrowed_pool
-            )
-        );
+        assert_eq!(baseline, key(&prepared, 0, false, None, false, &rebuilt_pool));
+        assert_ne!(baseline, key(&prepared, 0, false, None, false, &narrowed_pool));
+    }
+
+    #[test]
+    fn can_animate_matches_official_terms() {
+        // CC Messages.tsx:764-767, with the transcript site's inputs first
+        // (`null`, `[]`, `false`, REPL.tsx:5824-5827).
+        assert!(can_animate(false, 0, false));
+        assert!(!can_animate(true, 0, false));
+        assert!(!can_animate(false, 1, false));
+        assert!(!can_animate(false, 0, true));
     }
 
     #[test]

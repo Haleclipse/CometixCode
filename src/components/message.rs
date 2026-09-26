@@ -20,7 +20,6 @@ pub struct MessageProps {
     pub message: RenderableMessage,
     pub add_margin: bool,
     pub can_animate: bool,
-    pub is_waiting_for_permission: bool,
     pub verbose: bool,
     pub is_transcript_mode: bool,
     /// Cometix extension carriers (user-authorized L2, 2026-07-31; CC verbose
@@ -55,7 +54,6 @@ pub fn Message(props: &MessageProps) -> impl Into<AnyElement<'static>> {
             message,
             props.add_margin,
             props.can_animate,
-            props.is_waiting_for_permission,
             props.verbose,
             props.is_transcript_mode,
             props.expand_thinking,
@@ -281,7 +279,6 @@ fn render_assistant(
     message: &crate::types::message::AssistantMessage,
     add_margin: bool,
     can_animate: bool,
-    is_waiting_for_permission: bool,
     verbose: bool,
     is_transcript_mode: bool,
     expand_thinking: bool,
@@ -315,7 +312,6 @@ fn render_assistant(
                 is_api_error_message,
                 add_margin,
                 can_animate,
-                is_waiting_for_permission,
                 verbose,
                 is_transcript_mode,
                 expand_thinking,
@@ -341,7 +337,6 @@ fn render_assistant_block(
     is_api_error_message: bool,
     add_margin: bool,
     can_animate: bool,
-    is_waiting_for_permission: bool,
     verbose: bool,
     is_transcript_mode: bool,
     expand_thinking: bool,
@@ -424,7 +419,6 @@ fn render_assistant_block(
                     )),
                     add_margin: add_margin,
                     can_animate: can_animate,
-                    is_waiting_for_permission: is_waiting_for_permission,
                     // Maps to: CC `MessageRow.tsx:154-155`
                     // `getProgressMessagesFromLookup(msg, lookups)`.
                     progress_messages: lookups

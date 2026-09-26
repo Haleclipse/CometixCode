@@ -74,9 +74,6 @@ pub struct AssistantToolUseMessageProps {
     /// specialized tool-renderer embeddings can opt out without changing the
     /// tool name/message layout contract.
     pub should_show_dot: Option<bool>,
-    /// Mirrors official `isWaitingForPermission`, derived from the pending
-    /// worker request/tool-use id at the row boundary.
-    pub is_waiting_for_permission: bool,
     /// UI-only typed progress seam for official `ProgressMessage<ToolProgressData>`
     /// rows. Mock/main-screen paths can provide already-known progress snapshots
     /// without starting real tools or progress streams.
@@ -107,6 +104,18 @@ pub fn AssistantToolUseMessage(
     // stable across renders (this hook holds state, unlike the context reads
     // below).
     let (_, terminal_rows) = hooks.use_terminal_size();
+    // Maps to CC `AssistantToolUseMessage.tsx:58-60,122`: the row reads
+    // `pendingWorkerRequest` itself — a swarm worker waiting on its leader's
+    // approval for this tool use — rather than being told by its parents.
+    // Unconditional for the same hook-order reason as above.
+    let pending_worker_request =
+        crate::state::app_state::use_app_state_maybe_outside_of_provider(&mut hooks, |state| {
+            state.pending_worker_request.clone()
+        })
+        .flatten();
+    let is_waiting_for_permission = pending_worker_request
+        .as_ref()
+        .is_some_and(|request| props.tool_use_id.as_deref() == Some(request.tool_use_id.as_str()));
     let progress_options = ToolUseProgressOptions {
         verbose: props.verbose,
         is_transcript_mode: props.is_transcript_mode,
@@ -275,7 +284,7 @@ pub fn AssistantToolUseMessage(
         &props.tool_name,
         status,
         is_classifier_checking,
-        props.is_waiting_for_permission,
+        is_waiting_for_permission,
         &props.progress_messages,
         progress_options,
     );
@@ -287,7 +296,7 @@ pub fn AssistantToolUseMessage(
             status,
             is_classifier_checking,
             classifier_approvals.checking_is_auto(),
-            props.is_waiting_for_permission,
+            is_waiting_for_permission,
             &props.progress_messages,
             progress_options,
         );
@@ -1014,8 +1023,9 @@ fn tool_use_auxiliary_messages(
         }];
     }
 
-    let is_unresolved = matches!(status, ToolUseStatus::Queued | ToolUseStatus::Running);
-    if is_waiting_for_permission && is_unresolved {
+    // CC `:204-215`: under `!isResolved && !isQueued`, i.e. a running row. A
+    // queued row shows its queued message instead (`:232`).
+    if is_waiting_for_permission && status == ToolUseStatus::Running {
         return vec!["Waiting for permission…".to_string()];
     }
 
@@ -3674,39 +3684,69 @@ mod tests {
         assert!(!text.contains("MockWrapper"), "canvas=\n{text}");
     }
 
+    /// An AppStore whose `pendingWorkerRequest` names `tool_use_id`, as a swarm
+    /// worker's store does while it waits on the leader
+    /// (swarmWorkerHandler.ts:62-65).
+    fn store_with_pending_worker_request(tool_use_id: &str) -> crate::state::store::AppStore {
+        crate::state::store::AppStore::new(
+            crate::state::app_state_store::AppState {
+                pending_worker_request: Some(std::sync::Arc::new(
+                    crate::hooks::use_inbox_poller::PendingWorkerRequest {
+                        tool_name: "Bash".to_string(),
+                        tool_use_id: tool_use_id.to_string(),
+                        description: "echo permission-gated".to_string(),
+                    },
+                )),
+                ..Default::default()
+            },
+            None,
+        )
+    }
+
     #[test]
     fn assistant_tool_use_waiting_permission_row_takes_priority() {
-        assert_eq!(
-            auxiliary_message("Bash", ToolUseStatus::Queued, false, false, true),
-            some_message("Waiting for permission…")
-        );
+        // CC :204-215 — only a running row (`!isResolved && !isQueued`); a
+        // queued one shows its queued message (:232).
         assert_eq!(
             auxiliary_message("Read", ToolUseStatus::Running, false, false, true),
             some_message("Waiting for permission…")
+        );
+        assert_eq!(
+            auxiliary_message("Bash", ToolUseStatus::Queued, false, false, true),
+            some_message("Waiting…")
         );
         assert_eq!(
             auxiliary_message("Bash", ToolUseStatus::Succeeded, false, false, true),
             None
         );
 
-        let text = element! {
-            ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
-                AssistantToolUseMessage(
-                    tool_name: "Bash".to_string(),
-                    description: "echo permission-gated".to_string(),
-                    status: Some(ToolUseStatus::Queued),
-                    can_animate: false,
-                    is_waiting_for_permission: true,
-                    verbose: false,
-                    is_transcript_mode: false,
-                )
+        let render = |tool_use_id: &str| {
+            let store = store_with_pending_worker_request("toolu_waiting");
+            element! {
+                ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
+                    ContextProvider(value: Context::owned(store)) {
+                        AssistantToolUseMessage(
+                            tool_use_id: Some(tool_use_id.to_string()),
+                            tool_name: "Bash".to_string(),
+                            description: "echo permission-gated".to_string(),
+                            status: Some(ToolUseStatus::Running),
+                            can_animate: false,
+                            verbose: false,
+                            is_transcript_mode: false,
+                        )
+                    }
+                }
             }
-        }
-        .render(None)
-        .to_string();
+            .render(None)
+            .to_string()
+        };
 
+        // CC :122 `pendingWorkerRequest?.toolUseId === param.id`, read by the
+        // row from AppState.
+        let text = render("toolu_waiting");
         assert!(text.contains("Waiting for permission…"), "canvas=\n{text}");
-        assert!(!text.contains("Waiting…"), "canvas=\n{text}");
+        let other = render("toolu_other");
+        assert!(!other.contains("Waiting for permission…"), "canvas=\n{other}");
     }
 
     #[test]
@@ -3730,19 +3770,21 @@ mod tests {
                 is_auto: false,
             },
         );
+        let store = store_with_pending_worker_request("toolu_classifier");
         let text = element! {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
-                ContextProvider(value: Context::owned(classifier_state)) {
-                    AssistantToolUseMessage(
-                        tool_use_id: Some("toolu_classifier".to_string()),
-                        tool_name: "Bash".to_string(),
-                        description: "rm -rf tmp".to_string(),
-                        status: Some(ToolUseStatus::Running),
-                        can_animate: false,
-                        is_waiting_for_permission: true,
-                        verbose: false,
-                        is_transcript_mode: false,
-                    )
+                ContextProvider(value: Context::owned(store)) {
+                    ContextProvider(value: Context::owned(classifier_state)) {
+                        AssistantToolUseMessage(
+                            tool_use_id: Some("toolu_classifier".to_string()),
+                            tool_name: "Bash".to_string(),
+                            description: "rm -rf tmp".to_string(),
+                            status: Some(ToolUseStatus::Running),
+                            can_animate: false,
+                            verbose: false,
+                            is_transcript_mode: false,
+                        )
+                    }
                 }
             }
         }
