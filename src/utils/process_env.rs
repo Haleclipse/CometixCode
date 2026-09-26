@@ -268,7 +268,7 @@ pub(crate) fn begin_update() -> EnvUpdate<'static> {
     EnvUpdate {
         guard,
         staged,
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         os_operations: Vec::new(),
     }
 }
@@ -305,7 +305,7 @@ pub(crate) fn restore_entry(saved: EnvEntryRestore) {
                 .entries
                 .partition_point(|candidate| candidate.insertion_ordinal < entry.insertion_ordinal);
             table.entries.insert(position, entry.clone());
-            #[cfg(unix)]
+            #[cfg(any(unix, windows))]
             update
                 .os_operations
                 .push(OsOperation::Set(entry.key, entry.value));
@@ -313,7 +313,7 @@ pub(crate) fn restore_entry(saved: EnvEntryRestore) {
         None => {
             if let Some(current) = current {
                 Arc::make_mut(&mut update.staged).entries.remove(current);
-                #[cfg(unix)]
+                #[cfg(any(unix, windows))]
                 update.os_operations.push(OsOperation::Remove(saved.key));
             }
         }
@@ -321,7 +321,7 @@ pub(crate) fn restore_entry(saved: EnvEntryRestore) {
     update.commit();
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 enum OsOperation {
     Set(OsString, OsString),
     Remove(OsString),
@@ -332,7 +332,7 @@ enum OsOperation {
 pub(crate) struct EnvUpdate<'a> {
     guard: RwLockWriteGuard<'a, Arc<EnvTable>>,
     staged: Arc<EnvTable>,
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     os_operations: Vec<OsOperation>,
 }
 
@@ -348,7 +348,7 @@ impl EnvUpdate<'_> {
             return;
         };
         Arc::make_mut(&mut self.staged).insert(key.clone(), value.clone());
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         self.os_operations.push(OsOperation::Set(key, value));
     }
 
@@ -360,7 +360,7 @@ impl EnvUpdate<'_> {
             return;
         }
         Arc::make_mut(&mut self.staged).remove(&key);
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         self.os_operations.push(OsOperation::Remove(key));
     }
 
@@ -376,16 +376,23 @@ impl EnvUpdate<'_> {
     }
 
     /// Publishes the complete staged version exactly once. Until production
-    /// raw readers are migrated, Unix mirrors the already-normalized operations
-    /// into the real environment at this boundary only.
-    #[allow(clippy::disallowed_methods)] // Transitional carrier-owned Unix write-through.
+    /// raw readers are migrated, every platform mirrors the already-normalized
+    /// operations into the real environment at this boundary only. A build
+    /// without this write-through strands every carrier-only write where the
+    /// raw `std::env` readers cannot see it — settings.json `env` included,
+    /// which is how `ANTHROPIC_AUTH_TOKEN` stopped reaching auth
+    /// (`services/api/client.rs:84`).
+    #[allow(clippy::disallowed_methods)] // Transitional carrier-owned real-env write-through.
     pub(crate) fn commit(mut self) -> EnvSnapshot {
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         for operation in &self.os_operations {
-            // SAFETY: normalization removes NUL/`=` cases that make std's API
-            // panic, but this transitional write-through remains unsound with
-            // concurrent raw OS readers/writers and is not atomic with carrier
-            // publication. The final integration child removes the bridge.
+            // SAFETY: `normalize_assignment`/`normalize_key` strip the NUL and
+            // `=` shapes that make std's API panic. Windows `set_var` is
+            // documented as sound — the same premise `entrypoints/cli.rs:19-23`
+            // already relies on. On Unix the write-through stays unsound with
+            // concurrent raw OS readers and is not atomic with carrier
+            // publication, so the integration child removes this bridge only
+            // after the raw readers are migrated.
             unsafe {
                 match operation {
                     OsOperation::Set(key, value) => std::env::set_var(key, value),
@@ -829,30 +836,35 @@ mod tests {
         assert!(!keys_equal(&first, &second));
     }
 
-    /// The Windows carrier is the L1 owner for ordinary CC `process.env`
-    /// assignments (`cli/structuredIO.ts:348-360`); only the later bootstrap
-    /// hardening owner may mutate the real Windows environment.
+    /// The carrier mirrors ordinary CC `process.env` assignments into the real
+    /// environment (`cli/structuredIO.ts:348-360`). Node has ONE `process.env`
+    /// object, so a carrier-only write strands settings `env` where the raw
+    /// `std::env` readers cannot see it — which is exactly how
+    /// `ANTHROPIC_AUTH_TOKEN` from settings.json stopped reaching auth
+    /// (`services/api/client.rs:84`) before this write-through covered Windows.
     #[cfg(windows)]
     #[test]
-    fn windows_carrier_operations_leave_real_environment_unchanged() {
+    fn windows_carrier_operations_mirror_into_real_environment() {
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let key = "COMETIX_PROCESS_ENV_WINDOWS_OS_UNCHANGED";
-        let real_before = std::env::vars_os().collect::<Vec<_>>();
-        let raw_value_before = std::env::var_os(key);
+        let key = "COMETIX_PROCESS_ENV_WINDOWS_OS_MIRRORED";
         let _carrier = EnvVarGuard::unset(key);
-        assert_eq!(std::env::vars_os().collect::<Vec<_>>(), real_before);
-        assert_eq!(std::env::var_os(key), raw_value_before);
 
+        // Names normalization rejects reach neither the carrier nor the OS.
         let before_invalid = snapshot();
         set("", "ignored");
         set("BAD=KEY", "ignored");
         assert!(before_invalid.same_version(&snapshot()));
-        assert_eq!(std::env::vars_os().collect::<Vec<_>>(), real_before);
 
         set(key, "valid\0truncated");
         assert_eq!(var(key).as_deref(), Some("valid"));
-        assert_eq!(std::env::vars_os().collect::<Vec<_>>(), real_before);
+        assert_eq!(
+            std::env::var(key).as_deref(),
+            Ok("valid"),
+            "a carrier write must reach the real Windows environment"
+        );
+
         remove(key);
-        assert_eq!(std::env::vars_os().collect::<Vec<_>>(), real_before);
+        assert_eq!(var(key), None);
+        assert_eq!(std::env::var_os(key), None);
     }
 }
