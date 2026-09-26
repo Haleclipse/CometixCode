@@ -1159,6 +1159,20 @@ fn messages_memo_key(
     )
 }
 
+/// Memo payload for a tool-use id set: sorted, so equality is set equality
+/// and the `Debug` text feeding the `message-rows` Memo is deterministic.
+///
+/// Maps to: CC `Messages.tsx:1030-1036` `setsEqual`, which the `Messages`
+/// comparator applies to `inProgressToolUseIDs` (`:1064-1068`). CC compares
+/// `streamingToolUses` per element by `contentBlock` (`:1054-1063`); the port's
+/// prop is already reduced to the id set (`:690`), so the set is what can be
+/// compared here.
+fn tool_use_id_set_memo_key(ids: &HashSet<String>) -> Vec<String> {
+    let mut ids: Vec<String> = ids.iter().cloned().collect();
+    ids.sort_unstable();
+    ids
+}
+
 /// iocraft L1 comparator payload for the extracted `MessageRows` subtree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MessageRowsMemoKey {
@@ -1179,6 +1193,11 @@ struct MessageRowsMemoKey {
     can_animate: bool,
     classifier_checking_tool_use_id: Option<String>,
     classifier_checking_is_auto: bool,
+    /// Every row's `isQueued`/`isStreaming` reads these (CC `Messages.tsx:829`
+    /// and the row's `streamingToolUseIDs`), so a set change alone must get
+    /// past this boundary — see [`tool_use_id_set_memo_key`].
+    in_progress_tool_use_ids: Vec<String>,
+    streaming_tool_use_ids: Vec<String>,
     /// CC has no `MessageRows` component — this memo boundary is a port L1
     /// extraction of `renderableMessages.flatMap(renderMessageRow)`, so it must
     /// carry every term CC's enclosing `Messages` comparator carries, `tools`
@@ -1200,6 +1219,8 @@ fn message_rows_memo_key(
     columns: u16,
     classifier_checking_tool_use_id: Option<&str>,
     classifier_checking_is_auto: bool,
+    in_progress_tool_use_ids: &HashSet<String>,
+    streaming_tool_use_ids: &HashSet<String>,
     tools: &[crate::types::tools::Tool],
 ) -> MessageRowsMemoKey {
     MessageRowsMemoKey {
@@ -1227,6 +1248,8 @@ fn message_rows_memo_key(
         can_animate: true,
         classifier_checking_tool_use_id: classifier_checking_tool_use_id.map(str::to_string),
         classifier_checking_is_auto,
+        in_progress_tool_use_ids: tool_use_id_set_memo_key(in_progress_tool_use_ids),
+        streaming_tool_use_ids: tool_use_id_set_memo_key(streaming_tool_use_ids),
     }
 }
 
@@ -1292,6 +1315,8 @@ impl Component for MessageRows {
             props.columns,
             props.classifier_checking_tool_use_id.as_deref(),
             props.classifier_checking_is_auto,
+            &props.in_progress_tool_use_ids,
+            &props.streaming_tool_use_ids,
             &props.tools,
         );
 
@@ -1490,6 +1515,9 @@ struct MessagesMemoKey {
     classifier_checking_tool_use_id: Option<String>,
     classifier_checking_is_auto: bool,
     streaming_text: Option<String>,
+    /// CC `Messages.tsx:1054-1068` — see [`tool_use_id_set_memo_key`].
+    in_progress_tool_use_ids: Vec<String>,
+    streaming_tool_use_ids: Vec<String>,
     /// CC `Messages.tsx:1079-1087` — see [`tool_pool_memo_key`].
     tool_pool: String,
 }
@@ -1640,6 +1668,8 @@ impl Component for MessagesImpl {
             classifier_checking_tool_use_id: props.classifier_checking_tool_use_id.clone(),
             classifier_checking_is_auto: props.classifier_checking_is_auto,
             streaming_text: props.streaming_text.clone(),
+            in_progress_tool_use_ids: tool_use_id_set_memo_key(&props.in_progress_tool_use_ids),
+            streaming_tool_use_ids: tool_use_id_set_memo_key(&props.streaming_tool_use_ids),
             tool_pool: tool_pool_memo_key(&props.tools),
         };
 
@@ -1765,6 +1795,8 @@ impl Component for MessagesImpl {
             terminal_cols,
             props.classifier_checking_tool_use_id.as_deref(),
             props.classifier_checking_is_auto,
+            &props.in_progress_tool_use_ids,
+            &props.streaming_tool_use_ids,
             &props.tools,
         );
         rows_key.can_animate = can_animate;
@@ -2391,6 +2423,110 @@ mod tests {
         assert!(mounted.contains("Waiting for permission…"), "mount frame:\n{mounted}");
         assert!(mounted.contains("verbose=false"), "mount frame:\n{mounted}");
         assert!(!answered.contains("Waiting for permission…"), "frame after the write:\n{answered}");
+    }
+
+    #[derive(Default, Props)]
+    struct InProgressFlipMessagesProps {
+        pub is_loading: bool,
+    }
+
+    /// Messages whose only changing prop is `inProgressToolUseIDs`: the store's
+    /// `verbose` stands in for REPL's `setInProgressToolUseIDs` and picks one
+    /// of two fixed sets. Messages' own `verbose` prop stays at its default.
+    #[component]
+    fn InProgressFlipMessages(
+        props: &InProgressFlipMessagesProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        let started = crate::state::app_state::use_app_state(&mut hooks, |state| state.verbose);
+        let messages = hooks.use_const(|| {
+            Arc::new(vec![tool_use_named_with_input(
+                "assistant-tool",
+                "toolu_1",
+                "Bash",
+                None,
+                "echo queued-then-running",
+            )])
+        });
+        let queued = hooks.use_const(|| Arc::new(HashSet::new()));
+        let running = hooks.use_const(|| {
+            Arc::new(["toolu_1".to_string()].into_iter().collect::<HashSet<_>>())
+        });
+        let in_progress = if started { running } else { queued };
+        element! {
+            Messages(
+                messages: Arc::clone(&messages),
+                is_loading: props.is_loading,
+                in_progress_tool_use_ids: Arc::clone(&in_progress),
+            )
+        }
+    }
+
+    #[derive(Default, Props)]
+    struct InProgressFlipProbeProps {
+        pub store: Option<crate::state::store::AppStore>,
+        pub is_loading: bool,
+    }
+
+    #[component]
+    fn InProgressFlipProbe(props: &InProgressFlipProbeProps) -> impl Into<AnyElement<'static>> {
+        let store = props.store.clone().expect("probe store");
+        let is_loading = props.is_loading;
+        let current_theme = *theme::current();
+        element! {
+            ContextProvider(value: Context::owned(current_theme)) {
+                crate::state::app_state::AppStateProvider(
+                    prebuilt_store: Some(store),
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        View(flex_direction: FlexDirection::Column) {
+                            InProgressFlipMessages(is_loading: is_loading)
+                            VerboseEcho
+                        }
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn messages_tool_row_follows_an_in_progress_set_change_alone() {
+        // CC's Messages comparator re-renders when `inProgressToolUseIDs`
+        // stops being `setsEqual` (Messages.tsx:1064-1068), and the row's
+        // `isQueued` reads the set (AssistantToolUseMessage.tsx:121). Idle,
+        // the MessagesImpl bailout used to swallow the change; loading, the
+        // `message-rows` Memo did. Frame-driven: the same write flips the
+        // sibling echo, so a frame always follows.
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        for is_loading in [false, true] {
+            let store = crate::state::store::AppStore::new(Default::default(), None);
+            let (queued, started) = futures::executor::block_on(async {
+                let mut probe = element!(InProgressFlipProbe(
+                    store: Some(store.clone()),
+                    is_loading: is_loading,
+                ));
+                let frames = probe
+                    .mock_terminal_render_loop(MockTerminalConfig::default().with_size(100, 24));
+                futures::pin_mut!(frames);
+                let queued = frames.next().await.expect("mount frame").to_string();
+                store.replace_with(|state| state.verbose = true);
+                let mut started = frames.next().await.expect("frame after the write").to_string();
+                while !started.contains("verbose=true") {
+                    started = frames.next().await.expect("frame showing the write").to_string();
+                }
+                (queued, started)
+            });
+            assert!(
+                queued.contains("Waiting…"),
+                "is_loading={is_loading} mount frame:\n{queued}"
+            );
+            // The row itself must still be there, now Running (Bash renders
+            // "Running…", BashTool/UI.tsx), not merely gone.
+            assert!(
+                !started.contains("Waiting…") && started.contains("Running…"),
+                "is_loading={is_loading} frame after the set change:\n{started}"
+            );
+        }
     }
 
     #[test]
@@ -3065,6 +3201,8 @@ mod tests {
                 120,
                 classifier,
                 classifier_is_auto,
+                &HashSet::new(),
+                &HashSet::new(),
                 pool,
             )
         };
@@ -3088,6 +3226,21 @@ mod tests {
         // (`AgentTool/UI.tsx:1096-1098`).
         assert_eq!(baseline, key(&prepared, 0, false, None, false, &rebuilt_pool));
         assert_ne!(baseline, key(&prepared, 0, false, None, false, &narrowed_pool));
+        // CC Messages.tsx:1030-1036,1064-1068: the in-progress set compares by
+        // `setsEqual` — a rebuilt set with the same ids is equal whatever its
+        // iteration order, a set that gained an id is not. The streaming set
+        // is the same shape (`:690`).
+        let ids = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<HashSet<_>>();
+        let with_sets = |in_progress: &HashSet<String>, streaming: &HashSet<String>| {
+            message_rows_memo_key(
+                &prepared, 0, false, false, false, true, true, 120, None, false, in_progress,
+                streaming, &pool,
+            )
+        };
+        let running = with_sets(&ids(&["toolu_2", "toolu_1"]), &HashSet::new());
+        assert_ne!(baseline, running);
+        assert_eq!(running, with_sets(&ids(&["toolu_1", "toolu_2"]), &HashSet::new()));
+        assert_ne!(baseline, with_sets(&HashSet::new(), &ids(&["toolu_1"])));
     }
 
     #[test]
