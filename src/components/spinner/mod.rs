@@ -6,9 +6,9 @@
 
 pub mod flashing_char;
 pub mod glimmer_message;
-pub mod glyph;
 pub mod shimmer_char;
 pub mod spinner_animation_row;
+pub mod spinner_glyph;
 pub mod teammate_select_hint;
 pub mod teammate_spinner_line;
 pub mod teammate_spinner_tree;
@@ -17,7 +17,7 @@ pub mod use_shimmer_animation;
 pub mod use_stalled_animation;
 pub mod utils;
 
-pub use glyph::SpinnerGlyph;
+pub use spinner_glyph::SpinnerGlyph;
 pub use teammate_tree::{
     TeammateMessageBlockSnapshot, TeammateMessageSnapshot, TeammateRecentActivity,
     TeammateSpinnerColor, TeammateSpinnerTask, TeammateSpinnerTree, TeammateTaskSnapshot,
