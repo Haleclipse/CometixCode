@@ -4285,9 +4285,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     let external_editor_runtime = hooks
         .try_use_context::<crate::utils::prompt_editor::ExternalEditorRuntime>()
         .map(|runtime| *runtime);
-    let keybinding_runtime_for_reload = hooks
-        .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
-        .map(|runtime| runtime.clone());
     let channel_permission_callbacks =
         crate::state::app_state::use_app_state(&mut hooks, |state| {
             state.channel_permission_callbacks.clone()
@@ -4665,8 +4662,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     });
     let keybindings_processing_tx = keybindings_processing_channel.0.clone();
     let keybindings_processing_rx = keybindings_processing_channel.1.clone();
-    let app_store_for_keybindings_reload = app_store.clone();
-    let keybinding_runtime_for_editor_reload = keybinding_runtime_for_reload.clone();
     hooks.use_future(async move {
         while let Ok((invocation, prepared)) = keybindings_processing_rx.recv().await {
             let (output, is_error) = match prepared {
@@ -4686,14 +4681,11 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         Some(runtime) => runtime.edit_file(&path).await,
                         None => crate::utils::prompt_editor::EditorResult::default(),
                     };
-                    let loaded = crate::keybindings::load_user_bindings::reload_keybindings_sync_with_warnings();
-                    if let Some(runtime) = keybinding_runtime_for_editor_reload.as_ref() {
-                        runtime.replace_bindings(loaded.bindings);
-                    }
-                    crate::keybindings::keybinding_provider_setup::sync_keybinding_warning_notification(
-                        &app_store_for_keybindings_reload,
-                        &loaded.warnings,
-                    );
+                    // CC reloads through its file watcher, whose change
+                    // reaches every KeybindingSetup's subscription
+                    // (loadUserBindings.ts:424-437); the new bindings and
+                    // their warnings land there, not in this REPL body.
+                    crate::keybindings::load_user_bindings::reload_keybindings_and_notify();
                     (
                         crate::commands::keybindings::keybindings::editor_result_message(
                             &path,
@@ -9408,8 +9400,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // more top-level tree, the transcript return (REPL.tsx:5805-5989), which
     // mounts no MCPConnectionManager; here the transcript screen lives in the
     // same tree, so toggling it keeps the manager mounted as well.
+    //
+    // Maps to: CC `<KeybindingSetup>` as the outermost element of both
+    // returns (REPL.tsx:5851, :6083). This REPL owns its keybinding runtime,
+    // as CC's does; nothing above it provides one. The one tree parents both
+    // screens, so one mount covers both, as with the manager below.
     element! {
-        Fragment {
+        crate::keybindings::keybinding_provider_setup::KeybindingSetup {
             // CC mounts AnimatedTerminalTitle before, not inside,
             // MCPConnectionManager (REPL.tsx:6084 vs :6134), in both the
             // transcript and main returns; this single tree parents both
@@ -13558,12 +13555,12 @@ mod tests {
             action: Some("command:help".to_string()),
             context: crate::keybindings::types::ContextName::Chat,
         });
-        let runtime = crate::keybindings::keybinding_context::KeybindingRuntime::new(bindings);
+        // The REPL mounts its own KeybindingSetup, which loads the bindings
+        // as a `keybindings.json` would supply them.
+        crate::keybindings::load_user_bindings::set_cached_keybindings_for_testing(bindings);
         element! {
-            ContextProvider(value: Context::owned(runtime)) {
-                ContextProvider(value: Context::owned(current_theme)) {
-                    IsolatedAuthRepl
-                }
+            ContextProvider(value: Context::owned(current_theme)) {
+                IsolatedAuthRepl
             }
         }
     }
@@ -17109,14 +17106,13 @@ mod tests {
                 action: Some("command:permissions".to_string()),
                 context: crate::keybindings::types::ContextName::Chat,
             });
+            // The REPL's own KeybindingSetup loads these, as a
+            // `keybindings.json` would supply them.
+            crate::keybindings::load_user_bindings::set_cached_keybindings_for_testing(bindings);
             let mut app = element! {
                 ContextProvider(value: Context::owned(probe.clone())) {
-                    ContextProvider(value: Context::owned(
-                        crate::keybindings::keybinding_context::KeybindingRuntime::new(bindings)
-                    )) {
-                        ContextProvider(value: Context::owned(*theme::current())) {
-                            IsolatedAuthRepl(app_store: Some(store.clone()))
-                        }
+                    ContextProvider(value: Context::owned(*theme::current())) {
+                        IsolatedAuthRepl(app_store: Some(store.clone()))
                     }
                 }
             };
@@ -17365,14 +17361,13 @@ mod tests {
                 action: Some("command:permissions".into()),
                 context: crate::keybindings::types::ContextName::Chat,
             });
+            // The REPL's own KeybindingSetup loads these, as a
+            // `keybindings.json` would supply them.
+            crate::keybindings::load_user_bindings::set_cached_keybindings_for_testing(bindings);
             let mut app = element! {
                 ContextProvider(value: Context::owned(probe.clone())) {
-                    ContextProvider(value: Context::owned(
-                        crate::keybindings::keybinding_context::KeybindingRuntime::new(bindings)
-                    )) {
-                        ContextProvider(value: Context::owned(*theme::current())) {
-                            IsolatedAuthRepl(app_store: Some(store.clone()))
-                        }
+                    ContextProvider(value: Context::owned(*theme::current())) {
+                        IsolatedAuthRepl(app_store: Some(store.clone()))
                     }
                 }
             };

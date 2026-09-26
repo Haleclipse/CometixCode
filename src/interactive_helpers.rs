@@ -350,7 +350,7 @@ fn SetupScreensHost<'a>(
         show_claude_in_chrome_onboarding,
     );
 
-    match setup_gate {
+    let gate_element = match setup_gate {
         SetupScreenGate::Onboarding => {
             let snapshot = setup_screens_snapshot.clone();
             element! {
@@ -485,7 +485,19 @@ fn SetupScreensHost<'a>(
             }
             element! { Fragment }.into_any()
         }
+    };
+    if setup_gate == SetupScreenGate::Ready {
+        return gate_element;
     }
+    // Maps to: CC `interactiveHelpers.tsx:121-131` `showSetupDialog` — every
+    // setup dialog renders inside its own `<KeybindingSetup>`. Keyed by gate,
+    // so each dialog gets a fresh one, as each CC `showDialog` render does.
+    element! {
+        crate::keybindings::keybinding_provider_setup::KeybindingSetup(key: format!("{setup_gate:?}")) {
+            #(Some(gate_element))
+        }
+    }
+    .into_any()
 }
 
 #[cfg(test)]

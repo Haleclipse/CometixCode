@@ -24,14 +24,19 @@ pub fn launch_resume_chooser(
     filter_by_pr: Option<ResumeFilterByPr>,
     repl_props: ReplProps,
 ) -> AnyElement<'static> {
+    // Maps to: CC `dialogLaunchers.tsx:191-197` — `<App><KeybindingSetup>
+    // <ResumeConversation/>`. The REPL the picker opens mounts its own
+    // KeybindingSetup inside this one, as CC's does.
     let children = AppChildren::new(move || {
         element! {
-            ResumeConversation(
-                repl_props: repl_props.clone(),
-                worktree_paths: worktree_paths.clone(),
-                initial_search_query: initial_search_query.clone(),
-                filter_by_pr: filter_by_pr.clone(),
-            )
+            crate::keybindings::keybinding_provider_setup::KeybindingSetup {
+                ResumeConversation(
+                    repl_props: repl_props.clone(),
+                    worktree_paths: worktree_paths.clone(),
+                    initial_search_query: initial_search_query.clone(),
+                    filter_by_pr: filter_by_pr.clone(),
+                )
+            }
         }
         .into_any()
     });

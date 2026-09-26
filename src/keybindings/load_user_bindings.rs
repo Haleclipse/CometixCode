@@ -21,6 +21,62 @@ pub struct KeybindingsLoadResult {
 static CACHED_RESULT: LazyLock<RwLock<Option<KeybindingsLoadResult>>> =
     LazyLock::new(|| RwLock::new(None));
 
+type ChangeSubscribers =
+    Vec<(u64, futures::channel::mpsc::UnboundedSender<KeybindingsLoadResult>)>;
+
+/// Maps to: CC `keybindingsChanged = createSignal<[result]>()`
+/// (loadUserBindings.ts:71): every mounted KeybindingSetup hears each reload.
+static CHANGE_SUBSCRIBERS: LazyLock<std::sync::Mutex<ChangeSubscribers>> =
+    LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
+static NEXT_SUBSCRIBER_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A live `subscribeToKeybindingChanges` registration; dropping it is CC's
+/// returned `unsubscribe()` (KeybindingProviderSetup.tsx:213-216).
+pub struct KeybindingChangeSubscription {
+    id: u64,
+}
+
+impl Drop for KeybindingChangeSubscription {
+    fn drop(&mut self) {
+        CHANGE_SUBSCRIBERS
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .retain(|(id, _)| *id != self.id);
+    }
+}
+
+/// Maps to: CC `subscribeToKeybindingChanges` (loadUserBindings.ts:422).
+/// Each reload arrives on the returned receiver.
+pub fn subscribe_to_keybinding_changes() -> (
+    KeybindingChangeSubscription,
+    futures::channel::mpsc::UnboundedReceiver<KeybindingsLoadResult>,
+) {
+    let id = NEXT_SUBSCRIBER_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let (sender, receiver) = futures::channel::mpsc::unbounded();
+    CHANGE_SUBSCRIBERS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((id, sender));
+    (KeybindingChangeSubscription { id }, receiver)
+}
+
+/// Maps to: CC `keybindingsChanged.emit(result)` (loadUserBindings.ts:436).
+fn emit_keybinding_change(result: &KeybindingsLoadResult) {
+    for (_, sender) in CHANGE_SUBSCRIBERS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .iter()
+    {
+        let _ = sender.unbounded_send(result.clone());
+    }
+}
+
+/// Reloads from disk and tells every subscriber, the way a watcher-detected
+/// change does. Used after `/keybindings` returns from the external editor.
+pub fn reload_keybindings_and_notify() {
+    emit_keybinding_change(&reload_keybindings_sync_with_warnings());
+}
+
 const FILE_STABILITY_THRESHOLD: Duration = Duration::from_millis(500);
 const FILE_STABILITY_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -56,9 +112,10 @@ impl Drop for KeybindingWatcher {
     }
 }
 
-pub fn initialize_keybinding_watcher(
-    on_change: impl Fn(KeybindingsLoadResult) + Send + 'static,
-) -> Option<KeybindingWatcher> {
+/// Maps to: CC `initializeKeybindingWatcher()` (loadUserBindings.ts:353-404):
+/// a stable write reloads the file and emits the result to every
+/// `subscribe_to_keybinding_changes` subscriber (:424-437).
+pub fn initialize_keybinding_watcher() -> Option<KeybindingWatcher> {
     if !is_keybinding_customization_enabled() {
         return None;
     }
@@ -87,7 +144,7 @@ pub fn initialize_keybinding_watcher(
                 *fingerprint == current && since.elapsed() >= FILE_STABILITY_THRESHOLD
             }) {
                 pending = None;
-                on_change(reload_keybindings_sync_with_warnings());
+                emit_keybinding_change(&reload_keybindings_sync_with_warnings());
             }
         }
     });
@@ -262,6 +319,33 @@ pub fn get_cached_keybinding_warnings() -> Vec<KeybindingWarning> {
         .unwrap_or_default()
 }
 
+/// Emits a reload as the watcher would, without touching the disk.
+#[cfg(test)]
+pub fn emit_keybinding_change_for_testing(result: KeybindingsLoadResult) {
+    emit_keybinding_change(&result);
+}
+
+/// How many `subscribe_to_keybinding_changes` registrations are live.
+#[cfg(test)]
+pub fn keybinding_change_subscriber_count_for_testing() -> usize {
+    CHANGE_SUBSCRIBERS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .len()
+}
+
+/// Seeds the loader cache the way a `keybindings.json` would, for tests that
+/// mount a `KeybindingSetup` (which reads this cache) with custom bindings.
+#[cfg(test)]
+pub fn set_cached_keybindings_for_testing(bindings: Vec<ParsedBinding>) {
+    *CACHED_RESULT
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(KeybindingsLoadResult {
+        bindings,
+        warnings: Vec::new(),
+    });
+}
+
 #[cfg(test)]
 pub fn reset_keybinding_loader_for_testing() {
     *CACHED_RESULT
@@ -411,20 +495,28 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         reset_keybinding_loader_for_testing();
 
-        let (tx, rx) = std::sync::mpsc::channel();
-        let watcher = initialize_keybinding_watcher(move |result| {
-            let _ = tx.send(result);
-        })
-        .expect("existing config directory should be watched");
+        // CC: the watcher emits to every `subscribeToKeybindingChanges`
+        // subscriber (loadUserBindings.ts:424-437).
+        let (_subscription, mut changes) = subscribe_to_keybinding_changes();
+        let mut next_change = |what: &str| -> KeybindingsLoadResult {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                if let Ok(result) = changes.try_recv() {
+                    return result;
+                }
+                assert!(Instant::now() < deadline, "{what}");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        };
+        let watcher =
+            initialize_keybinding_watcher().expect("existing config directory should be watched");
         std::fs::write(
             root.join("keybindings.json"),
             r#"{"bindings":[{"context":"Chat","bindings":{"enter":"chat:cancel"}}]}"#,
         )
         .unwrap();
 
-        let result = rx
-            .recv_timeout(Duration::from_secs(3))
-            .expect("stable write should trigger reload");
+        let result = next_change("stable write should trigger reload");
         assert!(result.bindings.iter().any(|binding| {
             binding.context == ContextName::Chat
                 && binding.action.as_deref() == Some("chat:cancel")
@@ -432,9 +524,7 @@ mod tests {
         }));
 
         std::fs::remove_file(root.join("keybindings.json")).unwrap();
-        let deleted = rx
-            .recv_timeout(Duration::from_secs(3))
-            .expect("stable deletion should restore defaults");
+        let deleted = next_change("stable deletion should restore defaults");
         assert!(!deleted.bindings.iter().any(|binding| {
             binding.context == ContextName::Chat
                 && binding.action.as_deref() == Some("chat:cancel")

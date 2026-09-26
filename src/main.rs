@@ -903,9 +903,6 @@ struct MainProps {
     session_launch: commands::resume::CliSessionLaunch,
     resume_filter_by_pr: Option<crate::screens::resume_conversation::ResumeFilterByPr>,
     mcp_startup: Arc<McpStartupConfig>,
-    /// Pre-render keybinding snapshot/runtime. Loading and watcher setup happen
-    /// before the retained root mounts.
-    keybinding_runtime: crate::keybindings::keybinding_context::KeybindingRuntime,
     /// Rust process adapter for CC `exitWithError(..., exitCode: 1)`.
     exit_code: Arc<AtomicI32>,
 }
@@ -924,8 +921,6 @@ impl Default for MainProps {
             session_launch: commands::resume::CliSessionLaunch::None,
             resume_filter_by_pr: None,
             mcp_startup: Arc::new(McpStartupConfig::default()),
-            keybinding_runtime:
-                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
             exit_code: Arc::new(AtomicI32::new(0)),
         }
     }
@@ -998,10 +993,6 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     });
     // Keep all iocraft hooks above retained phase branching. React has the same
     // rule; violating it caused the bare `-r` loading→selector panic.
-    let keybinding_runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
-        &mut hooks,
-        props.keybinding_runtime.clone(),
-    );
     let current_theme = *crate::utils::theme::current();
 
     // Maps to: CC `main.tsx` awaiting `loadPluginHooks()` after setup and
@@ -1280,16 +1271,18 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     // `state::app_state::AppStateProvider`, which is its sole provider.
     // The startup settings snapshot likewise travels as a typed prop
     // (`SetupScreensHostProps` / `AppProps`), so no ambient
-    // `Arc<SettingsWithErrors>` context is published either.
+    // `Arc<SettingsWithErrors>` context is published either. No keybinding
+    // runtime either: as in CC, each phase that takes keys mounts its own
+    // `KeybindingSetup` — REPL (REPL.tsx:5851, :6083), each setup dialog
+    // (interactiveHelpers.tsx:121-131) and the resume chooser
+    // (dialogLaunchers.tsx:171-196).
     element! {
-        ContextProvider(value: Context::owned(keybinding_runtime)) {
-            ContextProvider(value: Context::owned(current_theme)) {
-                ContextProvider(value: Context::owned(clipboard.clone())) {
-                    // Node process.exitCode representation: reuse the existing
-                    // process-owned status consumed after the render loop.
-                    ContextProvider(value: Context::owned(props.exit_code.clone())) {
-                        #(phase)
-                    }
+        ContextProvider(value: Context::owned(current_theme)) {
+            ContextProvider(value: Context::owned(clipboard.clone())) {
+                // Node process.exitCode representation: reuse the existing
+                // process-owned status consumed after the render loop.
+                ContextProvider(value: Context::owned(props.exit_code.clone())) {
+                    #(phase)
                 }
             }
         }
@@ -1576,13 +1569,11 @@ pub fn run(config: crate::cli::CliConfig) {
     }
     let setup_snapshot = Arc::new(default_setup_screens_snapshot());
 
-    // Maps to CC `loadKeybindingsSyncWithWarnings()` before the interactive
-    // provider mounts. Config reads never enter a retained frame.
-    let startup_keybindings =
-        crate::keybindings::load_user_bindings::load_keybindings_sync_with_warnings();
-    let keybinding_runtime = crate::keybindings::keybinding_context::KeybindingRuntime::new(
-        startup_keybindings.bindings.clone(),
-    );
+    // Maps to CC `loadKeybindingsSyncWithWarnings()` (loadUserBindings.ts,
+    // cached): the first load, done here so it fills the loader cache before
+    // anything mounts. Every `KeybindingSetup` then reads that cache, so no
+    // config read enters a retained frame.
+    let _ = crate::keybindings::load_user_bindings::load_keybindings_sync_with_warnings();
 
     let launch = match build_interactive_launch_with_system_prompts(
         &startup_settings.settings,
@@ -1618,12 +1609,9 @@ pub fn run(config: crate::cli::CliConfig) {
     //     re-seed.
     //   * `claude_ai_limits::bind_app_store` — permanently exempt (approved
     //     L1 `Compile-time distribution capability projection`).
-    //   * `sync_keybinding_warning_notification` + the watcher callback — CC
-    //     `KeybindingProviderSetup.tsx:68-104` runs inside the provider
-    //     (`REPL.tsx:182`). Kept here because the Rust keybinding runtime is
-    //     mounted by the retained root ABOVE the provider; the notification it
-    //     writes lands in the adopted root either way. SEAM: ownership差,
-    //     no observable difference at first paint.
+    //   * keybinding warnings — no longer written here: REPL's
+    //     `KeybindingSetup` mounts inside the provider and runs
+    //     `useKeybindingWarnings` itself (KeybindingProviderSetup.tsx:68-121).
     //   * settings watch — DELETED at G5; ownership moved to the provider
     //     subscription (`AppState.tsx:104-110`) with the detector as the
     //     process-wide notifier (`main.tsx:689`).
@@ -1662,23 +1650,11 @@ pub fn run(config: crate::cli::CliConfig) {
     // is dropped after the retained tree unmounts.
     let _claude_ai_limits_subscription =
         crate::services::claude_ai_limits::bind_app_store(store.clone());
-    crate::keybindings::keybinding_provider_setup::sync_keybinding_warning_notification(
-        &store,
-        &startup_keybindings.warnings,
-    );
-    // Maps to CC `initializeKeybindingWatcher()` + subscription. The watcher
-    // and all reload I/O live outside the retained tree.
-    let _keybinding_watcher = {
-        let runtime = keybinding_runtime.clone();
-        let store = store.clone();
-        crate::keybindings::load_user_bindings::initialize_keybinding_watcher(move |result| {
-            runtime.replace_bindings(result.bindings);
-            crate::keybindings::keybinding_provider_setup::sync_keybinding_warning_notification(
-                &store,
-                &result.warnings,
-            );
-        })
-    };
+    // Maps to CC `initializeKeybindingWatcher()` (loadUserBindings.ts:353-404),
+    // which CC starts from the first KeybindingSetup mount and keeps for the
+    // process. The watcher and all reload I/O live outside the retained tree;
+    // each `KeybindingSetup` mount subscribes to what it emits.
+    let _keybinding_watcher = crate::keybindings::load_user_bindings::initialize_keybinding_watcher();
 
     utils::debug::log_for_debugging(&format!(
         "[STARTUP] setup() completed in {}ms",
@@ -1696,7 +1672,6 @@ pub fn run(config: crate::cli::CliConfig) {
                 session_launch: session_launch.clone(),
                 resume_filter_by_pr: resume_filter_by_pr.clone(),
                 mcp_startup: mcp_startup.clone(),
-                keybinding_runtime: keybinding_runtime.clone(),
                 exit_code: exit_code.clone(),
             )
         }
