@@ -479,6 +479,66 @@ mod tests {
     }
 
     #[test]
+    fn settings_exit_hook_exits_on_double_ctrl_d_with_an_empty_language_input() {
+        // CC: `app:exit` belongs to Settings' useExitOnCtrlCDWithKeybindings
+        // (Settings.tsx:62), registered before LanguagePicker's TextInput,
+        // whose useTextInput registers no keybinding. So a double Ctrl+D in
+        // the empty field exits. Frame-driven and hang-free: the render loop
+        // ends on exit (the `z` sent in the same batch may still paint first);
+        // if it does not, the typed `z` then `q` produce frames and the test
+        // fails on "zq".
+        crate::utils::process_runtime::initialize_test_process_runtime();
+        let (exited, last) = futures::executor::block_on(async {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(SettingsHarness);
+            let mut frames = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(110, 30),
+            ));
+            let mut stage = 0;
+            let mut last = String::new();
+            while let Some(canvas) = frames.next().await {
+                last = canvas_lines(&canvas).join("\n");
+                match stage {
+                    0 => {
+                        let mut open = text_events("language");
+                        open.push(press(KeyCode::Enter));
+                        open.push(press(KeyCode::Char(' ')));
+                        for event in open {
+                            keys.send(event).await.unwrap();
+                        }
+                        stage = 1;
+                    }
+                    1 if last.contains("Enter your preferred response and voice language:") => {
+                        let mut ctrl_d = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('d'));
+                        ctrl_d.modifiers = KeyModifiers::CONTROL;
+                        for event in [
+                            TerminalEvent::Key(ctrl_d.clone()),
+                            TerminalEvent::Key(ctrl_d),
+                            press(KeyCode::Char('z')),
+                        ] {
+                            keys.send(event).await.unwrap();
+                        }
+                        stage = 2;
+                    }
+                    2 if last.contains("❯ z") => {
+                        if keys.send(press(KeyCode::Char('q'))).await.is_err() {
+                            return (true, last);
+                        }
+                        stage = 3;
+                    }
+                    3 if last.contains("❯ zq") => return (false, last),
+                    _ => {}
+                }
+            }
+            (true, last)
+        });
+        assert!(
+            exited,
+            "a double Ctrl+D in the empty language field must exit; canvas=\n{last}"
+        );
+    }
+
+    #[test]
     fn settings_default_status_tab_starts_with_header_focused_like_official() {
         let text = render_settings_status_text(Vec::new());
 
