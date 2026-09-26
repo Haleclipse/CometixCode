@@ -99,6 +99,14 @@ pub fn BaseTextInput(
     props: &BaseTextInputProps,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
+    // CC `BaseTextInput.tsx:144` `<Text dimColor={props.dimColor}>` is
+    // ThemedText (`ink.ts:37`), whose dimColor is the `inactive` foreground,
+    // not SGR dim (PORTING.md dimColor contract).
+    let dim_color = hooks
+        .try_use_context::<crate::utils::theme::Theme>()
+        .map(|theme| theme.inactive)
+        .unwrap_or_else(|| crate::utils::theme::current().inactive);
+    let text_color = props.dim_color.then_some(dim_color);
     // Maps to CC `useDeclaredCursor({ line, column, active })`: park the
     // physical terminal cursor for IME/accessibility coordinates, but keep it
     // hidden in the normal synthetic-cursor path. CC hides the native cursor at
@@ -177,7 +185,7 @@ pub fn BaseTextInput(
                 element! {
                     View(flex_direction: FlexDirection::Row, height: 1u32, overflow: Overflow::Hidden) {
                         #(if before_highlights.is_empty() {
-                            element! { Text(content: line.before, dim: props.dim_color, wrap: TextWrap::NoWrap) }.into_any()
+                            element! { Text(content: line.before, color: text_color, wrap: TextWrap::NoWrap) }.into_any()
                         } else {
                             element! { HighlightedInput(text: line.before, highlights: before_highlights) }.into_any()
                         })
@@ -188,13 +196,16 @@ pub fn BaseTextInput(
                         // that gate here.
                         Text(content: line.cursor.clone(), invert: props.show_cursor && props.terminal_focus && !line.cursor.is_empty(), wrap: TextWrap::NoWrap)
                         #(if after_highlights.is_empty() {
-                            element! { Text(content: line.after, dim: props.dim_color, wrap: TextWrap::NoWrap) }.into_any()
+                            element! { Text(content: line.after, color: text_color, wrap: TextWrap::NoWrap) }.into_any()
                         } else {
                             element! { HighlightedInput(text: line.after, highlights: after_highlights) }.into_any()
                         })
                         #(if show_hint_here {
+                            // CC :152-156 `<Text dimColor>` (ThemedText →
+                            // inactive). The ghost text below is `chalk.dim`
+                            // (TextInput.tsx:133), which is SGR dim.
                             hint.map(|hint| element! {
-                                Text(content: hint, dim: true, wrap: TextWrap::NoWrap)
+                                Text(content: hint, color: dim_color, wrap: TextWrap::NoWrap)
                             })
                         } else {
                             None
@@ -336,14 +347,15 @@ mod tests {
             Weight::Normal,
             "cursor cell should not inherit dim input text styling"
         );
+        // CC `BaseTextInput.tsx:144` `<Text dimColor>` is ThemedText: the
+        // `inactive` foreground, not SGR dim.
+        let before_style = canvas.resolved_text_style(0, 0).expect("before style");
         assert_eq!(
-            canvas
-                .resolved_text_style(0, 0)
-                .expect("before style")
-                .weight,
-            Weight::Light,
-            "non-cursor input text still honors dim_color"
+            before_style.color,
+            Some(crate::utils::theme::current().inactive),
+            "non-cursor input text honors dim_color as the inactive foreground"
         );
+        assert_eq!(before_style.weight, Weight::Normal);
     }
 
     // CC TextInput.tsx:82-84: a blurred terminal (or accessibility mode)

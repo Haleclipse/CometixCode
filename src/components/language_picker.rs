@@ -29,7 +29,10 @@ const LANGUAGE_PICKER_DEFAULT_HINT: &str = "Leave empty for default (English)";
 /// Maps to: CC `LanguagePicker.tsx`:27-30 `handleSubmit()` —
 /// `onComplete(language?.trim() || undefined)`.
 fn submitted_language(value: &str) -> Option<String> {
-    let trimmed = value.trim();
+    // JS `String.prototype.trim`: Unicode White_Space minus U+0085, plus
+    // U+FEFF — not Rust's `str::trim`.
+    let trimmed =
+        value.trim_matches(|ch: char| (ch.is_whitespace() && ch != '\u{85}') || ch == '\u{feff}');
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
@@ -121,6 +124,9 @@ mod tests {
         assert_eq!(submitted_language("  日本語  ").as_deref(), Some("日本語"));
         assert_eq!(submitted_language("   "), None);
         assert_eq!(submitted_language(""), None);
+        // JS trim strips U+FEFF but keeps U+0085.
+        assert_eq!(submitted_language("\u{feff}"), None);
+        assert_eq!(submitted_language("\u{85}").as_deref(), Some("\u{85}"));
     }
 
     fn render_picker(initial_language: Option<&str>) -> String {

@@ -1230,12 +1230,20 @@ pub fn PromptInput<'a>(
             true
         },
     );
+    // Maps to: CC `PromptInput.tsx:2226-2238`. The picker owns ctrl+r only
+    // under the HISTORY_PICKER build feature; without it the binding is
+    // inactive and useHistorySearch's inline search takes the key.
+    // (`prompt_actions_active` stands in for CC's `!isModalOverlayActive`,
+    // a known seam.)
+    let history_picker = crate::utils::feature_flags::feature_enabled(
+        crate::utils::feature_flags::FeatureFlag::HistoryPicker,
+    );
     use_keybinding(
         &mut hooks,
         keybinding_runtime.clone(),
         "history:search",
         ContextName::Global,
-        move || prompt_actions_active,
+        move || history_picker && prompt_actions_active,
         move || {
             show_history_picker.set(true);
             help_open.set(false);
@@ -2207,6 +2215,7 @@ pub fn PromptInput<'a>(
             }),
             escape_event_passthrough: false,
             select_navigation_passthrough: false,
+            preceding_keybinding_contexts: Vec::new(),
             value: input,
             cursor_offset,
             inline_ghost_text: typeahead_inline_ghost_text.clone(),

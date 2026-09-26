@@ -110,6 +110,12 @@ pub fn Settings<'a>(
     let mut config_owns_esc = hooks.use_state(|| false);
     let mut pending_config_result = hooks.use_state(|| None::<String>);
 
+    // Maps to: CC `Settings.tsx:62` `useExitOnCtrlCDWithKeybindings()`.
+    // Registered with the pane, it takes Ctrl+C/Ctrl+D ahead of any
+    // TextInput a submenu mounts later (LanguagePicker), so typed text
+    // survives and a second press exits, as in CC.
+    let _ = crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings(&mut hooks, true);
+
     let keybinding_runtime = hooks
         .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
         .map(|runtime| runtime.clone());
@@ -422,6 +428,54 @@ mod tests {
             )
             .join("\n")
         })
+    }
+
+    #[test]
+    fn settings_exit_hook_takes_ctrl_c_ahead_of_the_language_input() {
+        // CC `Settings.tsx:62` registers app:interrupt with the pane, before
+        // LanguagePicker's TextInput mounts, so Ctrl+C arms the exit double
+        // press and never clears the typed language. Frame-driven: each step
+        // waits for the frame the previous one produced; the trailing `z`
+        // guarantees a frame either way.
+        crate::utils::process_runtime::initialize_test_process_runtime();
+        let last = futures::executor::block_on(async {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(SettingsHarness);
+            let mut frames = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(110, 30),
+            ));
+            let mut stage = 0;
+            let mut last = String::new();
+            while let Some(canvas) = frames.next().await {
+                last = canvas_lines(&canvas).join("\n");
+                match stage {
+                    0 => {
+                        let mut open = text_events("language");
+                        open.push(press(KeyCode::Enter));
+                        open.push(press(KeyCode::Char(' ')));
+                        for event in open {
+                            keys.send(event).await.unwrap();
+                        }
+                        stage = 1;
+                    }
+                    1 if last.contains("Enter your preferred response and voice language:") => {
+                        let mut ctrl_c = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('c'));
+                        ctrl_c.modifiers = KeyModifiers::CONTROL;
+                        let mut typed = text_events("Korean");
+                        typed.push(TerminalEvent::Key(ctrl_c));
+                        typed.push(press(KeyCode::Char('z')));
+                        for event in typed {
+                            keys.send(event).await.unwrap();
+                        }
+                        stage = 2;
+                    }
+                    2 if last.contains('z') => break,
+                    _ => {}
+                }
+            }
+            last
+        });
+        assert!(last.contains("Koreanz"), "canvas=\n{last}");
     }
 
     #[test]

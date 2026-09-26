@@ -105,13 +105,6 @@ fn language_display_value(language: Option<&str>) -> String {
     language.unwrap_or("Default (English)").to_string()
 }
 
-/// Inverse of [`language_display_value`]. Cometix keeps each row's shown
-/// value in `items` instead of a separate `currentLanguage` state, so the
-/// `initialLanguage` handed to LanguagePicker is read back from the row.
-fn current_language_from_display(display: &str) -> Option<String> {
-    (!display.eq_ignore_ascii_case("Default (English)")).then(|| display.to_string())
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AutoUpdatesAction {
     Open(SettingsSubmenu),
@@ -739,10 +732,24 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     // Maps to: CC Config.tsx:197 `useTerminalFocus()`, handed to SearchBox so
     // the cursor cell disappears while the terminal is blurred.
     let is_terminal_focused = hooks.use_terminal_focus();
+    // Maps to: CC `Config.tsx:179` `useIsInsideModal()`, which drops the
+    // list container's `marginY` inside the fullscreen modal slot (:2121).
+    let inside_modal = crate::context::modal_context::use_is_inside_modal(&hooks);
     // Maps to: CC Config.tsx `showSubmenu`. Submenus are UI-only previews:
     // selecting an option updates this in-memory Config item list only.
     let mut submenu = hooks.use_state(|| None::<SettingsSubmenu>);
     let mut submenu_focused = hooks.use_state(|| 0usize);
+    // Maps to: CC `Config.tsx:190-193` `currentLanguage` and its
+    // `initialLanguage` ref. The language row shows `currentLanguage ??
+    // 'Default (English)'`; LanguagePicker starts from `currentLanguage`
+    // itself, never from that display text. (The row's change summary still
+    // comes from the shared display-value diff, so a language typed as the
+    // literal "Default (English)" produces no summary line — seam.)
+    let initial_language = hooks.use_state({
+        let language = settings_snapshot.language.clone();
+        move || language
+    });
+    let mut current_language = hooks.use_state(move || initial_language.read().clone());
     // Maps to official ThemeProvider preview/save/cancel state. This remains
     // in-memory in Cometix unless config writes are explicitly opted in later.
     let mut theme_preview = hooks.use_state(ThemePreviewState::default);
@@ -868,6 +875,22 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     let keybinding_runtime = hooks
         .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
         .map(|runtime| runtime.clone());
+    // CC `ConfigurableShortcutHint action="confirm:no" context="Settings"
+    // fallback="Esc"` in the Language submenu footer (`Config.tsx:2003-2012`).
+    let settings_cancel_shortcut = {
+        let bindings = keybinding_runtime
+            .as_ref()
+            .map(|runtime| runtime.bindings())
+            .unwrap_or_else(|| {
+                std::sync::Arc::new(crate::keybindings::default_bindings::default_bindings())
+            });
+        crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
+            "confirm:no",
+            &crate::keybindings::types::ContextName::Settings,
+            "Esc",
+            bindings.as_slice(),
+        )
+    };
     crate::keybindings::use_keybinding::use_keybinding(
         &mut hooks,
         keybinding_runtime.clone(),
@@ -885,6 +908,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     &initial,
                 );
                 items.set(initial);
+                current_language.set(initial_language.read().clone());
                 should_close.set(true);
                 true
             }
@@ -1449,11 +1473,13 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             .into_any()
         } else if active_submenu == SettingsSubmenu::Language {
             // Maps to: CC `Config.tsx`:1976-2014.
-            let initial_language = items
-                .read()
-                .iter()
-                .find(|item| item.id == "language")
-                .and_then(|item| current_language_from_display(&item.display_value()));
+            let initial_language = current_language.read().clone();
+            // CC :2003-2012 `<Text dimColor><Byline><KeyboardShortcutHint
+            // shortcut="Enter" action="confirm" /><ConfigurableShortcutHint
+            // action="confirm:no" context="Settings" …/></Byline></Text>`,
+            // as one ThemedText: the design-system hints render an inherited
+            // dimColor as SGR dim rather than the `inactive` foreground.
+            let footer = format!("Enter to confirm · {settings_cancel_shortcut} to cancel");
 
             element! {
                 ContextProvider(value: Context::owned(theme)) {
@@ -1461,6 +1487,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                         LanguagePicker(
                             initial_language: initial_language,
                             on_complete: move |language: Option<String>| {
+                                current_language.set(language.clone());
                                 let mut all = items.read().clone();
                                 apply_settings_submenu_selection(
                                     &mut all,
@@ -1476,7 +1503,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 tabs_hidden_request.set(Some(false));
                             },
                         )
-                        Text(content: "Enter to confirm · Esc to cancel".to_string(), color: theme.inactive)
+                        Text(content: footer, color: theme.inactive)
                     }
                 }
             }
@@ -1572,8 +1599,11 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             .into_any()
         }
     } else {
+        // CC :2118-2122 `<Box flexDirection="column" gap={1}
+        // marginY={insideModal ? undefined : 1}>`.
+        let margin_y = if inside_modal { 0u32 } else { 1u32 };
         element! {
-            View(flex_direction: FlexDirection::Column) {
+            View(flex_direction: FlexDirection::Column, margin_top: margin_y, margin_bottom: margin_y) {
             // Maps to: CC Config.tsx:2123-2129 — `<SearchBox query isFocused
             // isTerminalFocused cursorOffset placeholder="Search settings…" />`,
             // the same component LogSelector and the plugin menus mount. The

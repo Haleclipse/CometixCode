@@ -14,14 +14,6 @@ use crate::utils::cursor::clamp_cursor;
 use crate::utils::prompt_history;
 use iocraft::prelude::*;
 
-/// Maps to: the `HISTORY_PICKER` build feature, on in the external build
-/// (rebuild `scripts/build.ts:49`). With it, ctrl+r opens PromptInput's
-/// history picker and this inline search's own `history:search` binding is
-/// inactive (`useHistorySearch.ts:236-241`), so the inline search — and the
-/// footer's `HistorySearchInput` — is only reachable in a build without the
-/// picker, exactly as in CC.
-const HISTORY_PICKER: bool = true;
-
 #[derive(Clone, Copy)]
 pub struct UseHistorySearchOptions {
     pub input: State<String>,
@@ -80,13 +72,19 @@ pub fn use_history_search(
     let runtime = hooks
         .try_use_context::<KeybindingRuntime>()
         .map(|runtime| runtime.clone());
+    // CC `isActive: feature('HISTORY_PICKER') ? false : !isSearching`
+    // (`useHistorySearch.ts:236-241`): under the build feature ctrl+r belongs
+    // to PromptInput's picker, so this inline search — and the footer's
+    // HistorySearchInput — is reachable only in a build without it.
+    let history_picker = crate::utils::feature_flags::feature_enabled(
+        crate::utils::feature_flags::FeatureFlag::HistoryPicker,
+    );
     use_keybinding(
         hooks,
         runtime.clone(),
         "history:search",
         ContextName::Global,
-        // CC `isActive: feature('HISTORY_PICKER') ? false : !isSearching`.
-        move || !HISTORY_PICKER && options.focus && !cells.is_searching.get(),
+        move || !history_picker && options.focus && !cells.is_searching.get(),
         move || {
             start(cells, options);
             true
@@ -134,10 +132,11 @@ pub fn use_history_search(
     // through `useInput({ isActive: isSearching })`: backspace on an empty
     // query cancels the search. Everything else a user types edits the query
     // in `HistorySearchInput`'s TextInput (`onChange={setHistoryQuery}`), not
-    // here. `useInput` sees every key, including ones that TextInput consumed,
-    // so this is a plain subscription; the query it tests is the one this
-    // render saw, as CC's closure over `historyQuery` is — a backspace that
-    // deletes the last character does not also cancel.
+    // here. CC registered this listener when PromptInput mounted, ahead of
+    // that TextInput, and backspace is no binding, so it sees every
+    // backspace; a plain subscription does the same. The query it tests is
+    // the one this render saw, as CC's closure over `historyQuery` is — a
+    // backspace that deletes the last character does not also cancel.
     let query_at_render = cells.query.read().clone();
     hooks.use_terminal_events(move |event| {
         if !options.focus || !cells.is_searching.get() {

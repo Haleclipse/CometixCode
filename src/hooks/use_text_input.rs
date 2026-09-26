@@ -40,6 +40,15 @@ pub struct UseTextInputOptions {
     pub escape_event_passthrough: bool,
     /// L1 Ink parent-before-input dispatch for CustomSelect navigation.
     pub select_navigation_passthrough: bool,
+    /// Native transport for CC listener registration order. Ink dispatches
+    /// input to listeners in the order they registered and stops at
+    /// `stopImmediatePropagation` (`ink/events/emitter.ts:29-34`); handlers in
+    /// these keybinding contexts registered before this input mounted — e.g.
+    /// useHistorySearch's, registered with PromptInput, ahead of the
+    /// HistorySearchInput TextInput that mounts when a search starts — so a
+    /// key one of them takes never reaches the input. iocraft polls children
+    /// first, so the input leaves such a key for them.
+    pub preceding_keybinding_contexts: Vec<ContextName>,
 }
 
 pub struct TextInputState {
@@ -180,6 +189,31 @@ pub fn use_text_input(hooks: &mut Hooks, mut options: UseTextInputOptions) -> Te
                         if let Some(keystroke) =
                             crate::keybindings::matcher::key_event_to_keystroke(key_event)
                         {
+                            // A listener that registered before this input
+                            // resolves the key in its own context, as its
+                            // `useKeybinding` does (`[...activeContexts,
+                            // context, 'Global']`, useKeybinding.ts:54-62).
+                            for preceding in &options.preceding_keybinding_contexts {
+                                let mut contexts: HashSet<ContextName> = runtime.active_contexts();
+                                contexts.insert(preceding.clone());
+                                contexts.insert(ContextName::Global);
+                                if let ChordResolveResult::Match { action } =
+                                    crate::keybindings::resolver::resolve_key_with_chord_state(
+                                        Some(&keystroke),
+                                        keystroke.key == "escape",
+                                        &contexts,
+                                        runtime.bindings().as_slice(),
+                                        None,
+                                    )
+                                {
+                                    if runtime.has_registered_handler(
+                                        &action,
+                                        &HashSet::from([preceding.clone()]),
+                                    ) {
+                                        return;
+                                    }
+                                }
+                            }
                             let mut contexts: HashSet<ContextName> = runtime.active_contexts();
                             contexts.insert(ContextName::Chat);
                             contexts.insert(ContextName::Global);
@@ -687,6 +721,7 @@ mod tests {
                 cancel_passthrough: false,
                 escape_event_passthrough: props.escape_event_passthrough,
                 select_navigation_passthrough: false,
+                preceding_keybinding_contexts: Vec::new(),
             },
         );
         element! { Text(content: format!("ready={} value={:?} cleared={:?}", ready.get(), value.read().as_str(), cleared.read().as_slice())) }
@@ -785,6 +820,7 @@ mod tests {
                 cancel_passthrough: false,
                 escape_event_passthrough: false,
                 select_navigation_passthrough: false,
+                preceding_keybinding_contexts: Vec::new(),
             },
         );
         element! {

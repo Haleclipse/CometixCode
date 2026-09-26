@@ -49,6 +49,8 @@ pub enum FeatureFlag {
     NewInit,
     /// Maps to CC `feature('BREAK_CACHE_COMMAND')` build feature.
     BreakCacheCommand,
+    /// Maps to CC `feature('HISTORY_PICKER')` build feature.
+    HistoryPicker,
     /// Maps to CC `feature('FORK_SUBAGENT')` build feature.
     ForkSubagent,
     /// Maps to CC `feature('COORDINATOR_MODE')` build feature.
@@ -279,6 +281,14 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "BREAK_CACHE_COMMAND",
         enabled: false,
         note: "Ant-only cache-breaker system-context injection remains disabled unless explicitly enabled in source.",
+    },
+    FeatureSwitch {
+        flag: FeatureFlag::HistoryPicker,
+        cc_growthbook_name: "HISTORY_PICKER",
+        // Build feature, not GrowthBook: `scripts/build.ts:49` lists it under
+        // "Generally available (ON in production)".
+        enabled: true,
+        note: "Build feature: scripts/build.ts:49. ctrl+r opens PromptInput's history picker (PromptInput.tsx:2226-2238) and useHistorySearch's inline history:search binding is inactive (useHistorySearch.ts:236-241).",
     },
     FeatureSwitch {
         flag: FeatureFlag::ForkSubagent,

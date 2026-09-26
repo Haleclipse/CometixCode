@@ -114,6 +114,7 @@ pub fn VimTextInput<'a>(
             on_history_reset: props.on_history_reset.clone(),
             escape_event_passthrough: false,
             select_navigation_passthrough: false,
+            preceding_keybinding_contexts: Vec::new(),
             cancel_passthrough: false,
             value,
             cursor_offset,
