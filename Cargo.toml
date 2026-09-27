@@ -194,3 +194,19 @@ panic = "abort"
 inherits = "release"
 strip = false
 debug = true
+
+# generational-box 0.5.6 backs iocraft's State. With debug assertions it
+# records borrow locations, and a failed `try_read` then builds its error by
+# unwrapping the recorded write location without the lock the read failed
+# on (sync.rs:115-118, lib.rs:357): when the writer releases in between, the
+# read panics instead of reporting the borrow. iocraft write-borrows every
+# State in each poll (use_state.rs poll_change), so a tokio task reading a
+# State — the plugin UI's async loads through PluginUiState — hits it under
+# load, where release builds, which keep no borrow locations, just retry.
+# Build the crate as release does in dev and tests; its generation checks
+# (the default `check_generation` feature) stay on.
+[profile.dev.package.generational-box]
+debug-assertions = false
+
+[profile.test.package.generational-box]
+debug-assertions = false
