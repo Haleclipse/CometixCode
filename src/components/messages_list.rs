@@ -2651,6 +2651,120 @@ mod tests {
         }
     }
 
+    #[derive(Default, Props)]
+    struct TurnSummaryThemeProbeProps {
+        pub store: Option<crate::state::store::AppStore>,
+    }
+
+    #[component]
+    fn TurnSummaryThemeProbe(
+        props: &TurnSummaryThemeProbeProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
+        use crate::types::message::{SystemBase, SystemMessage};
+        let store = props.store.clone().expect("probe store");
+        let messages = hooks.use_const(|| {
+            let base = SystemBase::new();
+            Arc::new(vec![RenderableMessage {
+                uuid: base.uuid.clone(),
+                kind: RenderableMessageKind::System(SystemMessage::TurnDuration {
+                    base,
+                    duration_ms: 5_000,
+                    budget_tokens: None,
+                    budget_limit: None,
+                    budget_nudges: None,
+                    message_count: None,
+                }),
+            }])
+        });
+        element! {
+            ThemeProvider(
+                initial_state: Some(crate::utils::theme::ThemeSetting::Named(theme::ThemeName::Dark)),
+                on_theme_save: Some(Arc::new(|_| {}) as ThemeSaveHandler),
+            ) {
+                crate::state::app_state::AppStateProvider(
+                    prebuilt_store: Some(store),
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        View(flex_direction: FlexDirection::Column) {
+                            Messages(messages: Arc::clone(&messages), hide_logo: true)
+                            PreviewLightOnKey
+                        }
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn messages_theme_preview_keeps_a_turn_summary_taken_at_mount() {
+        // CC's turn-duration row snapshots the running background tasks at
+        // mount (SystemTextMessage.tsx:352-357); a theme preview re-renders it
+        // in place, it does not remount it, so a task that has since finished
+        // still reads "still running" in that historical row.
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let store = crate::state::store::AppStore::new(Default::default(), None);
+        store.replace_with(|state| {
+            Arc::make_mut(&mut state.tasks).insert(
+                "agent-1".to_string(),
+                Arc::new(crate::state::app_state_store::TaskState::Other(
+                    crate::state::app_state_store::TaskStateOther {
+                        id: "agent-1".to_string(),
+                        task_type: "local_agent".to_string(),
+                        status: "running".to_string(),
+                        description: String::new(),
+                        is_backgrounded: Some(true),
+                        notified: false,
+                        retain: Some(false),
+                        evict_after: None,
+                        progress_tool_uses: None,
+                        progress_tokens: None,
+                    },
+                )),
+            );
+        });
+        let frames = futures::executor::block_on({
+            let store = store.clone();
+            async move {
+                let (keys, events) = async_channel::unbounded();
+                let mut probe = element!(TurnSummaryThemeProbe(store: Some(store.clone())));
+                let mut render_loop = Box::pin(probe.mock_terminal_render_loop(
+                    MockTerminalConfig::with_events(events).with_size(100, 12),
+                ));
+                let mut frames = Vec::new();
+                while let Some(canvas) = render_loop.next().await {
+                    let text = canvas.to_string();
+                    assert!(text.contains("presses="), "the probe stopped rendering:\n{text}");
+                    if !text.contains(&format!("presses={}", frames.len())) {
+                        continue;
+                    }
+                    frames.push(text);
+                    if frames.len() == 2 {
+                        break;
+                    }
+                    // The task finishes before the preview.
+                    store.replace_with(|state| {
+                        Arc::make_mut(&mut state.tasks).clear();
+                    });
+                    keys.send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        KeyCode::Char('p'),
+                    )))
+                    .await
+                    .unwrap();
+                }
+                frames
+            }
+        });
+        for frame in &frames {
+            assert!(
+                frame.contains("1 local agent still running"),
+                "the historical summary changed:\n{frame}"
+            );
+        }
+    }
+
     fn foreground_at(canvas: &iocraft::Canvas, needle: &str) -> Option<iocraft::Color> {
         use unicode_width::UnicodeWidthStr;
         let text = canvas.to_string();

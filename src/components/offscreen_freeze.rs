@@ -8,9 +8,10 @@
 //! CC's freeze returns a cached element (`OffscreenFreeze.tsx:24-38`), which
 //! React still re-renders when a context it reads changes — a ThemeProvider
 //! preview or save repaints frozen rows too. iocraft's freeze skips its
-//! children entirely, so this boundary keys the frozen subtree by the resolved
-//! theme: a theme change remounts it unfrozen, in the new palette, at the cost
-//! of the subtree's local state.
+//! children entirely, so this boundary hands the resolved theme to iocraft's
+//! `refresh_key`: a theme change re-renders the frozen subtree in place,
+//! keeping its component instances and their mount-time state (a turn's
+//! "still running" summary, say).
 
 pub use iocraft::components::InVirtualListContext;
 use iocraft::prelude::*;
@@ -49,10 +50,10 @@ impl Component for OffscreenFreeze {
         updater.set_transparent_layout(true);
         let mut frozen = element! {
             iocraft::components::OffscreenFreeze(
-                key: format!("offscreen-freeze-{theme:?}"),
                 terminal_rows: props.terminal_rows,
                 damage_on_restore: props.damage_on_restore,
                 skip_poll: props.skip_poll,
+                refresh_key: Some(theme as u64),
             ) {
                 #(props.children.iter_mut().map(AnyElement::from))
             }
