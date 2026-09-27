@@ -3,9 +3,9 @@
 use chrono::{DateTime, Datelike, Local};
 
 fn locale_prefers_12_hour_clock() -> bool {
-    let locale = std::env::var("LC_ALL")
-        .or_else(|_| std::env::var("LC_TIME"))
-        .or_else(|_| std::env::var("LANG"))
+    let locale = crate::utils::process_env::var("LC_ALL")
+        .or_else(|_| crate::utils::process_env::var("LC_TIME"))
+        .or_else(|_| crate::utils::process_env::var("LANG"))
         .unwrap_or_default()
         .replace('-', "_")
         .to_ascii_lowercase();

@@ -32,7 +32,9 @@ macro_rules! zip_path {
 /// Maps to: CC `utils/plugins/zipCache.ts:55-57#isPluginZipCacheEnabled`.
 pub fn is_plugin_zip_cache_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_USE_ZIP_CACHE").as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_USE_ZIP_CACHE")
+            .ok()
+            .as_deref(),
     )
 }
 /// Maps to: CC `utils/plugins/zipCache.ts:64-70#getPluginZipCachePath`.
@@ -41,6 +43,7 @@ pub fn get_plugin_zip_cache_path() -> Option<PathBuf> {
         return None;
     }
     crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR")
+        .ok()
         .filter(|s| !s.is_empty())
         .map(|s| PathBuf::from(crate::utils::permissions::path_validation::expand_tilde(&s)))
 }

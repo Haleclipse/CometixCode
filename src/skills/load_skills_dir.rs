@@ -441,7 +441,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
         }
     } else {
         if !crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_POLICY_SKILLS")
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_POLICY_SKILLS")
                 .ok()
                 .as_deref(),
         ) {
@@ -1823,7 +1823,7 @@ mod tests {
             "---\nname: rust-only\ndescription: Rust skill\npaths: src/**/*.rs\n---\nRust body",
         )
         .unwrap();
-        let _ = std::process::Command::new("git")
+        let _ = crate::utils::subprocess_env::command("git")
             .args(["init", "--quiet"])
             .current_dir(&root)
             .status();

@@ -349,7 +349,7 @@ fn should_retry_529(query_source: Option<&RetryQuerySource>) -> bool {
 /// Maps to: CC `services/api/withRetry.ts:100-104`
 fn is_persistent_retry_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_UNATTENDED_RETRY")
+        crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY")
             .ok()
             .as_deref(),
     )
@@ -409,7 +409,9 @@ fn is_oauth_token_revoked_error(error: &RetryableError) -> bool {
 /// Maps to: CC `services/api/withRetry.ts:631-644`
 fn is_bedrock_auth_error(error: &RetryableError) -> bool {
     if !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_BEDROCK").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK")
+            .ok()
+            .as_deref(),
     ) {
         return false;
     }
@@ -424,7 +426,9 @@ fn is_bedrock_auth_error(error: &RetryableError) -> bool {
 /// Maps to: CC `services/api/withRetry.ts:670-682`
 fn is_vertex_auth_error(error: &RetryableError) -> bool {
     if !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_VERTEX").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_USE_VERTEX")
+            .ok()
+            .as_deref(),
     ) {
         return false;
     }
@@ -493,8 +497,11 @@ fn should_retry(error: &ApiError) -> bool {
     }
 
     // CCR mode: auth errors are transient blips
-    if crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref())
-        && (error.status == Some(401) || error.status == Some(403))
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE")
+            .ok()
+            .as_deref(),
+    ) && (error.status == Some(401) || error.status == Some(403))
     {
         return true;
     }
@@ -700,7 +707,7 @@ fn get_rate_limit_reset_delay_ms(error: &ApiError) -> Option<u64> {
 ///
 /// Maps to: CC `services/api/withRetry.ts:789-794`
 pub fn get_default_max_retries() -> u32 {
-    std::env::var("CLAUDE_CODE_MAX_RETRIES")
+    crate::utils::process_env::var("CLAUDE_CODE_MAX_RETRIES")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(DEFAULT_MAX_RETRIES)
@@ -1010,8 +1017,9 @@ where
                     // TODO: Check FALLBACK_FOR_ALL_PRIMARY_MODELS and isNonCustomOpusModel
                     // once model utils are ported.
                     // See CC `utils/model/model.ts:isNonCustomOpusModel`.
-                    let should_track = std::env::var("FALLBACK_FOR_ALL_PRIMARY_MODELS").is_ok()
-                        || is_non_custom_opus_model(&options.model);
+                    let should_track =
+                        crate::utils::process_env::var("FALLBACK_FOR_ALL_PRIMARY_MODELS").is_ok()
+                            || is_non_custom_opus_model(&options.model);
                     if should_track {
                         consecutive_529_errors += 1;
                         if consecutive_529_errors >= MAX_529_RETRIES {
@@ -1026,7 +1034,7 @@ where
                             // External users (non-sandbox, non-persistent) get a terminal error
                             if !crate::utils::build_profile::has_internal_capability(
                                 crate::utils::build_profile::InternalCapability::Api,
-                            ) && std::env::var("IS_SANDBOX").is_err()
+                            ) && crate::utils::process_env::var("IS_SANDBOX").is_err()
                                 && !is_persistent_retry_enabled()
                             {
                                 return Err(CannotRetryError {

@@ -208,7 +208,7 @@ pub fn default_setup_screens_snapshot() -> SetupScreensSnapshot {
     let detected = runtime_env::get();
     setup_screens_snapshot_from_readonly_runtime(
         &load_global_config(),
-        &|key| std::env::var(key).ok(),
+        &|key| crate::utils::process_env::var(key).ok(),
         std::env::args(),
         detected.terminal.clone(),
         detected.platform,
@@ -221,7 +221,7 @@ pub fn default_status_notice_context(
     let cwd = std::env::current_dir().unwrap_or_default();
     status_notice_context_from_readonly_runtime(
         &load_global_config(),
-        &|key| std::env::var(key).ok(),
+        &|key| crate::utils::process_env::var(key).ok(),
         &cwd,
         discover_claude_md_files(),
         ide_installation_status,
@@ -704,11 +704,15 @@ mod setup_screens_snapshot_tests {
         }
 
         assert_eq!(
-            crate::utils::process_env::var("ANTHROPIC_AUTH_TOKEN").as_deref(),
+            crate::utils::process_env::var("ANTHROPIC_AUTH_TOKEN")
+                .ok()
+                .as_deref(),
             Some("token-sentinel")
         );
         assert_eq!(
-            crate::utils::process_env::var("ANTHROPIC_API_KEY").as_deref(),
+            crate::utils::process_env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .as_deref(),
             Some("api-key-sentinel")
         );
     }
@@ -854,8 +858,11 @@ pub enum SetupScreenGate {
 
 /// Maps to: CC `interactiveHelpers.tsx` CLAUBBIT / demo skip of trust.
 pub fn should_skip_trust_dialog_for_env() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("CLAUBBIT").ok().as_deref())
-        || crate::utils::env_utils::is_env_truthy(std::env::var("IS_DEMO").ok().as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUBBIT").ok().as_deref(),
+    ) || crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("IS_DEMO").ok().as_deref(),
+    )
 }
 
 /// Whether TrustDialog must still be shown (CC fast-path when already accepted).
@@ -879,7 +886,9 @@ pub fn should_show_claude_md_external_includes_gate() -> bool {
 pub fn load_claude_md_external_includes_for_setup() -> Vec<ExternalClaudeMdInclude> {
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
     );
     let files = discover_claude_md_files_with_external_policy(
         include_default_discovery,
@@ -890,8 +899,8 @@ pub fn load_claude_md_external_includes_for_setup() -> Vec<ExternalClaudeMdInclu
 }
 
 fn home_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(std::path::PathBuf::from)
 }
 

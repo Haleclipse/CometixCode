@@ -4,15 +4,21 @@
 
 /// Maps to: CC `services/analytics/config.ts:16-27` `isAnalyticsDisabled`.
 pub fn is_analytics_disabled() -> bool {
-    std::env::var("NODE_ENV").ok().as_deref() == Some("test")
+    crate::utils::process_env::var("NODE_ENV").ok().as_deref() == Some("test")
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_USE_BEDROCK").ok().as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK")
+                .ok()
+                .as_deref(),
         )
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_USE_VERTEX").ok().as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_USE_VERTEX")
+                .ok()
+                .as_deref(),
         )
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_USE_FOUNDRY").ok().as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_USE_FOUNDRY")
+                .ok()
+                .as_deref(),
         )
         || crate::utils::privacy_level::is_telemetry_disabled()
 }

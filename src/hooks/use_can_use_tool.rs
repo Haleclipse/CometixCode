@@ -903,7 +903,7 @@ pub fn can_use_tool_or_queue_permission_for_params_with_store(
         crate::hooks::tool_permission::handlers::interactive_handler::fill_tool_description(
             &mut request,
         );
-        let wait_timeout = std::env::var("COMETIX_SWARM_PERMISSION_WAIT_MS")
+        let wait_timeout = crate::utils::process_env::var("COMETIX_SWARM_PERMISSION_WAIT_MS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .map(std::time::Duration::from_millis)

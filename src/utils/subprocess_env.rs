@@ -66,6 +66,25 @@ pub fn apply_process_env(command: &mut tokio::process::Command) {
     command.envs(env.iter());
 }
 
+/// The one constructor for child processes: Node's `spawn(file, args)` without
+/// an explicit `env` inherits the effective `process.env`, never the frozen real
+/// environment. `subprocessEnv()` owners layer [`apply_subprocess_env_std`] on
+/// top; explicit per-command overrides follow either.
+#[allow(clippy::disallowed_methods)] // The sanctioned `Command::new`.
+pub fn command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    let mut command = std::process::Command::new(program);
+    apply_process_env_std(&mut command);
+    command
+}
+
+/// Tokio counterpart of [`command`].
+#[allow(clippy::disallowed_methods)] // The sanctioned `Command::new`.
+pub fn tokio_command(program: impl AsRef<std::ffi::OsStr>) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
+    apply_process_env(&mut command);
+    command
+}
+
 fn scrub_enabled(env: &crate::utils::process_env::EnvSnapshot) -> bool {
     crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"))
 }
@@ -119,6 +138,7 @@ pub(crate) fn apply_subprocess_env_std_snapshot(
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // Raw commands isolate the helpers under test.
 mod tests {
     use crate::utils::env_utils::EnvVarGuard;
 
@@ -141,6 +161,42 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// Node children inherit the live `process.env`: a real child sees a
+    /// carrier-only variable and not one the carrier deleted, although the
+    /// real environment still holds it.
+    #[test]
+    fn command_children_inherit_the_effective_environment() {
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        #[cfg(windows)]
+        let (deleted, shell, script) = (
+            "USERPROFILE",
+            "cmd",
+            ["/C", "echo %COMETIX_CHILD_ENV_ADDED%;%USERPROFILE%"],
+        );
+        #[cfg(not(windows))]
+        let (deleted, shell, script) = (
+            "HOME",
+            "/bin/sh",
+            [
+                "-c",
+                "printf '%s;%s' \"$COMETIX_CHILD_ENV_ADDED\" \"${HOME-unset}\"",
+            ],
+        );
+        assert!(
+            crate::utils::process_env::startup_snapshot().contains(deleted),
+            "the real environment provides {deleted}"
+        );
+        let _added = EnvVarGuard::set("COMETIX_CHILD_ENV_ADDED", "from-carrier");
+        let _deleted = EnvVarGuard::unset(deleted);
+
+        let output = super::command(shell).args(script).output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        #[cfg(windows)]
+        assert_eq!(stdout.trim(), "from-carrier;%USERPROFILE%");
+        #[cfg(not(windows))]
+        assert_eq!(stdout, "from-carrier;unset");
     }
 
     /// CC `utils/subprocessEnv.ts#subprocessEnv` returns the current

@@ -64,8 +64,8 @@ pub fn get_relative_memory_path_with_roots(path: &Path, home: &Path, cwd: &Path)
 
 /// Maps to: CC `getRelativeMemoryPath(path)` using process roots.
 pub fn get_relative_memory_path(path: &Path) -> String {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    let home = crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_default();
     let cwd = std::env::current_dir().unwrap_or_default();

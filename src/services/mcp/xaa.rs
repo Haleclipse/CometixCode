@@ -99,7 +99,7 @@ mod runtime {
     const XAA_REQUEST_TIMEOUT_SECS: u64 = 30;
 
     fn http_client() -> anyhow::Result<reqwest::Client> {
-        Ok(reqwest::Client::builder()
+        Ok(crate::utils::http::client_builder()
             .timeout(std::time::Duration::from_secs(XAA_REQUEST_TIMEOUT_SECS))
             .build()?)
     }

@@ -55,7 +55,7 @@ mod runtime {
     pub fn fetch_claude_ai_mcp_configs_if_eligible() -> super::super::config::McpConfigPromise {
         memoized_config_promise(&CLAUDE_AI_MCP_CONFIGS_CACHE, || {
             super::super::config::start_mcp_config_promise(async {
-                let get_env = |key: &str| std::env::var(key).ok();
+                let get_env = |key: &str| crate::utils::process_env::var(key).ok();
                 if crate::utils::env_utils::is_env_defined_falsy(
                     get_env("ENABLE_CLAUDEAI_MCP_SERVERS").as_deref(),
                 ) {
@@ -90,7 +90,7 @@ mod runtime {
                 debug_log(format!("[claudeai-mcp] Fetching from {url}"));
 
                 let result = async {
-                    let response = reqwest::Client::builder()
+                    let response = crate::utils::http::client_builder()
                         .timeout(Duration::from_millis(FETCH_TIMEOUT_MS))
                         .build()?
                         .get(&url)

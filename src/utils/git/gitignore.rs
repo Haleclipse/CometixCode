@@ -31,7 +31,7 @@ mod tests {
         ));
         std::fs::create_dir_all(root.join("ignored/nested")).unwrap();
         std::fs::write(root.join(".gitignore"), "ignored/\n").unwrap();
-        let _ = std::process::Command::new("git")
+        let _ = crate::utils::subprocess_env::command("git")
             .args(["init", "--quiet"])
             .current_dir(&root)
             .status();

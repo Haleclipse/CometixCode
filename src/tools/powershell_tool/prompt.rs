@@ -28,7 +28,7 @@ pub fn get_max_output_length() -> usize {
 
 fn get_background_usage_note() -> Option<&'static str> {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
             .ok()
             .as_deref(),
     ) {
@@ -41,7 +41,7 @@ fn get_background_usage_note() -> Option<&'static str> {
 
 fn get_sleep_guidance() -> Option<&'static str> {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
             .ok()
             .as_deref(),
     ) {

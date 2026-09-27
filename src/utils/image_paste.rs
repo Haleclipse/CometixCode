@@ -6,7 +6,6 @@
 //! not write session/config state.
 
 use base64::Engine as _;
-use std::process::Command;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClipboardImage {
@@ -75,7 +74,7 @@ fn macos_clipboard_image() -> Option<ClipboardImage> {
     for (class, media_type) in [("PNGf", "image/png"), ("JPEG", "image/jpeg")] {
         let script =
             format!("try\nreturn the clipboard as «class {class}»\non error\nreturn \"\"\nend try");
-        let output = Command::new("osascript")
+        let output = crate::utils::subprocess_env::command("osascript")
             .args(["-e", &script])
             .output()
             .ok()?;
@@ -106,7 +105,7 @@ fn macos_clipboard_image() -> Option<ClipboardImage> {
 #[cfg(target_os = "windows")]
 fn windows_clipboard_image() -> Option<ClipboardImage> {
     let script = r#"Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $i=[Windows.Forms.Clipboard]::GetImage(); if($null -ne $i){$m=New-Object IO.MemoryStream; $i.Save($m,[Drawing.Imaging.ImageFormat]::Png); [Convert]::ToBase64String($m.ToArray())}"#;
-    let output = Command::new("powershell.exe")
+    let output = crate::utils::subprocess_env::command("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output()
         .ok()?;
@@ -133,7 +132,10 @@ fn unix_clipboard_image() -> Option<ClipboardImage> {
             "image/png",
         ),
     ] {
-        let Ok(output) = Command::new(program).args(args).output() else {
+        let Ok(output) = crate::utils::subprocess_env::command(program)
+            .args(args)
+            .output()
+        else {
             continue;
         };
         if output.status.success() && !output.stdout.is_empty() {

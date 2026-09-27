@@ -553,7 +553,7 @@ fn terminate_process_tree(child: &mut Child) {
     }
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("taskkill")
+        let _ = crate::utils::subprocess_env::command("taskkill")
             .args(["/PID", &child.id().to_string(), "/T", "/F"])
             .status();
     }
@@ -630,12 +630,12 @@ pub fn create_failed_command(error: impl Into<String>) -> ShellCommand {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     fn spawned(script: &str, timeout: Duration, auto_background: bool) -> ShellCommand {
         let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
         let output = TaskOutput::new(&task_id, false);
-        let mut command = Command::new("bash");
+        let mut command = crate::utils::subprocess_env::command("bash");
         command
             .args(["-lc", script])
             .stdout(Stdio::piped())
@@ -698,7 +698,7 @@ mod tests {
         let abort = crate::tool::AbortController::default();
         let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
         let output = TaskOutput::new(&task_id, false);
-        let mut process = Command::new("bash");
+        let mut process = crate::utils::subprocess_env::command("bash");
         process
             .args(["-lc", "sleep .05; printf survived"])
             .stdout(Stdio::piped())
@@ -745,7 +745,7 @@ mod tests {
             .append(true)
             .open(&output_path)
             .unwrap();
-        let mut process = Command::new("bash");
+        let mut process = crate::utils::subprocess_env::command("bash");
         process
             .args(["-lc", "head -c 8192 /dev/zero; sleep 2"])
             .stdout(Stdio::from(output_file.try_clone().unwrap()))

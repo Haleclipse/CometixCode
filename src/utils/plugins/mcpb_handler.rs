@@ -404,7 +404,7 @@ async fn download_mcpb(
     let start = std::time::Instant::now();
     let mut fired = false;
     let result: anyhow::Result<Vec<u8>> = async {
-        let client = reqwest::Client::builder()
+        let client = crate::utils::http::client_builder()
             .timeout(std::time::Duration::from_secs(120))
             .redirect(reqwest::redirect::Policy::limited(5))
             .build()?;

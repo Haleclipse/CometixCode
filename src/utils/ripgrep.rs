@@ -8,7 +8,7 @@ use crate::utils::debug::log_for_debugging;
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{
     Arc, Mutex, OnceLock,
     atomic::{AtomicBool, Ordering},
@@ -124,7 +124,9 @@ fn get_ripgrep_config() -> RipgrepConfig {
         .get_or_init(|| {
             // USE_BUILTIN_RIPGREP falsy → prefer system `rg`.
             if crate::utils::env_utils::is_env_defined_falsy(
-                std::env::var("USE_BUILTIN_RIPGREP").ok().as_deref(),
+                crate::utils::process_env::var("USE_BUILTIN_RIPGREP")
+                    .ok()
+                    .as_deref(),
             ) && system_rg_path().is_some()
             {
                 return RipgrepConfig {
@@ -217,7 +219,7 @@ fn platform_default_timeout_seconds() -> u64 {
 }
 
 fn default_timeout() -> Duration {
-    let parsed_seconds = std::env::var("CLAUDE_CODE_GLOB_TIMEOUT_SECONDS")
+    let parsed_seconds = crate::utils::process_env::var("CLAUDE_CODE_GLOB_TIMEOUT_SECONDS")
         .ok()
         .map(|value| parse_timeout_seconds(&value))
         .unwrap_or(0);
@@ -307,7 +309,7 @@ pub fn codesign_ripgrep_if_necessary() {
     }
     let builtin_path = config.command;
 
-    let probe = Command::new("codesign")
+    let probe = crate::utils::subprocess_env::command("codesign")
         .args(["-vv", "-d", &builtin_path])
         .output();
     let Ok(probe) = probe else {
@@ -319,7 +321,7 @@ pub fn codesign_ripgrep_if_necessary() {
         return;
     }
 
-    let sign = Command::new("codesign")
+    let sign = crate::utils::subprocess_env::command("codesign")
         .args([
             "--sign",
             "-",
@@ -338,7 +340,7 @@ pub fn codesign_ripgrep_if_necessary() {
         }
     }
 
-    let quarantine = Command::new("xattr")
+    let quarantine = crate::utils::subprocess_env::command("xattr")
         .args(["-d", "com.apple.quarantine", &builtin_path])
         .output();
     if let Ok(quarantine) = quarantine {
@@ -356,7 +358,7 @@ fn run_ripgrep_first_use_probe(config: &RipgrepConfig) -> bool {
     let command = resolve_spawn_command(config);
     let mut args = config.args.clone();
     args.push("--version".to_string());
-    let mut child = match Command::new(&command)
+    let mut child = match crate::utils::subprocess_env::command(&command)
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -451,7 +453,7 @@ where
     full_args.extend(args.iter().cloned());
     full_args.push(target.display().to_string());
 
-    let mut child = Command::new(&command)
+    let mut child = crate::utils::subprocess_env::command(&command)
         .args(&full_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -528,7 +530,7 @@ fn rip_grep_file_count(
     full_args.extend(args.iter().cloned());
     full_args.push(target.display().to_string());
 
-    let mut child = Command::new(&command)
+    let mut child = crate::utils::subprocess_env::command(&command)
         .args(&full_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -586,8 +588,8 @@ pub fn count_files_rounded_rg(
         }
     }
 
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    let home = crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(PathBuf::from);
     if let Some(home) = home {
         if let (Ok(resolved_dir), Ok(resolved_home)) =
@@ -685,7 +687,7 @@ fn rip_grep_inner_with_config(
     full_args.extend(args.iter().cloned());
     full_args.push(target.display().to_string());
 
-    let mut child = match Command::new(&command)
+    let mut child = match crate::utils::subprocess_env::command(&command)
         .args(&full_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -875,8 +877,8 @@ fn system_rg_path_in(path: &std::ffi::OsStr) -> Option<PathBuf> {
     for dir in std::env::split_paths(path) {
         #[cfg(windows)]
         {
-            let path_ext =
-                std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+            let path_ext = crate::utils::process_env::var("PATHEXT")
+                .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
             for extension in path_ext
                 .split(';')
                 .filter(|extension| !extension.is_empty())
@@ -900,7 +902,7 @@ fn system_rg_path_in(path: &std::ffi::OsStr) -> Option<PathBuf> {
 
 /// Resolve executable `rg` on PATH, mirroring CC's `which` / `where.exe` gate.
 pub fn system_rg_path() -> Option<PathBuf> {
-    system_rg_path_in(&std::env::var_os("PATH")?)
+    system_rg_path_in(&crate::utils::process_env::var_os("PATH")?)
 }
 
 #[cfg(test)]
@@ -960,7 +962,7 @@ mod tests {
             return;
         };
         assert!(binary.is_file(), "the lookup only reports real files");
-        let output = Command::new(&binary)
+        let output = crate::utils::subprocess_env::command(&binary)
             .arg("--version")
             .output()
             .expect("run packaged rg");

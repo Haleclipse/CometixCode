@@ -3,7 +3,7 @@
 //! Maps to: CC `utils/execFileNoThrow.ts`.
 
 use std::io::{Read, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
 /// L1 injection of `osc.ts`'s imported `execFileNoThrow` and Node event loop
@@ -330,7 +330,7 @@ impl StartedProcess {
         options: &ExecFileWithCwdOptions<'_>,
         inherited_env: Option<&crate::utils::process_env::EnvSnapshot>,
     ) -> std::io::Result<Self> {
-        let mut command = Command::new(program);
+        let mut command = crate::utils::subprocess_env::command(program);
         command
             .args(args)
             .stdout(Stdio::piped())
@@ -351,9 +351,8 @@ impl StartedProcess {
         };
         // CC passes env to Execa with extendEnv's true default. Snapshot the
         // established runtime process.env carrier before spawn, then overlay
-        // own properties (including explicit undefined removals).
-        // Old synchronous consumers still inherit the OS environment. Their
-        // migration to the process.env carrier is not part of this adapter.
+        // own properties (including explicit undefined removals). Without a
+        // caller snapshot, the constructor already installed the current one.
         if let Some(inherited_env) = inherited_env {
             command.env_clear().envs(inherited_env.iter());
         }

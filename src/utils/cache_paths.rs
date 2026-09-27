@@ -60,14 +60,14 @@ fn cache_root() -> io::Result<&'static PathBuf> {
         .join("Caches")
         .join("claude-cli-nodejs");
     #[cfg(target_os = "windows")]
-    let root = std::env::var_os("LOCALAPPDATA")
+    let root = crate::utils::process_env::var_os("LOCALAPPDATA")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join("AppData").join("Local"))
         .join("claude-cli-nodejs")
         .join("Cache");
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let root = std::env::var_os("XDG_CACHE_HOME")
+    let root = crate::utils::process_env::var_os("XDG_CACHE_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".cache"))

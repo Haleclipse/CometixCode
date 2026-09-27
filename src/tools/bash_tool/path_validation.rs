@@ -1246,7 +1246,7 @@ fn passthrough(message: String) -> PermissionResult {
 }
 
 fn home_dir_string() -> Option<String> {
-    std::env::var_os("HOME").map(|home| PathBuf::from(home).display().to_string())
+    crate::utils::process_env::var_os("HOME").map(|home| PathBuf::from(home).display().to_string())
 }
 
 #[cfg(test)]

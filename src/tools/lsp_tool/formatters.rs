@@ -837,7 +837,7 @@ async fn filter_git_ignored_location_uris(locations: Vec<&Value>, cwd: &str) -> 
 
     let mut ignored_paths = BTreeSet::<String>::new();
     for batch in unique_paths.chunks(50) {
-        let mut command = tokio::process::Command::new("git");
+        let mut command = crate::utils::subprocess_env::tokio_command("git");
         command.arg("check-ignore").args(batch).current_dir(cwd);
         if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), command.output()).await
         {
@@ -1046,7 +1046,7 @@ mod tests {
 
     #[tokio::test]
     async fn filter_git_ignored_result_removes_ignored_locations_like_official() {
-        if std::process::Command::new("git")
+        if crate::utils::subprocess_env::command("git")
             .arg("--version")
             .output()
             .is_err()
@@ -1060,7 +1060,7 @@ mod tests {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("cometix-lsp-ignore-{unique}"));
         std::fs::create_dir_all(&root).unwrap();
-        let _ = std::process::Command::new("git")
+        let _ = crate::utils::subprocess_env::command("git")
             .arg("init")
             .arg("--quiet")
             .current_dir(&root)

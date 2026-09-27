@@ -88,7 +88,7 @@ impl ApiTrace {
 
 /// Resolve effective trace level.
 pub fn trace_level() -> TraceLevel {
-    match std::env::var("COMETIX_TRACE") {
+    match crate::utils::process_env::var("COMETIX_TRACE") {
         Ok(raw) => {
             let normalized = raw.trim().to_ascii_lowercase();
             match normalized.as_str() {
@@ -124,7 +124,7 @@ fn debug_implies_summary() -> bool {
 
 /// Directory for trace JSONL files.
 pub fn get_trace_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("COMETIX_TRACE_DIR") {
+    if let Ok(dir) = crate::utils::process_env::var("COMETIX_TRACE_DIR") {
         let trimmed = dir.trim();
         if !trimmed.is_empty() {
             return PathBuf::from(trimmed);

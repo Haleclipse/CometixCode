@@ -7,7 +7,6 @@ pub mod git_filesystem;
 pub mod gitignore;
 
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 use unicode_normalization::UnicodeNormalization;
 
 /// Maps to: CC `utils/git.ts:212-216#gitExe`.
@@ -158,7 +157,7 @@ fn normalize_unicode(path: PathBuf) -> PathBuf {
 /// same original working directory once when `LogSelector` mounts.
 pub fn get_branch() -> String {
     let cwd = crate::bootstrap::state::get_original_cwd();
-    Command::new("git")
+    crate::utils::subprocess_env::command("git")
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(cwd)
         .output()
@@ -180,9 +179,9 @@ mod tests {
         // the zero-argument memo nor Bun-compatible startup PATH is reset by
         // a test-only production hook. A candidate is never executed.
         const PROBE: &str = "COMETIX_GIT_EXE_MEMO_PROBE";
-        if let Ok(mode) = std::env::var(PROBE) {
+        if let Ok(mode) = crate::utils::process_env::var(PROBE) {
             crate::utils::process_env::capture_startup();
-            let directory = PathBuf::from(std::env::var_os("PATH").unwrap());
+            let directory = PathBuf::from(crate::utils::process_env::var_os("PATH").unwrap());
             let executable = directory.join("git");
             let expected = if mode == "found" {
                 executable.clone()
@@ -212,7 +211,7 @@ mod tests {
                 std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755))
                     .unwrap();
             }
-            let mut child = Command::new(std::env::current_exe().unwrap())
+            let mut child = crate::utils::subprocess_env::command(std::env::current_exe().unwrap())
                 .args([
                     "--exact",
                     "utils::git::tests::git_exe_matches_official_first_lookup_memo_for_path_and_fallback",

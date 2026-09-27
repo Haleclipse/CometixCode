@@ -13,15 +13,21 @@ pub enum ApiProvider {
 /// Maps to CC `utils/model/providers.ts` `getAPIProvider()`.
 pub fn get_api_provider() -> ApiProvider {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_BEDROCK").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK")
+            .ok()
+            .as_deref(),
     ) {
         ApiProvider::Bedrock
     } else if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_VERTEX").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_USE_VERTEX")
+            .ok()
+            .as_deref(),
     ) {
         ApiProvider::Vertex
     } else if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_FOUNDRY").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_USE_FOUNDRY")
+            .ok()
+            .as_deref(),
     ) {
         ApiProvider::Foundry
     } else {
@@ -63,7 +69,7 @@ pub fn is_first_party_anthropic_base_url_for_audience(
 
 /// Maps to CC `utils/model/providers.ts#isFirstPartyAnthropicBaseUrl`.
 pub fn is_first_party_anthropic_base_url() -> bool {
-    let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+    let base_url = crate::utils::process_env::var("ANTHROPIC_BASE_URL").ok();
     is_first_party_anthropic_base_url_for_audience(
         base_url.as_deref(),
         crate::utils::build_profile::build_audience(),

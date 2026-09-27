@@ -133,11 +133,11 @@ pub fn is_project_config_key(key: &str) -> bool {
 // ════════════════════════════════════════════════════════════
 
 pub fn get_config_home() -> PathBuf {
-    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+    if let Ok(dir) = crate::utils::process_env::var("CLAUDE_CONFIG_DIR") {
         PathBuf::from(dir)
-    } else if let Ok(home) = std::env::var("HOME") {
+    } else if let Ok(home) = crate::utils::process_env::var("HOME") {
         PathBuf::from(home).join(".claude")
-    } else if let Ok(home) = std::env::var("USERPROFILE") {
+    } else if let Ok(home) = crate::utils::process_env::var("USERPROFILE") {
         PathBuf::from(home).join(".claude")
     } else {
         PathBuf::from(".claude")
@@ -145,11 +145,11 @@ pub fn get_config_home() -> PathBuf {
 }
 
 fn get_global_config_file_home() -> PathBuf {
-    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
+    if let Ok(dir) = crate::utils::process_env::var("CLAUDE_CONFIG_DIR") {
         PathBuf::from(dir)
-    } else if let Ok(home) = std::env::var("HOME") {
+    } else if let Ok(home) = crate::utils::process_env::var("HOME") {
         PathBuf::from(home)
-    } else if let Ok(home) = std::env::var("USERPROFILE") {
+    } else if let Ok(home) = crate::utils::process_env::var("USERPROFILE") {
         PathBuf::from(home)
     } else {
         PathBuf::from(".")
@@ -1792,7 +1792,7 @@ pub fn record_first_start_time() {
 }
 
 pub fn is_config_write_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+    crate::utils::env_utils::is_cometix_write_enabled()
 }
 
 fn is_write_enabled() -> bool {
@@ -1805,7 +1805,9 @@ fn is_write_enabled() -> bool {
 
 pub fn should_skip_plugin_autoupdate() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("FORCE_AUTOUPDATE_PLUGINS").ok().as_deref(),
+        crate::utils::process_env::var("FORCE_AUTOUPDATE_PLUGINS")
+            .ok()
+            .as_deref(),
     ) {
         return false;
     }
@@ -1813,19 +1815,21 @@ pub fn should_skip_plugin_autoupdate() -> bool {
 }
 
 pub fn get_auto_updater_disabled_reason() -> Option<&'static str> {
-    if crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_AUTOUPDATER").ok().as_deref())
-        || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
-                .ok()
-                .as_deref(),
-        )
-    {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_AUTOUPDATER")
+            .ok()
+            .as_deref(),
+    ) || crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
+            .ok()
+            .as_deref(),
+    ) {
         return Some("environment");
     }
 
     if cfg!(debug_assertions)
         && !crate::utils::env_utils::is_env_truthy(
-            std::env::var("ENABLE_AUTOUPDATER_IN_DEVELOPMENT")
+            crate::utils::process_env::var("ENABLE_AUTOUPDATER_IN_DEVELOPMENT")
                 .ok()
                 .as_deref(),
         )

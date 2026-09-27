@@ -13,7 +13,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Shutdown, TcpListener, TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -644,7 +644,7 @@ fn start_linux_bridges(
     let socks_socket = std::env::temp_dir().join(format!("cometix-socks-{token}.sock"));
     let mut bridges = Vec::new();
     for (socket, port) in [(&http_socket, http_port), (&socks_socket, socks_port)] {
-        let child = Command::new("socat")
+        let child = crate::utils::subprocess_env::command("socat")
             .arg(format!("UNIX-LISTEN:{},fork,reuseaddr", socket.display()))
             .arg(format!(
                 "TCP:localhost:{port},keepalive,keepidle=10,keepintvl=5,keepcnt=3"

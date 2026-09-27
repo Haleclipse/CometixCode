@@ -792,7 +792,9 @@ fn resolve_git_subdir_url(url: &str) -> anyhow::Result<String> {
     {
         Ok(
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_REMOTE")
+                    .ok()
+                    .as_deref(),
             ) {
                 format!("https://github.com/{url}.git")
             } else {
@@ -1720,7 +1722,7 @@ pub fn load_all_plugins_cache_only()
 {
     use futures::FutureExt;
     let promise = if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SYNC_PLUGIN_INSTALL")
+        crate::utils::process_env::var("CLAUDE_CODE_SYNC_PLUGIN_INSTALL")
             .ok()
             .as_deref(),
     ) {

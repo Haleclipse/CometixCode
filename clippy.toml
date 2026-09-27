@@ -1,10 +1,23 @@
-# Writers must go through the process-env carrier (PORTING.md "Global
-# process.env carrier"): raw set_var/remove_var desyncs the carrier's owned
-# environment and is UB on Unix when any other thread may call getenv.
-# The only allowed sites are the carrier's own transitional real-env
-# write-through (utils/process_env.rs) and the Windows CreateProcess harden
-# write at the entrypoint (entrypoints/cli.rs), both annotated with
-# `#[allow(clippy::disallowed_methods)]`.
+# The process-env carrier (utils/process_env.rs, PORTING.md "Global
+# process.env carrier") is the only owner of the effective `process.env`.
+#
+# Writers must go through it: raw set_var/remove_var desyncs the carrier's owned
+# environment and is UB on Unix when any other thread may call getenv. The only
+# allowed site is the Windows CreateProcess harden write at the entrypoint
+# (entrypoints/cli.rs), annotated with `#[allow(clippy::disallowed_methods)]`.
+#
+# Readers must go through it too: the real environment is the frozen startup
+# capture, so a raw read misses every runtime update (settings env,
+# StructuredIO refreshes, session-id changes). `process_env::var`/`var_os` keep
+# the std signatures. The only allowed raw read is the carrier's startup
+# capture itself.
+#
+# Children inherit it the same way: a bare `Command::new` would hand the child
+# the frozen real environment, so every child starts from
+# `subprocess_env::command`/`tokio_command`, which install the carrier snapshot.
+#
+# So do HTTP clients: reqwest's own proxy discovery reads the frozen real
+# environment, so every client starts from `utils::http::client_builder`.
 [[disallowed-methods]]
 path = "std::env::set_var"
 reason = "write through crate::utils::process_env instead (set/begin_update); see PORTING.md 'Global process.env carrier'"
@@ -12,3 +25,35 @@ reason = "write through crate::utils::process_env instead (set/begin_update); se
 [[disallowed-methods]]
 path = "std::env::remove_var"
 reason = "write through crate::utils::process_env instead (remove/begin_update); see PORTING.md 'Global process.env carrier'"
+
+[[disallowed-methods]]
+path = "std::env::var"
+reason = "read through crate::utils::process_env::var (same signature); the real environment is the frozen startup capture"
+
+[[disallowed-methods]]
+path = "std::env::var_os"
+reason = "read through crate::utils::process_env::var_os (same signature); the real environment is the frozen startup capture"
+
+[[disallowed-methods]]
+path = "std::env::vars"
+reason = "enumerate crate::utils::process_env::snapshot() instead; the real environment is the frozen startup capture"
+
+[[disallowed-methods]]
+path = "std::env::vars_os"
+reason = "enumerate crate::utils::process_env::snapshot() instead; the real environment is the frozen startup capture"
+
+[[disallowed-methods]]
+path = "std::process::Command::new"
+reason = "construct through crate::utils::subprocess_env::command so the child inherits the effective process.env"
+
+[[disallowed-methods]]
+path = "tokio::process::Command::new"
+reason = "construct through crate::utils::subprocess_env::tokio_command so the child inherits the effective process.env"
+
+[[disallowed-methods]]
+path = "reqwest::Client::new"
+reason = "build through crate::utils::http::client_builder so proxies come from the effective process.env"
+
+[[disallowed-methods]]
+path = "reqwest::Client::builder"
+reason = "build through crate::utils::http::client_builder so proxies come from the effective process.env"

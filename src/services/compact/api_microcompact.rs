@@ -74,10 +74,14 @@ pub fn get_api_context_management(
     }
 
     let use_clear_tool_results = crate::utils::env_utils::is_env_truthy(
-        std::env::var("USE_API_CLEAR_TOOL_RESULTS").ok().as_deref(),
+        crate::utils::process_env::var("USE_API_CLEAR_TOOL_RESULTS")
+            .ok()
+            .as_deref(),
     );
     let use_clear_tool_uses = crate::utils::env_utils::is_env_truthy(
-        std::env::var("USE_API_CLEAR_TOOL_USES").ok().as_deref(),
+        crate::utils::process_env::var("USE_API_CLEAR_TOOL_USES")
+            .ok()
+            .as_deref(),
     );
     if !use_clear_tool_results && !use_clear_tool_uses {
         return if edits.is_empty() {
@@ -87,11 +91,11 @@ pub fn get_api_context_management(
         };
     }
 
-    let trigger_threshold = std::env::var("API_MAX_INPUT_TOKENS")
+    let trigger_threshold = crate::utils::process_env::var("API_MAX_INPUT_TOKENS")
         .ok()
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(DEFAULT_MAX_INPUT_TOKENS);
-    let keep_target = std::env::var("API_TARGET_INPUT_TOKENS")
+    let keep_target = crate::utils::process_env::var("API_TARGET_INPUT_TOKENS")
         .ok()
         .and_then(|value| value.parse::<i64>().ok())
         .unwrap_or(DEFAULT_TARGET_INPUT_TOKENS);

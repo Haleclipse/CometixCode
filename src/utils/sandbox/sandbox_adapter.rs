@@ -52,7 +52,9 @@ pub fn run_linux_seccomp_helper_if_requested() -> Option<i32> {
             return Some(1);
         }
         use std::os::unix::process::CommandExt as _;
-        let error = std::process::Command::new(program).args(args).exec();
+        let error = crate::utils::subprocess_env::command(program)
+            .args(args)
+            .exec();
         eprintln!("Could not execute the sandboxed command: {error}");
         Some(1)
     }
@@ -295,7 +297,7 @@ pub fn check_dependencies_readonly() -> SandboxDependencyCheck {
 }
 
 fn command_exists(command: &str) -> bool {
-    std::env::var_os("PATH")
+    crate::utils::process_env::var_os("PATH")
         .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(command).is_file()))
 }
 
@@ -873,7 +875,7 @@ fn wrap_shell_command_macos(
 }
 
 fn proxy_environment(http_port: u16, socks_port: u16) -> Vec<String> {
-    let tmpdir = std::env::var("CLAUDE_TMPDIR").unwrap_or_else(|_| {
+    let tmpdir = crate::utils::process_env::var("CLAUDE_TMPDIR").unwrap_or_else(|_| {
         crate::utils::permissions::filesystem::get_claude_temp_dir()
             .display()
             .to_string()
@@ -1904,8 +1906,8 @@ fn normalize_path_string(path: PathBuf) -> String {
 }
 
 fn home_dir() -> Option<String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
+    crate::utils::process_env::var("HOME")
+        .or_else(|_| crate::utils::process_env::var("USERPROFILE"))
         .ok()
 }
 
@@ -2033,7 +2035,7 @@ mod tests {
             },
         )
         .unwrap();
-        let output = std::process::Command::new(&wrapped.program)
+        let output = crate::utils::subprocess_env::command(&wrapped.program)
             .args(&wrapped.args)
             .current_dir(&root)
             .output()
@@ -2094,7 +2096,7 @@ mod tests {
         let command =
             format!("/usr/bin/curl --silent --show-error --noproxy '' http://127.0.0.1:{port}/");
         let wrapped = wrap_shell_command("/bin/bash", &command, &root, &settings).unwrap();
-        let output = std::process::Command::new(&wrapped.program)
+        let output = crate::utils::subprocess_env::command(&wrapped.program)
             .args(&wrapped.args)
             .current_dir(&root)
             .output()
@@ -2156,7 +2158,7 @@ mod tests {
             },
         )
         .unwrap();
-        let output = std::process::Command::new(&wrapped.program)
+        let output = crate::utils::subprocess_env::command(&wrapped.program)
             .args(&wrapped.args)
             .current_dir(&root)
             .output()

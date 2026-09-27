@@ -1067,7 +1067,9 @@ impl FileReadTool {
         // conditional activation then runs synchronously. Simple mode skips
         // the complete block. There is no separate dynamic-discovery gate.
         if !crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+                .ok()
+                .as_deref(),
         ) {
             let cwd = context.effective_cwd();
             let paths = vec![full_file_path.clone()];

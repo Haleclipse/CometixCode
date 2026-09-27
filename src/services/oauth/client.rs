@@ -97,7 +97,7 @@ pub async fn refresh_oauth_token(
     // Rust-only transport initialization: the binary installs this at startup,
     // while library/test callers can enter this service boundary directly.
     crate::utils::tls_provider::install_crypto_provider();
-    let client = reqwest::Client::builder()
+    let client = crate::utils::http::client_builder()
         .timeout(Duration::from_millis(15_000))
         .build()?;
     let request = client

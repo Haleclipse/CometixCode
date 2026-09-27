@@ -198,7 +198,7 @@ pub fn build_account_properties() -> Vec<Property> {
     {
         properties.push(property("API key", api_key_source));
     }
-    if std::env::var_os("IS_DEMO").is_none() {
+    if crate::utils::process_env::var_os("IS_DEMO").is_none() {
         if let Some(organization) = account_info.organization {
             properties.push(property("Organization", organization));
         }
@@ -210,7 +210,10 @@ pub fn build_account_properties() -> Vec<Property> {
 }
 
 fn push_env_property(properties: &mut Vec<Property>, label: &'static str, key: &str) {
-    if let Some(value) = std::env::var(key).ok().filter(|value| !value.is_empty()) {
+    if let Some(value) = crate::utils::process_env::var(key)
+        .ok()
+        .filter(|value| !value.is_empty())
+    {
         properties.push(property(label, value));
     }
 }
@@ -233,7 +236,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 crate::utils::env_utils::get_aws_region(),
             ));
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH")
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH")
                     .ok()
                     .as_deref(),
             ) {
@@ -253,7 +256,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 crate::utils::env_utils::get_default_vertex_region(),
             ));
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH")
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH")
                     .ok()
                     .as_deref(),
             ) {
@@ -273,7 +276,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 "ANTHROPIC_FOUNDRY_RESOURCE",
             );
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
                     .ok()
                     .as_deref(),
             ) {
@@ -283,7 +286,10 @@ pub fn build_api_provider_properties() -> Vec<Property> {
     }
 
     for key in ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"] {
-        if let Some(proxy) = std::env::var(key).ok().filter(|value| !value.is_empty()) {
+        if let Some(proxy) = crate::utils::process_env::var(key)
+            .ok()
+            .filter(|value| !value.is_empty())
+        {
             properties.push(property("Proxy", proxy));
             break;
         }
@@ -297,7 +303,10 @@ pub fn build_api_provider_properties() -> Vec<Property> {
         ("mTLS client cert", "CLAUDE_CODE_CLIENT_CERT"),
         ("mTLS client key", "CLAUDE_CODE_CLIENT_KEY"),
     ] {
-        if let Some(path) = std::env::var(key).ok().filter(|value| !value.is_empty()) {
+        if let Some(path) = crate::utils::process_env::var(key)
+            .ok()
+            .filter(|value| !value.is_empty())
+        {
             if std::fs::read_to_string(&path).is_ok() {
                 properties.push(property(label, path));
             }

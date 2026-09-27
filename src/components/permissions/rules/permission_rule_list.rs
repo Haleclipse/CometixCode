@@ -626,7 +626,7 @@ fn PermissionRuleListCancelBinding(
     let active = props.active;
     let mut pending = props.pending;
     #[cfg(test)]
-    if std::env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
+    if crate::utils::process_env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
         eprintln!("cancel binding render active={active}");
         hooks.use_terminal_events({
             let runtime = runtime.clone();
@@ -646,7 +646,7 @@ fn PermissionRuleListCancelBinding(
         move || active,
         move || {
             #[cfg(test)]
-            if std::env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
+            if crate::utils::process_env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
                 eprintln!("cancel binding invoked active={active}");
             }
             if let Some(pending) = pending.as_mut() {
@@ -877,7 +877,7 @@ pub fn PermissionRuleList<'a>(
 
     if pending_cancel.get() {
         #[cfg(test)]
-        if std::env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
+        if crate::utils::process_env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
             eprintln!("parent pending_cancel");
         }
         pending_cancel.set(false);
@@ -891,7 +891,7 @@ pub fn PermissionRuleList<'a>(
     let completed_exit = { pending_exit_result.read().clone() };
     if let Some(result) = completed_exit {
         #[cfg(test)]
-        if std::env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
+        if crate::utils::process_env::var_os("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC").is_some() {
             eprintln!("parent on_exit={result:?}");
         }
         pending_exit_result.set(None);

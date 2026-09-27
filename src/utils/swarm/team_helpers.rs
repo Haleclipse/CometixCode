@@ -119,7 +119,9 @@ fn maybe_skip_disk_io_in_tests() -> bool {
     #[cfg(test)]
     {
         !crate::utils::env_utils::is_env_truthy(
-            std::env::var("COMETIX_TEST_TEAM_FILE_IO").ok().as_deref(),
+            crate::utils::process_env::var("COMETIX_TEST_TEAM_FILE_IO")
+                .ok()
+                .as_deref(),
         )
     }
     #[cfg(not(test))]
@@ -516,7 +518,7 @@ fn destroy_worktree(worktree_path: &str) {
         });
 
     if let Some(main_repo_path) = main_repo_path {
-        if std::process::Command::new("git")
+        if crate::utils::subprocess_env::command("git")
             .args(["worktree", "remove", "--force", worktree_path])
             .current_dir(&main_repo_path)
             .output()

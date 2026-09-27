@@ -1,8 +1,6 @@
 //! Swarm backend environment detection.
 //! Maps to: CC `utils/swarm/backends/detection.ts`.
 
-use std::process::Command;
-
 use crate::utils::swarm::constants::TMUX_COMMAND;
 
 /// Maps to: CC `ORIGINAL_USER_TMUX` consumer in `isInsideTmuxSync()`.
@@ -12,7 +10,7 @@ pub fn is_inside_tmux_sync_from_env(original_user_tmux: Option<&str>) -> bool {
 
 /// Maps to: CC `isInsideTmuxSync()`.
 pub fn is_inside_tmux_sync() -> bool {
-    is_inside_tmux_sync_from_env(std::env::var("TMUX").ok().as_deref())
+    is_inside_tmux_sync_from_env(crate::utils::process_env::var("TMUX").ok().as_deref())
 }
 
 /// Maps to: CC `isInsideTmux()`.
@@ -22,14 +20,14 @@ pub async fn is_inside_tmux() -> bool {
 
 /// Maps to: CC `getLeaderPaneId()`.
 pub fn get_leader_pane_id() -> Option<String> {
-    std::env::var("TMUX_PANE")
+    crate::utils::process_env::var("TMUX_PANE")
         .ok()
         .filter(|value| !value.is_empty())
 }
 
 /// Maps to: CC `isTmuxAvailable()`.
 pub async fn is_tmux_available() -> bool {
-    Command::new(TMUX_COMMAND)
+    crate::utils::subprocess_env::command(TMUX_COMMAND)
         .arg("-V")
         .output()
         .map(|output| output.status.success())
@@ -50,8 +48,12 @@ pub fn is_in_iterm2_from_env(
 /// Maps to: CC `isInITerm2()`.
 pub fn is_in_iterm2() -> bool {
     is_in_iterm2_from_env(
-        std::env::var("TERM_PROGRAM").ok().as_deref(),
-        std::env::var("ITERM_SESSION_ID").ok().as_deref(),
+        crate::utils::process_env::var("TERM_PROGRAM")
+            .ok()
+            .as_deref(),
+        crate::utils::process_env::var("ITERM_SESSION_ID")
+            .ok()
+            .as_deref(),
         crate::utils::env::get().terminal.as_deref(),
     )
 }
@@ -61,7 +63,7 @@ pub const IT2_COMMAND: &str = "it2";
 
 /// Maps to: CC `isIt2CliAvailable()`.
 pub async fn is_it2_cli_available() -> bool {
-    Command::new(IT2_COMMAND)
+    crate::utils::subprocess_env::command(IT2_COMMAND)
         .args(["session", "list"])
         .output()
         .map(|output| output.status.success())

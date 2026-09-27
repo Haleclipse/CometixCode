@@ -33,7 +33,7 @@ fn now_ms() -> u64 {
 /// here.
 pub fn is_fast_mode_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_FAST_MODE")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_FAST_MODE")
             .ok()
             .as_deref(),
     )

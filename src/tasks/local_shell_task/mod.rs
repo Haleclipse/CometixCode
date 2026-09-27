@@ -636,14 +636,14 @@ mod tests {
 
     #[test]
     fn ctrl_b_backgrounds_registered_foreground_task_in_place() {
-        use std::process::{Command, Stdio};
+        use std::process::Stdio;
 
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvGuard::writes("1");
         clear_for_test();
         let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
         let output = crate::utils::task::task_output::TaskOutput::new(&task_id, false);
-        let mut process = Command::new("bash");
+        let mut process = crate::utils::subprocess_env::command("bash");
         process
             .args(["-lc", "sleep .2; printf ctrl-b-done"])
             .stdout(Stdio::piped())
@@ -704,14 +704,14 @@ mod tests {
 
     #[test]
     fn no_write_mode_refuses_explicit_and_in_place_backgrounding() {
-        use std::process::{Command, Stdio};
+        use std::process::Stdio;
 
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvGuard::writes("0");
         clear_for_test();
         let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
         let output = crate::utils::task::task_output::TaskOutput::new(&task_id, false);
-        let mut process = Command::new("bash");
+        let mut process = crate::utils::subprocess_env::command("bash");
         process
             .args(["-lc", "sleep 5"])
             .stdout(Stdio::piped())

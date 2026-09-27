@@ -1490,7 +1490,7 @@ fn log_discovered_mcp_server_counts(
     all_configs.extend(claudeai_configs.clone());
     let mut counts =
         serde_json::json!({"enterprise":0,"global":0,"project":0,"user":0,"plugin":0,"claudeai":0});
-    let ant = std::env::var("USER_TYPE").ok().as_deref() == Some("ant");
+    let ant = crate::utils::process_env::var("USER_TYPE").ok().as_deref() == Some("ant");
     let mut stdio_commands = Vec::new();
     for (name, config) in crate::utils::process_env::ecmascript_object_entries(&all_configs) {
         use super::types::ConfigScope;

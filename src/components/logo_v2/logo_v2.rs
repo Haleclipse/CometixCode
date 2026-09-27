@@ -140,7 +140,8 @@ impl LogoDisplayData {
         let project_config = crate::utils::config::get_current_project_config();
         let settings = crate::utils::settings::get_initial_settings();
         let session_id = crate::bootstrap::state::get_session_id();
-        let is_demo = std::env::var("IS_DEMO").is_ok_and(|value| !value.is_empty());
+        let is_demo =
+            crate::utils::process_env::var("IS_DEMO").is_ok_and(|value| !value.is_empty());
         let show_project_onboarding =
             project_onboarding_state::should_show_project_onboarding_for_config_and_steps(
                 &project_config,
@@ -280,14 +281,16 @@ impl LogoDisplayData {
             voice_notice_seen_count: global_config.voice_notice_seen_count.unwrap_or(0),
             company_announcement,
             show_sandbox_status,
-            tmux_session: std::env::var("CLAUDE_CODE_TMUX_SESSION")
+            tmux_session: crate::utils::process_env::var("CLAUDE_CODE_TMUX_SESSION")
                 .ok()
                 .filter(|value| !value.is_empty()),
-            tmux_prefix: std::env::var("CLAUDE_CODE_TMUX_PREFIX")
+            tmux_prefix: crate::utils::process_env::var("CLAUDE_CODE_TMUX_PREFIX")
                 .ok()
                 .filter(|value| !value.is_empty()),
-            tmux_prefix_conflicts: std::env::var("CLAUDE_CODE_TMUX_PREFIX_CONFLICTS")
-                .is_ok_and(|value| !value.is_empty()),
+            tmux_prefix_conflicts: crate::utils::process_env::var(
+                "CLAUDE_CODE_TMUX_PREFIX_CONFLICTS",
+            )
+            .is_ok_and(|value| !value.is_empty()),
         }
     }
 
@@ -345,7 +348,9 @@ pub fn Logo(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let columns = columns.max(1) as usize;
     let data = LogoDisplayData::current();
     let show_full_logo = data.should_show_full_logo(crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_FORCE_FULL_LOGO").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_FORCE_FULL_LOGO")
+            .ok()
+            .as_deref(),
     ));
     let mode = select_logo_layout_mode(columns, show_full_logo);
 

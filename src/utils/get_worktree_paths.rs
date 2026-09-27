@@ -4,11 +4,9 @@
 //! implementation is async because its git helpers are async; callers keep the
 //! same ownership and ordering while this local process call returns directly.
 
-use std::process::Command;
-
 /// Maps to: CC `utils/getWorktreePaths.ts#getWorktreePaths`.
 pub fn get_worktree_paths(cwd: &str) -> Vec<String> {
-    let Ok(output) = Command::new("git")
+    let Ok(output) = crate::utils::subprocess_env::command("git")
         .args(["worktree", "list", "--porcelain"])
         .current_dir(cwd)
         .output()

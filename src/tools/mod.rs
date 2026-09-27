@@ -66,7 +66,9 @@ fn special_tools() -> std::collections::HashSet<&'static str> {
 /// Maps to: CC `tools.ts` `getTools(...)`.
 pub fn get_tools(permission_context: &crate::tool::ToolPermissionContext) -> Vec<Tool> {
     let tools = if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
     ) {
         // Maps to CC `tools.ts` simple mode: expose only Bash, Read, and Edit
         // primitives until REPL/coordinator mode wrappers are ported.

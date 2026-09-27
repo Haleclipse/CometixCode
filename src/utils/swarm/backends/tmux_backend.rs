@@ -1,7 +1,6 @@
 //! tmux pane backend for teammate execution.
 //! Maps to: CC `utils/swarm/backends/TmuxBackend.ts`.
 
-use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
@@ -57,7 +56,9 @@ pub fn tmux_color_name(color: AgentColorName) -> &'static str {
 }
 
 fn run_tmux(args: &[String]) -> TmuxCommandResult {
-    let output = Command::new(TMUX_COMMAND).args(args).output();
+    let output = crate::utils::subprocess_env::command(TMUX_COMMAND)
+        .args(args)
+        .output();
     match output {
         Ok(output) => TmuxCommandResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),

@@ -136,7 +136,9 @@ pub fn interpolate_env_vars_with(
 
 /// Maps to: CC `interpolateEnvVars(...)`.
 pub fn interpolate_env_vars(value: &str, allowed_env_vars: &HashSet<String>) -> String {
-    interpolate_env_vars_with(value, allowed_env_vars, |name| std::env::var(name).ok())
+    interpolate_env_vars_with(value, allowed_env_vars, |name| {
+        crate::utils::process_env::var(name).ok()
+    })
 }
 
 fn effective_allowed_env_vars(hook: &HttpHook, policy: &HttpHookPolicy) -> HashSet<String> {
@@ -242,7 +244,9 @@ pub async fn exec_http_hook_with_policy(
         };
     }
 
-    let headers = match build_headers_with(hook, policy, |name| std::env::var(name).ok()) {
+    let headers = match build_headers_with(hook, policy, |name| {
+        crate::utils::process_env::var(name).ok()
+    }) {
         Ok(headers) => headers,
         Err(error) => {
             return ExecHttpHookResult {
@@ -264,7 +268,7 @@ pub async fn exec_http_hook_with_policy(
     // provider before constructing an HTTP client.
     crate::utils::tls_provider::install_crypto_provider();
 
-    let client = match reqwest::Client::builder()
+    let client = match crate::utils::http::client_builder()
         .timeout(Duration::from_millis(timeout_ms))
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()

@@ -26,5 +26,9 @@ pub(crate) mod windows_syntax;
 pub(crate) use borrowed::SugarPath;
 pub(crate) use owned::SugarPathBuf;
 
+// The upstream sugar_path suite is preserved verbatim, including its
+// self-spawning tests' raw std process/environment calls: each child reads the
+// environment its parent spawned it with, which is exactly its startup capture.
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests;

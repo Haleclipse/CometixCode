@@ -1789,11 +1789,13 @@ pub async fn get_attachments(
     // silently drop them (Coworker runs with --bare and depends on
     // task-notification for mid-tool-call notifications).
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_ATTACHMENTS")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_ATTACHMENTS")
             .ok()
             .as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
     ) {
         return get_queued_command_attachments(&queued_commands);
     }
@@ -2396,7 +2398,7 @@ fn filter_to_bundled_and_mcp(
 fn get_skill_listing_attachments(
     tool_use_context: &mut ToolUseContext,
 ) -> Vec<AttachmentContinuation> {
-    if std::env::var("NODE_ENV").as_deref() == Ok("test") {
+    if crate::utils::process_env::var("NODE_ENV").as_deref() == Ok("test") {
         return Vec::new();
     }
     if !tool_use_context

@@ -40,8 +40,11 @@ impl ExternalEditorRuntime {
         // loop blocks until it returns, then reacquires raw mode and repaints.
         let mut app = self.app;
         let program_for_err = program.clone();
-        let receiver =
-            app.suspend_terminal(move || std::process::Command::new(&program).args(&args).status());
+        let receiver = app.suspend_terminal(move || {
+            crate::utils::subprocess_env::command(&program)
+                .args(&args)
+                .status()
+        });
 
         let status = match receiver.await {
             Ok(Ok(Ok(status))) => status,
@@ -147,7 +150,7 @@ fn command_exists(command: &str) -> bool {
     if candidate.components().count() > 1 {
         return candidate.is_file();
     }
-    std::env::var_os("PATH").is_some_and(|path| {
+    crate::utils::process_env::var_os("PATH").is_some_and(|path| {
         std::env::split_paths(&path).any(|directory| directory.join(command).is_file())
     })
 }
@@ -155,11 +158,11 @@ fn command_exists(command: &str) -> bool {
 /// Resolves `$VISUAL`, `$EDITOR`, then the official `code`, `vi`, `nano`
 /// fallback order. The returned argv is executed directly, never by a shell.
 pub fn external_editor_command() -> Option<(String, Vec<String>)> {
-    let configured = std::env::var("VISUAL")
+    let configured = crate::utils::process_env::var("VISUAL")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
-            std::env::var("EDITOR")
+            crate::utils::process_env::var("EDITOR")
                 .ok()
                 .filter(|value| !value.trim().is_empty())
         });

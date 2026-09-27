@@ -50,7 +50,7 @@ impl DebugLogLevel {
 
 /// Maps to: CC `utils/debug.ts#getMinDebugLogLevel`.
 pub fn get_min_debug_log_level() -> DebugLogLevel {
-    std::env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
+    crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
         .ok()
         .as_deref()
         .and_then(DebugLogLevel::from_env_name)
@@ -62,7 +62,7 @@ pub fn get_debug_log_path() -> PathBuf {
     if let Some(path) = config().debug_file.clone() {
         return path;
     }
-    if let Ok(dir) = std::env::var("CLAUDE_CODE_DEBUG_LOGS_DIR") {
+    if let Ok(dir) = crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOGS_DIR") {
         return PathBuf::from(dir)
             .join(format!("{}.log", crate::bootstrap::state::get_session_id()));
     }
@@ -282,10 +282,16 @@ impl DebugConfig {
             || debug_to_stderr
             || debug_file.is_some()
             || debug_filter.is_some()
-            || crate::utils::env_utils::is_env_truthy(std::env::var("DEBUG").ok().as_deref())
-            || crate::utils::env_utils::is_env_truthy(std::env::var("DEBUG_SDK").ok().as_deref())
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DEBUG").ok().as_deref(),
+                crate::utils::process_env::var("DEBUG").ok().as_deref(),
+            )
+            || crate::utils::env_utils::is_env_truthy(
+                crate::utils::process_env::var("DEBUG_SDK").ok().as_deref(),
+            )
+            || crate::utils::env_utils::is_env_truthy(
+                crate::utils::process_env::var("CLAUDE_CODE_DEBUG")
+                    .ok()
+                    .as_deref(),
             );
 
         let perf_from_filter = debug_filter.is_some_and(|f| {
@@ -298,10 +304,14 @@ impl DebugConfig {
         });
         let profile_all = perf_from_filter
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILE").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_DEBUG_PROFILE")
+                    .ok()
+                    .as_deref(),
             )
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILES").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_DEBUG_PROFILES")
+                    .ok()
+                    .as_deref(),
             );
 
         Self {
@@ -313,15 +323,21 @@ impl DebugConfig {
             filter,
             frame_profile: profile_all
                 || crate::utils::env_utils::is_env_truthy(
-                    std::env::var("COMETIX_FRAME_PROFILE").ok().as_deref(),
+                    crate::utils::process_env::var("COMETIX_FRAME_PROFILE")
+                        .ok()
+                        .as_deref(),
                 ),
             component_profile: profile_all
                 || crate::utils::env_utils::is_env_truthy(
-                    std::env::var("COMETIX_COMPONENT_PROFILE").ok().as_deref(),
+                    crate::utils::process_env::var("COMETIX_COMPONENT_PROFILE")
+                        .ok()
+                        .as_deref(),
                 ),
             query_pump_profile: profile_all
                 || crate::utils::env_utils::is_env_truthy(
-                    std::env::var("COMETIX_QUERY_PUMP_PROFILE").ok().as_deref(),
+                    crate::utils::process_env::var("COMETIX_QUERY_PUMP_PROFILE")
+                        .ok()
+                        .as_deref(),
                 ),
         }
     }
@@ -355,25 +371,35 @@ impl DebugConfig {
             || has_exact_flag(argv, "--debug-profiles")
             || has_exact_flag(argv, "--debug-perf")
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILE").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_DEBUG_PROFILE")
+                    .ok()
+                    .as_deref(),
             )
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_DEBUG_PROFILES").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_DEBUG_PROFILES")
+                    .ok()
+                    .as_deref(),
             );
         cfg.frame_profile = profile_all
             || has_exact_flag(argv, "--debug-frame-profile")
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_FRAME_PROFILE").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_FRAME_PROFILE")
+                    .ok()
+                    .as_deref(),
             );
         cfg.component_profile = profile_all
             || has_exact_flag(argv, "--debug-component-profile")
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_COMPONENT_PROFILE").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_COMPONENT_PROFILE")
+                    .ok()
+                    .as_deref(),
             );
         cfg.query_pump_profile = profile_all
             || has_exact_flag(argv, "--debug-query-pump-profile")
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_QUERY_PUMP_PROFILE").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_QUERY_PUMP_PROFILE")
+                    .ok()
+                    .as_deref(),
             );
         cfg
     }
@@ -420,7 +446,7 @@ mod tests {
     #[test]
     fn log_ant_error_matches_official_audience_stack_and_error_level() {
         const CHILD: &str = "COMETIX_TEST_LOG_ANT_ERROR_CHILD";
-        if std::env::var_os(CHILD).is_some() {
+        if crate::utils::process_env::var_os(CHILD).is_some() {
             init_from_parts(false, true, None, None);
             log_ant_error("absent-stack", None);
             log_ant_error("empty-stack", Some(""));
@@ -433,7 +459,7 @@ mod tests {
 
         // Separate process keeps the production OnceLock and stderr sink real
         // without changing other tests' debug configuration.
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = crate::utils::subprocess_env::command(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "utils::debug::tests::log_ant_error_matches_official_audience_stack_and_error_level",

@@ -3,7 +3,7 @@
 /// Maps to: CC `getEnvironmentKind:25-31`.
 /// The source's two string literals are retained without accepting other truthy values.
 pub fn get_environment_kind() -> Option<String> {
-    std::env::var("CLAUDE_CODE_ENVIRONMENT_KIND")
+    crate::utils::process_env::var("CLAUDE_CODE_ENVIRONMENT_KIND")
         .ok()
         .filter(|kind| matches!(kind.as_str(), "byoc" | "anthropic_cloud"))
 }

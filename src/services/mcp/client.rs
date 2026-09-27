@@ -485,7 +485,7 @@ pub async fn process_mcp_result(
     }
 
     if crate::utils::env_utils::is_env_defined_falsy(
-        std::env::var("ENABLE_MCP_LARGE_OUTPUT_FILES")
+        crate::utils::process_env::var("ENABLE_MCP_LARGE_OUTPUT_FILES")
             .ok()
             .as_deref(),
     ) || content_contains_images(&transformed.content)
@@ -592,7 +592,7 @@ fn project_mcp_server_tools(
                         .as_ref()
                         .is_some_and(|config| config.transport == Transport::Sdk)
                         && crate::utils::env_utils::is_env_truthy(
-                            std::env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
+                            crate::utils::process_env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
                                 .ok()
                                 .as_deref(),
                         );
@@ -831,7 +831,7 @@ pub fn resolve_mcp_tool_invocation(
                     .as_ref()
                     .is_some_and(|config| config.transport == Transport::Sdk)
                     && crate::utils::env_utils::is_env_truthy(
-                        std::env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
+                        crate::utils::process_env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
                             .ok()
                             .as_deref(),
                     );
@@ -1990,7 +1990,9 @@ mod runtime {
         // and library callers that do not enter `main()` still need the
         // selected crypto provider installed before building the HTTP client.
         crate::utils::tls_provider::install_crypto_provider();
-        let client = reqwest::Client::new();
+        let client = crate::utils::http::client_builder()
+            .build()
+            .expect("Client::new()");
         let mut request = client.get(url).header("Accept", "text/event-stream");
         for (key, value) in &headers {
             request = request.header(key, value);
@@ -2051,7 +2053,7 @@ mod runtime {
     }
 
     fn connection_timeout_ms() -> u64 {
-        std::env::var("MCP_TIMEOUT")
+        crate::utils::process_env::var("MCP_TIMEOUT")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|value| *value > 0)
@@ -2061,7 +2063,7 @@ mod runtime {
     /// Maps to: CC `services/mcp/client.ts:552-554`
     /// `getMcpServerConnectionBatchSize`.
     pub(super) fn get_mcp_server_connection_batch_size() -> usize {
-        std::env::var("MCP_SERVER_CONNECTION_BATCH_SIZE")
+        crate::utils::process_env::var("MCP_SERVER_CONNECTION_BATCH_SIZE")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|value| *value > 0)
@@ -2071,7 +2073,7 @@ mod runtime {
     /// Maps to: CC `services/mcp/client.ts:556-561`
     /// `getRemoteMcpServerConnectionBatchSize`.
     pub(super) fn get_remote_mcp_server_connection_batch_size() -> usize {
-        std::env::var("MCP_REMOTE_SERVER_CONNECTION_BATCH_SIZE")
+        crate::utils::process_env::var("MCP_REMOTE_SERVER_CONNECTION_BATCH_SIZE")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|value| *value > 0)
@@ -2152,8 +2154,10 @@ mod runtime {
             .as_deref()
             .filter(|command| !command.trim().is_empty())
             .ok_or_else(|| anyhow::anyhow!("stdio MCP server is missing command"))?;
-        let mut cmd = Command::new(command);
+        let mut cmd = crate::utils::subprocess_env::tokio_command(command);
         cmd.args(&config.args);
+        // CC stdio transport env: `{ ...subprocessEnv(), ...serverRef.env }`.
+        crate::utils::subprocess_env::apply_subprocess_env(&mut cmd);
         cmd.envs(&config.env);
         cmd.stderr(Stdio::piped());
         Ok(cmd)
@@ -2294,10 +2298,24 @@ mod runtime {
         if transport_config.auth_header.as_deref() == Some("") {
             transport_config.auth_header = None;
         }
-        let transport = StreamableHttpClientTransport::from_config(transport_config);
+        let transport = streamable_http_transport(transport_config);
         let handler = CometixMcpClientHandler::new(name);
         let timeout = Duration::from_millis(connection_timeout_ms());
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
+    }
+
+    /// rmcp `from_config`'s own client (no idle pooling, no redirects that
+    /// would replay caller headers), built on the effective environment's
+    /// proxies instead of the frozen real ones.
+    fn streamable_http_transport(
+        config: StreamableHttpClientTransportConfig,
+    ) -> StreamableHttpClientTransport<reqwest::Client> {
+        let client = crate::utils::http::client_builder()
+            .pool_max_idle_per_host(0)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("failed to build default reqwest client");
+        StreamableHttpClientTransport::with_client(client, config)
     }
 
     async fn serve_claude_ai_proxy_http_with_token(
@@ -2308,7 +2326,7 @@ mod runtime {
         // Rust/rmcp transport boundary for the source's nested `doRequest`:
         // each retry must start a new service with the bearer token it sends.
         let transport_config = claude_ai_proxy_http_config(proxy_url, token)?;
-        let transport = StreamableHttpClientTransport::from_config(transport_config);
+        let transport = streamable_http_transport(transport_config);
         let handler = CometixMcpClientHandler::new(name);
         let timeout = Duration::from_millis(connection_timeout_ms());
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
@@ -3631,7 +3649,7 @@ mod runtime {
         meta: Option<Map<String, Value>>,
     ) -> Result<Value, (anyhow::Error, Option<ScopedMcpServerConfig>)> {
         let timeout = Duration::from_millis(super::get_mcp_tool_timeout_ms_from_env(|key| {
-            std::env::var(key).ok()
+            crate::utils::process_env::var(key).ok()
         }));
         let (peer, config) = {
             let clients = CONNECTED_CLIENTS.lock().unwrap();

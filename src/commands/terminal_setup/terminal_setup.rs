@@ -382,8 +382,8 @@ pub async fn install_bindings_for_vscode_terminal(
     let theme = crate::utils::theme::get_theme(theme);
     let editor_name = editor.display_name();
     if is_vscode_remote_ssh_for_env(
-        &std::env::var("VSCODE_GIT_ASKPASS_MAIN").unwrap_or_default(),
-        &std::env::var("PATH").unwrap_or_default(),
+        &crate::utils::process_env::var("VSCODE_GIT_ASKPASS_MAIN").unwrap_or_default(),
+        &crate::utils::process_env::var("PATH").unwrap_or_default(),
     ) {
         let warning = color(Some(theme.warning), ColorType::Foreground)(&format!(
             "Cannot install keybindings from a remote {editor_name} session."
@@ -607,10 +607,10 @@ pub async fn install_bindings_for_alacritty(
     let theme = crate::utils::theme::get_theme(theme);
     let home =
         std::env::home_dir().ok_or_else(|| anyhow::anyhow!("Home directory is unavailable"))?;
-    let xdg = std::env::var_os("XDG_CONFIG_HOME")
+    let xdg = crate::utils::process_env::var_os("XDG_CONFIG_HOME")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
-    let app_data = std::env::var_os("APPDATA")
+    let app_data = crate::utils::process_env::var_os("APPDATA")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
     let paths = alacritty_config_paths_for(
@@ -964,25 +964,22 @@ mod tests {
     // user terminal preferences. nextest gives each test its own process.
     struct InstallerFixture {
         root: PathBuf,
-        vars: Vec<(&'static str, Option<std::ffi::OsString>)>,
+        _vars: [crate::utils::env_utils::EnvVarGuard; 4],
     }
     impl InstallerFixture {
         fn new() -> Self {
+            use crate::utils::env_utils::EnvVarGuard;
             let root = std::env::temp_dir()
                 .join(format!("cometix-terminal-setup-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
-            let vars = ["HOME", "XDG_CONFIG_HOME", "VSCODE_GIT_ASKPASS_MAIN", "PATH"]
-                .into_iter()
-                .map(|key| (key, std::env::var_os(key)))
-                .collect();
-            unsafe {
-                std::env::set_var("HOME", &root);
-                std::env::set_var("XDG_CONFIG_HOME", root.join(".config"));
-                std::env::remove_var("VSCODE_GIT_ASKPASS_MAIN");
-                std::env::set_var("PATH", "/usr/bin:/bin");
-            }
+            let _vars = [
+                EnvVarGuard::set("HOME", &root),
+                EnvVarGuard::set("XDG_CONFIG_HOME", root.join(".config")),
+                EnvVarGuard::unset("VSCODE_GIT_ASKPASS_MAIN"),
+                EnvVarGuard::set("PATH", "/usr/bin:/bin"),
+            ];
             chalk::set_stdout_level(0);
-            Self { root, vars }
+            Self { root, _vars }
         }
         fn put(&self, path: &Path, value: &str) {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -998,14 +995,6 @@ mod tests {
     }
     impl Drop for InstallerFixture {
         fn drop(&mut self) {
-            for (key, value) in &self.vars {
-                unsafe {
-                    match value {
-                        Some(value) => std::env::set_var(key, value),
-                        None => std::env::remove_var(key),
-                    }
-                }
-            }
             let _ = std::fs::remove_dir_all(&self.root);
         }
     }
@@ -1275,12 +1264,10 @@ mod tests {
     #[tokio::test]
     async fn terminal_setup_remote_installer_matches_official_no_file_effects() {
         let fixture = InstallerFixture::new();
-        unsafe {
-            std::env::set_var(
-                "VSCODE_GIT_ASKPASS_MAIN",
-                "/remote/.cursor-server/askpass.sh",
-            );
-        }
+        crate::utils::process_env::set(
+            "VSCODE_GIT_ASKPASS_MAIN",
+            "/remote/.cursor-server/askpass.sh",
+        );
         let output = install_bindings_for_vscode_terminal(
             VSCodeFamilyEditor::Cursor,
             crate::utils::theme::ThemeName::Dark,

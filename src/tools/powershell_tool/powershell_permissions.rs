@@ -146,7 +146,7 @@ pub fn powershell_tool_has_permission(
     }
 
     if !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
             .ok()
             .as_deref(),
     ) {

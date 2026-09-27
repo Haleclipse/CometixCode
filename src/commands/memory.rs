@@ -61,9 +61,9 @@ pub fn MemoryCommandPanel<'a>(
                 // CC ignores EditorResult.error here and still reports which
                 // file was selected; only mkdir/create failures reject.
                 let _ = editor_result;
-                let editor_info = if let Ok(value) = std::env::var("VISUAL") {
+                let editor_info = if let Ok(value) = crate::utils::process_env::var("VISUAL") {
                     (!value.is_empty()).then(|| format!("Using $VISUAL=\"{value}\"."))
-                } else if let Ok(value) = std::env::var("EDITOR") {
+                } else if let Ok(value) = crate::utils::process_env::var("EDITOR") {
                     (!value.is_empty()).then(|| format!("Using $EDITOR=\"{value}\"."))
                 } else {
                     None

@@ -9,7 +9,7 @@ use crate::components::design_system::dialog::Dialog;
 use crate::constants::figures::MAIN_SYMBOLS;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
-use std::{collections::BTreeSet, process::Command};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CuGrantFlags {
@@ -281,7 +281,9 @@ fn open_computer_use_tcc_settings_no_throw(option: TccOption) {
     let Some(url) = computer_use_tcc_open_url(option) else {
         return;
     };
-    let _ = Command::new("open").arg(url).spawn();
+    let _ = crate::utils::subprocess_env::command("open")
+        .arg(url)
+        .spawn();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

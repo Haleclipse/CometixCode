@@ -336,17 +336,20 @@ fn settings_submenu_options(menu: SettingsSubmenu) -> Vec<SelectOptionData> {
 }
 
 fn auto_updates_disabled_env_var() -> Option<&'static str> {
-    if crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_AUTOUPDATER").ok().as_deref())
-    {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_AUTOUPDATER")
+            .ok()
+            .as_deref(),
+    ) {
         Some("DISABLE_AUTOUPDATER")
     } else if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
             .ok()
             .as_deref(),
     ) {
         Some("CLAUDE_CODE_DISABLE_AUTOUPDATER")
     } else if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
             .ok()
             .as_deref(),
     ) {

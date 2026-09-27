@@ -61,7 +61,7 @@ fn executable_exists(path: &Path) -> bool {
 /// Maps to CC `findGitBashPath()` without process exit: callers surface the
 /// official installation message as an execution error.
 pub fn find_git_bash_path() -> Result<PathBuf, String> {
-    if let Some(path) = std::env::var_os("CLAUDE_CODE_GIT_BASH_PATH") {
+    if let Some(path) = crate::utils::process_env::var_os("CLAUDE_CODE_GIT_BASH_PATH") {
         let path = PathBuf::from(path);
         if executable_exists(&path) {
             return Ok(path);
@@ -87,7 +87,10 @@ pub fn find_git_bash_path() -> Result<PathBuf, String> {
         }
     }
 
-    if let Ok(output) = std::process::Command::new("where.exe").arg("git").output() {
+    if let Ok(output) = crate::utils::subprocess_env::command("where.exe")
+        .arg("git")
+        .output()
+    {
         let cwd = std::env::current_dir().ok();
         for candidate in String::from_utf8_lossy(&output.stdout)
             .lines()

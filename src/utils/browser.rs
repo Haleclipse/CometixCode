@@ -2,7 +2,7 @@
 //! Maps to: CC `utils/browser.ts`.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 
 /// Maps to: CC `utils/browser.ts:39-70` `openBrowser`.
 ///
@@ -19,14 +19,14 @@ pub async fn open_browser(url: &str) -> anyhow::Result<bool> {
         return Ok(false);
     }
 
-    let browser = std::env::var_os("BROWSER").filter(|value| !value.is_empty());
+    let browser = crate::utils::process_env::var_os("BROWSER").filter(|value| !value.is_empty());
     let mut command = if cfg!(target_os = "windows") {
         if let Some(browser) = browser {
-            let mut command = Command::new(browser);
+            let mut command = crate::utils::subprocess_env::command(browser);
             command.arg(format!("\"{url}\""));
             command
         } else {
-            let mut command = Command::new("rundll32");
+            let mut command = crate::utils::subprocess_env::command("rundll32");
             command.args(["url,OpenURL", url]);
             command
         }
@@ -38,7 +38,7 @@ pub async fn open_browser(url: &str) -> anyhow::Result<bool> {
                 "xdg-open".into()
             }
         });
-        let mut command = Command::new(executable);
+        let mut command = crate::utils::subprocess_env::command(executable);
         command.arg(url);
         command
     };
@@ -58,15 +58,15 @@ pub async fn open_browser(url: &str) -> anyhow::Result<bool> {
 /// the child application and performs no network or shell evaluation.
 pub fn open_path(path: &Path) -> std::io::Result<()> {
     let mut command = if cfg!(target_os = "macos") {
-        let mut command = Command::new("open");
+        let mut command = crate::utils::subprocess_env::command("open");
         command.arg(path);
         command
     } else if cfg!(target_os = "windows") {
-        let mut command = Command::new("explorer");
+        let mut command = crate::utils::subprocess_env::command("explorer");
         command.arg(path);
         command
     } else {
-        let mut command = Command::new("xdg-open");
+        let mut command = crate::utils::subprocess_env::command("xdg-open");
         command.arg(path);
         command
     };

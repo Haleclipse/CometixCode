@@ -26,8 +26,8 @@ pub async fn get_inference_profile_backing_model(
     region: &str,
     auth: &crate::services::api::client::BedrockAuth,
 ) -> Option<String> {
-    let endpoint = std::env::var("ANTHROPIC_BEDROCK_BASE_URL")
-        .or_else(|_| std::env::var("AWS_ENDPOINT_URL_BEDROCK"))
+    let endpoint = crate::utils::process_env::var("ANTHROPIC_BEDROCK_BASE_URL")
+        .or_else(|_| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK"))
         .unwrap_or_else(|_| format!("https://bedrock.{region}.amazonaws.com"));
     let response = crate::services::api::client::send_bedrock_request(
         reqwest::Method::GET,

@@ -34,7 +34,7 @@ impl SecureStorageBackend for MacOsKeychainStorage {
             crate::utils::auth::record_auth_io(
                 crate::utils::auth::AuthIoOperation::KeychainSubprocess,
             );
-            let output = std::process::Command::new("security")
+            let output = crate::utils::subprocess_env::command("security")
                 .args([
                     "find-generic-password",
                     "-a",
@@ -100,7 +100,7 @@ impl SecureStorageBackend for MacOsKeychainStorage {
 
         #[cfg(all(target_os = "macos", not(test)))]
         let updated = if command.len() <= SECURITY_STDIN_LINE_LIMIT {
-            let mut child = match std::process::Command::new("security")
+            let mut child = match crate::utils::subprocess_env::command("security")
                 .arg("-i")
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::null())
@@ -118,7 +118,7 @@ impl SecureStorageBackend for MacOsKeychainStorage {
             }
             child.wait().map(|status| status.success()).unwrap_or(false)
         } else {
-            std::process::Command::new("security")
+            crate::utils::subprocess_env::command("security")
                 .args([
                     "add-generic-password",
                     "-U",
@@ -166,7 +166,7 @@ impl SecureStorageBackend for MacOsKeychainStorage {
         super::mac_os_keychain_helpers::clear_keychain_cache();
 
         #[cfg(all(target_os = "macos", not(test)))]
-        let deleted = std::process::Command::new("security")
+        let deleted = crate::utils::subprocess_env::command("security")
             .args([
                 "delete-generic-password",
                 "-a",

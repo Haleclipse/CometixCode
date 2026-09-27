@@ -57,7 +57,7 @@ fn doctor_validate_env_var(
     default: usize,
     upper_limit: usize,
 ) -> Option<EnvValidationWarning> {
-    let value = std::env::var(name).ok();
+    let value = crate::utils::process_env::var(name).ok();
     doctor_validate_env_value(name, value.as_deref(), default, upper_limit)
 }
 
@@ -90,7 +90,7 @@ fn doctor_auto_update_channel() -> String {
     crate::utils::settings::load_settings_from_disk()
         .settings
         .auto_updates_channel
-        .or_else(|| std::env::var("COMETIX_AUTO_UPDATE_CHANNEL").ok())
+        .or_else(|| crate::utils::process_env::var("COMETIX_AUTO_UPDATE_CHANNEL").ok())
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "latest".to_string())
 }

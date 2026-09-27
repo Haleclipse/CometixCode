@@ -129,7 +129,7 @@ pub fn is_plan_mode_required() -> bool {
         return context.plan_mode_required;
     }
     crate::utils::env_utils::is_env_truthy(
-        std::env::var(crate::utils::swarm::constants::PLAN_MODE_REQUIRED_ENV_VAR)
+        crate::utils::process_env::var(crate::utils::swarm::constants::PLAN_MODE_REQUIRED_ENV_VAR)
             .ok()
             .as_deref(),
     )

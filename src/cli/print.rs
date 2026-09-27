@@ -3092,7 +3092,7 @@ mod sdk_mapper_tests {
     #[test]
     fn sdk_initialize_cold_plugins_keeps_published_current_thread_executor_live() {
         const CHILD: &str = "COMETIX_SDK_CURRENT_THREAD_PLUGIN_CHILD";
-        if let Some(root) = std::env::var_os(CHILD) {
+        if let Some(root) = crate::utils::process_env::var_os(CHILD) {
             // Isolated test process: do not use initialize_test_process_runtime,
             // whose multithread executor would conceal the production deadlock.
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
@@ -3169,7 +3169,7 @@ mod sdk_mapper_tests {
             "---\nname: reviewer\ndescription: Local SDK agent fixture\n---\nNever execute",
         )
         .unwrap();
-        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+        let mut child = crate::utils::subprocess_env::command(std::env::current_exe().unwrap())
             .args(["--exact", "cli::print::sdk_mapper_tests::sdk_initialize_cold_plugins_keeps_published_current_thread_executor_live", "--nocapture"])
             .env(CHILD, &root)
             .current_dir(&root)

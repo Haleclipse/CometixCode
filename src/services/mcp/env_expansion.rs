@@ -22,7 +22,7 @@ pub fn expand_env_vars_in_string(value: &str) -> (String, Vec<String>) {
             .split_once(":-")
             .map(|(name, default_value)| (name, Some(default_value)))
             .unwrap_or((var_content, None));
-        if let Ok(env_value) = std::env::var(name) {
+        if let Ok(env_value) = crate::utils::process_env::var(name) {
             out.push_str(&env_value);
         } else if let Some(default_value) = default_value {
             out.push_str(default_value);

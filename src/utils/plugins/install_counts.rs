@@ -233,7 +233,7 @@ async fn fetch_install_counts_from_git_hub() -> anyhow::Result<Vec<JsoncValue>> 
         // Reuse the project's selected provider and reqwest's environment proxy
         // support. No new proxy/CA policy or user-visible override is invented.
         crate::utils::tls_provider::install_crypto_provider();
-        let client = reqwest::Client::builder()
+        let client = crate::utils::http::client_builder()
             .timeout(std::time::Duration::from_millis(10000))
             .build()?;
         let url = INSTALL_COUNTS_URL.to_owned();

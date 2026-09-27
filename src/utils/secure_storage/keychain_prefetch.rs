@@ -160,10 +160,10 @@ fn spawn_security(service_name: &str) -> SpawnResult {
     crate::utils::auth::record_auth_io(crate::utils::auth::AuthIoOperation::KeychainSubprocess);
     let username = super::mac_os_keychain_helpers::get_username();
     use std::io::Read;
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
     use std::time::Instant;
 
-    let mut child = match Command::new("security")
+    let mut child = match crate::utils::subprocess_env::command("security")
         .args([
             "find-generic-password",
             "-a",

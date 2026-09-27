@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 /// Serialises the ~200 test modules that mutate process-wide state.
 ///
@@ -59,9 +59,8 @@ pub static TEST_ENV_LOCK: std::sync::LazyLock<TestEnvLock> =
 /// The other half of `TEST_ENV_LOCK`'s bargain: the lock serialises the
 /// mutations, this undoes them.
 ///
-/// Writes go through the `process_env` carrier. Its temporary Unix bridge lets
-/// migrated tests continue to exercise nearby raw readers until their owner
-/// tasks move them; it is not a production environment-policy guarantee. The
+/// Writes go through the `process_env` carrier, which every reader, child and
+/// HTTP client observes; the real environment is never touched. The
 /// full previous entry (stable insertion ordinal + spelling + value) is captured
 /// so restore reproduces the exact prior state — including a non-canonical
 /// Windows spelling and first-to-last aggregate drops of distinct-key guards —
@@ -196,11 +195,11 @@ impl Drop for PinnedProjectDir {
 
 /// JS-truthiness read of an environment variable: CC's ubiquitous
 /// `process.env.X || fallback` / `if (process.env.X)` shapes treat an empty
-/// value as unset, while `std::env::var` returns `Ok("")` for it. L1 language
+/// value as unset, while `process_env::var` returns `Ok("")` for it. L1 language
 /// carrier with no single CC function — the `||` operator is the source.
-/// Use this instead of `env::var(..).ok()` when porting those shapes.
+/// Use this instead of `process_env::var(..).ok()` when porting those shapes.
 pub fn truthy_env_var(key: &str) -> Option<String> {
-    truthy_env_value(std::env::var(key).ok())
+    truthy_env_value(crate::utils::process_env::var(key).ok())
 }
 
 /// Value-level companion to [`truthy_env_var`] for call sites that read the
@@ -235,17 +234,20 @@ pub fn is_env_defined_falsy(env_var: Option<&str>) -> bool {
 
 /// Maps to: CC `utils/envUtils.ts:60-65` `isBareMode`.
 pub fn is_bare_mode() -> bool {
-    is_env_truthy(env::var("CLAUDE_CODE_SIMPLE").ok().as_deref())
-        || std::env::args_os().any(|argument| argument == std::ffi::OsStr::new("--bare"))
+    is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
+    ) || std::env::args_os().any(|argument| argument == std::ffi::OsStr::new("--bare"))
 }
 
 /// Maps to: CC `utils/envUtils.ts#getAWSRegion`.
 pub fn get_aws_region() -> String {
-    env::var("AWS_REGION")
+    crate::utils::process_env::var("AWS_REGION")
         .ok()
         .filter(|region| !region.is_empty())
         .or_else(|| {
-            env::var("AWS_DEFAULT_REGION")
+            crate::utils::process_env::var("AWS_DEFAULT_REGION")
                 .ok()
                 .filter(|region| !region.is_empty())
         })
@@ -254,7 +256,7 @@ pub fn get_aws_region() -> String {
 
 /// Maps to: CC `utils/envUtils.ts#getDefaultVertexRegion`.
 pub fn get_default_vertex_region() -> String {
-    env::var("CLOUD_ML_REGION")
+    crate::utils::process_env::var("CLOUD_ML_REGION")
         .ok()
         .filter(|region| !region.is_empty())
         .unwrap_or_else(|| "us-east5".to_string())
@@ -279,7 +281,7 @@ pub fn get_vertex_region_for_model(model: Option<&str>) -> String {
             .iter()
             .find(|(prefix, _)| model.starts_with(prefix))
     }) {
-        if let Ok(region) = env::var(variable) {
+        if let Ok(region) = crate::utils::process_env::var(variable) {
             if !region.is_empty() {
                 return region;
             }
@@ -293,11 +295,19 @@ pub fn get_vertex_region_for_model(model: Option<&str>) -> String {
 pub fn is_cometix_write_enabled() -> bool {
     #[cfg(test)]
     {
-        is_env_truthy(env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+        is_env_truthy(
+            crate::utils::process_env::var("COMETIX_WRITE_ENABLED")
+                .ok()
+                .as_deref(),
+        )
     }
     #[cfg(not(test))]
     {
-        !is_env_defined_falsy(env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+        !is_env_defined_falsy(
+            crate::utils::process_env::var("COMETIX_WRITE_ENABLED")
+                .ok()
+                .as_deref(),
+        )
     }
 }
 
@@ -319,11 +329,11 @@ pub fn get_claude_config_home_dir_from_snapshot(
 
 /// Maps to: CC `utils/envUtils.ts#getClaudeConfigHomeDir`.
 pub fn get_claude_config_home_dir() -> PathBuf {
-    if let Ok(dir) = env::var("CLAUDE_CONFIG_DIR") {
+    if let Ok(dir) = crate::utils::process_env::var("CLAUDE_CONFIG_DIR") {
         PathBuf::from(dir)
-    } else if let Ok(home) = env::var("HOME") {
+    } else if let Ok(home) = crate::utils::process_env::var("HOME") {
         PathBuf::from(home).join(".claude")
-    } else if let Ok(home) = env::var("USERPROFILE") {
+    } else if let Ok(home) = crate::utils::process_env::var("USERPROFILE") {
         PathBuf::from(home).join(".claude")
     } else {
         PathBuf::from(".claude")
@@ -349,7 +359,7 @@ pub fn is_running_on_homespace_for_audience(
 /// Maps to: CC `utils/envUtils.ts:114-123` `isRunningOnHomespace`.
 pub fn is_running_on_homespace() -> bool {
     is_running_on_homespace_for_audience(
-        &|key| env::var(key).ok(),
+        &|key| crate::utils::process_env::var(key).ok(),
         crate::utils::build_profile::build_audience(),
     )
 }
@@ -442,14 +452,14 @@ mod tests {
             assert!(panic.is_err());
             assert_eq!(selected_keys(), keys);
             assert_eq!(
-                crate::utils::process_env::var(keys[1]).as_deref(),
+                crate::utils::process_env::var(keys[1]).ok().as_deref(),
                 Some("outer")
             );
         }
 
         assert_eq!(selected_keys(), keys);
         assert_eq!(
-            crate::utils::process_env::var(keys[1]).as_deref(),
+            crate::utils::process_env::var(keys[1]).ok().as_deref(),
             Some("before")
         );
 
