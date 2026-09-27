@@ -171,6 +171,7 @@ pub mod suggestions;
 pub mod swarm;
 pub mod system_prompt;
 pub mod system_prompt_type;
+pub mod system_theme;
 pub mod task;
 pub mod tasks;
 #[cfg(feature = "anthropic_internal")]

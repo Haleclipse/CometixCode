@@ -11,7 +11,8 @@ use crate::components::channel_downgrade_dialog::{
     ChannelDowngradeDialog, channel_downgrade_options,
 };
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
-use crate::components::design_system::theme_provider::{ThemePreviewState, ThemeSetting};
+use crate::components::design_system::theme_provider::{ThemeContextValue, use_theme};
+use crate::utils::theme::ThemeSetting;
 use crate::components::language_picker::LanguagePicker;
 use crate::components::model_picker as model;
 use crate::components::model_picker::{ModelPicker, ModelPickerSelection};
@@ -141,6 +142,13 @@ fn apply_runtime_display_settings(items: &mut [SettingItem], prefers_reduced_mot
         .find(|item| item.id == "prefersReducedMotion")
     {
         item.value = SettingValue::Bool(prefers_reduced_motion);
+    }
+}
+
+fn set_theme_row_value(items: &mut [SettingItem], setting: ThemeSetting) {
+    if let Some(item) = items.iter_mut().find(|item| item.id == "theme") {
+        item.value =
+            SettingValue::Display(theme::theme_display_label(Some(setting.setting_value())).to_string());
     }
 }
 
@@ -450,35 +458,32 @@ fn theme_name_from_option(option: &SelectOptionData) -> ThemeName {
         .unwrap_or(ThemeName::Dark)
 }
 
-fn preview_theme_from_option(
-    preview: &mut State<ThemePreviewState>,
-    option: Option<&SelectOptionData>,
-) {
+/// Maps to: CC `ThemePicker.tsx:132-134` `onFocus → setPreviewTheme`, which
+/// Select also fires for its default focus on mount.
+fn preview_theme_from_option(theme: &ThemeContextValue, option: Option<&SelectOptionData>) {
     let Some(option) = option else {
         return;
     };
-    let mut state = preview.get();
-    state.set_preview(ThemeSetting::Named(theme_name_from_option(option)));
-    preview.set(state);
+    theme.set_preview_theme(ThemeSetting::Named(theme_name_from_option(option)));
 }
 
+/// Maps to: CC `ThemePicker.tsx:135-138` `onChange → savePreview();
+/// onThemeSelect(setting)`, where Config's `onThemeSelect` calls `setTheme`
+/// (`Config.tsx:1799-1804`).
 fn save_theme_preview_from_option(
-    preview: &mut State<ThemePreviewState>,
+    theme: &ThemeContextValue,
     option: Option<&SelectOptionData>,
 ) -> Option<ThemeName> {
     let option = option?;
     let theme_name = theme_name_from_option(option);
-    let mut state = preview.get();
-    state.set_preview(ThemeSetting::Named(theme_name));
-    let _ = state.save_preview();
-    preview.set(state);
+    theme.save_preview();
+    theme.set_theme_setting(ThemeSetting::Named(theme_name));
     Some(theme_name)
 }
 
-fn cancel_theme_preview(preview: &mut State<ThemePreviewState>) {
-    let mut state = preview.get();
-    state.cancel_preview();
-    preview.set(state);
+/// Maps to: CC `ThemePicker.tsx:139-149` `onCancel → cancelPreview()`.
+fn cancel_theme_preview(theme: &ThemeContextValue) {
+    theme.cancel_preview();
 }
 
 fn visible_from_index(focused_index: usize, count: usize, visible_count: usize) -> usize {
@@ -627,7 +632,7 @@ fn activate_focused_config_item(
     mut submenu: State<Option<SettingsSubmenu>>,
     mut submenu_focused: State<usize>,
     mut tabs_hidden_request: State<Option<bool>>,
-    mut theme_preview: State<ThemePreviewState>,
+    theme_control: ThemeContextValue,
     runtime_display_context: Option<crate::state::store::AppStore>,
     runtime_notifications_context: NotificationsWriter,
 ) {
@@ -659,14 +664,7 @@ fn activate_focused_config_item(
             let focus = focused_index_for_menu_value(menu, &options, &current_item.display_value());
             submenu_focused.set(focus);
             if menu == SettingsSubmenu::Theme {
-                let theme_name = options
-                    .get(focus)
-                    .map(theme_name_from_option)
-                    .unwrap_or(ThemeName::Dark);
-                let mut state = theme_preview.get();
-                state.saved = ThemeSetting::Named(theme_name);
-                state.set_preview(ThemeSetting::Named(theme_name));
-                theme_preview.set(state);
+                preview_theme_from_option(&theme_control, options.get(focus));
             }
         }
         tabs_hidden_request.set(Some(true));
@@ -716,10 +714,18 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         .map(|store| store.clone());
     let initial_prefers_reduced_motion = settings_snapshot.prefers_reduced_motion.unwrap_or(false);
     let runtime_notifications_context = use_notifications(&mut hooks);
-    let initial_items_seed = items_with_runtime_context(
+    // Maps to: CC `Config.tsx:180-181` `useTheme()` / `useThemeSetting()`, and
+    // ThemePicker's `usePreviewTheme()` (`ThemePicker.tsx:55`): the Theme
+    // submenu previews, saves and cancels through the root ThemeProvider, so
+    // the whole app previews. A save persists through `saveGlobalConfig`,
+    // which is a dry run unless config writes are enabled.
+    let (_, theme_control) = use_theme(&hooks);
+    let mut initial_items_seed = items_with_runtime_context(
         Some(settings_snapshot.as_ref()),
         initial_prefers_reduced_motion,
     );
+    // CC's Theme row shows the provider's `themeSetting` (`Config.tsx:759-761`).
+    set_theme_row_value(&mut initial_items_seed, theme_control.theme_setting());
     let initial_items_for_state = initial_items_seed.clone();
     let initial_items = hooks.use_state(move || initial_items_for_state);
     let mut items = hooks.use_state(move || initial_items_seed);
@@ -750,9 +756,12 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         move || language
     });
     let mut current_language = hooks.use_state(move || initial_language.read().clone());
-    // Maps to official ThemeProvider preview/save/cancel state. This remains
-    // in-memory in Cometix unless config writes are explicitly opted in later.
-    let mut theme_preview = hooks.use_state(ThemePreviewState::default);
+    // CC `Config.tsx:245` `initialThemeSetting = useRef(themeSetting)`, which
+    // Escape's `revertChanges` restores (`:1477-1479`).
+    let initial_theme_setting = hooks.use_state({
+        let setting = theme_control.theme_setting();
+        move || setting
+    });
     // Maps to ThemePicker's syntax highlighting toggle copy. The Rust port
     // keeps this as an in-memory visual preview and never writes settings.
     let mut syntax_highlighting_disabled = hooks.use_state(|| false);
@@ -900,7 +909,13 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         {
             let runtime_display_context = runtime_display_context.clone();
             let runtime_notifications_context = runtime_notifications_context.clone();
+            let theme_control = theme_control.clone();
             move || {
+                // CC `Config.tsx:1477-1479`: the theme is restored first, and
+                // only when it changed.
+                if theme_control.theme_setting() != initial_theme_setting.get() {
+                    theme_control.set_theme_setting(initial_theme_setting.get());
+                }
                 let initial = initial_items.read().clone();
                 revert_runtime_previews(
                     runtime_display_context.clone(),
@@ -998,6 +1013,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         {
             let runtime_display_context = runtime_display_context.clone();
             let runtime_notifications_context = runtime_notifications_context.clone();
+            let theme_control = theme_control.clone();
             move || {
                 activate_focused_config_item(
                     items,
@@ -1006,7 +1022,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     submenu,
                     submenu_focused,
                     tabs_hidden_request,
-                    theme_preview,
+                    theme_control.clone(),
                     runtime_display_context.clone(),
                     runtime_notifications_context.clone(),
                 );
@@ -1026,6 +1042,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         },
     );
     hooks.use_propagated_terminal_events({
+        let theme_control = theme_control.clone();
         move |event| match event.event() {
             TerminalEvent::Key(KeyEvent { code, kind, .. }) if *kind != KeyEventKind::Release => {
                 if let Some(active_submenu) = submenu.get() {
@@ -1052,7 +1069,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     match code {
                         KeyCode::Esc => {
                             if active_submenu == SettingsSubmenu::Theme {
-                                cancel_theme_preview(&mut theme_preview);
+                                cancel_theme_preview(&theme_control);
                             }
                             submenu.set(None);
                             submenu_focused.set(0);
@@ -1065,7 +1082,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                             submenu_focused.set(new_focus);
                             if active_submenu == SettingsSubmenu::Theme {
                                 preview_theme_from_option(
-                                    &mut theme_preview,
+                                    &theme_control,
                                     options.get(new_focus),
                                 );
                             }
@@ -1077,7 +1094,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                             submenu_focused.set(new_focus);
                             if active_submenu == SettingsSubmenu::Theme {
                                 preview_theme_from_option(
-                                    &mut theme_preview,
+                                    &theme_control,
                                     options.get(new_focus),
                                 );
                             }
@@ -1088,7 +1105,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                             if let Some(option) = options.get(focused) {
                                 let mut all = items.read().clone();
                                 let display_value = if active_submenu == SettingsSubmenu::Theme {
-                                    save_theme_preview_from_option(&mut theme_preview, Some(option))
+                                    save_theme_preview_from_option(&theme_control, Some(option))
                                         .unwrap_or(ThemeName::Dark)
                                         .display_label()
                                         .to_string()
@@ -1164,14 +1181,10 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     );
                                     submenu_focused.set(focus);
                                     if menu == SettingsSubmenu::Theme {
-                                        let theme_name = options
-                                            .get(focus)
-                                            .map(theme_name_from_option)
-                                            .unwrap_or(ThemeName::Dark);
-                                        let mut state = theme_preview.get();
-                                        state.saved = ThemeSetting::Named(theme_name);
-                                        state.set_preview(ThemeSetting::Named(theme_name));
-                                        theme_preview.set(state);
+                                        preview_theme_from_option(
+                                            &theme_control,
+                                            options.get(focus),
+                                        );
                                     }
                                 }
                                 tabs_hidden_request.set(Some(true));
@@ -1226,14 +1239,10 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     );
                                     submenu_focused.set(focus);
                                     if menu == SettingsSubmenu::Theme {
-                                        let theme_name = options
-                                            .get(focus)
-                                            .map(theme_name_from_option)
-                                            .unwrap_or(ThemeName::Dark);
-                                        let mut state = theme_preview.get();
-                                        state.saved = ThemeSetting::Named(theme_name);
-                                        state.set_preview(ThemeSetting::Named(theme_name));
-                                        theme_preview.set(state);
+                                        preview_theme_from_option(
+                                            &theme_control,
+                                            options.get(focus),
+                                        );
                                     }
                                 }
                                 tabs_hidden_request.set(Some(true));
@@ -1288,14 +1297,10 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     );
                                     submenu_focused.set(focus);
                                     if menu == SettingsSubmenu::Theme {
-                                        let theme_name = options
-                                            .get(focus)
-                                            .map(theme_name_from_option)
-                                            .unwrap_or(ThemeName::Dark);
-                                        let mut state = theme_preview.get();
-                                        state.saved = ThemeSetting::Named(theme_name);
-                                        state.set_preview(ThemeSetting::Named(theme_name));
-                                        theme_preview.set(state);
+                                        preview_theme_from_option(
+                                            &theme_control,
+                                            options.get(focus),
+                                        );
                                     }
                                 }
                                 tabs_hidden_request.set(Some(true));
@@ -1342,8 +1347,10 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         }
     });
 
-    let active_theme_name = theme_preview.get().current_theme_name();
-    let theme = *theme::get_theme(active_theme_name);
+    // The provider's palette, which a Theme submenu preview has already
+    // switched for the whole app.
+    let (active_theme_name, _) = use_theme(&hooks);
+    let theme = *hooks.use_context::<theme::Theme>();
     let env_disabled_syntax = syntax_highlighting_disabled_by_env();
 
     // Rebuild visible list — filtered by search query
@@ -1777,7 +1784,7 @@ mod tests {
 
     #[component]
     fn ConfigHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let current_theme = *theme::current();
+        use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
         let keybinding_runtime =
             crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
                 &mut hooks,
@@ -1786,7 +1793,12 @@ mod tests {
         element! {
             ContextProvider(value: Context::owned(keybinding_runtime)) {
 
-                ContextProvider(value: Context::owned(current_theme)) {
+                // Config always renders under the root ThemeProvider, whose
+                // preview the Theme submenu drives.
+                ThemeProvider(
+                    initial_state: Some(ThemeSetting::Named(ThemeName::Dark)),
+                    on_theme_save: Some(std::sync::Arc::new(|_| {}) as ThemeSaveHandler),
+                ) {
                     crate::state::app_state::AppStateProvider(
                         children: crate::state::app_state::ProviderChildren::new(|| element! {
                             Config(max_visible: Some(12u32), header_focused: false)
@@ -3004,6 +3016,119 @@ mod tests {
             !text.contains("Enter to select · Esc to cancel"),
             "submenu should close after selecting a value; canvas=\n{text}"
         );
+    }
+
+    /// What the rest of the app sees of the provider while Config drives it,
+    /// with a count of every key press (a bypass listener, so Config's
+    /// consumption does not hide one) that makes each key produce a frame.
+    #[component]
+    fn ProviderThemeEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let (current, value) = use_theme(&hooks);
+        let mut keys = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                keys.set(keys.get() + 1);
+            }
+        });
+        element! {
+            Text(content: format!(
+                "keys={} provider setting={} current={}",
+                keys.get(),
+                value.theme_setting().setting_value(),
+                current.setting_value(),
+            ))
+        }
+    }
+
+    #[component]
+    fn ConfigWithProviderEchoHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
+        let keybinding_runtime =
+            crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
+                &mut hooks,
+                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
+            );
+        element! {
+            ContextProvider(value: Context::owned(keybinding_runtime)) {
+                ThemeProvider(
+                    initial_state: Some(ThemeSetting::Named(ThemeName::Dark)),
+                    on_theme_save: Some(std::sync::Arc::new(|_| {}) as ThemeSaveHandler),
+                ) {
+                    crate::state::app_state::AppStateProvider(
+                        children: crate::state::app_state::ProviderChildren::new(|| element! {
+                            View(flex_direction: FlexDirection::Column) {
+                                Config(max_visible: Some(12u32), header_focused: false)
+                                ProviderThemeEcho
+                            }
+                        }.into_any()),
+                    )
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn config_theme_submenu_drives_the_provider_and_escape_reverts_it() {
+        // CC ThemePicker.tsx:132-149 previews and saves through the
+        // ThemeProvider, so the whole app follows; Config's Escape
+        // `revertChanges` restores the mount-time theme (Config.tsx:1477-1479).
+        // Frame-driven: each key batch is followed by the frame its last key
+        // counts to, and the provider state is read off that frame.
+        let steps = futures::executor::block_on(async {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(ConfigWithProviderEchoHarness);
+            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(110, 40),
+            ));
+            let mut open = text_events("theme");
+            open.push(press(KeyCode::Enter));
+            open.push(press(KeyCode::Char(' ')));
+            let batches = [
+                open,
+                vec![press(KeyCode::Down)],
+                vec![press(KeyCode::Enter)],
+                vec![press(KeyCode::Esc)],
+            ];
+            let mut sent = 0;
+            let mut batch = 0;
+            let mut steps = Vec::new();
+            while let Some(canvas) = render_loop.next().await {
+                let text = canvas_lines(&canvas).join("\n");
+                assert!(text.contains("provider setting="), "the echo stopped rendering:\n{text}");
+                if !text.contains(&format!("keys={sent} ")) {
+                    continue;
+                }
+                steps.push(text);
+                let Some(next) = batches.get(batch) else {
+                    break;
+                };
+                sent += next.len();
+                for event in next.iter().cloned() {
+                    keys.send(event).await.unwrap();
+                }
+                batch += 1;
+            }
+            steps
+        });
+        let expected = [
+            (None, "provider setting=dark current=dark"),
+            // Opening previews the focused (current) theme.
+            (Some("Choose the text style"), "provider setting=dark current=dark"),
+            // Down previews the next option for the whole app.
+            (Some("Choose the text style"), "provider setting=dark current=light"),
+            // Enter saves it and closes the submenu.
+            (None, "provider setting=light current=light"),
+            // Escape closes /config and restores the mount-time theme.
+            (None, "provider setting=dark current=dark"),
+        ];
+        assert_eq!(steps.len(), expected.len(), "steps={steps:#?}");
+        for (step, (picker, provider)) in steps.iter().zip(expected) {
+            assert!(step.contains(provider), "expected {provider:?} in\n{step}");
+            if let Some(picker) = picker {
+                assert!(step.contains(picker), "expected {picker:?} in\n{step}");
+            }
+        }
+        assert!(!steps[3].contains("Choose the text style"), "{}", steps[3]);
     }
 
     #[test]

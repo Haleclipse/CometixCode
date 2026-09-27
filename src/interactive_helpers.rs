@@ -265,14 +265,29 @@ pub fn exit_with_error(
     system_context: &mut SystemContext,
     exit_code: &AtomicI32,
     message: impl Into<String>,
-    color: Color,
 ) -> AnyElement<'static> {
     exit_code.store(1, Ordering::SeqCst);
     system_context.exit();
     element! {
-        Text(content: message.into(), color: color)
+        ExitMessage(message: message.into())
     }
     .into_any()
+}
+
+#[derive(Default, Props)]
+struct ExitMessageProps {
+    message: String,
+}
+
+/// Maps to: CC `interactiveHelpers.tsx:108-110` `exitWithMessage`'s
+/// `<Text color={color}>`, with `exitWithError`'s `color: 'error'`. The
+/// colour is a theme key, resolved under the root's ThemeProvider.
+#[component]
+fn ExitMessage(props: &ExitMessageProps, hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let theme = hooks.use_context::<crate::utils::theme::Theme>();
+    element! {
+        Text(content: props.message.clone(), color: theme.error)
+    }
 }
 
 pub fn show_setup_screens(

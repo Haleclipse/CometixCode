@@ -550,7 +550,7 @@ pub fn PluginSettings(
                     _=>{let target_plugin=match view{ViewState::DiscoverPlugins{target_plugin}=>target_plugin,_=>None};element!{DiscoverPlugins(error:error.read().clone(),set_error:set_error,result:result.read().clone(),set_result:set_result,set_view_state:set_view_state,on_install_complete:mark_plugins_changed,on_search_mode_change:set_child_search_active,target_plugin:target_plugin)}.into_any()}
                 }
             };
-            let theme=crate::utils::theme::current();
+            let theme=*hooks.use_context::<crate::utils::theme::Theme>();
             let mut body=Some(body);
             let tabs=[("discover","Discover".to_string()),("installed","Installed".to_string()),("marketplaces","Marketplaces".to_string()),("errors",errors_title)].into_iter().map(|(id,title)|{
                 element!{Tab(id:Some(id.into()),title:title){#(if tab==id{body.take()}else{None})}}
@@ -564,13 +564,13 @@ pub fn PluginSettings(
 
 /// Maps to: CC PluginSettings.tsx:70-101#McpRedirectBanner.
 #[component]
-fn McpRedirectBanner() -> impl Into<AnyElement<'static>> {
+fn McpRedirectBanner(hooks: Hooks) -> impl Into<AnyElement<'static>> {
     if !crate::utils::build_profile::has_internal_capability(
         crate::utils::build_profile::InternalCapability::Prompts,
     ) {
         return element! {View}.into_any();
     }
-    let theme = crate::utils::theme::current();
+    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
     element!{View(flex_direction:FlexDirection::Row,align_items:AlignItems::FLEX_START,padding_left:1u32,margin_top:1u32,border_style:BorderStyle::Single,border_left:true,border_right:false,border_top:false,border_bottom:false,border_color:theme.permission){
         View(flex_shrink:0.0f32){Text(content:"i ",weight:Weight::Bold,italic:true,color:theme.permission)}
         Text(content:"[ANT-ONLY] MCP servers are now managed in /plugins. Use /mcp no-redirect to test old UI")
@@ -1039,7 +1039,7 @@ fn ErrorsTabContent(
     if clamped != selected_index.get() {
         selected_index.set(clamped);
     }
-    let theme = crate::utils::theme::current();
+    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
     let has_action = rows.get(clamped).is_some_and(|r| {
         !matches!(
             r.action,

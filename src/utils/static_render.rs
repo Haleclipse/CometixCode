@@ -14,9 +14,9 @@ use iocraft::prelude::*;
 /// Async leaf hooks likewise remain at their first committed fallback frame.
 pub async fn render_to_ansi_string(node: AnyElement<'static>, columns: Option<usize>) -> String {
     // The source's imported render wraps every tree in ThemeProvider
-    // (`ink.ts:12-23`). Reuse the current theme's established Context carrier.
+    // (`ink.ts:12-23`), which reads the configured theme.
     let mut themed = element! {
-        ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
+        crate::components::design_system::theme_provider::ThemeProvider {
             #(node)
         }
     };

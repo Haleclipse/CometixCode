@@ -28,6 +28,7 @@ use crate::constants::product;
 use crate::project_onboarding_state;
 use crate::utils::file::get_display_path;
 use crate::utils::logo_v2_utils;
+use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::utils::release_notes as release_notes_utils;
 use iocraft::prelude::*;
 use std::collections::hash_map::DefaultHasher;

@@ -12,6 +12,7 @@ use crate::components::logo_v2::logo_v2::{
     LOGO_DISPLAY_NAME, LogoDisplayData, format_cwd_line, format_model_and_billing,
     truncate_to_width,
 };
+use crate::components::offscreen_freeze::OffscreenFreeze;
 use iocraft::prelude::*;
 
 #[derive(Default, Props)]

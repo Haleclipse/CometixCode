@@ -503,7 +503,7 @@ pub fn ManageMarketplaces(
             }
         }
     });
-    let theme = crate::utils::theme::current();
+    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
     let figures = crate::constants::figures::figures();
     if loading.get() {
         return element! {Text(content:"Loading marketplaces…")}.into_any();

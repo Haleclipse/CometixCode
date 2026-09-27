@@ -255,7 +255,7 @@ pub fn TeamsDialog<'a>(
                     if !symbol.is_empty() {
                         contents.push(
                             MixedTextContent::new(format!("{symbol} "))
-                                .color(mode_color(get_mode_color(mode))),
+                                .color(mode_color(&theme, get_mode_color(mode))),
                         );
                     }
                     let mut name = MixedTextContent::new(format!("@{}", teammate.name)).weight(
@@ -310,7 +310,7 @@ pub fn TeamsDialog<'a>(
             if !symbol.is_empty() {
                 title.push(
                     MixedTextContent::new(format!("{symbol} "))
-                        .color(mode_color(get_mode_color(mode))),
+                        .color(mode_color(&theme, get_mode_color(mode))),
                 );
             }
             let mut teammate_title = MixedTextContent::new(format!("@{}", teammate.name));

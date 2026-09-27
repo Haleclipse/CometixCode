@@ -2160,6 +2160,7 @@ fn messages_memo_key(
         in_progress_tool_use_ids,
         streaming_tool_use_ids,
         tools,
+        crate::utils::theme::ThemeName::Dark,
     )
 }
 
@@ -2185,6 +2186,7 @@ fn messages_memo_key_for_screen(
     in_progress_tool_use_ids: &std::collections::HashSet<String>,
     streaming_tool_use_ids: &std::collections::HashSet<String>,
     tools: &[crate::types::tools::Tool],
+    theme: crate::utils::theme::ThemeName,
 ) -> String {
     // Maps to: CC `Messages.tsx:1064-1065`, which compares `inProgressToolUseIDs`
     // with `setsEqual` inside the memo comparator. Without it the subtree keeps
@@ -2200,8 +2202,11 @@ fn messages_memo_key_for_screen(
     // `areMessagesPropsEqual` compares the ordered NAME list, not the array
     // identity, so a rebuilt pool with the same names keeps the memo.
     let tool_pool = crate::components::messages_list::tool_pool_memo_key(tools);
+    // Not a CC comparator term: React re-renders Messages' themed descendants
+    // past the memo when the ThemeProvider value changes; iocraft does not.
     format!(
-        "messages:{:p}:{}:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{:?}:{}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}:{:?}:{:?}:{}",
+        "messages:{:?}:{:p}:{}:{}:{:?}:{:?}:{}:{}:{}:{}:{}:{:?}:{}:{}:{:?}:{}:{:?}:{:?}:{:?}:{}:{:?}:{:?}:{}",
+        theme,
         Arc::as_ptr(messages),
         messages.len(),
         conversation_id,
@@ -2381,6 +2386,7 @@ fn memoized_messages(
         in_progress_tool_use_ids,
         streaming_tool_use_ids,
         tools,
+        crate::utils::theme::ThemeName::Dark,
     )
 }
 
@@ -2414,6 +2420,9 @@ fn memoized_messages_for_screen(
     // Maps to: CC `REPL.tsx:5821` / `:6162` `tools={tools}` — the memo half at
     // `REPL.tsx:1216`, the same object both Messages sites receive.
     tools: Arc<Vec<crate::types::tools::Tool>>,
+    // The resolved theme REPL renders under (CC `REPL.tsx:2071` `useTheme()`),
+    // for the memo key only.
+    theme: crate::utils::theme::ThemeName,
 ) -> AnyElement<'static> {
     // Mirror official `Messages = React.memo(...)` before entering the
     // Messages component. The component keeps its own bailout as a safety
@@ -2438,6 +2447,7 @@ fn memoized_messages_for_screen(
         &in_progress_tool_use_ids,
         &streaming_tool_use_ids,
         &tools,
+        theme,
     );
     let classifier_checking_tool_use_id = classifier_approvals
         .checking()
@@ -4056,6 +4066,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // Maps to CC `/context` using `process.stdout.columns || 80`; the same
     // terminal-size hook also owns main-screen responsive rendering below.
     let (terminal_cols, terminal_rows) = hooks.use_terminal_size();
+    // Maps to: CC REPL.tsx:2071 `const [theme] = useTheme()`.
+    let (theme_name, _) = crate::components::design_system::theme_provider::use_theme(&hooks);
     let mut permission_queue = hooks.use_state(Vec::<ToolUseConfirm>::new);
     // Maps to: CC REPL.tsx:1537-1543 `sandboxPermissionRequestQueue` useState —
     // REPL-local queue of network-host asks. The per-request resolver lives on
@@ -6096,11 +6108,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         move |invocation: SlashCommandInvocation| {
             let mock_pump = mock_pump.clone();
             async move {
-                let configured_theme = crate::utils::config::load_global_config().theme;
-                let theme = configured_theme
-                    .as_deref()
-                    .and_then(crate::utils::theme::ThemeName::from_config_or_display)
-                    .unwrap_or(crate::utils::theme::ThemeName::Dark);
+                // CC terminalSetup.tsx:219 `setupTerminal(context.options.theme)`,
+                // the REPL's resolved `useTheme()` (REPL.tsx:2071, :3205).
+                let theme = theme_name;
                 let result = match crate::utils::process_runtime::runtime_handle_for_detached_work()
                 {
                     Some(runtime) => runtime
@@ -9482,6 +9492,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     Arc::clone(&in_progress_tool_use_ids_value),
                     Arc::clone(&streaming_tool_use_ids_value),
                     Arc::clone(&tools),
+                    theme_name,
                 ))
             } else {
                 None
@@ -9509,6 +9520,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     Arc::clone(&in_progress_tool_use_ids_value),
                     Arc::clone(&streaming_tool_use_ids_value),
                     Arc::clone(&tools),
+                    theme_name,
                 ))
             } else {
                 None
@@ -15718,6 +15730,42 @@ mod tests {
         assert_ne!(key(&["Bash", "Read"]), key(&["Bash"]));
         // CC compares position-by-position, so order is part of the identity.
         assert_ne!(key(&["Bash", "Read"]), key(&["Read", "Bash"]));
+    }
+
+    #[test]
+    fn messages_memo_key_tracks_the_theme() {
+        // React re-renders Messages' themed rows past `React.memo` when the
+        // ThemeProvider value changes; this memo must let a theme change
+        // alone through.
+        let messages = Arc::new(vec![RenderableMessage::user("u1", "hello")]);
+        let status_notice_context = StatusNoticeContext::default();
+        let key = |theme| {
+            messages_memo_key_for_screen(
+                &messages,
+                0,
+                false,
+                false,
+                true,
+                80,
+                24,
+                false,
+                0,
+                false,
+                None,
+                false,
+                &status_notice_context,
+                None,
+                Screen::Prompt,
+                false,
+                &std::collections::HashSet::new(),
+                &std::collections::HashSet::new(),
+                &[],
+                theme,
+            )
+        };
+        use crate::utils::theme::ThemeName;
+        assert_eq!(key(ThemeName::Dark), key(ThemeName::Dark));
+        assert_ne!(key(ThemeName::Dark), key(ThemeName::Light));
     }
 
     #[test]

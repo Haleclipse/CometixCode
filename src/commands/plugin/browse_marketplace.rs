@@ -609,7 +609,7 @@ pub fn BrowseMarketplace(
         ContextName::Select,
         move || details_active,
     );
-    let theme = crate::utils::theme::current();
+    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
     let figures = crate::constants::figures::figures();
     if let ViewState::PluginOptions { plugin, plugin_id } = view {
         let name = plugin.name.clone();

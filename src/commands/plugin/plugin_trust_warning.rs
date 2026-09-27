@@ -2,8 +2,8 @@
 use iocraft::prelude::*;
 /// Maps to: CC PluginTrustWarning.tsx:6-20#PluginTrustWarning.
 #[component]
-pub fn PluginTrustWarning() -> impl Into<AnyElement<'static>> {
-    let theme = crate::utils::theme::current();
+pub fn PluginTrustWarning(hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
     let custom = crate::utils::plugins::marketplace_helpers::get_plugin_trust_message()
         .filter(|s| !s.is_empty())
         .map(|s| format!(" {s}"))

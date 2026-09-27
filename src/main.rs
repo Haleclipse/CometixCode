@@ -993,7 +993,6 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     });
     // Keep all iocraft hooks above retained phase branching. React has the same
     // rule; violating it caused the bare `-r` loading→selector panic.
-    let current_theme = *crate::utils::theme::current();
 
     // Maps to: CC `main.tsx` awaiting `loadPluginHooks()` after setup and
     // before SessionStart/REPL launch. Registered hooks remain separate from
@@ -1160,7 +1159,6 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                             &mut hooks.use_context_mut::<SystemContext>(),
                             &props.exit_code,
                             error,
-                            current_theme.error,
                         )
                     } else {
                         if !resume_started.get() {
@@ -1275,9 +1273,10 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     // runtime either: as in CC, each phase that takes keys mounts its own
     // `KeybindingSetup` — REPL (REPL.tsx:5851, :6083), each setup dialog
     // (interactiveHelpers.tsx:121-131) and the resume chooser
-    // (dialogLaunchers.tsx:171-196).
+    // (dialogLaunchers.tsx:171-196). The theme is CC's `ink.ts` wrap: every
+    // render sits under a ThemeProvider reading the configured setting.
     element! {
-        ContextProvider(value: Context::owned(current_theme)) {
+        crate::components::design_system::theme_provider::ThemeProvider {
             ContextProvider(value: Context::owned(clipboard.clone())) {
                 // Node process.exitCode representation: reuse the existing
                 // process-owned status consumed after the render loop.

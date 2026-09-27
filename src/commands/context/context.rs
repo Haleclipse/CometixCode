@@ -50,14 +50,20 @@ pub fn collect_context_data(request: &ContextCommandRequest) -> ContextData {
         main_thread_agent_definition: request.main_thread_agent_definition.as_ref(),
         original_messages: Some(&api_view),
         cwd: &cwd,
-        theme: *crate::utils::theme::current(),
+        // CC keeps theme keys in the data and resolves them under the
+        // ThemeProvider `renderToAnsiString` mounts; the port resolves them
+        // here, against the theme that provider starts with.
+        theme: *crate::utils::theme::get_theme(
+            crate::components::design_system::theme_provider::initial_theme_name(),
+        ),
     })
 }
 
-/// Maps to CC `renderToAnsiString(<ContextVisualization data={data} />)`.
+/// Maps to CC `renderToAnsiString(<ContextVisualization data={data} />)`,
+/// whose render wraps the tree in ThemeProvider (`ink.ts:12-23`).
 pub fn render_context_to_ansi(data: ContextData, columns: u16) -> Result<String, String> {
     let mut element = element! {
-        ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
+        crate::components::design_system::theme_provider::ThemeProvider {
             ContextVisualization(data: data)
         }
     };

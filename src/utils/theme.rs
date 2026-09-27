@@ -848,8 +848,10 @@ pub static LIGHT_DALTONIZED: Theme = Theme {
 // Theme name + selection
 // ══════════════════════════════════════════════════════════════════
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThemeName {
+    /// CC `DEFAULT_THEME` (`ThemeProvider.tsx:28`).
+    #[default]
     Dark,
     Light,
     DarkAnsi,
@@ -917,7 +919,47 @@ impl ThemeName {
     }
 }
 
+/// Maps to: CC `utils/theme.ts:103-109` `THEME_SETTINGS` / `ThemeSetting` — a
+/// theme preference as stored in user config. `Auto` follows the terminal's
+/// dark/light background and is resolved to a [`ThemeName`] at runtime
+/// (`utils/systemTheme.ts`, here `utils/system_theme.rs`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemeSetting {
+    Auto,
+    Named(ThemeName),
+}
+
+impl Default for ThemeSetting {
+    /// CC's config default and the ThemeContext default (`ThemeProvider.tsx:28`).
+    fn default() -> Self {
+        Self::Named(ThemeName::Dark)
+    }
+}
+
+impl ThemeSetting {
+    pub fn setting_value(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Named(name) => name.setting_value(),
+        }
+    }
+
+    /// A stored `theme` value; `None` outside `THEME_SETTINGS`. `auto` is
+    /// matched exactly, as CC compares it (`ThemeProvider.tsx:97`); the
+    /// theme names keep [`ThemeName::from_setting_value`]'s existing leniency.
+    pub fn from_setting_value(value: &str) -> Option<Self> {
+        if value == "auto" {
+            return Some(Self::Auto);
+        }
+        ThemeName::from_setting_value(value).map(Self::Named)
+    }
+}
+
+/// Maps to: CC `Config.tsx:2310-2318` `THEME_LABELS`, which includes `auto`.
 pub fn theme_display_label(value: Option<&str>) -> &'static str {
+    if value == Some("auto") {
+        return "Auto (match terminal)";
+    }
     value
         .and_then(ThemeName::from_config_or_display)
         .unwrap_or(ThemeName::Dark)
@@ -944,10 +986,14 @@ pub fn current() -> &'static Theme {
     &DARK
 }
 
-/// Map PermissionModeColor to actual theme color.
-pub fn mode_color(c: crate::utils::permissions::permission_mode::PermissionModeColor) -> Color {
+/// Map PermissionModeColor to actual theme color. CC's `getModeColor` returns
+/// a theme key that the rendering ThemedText resolves against the provided
+/// theme, so the caller passes the theme it read from context.
+pub fn mode_color(
+    t: &Theme,
+    c: crate::utils::permissions::permission_mode::PermissionModeColor,
+) -> Color {
     use crate::utils::permissions::permission_mode::PermissionModeColor;
-    let t = current();
     match c {
         PermissionModeColor::Text => t.text,
         PermissionModeColor::Plan => t.plan_mode,

@@ -96,7 +96,7 @@ pub fn AddMarketplace(
         },
         (),
     );
-    let theme = crate::utils::theme::current();
+    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
     let set_input = props.set_input_value.clone();
     let progress = progress_message.read().clone();
     element! {View(flex_direction:FlexDirection::Column){

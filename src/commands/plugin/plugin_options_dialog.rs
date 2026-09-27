@@ -234,7 +234,7 @@ pub fn PluginOptionsDialog(
         .to_owned();
     let next = current_field_index.get() + 1 < fields.len();
     let on_cancel = props.on_cancel.clone();
-    let theme = crate::utils::theme::current();
+    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
     element!{Dialog(title:props.title.clone(),subtitle:Some(props.subtitle.clone()),is_cancel_active:Some(false),on_cancel:move |_|on_cancel(())){
         View(flex_direction:FlexDirection::Column){
             View {Text(content:title,weight:Weight::Bold) #(required.then(||element!{Text(content:" *",color:theme.error)}))}

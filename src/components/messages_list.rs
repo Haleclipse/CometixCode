@@ -15,6 +15,8 @@ use crate::utils::classifier_approvals::{ClassifierApprovalsState, ClassifierChe
 use crate::utils::collapse_read_search::collapse_read_search_groups;
 use crate::utils::debug::component_profile_enabled;
 use crate::utils::status_notice_definitions::{StatusNoticeContext, get_active_notices};
+use crate::components::offscreen_freeze::OffscreenFreeze;
+use crate::utils::theme::ThemeName;
 use iocraft::prelude::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
@@ -1198,6 +1200,10 @@ struct MessageRowsMemoKey {
     /// past this boundary — see [`tool_use_id_set_memo_key`].
     in_progress_tool_use_ids: Vec<String>,
     streaming_tool_use_ids: Vec<String>,
+    /// CC re-renders themed rows past `React.memo` when the ThemeProvider
+    /// value changes; iocraft reads context only in an update, so the theme
+    /// must get past this boundary itself.
+    theme: ThemeName,
     /// CC has no `MessageRows` component — this memo boundary is a port L1
     /// extraction of `renderableMessages.flatMap(renderMessageRow)`, so it must
     /// carry every term CC's enclosing `Messages` comparator carries, `tools`
@@ -1222,6 +1228,7 @@ fn message_rows_memo_key(
     in_progress_tool_use_ids: &HashSet<String>,
     streaming_tool_use_ids: &HashSet<String>,
     tools: &[crate::types::tools::Tool],
+    theme: ThemeName,
 ) -> MessageRowsMemoKey {
     MessageRowsMemoKey {
         render_range: None,
@@ -1250,6 +1257,7 @@ fn message_rows_memo_key(
         classifier_checking_is_auto,
         in_progress_tool_use_ids: tool_use_id_set_memo_key(in_progress_tool_use_ids),
         streaming_tool_use_ids: tool_use_id_set_memo_key(streaming_tool_use_ids),
+        theme,
     }
 }
 
@@ -1277,6 +1285,8 @@ struct MessageRowsProps {
     pub streaming_tool_use_ids: Arc<HashSet<String>>,
     /// Maps to: CC `Messages.tsx:822` `tools={tools}` on each `MessageRow`.
     pub tools: Arc<Vec<crate::types::tools::Tool>>,
+    /// The resolved theme MessagesImpl rendered under, for the memo keys.
+    pub theme: ThemeName,
 }
 
 #[derive(Default)]
@@ -1318,6 +1328,7 @@ impl Component for MessageRows {
             &props.in_progress_tool_use_ids,
             &props.streaming_tool_use_ids,
             &props.tools,
+            props.theme,
         );
 
         next_key.render_range = props.render_range;
@@ -1387,6 +1398,7 @@ impl Component for MessageRows {
         let in_progress_tool_use_ids = Arc::clone(&props.in_progress_tool_use_ids);
         let streaming_tool_use_ids = Arc::clone(&props.streaming_tool_use_ids);
         let tools = Arc::clone(&props.tools);
+        let theme = props.theme;
         let rendered_count = end.saturating_sub(start);
 
         updater.update_children(
@@ -1419,6 +1431,7 @@ impl Component for MessageRows {
                     columns,
                     &in_progress_tool_use_ids,
                     &streaming_tool_use_ids,
+                    theme,
                 );
                 let is_static = static_memo_key.is_some();
                 let memo_key = static_memo_key
@@ -1520,6 +1533,9 @@ struct MessagesMemoKey {
     streaming_tool_use_ids: Vec<String>,
     /// CC `Messages.tsx:1079-1087` — see [`tool_pool_memo_key`].
     tool_pool: String,
+    /// Not a CC comparator term: React re-renders a context consumer past
+    /// `React.memo` (ThemeProvider.tsx:136), which iocraft does not.
+    theme: ThemeName,
 }
 
 #[derive(Default)]
@@ -1638,6 +1654,7 @@ impl Component for MessagesImpl {
         );
         let prepare_elapsed = prepare_start.map(|start| start.elapsed());
         let (terminal_cols, _) = hooks.use_terminal_size();
+        let (theme_name, _) = crate::components::design_system::theme_provider::use_theme(&hooks);
         // Cometix display prefs live in AppState (Config preview). The
         // store-absent fallbacks recorded here on 2026-08-01 are gone:
         // retained Messages always mounts under AppStateProvider, and the
@@ -1671,6 +1688,7 @@ impl Component for MessagesImpl {
             in_progress_tool_use_ids: tool_use_id_set_memo_key(&props.in_progress_tool_use_ids),
             streaming_tool_use_ids: tool_use_id_set_memo_key(&props.streaming_tool_use_ids),
             tool_pool: tool_pool_memo_key(&props.tools),
+            theme: theme_name,
         };
 
         // Match official `Messages = React.memo(...)`: prompt-only frames keep
@@ -1716,7 +1734,9 @@ impl Component for MessagesImpl {
             // CC React.memo compares LogoHeader props only. Terminal width is
             // deliberately absent: LogoV2's own terminal-size hook invalidates
             // its child subtree without dirtying the header from parent frames.
-            let logo_memo_key = format!("logo-header:{status_notice_context:?}");
+            // The theme is here because React re-renders a context consumer
+            // past the memo and iocraft does not.
+            let logo_memo_key = format!("logo-header:{theme_name:?}:{status_notice_context:?}");
             children.push(
                 element! {
                     Memo(key: "logo-header".to_string(), memo_key: logo_memo_key, compare: memo_key_eq as MemoComparator) {
@@ -1798,6 +1818,7 @@ impl Component for MessagesImpl {
             &props.in_progress_tool_use_ids,
             &props.streaming_tool_use_ids,
             &props.tools,
+            theme_name,
         );
         rows_key.can_animate = can_animate;
         let rows_memo_key = format!("{:?}:{:?}", props.render_range, rows_key);
@@ -1823,6 +1844,7 @@ impl Component for MessagesImpl {
                             // CC `Messages.tsx:822` `tools={tools}` — the row
                             // map is this component in the port's L1 split.
                             tools: Arc::clone(&props.tools),
+                            theme: theme_name,
                         )
                     }
                 }
@@ -2529,6 +2551,150 @@ mod tests {
         }
     }
 
+    /// Previews the light theme on `p`; every key bumps a visible count so a
+    /// frame always follows.
+    #[component]
+    fn PreviewLightOnKey(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let preview = crate::components::design_system::theme_provider::use_preview_theme(&hooks);
+        let mut presses = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |event| {
+            let TerminalEvent::Key(key) = event else {
+                return;
+            };
+            if key.kind != KeyEventKind::Press {
+                return;
+            }
+            presses.set(presses.get() + 1);
+            match key.code {
+                KeyCode::Char('p') => {
+                    preview.set_preview_theme(crate::utils::theme::ThemeSetting::Named(
+                        crate::utils::theme::ThemeName::Light,
+                    ))
+                }
+                KeyCode::Char('c') => preview.cancel_preview(),
+                _ => {}
+            }
+        });
+        element! { Text(content: format!("presses={}", presses.get())) }
+    }
+
+    #[derive(Default, Props)]
+    struct ThemeFlipProbeProps {
+        pub is_loading: bool,
+        pub show_logo: bool,
+    }
+
+    #[component]
+    fn ThemeFlipProbe(props: &ThemeFlipProbeProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
+        let messages = hooks.use_const(|| Arc::new(vec![RenderableMessage::user("u1", "hello theme")]));
+        let is_loading = props.is_loading;
+        let hide_logo = !props.show_logo;
+        element! {
+            ThemeProvider(
+                initial_state: Some(crate::utils::theme::ThemeSetting::Named(theme::ThemeName::Dark)),
+                on_theme_save: Some(Arc::new(|_| {}) as ThemeSaveHandler),
+            ) {
+                crate::state::app_state::AppStateProvider(
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        View(flex_direction: FlexDirection::Column) {
+                            Messages(messages: Arc::clone(&messages), is_loading: is_loading, hide_logo: hide_logo)
+                            PreviewLightOnKey
+                        }
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    fn background_at(canvas: &iocraft::Canvas, needle: &str) -> Option<iocraft::Color> {
+        use unicode_width::UnicodeWidthStr;
+        let text = canvas.to_string();
+        let (y, line) = text.lines().enumerate().find(|(_, line)| line.contains(needle))?;
+        let x = line[..line.find(needle)?].width();
+        canvas.cell(x, y).and_then(|cell| cell.background_color)
+    }
+
+    #[test]
+    fn messages_rows_repaint_when_the_provider_previews_another_theme() {
+        // CC re-renders every themed descendant past `React.memo` when the
+        // ThemeProvider value changes (ThemeProvider.tsx:136). The user row
+        // is static, so it sits behind the MessagesImpl bailout (idle), the
+        // `message-rows` Memo (loading), its own static key and CachedSubtree;
+        // the theme name in those keys is what carries the change through.
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        for is_loading in [false, true] {
+            let (before, after) = futures::executor::block_on(async {
+                let (keys, events) = async_channel::unbounded();
+                let mut probe = element!(ThemeFlipProbe(is_loading: is_loading));
+                let mut render_loop = Box::pin(probe.mock_terminal_render_loop(
+                    MockTerminalConfig::with_events(events).with_size(100, 12),
+                ));
+                let mut before = None;
+                while let Some(canvas) = render_loop.next().await {
+                    let text = canvas.to_string();
+                    assert!(text.contains("presses="), "the probe stopped rendering:\n{text}");
+                    if before.is_none() && text.contains("presses=0") {
+                        before = Some(background_at(&canvas, "hello theme"));
+                        keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('p'))))
+                            .await
+                            .unwrap();
+                    } else if text.contains("presses=1") {
+                        return (before.flatten(), background_at(&canvas, "hello theme"));
+                    }
+                }
+                panic!("render loop ended early");
+            });
+            assert_eq!(before, Some(theme::DARK.user_message_bg), "is_loading={is_loading}");
+            assert_eq!(after, Some(theme::LIGHT.user_message_bg), "is_loading={is_loading}");
+        }
+    }
+
+    fn foreground_at(canvas: &iocraft::Canvas, needle: &str) -> Option<iocraft::Color> {
+        use unicode_width::UnicodeWidthStr;
+        let text = canvas.to_string();
+        let (y, line) = text.lines().enumerate().find(|(_, line)| line.contains(needle))?;
+        let x = line[..line.find(needle)?].width();
+        canvas.cell(x, y).and_then(|cell| cell.text_style()).and_then(|style| style.color)
+    }
+
+    #[test]
+    fn messages_logo_follows_a_preview_and_its_cancel() {
+        // The logo's dim text previews light and returns to dark on cancel,
+        // as every themed descendant does under CC's ThemeProvider.
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let colors = futures::executor::block_on(async {
+            let (keys, events) = async_channel::unbounded();
+            let mut probe = element!(ThemeFlipProbe(show_logo: true));
+            let mut render_loop = Box::pin(probe.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(120, 40),
+            ));
+            let mut colors = Vec::new();
+            let press = |c| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char(c)));
+            let keys_in_order = ['p', 'c'];
+            while let Some(canvas) = render_loop.next().await {
+                let text = canvas.to_string();
+                assert!(text.contains("presses="), "the probe stopped rendering:\n{text}");
+                if !text.contains(&format!("presses={}", colors.len())) {
+                    continue;
+                }
+                colors.push((foreground_at(&canvas, "Opus now defaults"), text));
+                let Some(key) = keys_in_order.get(colors.len() - 1) else {
+                    break;
+                };
+                keys.send(press(*key)).await.unwrap();
+            }
+            colors
+        });
+        let expected = [theme::DARK.inactive, theme::LIGHT.inactive, theme::DARK.inactive];
+        assert_eq!(colors.len(), expected.len());
+        for ((color, text), expected) in colors.iter().zip(expected) {
+            assert_eq!(*color, Some(expected), "canvas:\n{text}");
+        }
+    }
+
     #[test]
     fn messages_tool_use_reads_pending_worker_request_for_waiting_permission_row() {
         // CC AssistantToolUseMessage.tsx:58-60,122: the row reads
@@ -3204,6 +3370,7 @@ mod tests {
                 &HashSet::new(),
                 &HashSet::new(),
                 pool,
+                ThemeName::Dark,
             )
         };
         let baseline = key(&prepared, 0, false, None, false, &pool);
@@ -3234,13 +3401,17 @@ mod tests {
         let with_sets = |in_progress: &HashSet<String>, streaming: &HashSet<String>| {
             message_rows_memo_key(
                 &prepared, 0, false, false, false, true, true, 120, None, false, in_progress,
-                streaming, &pool,
+                streaming, &pool, ThemeName::Dark,
             )
         };
         let running = with_sets(&ids(&["toolu_2", "toolu_1"]), &HashSet::new());
         assert_ne!(baseline, running);
         assert_eq!(running, with_sets(&ids(&["toolu_1", "toolu_2"]), &HashSet::new()));
         assert_ne!(baseline, with_sets(&HashSet::new(), &ids(&["toolu_1"])));
+        // A theme change alone reaches the rows (see `MessageRowsMemoKey::theme`).
+        let mut light = key(&prepared, 0, false, None, false, &pool);
+        light.theme = ThemeName::Light;
+        assert_ne!(baseline, light);
     }
 
     #[test]

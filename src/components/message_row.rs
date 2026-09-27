@@ -7,6 +7,8 @@
 use super::message::Message;
 use super::messages_list::MessageLookups;
 use crate::types::message::{RenderableMessage, RenderableMessageKind, SystemMessage};
+use crate::components::offscreen_freeze::OffscreenFreeze;
+use crate::utils::theme::ThemeName;
 use iocraft::prelude::*;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeSet, HashSet};
@@ -75,6 +77,11 @@ struct MessageRowRenderKey {
     expand_thinking: bool,
     expand_collapsed_read_search: bool,
     columns: u16,
+    /// Not an `areMessageRowPropsEqual` term: React re-renders the row's
+    /// themed descendants past the memo when the ThemeProvider value changes,
+    /// and iocraft reads context only in an update. It also keys the
+    /// CachedSubtree, whose cells carry the old palette.
+    theme: ThemeName,
 }
 
 #[derive(Default)]
@@ -92,9 +99,11 @@ impl Component for MessageRow {
     fn update(
         &mut self,
         props: &mut Self::Props<'_>,
-        _hooks: Hooks,
+        mut hooks: Hooks,
         updater: &mut ComponentUpdater,
     ) {
+        let hooks = hooks.with_context_stack(updater.component_context_stack());
+        let (theme, _) = crate::components::design_system::theme_provider::use_theme(&hooks);
         let Some(message) = props.messages.get(props.index).cloned() else {
             if self.last_static_key.is_none() {
                 return;
@@ -108,7 +117,7 @@ impl Component for MessageRow {
             return;
         };
 
-        let next_static_key = message_row_static_key(&message, props);
+        let next_static_key = message_row_static_key(&message, props, theme);
         // Contract D (PORTING.md `iocraft selected external-store subscription
         // carrier`): a manual bailout must still let a descendant's own
         // AppState subscription through, as CC's `useSyncExternalStore`
@@ -201,6 +210,7 @@ fn message_row_cache_key(key: &MessageRowRenderKey) -> String {
 fn message_row_static_key(
     message: &RenderableMessage,
     props: &MessageRowProps,
+    theme: ThemeName,
 ) -> Option<MessageRowRenderKey> {
     message_row_static_key_from_parts(
         message,
@@ -216,6 +226,7 @@ fn message_row_static_key(
         props.columns,
         &props.in_progress_tool_use_ids,
         &props.streaming_tool_use_ids,
+        theme,
     )
 }
 
@@ -234,6 +245,7 @@ fn message_row_static_key_from_parts(
     columns: u16,
     in_progress_tool_use_ids: &HashSet<String>,
     streaming_tool_use_ids: &HashSet<String>,
+    theme: ThemeName,
 ) -> Option<MessageRowRenderKey> {
     // A row may skip re-rendering only when it renders statically AND CC's
     // memo comparator would bail: `if (isStreaming || !isResolved) return
@@ -263,6 +275,7 @@ fn message_row_static_key_from_parts(
         expand_thinking,
         expand_collapsed_read_search,
         columns,
+        theme,
     })
 }
 
@@ -281,6 +294,7 @@ pub(crate) fn message_row_static_memo_key(
     columns: u16,
     in_progress_tool_use_ids: &HashSet<String>,
     streaming_tool_use_ids: &HashSet<String>,
+    theme: ThemeName,
 ) -> Option<String> {
     message_row_static_key_from_parts(
         message,
@@ -296,6 +310,7 @@ pub(crate) fn message_row_static_memo_key(
         columns,
         in_progress_tool_use_ids,
         streaming_tool_use_ids,
+        theme,
     )
     .as_ref()
     .map(message_row_cache_key)
@@ -697,6 +712,7 @@ mod tests {
                 100,
                 &HashSet::new(),
                 streaming,
+                ThemeName::Dark,
             )
         };
         let unresolved = MessageLookups::default();
@@ -807,8 +823,8 @@ mod tests {
         };
 
         assert_eq!(
-            message_row_static_key(&message, &base),
-            message_row_static_key(&message, &loading)
+            message_row_static_key(&message, &base, ThemeName::Dark),
+            message_row_static_key(&message, &loading, ThemeName::Dark)
         );
     }
 
