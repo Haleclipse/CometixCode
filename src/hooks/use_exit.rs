@@ -79,12 +79,30 @@ pub fn use_exit(hooks: &mut Hooks) -> ExitState {
 /// Ctrl+C/Ctrl+D keys remain non-rebindable, while assigning either action to
 /// an additional key works like CC.
 pub fn use_exit_on_ctrl_cd_with_keybindings(hooks: &mut Hooks, is_active: bool) -> ExitKeyState {
+    use_exit_on_ctrl_cd_with_keybindings_on_exit(hooks, is_active, None)
+}
+
+/// CC's `onExit` override (`useExitOnCtrlCDWithKeybindings(onExit?)`).
+pub type ExitHandler = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+/// Maps to: CC `useExitOnCtrlCDWithKeybindings(onExit, …, isActive)` with an
+/// `onExit` in place of `useApp().exit()` on the second press. The keys are
+/// still taken: a no-op `onExit` (ThemePicker's `skipExitHandling`) arms the
+/// "again to exit" hint and then does nothing.
+pub fn use_exit_on_ctrl_cd_with_keybindings_on_exit(
+    hooks: &mut Hooks,
+    is_active: bool,
+    on_exit: Option<ExitHandler>,
+) -> ExitKeyState {
     let ctrl_c = use_double_press(hooks);
     let ctrl_d = use_double_press(hooks);
     let mut app = hooks.use_app();
 
     if ctrl_c.take_triggered() || ctrl_d.take_triggered() {
-        app.exit();
+        match on_exit {
+            Some(on_exit) => on_exit(),
+            None => app.exit(),
+        }
     }
 
     let runtime = hooks

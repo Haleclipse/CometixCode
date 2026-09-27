@@ -11,14 +11,13 @@ use crate::components::channel_downgrade_dialog::{
     ChannelDowngradeDialog, channel_downgrade_options,
 };
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
-use crate::components::design_system::theme_provider::{ThemeContextValue, use_theme};
+use crate::components::design_system::theme_provider::use_theme;
 use crate::utils::theme::ThemeSetting;
 use crate::components::language_picker::LanguagePicker;
 use crate::components::model_picker as model;
 use crate::components::model_picker::{ModelPicker, ModelPickerSelection};
 use crate::components::output_style_picker as output_style;
 use crate::components::output_style_picker::OutputStylePicker;
-use crate::components::structured_diff::color_diff::syntax_highlighting_disabled_by_env;
 use crate::components::theme_picker::ThemePicker;
 use crate::constants::product;
 use crate::context::notifications::use_notifications;
@@ -452,40 +451,6 @@ fn focused_index_for_menu_value(
     }
 }
 
-fn theme_name_from_option(option: &SelectOptionData) -> ThemeName {
-    ThemeName::from_config_or_display(&option.value)
-        .or_else(|| ThemeName::from_config_or_display(&option.label))
-        .unwrap_or(ThemeName::Dark)
-}
-
-/// Maps to: CC `ThemePicker.tsx:132-134` `onFocus → setPreviewTheme`, which
-/// Select also fires for its default focus on mount.
-fn preview_theme_from_option(theme: &ThemeContextValue, option: Option<&SelectOptionData>) {
-    let Some(option) = option else {
-        return;
-    };
-    theme.set_preview_theme(ThemeSetting::Named(theme_name_from_option(option)));
-}
-
-/// Maps to: CC `ThemePicker.tsx:135-138` `onChange → savePreview();
-/// onThemeSelect(setting)`, where Config's `onThemeSelect` calls `setTheme`
-/// (`Config.tsx:1799-1804`).
-fn save_theme_preview_from_option(
-    theme: &ThemeContextValue,
-    option: Option<&SelectOptionData>,
-) -> Option<ThemeName> {
-    let option = option?;
-    let theme_name = theme_name_from_option(option);
-    theme.save_preview();
-    theme.set_theme_setting(ThemeSetting::Named(theme_name));
-    Some(theme_name)
-}
-
-/// Maps to: CC `ThemePicker.tsx:139-149` `onCancel → cancelPreview()`.
-fn cancel_theme_preview(theme: &ThemeContextValue) {
-    theme.cancel_preview();
-}
-
 fn visible_from_index(focused_index: usize, count: usize, visible_count: usize) -> usize {
     if count <= visible_count {
         return 0;
@@ -632,7 +597,6 @@ fn activate_focused_config_item(
     mut submenu: State<Option<SettingsSubmenu>>,
     mut submenu_focused: State<usize>,
     mut tabs_hidden_request: State<Option<bool>>,
-    theme_control: ThemeContextValue,
     runtime_display_context: Option<crate::state::store::AppStore>,
     runtime_notifications_context: NotificationsWriter,
 ) {
@@ -663,9 +627,6 @@ fn activate_focused_config_item(
             let options = settings_submenu_options(menu);
             let focus = focused_index_for_menu_value(menu, &options, &current_item.display_value());
             submenu_focused.set(focus);
-            if menu == SettingsSubmenu::Theme {
-                preview_theme_from_option(&theme_control, options.get(focus));
-            }
         }
         tabs_hidden_request.set(Some(true));
         submenu.set(Some(menu));
@@ -762,9 +723,17 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         let setting = theme_control.theme_setting();
         move || setting
     });
-    // Maps to ThemePicker's syntax highlighting toggle copy. The Rust port
-    // keeps this as an in-memory visual preview and never writes settings.
-    let mut syntax_highlighting_disabled = hooks.use_state(|| false);
+    // CC `:242-244` `initialUserSettings` and the `settings` of
+    // `initialAppState` (`:248-262`): ThemePicker's Ctrl+T writes into both,
+    // and `revertChanges` restores them (`:1508-1510`, `:1533`).
+    let initial_user_syntax_disabled = hooks.use_state(|| {
+        crate::utils::settings::get_settings_for_source(crate::utils::settings::SettingSource::User)
+            .and_then(|settings| settings.syntax_highlighting_disabled)
+    });
+    let initial_app_settings = hooks.use_state({
+        let settings = settings_snapshot.clone();
+        move || settings
+    });
     let mut tabs_hidden_request = hooks.use_state(|| None::<bool>);
     let mut should_close = hooks.use_state(|| false);
     let mut pending_result = hooks.use_state(|| None::<String>);
@@ -773,7 +742,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     let max_vis = props.max_visible.unwrap_or(12) as usize;
     let header_focused = props.header_focused;
     let focus_header = props.on_focus_header.clone();
-    let (terminal_width, _) = hooks.use_terminal_size();
 
     if let Some(hidden) = tabs_hidden_request.get() {
         tabs_hidden_request.set(None);
@@ -900,6 +868,20 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             bindings.as_slice(),
         )
     };
+    // CC's Theme submenu footer resolves `confirm:no` in Confirmation
+    // (`Config.tsx:1816-1821`), unlike the Language footer's Settings.
+    let confirmation_cancel_shortcut = crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
+        "confirm:no",
+        &crate::keybindings::types::ContextName::Confirmation,
+        "Esc",
+        keybinding_runtime
+            .as_ref()
+            .map(|runtime| runtime.bindings())
+            .unwrap_or_else(|| {
+                std::sync::Arc::new(crate::keybindings::default_bindings::default_bindings())
+            })
+            .as_slice(),
+    );
     crate::keybindings::use_keybinding::use_keybinding(
         &mut hooks,
         keybinding_runtime.clone(),
@@ -922,6 +904,30 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     runtime_notifications_context.clone(),
                     &initial,
                 );
+                // CC `:1508-1510`: the user-settings key Ctrl+T writes. The
+                // port reverts on every Escape (it has no `isDirty`), so it
+                // writes only a changed value.
+                let initial_disabled = initial_user_syntax_disabled.get();
+                let current_disabled = crate::utils::settings::get_settings_for_source(
+                    crate::utils::settings::SettingSource::User,
+                )
+                .and_then(|settings| settings.syntax_highlighting_disabled);
+                if current_disabled != initial_disabled {
+                    let _ = crate::utils::settings::update_settings_for_source(
+                        crate::utils::settings::SettingSource::User,
+                        &serde_json::Map::from_iter([(
+                            "syntaxHighlightingDisabled".to_string(),
+                            initial_disabled.map_or(serde_json::Value::Null, serde_json::Value::Bool),
+                        )]),
+                    );
+                }
+                // CC `:1533` `settings: ia.settings`.
+                if let Some(store) = runtime_display_context.as_ref() {
+                    let initial_settings = initial_app_settings.read().clone();
+                    if !std::sync::Arc::ptr_eq(&store.get().settings, &initial_settings) {
+                        store.replace_with(|state| state.settings = initial_settings.clone());
+                    }
+                }
                 items.set(initial);
                 current_language.set(initial_language.read().clone());
                 should_close.set(true);
@@ -1013,7 +1019,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         {
             let runtime_display_context = runtime_display_context.clone();
             let runtime_notifications_context = runtime_notifications_context.clone();
-            let theme_control = theme_control.clone();
             move || {
                 activate_focused_config_item(
                     items,
@@ -1022,7 +1027,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     submenu,
                     submenu_focused,
                     tabs_hidden_request,
-                    theme_control.clone(),
                     runtime_display_context.clone(),
                     runtime_notifications_context.clone(),
                 );
@@ -1030,33 +1034,21 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             }
         },
     );
-    crate::keybindings::use_keybinding::use_keybinding(
-        &mut hooks,
-        keybinding_runtime,
-        "theme:toggleSyntaxHighlighting",
-        crate::keybindings::types::ContextName::ThemePicker,
-        move || submenu.get() == Some(SettingsSubmenu::Theme),
-        move || {
-            syntax_highlighting_disabled.set(!syntax_highlighting_disabled.get());
-            true
-        },
-    );
     hooks.use_propagated_terminal_events({
-        let theme_control = theme_control.clone();
         move |event| match event.event() {
             TerminalEvent::Key(KeyEvent { code, kind, .. }) if *kind != KeyEventKind::Release => {
                 if let Some(active_submenu) = submenu.get() {
                     // Official Config `handleKeyDown`: `if (showSubmenu !== null) return`.
-                    // ModelPicker and LanguagePicker own their own keys;
-                    // Config only yields.
+                    // ModelPicker, LanguagePicker and ThemePicker own their
+                    // own keys; Config only yields.
                     if matches!(
                         active_submenu,
-                        SettingsSubmenu::Model | SettingsSubmenu::Language
+                        SettingsSubmenu::Model | SettingsSubmenu::Language | SettingsSubmenu::Theme
                     ) {
                         return;
                     }
-                    // Theme / OutputStyle still use the Config-owned list
-                    // adapter until those pickers reclaim keys.
+                    // OutputStyle and the auto-update submenus still use the
+                    // Config-owned list adapter until those pickers reclaim keys.
 
                     let options = settings_submenu_options(active_submenu);
                     let count = options.len();
@@ -1068,9 +1060,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                         };
                     match code {
                         KeyCode::Esc => {
-                            if active_submenu == SettingsSubmenu::Theme {
-                                cancel_theme_preview(&theme_control);
-                            }
                             submenu.set(None);
                             submenu_focused.set(0);
                             tabs_hidden_request.set(Some(false));
@@ -1080,36 +1069,19 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                             let focus = submenu_focused.get();
                             let new_focus = focus.saturating_sub(1);
                             submenu_focused.set(new_focus);
-                            if active_submenu == SettingsSubmenu::Theme {
-                                preview_theme_from_option(
-                                    &theme_control,
-                                    options.get(new_focus),
-                                );
-                            }
                             event.stop_propagation();
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
                             let focus = submenu_focused.get();
                             let new_focus = if focus + 1 < count { focus + 1 } else { focus };
                             submenu_focused.set(new_focus);
-                            if active_submenu == SettingsSubmenu::Theme {
-                                preview_theme_from_option(
-                                    &theme_control,
-                                    options.get(new_focus),
-                                );
-                            }
                             event.stop_propagation();
                         }
                         KeyCode::Enter | KeyCode::Tab | KeyCode::Right => {
                             let focused = submenu_focused.get().min(count.saturating_sub(1));
                             if let Some(option) = options.get(focused) {
                                 let mut all = items.read().clone();
-                                let display_value = if active_submenu == SettingsSubmenu::Theme {
-                                    save_theme_preview_from_option(&theme_control, Some(option))
-                                        .unwrap_or(ThemeName::Dark)
-                                        .display_label()
-                                        .to_string()
-                                } else if active_submenu == SettingsSubmenu::OutputStyle {
+                                let display_value = if active_submenu == SettingsSubmenu::OutputStyle {
                                     output_style::output_style_display_for_option(option)
                                 } else if active_submenu == SettingsSubmenu::ChannelDowngrade {
                                     "stable".to_string()
@@ -1180,12 +1152,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         &current_item.display_value(),
                                     );
                                     submenu_focused.set(focus);
-                                    if menu == SettingsSubmenu::Theme {
-                                        preview_theme_from_option(
-                                            &theme_control,
-                                            options.get(focus),
-                                        );
-                                    }
                                 }
                                 tabs_hidden_request.set(Some(true));
                                 submenu.set(Some(menu));
@@ -1238,12 +1204,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         &current_item.display_value(),
                                     );
                                     submenu_focused.set(focus);
-                                    if menu == SettingsSubmenu::Theme {
-                                        preview_theme_from_option(
-                                            &theme_control,
-                                            options.get(focus),
-                                        );
-                                    }
                                 }
                                 tabs_hidden_request.set(Some(true));
                                 submenu.set(Some(menu));
@@ -1296,12 +1256,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         &current_item.display_value(),
                                     );
                                     submenu_focused.set(focus);
-                                    if menu == SettingsSubmenu::Theme {
-                                        preview_theme_from_option(
-                                            &theme_control,
-                                            options.get(focus),
-                                        );
-                                    }
                                 }
                                 tabs_hidden_request.set(Some(true));
                                 submenu.set(Some(menu));
@@ -1349,9 +1303,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     // The provider's palette, which a Theme submenu preview has already
     // switched for the whole app.
-    let (active_theme_name, _) = use_theme(&hooks);
     let theme = *hooks.use_context::<theme::Theme>();
-    let env_disabled_syntax = syntax_highlighting_disabled_by_env();
 
     // Rebuild visible list — filtered by search query
     // Maps to: CC Config.tsx filteredSettingsItems (line 1250-1258)
@@ -1374,33 +1326,38 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     if let Some(active_submenu) = submenu.get() {
         if active_submenu == SettingsSubmenu::Theme {
-            let options = settings_submenu_options(active_submenu);
-            let count = options.len();
-            let focused_index = submenu_focused.get().min(count.saturating_sub(1));
-            let selected_value = items
-                .read()
-                .iter()
-                .find(|item| item.id == active_submenu.setting_id())
-                .and_then(|item| ThemeName::from_config_or_display(&item.display_value()))
-                .map(|theme_name| theme_name.setting_value().to_string());
-
+            // Maps to: CC `Config.tsx:1796-1825`. The picker owns its keys and
+            // the preview; selecting saves through the provider (`setTheme`).
+            // The footer is `<Text dimColor italic><Byline>…` as one inactive
+            // line, like the Language footer.
+            let theme_select = theme_control.clone();
+            let footer = format!("Enter to select · {confirmation_cancel_shortcut} to cancel");
             element! {
-                ThemePicker(
-                    focused_index: focused_index,
-                    selected_value: selected_value,
-                    show_intro_text: false,
-                    help_text: None,
-                    show_help_text_below: false,
-                    hide_esc_to_cancel: false,
-                    skip_exit_handling: false,
-                    active_theme_name: Some(active_theme_name),
-                    syntax_highlighting_disabled: syntax_highlighting_disabled.get(),
-                    syntax_disabled_env_value: env_disabled_syntax.clone(),
-                    columns: usize::from(terminal_width),
-                    exit_pending: false,
-                    exit_key_name: None,
-                    auto_theme_enabled: false,
-                )
+                View(flex_direction: FlexDirection::Column) {
+                    ThemePicker(
+                        on_theme_select: move |setting: ThemeSetting| {
+                            theme_select.set_theme_setting(setting);
+                            let mut all = items.read().clone();
+                            apply_settings_submenu_selection(
+                                &mut all,
+                                SettingsSubmenu::Theme,
+                                theme::theme_display_label(Some(setting.setting_value())),
+                            );
+                            items.set(all);
+                            submenu.set(None);
+                            tabs_hidden_request.set(Some(false));
+                        },
+                        on_cancel: move |_| {
+                            submenu.set(None);
+                            tabs_hidden_request.set(Some(false));
+                        },
+                        hide_esc_to_cancel: true,
+                        skip_exit_handling: true,
+                    )
+                    View {
+                        Text(content: footer, color: theme.inactive, italic: true)
+                    }
+                }
             }
             .into_any()
         } else if active_submenu == SettingsSubmenu::Model {
@@ -2828,28 +2785,23 @@ mod tests {
 
     #[test]
     fn config_managed_theme_setting_opens_submenu_and_esc_returns_to_list() {
-        let mut events = text_events("theme");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        let submenu_text = render_text_with_events(events.clone());
+        // Frame-driven: Esc goes to the picker once it is on screen.
+        let canvases =
+            drive_config_with_provider(vec![open_theme_submenu(), vec![press(KeyCode::Esc)]]);
+        let submenu_text = canvas_lines(&canvases[1]).join("\n");
         assert!(
             submenu_text.contains("Choose the text style that looks best"),
-            "managed Theme row should open the Theme picker seam; canvas=\n{submenu_text}"
+            "managed Theme row should open the ThemePicker; canvas=\n{submenu_text}"
         );
         assert!(
             submenu_text.contains("Dark mode"),
-            "Theme picker seam should render official-shaped options; canvas=\n{submenu_text}"
+            "ThemePicker should render official-shaped options; canvas=\n{submenu_text}"
         );
 
-        events.push(press(KeyCode::Esc));
-        let closed_text = render_text_with_events(events);
+        let closed_text = canvas_lines(&canvases[2]).join("\n");
         assert!(
-            closed_text.contains("Theme"),
-            "Esc in submenu should return to Config list instead of closing Settings; canvas=\n{closed_text}"
-        );
-        assert!(
-            !closed_text.contains("Enter select · Esc cancel"),
-            "submenu footer should disappear after submenu Esc; canvas=\n{closed_text}"
+            closed_text.contains("Theme") && !closed_text.contains("Choose the text style"),
+            "Esc in the picker should close it back to the Config list; canvas=\n{closed_text}"
         );
     }
 
@@ -2918,15 +2870,21 @@ mod tests {
             PathSnapshot::capture(cwd.join(".claude/settings.local.json")),
         ];
 
-        let mut theme_events = text_events("theme");
-        theme_events.push(press(KeyCode::Enter));
-        theme_events.push(press(KeyCode::Char(' ')));
-        theme_events.push(press(KeyCode::Down));
-        theme_events.push(press(KeyCode::Enter));
-        let theme_text = render_text_with_events(theme_events);
+        // Frame-driven throughout: a timed stream loses the tail of a key
+        // sequence under load, once the reader's idle cutoff fires before
+        // the next key lands. A theme save goes through
+        // the provider's save handler — a no-op in this harness; in
+        // production `saveGlobalConfig`, a dry run unless writes are enabled —
+        // so this part checks the flow, not the file snapshots below.
+        let theme_canvases = drive_config_with_provider(vec![
+            open_theme_submenu(),
+            vec![press(KeyCode::Down)],
+            vec![press(KeyCode::Enter)],
+        ]);
+        let theme_text = canvas_lines(theme_canvases.last().unwrap()).join("\n");
         assert!(
-            theme_text.contains("Light mode"),
-            "Theme selection should update only the in-memory preview; canvas=\n{theme_text}"
+            theme_text.contains("Light mode") && !theme_text.contains("Choose the text style"),
+            "Theme selection should close the picker onto the new row value; canvas=\n{theme_text}"
         );
 
         let mut output_style_events = text_events("style");
@@ -2934,7 +2892,7 @@ mod tests {
         output_style_events.push(press(KeyCode::Char(' ')));
         output_style_events.push(press(KeyCode::Down));
         output_style_events.push(press(KeyCode::Enter));
-        let output_style_text = render_text_with_events(output_style_events);
+        let output_style_text = drive_config_keys_text(output_style_events);
         assert!(
             output_style_text.contains("Explanatory"),
             "Output style selection should update only the in-memory preview; canvas=\n{output_style_text}"
@@ -2945,7 +2903,7 @@ mod tests {
         language_events.push(press(KeyCode::Char(' ')));
         language_events.extend("Korean".chars().map(|ch| press(KeyCode::Char(ch))));
         language_events.push(press(KeyCode::Enter));
-        let language_text = render_text_with_events(language_events);
+        let language_text = drive_config_keys_text(language_events);
         assert!(
             language_text.contains("Korean"),
             "Language submit should update only the in-memory preview; canvas=\n{language_text}"
@@ -2956,7 +2914,7 @@ mod tests {
         model_events.push(press(KeyCode::Char(' ')));
         model_events.push(press(KeyCode::Down));
         model_events.push(press(KeyCode::Enter));
-        let model_text = render_text_with_events(model_events);
+        let model_text = drive_config_keys_text(model_events);
         assert!(
             model_text.contains("Model") && model_text.contains("Sonnet"),
             "Model selection should update only the in-memory preview; canvas=\n{model_text}"
@@ -2968,7 +2926,7 @@ mod tests {
             press(KeyCode::Down),
             press(KeyCode::Char(' ')),
         ];
-        let reduce_motion_text = render_text_with_events(reduce_motion_events);
+        let reduce_motion_text = drive_config_keys_text(reduce_motion_events);
         assert!(
             reduce_motion_text.contains("Reduce motion") && reduce_motion_text.contains("true"),
             "Reduce motion toggle should update only the in-memory preview; canvas=\n{reduce_motion_text}"
@@ -2977,7 +2935,7 @@ mod tests {
         let mut notification_events = text_events("notification");
         notification_events.push(press(KeyCode::Enter));
         notification_events.push(press(KeyCode::Char(' ')));
-        let notification_text = render_text_with_events(notification_events);
+        let notification_text = drive_config_keys_text(notification_events);
         assert!(
             notification_text.contains("Notifications")
                 && notification_text.contains("iTerm2 (OSC 9)"),
@@ -3001,19 +2959,20 @@ mod tests {
 
     #[test]
     fn config_theme_submenu_enter_applies_preview_and_closes_submenu() {
-        let mut events = text_events("theme");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        events.push(press(KeyCode::Down));
-        events.push(press(KeyCode::Enter));
-        let text = render_text_with_events(events);
+        // Frame-driven: Down and Enter go to the picker once it is on screen.
+        let canvases = drive_config_with_provider(vec![
+            open_theme_submenu(),
+            vec![press(KeyCode::Down)],
+            vec![press(KeyCode::Enter)],
+        ]);
+        let text = canvas_lines(canvases.last().unwrap()).join("\n");
 
         assert!(
             text.contains("Light mode"),
-            "selecting a Theme submenu option should update the in-memory displayed value; canvas=\n{text}"
+            "selecting a Theme submenu option should update the displayed value; canvas=\n{text}"
         );
         assert!(
-            !text.contains("Enter to select · Esc to cancel"),
+            !text.contains("Choose the text style") && !text.contains("Enter to select · Esc to cancel"),
             "submenu should close after selecting a value; canvas=\n{text}"
         );
     }
@@ -3065,6 +3024,55 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Search "theme", leave the search box and open its submenu.
+    fn open_theme_submenu() -> Vec<TerminalEvent> {
+        let mut open = text_events("theme");
+        open.push(press(KeyCode::Enter));
+        open.push(press(KeyCode::Char(' ')));
+        open
+    }
+
+    /// Drives `ConfigWithProviderEchoHarness` one key batch at a time and
+    /// returns the canvas each batch's last key produced, after the mount
+    /// canvas. The echo's key count makes every key produce a frame.
+    fn drive_config_with_provider(batches: Vec<Vec<TerminalEvent>>) -> Vec<Canvas> {
+        futures::executor::block_on(async move {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(ConfigWithProviderEchoHarness);
+            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(110, 40),
+            ));
+            let mut sent = 0;
+            let mut batch = 0;
+            let mut canvases = Vec::new();
+            while let Some(canvas) = render_loop.next().await {
+                let text = canvas_lines(&canvas).join("\n");
+                assert!(text.contains("provider setting="), "the echo stopped rendering:\n{text}");
+                if !text.contains(&format!("keys={sent} ")) {
+                    continue;
+                }
+                canvases.push(canvas);
+                let Some(next) = batches.get(batch) else {
+                    break;
+                };
+                sent += next.len();
+                for event in next.iter().cloned() {
+                    keys.send(event).await.unwrap();
+                }
+                batch += 1;
+            }
+            canvases
+        })
+    }
+
+    /// `drive_config_with_provider` with one key per frame, as a terminal
+    /// delivers them; returns the text of the frame the last key produced.
+    fn drive_config_keys_text(events: Vec<TerminalEvent>) -> String {
+        let canvases =
+            drive_config_with_provider(events.into_iter().map(|event| vec![event]).collect());
+        canvas_lines(canvases.last().unwrap()).join("\n")
     }
 
     #[test]
@@ -3143,11 +3151,12 @@ mod tests {
             text.contains("Choose the text style that looks best with your terminal"),
             "canvas=\n{text}"
         );
-        assert!(text.contains("demo.js"), "canvas=\n{text}");
+        // StructuredDiff's filePath only picks the language: no header row.
+        assert!(!text.contains("demo.js"), "canvas=\n{text}");
         assert!(text.contains("Hello, World!"), "canvas=\n{text}");
         assert!(text.contains("Hello, Claude!"), "canvas=\n{text}");
         assert!(
-            text.contains("Syntax theme: Monokai Extended (Ctrl+T to disable)"),
+            text.contains("Syntax theme: Monokai Extended (ctrl+t to disable)"),
             "canvas=\n{text}"
         );
         assert!(
@@ -3162,13 +3171,10 @@ mod tests {
 
     #[test]
     fn config_theme_picker_focus_previews_selected_palette_colors() {
-        let mut events = text_events("theme");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        events.push(press(KeyCode::Down));
-        let canvases = render_with_config(
-            MockTerminalConfig::with_events(terminal_timed_events(events)).with_size(110, 30),
-        );
+        // Frame-driven: Down goes out once the picker is on screen, since the
+        // picker, not Config, owns the submenu's keys.
+        let canvases =
+            drive_config_with_provider(vec![open_theme_submenu(), vec![press(KeyCode::Down)]]);
         let canvas = canvases
             .last()
             .expect("mock render should produce a canvas");
@@ -3209,44 +3215,55 @@ mod tests {
 
     #[test]
     fn config_theme_picker_escape_cancels_preview_palette() {
-        let mut events = text_events("theme");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        events.push(press(KeyCode::Down));
-        events.push(press(KeyCode::Esc));
-        events.push(press(KeyCode::Char(' ')));
-        let canvases = render_with_config(
-            MockTerminalConfig::with_events(stream::iter(events)).with_size(110, 30),
-        );
-        let canvas = canvases
-            .last()
-            .expect("mock render should produce a canvas");
-        let (title_x, title_y) = find_text(canvas, "Theme").expect("Theme title should render");
-
+        // Down previews Light (checked, so the cancel is not vacuous); the
+        // frame Esc produces must be back on Dark. It is read directly: a
+        // reopened picker would preview the saved theme on mount and hide a
+        // missing cancel.
+        let canvases = drive_config_with_provider(vec![
+            open_theme_submenu(),
+            vec![press(KeyCode::Down)],
+            vec![press(KeyCode::Esc)],
+        ]);
+        let (x, y) = find_text(&canvases[2], "Theme").expect("Theme title should render");
         assert_eq!(
-            canvas
-                .cell(title_x, title_y)
+            canvases[2]
+                .cell(x, y)
                 .and_then(|cell| cell.text_style())
                 .and_then(|style| style.color),
-            Some(theme::DARK.permission)
+            Some(theme::LIGHT.permission)
+        );
+        let after_escape = canvas_lines(&canvases[3]).join("\n");
+        assert!(
+            after_escape.contains("provider setting=dark current=dark")
+                && !after_escape.contains("Choose the text style"),
+            "{after_escape}"
         );
     }
 
     #[test]
-    fn config_theme_picker_ctrl_t_toggles_syntax_copy_in_memory_only() {
-        let mut events = text_events("theme");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        events.push(ctrl_char('t'));
-        let text = render_text_with_timed_events(events);
+    fn config_theme_submenu_ctrl_t_reaches_the_picker_binding() {
+        // CC ThemePicker.tsx:61-83: inside the Theme submenu ctrl+t is the
+        // picker's `theme:toggleSyntaxHighlighting` (its context outranks
+        // Global's `app:toggleTodos`), and the toggle writes user settings,
+        // so the config dir is a throwaway one.
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let dir = std::env::temp_dir().join(format!(
+            "cometix-config-theme-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _syntax = EnvVarGuard::unset("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
+        // Frame-driven: ctrl+t goes out once the picker registered its context.
+        let canvases = drive_config_with_provider(vec![open_theme_submenu(), vec![ctrl_char('t')]]);
+        let text = canvas_lines(canvases.last().unwrap()).join("\n");
+        let _ = fs::remove_dir_all(&dir);
 
         assert!(
-            text.contains("Syntax highlighting disabled (Ctrl+T to enable)"),
-            "Ctrl+T should toggle only the in-memory ThemePicker syntax copy; canvas=\n{text}"
-        );
-        assert!(
-            !crate::utils::session_storage::is_session_write_enabled(),
-            "ThemePicker previews must not imply session writes"
+            text.contains("Syntax highlighting disabled (ctrl+t to enable)"),
+            "canvas=\n{text}"
         );
     }
 

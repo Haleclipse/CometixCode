@@ -46,7 +46,6 @@ use crate::utils::ide::{is_jetbrains_ide, to_ide_display_name};
 use crate::utils::settings::SettingSource;
 use crate::utils::settings::get_settings_for_source;
 use crate::utils::status_notice_definitions::{MemoryFileInfo, StatusNoticeContext};
-use crate::utils::theme::ThemeName;
 use std::path::Path;
 use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -70,7 +69,6 @@ pub struct SetupScreensSnapshot {
     pub oauth_enabled: bool,
     pub api_key_needing_approval: Option<String>,
     pub offer_terminal_setup: bool,
-    pub theme_name: Option<ThemeName>,
     pub terminal_name: Option<String>,
     pub show_claude_in_chrome_onboarding: bool,
     pub claude_in_chrome_extension_installed: bool,
@@ -128,7 +126,6 @@ pub fn setup_screens_snapshot_from_readonly_runtime(
         oauth_enabled: is_anthropic_auth_enabled(),
         api_key_needing_approval: api_key_needing_onboarding_approval(global_config, get_env),
         offer_terminal_setup: should_offer_terminal_setup_for(terminal_name.as_deref(), platform),
-        theme_name: configured_theme.and_then(ThemeName::from_config_or_display),
         terminal_name,
         show_claude_in_chrome_onboarding: enable_claude_in_chrome
             && global_config.has_completed_claude_in_chrome_onboarding != Some(true),
@@ -367,17 +364,40 @@ fn SetupScreensHost<'a>(
 
     let gate_element = match setup_gate {
         SetupScreenGate::Onboarding => {
+            // Maps to: CC `interactiveHelpers.tsx:171-182` — onboarding is a
+            // `showSetupDialog(…, { onChangeAppState })`, i.e. its own
+            // `<AppStateProvider><KeybindingSetup>` (:127-128), which the theme
+            // step's ThemePicker reads. The other setup dialogs read no
+            // AppState yet and keep only the KeybindingSetup below (seam).
             let snapshot = setup_screens_snapshot.clone();
+            let keybinding_key = format!("{setup_gate:?}");
+            // SEAM: CC's `getDefaultAppState()` seeds `settings:
+            // getInitialSettings()` (AppStateStore.ts:469), which the picker's
+            // syntax toggle reads. Seeding it here waits for the env redesign:
+            // the port's onChangeAppState re-applies settings env on any
+            // settings write that carries one, which a toggle would then do
+            // before trust.
             element! {
-                Onboarding(
-                    on_done: move |_| {
-                        onboarding_dismissed.set(true);
-                    },
-                    oauth_enabled: snapshot.oauth_enabled,
-                    api_key_needing_approval: snapshot.api_key_needing_approval.clone(),
-                    offer_terminal_setup: snapshot.offer_terminal_setup,
-                    theme_name: snapshot.theme_name,
-                    terminal_name: snapshot.terminal_name.clone(),
+                crate::state::app_state::AppStateProvider(
+                    on_change_app_state: Some(crate::state::on_change_app_state::default_on_change()),
+                    children: crate::state::app_state::ProviderChildren::new(move || {
+                        let snapshot = snapshot.clone();
+                        let mut dismissed = onboarding_dismissed;
+                        element! {
+                            crate::keybindings::keybinding_provider_setup::KeybindingSetup(key: keybinding_key.clone()) {
+                                Onboarding(
+                                    on_done: move |_| {
+                                        dismissed.set(true);
+                                    },
+                                    oauth_enabled: snapshot.oauth_enabled,
+                                    api_key_needing_approval: snapshot.api_key_needing_approval.clone(),
+                                    offer_terminal_setup: snapshot.offer_terminal_setup,
+                                    terminal_name: snapshot.terminal_name.clone(),
+                                )
+                            }
+                        }
+                        .into_any()
+                    }),
                 )
             }
             .into_any()
@@ -501,7 +521,8 @@ fn SetupScreensHost<'a>(
             element! { Fragment }.into_any()
         }
     };
-    if setup_gate == SetupScreenGate::Ready {
+    // Onboarding already carries its showSetupDialog wrappers.
+    if matches!(setup_gate, SetupScreenGate::Ready | SetupScreenGate::Onboarding) {
         return gate_element;
     }
     // Maps to: CC `interactiveHelpers.tsx:121-131` `showSetupDialog` — every
@@ -519,7 +540,6 @@ fn SetupScreensHost<'a>(
 mod setup_screens_snapshot_tests {
     use super::*;
     use crate::utils::config::CustomApiKeyResponses;
-    use crate::utils::theme::ThemeName;
     use std::fs;
     use std::path::Path;
 
@@ -547,7 +567,6 @@ mod setup_screens_snapshot_tests {
             runtime_env::Platform::MacOS,
         );
         assert!(!completed.show_onboarding);
-        assert_eq!(completed.theme_name, Some(ThemeName::Dark));
         assert!(!completed.offer_terminal_setup);
 
         let with_new_key = setup_screens_snapshot_from_readonly_runtime(

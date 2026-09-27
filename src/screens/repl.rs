@@ -9649,7 +9649,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         }.into_any())
                     },
                     LocalCommandPanel::Theme => Some(element! {
-                        theme::ThemePickerWrapper(
+                        theme::ThemePickerCommand(
                             on_close: on_local_command_ui_close,
                             on_select: on_local_command_ui_result,
                         )
@@ -9930,7 +9930,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         }.into_any())
                     },
                     LocalCommandPanel::Theme => Some(element! {
-                        theme::ThemePickerWrapper(
+                        theme::ThemePickerCommand(
                             on_close: on_local_command_ui_close,
                             on_select: on_local_command_ui_result,
                         )

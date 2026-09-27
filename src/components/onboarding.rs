@@ -21,7 +21,7 @@ use crate::components::ui::{OrderedList, OrderedListItem};
 use crate::constants::product;
 use crate::utils::env;
 use crate::utils::preflight_checks::PreflightStep;
-use crate::utils::theme::{Theme, ThemeName};
+use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,10 +120,7 @@ pub(crate) struct OnboardingProps<'a> {
     pub offer_terminal_setup: bool,
     pub initial_step: Option<OnboardingStepId>,
     pub initial_step_index: usize,
-    pub theme_name: Option<ThemeName>,
     pub terminal_name: Option<String>,
-    pub exit_pending: bool,
-    pub exit_key_name: Option<String>,
 }
 
 impl Default for OnboardingProps<'_> {
@@ -135,10 +132,7 @@ impl Default for OnboardingProps<'_> {
             offer_terminal_setup: false,
             initial_step: None,
             initial_step_index: 0,
-            theme_name: None,
             terminal_name: None,
-            exit_pending: false,
-            exit_key_name: None,
         }
     }
 }
@@ -150,8 +144,9 @@ pub(crate) fn Onboarding<'a>(
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let theme = *hooks.use_context::<Theme>();
-    let (columns, _) = hooks.use_terminal_size();
-    let theme_name = props.theme_name.unwrap_or(ThemeName::Dark);
+    // CC Onboarding.tsx:49 `const [theme, setTheme] = useTheme()`.
+    let (theme_name, theme_control) =
+        crate::components::design_system::theme_provider::use_theme(&hooks);
     let terminal_name = props
         .terminal_name
         .clone()
@@ -170,8 +165,12 @@ pub(crate) fn Onboarding<'a>(
     let mut current_step_index = hooks.use_state(|| initial_index);
     let mut skip_oauth = hooks.use_state(|| false);
     let mut terminal_focused_index = hooks.use_state(|| 0usize);
-    let mut theme_focused_index = hooks.use_state(|| 0usize);
     let mut should_done = hooks.use_state(|| false);
+    // CC :77 `exitState`, relayed from `OnboardingExitBinding`.
+    let exit_state = hooks.use_state(crate::hooks::use_exit::ExitKeyState::default);
+    // CC :72-75 `handleThemeSelection` → `goToNextStep()`, relayed from the
+    // picker's callback to this render.
+    let mut theme_selected = hooks.use_state(|| false);
 
     let config = OnboardingFlowConfig {
         oauth_enabled: props.oauth_enabled,
@@ -185,6 +184,15 @@ pub(crate) fn Onboarding<'a>(
         current_step_index.set(bounded_index);
     }
     let current_step = steps.get(bounded_index).copied();
+    // CC :57-75 `goToNextStep()` once the picker has saved the theme.
+    if theme_selected.get() {
+        theme_selected.set(false);
+        if bounded_index + 1 < steps.len() {
+            current_step_index.set(bounded_index + 1);
+        } else {
+            should_done.set(true);
+        }
+    }
 
     // Maps to: CC Onboarding.tsx:190-220, Select onChange's
     // setupTerminal(theme).catch(...).finally(goToNextStep).
@@ -335,21 +343,8 @@ pub(crate) fn Onboarding<'a>(
             };
 
             match step {
-                OnboardingStepId::Theme => match code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        theme_focused_index.set(theme_focused_index.get().saturating_sub(1));
-                        event.stop_propagation();
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        theme_focused_index.set(theme_focused_index.get().saturating_add(1));
-                        event.stop_propagation();
-                    }
-                    KeyCode::Enter | KeyCode::Tab => {
-                        go_next();
-                        event.stop_propagation();
-                    }
-                    _ => {}
-                },
+                // ThemePicker owns the theme step's keys (Onboarding.tsx:80-90).
+                OnboardingStepId::Theme => {}
                 OnboardingStepId::Security => {}
                 OnboardingStepId::TerminalSetup => {}
                 OnboardingStepId::ApiKey => match code {
@@ -386,9 +381,7 @@ pub(crate) fn Onboarding<'a>(
 
     let body = match current_step {
         Some(OnboardingStepId::Preflight) => render_preflight_step(theme),
-        Some(OnboardingStepId::Theme) => {
-            render_theme_step(theme_name, theme_focused_index.get(), usize::from(columns))
-        }
+        Some(OnboardingStepId::Theme) => render_theme_step(theme_control.clone(), theme_selected),
         Some(OnboardingStepId::ApiKey) => render_api_key_step(
             props
                 .api_key_needing_approval
@@ -404,27 +397,23 @@ pub(crate) fn Onboarding<'a>(
                 .iter()
                 .position(|option| Some(&option.value) == terminal_select.focused_value().as_ref())
                 .unwrap_or(0),
-            props.exit_pending,
-            props.exit_key_name.as_deref(),
+            exit_state.get().pending,
+            exit_state.get().key_name,
         ),
         None => element! { Fragment }.into_any(),
     };
 
-    let exit_notice = if props.exit_pending {
-        Some(format!(
+    // CC :273-277.
+    let exit_notice = exit_state.get().pending.then(|| {
+        format!(
             "Press {} again to exit",
-            props
-                .exit_key_name
-                .as_deref()
-                .filter(|value| !value.is_empty())
-                .unwrap_or("Ctrl-C")
-        ))
-    } else {
-        None
-    };
+            exit_state.get().key_name.unwrap_or("Ctrl-C")
+        )
+    });
 
     element! {
         View(flex_direction: FlexDirection::Column) {
+            OnboardingExitBinding(exit_state: Some(exit_state))
             WelcomeV2(
                 theme_name: Some(theme_name),
                 version: Some(product::VERSION.to_string()),
@@ -434,7 +423,7 @@ pub(crate) fn Onboarding<'a>(
                 #(body)
                 #(exit_notice.map(|notice| element! {
                     View(padding: 1u32) {
-                        Text(content: notice, dim: true)
+                        Text(content: notice, color: theme.inactive)
                     }
                 }))
             }
@@ -442,28 +431,52 @@ pub(crate) fn Onboarding<'a>(
     }
 }
 
+#[derive(Default, Props)]
+struct OnboardingExitBindingProps {
+    exit_state: Option<State<crate::hooks::use_exit::ExitKeyState>>,
+}
+
+/// Native placement carrier for CC `Onboarding.tsx:77`
+/// `useExitOnCtrlCDWithKeybindings()`, like Settings' `SettingsExitBinding`:
+/// a zero-size first child, so the hook sees Ctrl+C/Ctrl+D before a step's
+/// ThemePicker (whose own exit is a no-op), as CC's listener order gives it
+/// whenever Onboarding mounted before the picker (the OAuth preflight step
+/// comes first). Without OAuth CC mounts the picker in the same commit, and
+/// its child-first effects let the picker's no-op take the keys; the port
+/// keeps Onboarding's exit there too. The state goes back to Onboarding for
+/// its "again to exit" lines.
+#[component]
+fn OnboardingExitBinding(
+    props: &OnboardingExitBindingProps,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
+    let state = crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings(&mut hooks, true);
+    if let Some(mut target) = props.exit_state {
+        if target.get() != state {
+            target.set(state);
+        }
+    }
+    element! { View(width: 0u32, height: 0u32) }
+}
+
+/// Maps to: CC `Onboarding.tsx:80-90` `themeStep`.
 fn render_theme_step(
-    theme_name: ThemeName,
-    focused_index: usize,
-    columns: usize,
+    theme_control: crate::components::design_system::theme_provider::ThemeContextValue,
+    mut theme_selected: State<bool>,
 ) -> AnyElement<'static> {
     element! {
         View(margin_left: 1u32, margin_right: 1u32) {
             ThemePicker(
-                focused_index: focused_index,
-                selected_value: Some(theme_name.setting_value().to_string()),
+                // CC :72-75 `handleThemeSelection`: `setTheme`, then the next
+                // step (relayed to the render).
+                on_theme_select: move |setting: crate::utils::theme::ThemeSetting| {
+                    theme_control.set_theme_setting(setting);
+                    theme_selected.set(true);
+                },
                 show_intro_text: true,
-                help_text: Some("To change this later, run /theme".to_string()),
-                show_help_text_below: false,
+                help_text: "To change this later, run /theme".to_string(),
                 hide_esc_to_cancel: true,
                 skip_exit_handling: true,
-                active_theme_name: Some(theme_name),
-                syntax_highlighting_disabled: false,
-                syntax_disabled_env_value: None,
-                columns: columns,
-                exit_pending: false,
-                exit_key_name: None,
-                auto_theme_enabled: false,
             )
         }
     }
@@ -593,18 +606,27 @@ mod tests {
     }
 
     fn render_onboarding_text(props: OnboardingProps<'static>) -> String {
+        let oauth_enabled = props.oauth_enabled;
+        let api_key_needing_approval = props.api_key_needing_approval;
+        let offer_terminal_setup = props.offer_terminal_setup;
+        let initial_step = props.initial_step;
+        let initial_step_index = props.initial_step_index;
+        let terminal_name = props.terminal_name;
+        // Onboarding renders inside its setup dialog's AppStateProvider
+        // (interactiveHelpers.tsx:127, `interactive_helpers::SetupScreensHost`).
         element! {
             ContextProvider(value: Context::owned(*theme::current())) {
-                Onboarding(
-                    oauth_enabled: props.oauth_enabled,
-                    api_key_needing_approval: props.api_key_needing_approval,
-                    offer_terminal_setup: props.offer_terminal_setup,
-                    initial_step: props.initial_step,
-                    initial_step_index: props.initial_step_index,
-                    theme_name: props.theme_name,
-                    terminal_name: props.terminal_name,
-                    exit_pending: props.exit_pending,
-                    exit_key_name: props.exit_key_name,
+                crate::state::app_state::AppStateProvider(
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        Onboarding(
+                            oauth_enabled: oauth_enabled,
+                            api_key_needing_approval: api_key_needing_approval.clone(),
+                            offer_terminal_setup: offer_terminal_setup,
+                            initial_step: initial_step,
+                            initial_step_index: initial_step_index,
+                            terminal_name: terminal_name.clone(),
+                        )
+                    }.into_any()),
                 )
             }
         }
@@ -652,7 +674,6 @@ mod tests {
     fn onboarding_security_step_renders_welcome_security_notes_and_continue() {
         let text = render_onboarding_text(OnboardingProps {
             initial_step: Some(OnboardingStepId::Security),
-            theme_name: Some(ThemeName::Dark),
             terminal_name: Some("xterm".to_string()),
             ..OnboardingProps::default()
         });
@@ -672,10 +693,94 @@ mod tests {
     }
 
     #[test]
+    fn onboarding_theme_step_saves_the_theme_and_moves_to_the_next_step() {
+        // CC Onboarding.tsx:72-75 `handleThemeSelection`: `setTheme`, then
+        // `goToNextStep` (Theme → Security by default). Frame-driven: each key
+        // bumps the echo's count, so each is followed by a frame.
+        use crate::components::design_system::theme_provider::{
+            ThemeProvider, ThemeSaveHandler, use_theme,
+        };
+        use crate::utils::theme::{ThemeName, ThemeSetting};
+
+        #[component]
+        fn ProviderEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let (current, value) = use_theme(&hooks);
+            let mut keys = hooks.use_state(|| 0usize);
+            hooks.use_terminal_events(move |event| {
+                if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                    keys.set(keys.get() + 1);
+                }
+            });
+            element! {
+                Text(content: format!(
+                    "keys={} provider setting={} current={}",
+                    keys.get(),
+                    value.theme_setting().setting_value(),
+                    current.setting_value(),
+                ))
+            }
+        }
+
+        #[component]
+        fn ThemeStepHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
+                &mut hooks,
+                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
+            );
+            element! {
+                ContextProvider(value: Context::owned(runtime)) {
+                    ThemeProvider(
+                        initial_state: Some(ThemeSetting::Named(ThemeName::Dark)),
+                        on_theme_save: Some(Arc::new(|_| {}) as ThemeSaveHandler),
+                    ) {
+                        crate::state::app_state::AppStateProvider(
+                            children: crate::state::app_state::ProviderChildren::new(|| element! {
+                                View(flex_direction: FlexDirection::Column) {
+                                    Onboarding(
+                                        initial_step: Some(OnboardingStepId::Theme),
+                                        terminal_name: Some("xterm".to_string()),
+                                    )
+                                    ProviderEcho
+                                }
+                            }.into_any()),
+                        )
+                    }
+                }
+            }
+        }
+
+        let frames = futures::executor::block_on(async {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(ThemeStepHarness);
+            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(120, 40),
+            ));
+            let batches = [key(KeyCode::Down), key(KeyCode::Enter)];
+            let mut frames = Vec::new();
+            while let Some(canvas) = render_loop.next().await {
+                let text = canvas.to_string();
+                assert!(text.contains("provider setting="), "the echo stopped rendering:\n{text}");
+                if !text.contains(&format!("keys={} ", frames.len())) {
+                    continue;
+                }
+                frames.push(text);
+                let Some(next) = batches.get(frames.len() - 1) else {
+                    break;
+                };
+                keys.send(next.clone()).await.unwrap();
+            }
+            frames
+        });
+        assert_eq!(frames.len(), 3, "frames={frames:#?}");
+        assert!(frames[1].contains("provider setting=dark current=light"), "{}", frames[1]);
+        assert!(frames[2].contains("provider setting=light current=light"), "{}", frames[2]);
+        assert!(frames[2].contains("Security notes:"), "{}", frames[2]);
+    }
+
+    #[test]
     fn onboarding_theme_step_uses_official_theme_picker_intro() {
         let text = render_onboarding_text(OnboardingProps {
             initial_step: Some(OnboardingStepId::Theme),
-            theme_name: Some(ThemeName::Dark),
             terminal_name: Some("xterm".to_string()),
             ..OnboardingProps::default()
         });

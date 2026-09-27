@@ -2133,7 +2133,6 @@ mod tests {
             oauth_enabled: false,
             api_key_needing_approval: None,
             offer_terminal_setup: false,
-            theme_name: Some(utils::theme::ThemeName::Dark),
             terminal_name: Some("kitty".to_string()),
             show_claude_in_chrome_onboarding: false,
             claude_in_chrome_extension_installed: false,
