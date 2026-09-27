@@ -662,7 +662,7 @@ pub fn DiscoverPlugins(
     let visible = pagination.get_visible_items(&filtered_plugins);
     element!{View(flex_direction:FlexDirection::Column){
         View{Text(content:"Discover plugins",weight:Weight::Bold) #(pagination.needs_pagination.then(||element!{Text(content:format!(" ({}/{})",pagination.scroll_position.current,pagination.scroll_position.total),dim:true)}))}
-        View(margin_bottom:1u32,width:terminal_width.saturating_sub(4),flex_direction:FlexDirection::Column){SearchBox(query:query.clone(),is_focused:search_active,is_terminal_focused:is_terminal_focused,cursor_offset:Some(search.offset()))}
+        View(margin_bottom:1u32){SearchBox(query:query.clone(),is_focused:search_active,is_terminal_focused:is_terminal_focused,width:Some(u32::from(terminal_width.saturating_sub(4))),cursor_offset:Some(search.offset()))}
         #(warning.read().as_ref().map(|w|element!{View(margin_bottom:1u32){Text(content:format!("{} {w}",figures.warning),color:theme.warning)}}))
         #((filtered_plugins.is_empty()&&!query.is_empty()).then(||element!{View(margin_bottom:1u32){Text(content:format!("No plugins match \"{query}\""),dim:true)}}))
         #(pagination.scroll_position.can_scroll_up.then(||element!{Text(content:format!(" {} more above",figures.arrow_up),dim:true)}))

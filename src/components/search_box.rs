@@ -12,6 +12,10 @@ pub struct SearchBoxProps {
     pub is_focused: bool,
     pub is_terminal_focused: bool,
     pub prefix: Option<String>,
+    /// CC `width` (SearchBox.tsx:21, :34): the box's own width, which a
+    /// caller sets rather than relying on its parent to stretch it. CC also
+    /// accepts a string; no caller passes one.
+    pub width: Option<u32>,
     pub cursor_offset: Option<usize>,
     pub borderless: bool,
 }
@@ -57,6 +61,7 @@ pub fn SearchBox(props: &SearchBoxProps, hooks: Hooks) -> impl Into<AnyElement<'
             border_color: if props.is_focused { theme.suggestion } else { theme.subtle },
             padding_left: if props.borderless { 0u32 } else { 1u32 },
             padding_right: if props.borderless { 0u32 } else { 1u32 },
+            width: props.width.map(Size::Length).unwrap_or(Size::Auto),
         ) {
             View(flex_direction: FlexDirection::Row) {
                 Text(content: format!("{prefix} "), color: prefix_color, wrap: TextWrap::NoWrap)
@@ -158,5 +163,23 @@ mod tests {
             .expect("prefix cell should have resolved style");
 
         assert_eq!(style.color, None, "canvas=\n{text}");
+    }
+
+    #[test]
+    fn width_sizes_the_box_inside_a_row_parent() {
+        // CC SearchBox.tsx:34 `width={width}`: /plugin's Discover and
+        // Installed views pass `terminalWidth - 4` inside a plain (row)
+        // `<Box marginBottom={1}>`, which would not stretch the box.
+        let canvas = element! {
+            ContextProvider(value: Context::owned(*theme::current())) {
+                View(margin_bottom: 1u32) {
+                    SearchBox(query: String::new(), is_focused: false, is_terminal_focused: true, width: Some(36))
+                }
+            }
+        }
+        .render(Some(60));
+        let text = canvas.to_string();
+        let top = text.lines().find(|line| line.contains('╭')).unwrap();
+        assert_eq!(top.trim_end().chars().count(), 36, "canvas=\n{text}");
     }
 }

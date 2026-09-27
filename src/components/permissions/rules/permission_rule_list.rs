@@ -537,11 +537,16 @@ fn RulesTabContent<'a>(
         (props.on_focus_header)(true);
     }
     let navigation = state.navigation.snapshot();
+    // CC :192, :207 `width={useTabsWidth()}`, always undefined in CC (no
+    // caller sets useFullWidth), so the box follows the tab's content. This
+    // list draws its own header and provides no Tabs context, which gives
+    // the same `None`.
+    let tab_width = crate::components::design_system::tabs::use_tabs_width(&hooks).map(u32::from);
     element! {
         View(flex_direction: FlexDirection::Column) {
             View(margin_bottom: 1u32, flex_direction: FlexDirection::Column) {
                 SearchBox(query: props.search_query.clone(), is_focused: props.is_search_mode && !props.header_focused,
-                    is_terminal_focused: props.is_focused, cursor_offset: Some(props.cursor_offset))
+                    is_terminal_focused: props.is_focused, width: tab_width, cursor_offset: Some(props.cursor_offset))
             }
             Select(options: props.options.clone(), focused_index: navigation.focused_index().unwrap_or(0),
                 visible_option_count: navigation.visible_option_count, visible_from_index: navigation.visible_from_index,
