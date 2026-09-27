@@ -364,14 +364,17 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
         SettingItem {
             id: "outputStyle",
             label: "Output style",
-            value: SettingValue::Display({
-                let style = settings.output_style.as_deref().unwrap_or("default");
-                if style.eq_ignore_ascii_case("default") {
-                    "Default".to_string()
-                } else {
-                    style.to_string()
-                }
-            }),
+            // CC `Config.tsx:186-188` `settingsData?.outputStyle ||
+            // DEFAULT_OUTPUT_STYLE_NAME`, shown as is (:846).
+            value: SettingValue::Display(
+                settings
+                    .output_style
+                    .clone()
+                    .filter(|style| !style.is_empty())
+                    .unwrap_or_else(|| {
+                        crate::constants::output_styles::DEFAULT_OUTPUT_STYLE_NAME.to_string()
+                    }),
+            ),
             search_text: "output style format",
             visible: true,
         },

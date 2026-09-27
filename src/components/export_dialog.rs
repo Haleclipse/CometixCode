@@ -341,9 +341,10 @@ struct ExportDialogSelectProps<'a> {
 }
 
 /// Maps to: CC ExportDialog.tsx:147-152 Select mount boundary.
-/// L1 React/Ink hook carrier: Rust Select exposes canonical hooks separately;
-/// keep them in this conditionally mounted child so returning from TextInput
-/// recreates Select state exactly as the source does. No navigation policy lives here.
+/// L1 (inline Select state carrier, PORTING.md): Rust Select exposes canonical
+/// hooks separately; keep them in this conditionally mounted child so returning
+/// from TextInput recreates Select state exactly as the source does. No
+/// navigation policy lives here.
 #[component]
 fn ExportDialogSelect<'a>(
     props: &mut ExportDialogSelectProps<'a>,

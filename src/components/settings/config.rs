@@ -7,10 +7,12 @@
 //!   - Scroll hints: "↑ N more above" / "↓ N more below"
 
 use super::items::{self, SettingItem, SettingValue};
-use crate::components::channel_downgrade_dialog::{
-    ChannelDowngradeDialog, channel_downgrade_options,
+use crate::components::channel_downgrade_dialog::{ChannelDowngradeChoice, ChannelDowngradeDialog};
+use crate::components::custom_select::{
+    Select, SelectInputOptionMeta, SelectLayout, SelectOptionData, UseSelectInputOptions,
+    UseSelectStateProps, use_select_input, use_select_state,
 };
-use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
+use crate::components::design_system::dialog::Dialog;
 use crate::components::design_system::theme_provider::use_theme;
 use crate::utils::theme::ThemeSetting;
 use crate::components::language_picker::LanguagePicker;
@@ -25,7 +27,7 @@ use crate::context::notifications::{
     Notification, NotificationColor, NotificationPriority, NotificationsWriter,
 };
 use crate::hooks::use_search_input::{SearchInput, use_search_input};
-use crate::utils::theme::{self, ThemeName};
+use crate::utils::theme;
 use iocraft::prelude::*;
 
 const POINTER: &str = "❯";
@@ -41,13 +43,15 @@ fn item_matches_query(item: &SettingItem, query_lower: &str) -> bool {
         || item.search_text.to_lowercase().contains(query_lower)
 }
 
+/// Maps to: CC `Config.tsx` `showSubmenu`'s values (TeammateModel and
+/// ExternalIncludes are not ported).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsSubmenu {
     Theme,
     Model,
     OutputStyle,
     Language,
-    AutoUpdatesDisabled,
+    EnableAutoUpdates,
     ChannelDowngrade,
 }
 
@@ -58,33 +62,7 @@ impl SettingsSubmenu {
             Self::Model => "model",
             Self::OutputStyle => "outputStyle",
             Self::Language => "language",
-            Self::AutoUpdatesDisabled | Self::ChannelDowngrade => "autoUpdatesChannel",
-        }
-    }
-
-    fn title(self) -> &'static str {
-        match self {
-            Self::Theme => "Theme",
-            Self::Model => "Select model",
-            Self::OutputStyle => "Preferred output style",
-            Self::Language => "Response language",
-            Self::AutoUpdatesDisabled => "Enable Auto-Updates",
-            Self::ChannelDowngrade => "Switch to Stable Channel",
-        }
-    }
-
-    fn help_text(self) -> &'static str {
-        match self {
-            Self::Theme => "Choose the text style that looks best with your terminal",
-            Self::Model => model::MODEL_PICKER_HEADER_TEXT,
-            Self::OutputStyle => {
-                "This changes how Cometix Code communicates with you in memory only"
-            }
-            Self::Language => "Leave empty for default (English)",
-            Self::AutoUpdatesDisabled => {
-                "Auto-updates cannot be enabled here without writing configuration"
-            }
-            Self::ChannelDowngrade => "Choose how to handle the stable channel preview",
+            Self::EnableAutoUpdates | Self::ChannelDowngrade => "autoUpdatesChannel",
         }
     }
 }
@@ -117,9 +95,7 @@ fn auto_updates_action_for_item(item: &SettingItem) -> Option<AutoUpdatesAction>
     }
     let value = item.display_value();
     if value.eq_ignore_ascii_case("disabled") {
-        Some(AutoUpdatesAction::Open(
-            SettingsSubmenu::AutoUpdatesDisabled,
-        ))
+        Some(AutoUpdatesAction::Open(SettingsSubmenu::EnableAutoUpdates))
     } else if value.eq_ignore_ascii_case("latest") {
         Some(AutoUpdatesAction::Open(SettingsSubmenu::ChannelDowngrade))
     } else {
@@ -309,47 +285,74 @@ fn preview_notification_setting_selection(mut context: NotificationsWriter, item
     }
 }
 
-fn option(label: &str, value: &str, description: &str) -> SelectOptionData {
-    SelectOptionData {
-        label: label.to_string(),
-        value: value.to_string(),
-        description: (!description.is_empty()).then(|| description.to_string()),
-        dim_description: true,
-        disabled: false,
-        input: None,
-    }
+/// Maps to: CC `Config.tsx:2041-2050`, the EnableAutoUpdates Select.
+fn enable_auto_updates_options() -> Vec<SelectOptionData> {
+    [("Enable with latest channel", "latest"), ("Enable with stable channel", "stable")]
+        .into_iter()
+        .map(|(label, value)| SelectOptionData {
+            label: label.to_string(),
+            value: value.to_string(),
+            ..SelectOptionData::default()
+        })
+        .collect()
 }
 
-fn settings_submenu_options(menu: SettingsSubmenu) -> Vec<SelectOptionData> {
-    match menu {
-        SettingsSubmenu::Theme => theme::THEME_PICKER_ORDER
-            .iter()
-            .map(|theme_name| option(theme_name.display_label(), theme_name.setting_value(), ""))
-            .collect(),
-        SettingsSubmenu::Model => model::model_picker_options(120),
-        SettingsSubmenu::OutputStyle => output_style::output_style_options(),
-        SettingsSubmenu::Language => vec![
-            option(
-                "Default (English)",
-                "Default (English)",
-                "Use the built-in default",
-            ),
-            option("Japanese", "Japanese", "Respond in Japanese"),
-            option("日本語", "日本語", "Respond in Japanese using native label"),
-            option("Español", "Español", "Respond in Spanish"),
-            option("Chinese", "Chinese", "Respond in Chinese"),
-        ],
-        SettingsSubmenu::AutoUpdatesDisabled => {
-            if auto_updates_disabled_by_env() {
-                Vec::new()
-            } else {
-                vec![
-                    option("Enable with latest channel", "latest", ""),
-                    option("Enable with stable channel", "stable", ""),
-                ]
-            }
-        }
-        SettingsSubmenu::ChannelDowngrade => channel_downgrade_options(product::VERSION),
+#[derive(Default, Props)]
+struct EnableAutoUpdatesSelectProps<'a> {
+    /// CC `onChange(channel)` (:2051).
+    on_change: HandlerMut<'a, String>,
+}
+
+/// L1 (inline Select state carrier): CC writes this `<Select>` inline in
+/// Config (`Config.tsx:2040-2076`), and CC's Select is a stateful component
+/// that mounts and unmounts with the EnableAutoUpdates submenu. The port's
+/// Select only renders, so the state it would own lives here, mounted in its
+/// place; this component adds nothing else.
+#[component]
+fn EnableAutoUpdatesSelect<'a>(
+    props: &mut EnableAutoUpdatesSelectProps<'a>,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
+    let options = enable_auto_updates_options();
+    // No default value, no focus value and no cancel: the default five-row
+    // viewport, focus on the first option, Esc left to the Dialog.
+    let state = use_select_state(
+        &mut hooks,
+        UseSelectStateProps {
+            visible_option_count: Some(5),
+            values: options.iter().map(|option| option.value.clone()).collect(),
+            default_value: None,
+            focus_value: None,
+        },
+    );
+    let events = use_select_input(
+        &mut hooks,
+        state,
+        UseSelectInputOptions {
+            option_metas: options
+                .iter()
+                .map(|option| SelectInputOptionMeta {
+                    value: option.value.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        },
+    );
+    if let Some(channel) = events.take_accepted() {
+        (props.on_change)(channel);
+    }
+    let navigation = state.navigation.snapshot();
+    element! {
+        Select(
+            is_disabled: false,
+            hide_indexes: false,
+            visible_option_count: navigation.visible_option_count,
+            options: options,
+            focused_index: navigation.focused_index().unwrap_or(0),
+            visible_from_index: navigation.visible_from_index,
+            layout: SelectLayout::Compact,
+        )
     }
 }
 
@@ -374,10 +377,6 @@ fn auto_updates_disabled_env_var() -> Option<&'static str> {
     }
 }
 
-fn auto_updates_disabled_by_env() -> bool {
-    auto_updates_disabled_env_var().is_some()
-}
-
 fn auto_updates_disabled_reason_label() -> &'static str {
     match auto_updates_disabled_env_var() {
         Some(env_var) => match env_var {
@@ -392,17 +391,6 @@ fn auto_updates_disabled_reason_label() -> &'static str {
     }
 }
 
-fn auto_updates_disabled_message() -> (&'static str, Option<String>) {
-    if let Some(env_var) = auto_updates_disabled_env_var() {
-        (
-            "Auto-updates are controlled by an environment variable and cannot be changed here.",
-            Some(format!("Unset {env_var} to re-enable auto-updates.")),
-        )
-    } else {
-        ("Auto-updates are disabled in development builds.", None)
-    }
-}
-
 fn model_value_for_display(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.eq_ignore_ascii_case("Default (recommended)")
@@ -414,52 +402,6 @@ fn model_value_for_display(value: &str) -> String {
     }
 }
 
-fn focused_index_for_value(options: &[SelectOptionData], value: &str) -> usize {
-    options
-        .iter()
-        .position(|option| option.value.eq_ignore_ascii_case(value))
-        .unwrap_or(0)
-}
-
-fn focused_index_for_menu_value(
-    menu: SettingsSubmenu,
-    options: &[SelectOptionData],
-    value: &str,
-) -> usize {
-    match menu {
-        SettingsSubmenu::Theme => {
-            let canonical = ThemeName::from_config_or_display(value)
-                .map(|theme_name| theme_name.setting_value())
-                .unwrap_or(ThemeName::Dark.setting_value());
-            focused_index_for_value(options, canonical)
-        }
-        SettingsSubmenu::Model => {
-            let canonical = model_value_for_display(value);
-            options
-                .iter()
-                .position(|option| {
-                    option.value.eq_ignore_ascii_case(&canonical)
-                        || option.label.eq_ignore_ascii_case(value)
-                })
-                .unwrap_or(0)
-        }
-        SettingsSubmenu::OutputStyle => focused_index_for_value(
-            options,
-            &output_style::output_style_value_for_display(value),
-        ),
-        _ => focused_index_for_value(options, value),
-    }
-}
-
-fn visible_from_index(focused_index: usize, count: usize, visible_count: usize) -> usize {
-    if count <= visible_count {
-        return 0;
-    }
-    let half_window = visible_count / 2;
-    focused_index
-        .saturating_sub(half_window)
-        .min(count.saturating_sub(visible_count))
-}
 
 fn apply_settings_submenu_selection(
     items: &mut [SettingItem],
@@ -595,7 +537,6 @@ fn activate_focused_config_item(
     selected: State<usize>,
     search: SearchInput,
     mut submenu: State<Option<SettingsSubmenu>>,
-    mut submenu_focused: State<usize>,
     mut tabs_hidden_request: State<Option<bool>>,
     runtime_display_context: Option<crate::state::store::AppStore>,
     runtime_notifications_context: NotificationsWriter,
@@ -621,13 +562,9 @@ fn activate_focused_config_item(
         items.set(all);
         return;
     }
+    // CC :1604-1653: a submenu row opens its submenu and hides the tabs; the
+    // submenu seeds its own state from the current value.
     if let Some(menu) = submenu_for_item(&current_item) {
-        // LanguagePicker seeds its own field from `initialLanguage`.
-        if menu != SettingsSubmenu::Language {
-            let options = settings_submenu_options(menu);
-            let focus = focused_index_for_menu_value(menu, &options, &current_item.display_value());
-            submenu_focused.set(focus);
-        }
         tabs_hidden_request.set(Some(true));
         submenu.set(Some(menu));
         return;
@@ -705,7 +642,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     // Maps to: CC Config.tsx `showSubmenu`. Submenus are UI-only previews:
     // selecting an option updates this in-memory Config item list only.
     let mut submenu = hooks.use_state(|| None::<SettingsSubmenu>);
-    let mut submenu_focused = hooks.use_state(|| 0usize);
     // Maps to: CC `Config.tsx:190-193` `currentLanguage` and its
     // `initialLanguage` ref. The language row shows `currentLanguage ??
     // 'Default (English)'`; LanguagePicker starts from `currentLanguage`
@@ -1025,7 +961,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     selected,
                     search,
                     submenu,
-                    submenu_focused,
                     tabs_hidden_request,
                     runtime_display_context.clone(),
                     runtime_notifications_context.clone(),
@@ -1036,74 +971,15 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     );
     hooks.use_propagated_terminal_events({
         move |event| match event.event() {
-            TerminalEvent::Key(KeyEvent { code, kind, .. }) if *kind != KeyEventKind::Release => {
-                if let Some(active_submenu) = submenu.get() {
-                    // Official Config `handleKeyDown`: `if (showSubmenu !== null) return`.
-                    // ModelPicker, LanguagePicker and ThemePicker own their
-                    // own keys; Config only yields.
-                    if matches!(
-                        active_submenu,
-                        SettingsSubmenu::Model | SettingsSubmenu::Language | SettingsSubmenu::Theme
-                    ) {
-                        return;
-                    }
-                    // OutputStyle and the auto-update submenus still use the
-                    // Config-owned list adapter until those pickers reclaim keys.
-
-                    let options = settings_submenu_options(active_submenu);
-                    let count = options.len();
-                    let modifiers =
-                        if let TerminalEvent::Key(KeyEvent { modifiers, .. }) = event.event() {
-                            *modifiers
-                        } else {
-                            KeyModifiers::empty()
-                        };
-                    match code {
-                        KeyCode::Esc => {
-                            submenu.set(None);
-                            submenu_focused.set(0);
-                            tabs_hidden_request.set(Some(false));
-                            event.stop_propagation();
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let focus = submenu_focused.get();
-                            let new_focus = focus.saturating_sub(1);
-                            submenu_focused.set(new_focus);
-                            event.stop_propagation();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            let focus = submenu_focused.get();
-                            let new_focus = if focus + 1 < count { focus + 1 } else { focus };
-                            submenu_focused.set(new_focus);
-                            event.stop_propagation();
-                        }
-                        KeyCode::Enter | KeyCode::Tab | KeyCode::Right => {
-                            let focused = submenu_focused.get().min(count.saturating_sub(1));
-                            if let Some(option) = options.get(focused) {
-                                let mut all = items.read().clone();
-                                let display_value = if active_submenu == SettingsSubmenu::OutputStyle {
-                                    output_style::output_style_display_for_option(option)
-                                } else if active_submenu == SettingsSubmenu::ChannelDowngrade {
-                                    "stable".to_string()
-                                } else {
-                                    option.value.clone()
-                                };
-                                apply_settings_submenu_selection(
-                                    &mut all,
-                                    active_submenu,
-                                    &display_value,
-                                );
-                                items.set(all);
-                            }
-                            submenu.set(None);
-                            submenu_focused.set(0);
-                            tabs_hidden_request.set(Some(false));
-                            event.stop_propagation();
-                        }
-                        _ => {
-                            event.stop_propagation();
-                        }
-                    }
+            TerminalEvent::Key(KeyEvent {
+                code,
+                kind,
+                modifiers,
+                ..
+            }) if *kind != KeyEventKind::Release => {
+                // CC :1737 `if (showSubmenu !== null) return`: every submenu
+                // owns its keys.
+                if submenu.get().is_some() {
                     return;
                 }
 
@@ -1119,174 +995,27 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                 }
 
                 // List mode
-                let query_lower = search.text().to_lowercase();
-                let visible_indices: Vec<usize> = items
-                    .read()
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, it)| item_matches_query(it, &query_lower))
-                    .map(|(i, _)| i)
-                    .collect();
-                let sel = selected.get();
                 match code {
-                    // Tabs.tsx/Config.tsx keeps Tab/Left/Right as raw content
-                    // cycling; configurable Space is owned by select:accept.
-                    KeyCode::Tab => {
-                        if let Some(&real_idx) = visible_indices.get(sel) {
-                            let current_item = items.read()[real_idx].clone();
-                            if matches!(
-                                auto_updates_action_for_item(&current_item),
-                                Some(AutoUpdatesAction::SetLatest)
-                            ) {
-                                let mut all = items.read().clone();
-                                set_auto_updates_channel_latest(&mut all, real_idx);
-                                items.set(all);
-                            } else if let Some(menu) = submenu_for_item(&current_item) {
-                                // LanguagePicker seeds its own field from
-                                // `initialLanguage`.
-                                if menu != SettingsSubmenu::Language {
-                                    let options = settings_submenu_options(menu);
-                                    let focus = focused_index_for_menu_value(
-                                        menu,
-                                        &options,
-                                        &current_item.display_value(),
-                                    );
-                                    submenu_focused.set(focus);
-                                }
-                                tabs_hidden_request.set(Some(true));
-                                submenu.set(Some(menu));
-                            } else {
-                                let mut all = items.read().clone();
-                                all[real_idx].toggle();
-                                preview_runtime_display_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_verbose_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_expand_display_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_prompt_suggestion_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_notification_setting_selection(
-                                    runtime_notifications_context.clone(),
-                                    &all[real_idx],
-                                );
-                                items.set(all);
-                            }
-                        }
+                    // CC :1761-1765: Left/Right/Tab run `toggleSetting()`,
+                    // the same function as select:accept (Space). Shift+Tab
+                    // is `tab` to Ink (parse-keypress.ts:405 `[Z`), BackTab
+                    // to crossterm.
+                    KeyCode::Tab | KeyCode::BackTab | KeyCode::Right | KeyCode::Left => {
+                        activate_focused_config_item(
+                            items,
+                            selected,
+                            search,
+                            submenu,
+                            tabs_hidden_request,
+                            runtime_display_context.clone(),
+                            runtime_notifications_context.clone(),
+                        );
                         event.stop_propagation();
                     }
-                    KeyCode::Right => {
-                        if let Some(&real_idx) = visible_indices.get(sel) {
-                            let current_item = items.read()[real_idx].clone();
-                            if matches!(
-                                auto_updates_action_for_item(&current_item),
-                                Some(AutoUpdatesAction::SetLatest)
-                            ) {
-                                let mut all = items.read().clone();
-                                set_auto_updates_channel_latest(&mut all, real_idx);
-                                items.set(all);
-                            } else if let Some(menu) = submenu_for_item(&current_item) {
-                                // LanguagePicker seeds its own field from
-                                // `initialLanguage`.
-                                if menu != SettingsSubmenu::Language {
-                                    let options = settings_submenu_options(menu);
-                                    let focus = focused_index_for_menu_value(
-                                        menu,
-                                        &options,
-                                        &current_item.display_value(),
-                                    );
-                                    submenu_focused.set(focus);
-                                }
-                                tabs_hidden_request.set(Some(true));
-                                submenu.set(Some(menu));
-                            } else {
-                                let mut all = items.read().clone();
-                                all[real_idx].toggle();
-                                preview_runtime_display_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_verbose_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_expand_display_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_prompt_suggestion_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_notification_setting_selection(
-                                    runtime_notifications_context.clone(),
-                                    &all[real_idx],
-                                );
-                                items.set(all);
-                            }
-                        }
-                        event.stop_propagation();
-                    }
-                    KeyCode::Left => {
-                        if let Some(&real_idx) = visible_indices.get(sel) {
-                            let current_item = items.read()[real_idx].clone();
-                            if matches!(
-                                auto_updates_action_for_item(&current_item),
-                                Some(AutoUpdatesAction::SetLatest)
-                            ) {
-                                let mut all = items.read().clone();
-                                set_auto_updates_channel_latest(&mut all, real_idx);
-                                items.set(all);
-                            } else if let Some(menu) = submenu_for_item(&current_item) {
-                                // LanguagePicker seeds its own field from
-                                // `initialLanguage`.
-                                if menu != SettingsSubmenu::Language {
-                                    let options = settings_submenu_options(menu);
-                                    let focus = focused_index_for_menu_value(
-                                        menu,
-                                        &options,
-                                        &current_item.display_value(),
-                                    );
-                                    submenu_focused.set(focus);
-                                }
-                                tabs_hidden_request.set(Some(true));
-                                submenu.set(Some(menu));
-                            } else {
-                                let mut all = items.read().clone();
-                                all[real_idx].toggle();
-                                preview_runtime_display_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_verbose_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_expand_display_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_prompt_suggestion_setting(
-                                    runtime_display_context.clone(),
-                                    &all[real_idx],
-                                );
-                                preview_notification_setting_selection(
-                                    runtime_notifications_context.clone(),
-                                    &all[real_idx],
-                                );
-                                items.set(all);
-                            }
-                        }
-                        event.stop_propagation();
-                    }
+                    // CC :1770 `if (e.ctrl || e.meta) return`, leaving the
+                    // key to other handlers; Ink's meta is Alt, as in
+                    // iocraft's use_input.
+                    _ if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {}
                     // Maps to: CC line 1772-1775 — printable char enters search
                     KeyCode::Char(c) if *c != ' ' && *c != 'j' && *c != 'k' && *c != '/' => {
                         let mut search = search;
@@ -1325,6 +1054,10 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     let is_search_focused = is_search_mode.get() && !header_focused;
 
     if let Some(active_submenu) = submenu.get() {
+        // The Model and OutputStyle footers (CC :1848-1858, :1964-1974):
+        // `<KeyboardShortcutHint shortcut="Enter" action="confirm" />` and
+        // confirm:no in the Confirmation context.
+        let confirm_footer = format!("Enter to confirm · {confirmation_cancel_shortcut} to cancel");
         if active_submenu == SettingsSubmenu::Theme {
             // Maps to: CC `Config.tsx:1796-1825`. The picker owns its keys and
             // the preview; selecting saves through the provider (`setTheme`).
@@ -1389,49 +1122,53 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 );
                                 items.set(all);
                                 submenu.set(None);
-                                submenu_focused.set(0);
                                 tabs_hidden_request.set(Some(false));
                             },
                             on_cancel: move |_| {
                                 submenu.set(None);
-                                submenu_focused.set(0);
                                 tabs_hidden_request.set(Some(false));
                             },
                         )
-                        Text(content: "Enter to confirm · Esc to cancel".to_string(), dim: true)
+                        // CC :1848-1858, one inactive line like the Language
+                        // footer.
+                        Text(content: confirm_footer, color: theme.inactive)
                     }
                 }
             }
             .into_any()
         } else if active_submenu == SettingsSubmenu::OutputStyle {
-            let options = settings_submenu_options(active_submenu);
-            let count = options.len();
-            let focused_index = submenu_focused.get().min(count.saturating_sub(1));
-            let selected_value = items
+            // Maps to: CC `Config.tsx:1935-1975`. The picker owns its keys;
+            // completing updates the row (the in-memory preview above). The
+            // row holds `currentOutputStyle` itself, the style value.
+            let initial_style = items
                 .read()
                 .iter()
                 .find(|item| item.id == active_submenu.setting_id())
-                .map(|item| output_style::output_style_value_for_display(&item.display_value()));
-
+                .map(SettingItem::display_value)
+                .unwrap_or_else(|| {
+                    crate::constants::output_styles::DEFAULT_OUTPUT_STYLE_NAME.to_string()
+                });
             element! {
-                ContextProvider(value: Context::owned(theme)) {
-                    View(flex_direction: FlexDirection::Column) {
-                        OutputStylePicker(
-                            options: options,
-                            focused_index: focused_index,
-                            selected_value: selected_value,
-                            visible_from_index: visible_from_index(focused_index, count, count.min(10).max(1)),
-                            is_loading: false,
-                            is_standalone_command: false,
-                        )
-                        View(margin_top: 1u32) {
-                            Text(
-                                content: "Enter to confirm · Esc to cancel".to_string(),
-                                color: theme.inactive,
-                                italic: true,
-                            )
-                        }
-                    }
+                View(flex_direction: FlexDirection::Column) {
+                    OutputStylePicker(
+                        initial_style: initial_style,
+                        on_complete: move |style: String| {
+                            let mut all = items.read().clone();
+                            apply_settings_submenu_selection(
+                                &mut all,
+                                SettingsSubmenu::OutputStyle,
+                                &style,
+                            );
+                            items.set(all);
+                            submenu.set(None);
+                            tabs_hidden_request.set(Some(false));
+                        },
+                        on_cancel: move |_| {
+                            submenu.set(None);
+                            tabs_hidden_request.set(Some(false));
+                        },
+                    )
+                    Text(content: confirm_footer, color: theme.inactive)
                 }
             }
             .into_any()
@@ -1473,91 +1210,83 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             }
             .into_any()
         } else if active_submenu == SettingsSubmenu::ChannelDowngrade {
-            let count = settings_submenu_options(active_submenu).len();
-            let focused_index = submenu_focused.get().min(count.saturating_sub(1));
+            // Maps to: CC `Config.tsx:2079-2116`. Either choice moves the row
+            // to stable. CC's `stay` also pins `minimumVersion` to the
+            // current version (:2100-2103) in the settings write; the port
+            // drops it with that write (the in-memory preview above), so the
+            // write, when ported, must carry it.
             element! {
-                ContextProvider(value: Context::owned(theme)) {
-                    ChannelDowngradeDialog(
-                        current_version: product::VERSION.to_string(),
-                        focused_index: focused_index,
-                    )
-                }
+                ChannelDowngradeDialog(
+                    current_version: product::VERSION.to_string(),
+                    on_choice: move |choice: ChannelDowngradeChoice| {
+                        submenu.set(None);
+                        tabs_hidden_request.set(Some(false));
+                        if choice == ChannelDowngradeChoice::Cancel {
+                            return;
+                        }
+                        let mut all = items.read().clone();
+                        apply_settings_submenu_selection(
+                            &mut all,
+                            SettingsSubmenu::ChannelDowngrade,
+                            "stable",
+                        );
+                        items.set(all);
+                    },
+                )
             }
             .into_any()
-        } else if active_submenu == SettingsSubmenu::AutoUpdatesDisabled {
-            let options = settings_submenu_options(active_submenu);
-            if options.is_empty() {
-                let (message, detail) = auto_updates_disabled_message();
-                element! {
-                    ContextProvider(value: Context::owned(theme)) {
-                        View(flex_direction: FlexDirection::Column) {
-                            Text(content: active_submenu.title(), color: theme.permission, weight: Weight::Bold)
-                            View(margin_top: 1u32) {
-                                Text(content: message, wrap: TextWrap::Wrap)
-                            }
-                            #(detail.map(|detail| element! {
-                                View(margin_top: 1u32) {
-                                    Text(content: detail.to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
-                                }
-                            }))
-                        }
-                    }
-                }
-                .into_any()
-            } else {
-                let count = options.len();
-                let focused_index = submenu_focused.get().min(count.saturating_sub(1));
-                element! {
-                    ContextProvider(value: Context::owned(theme)) {
-                        View(flex_direction: FlexDirection::Column) {
-                            Text(content: active_submenu.title(), color: theme.permission, weight: Weight::Bold)
-                            Select(
-                                is_disabled: false,
-                                hide_indexes: false,
-                                visible_option_count: count,
-                                options: options.clone(),
-                                focused_index: focused_index,
-                                visible_from_index: 0usize,
-                                layout: SelectLayout::Expanded,
-                            )
-                        }
-                    }
-                }
-                .into_any()
-            }
         } else {
-            let options = settings_submenu_options(active_submenu);
-            let count = options.len();
-            let focused_index = submenu_focused.get().min(count.saturating_sub(1));
-            let visible_option_count = count.min(10).max(1);
-            let visible_from = visible_from_index(focused_index, count, visible_option_count);
-            let selected_value = items
-                .read()
-                .iter()
-                .find(|item| item.id == active_submenu.setting_id())
-                .map(SettingItem::display_value);
-
-            element! {
-                ContextProvider(value: Context::owned(theme)) {
-                    View(flex_direction: FlexDirection::Column) {
-                        Text(content: active_submenu.title(), color: theme.permission, weight: Weight::Bold)
-                        View(margin_bottom: 1u32) {
-                            Text(content: active_submenu.help_text(), color: theme.subtle)
-                        }
-                        Select(
-                            is_disabled: false,
-                            hide_indexes: false,
-                            visible_option_count: visible_option_count,
-                            options: options.clone(),
-                            focused_index: focused_index,
-                            selected_value: selected_value,
-                            visible_from_index: visible_from,
-                            layout: SelectLayout::Expanded,
+            // Maps to: CC `Config.tsx:2015-2078` (EnableAutoUpdates). An
+            // environment variable leaves only its message (:2025-2038);
+            // otherwise the Select re-enables updates on the chosen channel.
+            // The port has no `development` reason here (see
+            // `auto_updates_disabled_env_var`).
+            let body = match auto_updates_disabled_env_var() {
+                Some(env_var) => vec![
+                    element! {
+                        Text(
+                            content: "Auto-updates are controlled by an environment variable and cannot be changed here.".to_string(),
+                            wrap: TextWrap::Wrap,
                         )
-                        View(margin_top: 1u32) {
-                            Text(content: "Enter select · Esc cancel", color: theme.subtle)
-                        }
                     }
+                    .into_any(),
+                    element! {
+                        Text(
+                            content: format!("Unset {env_var} to re-enable auto-updates."),
+                            color: theme.inactive,
+                            wrap: TextWrap::Wrap,
+                        )
+                    }
+                    .into_any(),
+                ],
+                None => vec![
+                    element! {
+                        EnableAutoUpdatesSelect(on_change: move |channel: String| {
+                            submenu.set(None);
+                            tabs_hidden_request.set(Some(false));
+                            let mut all = items.read().clone();
+                            apply_settings_submenu_selection(
+                                &mut all,
+                                SettingsSubmenu::EnableAutoUpdates,
+                                &channel,
+                            );
+                            items.set(all);
+                        })
+                    }
+                    .into_any(),
+                ],
+            };
+            element! {
+                Dialog(
+                    title: "Enable Auto-Updates".to_string(),
+                    on_cancel: move |_| {
+                        submenu.set(None);
+                        tabs_hidden_request.set(Some(false));
+                    },
+                    hide_border: true,
+                    hide_input_guide: true,
+                ) {
+                    #(body)
                 }
             }
             .into_any()
@@ -1677,11 +1406,11 @@ mod tests {
     use crate::utils::config::GlobalConfig;
     use crate::utils::env_utils::EnvVarGuard;
     use crate::utils::settings::types::SettingsJson;
-    use crate::utils::theme;
+    use crate::utils::theme::{self, ThemeName};
     use futures::{StreamExt, stream};
     use std::fs;
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
     use std::time::{Duration, SystemTime};
 
     #[test]
@@ -1955,8 +1684,32 @@ mod tests {
         }
     }
 
+    /// Counts key presses (a bypass listener, so consumption does not hide
+    /// one) so each key produces a frame for `drive_harness`.
     #[component]
-    fn ConfigAutoUpdatesDisabledHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn KeyCountEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut keys = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                keys.set(keys.get() + 1);
+            }
+        });
+        // Text after the count: `canvas_lines` trims trailing spaces, and
+        // `drive_harness` matches `keys=<count> `.
+        element! { Text(content: format!("keys={} pressed", keys.get())) }
+    }
+
+    #[derive(Default, Props)]
+    struct ConfigAutoUpdatesDisabledHarnessProps {
+        /// Adds a `KeyCountEcho` below Config.
+        echo: bool,
+    }
+
+    #[component]
+    fn ConfigAutoUpdatesDisabledHarness(
+        props: &ConfigAutoUpdatesDisabledHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let current_theme = *theme::current();
         let keybinding_runtime =
             crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
@@ -1972,6 +1725,7 @@ mod tests {
             initial.settings = Arc::new(settings);
             crate::state::store::AppStore::new(initial, None)
         });
+        let echo = props.echo;
 
         element! {
             ContextProvider(value: Context::owned(keybinding_runtime)) {
@@ -1979,8 +1733,11 @@ mod tests {
                 ContextProvider(value: Context::owned(current_theme)) {
                     crate::state::app_state::AppStateProvider(
                         prebuilt_store: Some(test_store.clone()),
-                        children: crate::state::app_state::ProviderChildren::new(|| element! {
-                            Config(max_visible: Some(12u32), header_focused: false)
+                        children: crate::state::app_state::ProviderChildren::new(move || element! {
+                            View(flex_direction: FlexDirection::Column) {
+                                Config(max_visible: Some(12u32), header_focused: false)
+                                #(echo.then(|| element! { KeyCountEcho }))
+                            }
                         }.into_any()),
                     )
                 }
@@ -2342,9 +2099,9 @@ mod tests {
 
         assert_eq!(
             submenu_for_item(&item),
-            Some(SettingsSubmenu::AutoUpdatesDisabled)
+            Some(SettingsSubmenu::EnableAutoUpdates)
         );
-        let options = settings_submenu_options(SettingsSubmenu::AutoUpdatesDisabled);
+        let options = enable_auto_updates_options();
         assert_eq!(
             options
                 .iter()
@@ -2399,20 +2156,91 @@ mod tests {
         );
     }
 
+    /// Search "version", leave the search box and open the auto-update
+    /// channel row's submenu.
+    fn open_auto_updates_submenu() -> Vec<TerminalEvent> {
+        let mut open = text_events("version");
+        open.push(press(KeyCode::Enter));
+        open.push(press(KeyCode::Char(' ')));
+        open
+    }
+
+    /// `ConfigAutoUpdatesDisabledHarness` driven one key per frame; returns
+    /// the text of the frame the last key produced.
+    fn drive_auto_updates_disabled_keys_text(events: Vec<TerminalEvent>) -> String {
+        let canvases = drive_harness(
+            element!(ConfigAutoUpdatesDisabledHarness(echo: true)).into_any(),
+            events.into_iter().map(|event| vec![event]).collect(),
+        );
+        canvas_lines(canvases.last().unwrap()).join("\n")
+    }
+
     #[test]
     fn config_auto_updates_disabled_by_env_stays_message_only() {
+        // CC Config.tsx:2025-2038: an env reason shows its message, no Select.
         let _lock = env_lock().lock().expect("env tests should serialize");
         let _disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
         let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
         let _env_guard = EnvVarGuard::set("DISABLE_AUTOUPDATER", "1");
 
-        assert!(settings_submenu_options(SettingsSubmenu::AutoUpdatesDisabled).is_empty());
-        let (message, detail) = auto_updates_disabled_message();
-        assert!(message.contains("environment variable"));
-        assert_eq!(
-            detail.as_deref(),
-            Some("Unset DISABLE_AUTOUPDATER to re-enable auto-updates.")
+        let text = drive_auto_updates_disabled_keys_text(open_auto_updates_submenu());
+        assert!(text.contains("Enable Auto-Updates"), "canvas=\n{text}");
+        assert!(
+            text.contains(
+                "Auto-updates are controlled by an environment variable and cannot be changed here."
+            ),
+            "canvas=\n{text}"
         );
+        assert!(
+            text.contains("Unset DISABLE_AUTOUPDATER to re-enable auto-updates."),
+            "canvas=\n{text}"
+        );
+        assert!(!text.contains("Enable with latest channel"), "canvas=\n{text}");
+    }
+
+    #[test]
+    fn config_enable_auto_updates_select_sets_the_channel_and_closes() {
+        // CC Config.tsx:2051-2075: the chosen channel becomes the row value.
+        let _lock = env_lock().lock().expect("env tests should serialize");
+        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
+        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        // F12 is a key nothing binds: its frame shows the settled choice.
+        let mut keys = open_auto_updates_submenu();
+        keys.push(press(KeyCode::Down));
+        keys.push(press(KeyCode::Enter));
+        keys.push(press(KeyCode::F(12)));
+
+        let text = drive_auto_updates_disabled_keys_text(keys);
+        let row = text
+            .lines()
+            .find(|line| line.contains("Auto-update channel"))
+            .unwrap_or_else(|| panic!("the list should be back; canvas=\n{text}"));
+        assert!(row.contains("stable"), "canvas=\n{text}");
+        assert!(!text.contains("Enable Auto-Updates"), "canvas=\n{text}");
+    }
+
+    #[test]
+    fn config_enable_auto_updates_escape_and_n_close_the_dialog() {
+        // CC Config.tsx:2016-2021 `<Dialog onCancel>`: confirm:no is Esc and
+        // n; the row keeps its value.
+        let _lock = env_lock().lock().expect("env tests should serialize");
+        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
+        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        // F12 is a key nothing binds: its frame shows the settled cancel.
+        for key in [KeyCode::Esc, KeyCode::Char('n')] {
+            let mut keys = open_auto_updates_submenu();
+            keys.push(press(key));
+            keys.push(press(KeyCode::F(12)));
+            let text = drive_auto_updates_disabled_keys_text(keys);
+            let row = text
+                .lines()
+                .find(|line| line.contains("Auto-update channel"))
+                .unwrap_or_else(|| panic!("{key:?}: the list should be back; canvas=\n{text}"));
+            assert!(row.contains("disabled"), "{key:?}: canvas=\n{text}");
+            assert!(!text.contains("Enable Auto-Updates"), "{key:?}: canvas=\n{text}");
+        }
     }
 
     #[test]
@@ -2438,7 +2266,7 @@ mod tests {
     #[test]
     fn config_auto_updates_latest_opens_official_channel_downgrade_dialog() {
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _guards = latest_channel_env_guards();
         let mut events = text_events("version");
         events.push(press(KeyCode::Enter));
         events.push(press(KeyCode::Char(' ')));
@@ -2467,6 +2295,61 @@ mod tests {
             !text.contains("Enter select · Esc cancel"),
             "official ChannelDowngradeDialog hideInputGuide omits a separate footer; canvas=\n{text}"
         );
+    }
+
+    /// Clears every variable that disables auto-updates
+    /// (`items::auto_updates_are_disabled`), so the row reads the default
+    /// `latest` channel whatever the host exports.
+    fn latest_channel_env_guards() -> [EnvVarGuard; 3] {
+        [
+            EnvVarGuard::unset("DISABLE_AUTOUPDATER"),
+            EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER"),
+            EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"),
+        ]
+    }
+
+    /// Opens the latest channel's ChannelDowngrade dialog and sends `keys`,
+    /// one key per frame; returns the Auto-update channel row, or panics when
+    /// the list is not back.
+    fn channel_downgrade_row_after(keys: Vec<TerminalEvent>) -> String {
+        let mut events = text_events("version");
+        events.push(press(KeyCode::Enter));
+        events.push(press(KeyCode::Char(' ')));
+        events.extend(keys);
+        let text = drive_config_keys_text(events);
+        assert!(!text.contains("Switch to Stable Channel"), "canvas=\n{text}");
+        text.lines()
+            .find(|line| line.contains("Auto-update channel"))
+            .unwrap_or_else(|| panic!("the list should be back; canvas=\n{text}"))
+            .to_string()
+    }
+
+    #[test]
+    fn config_channel_downgrade_choice_moves_the_row_to_stable() {
+        // CC Config.tsx:2082-2109: `downgrade` or `stay` switch to stable.
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        let _guards = latest_channel_env_guards();
+        // F12 is a key nothing binds: its frame shows the settled choice.
+        for choice in [Vec::new(), vec![press(KeyCode::Down)]] {
+            let mut keys = choice;
+            keys.push(press(KeyCode::Enter));
+            keys.push(press(KeyCode::F(12)));
+            let row = channel_downgrade_row_after(keys);
+            assert!(row.contains("stable"), "{row}");
+        }
+    }
+
+    #[test]
+    fn config_channel_downgrade_escape_and_n_keep_the_channel() {
+        // CC ChannelDowngradeDialog.tsx:25-27 cancels through the Dialog's
+        // confirm:no (Esc and n); Config.tsx:2086-2089 then changes nothing.
+        // F12 is a key nothing binds: its frame shows the settled cancel.
+        let _guard = env_lock().lock().expect("env lock should not be poisoned");
+        let _guards = latest_channel_env_guards();
+        for key in [KeyCode::Esc, KeyCode::Char('n')] {
+            let row = channel_downgrade_row_after(vec![press(key), press(KeyCode::F(12))]);
+            assert!(row.contains("latest"), "{key:?}: {row}");
+        }
     }
 
     #[test]
@@ -2825,7 +2708,7 @@ mod tests {
         auto_update_item.value = SettingValue::Display("disabled".to_string());
         assert!(apply_settings_submenu_selection(
             &mut items,
-            SettingsSubmenu::AutoUpdatesDisabled,
+            SettingsSubmenu::EnableAutoUpdates,
             "stable"
         ));
         let auto_update_item = items
@@ -2887,14 +2770,17 @@ mod tests {
             "Theme selection should close the picker onto the new row value; canvas=\n{theme_text}"
         );
 
-        let mut output_style_events = text_events("style");
-        output_style_events.push(press(KeyCode::Enter));
-        output_style_events.push(press(KeyCode::Char(' ')));
-        output_style_events.push(press(KeyCode::Down));
-        output_style_events.push(press(KeyCode::Enter));
-        let output_style_text = drive_config_keys_text(output_style_events);
+        let output_style_text =
+            drive_output_style_submenu_text(vec![
+                press(KeyCode::Down),
+                press(KeyCode::Enter),
+                press(KeyCode::F(12)),
+            ]);
         assert!(
-            output_style_text.contains("Explanatory"),
+            !output_style_text.contains("Preferred output style")
+                && output_style_text
+                    .lines()
+                    .any(|line| line.contains("Output style") && line.contains("Explanatory")),
             "Output style selection should update only the in-memory preview; canvas=\n{output_style_text}"
         );
 
@@ -2983,6 +2869,9 @@ mod tests {
     #[component]
     fn ProviderThemeEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let (current, value) = use_theme(&hooks);
+        let streaming = crate::state::app_state::use_app_state(&mut hooks, |state| {
+            state.settings.streaming_text_display.clone()
+        });
         let mut keys = hooks.use_state(|| 0usize);
         hooks.use_terminal_events(move |event| {
             if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
@@ -2991,10 +2880,11 @@ mod tests {
         });
         element! {
             Text(content: format!(
-                "keys={} provider setting={} current={}",
+                "keys={} provider setting={} current={} streaming={}",
                 keys.get(),
                 value.theme_setting().setting_value(),
                 current.setting_value(),
+                streaming.as_deref().unwrap_or("unset"),
             ))
         }
     }
@@ -3038,25 +2928,69 @@ mod tests {
     /// returns the canvas each batch's last key produced, after the mount
     /// canvas. The echo's key count makes every key produce a frame.
     fn drive_config_with_provider(batches: Vec<Vec<TerminalEvent>>) -> Vec<Canvas> {
+        drive_harness(element!(ConfigWithProviderEchoHarness).into_any(), batches)
+    }
+
+    /// Drives a harness that renders a `keys=<count> ` echo one key batch at
+    /// a time; returns the mount canvas and the canvas each batch's last key
+    /// produced.
+    fn drive_harness(
+        app: AnyElement<'static>,
+        batches: Vec<Vec<TerminalEvent>>,
+    ) -> Vec<Canvas> {
+        drive_harness_waiting(app, batches.into_iter().map(|batch| (None, batch)).collect())
+    }
+
+    /// `drive_harness` where a batch paired with a marker also waits for a
+    /// frame showing it — for a submenu that loads after it opens (CC's
+    /// OutputStylePicker takes no keys until its styles load). An empty batch
+    /// sends nothing, so no frame follows it: it ends the run.
+    fn drive_harness_waiting(
+        mut app: AnyElement<'static>,
+        batches: Vec<(Option<&'static str>, Vec<TerminalEvent>)>,
+    ) -> Vec<Canvas> {
         futures::executor::block_on(async move {
             let (keys, events) = async_channel::unbounded();
-            let mut app = element!(ConfigWithProviderEchoHarness);
             let mut render_loop = Box::pin(app.mock_terminal_render_loop(
                 MockTerminalConfig::with_events(events).with_size(110, 40),
             ));
             let mut sent = 0;
             let mut batch = 0;
             let mut canvases = Vec::new();
-            while let Some(canvas) = render_loop.next().await {
+            let mut last_text = String::new();
+            loop {
+                // Frames only follow a change: a frame awaited for this long
+                // (a key count or marker that never renders) fails the test
+                // instead of stalling it until the runner's timeout.
+                let next_frame = crate::utils::race(render_loop.next(), async {
+                    futures_timer::Delay::new(Duration::from_secs(10)).await;
+                    None
+                })
+                .await;
+                let Some(canvas) = next_frame else {
+                    panic!(
+                        "no frame with keys={sent} and batch {batch}'s marker; last frame:\n{last_text}"
+                    );
+                };
                 let text = canvas_lines(&canvas).join("\n");
-                assert!(text.contains("provider setting="), "the echo stopped rendering:\n{text}");
+                assert!(text.contains("keys="), "the echo stopped rendering:\n{text}");
+                last_text = text.clone();
                 if !text.contains(&format!("keys={sent} ")) {
                     continue;
                 }
+                if let Some((Some(marker), _)) = batches.get(batch) {
+                    if !text.contains(marker) {
+                        continue;
+                    }
+                }
                 canvases.push(canvas);
-                let Some(next) = batches.get(batch) else {
+                let Some((_, next)) = batches.get(batch) else {
                     break;
                 };
+                if next.is_empty() {
+                    assert_eq!(batch + 1, batches.len(), "an empty batch must come last");
+                    break;
+                }
                 sent += next.len();
                 for event in next.iter().cloned() {
                     keys.send(event).await.unwrap();
@@ -3072,6 +3006,26 @@ mod tests {
     fn drive_config_keys_text(events: Vec<TerminalEvent>) -> String {
         let canvases =
             drive_config_with_provider(events.into_iter().map(|event| vec![event]).collect());
+        canvas_lines(canvases.last().unwrap()).join("\n")
+    }
+
+    /// Search "style", leave the search box and open the Output style
+    /// submenu; then, once its styles have loaded, send `after_load` one key
+    /// per frame. Returns the text of the frame the last key produced.
+    fn drive_output_style_submenu_text(after_load: Vec<TerminalEvent>) -> String {
+        let mut open = text_events("style");
+        open.push(press(KeyCode::Enter));
+        open.push(press(KeyCode::Char(' ')));
+        let mut batches: Vec<_> = open.into_iter().map(|event| (None, vec![event])).collect();
+        let mut after_load = after_load.into_iter();
+        // The first key after opening waits for the Explanatory row; with
+        // no keys, an empty batch waits for it and ends the run.
+        batches.push((Some("Explanatory"), after_load.next().into_iter().collect()));
+        batches.extend(after_load.map(|event| (None, vec![event])));
+        let canvases = drive_harness_waiting(
+            element!(ConfigWithProviderEchoHarness).into_any(),
+            batches,
+        );
         canvas_lines(canvases.last().unwrap()).join("\n")
     }
 
@@ -3363,10 +3317,7 @@ mod tests {
         fs::create_dir_all(&config_home).unwrap();
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _cwd_guard = CurrentDirGuard::set(&cwd);
-        let mut events = text_events("style");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        let text = render_text_with_events(events);
+        let text = drive_output_style_submenu_text(Vec::new());
         let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
         let _ = fs::remove_dir_all(&temp_root);
 
@@ -3418,13 +3369,69 @@ mod tests {
     }
 
     #[test]
+    fn config_output_style_escape_and_n_close_the_picker() {
+        // CC OutputStylePicker.tsx:72 `<Dialog onCancel={onCancel}>` and
+        // Config.tsx:1959-1962. The port's Dialog had a no-op cancel that
+        // swallowed both keys. F12 is a key nothing binds: its frame shows
+        // the settled cancel.
+        for key in [KeyCode::Esc, KeyCode::Char('n')] {
+            let text = drive_output_style_submenu_text(vec![press(key), press(KeyCode::F(12))]);
+            assert!(!text.contains("Preferred output style"), "{key:?}: canvas=\n{text}");
+            assert!(
+                text.lines()
+                    .any(|line| line.contains("Output style") && line.contains("default")),
+                "{key:?}: the row keeps its value; canvas=\n{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn config_list_ignores_ctrl_and_alt_letters_instead_of_searching() {
+        // CC Config.tsx:1770 `if (e.ctrl || e.meta) return`: a modified
+        // letter neither starts a search nor is consumed. Ctrl+W and Alt+Q
+        // are bound nowhere by default.
+        for modifier in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+            let letter = if modifier == KeyModifiers::CONTROL { 'w' } else { 'q' };
+            let mut modified = KeyEvent::new(KeyEventKind::Press, KeyCode::Char(letter));
+            modified.modifiers = modifier;
+            let text = drive_config_keys_text(vec![
+                press(KeyCode::Enter),
+                TerminalEvent::Key(modified),
+            ]);
+            assert!(!text.contains(&format!("⌕ {letter}")), "{modifier:?}: canvas=\n{text}");
+            assert!(text.contains("Search settings"), "{modifier:?}: canvas=\n{text}");
+        }
+    }
+
+    #[test]
+    fn config_tab_right_and_left_preview_streaming_text_like_space() {
+        // CC Config.tsx:1761-1765: Left/Right/Tab run `toggleSetting()`, the
+        // function select:accept (Space in Settings) runs, so each previews
+        // the Streaming text mode into AppState as Space does. Shift+Tab is
+        // `tab` to Ink and BackTab to crossterm.
+        for key in [
+            KeyCode::Tab,
+            KeyCode::BackTab,
+            KeyCode::Right,
+            KeyCode::Left,
+            KeyCode::Char(' '),
+        ] {
+            let mut keys = text_events("streaming");
+            keys.push(press(KeyCode::Enter));
+            keys.push(press(key));
+            let text = drive_config_keys_text(keys);
+            assert!(text.contains("streaming=line"), "{key:?}: canvas=\n{text}");
+        }
+    }
+
+    #[test]
     fn config_output_style_selection_updates_preview_in_memory_only() {
-        let mut events = text_events("style");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        events.push(press(KeyCode::Down));
-        events.push(press(KeyCode::Enter));
-        let text = render_text_with_events(events);
+        let text =
+            drive_output_style_submenu_text(vec![
+                press(KeyCode::Down),
+                press(KeyCode::Enter),
+                press(KeyCode::F(12)),
+            ]);
 
         assert!(
             text.contains("Output style") && text.contains("Explanatory"),
