@@ -1481,8 +1481,18 @@ fn write_local_settings_value(value: &serde_json::Value) -> anyhow::Result<()> {
     result
 }
 
-/// Maps to: CC `setSandboxSettings(...)`.
-pub fn set_sandbox_settings(options: SandboxSettingsUpdate) -> anyhow::Result<()> {
+/// Maps to: CC `sandbox-adapter.ts:669-691#setSandboxSettings`. Its promise
+/// never rejects: it calls `updateSettingsForSource('localSettings', …)` and
+/// drops the `{ error }` that function returns after logging it
+/// (settings.ts:515-520). A failed write is logged here the same way and
+/// the caller carries on.
+pub fn set_sandbox_settings(options: SandboxSettingsUpdate) {
+    if let Err(error) = write_sandbox_settings_update(options) {
+        crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
+    }
+}
+
+fn write_sandbox_settings_update(options: SandboxSettingsUpdate) -> anyhow::Result<()> {
     let mut value = read_local_settings_value()?;
     if !value.is_object() {
         value = serde_json::json!({});

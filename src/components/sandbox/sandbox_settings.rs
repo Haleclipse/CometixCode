@@ -1,23 +1,33 @@
 //! Maps to: CC `components/sandbox/SandboxSettings.tsx`.
 //!
-//! The official component owns the `/sandbox` local-jsx panel, tabs, mode
-//! selection, override selection, and completion strings. Cometix dispatches
-//! settings writes through `utils/sandbox/sandbox_adapter.rs`; no sandbox
-//! runtime initialization or command wrapping happens in this UI component.
+//! The `/sandbox` panel: CC's `Tabs` (the header starts focused, ↓ hands
+//! focus to a tab's Select), a Mode tab and an Overrides tab that own their
+//! Selects, and the Config and Dependencies tabs. Settings writes go through
+//! `utils/sandbox/sandbox_adapter.rs`; no sandbox runtime initialization or
+//! command wrapping happens in this UI component.
 
 use super::sandbox_config_tab::SandboxConfigTab;
 use super::sandbox_dependencies_tab::SandboxDependenciesTab;
 use super::sandbox_overrides_tab::SandboxOverridesTab;
-use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
+use crate::components::custom_select::select::SelectOptionLabel;
+use crate::components::custom_select::{
+    Select, SelectInputOptionMeta, SelectLayout, SelectOptionData, UseSelectInputOptions,
+    UseSelectStateProps, use_select_input, use_select_state,
+};
 use crate::components::design_system::pane::Pane;
-use crate::components::design_system::tabs::{TabItem, TabsHeader};
+use crate::components::design_system::tabs::{Tab, Tabs, use_tab_header_focus};
+use crate::keybindings::keybinding_context::KeybindingRuntime;
+use crate::keybindings::types::ContextName;
 use crate::utils::sandbox::sandbox_adapter::{
     SandboxDependencyCheck, SandboxSettingsUpdate, are_sandbox_settings_locked_by_policy,
     are_unsandboxed_commands_allowed, check_dependencies_readonly, get_sandbox_enabled_setting,
-    is_auto_allow_bash_if_sandboxed_enabled, set_sandbox_settings,
+    is_auto_allow_bash_if_sandboxed_enabled, is_platform_in_enabled_list, is_supported_platform,
+    set_sandbox_settings,
 };
 use crate::utils::settings::get_initial_settings;
+use crate::utils::theme::Theme;
 use iocraft::prelude::*;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SandboxMode {
@@ -34,6 +44,15 @@ impl SandboxMode {
             Self::Disabled => "disabled",
         }
     }
+
+    fn from_value(value: &str) -> Option<Self> {
+        match value {
+            "auto-allow" => Some(Self::AutoAllow),
+            "regular" => Some(Self::Regular),
+            "disabled" => Some(Self::Disabled),
+            _ => None,
+        }
+    }
 }
 
 pub fn current_sandbox_mode(enabled: bool, auto_allow: bool) -> SandboxMode {
@@ -46,6 +65,8 @@ pub fn current_sandbox_mode(enabled: bool, auto_allow: bool) -> SandboxMode {
     }
 }
 
+/// Maps to: CC `SandboxSettings.tsx:48-70`. The labels carry the
+/// `(current)` suffix as text; `current_indicator_labels` renders it green.
 pub fn sandbox_mode_options(current_mode: SandboxMode) -> Vec<SelectOptionData> {
     [
         (SandboxMode::AutoAllow, "Sandbox BashTool, with auto-allow"),
@@ -69,6 +90,29 @@ pub fn sandbox_mode_options(current_mode: SandboxMode) -> Vec<SelectOptionData> 
         input: None,
     })
     .collect()
+}
+
+/// Maps to: CC `SandboxSettings.tsx:46`
+/// `color('success', theme)('(current)')`, a coloured span inside the
+/// current option's label string.
+fn current_indicator_labels(
+    options: &[SelectOptionData],
+    current_value: &str,
+    theme: &Theme,
+) -> BTreeMap<String, SelectOptionLabel> {
+    options
+        .iter()
+        .filter(|option| option.value == current_value)
+        .map(|option| {
+            let base = option.label.trim_end_matches(" (current)");
+            let mut indicator = StyledSegment::new("(current)");
+            indicator.styles.color = Some(theme.success);
+            (
+                option.value.clone(),
+                vec![StyledSegment::new(format!("{base} ")), indicator],
+            )
+        })
+        .collect()
 }
 
 pub fn sandbox_mode_completion_and_update(
@@ -102,199 +146,264 @@ pub fn sandbox_mode_completion_and_update(
     }
 }
 
-fn tabs_for_dep_check(dep_check: &SandboxDependencyCheck) -> Vec<TabItem> {
-    if !dep_check.errors.is_empty() {
-        vec![TabItem::new("dependencies", "Dependencies")]
-    } else {
-        let mut tabs = vec![TabItem::new("mode", "Mode")];
-        if !dep_check.warnings.is_empty() {
-            tabs.push(TabItem::new("dependencies", "Dependencies"));
-        }
-        tabs.push(TabItem::new("overrides", "Overrides"));
-        tabs.push(TabItem::new("config", "Config"));
-        tabs
-    }
-}
-
 #[derive(Default, Props)]
 pub struct SandboxSettingsProps<'a> {
     pub dep_check: Option<SandboxDependencyCheck>,
+    /// CC `onComplete(result)`; `None` is `onComplete(undefined, { display:
+    /// 'skip' })`.
     pub on_complete: HandlerMut<'a, Option<String>>,
 }
 
+/// Maps to: CC `SandboxSettings.tsx:25-160`.
 #[component]
 pub fn SandboxSettings<'a>(
     props: &mut SandboxSettingsProps<'a>,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
-    let theme = hooks.use_context::<crate::utils::theme::Theme>();
+    let theme = *hooks.use_context::<Theme>();
     let settings = get_initial_settings();
-    let dep_check = props
-        .dep_check
-        .clone()
-        .unwrap_or_else(check_dependencies_readonly);
-    let tabs = tabs_for_dep_check(&dep_check);
-    let mut tab_index = hooks.use_state(|| 0usize);
-    let mut mode_focus = hooks.use_state(|| 0usize);
-    let mut override_focus = hooks.use_state(|| 0usize);
-    let mut pending_result = hooks.use_state(|| Option::<Option<String>>::None);
-
-    let current_enabled = get_sandbox_enabled_setting(&settings);
+    // CC's `/sandbox` checks the dependencies once and passes `depCheck` in
+    // (sandbox-toggle.tsx:39, :70); without one, probe once per mount rather
+    // than on every render.
+    let dep_check = hooks.use_const({
+        let provided = props.dep_check.clone();
+        move || provided.unwrap_or_else(check_dependencies_readonly)
+    });
+    // CC :30-45. `SandboxManager.isSandboxingEnabled()` is
+    // `sandbox_adapter::is_sandboxing_enabled`, spelled out so this
+    // component's dependency check stands in for the probe it repeats.
+    let current_enabled = is_supported_platform()
+        && dep_check.errors.is_empty()
+        && is_platform_in_enabled_list()
+        && get_sandbox_enabled_setting(&settings);
     let current_auto_allow = is_auto_allow_bash_if_sandboxed_enabled(&settings);
+    let has_warnings = !dep_check.warnings.is_empty();
+    let allow_all_unix_sockets = settings
+        .sandbox
+        .as_ref()
+        .and_then(|sandbox| sandbox.pointer("/network/allowAllUnixSockets"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let show_socket_warning = has_warnings && !allow_all_unix_sockets;
     let current_mode = current_sandbox_mode(current_enabled, current_auto_allow);
-    let allow_unsandboxed = are_unsandboxed_commands_allowed(&settings);
-    let is_locked = are_sandbox_settings_locked_by_policy();
-    let selected_index = tab_index.get().min(tabs.len().saturating_sub(1));
-    let selected_id = tabs
-        .get(selected_index)
-        .map(|tab| tab.id.clone())
-        .unwrap_or_else(|| "mode".to_string());
-    crate::components::design_system::tabs::use_tabs_keybindings(
+
+    // The tabs report from their own renders; the result reaches this
+    // component's `onComplete` on its next one.
+    let pending_result = hooks.use_state(|| None::<Option<String>>);
+    let result = pending_result.read().clone();
+    if let Some(result) = result {
+        let mut pending_result = pending_result;
+        pending_result.set(None);
+        (props.on_complete)(result);
+    }
+    // The first result of a render stands: Enter and Esc read in one chunk
+    // must not let the cancel overwrite the choice already written.
+    let complete = Handler::from(move |result: Option<String>| {
+        let mut pending_result = pending_result;
+        if pending_result.read().is_none() {
+            pending_result.set(Some(result));
+        }
+    });
+
+    // CC :100-105.
+    let runtime = hooks
+        .try_use_context::<KeybindingRuntime>()
+        .map(|runtime| runtime.clone());
+    crate::keybindings::use_keybinding::use_keybinding(
         &mut hooks,
-        !tabs.is_empty(),
+        runtime,
+        "confirm:no",
+        ContextName::Settings,
+        || true,
         {
-            let mut tab_index = tab_index;
-            let tab_count = tabs.len();
-            move || tab_index.set((tab_index.get() + 1) % tab_count)
-        },
-        {
-            let mut tab_index = tab_index;
-            let tab_count = tabs.len();
+            let complete = complete.clone();
             move || {
-                let index = tab_index.get();
-                tab_index.set(if index == 0 { tab_count - 1 } else { index - 1 });
+                complete(None);
+                true
             }
         },
     );
 
-    let show_socket_warning = !dep_check.warnings.is_empty()
-        && !settings
-            .sandbox
-            .as_ref()
-            .and_then(|sandbox| sandbox.pointer("/network/allowAllUnixSockets"))
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
-
-    hooks.use_terminal_events({
-        let selected_id = selected_id.clone();
-        let mut mode_focus = mode_focus;
-        let mut override_focus = override_focus;
-        let mut pending_result = pending_result;
-        let current_enabled = current_enabled;
-        move |event| {
-            let TerminalEvent::Key(KeyEvent { code, kind, .. }) = event else {
-                return;
-            };
-            if kind == KeyEventKind::Release {
-                return;
-            }
-            match code {
-                KeyCode::Esc => pending_result.set(Some(None)),
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if selected_id == "mode" {
-                        mode_focus.set(mode_focus.get().saturating_sub(1));
-                    } else if selected_id == "overrides" && current_enabled {
-                        override_focus.set(override_focus.get().saturating_sub(1));
-                    }
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                    if selected_id == "mode" {
-                        mode_focus.set((mode_focus.get() + 1).min(2));
-                    } else if selected_id == "overrides" && current_enabled {
-                        override_focus.set((override_focus.get() + 1).min(1));
-                    }
-                }
-                KeyCode::Enter => {
-                    if selected_id == "mode" {
-                        let mode = match mode_focus.get().min(2) {
-                            0 => SandboxMode::AutoAllow,
-                            1 => SandboxMode::Regular,
-                            _ => SandboxMode::Disabled,
-                        };
-                        let (message, update) = sandbox_mode_completion_and_update(mode);
-                        let result = set_sandbox_settings(update)
-                            .map(|_| message.to_string())
-                            .unwrap_or_else(|error| format!("Error writing settings: {error}"));
-                        pending_result.set(Some(Some(result)));
-                    } else if selected_id == "overrides" && current_enabled {
-                        let allow = override_focus.get().min(1) == 0;
-                        let result = set_sandbox_settings(SandboxSettingsUpdate {
-                            enabled: None,
-                            auto_allow_bash_if_sandboxed: None,
-                            allow_unsandboxed_commands: Some(allow),
-                        })
-                        .map(|_| {
-                            if allow {
-                                "✓ Unsandboxed fallback allowed - commands can run outside sandbox when necessary".to_string()
-                            } else {
-                                "✓ Strict sandbox mode - all commands must run in sandbox or be excluded via the `excludedCommands` option".to_string()
-                            }
-                        })
-                        .unwrap_or_else(|error| format!("Error writing settings: {error}"));
-                        pending_result.set(Some(Some(result)));
-                    }
-                }
-                _ => {}
-            }
+    // CC :72-98 `handleSelect`.
+    let select_mode = Handler::from({
+        let complete = complete.clone();
+        move |mode: SandboxMode| {
+            // `setSandboxSettings` logs a failed write and resolves anyway.
+            let (message, update) = sandbox_mode_completion_and_update(mode);
+            set_sandbox_settings(update);
+            complete(Some(message.to_string()));
         }
     });
-
-    let result = { pending_result.read().clone() };
-    if let Some(result) = result {
-        pending_result.set(None);
-        (props.on_complete)(result);
-    }
-
-    let body = match selected_id.as_str() {
-        "dependencies" => element! {
-            SandboxDependenciesTab(dep_check: dep_check.clone())
+    let mode_tab = element! {
+        Tab(title: "Mode".to_string()) {
+            SandboxModeTab(
+                show_socket_warning: show_socket_warning,
+                current_mode: Some(current_mode),
+                on_select: select_mode,
+                on_complete: complete.clone(),
+            )
         }
-        .into_any(),
-        "overrides" => element! {
+    };
+    // CC `SandboxOverridesTab.tsx:18-20` reads these from SandboxManager;
+    // this component reads the same adapter once per render and hands them
+    // down.
+    let overrides_tab = element! {
+        Tab(title: "Overrides".to_string()) {
             SandboxOverridesTab(
                 is_enabled: current_enabled,
-                is_locked: is_locked,
-                current_allow_unsandboxed: allow_unsandboxed,
-                focused_index: override_focus.get().min(1),
+                is_locked: are_sandbox_settings_locked_by_policy(),
+                current_allow_unsandboxed: are_unsandboxed_commands_allowed(&settings),
+                on_complete: complete.clone(),
             )
         }
-        .into_any(),
-        "config" => element! {
+    };
+    let config_tab = element! {
+        Tab(title: "Config".to_string()) {
             SandboxConfigTab(settings: settings.clone(), dep_check: dep_check.clone())
         }
-        .into_any(),
-        _ => element! {
-            View(flex_direction: FlexDirection::Column, padding_top: 1u32, padding_bottom: 1u32) {
-                #(if show_socket_warning { Some(element! { Text(content: "Cannot block unix domain sockets (see Dependencies tab)".to_string(), color: theme.warning, wrap: TextWrap::Wrap) }) } else { None })
-                View(margin_bottom: 1u32) {
-                    Text(content: "Configure Mode:".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap)
-                }
-                Select(
-                    options: sandbox_mode_options(current_mode),
-                    focused_index: mode_focus.get().min(2),
-                    visible_option_count: 3usize,
-                    layout: SelectLayout::Compact,
-                    hide_indexes: true,
-                )
-                View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
-                    Text(content: "Auto-allow mode: Commands will try to run in the sandbox automatically, and attempts to run outside of the sandbox fallback to regular permissions. Explicit ask/deny rules are always respected.".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
-                    Text(content: "Learn more: https://code.claude.com/docs/en/sandboxing".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
-                }
+    };
+    let dependencies_tab = || {
+        element! {
+            Tab(title: "Dependencies".to_string()) {
+                SandboxDependenciesTab(dep_check: dep_check.clone())
             }
         }
-        .into_any(),
     };
 
+    // CC :130-151: missing required dependencies leave only the
+    // Dependencies tab; missing optional ones add it after Mode.
+    let tabs = if !dep_check.errors.is_empty() {
+        vec![dependencies_tab()]
+    } else {
+        let mut tabs = vec![mode_tab];
+        if has_warnings {
+            tabs.push(dependencies_tab());
+        }
+        tabs.push(overrides_tab);
+        tabs.push(config_tab);
+        tabs
+    };
+
+    // CC :153-159.
     element! {
         Pane(color: Some(theme.permission)) {
-            TabsHeader(
+            Tabs(
                 title: Some("Sandbox:".to_string()),
                 color: Some(theme.permission),
-                tabs: tabs,
-                selected_index: selected_index,
-                header_focused: false,
+                default_tab: Some("Mode".to_string()),
+            ) {
+                #(tabs)
+            }
+        }
+    }
+}
+
+#[derive(Default, Props)]
+struct SandboxModeTabProps {
+    show_socket_warning: bool,
+    current_mode: Option<SandboxMode>,
+    on_select: Handler<SandboxMode>,
+    on_complete: Handler<Option<String>>,
+}
+
+/// Maps to: CC `SandboxSettings.tsx:162-211`. The options are built here
+/// from the current mode (CC builds them in SandboxSettings, :48-70).
+#[component]
+fn SandboxModeTab(props: &SandboxModeTabProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    let theme = *hooks.use_context::<Theme>();
+    let focus = use_tab_header_focus(&mut hooks);
+    let current_mode = props.current_mode.unwrap_or(SandboxMode::Disabled);
+    let options = sandbox_mode_options(current_mode);
+    let option_labels = current_indicator_labels(&options, current_mode.value(), &theme);
+    // CC :186-192 `<Select options onChange onCancel onUpFromFirstItem
+    // isDisabled={headerFocused}>`: the default five-row viewport.
+    let state = use_select_state(
+        &mut hooks,
+        UseSelectStateProps {
+            visible_option_count: Some(5),
+            values: options.iter().map(|option| option.value.clone()).collect(),
+            default_value: None,
+            focus_value: None,
+        },
+    );
+    let events = use_select_input(
+        &mut hooks,
+        state,
+        UseSelectInputOptions {
+            is_disabled: focus.header_focused,
+            has_on_cancel: true,
+            has_on_up_from_first_item: true,
+            option_metas: options
+                .iter()
+                .map(|option| SelectInputOptionMeta {
+                    value: option.value.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        },
+    );
+    if let Some(mode) = events
+        .take_accepted()
+        .as_deref()
+        .and_then(SandboxMode::from_value)
+    {
+        (props.on_select)(mode);
+    }
+    if events.take_cancelled() {
+        (props.on_complete)(None);
+    }
+    if events.take_up_from_first_item() {
+        focus.focus_header();
+    }
+    let navigation = state.navigation.snapshot();
+
+    let mut auto_allow_heading = StyledSegment::new("Auto-allow mode:");
+    auto_allow_heading.styles.bold = Some(true);
+    auto_allow_heading.styles.color = Some(theme.inactive);
+    let mut auto_allow_body = StyledSegment::new(
+        " Commands will try to run in the sandbox automatically, and attempts to run outside of the sandbox fallback to regular permissions. Explicit ask/deny rules are always respected.",
+    );
+    auto_allow_body.styles.color = Some(theme.inactive);
+    let mut learn_more = StyledSegment::new("Learn more: ");
+    learn_more.styles.color = Some(theme.inactive);
+    let mut link = link_segment(
+        "https://code.claude.com/docs/en/sandboxing".to_string(),
+        Some("code.claude.com/docs/en/sandboxing".to_string()),
+        None,
+        None,
+    );
+    link.styles.color = Some(theme.inactive);
+
+    // CC :175-209.
+    element! {
+        View(flex_direction: FlexDirection::Column, padding_top: 1u32, padding_bottom: 1u32) {
+            #(props.show_socket_warning.then(|| element! {
+                View(margin_bottom: 1u32) {
+                    Text(
+                        content: "Cannot block unix domain sockets (see Dependencies tab)".to_string(),
+                        color: theme.warning,
+                        wrap: TextWrap::Wrap,
+                    )
+                }
+            }))
+            View(margin_bottom: 1u32) {
+                Text(content: "Configure Mode:".to_string(), weight: Weight::Bold, wrap: TextWrap::Wrap)
+            }
+            Select(
+                is_disabled: focus.header_focused,
+                options: options,
+                option_labels: option_labels,
+                selected_value: state.committed_value(),
+                focused_index: navigation.focused_index().unwrap_or(0),
+                visible_option_count: navigation.visible_option_count,
+                visible_from_index: navigation.visible_from_index,
+                layout: SelectLayout::Compact,
             )
-            #(body)
+            View(flex_direction: FlexDirection::Column, margin_top: 1u32, gap: 1) {
+                Text(segments: Some(vec![auto_allow_heading, auto_allow_body]), wrap: TextWrap::Wrap)
+                Text(segments: Some(vec![learn_more, link]), wrap: TextWrap::Wrap)
+            }
         }
     }
 }
@@ -303,12 +412,95 @@ pub fn SandboxSettings<'a>(
 mod tests {
     use super::*;
     use crate::utils::theme;
-    use futures::{StreamExt, stream};
+    use futures::StreamExt;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
 
-    fn key(code: KeyCode) -> TerminalEvent {
-        TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code))
+    type Results = Arc<Mutex<Vec<Option<String>>>>;
+
+    #[derive(Default, Props)]
+    struct SandboxHarnessProps {
+        results: Option<Results>,
+    }
+
+    /// The panel under the keybinding runtime and theme it mounts with, and
+    /// a line counting key presses (so each key produces a frame) and
+    /// listing the `onComplete` results.
+    #[component]
+    fn SandboxHarness(props: &SandboxHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
+            &mut hooks,
+            KeybindingRuntime::with_default_bindings(),
+        );
+        let results = props.results.clone().unwrap_or_default();
+        let completed = results.clone();
+        element! {
+            ContextProvider(value: Context::owned(runtime)) {
+                ContextProvider(value: Context::owned(*theme::current())) {
+                    View(flex_direction: FlexDirection::Column) {
+                        SandboxSettings(
+                            dep_check: Some(SandboxDependencyCheck::default()),
+                            on_complete: move |result: Option<String>| {
+                                completed.lock().unwrap().push(result);
+                            },
+                        )
+                        ResultsEcho(results: Some(results))
+                    }
+                }
+            }
+        }
+    }
+
+    #[component]
+    fn ResultsEcho(props: &SandboxHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut keys = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                keys.set(keys.get() + 1);
+            }
+        });
+        let results = props.results.clone().unwrap_or_default();
+        let results = results.lock().unwrap().len();
+        element! { Text(content: format!("keys={} results={results}", keys.get())) }
+    }
+
+    /// Sends one key per frame; returns the mount frame and the frame after
+    /// each key, and the `onComplete` results.
+    fn drive(keys_in_order: Vec<KeyCode>) -> (Vec<String>, Vec<Option<String>>) {
+        let results: Results = Arc::new(Mutex::new(Vec::new()));
+        let echo = results.clone();
+        let frames = futures::executor::block_on(async move {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(SandboxHarness(results: Some(echo)));
+            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(120, 40),
+            ));
+            let mut frames = Vec::new();
+            while let Some(canvas) = render_loop.next().await {
+                let text = canvas.to_string();
+                if !text.contains(&format!("keys={} ", frames.len())) {
+                    continue;
+                }
+                frames.push(text);
+                let Some(code) = keys_in_order.get(frames.len() - 1) else {
+                    break;
+                };
+                keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
+                    .await
+                    .unwrap();
+            }
+            frames
+        });
+        let results = results.lock().unwrap().clone();
+        (frames, results)
+    }
+
+    fn focused_row(frame: &str) -> String {
+        frame
+            .lines()
+            .find(|line| line.contains('❯'))
+            .unwrap_or_default()
+            .trim()
+            .to_string()
     }
 
     #[test]
@@ -331,58 +523,89 @@ mod tests {
 
     #[test]
     fn sandbox_settings_renders_mode_tabs_and_copy() {
-        let text = element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                SandboxSettings(dep_check: Some(SandboxDependencyCheck::default()))
-            }
-        }
-        .render(Some(120))
-        .to_string();
+        let text = element!(SandboxHarness).render(Some(120)).to_string();
         assert!(text.contains("Sandbox:"), "canvas=\n{text}");
         assert!(text.contains("Mode"), "canvas=\n{text}");
         assert!(text.contains("Overrides"), "canvas=\n{text}");
         assert!(text.contains("Config"), "canvas=\n{text}");
         assert!(text.contains("Configure Mode:"), "canvas=\n{text}");
+        // CC's Select shows its indexes (hideIndexes defaults to false).
         assert!(
-            text.contains("Sandbox BashTool, with auto-allow"),
+            text.contains("1. Sandbox BashTool, with auto-allow"),
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("code.claude.com/docs/en/sandboxing"),
+            text.contains("Learn more: code.claude.com/docs/en/sandboxing"),
             "canvas=\n{text}"
         );
     }
 
-    #[tokio::test]
-    async fn sandbox_settings_escape_completes_with_skip_none() {
-        let results = Arc::new(Mutex::new(Vec::new()));
-        let results_clone = Arc::clone(&results);
-        let mut app = element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                SandboxSettings(
-                    dep_check: Some(SandboxDependencyCheck::default()),
-                    on_complete: move |result| {
-                        results_clone.lock().unwrap().push(result);
-                    },
-                )
-            }
-        };
-        let mut render_loop = Box::pin(
-            app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(stream::iter(vec![key(KeyCode::Esc)]))
-                    .with_size(120, 30),
-            ),
-        );
-        for _ in 0..10 {
-            let next = crate::utils::race(render_loop.next(), async {
-                futures_timer::Delay::new(Duration::from_millis(100)).await;
-                None
-            })
-            .await;
-            if next.is_none() {
-                break;
-            }
+    #[test]
+    fn sandbox_settings_escape_completes_with_skip_none() {
+        // CC SandboxSettings.tsx:100-105 confirm:no → onComplete(undefined,
+        // { display: 'skip' }). The trailing key's frame shows it settled.
+        let (_, results) = drive(vec![KeyCode::Esc, KeyCode::F(12)]);
+        assert_eq!(results, vec![None]);
+    }
+
+    #[test]
+    fn sandbox_mode_values_round_trip() {
+        for mode in [SandboxMode::AutoAllow, SandboxMode::Regular, SandboxMode::Disabled] {
+            assert_eq!(SandboxMode::from_value(mode.value()), Some(mode));
         }
-        assert_eq!(results.lock().unwrap().clone(), vec![None]);
+    }
+
+    #[test]
+    fn sandbox_mode_select_waits_for_down_from_the_focused_header() {
+        // CC Tabs.tsx:125 starts with the header focused and the Select
+        // disabled (:191 `isDisabled={headerFocused}`): Enter selects
+        // nothing. ↓ hands focus to the Select, whose focus starts on the
+        // first option; ↓ moves it and Enter selects, reporting the mode's
+        // message (:83-88) whether or not the write lands, as CC's
+        // setSandboxSettings never rejects. Writes stay off in this test.
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _no_write = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
+        let (frames, results) = drive(vec![
+            KeyCode::Enter,
+            KeyCode::Down,
+            KeyCode::Down,
+            KeyCode::Enter,
+            KeyCode::F(12),
+        ]);
+        assert!(
+            focused_row(&frames[3]).contains("Sandbox BashTool, with regular permissions"),
+            "{}",
+            frames[3]
+        );
+        assert_eq!(
+            results,
+            vec![Some("✓ Sandbox enabled with regular bash permissions".to_string())]
+        );
+    }
+
+    #[test]
+    fn sandbox_escape_from_the_focused_select_completes_once() {
+        // With the Select focused, Esc is both select:cancel (:189
+        // onCancel) and SandboxSettings' confirm:no (:100-105); the panel
+        // completes with one skip.
+        let (_, results) = drive(vec![KeyCode::Down, KeyCode::Esc, KeyCode::F(12)]);
+        assert_eq!(results, vec![None]);
+    }
+
+    #[test]
+    fn sandbox_tab_keys_switch_tabs_and_up_returns_to_the_header() {
+        // CC Tabs.tsx:152-161: → switches tabs from the focused header. On
+        // the Mode tab ↓ enters the Select and ↑ on its first option gives
+        // focus back (:190 onUpFromFirstItem={focusHeader}), so → switches
+        // again.
+        let (frames, _) = drive(vec![
+            KeyCode::Down,
+            KeyCode::Right,
+            KeyCode::Up,
+            KeyCode::Right,
+        ]);
+        // → from the focused Select stays on Mode (no navFromContent).
+        assert!(frames[2].contains("Configure Mode:"), "{}", frames[2]);
+        assert!(!frames[4].contains("Configure Mode:"), "{}", frames[4]);
     }
 }
