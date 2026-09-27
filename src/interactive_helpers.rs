@@ -90,12 +90,11 @@ fn api_key_needing_onboarding_approval(
     if is_running_on_homespace() {
         return None;
     }
-    let api_key = get_env("ANTHROPIC_API_KEY")?;
-    let trimmed = api_key.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let truncated = normalize_api_key_for_config(trimmed);
+    // CC Onboarding.tsx:132-138: only an empty value is absent, and the
+    // suffix is taken from the value as set; auth matches the same
+    // untrimmed bytes, so a trimmed suffix would never be found approved.
+    let api_key = get_env("ANTHROPIC_API_KEY").filter(|value| !value.is_empty())?;
+    let truncated = normalize_api_key_for_config(&api_key);
     (get_custom_api_key_status(global_config, &truncated) == CustomApiKeyStatus::New)
         .then_some(truncated)
 }
@@ -542,6 +541,25 @@ mod setup_screens_snapshot_tests {
     use crate::utils::config::CustomApiKeyResponses;
     use std::fs;
     use std::path::Path;
+
+    #[test]
+    fn api_key_needing_approval_keeps_the_key_as_set() {
+        // CC Onboarding.tsx:132-138: `normalizeApiKeyForConfig` of the raw
+        // value, as auth later matches it; only an empty value is absent.
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _homespace = crate::utils::env_utils::EnvVarGuard::unset("COO_RUNNING_ON_HOMESPACE");
+        let config = GlobalConfig::default();
+        let with_key = |value: &'static str| {
+            move |key: &str| (key == "ANTHROPIC_API_KEY").then(|| value.to_string())
+        };
+        assert_eq!(
+            api_key_needing_onboarding_approval(&config, &with_key("sk-ant-test-key\r")),
+            Some(normalize_api_key_for_config("sk-ant-test-key\r"))
+        );
+        assert_eq!(api_key_needing_onboarding_approval(&config, &with_key("")), None);
+    }
 
     #[test]
     fn setup_screens_snapshot_matches_official_onboarding_gate_and_api_key_step() {
