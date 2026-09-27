@@ -66,7 +66,7 @@ use crate::components::tasks::task_status_utils::TaskStatus;
 use crate::components::teams::teams_dialog::{
     TeammateStatusData, TeamsDialog, TeamsDialogAction, TeamsDialogData,
 };
-use crate::components::thinking_toggle::{ThinkingToggle, thinking_toggle_requires_confirmation};
+use crate::components::thinking_toggle::ThinkingToggle;
 use crate::components::vim_text_input::{VimMode, VimTextInput};
 use crate::context::notifications::use_notifications;
 use crate::hooks::notifs::external_editor_hint::{
@@ -668,10 +668,6 @@ pub fn PromptInput<'a>(
     let initial_model = initial_app_state
         .as_ref()
         .and_then(|state| state.main_loop_model.clone());
-    let initial_thinking = initial_app_state
-        .as_ref()
-        .and_then(|state| state.thinking_enabled)
-        .unwrap_or(true);
     let fast_mode_on = initial_app_state
         .as_ref()
         .is_some_and(|state| state.fast_mode);
@@ -738,8 +734,6 @@ pub fn PromptInput<'a>(
     let mut show_model_picker = hooks.use_state(|| false);
     let mut show_fast_mode_picker = hooks.use_state(|| false);
     let mut show_thinking_toggle = hooks.use_state(|| false);
-    let mut thinking_toggle_focus = hooks.use_state(|| usize::from(!initial_thinking));
-    let mut thinking_confirmation = hooks.use_state(|| Option::<bool>::None);
     let mut is_external_editor_active = hooks.use_state(|| false);
     let mut editor_result = hooks.use_state(|| Option::<EditorResult>::None);
     let mut clipboard_image_result =
@@ -1493,7 +1487,6 @@ pub fn PromptInput<'a>(
             show_thinking_toggle.set(!show_thinking_toggle.get());
             show_model_picker.set(false);
             show_fast_mode_picker.set(false);
-            thinking_confirmation.set(None);
             help_open.set(false);
             true
         },
@@ -2048,80 +2041,6 @@ pub fn PromptInput<'a>(
     });
 
     let (columns, terminal_rows) = hooks.use_terminal_size();
-    let app_store_for_picker = app_store.clone();
-    let mut notifications_for_picker = notifications.clone();
-    let has_assistant_messages = props.has_assistant_messages;
-    hooks.use_propagated_terminal_events(move |event| {
-        let TerminalEvent::Key(KeyEvent {
-            code,
-            kind,
-            modifiers,
-            ..
-        }) = event.event()
-        else {
-            return;
-        };
-        if *kind == KeyEventKind::Release {
-            return;
-        }
-
-        if show_model_picker.get() {
-            return;
-        }
-
-        if show_thinking_toggle.get() {
-            let selected = thinking_toggle_focus.get() == 0;
-            let current = app_store_for_picker
-                .as_ref()
-                .and_then(|store| store.get().thinking_enabled)
-                .unwrap_or(true);
-            match code {
-                KeyCode::Esc => {
-                    if thinking_confirmation.read().is_some() {
-                        thinking_confirmation.set(None);
-                    } else {
-                        show_thinking_toggle.set(false);
-                    }
-                }
-                KeyCode::Up | KeyCode::Down => {
-                    if thinking_confirmation.read().is_none() {
-                        thinking_toggle_focus
-                            .set(1usize.saturating_sub(thinking_toggle_focus.get().min(1)));
-                    }
-                }
-                KeyCode::Enter if modifiers.is_empty() => {
-                    if thinking_confirmation.read().is_none()
-                        && thinking_toggle_requires_confirmation(
-                            current,
-                            selected,
-                            has_assistant_messages,
-                        )
-                    {
-                        thinking_confirmation.set(Some(selected));
-                    } else {
-                        let value = thinking_confirmation.read().unwrap_or(selected);
-                        if let Some(store) = app_store_for_picker.as_ref() {
-                            store.replace_with(|state| state.thinking_enabled = Some(value));
-                        }
-                        {
-                            let context = &mut notifications_for_picker;
-                            context.add_notification(
-                                crate::context::notifications::Notification::text(
-                                    "thinking-toggled-hotkey",
-                                    format!("Thinking {}", if value { "on" } else { "off" }),
-                                    crate::context::notifications::NotificationPriority::Immediate,
-                                ),
-                            );
-                        }
-                        thinking_confirmation.set(None);
-                        show_thinking_toggle.set(false);
-                    }
-                }
-                _ => return,
-            }
-            event.stop_propagation();
-        }
-    });
     let text_input_columns = prompt_text_input_columns(columns);
     // Official main-screen/native-scrollback PromptInput does not cap the
     // input viewport. The 50% bottom-slot cap is fullscreen-only upstream.
@@ -2884,20 +2803,48 @@ pub fn PromptInput<'a>(
         .into_any();
     }
 
+    // CC :2740-2758, returned in place of the input (:2856-2858). The toggle
+    // owns its keys; this only handles the result.
     if show_thinking_toggle.get() {
         let current = app_store
             .as_ref()
             .and_then(|store| store.get().thinking_enabled)
             .unwrap_or(true);
+        let select_store = app_store.clone();
+        let mut select_notifications = notifications.clone();
         return element! {
             View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
                 ThinkingToggle(
                     current_value: current,
-                    focused_index: thinking_toggle_focus.get(),
-                    confirmation_pending: *thinking_confirmation.read(),
                     is_mid_conversation: props.has_assistant_messages,
-                    exit_pending: false,
-                    exit_key_name: None,
+                    // CC :2713-2733 `handleThinkingSelect`.
+                    on_select: move |enabled: bool| {
+                        if let Some(store) = select_store.as_ref() {
+                            store.replace_with(|state| state.thinking_enabled = Some(enabled));
+                        }
+                        show_thinking_toggle.set(false);
+                        crate::services::analytics::log_event(
+                            "tengu_thinking_toggled_hotkey",
+                            serde_json::json!({ "enabled": enabled }),
+                        );
+                        // `<Text color={enabled ? 'suggestion' : undefined}
+                        // dimColor={!enabled}>`: no colour renders inactive.
+                        let notification = crate::context::notifications::Notification::text(
+                            "thinking-toggled-hotkey",
+                            format!("Thinking {}", if enabled { "on" } else { "off" }),
+                            crate::context::notifications::NotificationPriority::Immediate,
+                        )
+                        .with_timeout_ms(3000);
+                        select_notifications.add_notification(if enabled {
+                            notification.with_color(
+                                crate::context::notifications::NotificationColor::Suggestion,
+                            )
+                        } else {
+                            notification
+                        });
+                    },
+                    // CC :2735-2737 `handleThinkingCancel`.
+                    on_cancel: move |_| show_thinking_toggle.set(false),
                 )
             }
         }
@@ -4414,6 +4361,21 @@ mod tests {
         );
         assert_eq!(thinking_store.get().thinking_enabled, Some(false));
 
+        // CC PromptInput.tsx:2735-2737: cancelling leaves the mode alone.
+        let cancelled_thinking_store = crate::state::store::AppStore::new(
+            crate::state::app_state_store::AppState::default(),
+            None,
+        );
+        drive_prompt_with_store(
+            cancelled_thinking_store.clone(),
+            vec![
+                key_with_modifiers(KeyCode::Char('t'), KeyModifiers::ALT),
+                key(KeyCode::Down),
+                key(KeyCode::Esc),
+            ],
+        );
+        assert_eq!(cancelled_thinking_store.get().thinking_enabled, None);
+
         let fast_store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
             None,
@@ -4431,6 +4393,8 @@ mod tests {
 
     #[test]
     fn prompt_input_chat_actions_open_model_and_thinking_boundaries() {
+        // Selecting a thinking mode posts a timed notification.
+        crate::utils::process_runtime::initialize_test_process_runtime();
         let model = prompt_after_events(
             false,
             vec![key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT)],
@@ -4445,6 +4409,13 @@ mod tests {
             thinking.contains("Toggle thinking mode"),
             "canvas=\n{thinking}"
         );
+        // CC :2713-2737: selecting and cancelling both close the toggle.
+        for closing in [vec![key(KeyCode::Down), key(KeyCode::Enter)], vec![key(KeyCode::Esc)]] {
+            let mut events = vec![key_with_modifiers(KeyCode::Char('t'), KeyModifiers::ALT)];
+            events.extend(closing);
+            let closed = prompt_after_events(false, events);
+            assert!(!closed.contains("Toggle thinking mode"), "canvas=\n{closed}");
+        }
 
         let fast = prompt_after_events(
             false,
