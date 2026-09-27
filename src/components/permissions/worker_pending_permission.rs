@@ -5,7 +5,7 @@
 //! and does not make permission decisions.
 
 use super::worker_badge::WorkerBadge;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::tools::agent_tool::agent_color_manager::parse_agent_color_name;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
@@ -40,7 +40,7 @@ pub fn WorkerPendingPermission(
             padding_right: 1u32,
         ) {
             View(margin_bottom: 1u32) {
-                SpinnerGlyph(frame: 0usize, color: Some(theme.warning), reduced_motion: false)
+                Spinner
                 Text(
                     content: " Waiting for team lead approval".to_string(),
                     color: theme.warning,

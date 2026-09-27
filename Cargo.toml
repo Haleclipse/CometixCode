@@ -44,11 +44,12 @@ strip-ansi-escapes = "0.2.1"
 # UAX #29 segmentation with compiled-in data, including the dictionary models
 # for Chinese, Japanese, Khmer, Lao, Myanmar and Thai. No system ICU.
 icu_segmenter = { version = "2.3.0", features = ["auto"] }
-# iocraft fork carrying the CC Ink parity primitives (row-level diff, event
-# propagation, SIGCONT self-healing, IME cursor, bracketed paste, grid layout).
+# iocraft fork with CC Ink parity primitives. This and the three other
+# sibling checkouts below are `path` here and `git` in the public mirror;
+# scripts/sync-public-cargo.sh derives the mirror's manifest and lock.
 iocraft = { git = "https://github.com/Haleclipse/CometixTUI", features = ["unstable-output-streams"] }
-# Rust port of chalk, a member of the same workspace as the iocraft fork; owns
-# color-level detection and string styling, matching the source's chalk import.
+# Rust port of chalk (same workspace as the iocraft fork); owns color-level
+# detection and string styling, matching the source's chalk import.
 chalk = { git = "https://github.com/Haleclipse/CometixTUI" }
 
 # Rust port of @anthropic-ai/sdk.
@@ -142,12 +143,6 @@ rmcp = { version = "2.1.0", default-features = false, optional = true, features 
     "transport-streamable-http-client-reqwest",
 ] }
 
-# ── Platform TLS backends ────────────────────────────────────────────────
-# Android/Termux: native-tls (OpenSSL). reqwest's rustls* features always
-# enable rustls-platform-verifier, which panics without JNI context.
-# Desktop: rustls-no-provider + ring (installed by utils/tls_provider.rs). Keep anthropic-sdk
-# on rustls-no-provider too — reqwest feature "rustls" would union aws-lc-sys.
-
 # CC `asciicast.ts:118-125` reads `process.stdout.columns/rows`, which Node
 # services with ioctl(TIOCGWINSZ) on Unix and GetConsoleScreenBufferInfo on
 # Windows. utils/asciicast.rs calls libc directly for the first; the second
@@ -157,28 +152,24 @@ rmcp = { version = "2.1.0", default-features = false, optional = true, features 
 [target.'cfg(not(unix))'.dependencies]
 crossterm = "0.29"
 
+# ── Platform TLS backends ────────────────────────────────────────────────
+# Android/Termux: native-tls (OpenSSL). reqwest's rustls* features always
+# enable rustls-platform-verifier, which panics without JNI context.
+# Desktop: rustls-no-provider + ring (installed by utils/tls_provider.rs). Keep anthropic-sdk
+# on rustls-no-provider too — reqwest feature "rustls" would union aws-lc-sys.
+# Target tables only add the TLS feature; shared features stay in [dependencies].
 [target.'cfg(target_os = "android")'.dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "native-tls"] }
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "native-tls"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["native-tls"], optional = true }
 rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
-    "auth",
-    "client",
-    "elicitation",
     "reqwest-native-tls",
-    "transport-child-process",
-    "transport-streamable-http-client-reqwest",
 ] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls-no-provider"] }
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "rustls-tls-webpki-roots"], optional = true }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["rustls-tls-webpki-roots"], optional = true }
 rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
-    "auth",
-    "client",
-    "elicitation",
     "reqwest-tls-no-provider",
-    "transport-child-process",
-    "transport-streamable-http-client-reqwest",
 ] }
 # ring crypto provider for rustls — tls_provider installs it before HTTPS.
 rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
@@ -193,3 +184,13 @@ codegen-units = 16
 strip = true
 opt-level = "s"
 panic = "abort"
+
+# Release-shaped build that external sampling profilers can read: same
+# optimization level, but full debug info and symbols kept. Use for CPU
+# investigations (`cargo build --profile profiling`, then macOS `sample`
+# / samply / Instruments on the running process). `panic = "abort"` is
+# inherited; only symbol visibility differs from what ships.
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = true

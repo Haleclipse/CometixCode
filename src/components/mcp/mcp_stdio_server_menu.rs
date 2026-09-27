@@ -12,7 +12,7 @@ use crate::components::design_system::byline::Byline;
 use crate::components::design_system::keyboard_shortcut_hint::{
     KeyboardShortcutHint, KeyboardShortcutHintStyleContext,
 };
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::constants::figures;
 use crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings;
 use crate::services::mcp::types::McpServerConnectionType;
@@ -240,7 +240,7 @@ pub fn MCPStdioServerMenu<'a>(
                     Text(content: server.name.clone(), weight: Weight::Bold, wrap: TextWrap::NoWrap)
                 }
                 View(flex_direction: FlexDirection::Row) {
-                    SpinnerGlyph()
+                    Spinner
                     Text(content: " Restarting MCP server process".to_string(), wrap: TextWrap::NoWrap)
                 }
                 Text(content: "This may take a few moments.".to_string(), dim: true, wrap: TextWrap::NoWrap)

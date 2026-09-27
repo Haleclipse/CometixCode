@@ -12,7 +12,7 @@ use crate::components::design_system::byline::Byline;
 use crate::components::design_system::keyboard_shortcut_hint::{
     KeyboardShortcutHint, KeyboardShortcutHintStyleContext,
 };
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::constants::figures;
 use crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings;
 use crate::services::mcp::types::{McpServerConnectionType, Transport};
@@ -750,7 +750,7 @@ pub fn MCPRemoteServerMenu<'a>(
             View(flex_direction: FlexDirection::Column, padding: 1u32, row_gap: 1u32) {
                 Text(content: format!("Authenticating with {}…", server.name), color: theme.claude, wrap: TextWrap::NoWrap)
                 View(flex_direction: FlexDirection::Row) {
-                    SpinnerGlyph()
+                    Spinner
                     Text(content: auth_copy.to_string(), wrap: TextWrap::NoWrap)
                 }
                 #(authorization_url_value.map(|url| element! {
@@ -789,7 +789,7 @@ pub fn MCPRemoteServerMenu<'a>(
             View(flex_direction: FlexDirection::Column, padding: 1u32, row_gap: 1u32) {
                 Text(content: format!("Authenticating with {}…", server.name), color: theme.claude, wrap: TextWrap::NoWrap)
                 View(flex_direction: FlexDirection::Row) {
-                    SpinnerGlyph()
+                    Spinner
                     Text(content: " A browser window will open for authentication".to_string(), wrap: TextWrap::NoWrap)
                 }
                 #(claude_ai_auth_url_value.map(|url| element! {
@@ -859,7 +859,7 @@ pub fn MCPRemoteServerMenu<'a>(
                     Text(content: "…".to_string(), wrap: TextWrap::NoWrap)
                 }
                 View(flex_direction: FlexDirection::Row) {
-                    SpinnerGlyph()
+                    Spinner
                     Text(content: " Establishing connection to MCP server".to_string(), wrap: TextWrap::NoWrap)
                 }
                 Text(content: "This may take a few moments.".to_string(), dim: true, wrap: TextWrap::NoWrap)

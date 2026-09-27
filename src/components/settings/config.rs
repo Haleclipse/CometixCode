@@ -12,7 +12,6 @@ use crate::components::channel_downgrade_dialog::{
 };
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::theme_provider::{ThemePreviewState, ThemeSetting};
-use crate::components::language_picker;
 use crate::components::language_picker::LanguagePicker;
 use crate::components::model_picker as model;
 use crate::components::model_picker::{ModelPicker, ModelPickerSelection};
@@ -40,19 +39,6 @@ fn item_matches_query(item: &SettingItem, query_lower: &str) -> bool {
     query_lower.is_empty()
         || item.label.to_lowercase().contains(query_lower)
         || item.search_text.to_lowercase().contains(query_lower)
-}
-
-fn cursor_parts(text: &str, cursor_offset: usize) -> (String, String, String) {
-    let len = text.chars().count();
-    let offset = cursor_offset.min(len);
-    let before: String = text.chars().take(offset).collect();
-    match text.chars().nth(offset) {
-        Some(ch) => {
-            let after: String = text.chars().skip(offset + 1).collect();
-            (before, ch.to_string(), after)
-        }
-        None => (before, " ".to_string(), String::new()),
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +97,19 @@ fn submenu_for_setting(id: &str) -> Option<SettingsSubmenu> {
         "language" => Some(SettingsSubmenu::Language),
         _ => None,
     }
+}
+
+/// Maps to: CC `Config.tsx`:890-896 — the language row shows
+/// `currentLanguage ?? 'Default (English)'`.
+fn language_display_value(language: Option<&str>) -> String {
+    language.unwrap_or("Default (English)").to_string()
+}
+
+/// Inverse of [`language_display_value`]. Cometix keeps each row's shown
+/// value in `items` instead of a separate `currentLanguage` state, so the
+/// `initialLanguage` handed to LanguagePicker is read back from the row.
+fn current_language_from_display(display: &str) -> Option<String> {
+    (!display.eq_ignore_ascii_case("Default (English)")).then(|| display.to_string())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,6 +181,25 @@ fn preview_runtime_display_setting(
         store.replace_with(|state| {
             let mut settings = (*state.settings).clone();
             settings.prefers_reduced_motion = Some(*value);
+            state.settings = std::sync::Arc::new(settings);
+        });
+    }
+}
+
+fn preview_streaming_text_display_setting(
+    store: Option<crate::state::store::AppStore>,
+    item: &SettingItem,
+) {
+    if item.id != "streamingTextDisplay" {
+        return;
+    }
+    let value = item.display_value();
+    // Same in-memory preview route as `prefersReducedMotion`: REPL reads the
+    // AppState settings snapshot, so the next stream uses the new mode.
+    if let Some(store) = store {
+        store.replace_with(|state| {
+            let mut settings = (*state.settings).clone();
+            settings.streaming_text_display = Some(value.clone());
             state.settings = std::sync::Arc::new(settings);
         });
     }
@@ -511,6 +529,7 @@ fn config_summary_label(item: &SettingItem) -> &'static str {
         "autoCompactEnabled" => "auto-compact",
         "spinnerTipsEnabled" => "tips",
         "prefersReducedMotion" => "reduce motion",
+        "streamingTextDisplay" => "streaming text",
         "thinkingEnabled" => "thinking mode",
         "fastMode" => "fast mode",
         "promptSuggestionEnabled" => "prompt suggestions",
@@ -587,6 +606,12 @@ fn revert_runtime_previews(
     {
         preview_runtime_display_setting(store.clone(), item);
     }
+    if let Some(item) = initial_items
+        .iter()
+        .find(|item| item.id == "streamingTextDisplay")
+    {
+        preview_streaming_text_display_setting(store.clone(), item);
+    }
     if let Some(item) = initial_items.iter().find(|item| item.id == "verbose") {
         preview_verbose_setting(store.clone(), item);
     }
@@ -612,7 +637,6 @@ fn activate_focused_config_item(
     mut submenu: State<Option<SettingsSubmenu>>,
     mut submenu_focused: State<usize>,
     mut tabs_hidden_request: State<Option<bool>>,
-    mut language_input: SearchInput,
     mut theme_preview: State<ThemePreviewState>,
     runtime_display_context: Option<crate::state::store::AppStore>,
     runtime_notifications_context: NotificationsWriter,
@@ -639,11 +663,8 @@ fn activate_focused_config_item(
         return;
     }
     if let Some(menu) = submenu_for_item(&current_item) {
-        if menu == SettingsSubmenu::Language {
-            language_input.set(language_picker::language_display_to_input(
-                &current_item.display_value(),
-            ));
-        } else {
+        // LanguagePicker seeds its own field from `initialLanguage`.
+        if menu != SettingsSubmenu::Language {
             let options = settings_submenu_options(menu);
             let focus = focused_index_for_menu_value(menu, &options, &current_item.display_value());
             submenu_focused.set(focus);
@@ -666,6 +687,7 @@ fn activate_focused_config_item(
     let mut all = items.read().clone();
     all[real_idx].toggle();
     preview_runtime_display_setting(runtime_display_context.clone(), &all[real_idx]);
+    preview_streaming_text_display_setting(runtime_display_context.clone(), &all[real_idx]);
     preview_verbose_setting(runtime_display_context.clone(), &all[real_idx]);
     preview_expand_display_setting(runtime_display_context.clone(), &all[real_idx]);
     preview_prompt_suggestion_setting(runtime_display_context, &all[real_idx]);
@@ -717,12 +739,13 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     let search = use_search_input(&mut hooks, "");
     // Maps to: CC Config.tsx isSearchMode — default true (search box focused)
     let mut is_search_mode = hooks.use_state(|| true);
+    // Maps to: CC Config.tsx:197 `useTerminalFocus()`, handed to SearchBox so
+    // the cursor cell disappears while the terminal is blurred.
+    let is_terminal_focused = hooks.use_terminal_focus();
     // Maps to: CC Config.tsx `showSubmenu`. Submenus are UI-only previews:
     // selecting an option updates this in-memory Config item list only.
     let mut submenu = hooks.use_state(|| None::<SettingsSubmenu>);
     let mut submenu_focused = hooks.use_state(|| 0usize);
-    // Maps to official LanguagePicker's free-text state.
-    let language_input = use_search_input(&mut hooks, "");
     // Maps to official ThemeProvider preview/save/cancel state. This remains
     // in-memory in Cometix unless config writes are explicitly opted in later.
     let mut theme_preview = hooks.use_state(ThemePreviewState::default);
@@ -962,7 +985,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                     submenu,
                     submenu_focused,
                     tabs_hidden_request,
-                    language_input,
                     theme_preview,
                     runtime_display_context.clone(),
                     runtime_notifications_context.clone(),
@@ -987,50 +1009,16 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             TerminalEvent::Key(KeyEvent { code, kind, .. }) if *kind != KeyEventKind::Release => {
                 if let Some(active_submenu) = submenu.get() {
                     // Official Config `handleKeyDown`: `if (showSubmenu !== null) return`.
-                    // ModelPicker owns its own chords; Config only yields.
-                    if active_submenu == SettingsSubmenu::Model {
+                    // ModelPicker and LanguagePicker own their own keys;
+                    // Config only yields.
+                    if matches!(
+                        active_submenu,
+                        SettingsSubmenu::Model | SettingsSubmenu::Language
+                    ) {
                         return;
                     }
-                    // Theme / OutputStyle / Language still use the Config-owned
-                    // list adapter until those pickers reclaim keys.
-                    if active_submenu == SettingsSubmenu::Language {
-                        let mut language_input = language_input;
-                        let modifiers =
-                            if let TerminalEvent::Key(KeyEvent { modifiers, .. }) = event.event() {
-                                *modifiers
-                            } else {
-                                KeyModifiers::empty()
-                            };
-                        match code {
-                            KeyCode::Esc => {
-                                submenu.set(None);
-                                language_input.clear();
-                                tabs_hidden_request.set(Some(false));
-                                event.stop_propagation();
-                            }
-                            KeyCode::Enter => {
-                                let display_value = language_picker::language_input_to_display(
-                                    &language_input.text(),
-                                );
-                                let mut all = items.read().clone();
-                                apply_settings_submenu_selection(
-                                    &mut all,
-                                    active_submenu,
-                                    &display_value,
-                                );
-                                items.set(all);
-                                submenu.set(None);
-                                language_input.clear();
-                                tabs_hidden_request.set(Some(false));
-                                event.stop_propagation();
-                            }
-                            _ => {
-                                language_input.handle_edit_key(code, &modifiers);
-                                event.stop_propagation();
-                            }
-                        }
-                        return;
-                    }
+                    // Theme / OutputStyle still use the Config-owned list
+                    // adapter until those pickers reclaim keys.
 
                     let options = settings_submenu_options(active_submenu);
                     let count = options.len();
@@ -1144,12 +1132,9 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 set_auto_updates_channel_latest(&mut all, real_idx);
                                 items.set(all);
                             } else if let Some(menu) = submenu_for_item(&current_item) {
-                                if menu == SettingsSubmenu::Language {
-                                    let mut language_input = language_input;
-                                    language_input.set(language_picker::language_display_to_input(
-                                        &current_item.display_value(),
-                                    ));
-                                } else {
+                                // LanguagePicker seeds its own field from
+                                // `initialLanguage`.
+                                if menu != SettingsSubmenu::Language {
                                     let options = settings_submenu_options(menu);
                                     let focus = focused_index_for_menu_value(
                                         menu,
@@ -1209,12 +1194,9 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 set_auto_updates_channel_latest(&mut all, real_idx);
                                 items.set(all);
                             } else if let Some(menu) = submenu_for_item(&current_item) {
-                                if menu == SettingsSubmenu::Language {
-                                    let mut language_input = language_input;
-                                    language_input.set(language_picker::language_display_to_input(
-                                        &current_item.display_value(),
-                                    ));
-                                } else {
+                                // LanguagePicker seeds its own field from
+                                // `initialLanguage`.
+                                if menu != SettingsSubmenu::Language {
                                     let options = settings_submenu_options(menu);
                                     let focus = focused_index_for_menu_value(
                                         menu,
@@ -1274,12 +1256,9 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 set_auto_updates_channel_latest(&mut all, real_idx);
                                 items.set(all);
                             } else if let Some(menu) = submenu_for_item(&current_item) {
-                                if menu == SettingsSubmenu::Language {
-                                    let mut language_input = language_input;
-                                    language_input.set(language_picker::language_display_to_input(
-                                        &current_item.display_value(),
-                                    ));
-                                } else {
+                                // LanguagePicker seeds its own field from
+                                // `initialLanguage`.
+                                if menu != SettingsSubmenu::Language {
                                     let options = settings_submenu_options(menu);
                                     let focus = focused_index_for_menu_value(
                                         menu,
@@ -1364,10 +1343,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     let has_below = end < count;
 
     let is_search_focused = is_search_mode.get() && !header_focused;
-    let query_is_empty = search_query.is_empty();
-    let (before_cursor, cursor_cell, after_cursor) = cursor_parts(&search_query, search.offset());
-    let placeholder_first = PLACEHOLDER.chars().next().unwrap_or(' ').to_string();
-    let placeholder_rest: String = PLACEHOLDER.chars().skip(1).collect();
 
     if let Some(active_submenu) = submenu.get() {
         if active_submenu == SettingsSubmenu::Theme {
@@ -1476,15 +1451,33 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             }
             .into_any()
         } else if active_submenu == SettingsSubmenu::Language {
-            let language_query = language_input.text();
+            // Maps to: CC `Config.tsx`:1976-2014.
+            let initial_language = items
+                .read()
+                .iter()
+                .find(|item| item.id == "language")
+                .and_then(|item| current_language_from_display(&item.display_value()));
 
             element! {
                 ContextProvider(value: Context::owned(theme)) {
                     View(flex_direction: FlexDirection::Column) {
                         LanguagePicker(
-                            language: language_query,
-                            cursor_offset: language_input.offset(),
-                            columns: Some(language_picker::LANGUAGE_PICKER_COLUMNS),
+                            initial_language: initial_language,
+                            on_complete: move |language: Option<String>| {
+                                let mut all = items.read().clone();
+                                apply_settings_submenu_selection(
+                                    &mut all,
+                                    SettingsSubmenu::Language,
+                                    &language_display_value(language.as_deref()),
+                                );
+                                items.set(all);
+                                submenu.set(None);
+                                tabs_hidden_request.set(Some(false));
+                            },
+                            on_cancel: move |_| {
+                                submenu.set(None);
+                                tabs_hidden_request.set(Some(false));
+                            },
                         )
                         Text(content: "Enter to confirm · Esc to cancel".to_string(), color: theme.inactive)
                     }
@@ -1584,67 +1577,19 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     } else {
         element! {
             View(flex_direction: FlexDirection::Column) {
-            // Maps to: CC SearchBox (components/SearchBox.tsx line 28-68).
-            // Official SearchBox is pure Text rendering: input state comes
-            // from useSearchInput, and the cursor is an inverse Text cell.
-            View(
-                margin_bottom: 1u32,
-                border_style: BorderStyle::Round,
-                border_color: if is_search_focused { theme.suggestion } else { theme.subtle },
-                padding_left: 1u32,
-                padding_right: 1u32,
-            ) {
-                View(flex_direction: FlexDirection::Row) {
-                    Text(
-                        content: "⌕ ",
-                        color: if is_search_focused { theme.text } else { theme.inactive },
-                        wrap: TextWrap::NoWrap,
-                    )
-                    View(flex_direction: FlexDirection::Row, flex_grow: 1.0f32, overflow: Overflow::Hidden, height: 1u32) {
-                        // Focused + empty: cursor sits on the first
-                        // placeholder character, exactly like CC.
-                        #(if is_search_focused && query_is_empty {
-                            Some(element! {
-                                Text(content: placeholder_first.clone(), invert: true, wrap: TextWrap::NoWrap)
-                            })
-                        } else { None })
-                        #(if is_search_focused && query_is_empty {
-                            Some(element! {
-                                Text(content: placeholder_rest.clone(), color: theme.inactive, wrap: TextWrap::NoWrap)
-                            })
-                        } else { None })
-
-                        // Focused + query: render query around the inverse
-                        // cursor cell. At EOL the cursor cell is a space.
-                        #(if is_search_focused && !query_is_empty {
-                            Some(element! {
-                                Text(content: before_cursor.clone(), wrap: TextWrap::NoWrap)
-                            })
-                        } else { None })
-                        #(if is_search_focused && !query_is_empty {
-                            Some(element! {
-                                Text(content: cursor_cell.clone(), invert: true, wrap: TextWrap::NoWrap)
-                            })
-                        } else { None })
-                        #(if is_search_focused && !query_is_empty {
-                            Some(element! {
-                                Text(content: after_cursor.clone(), wrap: TextWrap::NoWrap)
-                            })
-                        } else { None })
-
-                        // Unfocused states: no cursor; show query or placeholder.
-                        #(if !is_search_focused && query_is_empty {
-                            Some(element! {
-                                Text(content: PLACEHOLDER, color: theme.inactive, wrap: TextWrap::NoWrap)
-                            })
-                        } else { None })
-                        #(if !is_search_focused && !query_is_empty {
-                            Some(element! {
-                                Text(content: search_query.clone(), color: theme.inactive, wrap: TextWrap::NoWrap)
-                            })
-                        } else { None })
-                    }
-                }
+            // Maps to: CC Config.tsx:2123-2129 — `<SearchBox query isFocused
+            // isTerminalFocused cursorOffset placeholder="Search settings…" />`,
+            // the same component LogSelector and the plugin menus mount. The
+            // margin stands for the parent Box's `gap={1}` (:2118-2122)
+            // between the box and the list below it.
+            View(margin_bottom: 1u32) {
+                crate::components::search_box::SearchBox(
+                    query: search_query.clone(),
+                    placeholder: Some(PLACEHOLDER.to_string()),
+                    is_focused: is_search_focused,
+                    is_terminal_focused: is_terminal_focused,
+                    cursor_offset: Some(search.offset()),
+                )
             }
 
             // Maps to: CC "↑ N more above"
@@ -2784,8 +2729,11 @@ mod tests {
 
     #[test]
     fn config_verbose_preview_updates_app_state_for_footer() {
+        // Six Downs from the top reached "Verbose output" before the
+        // Cometix-only "Streaming text" row was added above it.
         let events = stream::iter([
             press(KeyCode::Enter),
+            press(KeyCode::Down),
             press(KeyCode::Down),
             press(KeyCode::Down),
             press(KeyCode::Down),
@@ -3417,6 +3365,49 @@ mod tests {
         assert!(
             !crate::utils::session_storage::is_session_write_enabled(),
             "Language picker previews must not imply session writes"
+        );
+    }
+
+    #[test]
+    fn config_language_picker_types_settings_keys_as_text() {
+        // CC LanguagePicker.tsx:23-25: the Settings context keeps `n` (and
+        // the list's j / k / space) as text while the picker is open.
+        let mut events = text_events("language");
+        events.push(press(KeyCode::Enter));
+        events.push(press(KeyCode::Char(' ')));
+        events.extend("nj k".chars().map(|ch| press(KeyCode::Char(ch))));
+        events.push(press(KeyCode::Enter));
+        let text = render_text_with_events(events);
+
+        assert!(
+            text.contains("nj k"),
+            "keys bound in the Settings list must be typed into the picker; canvas=\n{text}"
+        );
+        assert!(
+            !text.contains("Enter to confirm · Esc to cancel"),
+            "Enter should submit and close the picker; canvas=\n{text}"
+        );
+    }
+
+    #[test]
+    fn config_language_picker_escape_cancels_without_applying() {
+        // TextInput's Escape arms the "Esc again to clear" notification
+        // timer before confirm:no cancels (CC useTextInput.ts:320-329).
+        crate::utils::process_runtime::initialize_test_process_runtime();
+        let mut events = text_events("language");
+        events.push(press(KeyCode::Enter));
+        events.push(press(KeyCode::Char(' ')));
+        events.extend("Korean".chars().map(|ch| press(KeyCode::Char(ch))));
+        events.push(press(KeyCode::Esc));
+        let text = render_text_with_events(events);
+
+        assert!(
+            !text.contains("Enter your preferred response and voice language:"),
+            "confirm:no should close the picker; canvas=\n{text}"
+        );
+        assert!(
+            !text.contains("Korean") && text.contains("Default (English)"),
+            "a cancelled picker leaves the language row unchanged; canvas=\n{text}"
         );
     }
     #[component]

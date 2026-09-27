@@ -4,22 +4,33 @@ use crate::components::text_input::TextInput;
 use iocraft::prelude::*;
 use unicode_width::UnicodeWidthStr;
 
+/// Maps to: CC `HistorySearchInput` props (`:6-10`). `value` carries both
+/// `value` and `onChange`: the TextInput writes the query State it is given,
+/// which is `useHistorySearch`'s `historyQuery` / `setHistoryQuery`.
 #[derive(Default, Props)]
 pub struct HistorySearchInputProps {
     pub value: Option<State<String>>,
-    pub cursor_offset: Option<State<usize>>,
     pub history_failed_match: bool,
 }
 
+/// Maps to: CC `HistorySearchInput` (`:12-35`).
 #[component]
 pub fn HistorySearchInput(
     props: &HistorySearchInputProps,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let internal_value = hooks.use_state(String::new);
-    let internal_cursor = hooks.use_state(|| 0usize);
+    let mut cursor = hooks.use_state(|| 0usize);
     let value = props.value.unwrap_or(internal_value);
-    let cursor = props.cursor_offset.unwrap_or(internal_cursor);
+    // CC :26-28 `cursorOffset={value.length}` with a no-op
+    // `onChangeCursorOffset`: "Force cursor to end of search input since
+    // navigation should cancel search". The TextInput's cursor is a byte
+    // offset, so the end is the query's byte length.
+    let end = value.read().len();
+    if cursor.get() != end {
+        cursor.set(end);
+    }
+    // CC :29 `columns={stringWidth(value) + 1}`.
     let width = UnicodeWidthStr::width(value.read().as_str()) + 1;
     element! {
         View(flex_direction: FlexDirection::Row, column_gap: 1u32) {

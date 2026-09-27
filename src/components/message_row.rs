@@ -44,9 +44,6 @@ pub struct MessageRowProps {
     /// Terminal columns, included in the row memo key because wrapping changes
     /// visible output even when message content is unchanged.
     pub columns: u16,
-    /// Pending permission request tool-use id, matching official
-    /// `pendingWorkerRequest?.toolUseId` for auxiliary tool rows.
-    pub pending_permission_tool_use_id: Option<String>,
     /// Maps to: CC `Messages.tsx:260` `inProgressToolUseIDs: Set<string>`,
     /// threaded down from REPL-owned state (`REPL.tsx:1897`).
     pub in_progress_tool_use_ids: Arc<HashSet<String>>,
@@ -117,11 +114,6 @@ impl Component for MessageRow {
         }
         let static_cache_key = next_static_key.as_ref().map(message_row_cache_key);
         self.last_static_key = next_static_key;
-        let is_waiting_for_permission = assistant_tool_use_matches_pending_permission(
-            &message,
-            props.pending_permission_tool_use_id.as_deref(),
-            props.lookups.as_deref(),
-        );
         let message = apply_row_runtime_state(message, props);
         // CC `MessageRow.tsx:172-186`: computed AFTER the runtime-state pass,
         // so a collapsed group reads the same liveness both places.
@@ -143,7 +135,6 @@ impl Component for MessageRow {
                                     message: message,
                                     add_margin: props.add_margin,
                                     can_animate: should_animate,
-                                    is_waiting_for_permission: is_waiting_for_permission,
                                     verbose: props.verbose,
                                     is_transcript_mode: props.is_transcript_mode,
                                     expand_thinking: props.expand_thinking,
@@ -168,7 +159,6 @@ impl Component for MessageRow {
                                 message: message,
                                 add_margin: props.add_margin,
                                 can_animate: should_animate,
-                                is_waiting_for_permission: is_waiting_for_permission,
                                 verbose: props.verbose,
                                 is_transcript_mode: props.is_transcript_mode,
                                 expand_thinking: props.expand_thinking,
@@ -539,33 +529,6 @@ fn apply_row_runtime_state(
     message
 }
 
-fn assistant_tool_use_matches_pending_permission(
-    message: &RenderableMessage,
-    pending_tool_use_id: Option<&str>,
-    lookups: Option<&MessageLookups>,
-) -> bool {
-    let Some(pending_tool_use_id) = pending_tool_use_id else {
-        return false;
-    };
-    match &message.kind {
-        // Maps to: CC `AssistantToolUseMessage.tsx:122`
-        // `const isWaitingForPermission = pendingWorkerRequest?.toolUseId === param.id`.
-        //
-        // CC needs no liveness guard because the pending request is cleared
-        // when the tool resolves. Cometix keeps one rather than assume that of
-        // its own pending-id plumbing — but sourced from `resolvedToolUseIDs`
-        // like every other liveness question, not from a status on the row.
-        RenderableMessageKind::Assistant { .. } if is_assistant_tool_use(message) => {
-            let id = assistant_tool_use_id(message).unwrap_or(message.uuid.as_str());
-            id == pending_tool_use_id
-                && !lookups
-                    .map(|lookups| lookups.resolved_tool_use_ids.contains(id))
-                    .unwrap_or(false)
-        }
-        _ => false,
-    }
-}
-
 fn sibling_tools_resolved(tool_use_id: &str, lookups: Option<&MessageLookups>) -> bool {
     let Some(lookups) = lookups else {
         return true;
@@ -636,46 +599,6 @@ mod tests {
             BTreeSet::from([tool_use_id.to_string()]),
         );
         lookups
-    }
-
-    #[test]
-    fn pending_permission_matches_only_active_tool_use_id() {
-        let unresolved = MessageLookups::default();
-        let resolved = resolved_lookup("toolu_1");
-        let row = tool_use("tool1", "toolu_1");
-
-        // Liveness now comes from `resolvedToolUseIDs`, so the same row matches
-        // while the tool is unresolved and stops matching once its result lands.
-        assert!(assistant_tool_use_matches_pending_permission(
-            &row,
-            Some("toolu_1"),
-            Some(&unresolved),
-        ));
-        assert!(!assistant_tool_use_matches_pending_permission(
-            &row,
-            Some("toolu_1"),
-            Some(&resolved),
-        ));
-        assert!(!assistant_tool_use_matches_pending_permission(
-            &row,
-            Some("toolu_2"),
-            Some(&unresolved),
-        ));
-
-        // Empty block id → the row falls back to its uuid, as before.
-        let fallback_id_message = RenderableMessage::assistant_block(
-            "message-id-fallback",
-            crate::types::message::AssistantContent::ToolUse(crate::types::message::ToolUseBlock {
-                id: crate::types::ids::ToolUseId(String::new()),
-                name: "Bash".to_string(),
-                input: serde_json::json!({"command": "echo permission-gated"}),
-            }),
-        );
-        assert!(assistant_tool_use_matches_pending_permission(
-            &fallback_id_message,
-            Some("message-id-fallback"),
-            Some(&unresolved),
-        ));
     }
 
     #[test]

@@ -6,9 +6,9 @@
 
 pub mod flashing_char;
 pub mod glimmer_message;
-pub mod glyph;
 pub mod shimmer_char;
 pub mod spinner_animation_row;
+pub mod spinner_glyph;
 pub mod teammate_select_hint;
 pub mod teammate_spinner_line;
 pub mod teammate_spinner_tree;
@@ -17,7 +17,7 @@ pub mod use_shimmer_animation;
 pub mod use_stalled_animation;
 pub mod utils;
 
-pub use glyph::SpinnerGlyph;
+pub use spinner_glyph::SpinnerGlyph;
 pub use teammate_tree::{
     TeammateMessageBlockSnapshot, TeammateMessageSnapshot, TeammateRecentActivity,
     TeammateSpinnerColor, TeammateSpinnerTask, TeammateSpinnerTree, TeammateTaskSnapshot,
@@ -51,9 +51,15 @@ pub fn Spinner(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         .try_use_context::<Theme>()
         .map(|theme| *theme)
         .unwrap_or_else(|| *crate::utils::theme::current());
-    let reduced_motion = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.settings.prefers_reduced_motion.unwrap_or(false)
-    });
+    // CC reads `useSettings()`, whose provider wraps every screen. Here the
+    // startup screens (main.rs's "Resuming conversation…", "Loading
+    // commands…") mount outside `AppStateProvider` (Contract B), so the
+    // setting is read provider-optionally and defaults to animated there.
+    let reduced_motion = crate::state::app_state::use_app_state_maybe_outside_of_provider(
+        &mut hooks,
+        |state| state.settings.prefers_reduced_motion.unwrap_or(false),
+    )
+    .unwrap_or(false);
     let frame = hooks.use_animation_frame(if reduced_motion {
         None
     } else {
@@ -296,6 +302,21 @@ fn format_duration_ms(ms: u64) -> String {
         format!("{hours}h {minutes}m {seconds}s")
     } else {
         format!("{minutes}m {seconds}s")
+    }
+}
+
+/// The animation row's clock interval; `None` freezes it. Reduced motion
+/// still ticks once a second so wall-elapsed text refreshes (Cometix keeps
+/// the timer live where CC relies on parent re-renders).
+fn spinner_row_interval(mode: SpinnerMode, reduced_motion: bool, frozen: bool) -> Option<Duration> {
+    if frozen {
+        None
+    } else if reduced_motion {
+        Some(Duration::from_millis(1_000))
+    } else if mode == SpinnerMode::Requesting {
+        Some(Duration::from_millis(50))
+    } else {
+        Some(Duration::from_millis(100))
     }
 }
 
@@ -656,7 +677,12 @@ pub fn SpinnerWithVerb(
     // Maps to CC `useStalledAnimation`: mutable timing values are refs and
     // must not schedule a render while being refreshed by the render itself.
     let mut stalled_state = hooks.use_ref(StalledState::default);
-    let mut thinking_status_state = hooks.use_state(ThinkingStatusState::default);
+    // Refs, not States: CC's SpinnerAnimationRow keeps its thinking status
+    // and token counter in `useRef` and steps them during render, so a step
+    // never schedules a render of its own — the next one comes from the row
+    // clock. As States they re-rendered on every step and, while the token
+    // counter was catching up, that meant a frame every ~20ms.
+    let mut thinking_status_state = hooks.use_ref(ThinkingStatusState::default);
     let settings_reduced_motion = crate::state::app_state::use_app_state(&mut hooks, |state| {
         state.settings.prefers_reduced_motion.unwrap_or(false)
     });
@@ -762,13 +788,20 @@ pub fn SpinnerWithVerb(
     let anim_paused = reduced_motion || props.disable_animation || props.time_ms_override.is_some();
     // Still tick under reduced_motion (1s) so wall-elapsed UI can refresh;
     // official relies on parent re-renders, but we keep the timer live.
-    let frame_interval = if props.time_ms_override.is_some() || props.disable_animation {
-        None
-    } else if reduced_motion {
-        Some(Duration::from_millis(1_000))
-    } else {
-        Some(Duration::from_millis(50))
-    };
+    // Row clock. CC 2.1.88 `SpinnerAnimationRow` ticks at a flat 50ms;
+    // CC 2.1.280 (`chunk-dgxaxeme.js:841`) ticks at 50ms only while
+    // requesting — the one mode whose glimmer steps every 50ms — and at
+    // 100ms otherwise, since the glimmer then steps every 200ms and the
+    // glyph every 120ms, so a 50ms clock rendered frames nothing moved in.
+    // Adopted here (deliberate 2.1.280 alignment): with the streaming
+    // preview coalesced at 100ms this is what puts streaming near CC's
+    // ~9 frames/s. 280's `glimmerParked` prop (defaults to false) has no
+    // 2.1.88 counterpart and is treated as false.
+    let frame_interval = spinner_row_interval(
+        props.mode,
+        reduced_motion,
+        props.time_ms_override.is_some() || props.disable_animation,
+    );
     let frame = hooks.use_animation_frame(frame_interval);
     let loading_start = hooks.use_const(|| Instant::now());
     // Depend on the frame tick so each interval re-samples wall time.
@@ -791,7 +824,9 @@ pub fn SpinnerWithVerb(
         .response_length_ref
         .map(|response_length_ref| response_length_ref.get())
         .unwrap_or(props.response_length);
-    let mut displayed_response_length_state = hooks.use_state(|| current_response_length);
+    // CC SpinnerAnimationRow.tsx:155-169 `tokenCounterRef` ("driven by 50ms
+    // clock"): one increment per row tick, held in a ref.
+    let mut displayed_response_length_state = hooks.use_ref(|| current_response_length);
     let token_animation_paused = anim_paused;
     let displayed_response_length = next_displayed_response_length(
         displayed_response_length_state.get(),
@@ -1191,6 +1226,77 @@ pub fn SpinnerWithVerb(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // CC `Spinner()` (Spinner.tsx:578) advances its glyph every 120ms on the
+    // shared clock. The startup screens used to mount a static
+    // `SpinnerGlyph(frame: 0)` in its place, which never moved; this mounts
+    // the real thing with no AppStateProvider, as main.rs's resume screen
+    // does, and expects the glyph to change over ~500ms.
+    #[component]
+    fn PlainSpinnerHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut system = hooks.use_context_mut::<SystemContext>();
+        let done = hooks.use_state(|| false);
+        let mut done_for_future = done;
+        hooks.use_future(async move {
+            futures_timer::Delay::new(Duration::from_millis(500)).await;
+            done_for_future.set(true);
+        });
+        if done.get() {
+            system.exit();
+        }
+        element! {
+            View(flex_direction: FlexDirection::Row) {
+                Spinner
+                Text(content: " Resuming conversation…")
+            }
+        }
+    }
+
+    #[test]
+    fn plain_spinner_animates_without_an_app_state_provider() {
+        use futures::StreamExt;
+        let canvases: Vec<_> = futures::executor::block_on(
+            element!(PlainSpinnerHarness)
+                .mock_terminal_render_loop(MockTerminalConfig::default())
+                .collect(),
+        );
+        let glyphs: std::collections::BTreeSet<String> = canvases
+            .iter()
+            .filter_map(|canvas| {
+                canvas
+                    .to_string()
+                    .lines()
+                    .next()
+                    .and_then(|line| line.trim_start().chars().next())
+                    .map(|glyph| glyph.to_string())
+            })
+            .collect();
+        assert!(
+            glyphs.len() >= 2,
+            "the plain spinner should advance through the official frames: {glyphs:?}"
+        );
+    }
+
+    #[test]
+    fn spinner_row_clock_matches_cc_2_1_280_cadence() {
+        // chunk-dgxaxeme.js:841: `Li(t ? null : l === "requesting" && !R ? 50 : 100)`.
+        assert_eq!(
+            spinner_row_interval(SpinnerMode::Requesting, false, false),
+            Some(Duration::from_millis(50))
+        );
+        for mode in [SpinnerMode::Responding, SpinnerMode::Thinking, SpinnerMode::ToolUse] {
+            assert_eq!(
+                spinner_row_interval(mode, false, false),
+                Some(Duration::from_millis(100)),
+                "{mode:?}"
+            );
+        }
+        assert_eq!(
+            spinner_row_interval(SpinnerMode::Responding, true, false),
+            Some(Duration::from_millis(1_000))
+        );
+        assert_eq!(spinner_row_interval(SpinnerMode::Requesting, false, true), None);
+    }
 
     fn render_text(element: impl Into<AnyElement<'static>>) -> String {
         let canvas = element.into().render(None);

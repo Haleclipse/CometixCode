@@ -977,7 +977,7 @@ pub(super) mod tests {
                 };
                 keys.send(event).await.unwrap();
                 keys.send(TerminalEvent::Resize(119, 30)).await.unwrap();
-                let after = tokio::time::timeout(Duration::from_secs(3), async {
+                let mut after = tokio::time::timeout(Duration::from_secs(3), async {
                     loop {
                         let frame = frames.next().await.unwrap().to_string();
                         if border_width(&frame) == 115 {
@@ -987,6 +987,15 @@ pub(super) mod tests {
                 })
                 .await
                 .unwrap();
+                // The oracle records the settled end state. The resize and the
+                // key are independent changes that need not land in the same
+                // frame (a same-frame settled resize can precede the key's
+                // frame), so drain until the loop goes quiet before asserting.
+                while let Ok(Some(frame)) =
+                    tokio::time::timeout(Duration::from_millis(300), frames.next()).await
+                {
+                    after = frame.to_string();
+                }
                 let mut expected_events = case["events"]
                     .as_array()
                     .unwrap()

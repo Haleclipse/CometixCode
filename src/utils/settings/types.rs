@@ -109,6 +109,14 @@ pub struct SettingsJson {
     pub language: Option<String>,
     pub syntax_highlighting_disabled: Option<bool>,
     pub prefers_reduced_motion: Option<bool>,
+    /// How the in-progress assistant reply is previewed while streaming:
+    /// `"character"` (every delta, Pi-style typewriter) or `"line"` (only
+    /// completed lines, CC `REPL.tsx:1997`). `prefersReducedMotion` overrides
+    /// both and hides the preview entirely, as in CC.
+    ///
+    /// @cometix offset: not an official settings.json key. CC has only the
+    /// line mode; Cometix keeps character streaming as an option.
+    pub streaming_text_display: Option<String>,
     pub show_thinking_summaries: Option<bool>,
     /// Official GrowthBook `tengu_prompt_cache_1h_config` payload.
     ///

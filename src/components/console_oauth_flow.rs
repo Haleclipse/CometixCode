@@ -7,7 +7,7 @@
 
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::keyboard_shortcut_hint::KeyboardShortcutHint;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 use std::collections::BTreeMap;
@@ -324,7 +324,7 @@ fn render_opening_browser() -> AnyElement<'static> {
     element! {
         View(flex_direction: FlexDirection::Column, row_gap: 1u32) {
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(content: "Opening browser to sign in…".to_string())
             }
         }
@@ -363,7 +363,7 @@ fn render_waiting_for_login(
                 View { Text(content: message, dim: true) }
             }))
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(content: "Opening browser to sign in…".to_string())
             }
         }
@@ -375,7 +375,7 @@ fn render_creating_api_key() -> AnyElement<'static> {
     element! {
         View(flex_direction: FlexDirection::Column, row_gap: 1u32) {
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(content: "Creating API key for Claude Code…".to_string())
             }
         }

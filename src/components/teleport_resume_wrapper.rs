@@ -5,7 +5,7 @@
 //! outside this render boundary; callers provide the same state snapshot.
 
 use crate::components::resume_task::{CodeSession, ResumeTask, ResumeTaskState};
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use iocraft::prelude::*;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -75,7 +75,7 @@ pub fn TeleportResumeWrapper(props: &TeleportResumeWrapperProps) -> impl Into<An
             element! {
                 View(flex_direction: FlexDirection::Column, padding: 1u32) {
                     View(flex_direction: FlexDirection::Row) {
-                        SpinnerGlyph(frame: 0usize)
+                        Spinner
                         Text(content: title, weight: Weight::Bold, wrap: TextWrap::NoWrap)
                     }
                     Text(content: detail, dim: true, wrap: TextWrap::NoWrap)

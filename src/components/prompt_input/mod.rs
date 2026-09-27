@@ -533,11 +533,13 @@ pub struct PromptInputProps<'a> {
     /// Initial controlled value seam. REPL owns the durable prompt snapshot so
     /// local-command unmount/remount cycles preserve unsent text.
     pub initial_input: Option<String>,
-    /// Maps to: CC `PromptInputProps.onInputChange`.
-    pub on_input_change: HandlerMut<'a, String>,
+    /// Maps to: CC `PromptInputProps.onInputChange`. A shared `Handler` (not
+    /// `HandlerMut`) so the text input's change event can call it directly,
+    /// the way CC's `onChange` calls `onInputChange`.
+    pub on_input_change: Handler<String>,
     /// Retained equivalent of REPL's controlled input/mode/paste/cursor state.
     /// Echoes edits with the same revision; only owner-initiated updates advance it.
-    pub on_input_state_change: HandlerMut<'a, PromptInputTextUpdate>,
+    pub on_input_state_change: Handler<PromptInputTextUpdate>,
     /// Projects CC `useIsModalOverlayActive()` to the REPL-level dynamic
     /// command-keybinding owner.
     pub on_modal_overlay_change: HandlerMut<'a, bool>,
@@ -568,6 +570,46 @@ pub struct PromptInputProps<'a> {
     /// Shift+Tab intent callback. REPL owns the actual permission-mode cycle
     /// via `utils::permissions::get_next_permission_mode`.
     pub on_permission_mode_cycle: HandlerMut<'a, ()>,
+    /// Maps to: CC `PromptInputProps.hasSuppressedDialogs` (PromptInput.tsx:301):
+    /// permission prompts are queued but held back while the user types
+    /// (REPL.tsx:2768-2775), so the prompt says it is waiting for them.
+    pub has_suppressed_dialogs: bool,
+}
+
+/// Maps to: CC PromptInput.tsx:1148-1160 `onChange` — cancel pending prompt
+/// suggestion / speculation work and reset autocomplete for the new text.
+/// Called from the text input's change event for typed edits, and from the
+/// render-body `prev_input` diff for programmatic ones.
+fn on_input_text_changed(
+    app_store: Option<&crate::state::store::AppStore>,
+    text: &str,
+    mut prev_input: iocraft::hooks::State<String>,
+    mut typeahead_selection_reset: iocraft::hooks::Ref<bool>,
+    mut autocomplete_dismissed_input: iocraft::hooks::State<Option<String>>,
+    mut help_open: iocraft::hooks::State<bool>,
+) {
+    crate::services::prompt_suggestion::prompt_suggestion::abort_prompt_suggestion();
+    if let Some(active) = app_store.and_then(|store| {
+        let state = store.get();
+        match &state.speculation {
+            crate::state::app_state_store::SpeculationState::Active(active) => {
+                Some(active.clone())
+            }
+            crate::state::app_state_store::SpeculationState::Idle => None,
+        }
+    }) {
+        active.abort_controller.abort();
+        let context = active.cache_safe_params.tool_use_context.clone();
+        tokio::spawn(async move {
+            crate::services::prompt_suggestion::speculation::abort_speculation(&context).await;
+        });
+    }
+    prev_input.set(text.to_string());
+    typeahead_selection_reset.set(true);
+    autocomplete_dismissed_input.set(None);
+    if help_open.get() {
+        help_open.set(false);
+    }
 }
 
 #[component]
@@ -687,8 +729,11 @@ pub fn PromptInput<'a>(
             last_insert_revision.set(Some(update.revision));
         }
     }
-    let mut undo_stack = hooks.use_state(Vec::<PromptEditSnapshot>::new);
-    let mut last_edit_snapshot = hooks.use_state(move || initial_edit_snapshot);
+    // Refs, not state: the undo buffer is never rendered, and it is recorded
+    // by diffing snapshots during render — a `State` write there is a
+    // render-phase update that costs the frame a second update pass.
+    let mut undo_stack = hooks.use_ref(Vec::<PromptEditSnapshot>::new);
+    let mut last_edit_snapshot = hooks.use_ref(move || initial_edit_snapshot);
     let mut stashed_prompt = hooks.use_state(|| Option::<PromptStash>::None);
     let mut show_model_picker = hooks.use_state(|| false);
     let mut show_fast_mode_picker = hooks.use_state(|| false);
@@ -1584,6 +1629,7 @@ pub fn PromptInput<'a>(
         && autocomplete_dismissed_input.read().as_deref() != Some(input.read().as_str());
     let typeahead_count = typeahead.suggestions.len() as i32;
     let mut typeahead_selected = typeahead.selected;
+    let typeahead_selection_reset = typeahead.selection_reset;
     let typeahead_suggestions = Arc::clone(&typeahead.suggestions);
     let typeahead_kind = typeahead.kind;
     let typeahead_file_token = typeahead.file_token.clone();
@@ -1595,29 +1641,22 @@ pub fn PromptInput<'a>(
 
     // Reset autocomplete selection when the actual input text changes. This is
     // the `onChange → selectedSuggestion=0` behavior from CC PromptInput.
+    //
+    // Typed changes already ran this in the text input's change event (the
+    // `on_change` handler below, CC's `onChange`), so on a typing frame
+    // `prev_input == input` and nothing here writes. This render-body diff
+    // is the fallback for the programmatic edits (undo, stash, suggestion
+    // accept, controlled updates, …) that set `input` without going through
+    // the text input.
     if prev_input.read().as_str() != input.read().as_str() {
-        crate::services::prompt_suggestion::prompt_suggestion::abort_prompt_suggestion();
-        if let Some(active) = app_store.as_ref().and_then(|store| {
-            let state = store.get();
-            match &state.speculation {
-                crate::state::app_state_store::SpeculationState::Active(active) => {
-                    Some(active.clone())
-                }
-                crate::state::app_state_store::SpeculationState::Idle => None,
-            }
-        }) {
-            active.abort_controller.abort();
-            let context = active.cache_safe_params.tool_use_context.clone();
-            tokio::spawn(async move {
-                crate::services::prompt_suggestion::speculation::abort_speculation(&context).await;
-            });
-        }
-        prev_input.set(input.to_string());
-        typeahead_selected.set(0);
-        autocomplete_dismissed_input.set(None);
-        if help_open.get() {
-            help_open.set(false);
-        }
+        on_input_text_changed(
+            app_store.as_ref(),
+            &input.read(),
+            prev_input,
+            typeahead_selection_reset,
+            autocomplete_dismissed_input,
+            help_open,
+        );
     }
 
     // `useTypeahead` is the sole suggestion-state owner. Reuse its memoized
@@ -2124,7 +2163,40 @@ pub fn PromptInput<'a>(
     let mut text_input = use_text_input(
         &mut hooks,
         UseTextInputOptions {
-            on_change: Handler::default(),
+            // Maps to: CC PromptInput.tsx:1148-1160 `onChange` — the work that
+            // follows a keystroke, plus `trackAndSetInput → onInputChange`
+            // (:382-388), runs in the input event. Doing it here instead of by
+            // diffing during render is what keeps a typing frame to one
+            // update pass: every `State` written during render forces the
+            // settle pass to re-run the update (and this component is most
+            // of it). The render-body emission near the end stays as the
+            // fallback for programmatic edits; the parent ignores repeats.
+            on_change: Handler::from({
+                let app_store = app_store.clone();
+                let on_input_change = props.on_input_change.clone();
+                let on_input_state_change = props.on_input_state_change.clone();
+                move |text: String| {
+                    if prev_input.read().as_str() == text.as_str() {
+                        return;
+                    }
+                    on_input_text_changed(
+                        app_store.as_ref(),
+                        &text,
+                        prev_input,
+                        typeahead_selection_reset,
+                        autocomplete_dismissed_input,
+                        help_open,
+                    );
+                    on_input_change(text.clone());
+                    on_input_state_change(PromptInputTextUpdate {
+                        revision: last_controlled_revision.get().unwrap_or_default(),
+                        text,
+                        mode: Some(input_mode.get()),
+                        pasted_contents: Some(pasted_contents.read().clone()),
+                        cursor_offset: Some(cursor_offset.get()),
+                    });
+                }
+            }),
             on_clear_input: Handler::default(),
             on_history_reset: Handler::from({
                 let arrow_history = arrow_history.clone();
@@ -3029,7 +3101,7 @@ pub fn PromptInput<'a>(
         cursor_offset.get(),
         &slash_command_triggers,
     );
-    let history_query = history_search.query.read().clone();
+    let history_query = history_search.query;
     let history_failed_match = history_search.failed_match.get();
     let input_row_height = rendered_lines.len().max(1);
     let terminal_focus = hooks.use_terminal_focus();
@@ -3147,7 +3219,14 @@ pub fn PromptInput<'a>(
         };
     let input_box_height = input_row_height + 2;
     let stash_height = usize::from(stashed_prompt.read().is_some());
-    let prompt_height = queue_height + stash_height + input_box_height + footer_height;
+    // CC PromptInput.tsx:2981-2985: `<Box marginTop={1} marginLeft={2}>` + one
+    // dim line.
+    let suppressed_dialogs_height = if props.has_suppressed_dialogs { 2 } else { 0 };
+    let prompt_height = queue_height
+        + suppressed_dialogs_height
+        + stash_height
+        + input_box_height
+        + footer_height;
     // Fill viewing fields from AppState (not REPL dual props).
     let mut swarm_banner_input = props.swarm_banner_input.clone();
     if effective_viewing_agent_name.is_some() {
@@ -3289,6 +3368,13 @@ pub fn PromptInput<'a>(
                 viewing_agent: effective_viewing_agent_name.is_some(),
                 use_brief_layout: use_brief_layout,
             )
+            // Maps to: CC PromptInput.tsx:2981-2985, between the queued
+            // commands and the stash notice.
+            #(props.has_suppressed_dialogs.then(|| element! {
+                View(margin_top: 1u32, margin_left: 2u32) {
+                    Text(content: "Waiting for permission…", dim: true, wrap: TextWrap::NoWrap)
+                }
+            }))
             PromptInputStashNotice(has_stash: stashed_prompt.read().is_some())
             #(prompt_input_box)
 
@@ -4965,6 +5051,60 @@ mod tests {
             !rendered.contains("/old:prompt (MCP)"),
             "canvas=\n{rendered}"
         );
+    }
+
+    #[derive(Default, Props)]
+    struct PromptSuppressedDialogsHarnessProps {
+        suppressed: bool,
+    }
+
+    #[component]
+    fn PromptSuppressedDialogsHarness(
+        props: &PromptSuppressedDialogsHarnessProps,
+        hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        let _ = hooks;
+        let suppressed = props.suppressed;
+        element! {
+            ContextProvider(value: Context::owned(*theme::current())) {
+                crate::state::app_state::AppStateProvider(
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        View(width: 80u32) {
+                            PromptInput(
+                                on_submit: move |_| {},
+                                on_exit: move |_| {},
+                                has_suppressed_dialogs: suppressed,
+                            )
+                        }
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    // CC PromptInput.tsx:2981-2985: a permission dialog held back while the
+    // user types leaves a dim "Waiting for permission…" above the input box.
+    #[test]
+    fn prompt_input_says_it_is_waiting_while_dialogs_are_suppressed() {
+        let shown = element!(PromptSuppressedDialogsHarness(suppressed: true))
+            .render(Some(80))
+            .to_string();
+        let lines: Vec<&str> = shown.lines().collect();
+        let hint = lines
+            .iter()
+            .position(|line| line.trim() == "Waiting for permission…")
+            .unwrap_or_else(|| panic!("hint missing:\n{shown}"));
+        assert!(lines[hint].starts_with("  Waiting"), "marginLeft 2:\n{shown}");
+        let prompt = lines
+            .iter()
+            .position(|line| line.contains(PROMPT_CHAR))
+            .expect("prompt line");
+        assert!(hint < prompt, "hint sits above the input box:\n{shown}");
+
+        let hidden = element!(PromptSuppressedDialogsHarness(suppressed: false))
+            .render(Some(80))
+            .to_string();
+        assert!(!hidden.contains("Waiting for permission"), "canvas=\n{hidden}");
     }
 
     #[test]

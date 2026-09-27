@@ -88,7 +88,9 @@ pub struct FooterProps {
     pub exit_hint: Option<String>,
     pub suppress_hint: bool,
     pub is_searching: bool,
-    pub history_query: String,
+    /// Maps to: CC `PromptInputFooter` `historyQuery` + `setHistoryQuery`
+    /// (PromptInput.tsx:3075-3076), passed through to the left side.
+    pub history_query: Option<State<String>>,
     pub history_failed_match: bool,
     pub is_loading: bool,
     pub permission_mode: PermissionMode,
@@ -327,7 +329,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                 mode: props.mode,
                                 suppress_hint: suppress_hint,
                                 is_searching: props.is_searching,
-                                history_query: props.history_query.clone(),
+                                history_query: props.history_query,
                                 history_failed_match: props.history_failed_match,
                                 is_loading: props.is_loading,
                                 permission_mode: props.permission_mode,

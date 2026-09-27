@@ -1,8 +1,11 @@
 //! Maps to: CC `hooks/useHistorySearch.ts` (inline Ctrl-R search subset).
-//! Official Claude Code binds Ctrl-R to reverse prompt-history search. While the
-//! search input is active, typed characters edit the search query, the prompt
-//! display is temporarily replaced by the newest matching history entry, Ctrl-R
-//! resumes to the next match, Esc/Tab accept, Ctrl-C cancels, and Enter executes.
+//! Official Claude Code binds Ctrl-R to reverse prompt-history search. While
+//! the search is active, the query is edited in `HistorySearchInput` (its
+//! TextInput writes the `query` State this hook returns, CC's
+//! `setHistoryQuery`), a changed query restarts the search, the prompt display
+//! is temporarily replaced by the newest matching history entry, Ctrl-R
+//! resumes to the next match, Esc/Tab accept, Ctrl-C cancels, Enter executes,
+//! and backspace on an empty query cancels.
 
 use crate::keybindings::keybinding_context::KeybindingRuntime;
 use crate::keybindings::types::ContextName;
@@ -10,6 +13,14 @@ use crate::keybindings::use_keybinding::{KeybindingHandlers, use_keybinding, use
 use crate::utils::cursor::clamp_cursor;
 use crate::utils::prompt_history;
 use iocraft::prelude::*;
+
+/// Maps to: the `HISTORY_PICKER` build feature, on in the external build
+/// (rebuild `scripts/build.ts:49`). With it, ctrl+r opens PromptInput's
+/// history picker and this inline search's own `history:search` binding is
+/// inactive (`useHistorySearch.ts:236-241`), so the inline search — and the
+/// footer's `HistorySearchInput` — is only reachable in a build without the
+/// picker, exactly as in CC.
+const HISTORY_PICKER: bool = true;
 
 #[derive(Clone, Copy)]
 pub struct UseHistorySearchOptions {
@@ -55,7 +66,7 @@ pub fn use_history_search(
     hooks: &mut Hooks,
     options: UseHistorySearchOptions,
 ) -> HistorySearchState {
-    let mut cells = SearchCells {
+    let cells = SearchCells {
         is_searching: hooks.use_state(|| false),
         query: hooks.use_state(String::new),
         failed_match: hooks.use_state(|| false),
@@ -74,7 +85,8 @@ pub fn use_history_search(
         runtime.clone(),
         "history:search",
         ContextName::Global,
-        move || options.focus && !cells.is_searching.get(),
+        // CC `isActive: feature('HISTORY_PICKER') ? false : !isSearching`.
+        move || !HISTORY_PICKER && options.focus && !cells.is_searching.get(),
         move || {
             start(cells, options);
             true
@@ -118,57 +130,43 @@ pub fn use_history_search(
         move || options.focus && cells.is_searching.get(),
     );
 
-    hooks.use_propagated_terminal_events({
-        move |event| {
-            if !options.focus {
-                return;
-            }
-
-            match event.event() {
-                TerminalEvent::Paste(text) if cells.is_searching.get() => {
-                    let mut query = cells.query.read().clone();
-                    query.push_str(&normalize_search_paste(text));
-                    cells.query.set(query.clone());
-                    search(cells, options, query, false);
-                    event.stop_propagation();
-                }
-                TerminalEvent::Key(KeyEvent {
-                    code,
-                    kind,
-                    modifiers,
-                    ..
-                }) if *kind != KeyEventKind::Release => {
-                    let ctrl = modifiers.contains(KeyModifiers::CONTROL);
-                    let alt = modifiers.contains(KeyModifiers::ALT);
-
-                    if cells.is_searching.get() {
-                        match code {
-                            KeyCode::Backspace => {
-                                let mut query = cells.query.read().clone();
-                                if query.is_empty() {
-                                    cancel(cells, options);
-                                } else {
-                                    query.pop();
-                                    cells.query.set(query.clone());
-                                    search(cells, options, query, false);
-                                }
-                            }
-                            KeyCode::Char(c) if !ctrl && !alt => {
-                                let mut query = cells.query.read().clone();
-                                query.push(*c);
-                                cells.query.set(query.clone());
-                                search(cells, options, query, false);
-                            }
-                            _ => {}
-                        }
-                        event.stop_propagation();
-                        return;
-                    }
-                }
-                _ => {}
+    // Maps to: CC `useHistorySearch.ts:258-280` `handleKeyDown`, subscribed
+    // through `useInput({ isActive: isSearching })`: backspace on an empty
+    // query cancels the search. Everything else a user types edits the query
+    // in `HistorySearchInput`'s TextInput (`onChange={setHistoryQuery}`), not
+    // here. `useInput` sees every key, including ones that TextInput consumed,
+    // so this is a plain subscription; the query it tests is the one this
+    // render saw, as CC's closure over `historyQuery` is — a backspace that
+    // deletes the last character does not also cancel.
+    let query_at_render = cells.query.read().clone();
+    hooks.use_terminal_events(move |event| {
+        if !options.focus || !cells.is_searching.get() {
+            return;
+        }
+        if let TerminalEvent::Key(KeyEvent {
+            code: KeyCode::Backspace,
+            kind,
+            ..
+        }) = event
+        {
+            if kind != KeyEventKind::Release && query_at_render.is_empty() {
+                cancel(cells, options);
             }
         }
     });
+
+    // Maps to: CC `useHistorySearch.ts:285-296` — "Reset history search when
+    // query changes": a new query restarts the search from the newest entry.
+    // `searchHistory` returns early while not searching (:75-77).
+    let query_for_effect = cells.query.read().clone();
+    hooks.use_effect(
+        move || {
+            if cells.is_searching.get() {
+                search(cells, options, cells.query.read().clone(), false);
+            }
+        },
+        query_for_effect,
+    );
 
     HistorySearchState {
         is_searching: cells.is_searching,
@@ -276,10 +274,4 @@ fn clear(mut cells: SearchCells) {
     cells.original_input.set(String::new());
     cells.original_cursor_offset.set(0);
     cells.seen.set(Vec::new());
-}
-
-fn normalize_search_paste(text: &str) -> String {
-    text.replace("\r\n", "\n")
-        .replace('\r', "\n")
-        .replace('\n', " ")
 }

@@ -6,7 +6,7 @@
 
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::dialog::Dialog;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use iocraft::prelude::*;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -70,7 +70,7 @@ pub fn TeleportStash(props: &TeleportStashProps) -> impl Into<AnyElement<'static
         TeleportStashState::Loading => element! {
             View(flex_direction: FlexDirection::Column, padding: 1u32) {
                 View(flex_direction: FlexDirection::Row, margin_bottom: 1u32) {
-                    SpinnerGlyph(frame: 0usize)
+                    Spinner
                     Text(content: " Checking git status…".to_string(), wrap: TextWrap::NoWrap)
                 }
             }
@@ -114,7 +114,7 @@ pub fn TeleportStash(props: &TeleportStashProps) -> impl Into<AnyElement<'static
                     #(if *stashing {
                         Some(element! {
                             View(flex_direction: FlexDirection::Row) {
-                                SpinnerGlyph(frame: 0usize)
+                                Spinner
                                 Text(content: " Stashing changes...".to_string(), wrap: TextWrap::NoWrap)
                             }
                         }.into_any())

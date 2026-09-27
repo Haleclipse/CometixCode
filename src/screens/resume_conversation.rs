@@ -7,7 +7,7 @@
 
 use crate::commands::resume;
 use crate::components::log_selector::LogSelector;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::screens::repl::ReplProps;
 use crate::utils::cross_project_resume::{CrossProjectResumeResult, check_cross_project_resume};
 use crate::utils::session_storage::{SessionLogResult, SessionSelection, SessionSummary};
@@ -398,7 +398,7 @@ pub fn ResumeConversation(
     if loading.get() && logs.read().is_empty() {
         return element! {
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(content: " Loading conversations…".to_string(), wrap: TextWrap::NoWrap)
             }
         }
@@ -407,7 +407,7 @@ pub fn ResumeConversation(
     if resuming.get() {
         return element! {
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize)
+                Spinner
                 Text(content: " Resuming conversation…".to_string(), wrap: TextWrap::NoWrap)
             }
         }

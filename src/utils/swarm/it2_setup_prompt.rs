@@ -9,7 +9,7 @@
 
 use crate::components::custom_select::select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::pane::Pane;
-use crate::components::spinner::SpinnerGlyph;
+use crate::components::spinner::Spinner;
 use crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings;
 use crate::utils::swarm::backends::it2_setup::{
     PythonPackageManager, detect_python_package_manager, get_python_api_instructions, install_it2,
@@ -331,7 +331,7 @@ fn render_installing(
     element! {
         View(flex_direction: FlexDirection::Column, row_gap: 1u32) {
             View(flex_direction: FlexDirection::Row) {
-                SpinnerGlyph(frame: 0usize, color: Some(theme.permission), reduced_motion: true)
+                Spinner
                 Text(content: format!(" Installing it2 using {pm}…"), wrap: TextWrap::NoWrap)
             }
             Text(content: "This may take a moment.".to_string(), dim: true, wrap: TextWrap::NoWrap)
@@ -380,7 +380,7 @@ fn render_api_instructions(theme: crate::utils::theme::Theme) -> AnyElement<'sta
 fn render_verifying(theme: crate::utils::theme::Theme) -> AnyElement<'static> {
     element! {
         View(flex_direction: FlexDirection::Row) {
-            SpinnerGlyph(frame: 0usize, color: Some(theme.permission), reduced_motion: true)
+            Spinner
             Text(content: " Verifying it2 can communicate with iTerm2…".to_string(), wrap: TextWrap::NoWrap)
         }
     }
