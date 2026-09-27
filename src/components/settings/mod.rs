@@ -441,6 +441,28 @@ mod tests {
     }
 
     #[test]
+    fn settings_config_search_box_spans_the_pane() {
+        // CC Config.tsx:1789-1791 roots Config at `width="100%"`, which in
+        // CC's Tab resolves to the pane's content width; the search box, a
+        // direct child of the gap column (:2118-2123), stretches across it.
+        // The permission tabs, with no percentage, follow their content
+        // instead. (Here the tab container is a column, so this catches a
+        // wrapper that stops the stretch; the root's width is checked under
+        // a row parent in config.rs.)
+        // The 110-column pane's content box, inside Pane's `paddingX={2}`
+        // (Pane.tsx:52), is 106 columns from column 2.
+        let text = render_settings_text(Vec::new());
+        let top = text
+            .lines()
+            .find(|line| line.contains('╭'))
+            .unwrap_or_else(|| panic!("no search box; canvas=\n{text}"));
+        let border = top.trim();
+        assert!(top.starts_with("  ╭"), "{top:?}\ncanvas=\n{text}");
+        assert!(border.ends_with('╮'), "{top:?}");
+        assert_eq!(border.chars().count(), 106, "{top:?}\ncanvas=\n{text}");
+    }
+
+    #[test]
     fn settings_exit_hook_takes_ctrl_c_ahead_of_the_language_input() {
         // CC `Settings.tsx:62` registers app:interrupt with the pane, before
         // LanguagePicker's TextInput mounts, so Ctrl+C arms the exit double

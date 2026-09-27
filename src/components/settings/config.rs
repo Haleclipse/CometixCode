@@ -1053,7 +1053,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     let is_search_focused = is_search_mode.get() && !header_focused;
 
-    if let Some(active_submenu) = submenu.get() {
+    let content = if let Some(active_submenu) = submenu.get() {
         // The Model and OutputStyle footers (CC :1848-1858, :1964-1974):
         // `<KeyboardShortcutHint shortcut="Enter" action="confirm" />` and
         // confirm:no in the Confirmation context.
@@ -1296,22 +1296,22 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
         // marginY={insideModal ? undefined : 1}>`.
         let margin_y = if inside_modal { 0u32 } else { 1u32 };
         element! {
-            View(flex_direction: FlexDirection::Column, margin_top: margin_y, margin_bottom: margin_y) {
+            View(flex_direction: FlexDirection::Column, gap: 1, margin_top: margin_y, margin_bottom: margin_y) {
             // Maps to: CC Config.tsx:2123-2129 — `<SearchBox query isFocused
             // isTerminalFocused cursorOffset placeholder="Search settings…" />`,
-            // the same component LogSelector and the plugin menus mount. The
-            // margin stands for the parent Box's `gap={1}` (:2118-2122)
-            // between the box and the list below it.
-            View(margin_bottom: 1u32) {
-                crate::components::search_box::SearchBox(
-                    query: search_query.clone(),
-                    placeholder: Some(PLACEHOLDER.to_string()),
-                    is_focused: is_search_focused,
-                    is_terminal_focused: is_terminal_focused,
-                    cursor_offset: Some(search.offset()),
-                )
-            }
+            // the same component LogSelector and the plugin menus mount. A
+            // direct child of the column, it stretches to Config's full width.
+            crate::components::search_box::SearchBox(
+                query: search_query.clone(),
+                placeholder: Some(PLACEHOLDER.to_string()),
+                is_focused: is_search_focused,
+                is_terminal_focused: is_terminal_focused,
+                cursor_offset: Some(search.offset()),
+            )
 
+            // CC :2130-2238 `<Box flexDirection="column">`: the empty-result
+            // line, or the scroll hints around the visible rows.
+            View(flex_direction: FlexDirection::Column) {
             // Maps to: CC "↑ N more above"
             #(if has_above {
                 Some(element! {
@@ -1380,23 +1380,37 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             } else {
                 None
             })
-
-            // Maps to official Config footer by focus mode.
-            View(margin_top: 1u32) {
-                Text(
-                    content: if header_focused {
-                        "←/→ tab switch · ↓ return · Esc close"
-                    } else if is_search_mode.get() {
-                        "Type to filter · Enter/↓ select · ↑ tabs · Esc clear"
-                    } else {
-                        "Space change · Enter save · / search · Esc cancel"
-                    },
-                    color: theme.inactive,
-                )
             }
+
+            // Maps to official Config footer by focus mode (CC :2239-2294).
+            Text(
+                content: if header_focused {
+                    "←/→ tab switch · ↓ return · Esc close"
+                } else if is_search_mode.get() {
+                    "Type to filter · Enter/↓ select · ↑ tabs · Esc clear"
+                } else {
+                    "Space change · Enter save · / search · Esc cancel"
+                },
+                color: theme.inactive,
+            )
         }
         }
         .into_any()
+    };
+
+    // CC :1789-1795: the root Box is `width="100%"`. CC's Tab is a row Box
+    // measured at most the pane's content width, and CC's yoga resolves the
+    // percentage against that available width (native-ts/yoga-layout
+    // index.ts:1220 `let width = availableWidth`, :1352-1356 `ownerW`), so
+    // Config — and the search box stretched across it — spans the pane,
+    // where the permission tabs, with no percentage, follow their content.
+    // The port's Settings tab container is a column, which stretches Config
+    // anyway; the root keeps the width wherever the parent is a row or
+    // shrinks to its content.
+    element! {
+        View(flex_direction: FlexDirection::Column, width: 100pct) {
+            #(content)
+        }
     }
 }
 
@@ -3383,6 +3397,24 @@ mod tests {
                 "{key:?}: the row keeps its value; canvas=\n{text}"
             );
         }
+    }
+
+    #[test]
+    fn config_root_takes_the_full_width_under_a_row_parent() {
+        // CC Config.tsx:1789-1791 `width="100%"`: under a row parent — CC's
+        // Tab (Tabs.tsx:308), or this harness's root — Config would shrink to
+        // its widest row without it. The search box stretches across Config.
+        let canvases = render_with_config(
+            MockTerminalConfig::with_events(stream::iter(Vec::<TerminalEvent>::new()))
+                .with_size(100, 24),
+        );
+        let lines = canvas_lines(canvases.last().unwrap());
+        let top = lines
+            .iter()
+            .find(|line| line.contains('╭'))
+            .unwrap_or_else(|| panic!("no search box; canvas=\n{}", lines.join("\n")));
+        assert_eq!(top.trim_end().chars().count(), 100, "{top:?}");
+        assert!(top.starts_with('╭') && top.trim_end().ends_with('╮'), "{top:?}");
     }
 
     #[test]
