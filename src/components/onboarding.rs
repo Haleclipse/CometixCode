@@ -1,12 +1,15 @@
-//! Maps to: CC `components/Onboarding.tsx`:39-265.
+//! Maps to: CC `components/Onboarding.tsx`:45-281.
 //!
-//! This is the main onboarding shell: official step ordering, WelcomeV2 header,
-//! theme/security/terminal setup rendering, and simple local key handling. The
-//! OAuth/API-key/preflight side effects remain safe boundaries here: no network,
-//! OAuth browser launch, keychain write, analytics, or auth config
-//! writes are performed. Those runtime effects stay deferred to their dedicated
-//! official slices (`ConsoleOAuthFlow`, `ApproveApiKey`, `PreflightStep`).
-//! Terminal setup delegates to the canonical `terminalSetup` installer.
+//! This is the main onboarding shell: official step ordering, WelcomeV2
+//! header, and the steps themselves. Each step owns its keys, as in CC: the
+//! theme step's ThemePicker, the api-key step's `ApproveApiKey` (which
+//! records the answer in `customApiKeyResponses`), and the terminal-setup
+//! step's Select; Onboarding's own confirm:yes / confirm:no bindings sit
+//! in a carrier ahead of the step. OAuth and preflight remain safe
+//! boundaries: no network, OAuth browser launch, keychain write, or
+//! analytics; those stay with their dedicated slices (`ConsoleOAuthFlow`,
+//! `PreflightStep`). Terminal setup delegates to the canonical
+//! `terminalSetup` installer.
 
 use crate::components::approve_api_key::ApproveApiKey;
 use crate::components::console_oauth_flow::{ConsoleOAuthFlow, ConsoleOAuthMode, OAuthStatus};
@@ -55,7 +58,7 @@ pub(crate) struct OnboardingFlowConfig {
     pub offer_terminal_setup: bool,
 }
 
-/// Maps to: CC `components/Onboarding.tsx`:150-186 step construction.
+/// Maps to: CC `components/Onboarding.tsx`:150-230 step construction.
 pub(crate) fn onboarding_step_ids(config: &OnboardingFlowConfig) -> Vec<OnboardingStepId> {
     let mut steps = Vec::new();
     if config.oauth_enabled {
@@ -137,7 +140,7 @@ impl Default for OnboardingProps<'_> {
     }
 }
 
-/// Maps to: CC `components/Onboarding.tsx`:54-247 `Onboarding(...)`.
+/// Maps to: CC `components/Onboarding.tsx`:45-281 `Onboarding(...)`.
 #[component]
 pub(crate) fn Onboarding<'a>(
     props: &mut OnboardingProps<'a>,
@@ -163,14 +166,13 @@ pub(crate) fn Onboarding<'a>(
         step_from_initial(&base_steps, props.initial_step, props.initial_step_index);
 
     let mut current_step_index = hooks.use_state(|| initial_index);
-    let mut skip_oauth = hooks.use_state(|| false);
-    let mut terminal_focused_index = hooks.use_state(|| 0usize);
+    let skip_oauth = hooks.use_state(|| false);
+    // CC calls `onDone()` from `goToNextStep`; this component's `on_done`
+    // cannot be held by the step callbacks, so they set this and the next
+    // render calls it.
     let mut should_done = hooks.use_state(|| false);
     // CC :77 `exitState`, relayed from `OnboardingExitBinding`.
     let exit_state = hooks.use_state(crate::hooks::use_exit::ExitKeyState::default);
-    // CC :72-75 `handleThemeSelection` → `goToNextStep()`, relayed from the
-    // picker's callback to this render.
-    let mut theme_selected = hooks.use_state(|| false);
 
     let config = OnboardingFlowConfig {
         oauth_enabled: props.oauth_enabled,
@@ -184,23 +186,46 @@ pub(crate) fn Onboarding<'a>(
         current_step_index.set(bounded_index);
     }
     let current_step = steps.get(bounded_index).copied();
-    // CC :57-75 `goToNextStep()` once the picker has saved the theme.
-    if theme_selected.get() {
-        theme_selected.set(false);
-        if bounded_index + 1 < steps.len() {
-            current_step_index.set(bounded_index + 1);
-        } else {
-            should_done.set(true);
+    // CC :57-70 `goToNextStep`. Like CC's, each render's closure holds that
+    // render's step index, so a second call from one step lands on the
+    // same next step.
+    let go_to_next_step = {
+        let step_count = steps.len();
+        move || {
+            let (mut current_step_index, mut should_done) = (current_step_index, should_done);
+            if bounded_index + 1 < step_count {
+                current_step_index.set(bounded_index + 1);
+            } else {
+                should_done.set(true);
+            }
         }
-    }
+    };
+    // CC :72-75 `handleThemeSelection`.
+    let handle_theme_selection = {
+        let theme_control = theme_control.clone();
+        move |setting: crate::utils::theme::ThemeSetting| {
+            theme_control.set_theme_setting(setting);
+            go_to_next_step();
+        }
+    };
+    // CC :143-148 `handleApiKeyDone`: an approved key skips OAuth, then
+    // `goToNextStep()`. CC lands on its skipped OAuth step, whose
+    // SkippableStep moves on; the port drops that step from `steps`, so
+    // the next index is already the step after it.
+    let handle_api_key_done = move |approved: bool| {
+        if approved {
+            let mut skip_oauth = skip_oauth;
+            skip_oauth.set(true);
+        }
+        go_to_next_step();
+    };
 
-    // Maps to: CC Onboarding.tsx:190-220, Select onChange's
-    // setupTerminal(theme).catch(...).finally(goToNextStep).
+    // Maps to: CC Onboarding.tsx:207-216, Select onChange's
+    // setupTerminal(theme).catch(...).finally(goToNextStep), the
+    // `goToNextStep` of the render that chose to install.
     // A3/A6: dropping the UI waiter does not cancel the installation promise.
     let install_terminal = hooks.use_async_handler({
-        let steps = steps.clone();
         move |()| {
-            let steps = steps.clone();
             async move {
                 if let Some(runtime) =
                     crate::utils::process_runtime::runtime_handle_for_detached_work()
@@ -218,107 +243,15 @@ pub(crate) fn Onboarding<'a>(
                         "Process runtime unavailable for terminal setup",
                     ));
                 }
-                let index = current_step_index.get().min(steps.len().saturating_sub(1));
-                if index + 1 < steps.len() {
-                    current_step_index.set(index + 1);
-                } else {
-                    should_done.set(true);
-                }
+                go_to_next_step();
             }
         }
     });
-    let terminal_options = terminal_setup_options();
-    let terminal_select = use_select_state(
-        &mut hooks,
-        UseSelectStateProps {
-            values: terminal_options
-                .iter()
-                .map(|option| option.value.clone())
-                .collect(),
-            visible_option_count: None,
-            default_value: None,
-            focus_value: None,
-        },
-    );
-    let terminal_events = use_select_input(
-        &mut hooks,
-        terminal_select,
-        UseSelectInputOptions {
-            is_disabled: current_step != Some(OnboardingStepId::TerminalSetup),
-            has_on_cancel: current_step == Some(OnboardingStepId::TerminalSetup),
-            option_metas: terminal_options
-                .iter()
-                .map(|option| SelectInputOptionMeta {
-                    value: option.value.clone(),
-                    ..Default::default()
-                })
-                .collect(),
-            ..Default::default()
-        },
-    );
-    if let Some(value) = terminal_events.take_accepted() {
-        if value == "install" {
-            install_terminal(());
-        } else if bounded_index + 1 < steps.len() {
-            current_step_index.set(bounded_index + 1);
-        } else {
-            should_done.set(true);
-        }
-    }
-    if terminal_events.take_cancelled() {
-        if bounded_index + 1 < steps.len() {
-            current_step_index.set(bounded_index + 1);
-        } else {
-            should_done.set(true);
-        }
-    }
 
     if should_done.get() {
         should_done.set(false);
         (props.on_done)(());
     }
-
-    let runtime = hooks
-        .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
-        .map(|runtime| runtime.clone());
-    crate::keybindings::use_keybinding::use_keybinding(
-        &mut hooks,
-        runtime.clone(),
-        "confirm:yes",
-        crate::keybindings::types::ContextName::Confirmation,
-        move || current_step == Some(OnboardingStepId::Security),
-        {
-            let steps = steps.clone();
-            move || {
-                let index = current_step_index.get().min(steps.len().saturating_sub(1));
-                if index + 1 < steps.len() {
-                    current_step_index.set(index + 1);
-                } else {
-                    should_done.set(true);
-                }
-                true
-            }
-        },
-    );
-    crate::keybindings::use_keybinding::use_keybinding(
-        &mut hooks,
-        runtime,
-        "confirm:no",
-        crate::keybindings::types::ContextName::Confirmation,
-        move || current_step == Some(OnboardingStepId::TerminalSetup),
-        {
-            let steps = steps.clone();
-            move || {
-                let index = current_step_index.get().min(steps.len().saturating_sub(1));
-                if index + 1 < steps.len() {
-                    current_step_index.set(index + 1);
-                } else {
-                    should_done.set(true);
-                }
-                true
-            }
-        },
-    );
 
     hooks.use_propagated_terminal_events({
         let steps = steps.clone();
@@ -347,28 +280,8 @@ pub(crate) fn Onboarding<'a>(
                 OnboardingStepId::Theme => {}
                 OnboardingStepId::Security => {}
                 OnboardingStepId::TerminalSetup => {}
-                OnboardingStepId::ApiKey => match code {
-                    KeyCode::Up | KeyCode::Char('k') | KeyCode::Down | KeyCode::Char('j') => {
-                        terminal_focused_index.set(if terminal_focused_index.get() == 0 {
-                            1
-                        } else {
-                            0
-                        });
-                        event.stop_propagation();
-                    }
-                    KeyCode::Enter | KeyCode::Tab => {
-                        if terminal_focused_index.get() == 0 {
-                            skip_oauth.set(true);
-                        }
-                        go_next();
-                        event.stop_propagation();
-                    }
-                    KeyCode::Esc => {
-                        go_next();
-                        event.stop_propagation();
-                    }
-                    _ => {}
-                },
+                // ApproveApiKey owns its keys (Onboarding.tsx:156-165).
+                OnboardingStepId::ApiKey => {}
                 OnboardingStepId::Preflight | OnboardingStepId::OAuth => {
                     if matches!(code, KeyCode::Enter | KeyCode::Tab | KeyCode::Esc) {
                         go_next();
@@ -381,22 +294,21 @@ pub(crate) fn Onboarding<'a>(
 
     let body = match current_step {
         Some(OnboardingStepId::Preflight) => render_preflight_step(theme),
-        Some(OnboardingStepId::Theme) => render_theme_step(theme_control.clone(), theme_selected),
+        Some(OnboardingStepId::Theme) => render_theme_step(handle_theme_selection),
         Some(OnboardingStepId::ApiKey) => render_api_key_step(
             props
                 .api_key_needing_approval
                 .as_deref()
                 .unwrap_or_default(),
-            terminal_focused_index.get(),
+            handle_api_key_done,
         ),
         Some(OnboardingStepId::OAuth) => render_oauth_step(),
-        Some(OnboardingStepId::Security) => render_security_step(),
+        Some(OnboardingStepId::Security) => render_security_step(theme),
         Some(OnboardingStepId::TerminalSetup) => render_terminal_setup_step(
+            theme,
             &terminal_name,
-            terminal_options
-                .iter()
-                .position(|option| Some(&option.value) == terminal_select.focused_value().as_ref())
-                .unwrap_or(0),
+            install_terminal,
+            go_to_next_step,
             exit_state.get().pending,
             exit_state.get().key_name,
         ),
@@ -414,6 +326,13 @@ pub(crate) fn Onboarding<'a>(
     element! {
         View(flex_direction: FlexDirection::Column) {
             OnboardingExitBinding(exit_state: Some(exit_state))
+            OnboardingStepBindings(
+                current_step,
+                // CC :236-246: continuing from the last step is `onDone()`,
+                // which `goToNextStep()` also is there.
+                handle_security_continue: Handler::from(move |()| go_to_next_step()),
+                handle_terminal_setup_skip: Handler::from(move |()| go_to_next_step()),
+            )
             WelcomeV2(
                 theme_name: Some(theme_name),
                 version: Some(product::VERSION.to_string()),
@@ -459,20 +378,71 @@ fn OnboardingExitBinding(
     element! { View(width: 0u32, height: 0u32) }
 }
 
+#[derive(Default, Props)]
+struct OnboardingStepBindingsProps {
+    current_step: Option<OnboardingStepId>,
+    /// CC `handleSecurityContinue`.
+    handle_security_continue: Handler<()>,
+    /// CC `handleTerminalSetupSkip`.
+    handle_terminal_setup_skip: Handler<()>,
+}
+
+/// Native placement carrier for CC `Onboarding.tsx:234-266`
+/// `handleSecurityContinue` / `handleTerminalSetupSkip` and their
+/// `useKeybindings`. CC registers them when Onboarding mounts, before the
+/// security and terminal-setup steps mount their content, so confirm:no
+/// takes Esc and n ahead of the terminal-setup Select's cancel. A zero-size
+/// child ahead of the step keeps that order.
+#[component]
+fn OnboardingStepBindings(
+    props: &OnboardingStepBindingsProps,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
+    let current_step = props.current_step;
+    let runtime = hooks
+        .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
+        .map(|runtime| runtime.clone());
+    // CC :248-256.
+    crate::keybindings::use_keybinding::use_keybinding(
+        &mut hooks,
+        runtime.clone(),
+        "confirm:yes",
+        crate::keybindings::types::ContextName::Confirmation,
+        move || current_step == Some(OnboardingStepId::Security),
+        {
+            let handle_security_continue = props.handle_security_continue.clone();
+            move || {
+                handle_security_continue(());
+                true
+            }
+        },
+    );
+    // CC :258-266.
+    crate::keybindings::use_keybinding::use_keybinding(
+        &mut hooks,
+        runtime,
+        "confirm:no",
+        crate::keybindings::types::ContextName::Confirmation,
+        move || current_step == Some(OnboardingStepId::TerminalSetup),
+        {
+            let handle_terminal_setup_skip = props.handle_terminal_setup_skip.clone();
+            move || {
+                handle_terminal_setup_skip(());
+                true
+            }
+        },
+    );
+    element! { View(width: 0u32, height: 0u32) }
+}
+
 /// Maps to: CC `Onboarding.tsx:80-90` `themeStep`.
 fn render_theme_step(
-    theme_control: crate::components::design_system::theme_provider::ThemeContextValue,
-    mut theme_selected: State<bool>,
+    handle_theme_selection: impl FnMut(crate::utils::theme::ThemeSetting) + Send + Sync + 'static,
 ) -> AnyElement<'static> {
     element! {
         View(margin_left: 1u32, margin_right: 1u32) {
             ThemePicker(
-                // CC :72-75 `handleThemeSelection`: `setTheme`, then the next
-                // step (relayed to the render).
-                on_theme_select: move |setting: crate::utils::theme::ThemeSetting| {
-                    theme_control.set_theme_setting(setting);
-                    theme_selected.set(true);
-                },
+                on_theme_select: handle_theme_selection,
                 show_intro_text: true,
                 help_text: "To change this later, run /theme".to_string(),
                 hide_esc_to_cancel: true,
@@ -483,7 +453,9 @@ fn render_theme_step(
     .into_any()
 }
 
-fn render_security_step() -> AnyElement<'static> {
+/// Maps to: CC `Onboarding.tsx:92-124` `securityStep`; `<Text dimColor>`
+/// is the theme's `inactive` colour.
+fn render_security_step(theme: Theme) -> AnyElement<'static> {
     element! {
         View(flex_direction: FlexDirection::Column, row_gap: 1u32, padding_left: 1u32) {
             Text(content: "Security notes:".to_string(), weight: Weight::Bold)
@@ -491,11 +463,11 @@ fn render_security_step() -> AnyElement<'static> {
                 OrderedList() {
                     OrderedListItem() {
                         Text(content: "Claude can make mistakes".to_string())
-                        Text(content: "You should always review Claude's responses, especially when\nrunning code.\n".to_string(), dim: true, wrap: TextWrap::Wrap)
+                        Text(content: "You should always review Claude's responses, especially when\nrunning code.\n".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
                     }
                     OrderedListItem() {
                         Text(content: "Due to prompt injection risks, only use it with code you trust".to_string())
-                        Text(content: "For more details see:\nhttps://code.claude.com/docs/en/security".to_string(), dim: true, wrap: TextWrap::Wrap)
+                        Text(content: "For more details see:\nhttps://code.claude.com/docs/en/security".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
                     }
                 }
             }
@@ -505,14 +477,86 @@ fn render_security_step() -> AnyElement<'static> {
     .into_any()
 }
 
+#[derive(Default, Props)]
+struct TerminalSetupSelectProps<'a> {
+    /// CC `onChange(value)`.
+    on_change: HandlerMut<'a, String>,
+    /// CC `onCancel`.
+    on_cancel: HandlerMut<'a, ()>,
+}
+
+/// L1 (inline Select state carrier, PORTING.md): CC writes this Select
+/// inline in the terminal-setup step (Onboarding.tsx:196-218), so it mounts
+/// only while that step shows; the port's Select only renders, and its
+/// state lives here in its place. An accept and a cancel in one poll report
+/// the accept first.
+#[component]
+fn TerminalSetupSelect<'a>(
+    props: &mut TerminalSetupSelectProps<'a>,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
+    let options = terminal_setup_options();
+    // No default value, no focus value: the default five-row viewport,
+    // focus on the first option.
+    let state = use_select_state(
+        &mut hooks,
+        UseSelectStateProps {
+            values: options.iter().map(|option| option.value.clone()).collect(),
+            visible_option_count: Some(5),
+            default_value: None,
+            focus_value: None,
+        },
+    );
+    let events = use_select_input(
+        &mut hooks,
+        state,
+        UseSelectInputOptions {
+            has_on_cancel: true,
+            option_metas: options
+                .iter()
+                .map(|option| SelectInputOptionMeta {
+                    value: option.value.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        },
+    );
+    // Both are taken every render, so neither is left to fire later.
+    let accepted = events.take_accepted();
+    let cancelled = events.take_cancelled();
+    if let Some(value) = accepted {
+        (props.on_change)(value);
+    }
+    if cancelled {
+        (props.on_cancel)(());
+    }
+    let navigation = state.navigation.snapshot();
+    element! {
+        Select(
+            is_disabled: false,
+            hide_indexes: false,
+            visible_option_count: navigation.visible_option_count,
+            options: options,
+            focused_index: navigation.focused_index().unwrap_or(0),
+            // CC select:accept commits the focused option, and the compact
+            // layout ticks it while the install runs.
+            selected_value: state.committed_value(),
+            visible_from_index: navigation.visible_from_index,
+            layout: SelectLayout::Compact,
+        )
+    }
+}
+
+/// Maps to: CC `Onboarding.tsx:181-230`.
 fn render_terminal_setup_step(
+    theme: Theme,
     terminal_name: &str,
-    focused_index: usize,
+    install_terminal: Handler<()>,
+    go_to_next_step: impl Fn() + Copy + Send + Sync + 'static,
     exit_pending: bool,
     exit_key_name: Option<&str>,
 ) -> AnyElement<'static> {
-    let options = terminal_setup_options();
-    let focused_index = focused_index.min(options.len().saturating_sub(1));
     let footer = if exit_pending {
         format!(
             "Press {} again to exit",
@@ -535,17 +579,19 @@ fn render_terminal_setup_step(
                     ),
                     wrap: TextWrap::Wrap,
                 )
-                Select(
-                    is_disabled: false,
-                    hide_indexes: false,
-                    visible_option_count: options.len(),
-                    options: options,
-                    focused_index: focused_index,
-                    selected_value: None,
-                    visible_from_index: 0usize,
-                    layout: SelectLayout::Compact,
+                // CC :207-217.
+                TerminalSetupSelect(
+                    on_change: move |value: String| {
+                        if value == "install" {
+                            install_terminal(());
+                        } else {
+                            go_to_next_step();
+                        }
+                    },
+                    on_cancel: move |_| go_to_next_step(),
                 )
-                Text(content: footer, dim: true)
+                // CC :219 `<Text dimColor>`.
+                Text(content: footer, color: theme.inactive)
             }
         }
     }
@@ -563,14 +609,15 @@ fn render_preflight_step(_theme: Theme) -> AnyElement<'static> {
     .into_any()
 }
 
+/// Maps to: CC `Onboarding.tsx:156-165`.
 fn render_api_key_step(
     custom_api_key_truncated: &str,
-    focused_index: usize,
+    handle_api_key_done: impl FnMut(bool) + Send + Sync + 'static,
 ) -> AnyElement<'static> {
     element! {
         ApproveApiKey(
             custom_api_key_truncated: custom_api_key_truncated.to_string(),
-            focused_index: focused_index,
+            on_done: handle_api_key_done,
         )
     }
     .into_any()
@@ -775,6 +822,231 @@ mod tests {
         assert!(frames[1].contains("provider setting=dark current=light"), "{}", frames[1]);
         assert!(frames[2].contains("provider setting=light current=light"), "{}", frames[2]);
         assert!(frames[2].contains("Security notes:"), "{}", frames[2]);
+    }
+
+    #[test]
+    fn onboarding_api_key_answer_skips_oauth_only_when_approved() {
+        // CC Onboarding.tsx:143-148 `handleApiKeyDone`: approving skips the
+        // OAuth step; rejecting goes on to it. The dialog owns its keys and
+        // opens on "No". Terminal setup follows security, so a second step
+        // would show. Writes stay off: the answer's config save is a dry
+        // run here.
+        use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
+        use crate::utils::theme::{ThemeName, ThemeSetting};
+
+        #[component]
+        fn KeyEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let mut keys = hooks.use_state(|| 0usize);
+            hooks.use_terminal_events(move |event| {
+                if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                    keys.set(keys.get() + 1);
+                }
+            });
+            element! { Text(content: format!("keys={} pressed", keys.get())) }
+        }
+
+        #[component]
+        fn ApiKeyStepHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+            let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
+                &mut hooks,
+                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
+            );
+            element! {
+                ContextProvider(value: Context::owned(runtime)) {
+                    ThemeProvider(
+                        initial_state: Some(ThemeSetting::Named(ThemeName::Dark)),
+                        on_theme_save: Some(Arc::new(|_| {}) as ThemeSaveHandler),
+                    ) {
+                        crate::state::app_state::AppStateProvider(
+                            children: crate::state::app_state::ProviderChildren::new(|| element! {
+                                View(flex_direction: FlexDirection::Column) {
+                                    Onboarding(
+                                        oauth_enabled: true,
+                                        api_key_needing_approval: Some("abcd1234".to_string()),
+                                        offer_terminal_setup: true,
+                                        initial_step: Some(OnboardingStepId::ApiKey),
+                                        terminal_name: Some("xterm".to_string()),
+                                    )
+                                    KeyEcho
+                                }
+                            }.into_any()),
+                        )
+                    }
+                }
+            }
+        }
+
+        // Each batch in one go once the previous one has a frame, then an
+        // unbound F12 for the step to settle.
+        let run = |batches: Vec<Vec<KeyCode>>| {
+            futures::executor::block_on(async move {
+                let (keys, events) = async_channel::unbounded();
+                let mut app = element!(ApiKeyStepHarness);
+                let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                    MockTerminalConfig::with_events(events).with_size(120, 40),
+                ));
+                let mut batches = batches;
+                batches.push(vec![KeyCode::F(12)]);
+                let mut next_batch = 0;
+                let mut sent = 0;
+                let mut last = String::new();
+                while let Some(canvas) = render_loop.next().await {
+                    last = canvas.to_string();
+                    if !last.contains(&format!("keys={sent} ")) {
+                        continue;
+                    }
+                    let Some(batch) = batches.get(next_batch) else {
+                        break;
+                    };
+                    for code in batch {
+                        keys.send(key(*code)).await.unwrap();
+                    }
+                    sent += batch.len();
+                    next_batch += 1;
+                }
+                last
+            })
+        };
+
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _no_write = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
+        let approved = run(vec![vec![KeyCode::Up], vec![KeyCode::Enter]]);
+        assert!(approved.contains("Security notes:"), "{approved}");
+        let rejected = run(vec![vec![KeyCode::Enter]]);
+        assert!(rejected.contains("Select login method:"), "{rejected}");
+        // An answer and Esc in one read are one answer, one step.
+        let rejected = run(vec![vec![KeyCode::Enter, KeyCode::Esc]]);
+        assert!(rejected.contains("Select login method:"), "{rejected}");
+        let approved = run(vec![vec![KeyCode::Up], vec![KeyCode::Enter, KeyCode::Esc]]);
+        assert!(approved.contains("Security notes:"), "{approved}");
+    }
+
+    #[derive(Default, Props)]
+    struct StepHarnessProps {
+        initial_step: Option<OnboardingStepId>,
+        /// Unbinds Esc in the Confirmation context.
+        unbind_confirmation_escape: bool,
+    }
+
+    /// Onboarding with terminal setup offered, from `initial_step`, under
+    /// the keybinding runtime and theme it mounts with, and a line counting
+    /// key presses (so each read produces a frame) and `onDone` calls.
+    #[component]
+    fn StepHarness(props: &StepHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
+        use crate::utils::theme::{ThemeName, ThemeSetting};
+        let unbind_confirmation_escape = props.unbind_confirmation_escape;
+        let runtime = hooks.use_const(|| {
+            let mut bindings = crate::keybindings::default_bindings::default_bindings();
+            if unbind_confirmation_escape {
+                bindings.push(crate::keybindings::types::ParsedBinding {
+                    chord: crate::keybindings::parser::parse_chord("escape"),
+                    action: None,
+                    context: crate::keybindings::types::ContextName::Confirmation,
+                });
+            }
+            crate::keybindings::keybinding_context::KeybindingRuntime::new(bindings)
+        });
+        let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
+            &mut hooks, runtime,
+        );
+        let mut keys = hooks.use_state(|| 0usize);
+        let done = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                keys.set(keys.get() + 1);
+            }
+        });
+        let initial_step = props.initial_step;
+        element! {
+            ContextProvider(value: Context::owned(runtime)) {
+                ThemeProvider(
+                    initial_state: Some(ThemeSetting::Named(ThemeName::Dark)),
+                    on_theme_save: Some(Arc::new(|_| {}) as ThemeSaveHandler),
+                ) {
+                    crate::state::app_state::AppStateProvider(
+                        children: crate::state::app_state::ProviderChildren::new(move || element! {
+                            View(flex_direction: FlexDirection::Column) {
+                                Onboarding(
+                                    offer_terminal_setup: true,
+                                    initial_step,
+                                    terminal_name: Some("xterm".to_string()),
+                                    on_done: move |_| {
+                                        let mut done = done;
+                                        done.set(done.get() + 1);
+                                    },
+                                )
+                                Text(content: format!("keys={} done={}", keys.get(), done.get()))
+                            }
+                        }.into_any()),
+                    )
+                }
+            }
+        }
+    }
+
+    /// Sends each batch in one go once the previous one has a frame, then an
+    /// unbound F12 to settle; returns the last frame.
+    fn run_steps(
+        initial_step: OnboardingStepId,
+        unbind_confirmation_escape: bool,
+        batches: Vec<Vec<KeyCode>>,
+    ) -> String {
+        futures::executor::block_on(async move {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(StepHarness(
+                initial_step: Some(initial_step),
+                unbind_confirmation_escape,
+            ));
+            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(120, 40),
+            ));
+            let mut batches = batches;
+            batches.push(vec![KeyCode::F(12)]);
+            let mut next_batch = 0;
+            let mut sent = 0;
+            let mut last = String::new();
+            while let Some(canvas) = render_loop.next().await {
+                last = canvas.to_string();
+                if !last.contains(&format!("keys={sent} ")) {
+                    continue;
+                }
+                let Some(batch) = batches.get(next_batch) else {
+                    break;
+                };
+                for code in batch {
+                    keys.send(key(*code)).await.unwrap();
+                }
+                sent += batch.len();
+                next_batch += 1;
+            }
+            last
+        })
+    }
+
+    #[test]
+    fn onboarding_terminal_setup_confirm_no_sees_escape_before_the_select() {
+        // CC Onboarding.tsx:258-265 registers confirm:no when Onboarding
+        // mounts, ahead of the terminal-setup Select, which registers no
+        // active context. With Esc unbound in Confirmation, that unbound
+        // match stops Esc (useKeybinding.ts:182-186) before the Select's
+        // cancel; n still skips.
+        let escaped = run_steps(OnboardingStepId::TerminalSetup, true, vec![vec![KeyCode::Esc]]);
+        assert!(escaped.contains("done=0"), "{escaped}");
+        assert!(escaped.contains("Use Claude Code's terminal setup?"), "{escaped}");
+        let declined = run_steps(OnboardingStepId::TerminalSetup, true, vec![vec![KeyCode::Char('n')]]);
+        assert!(declined.contains("done=1"), "{declined}");
+    }
+
+    #[test]
+    fn onboarding_keys_in_one_read_advance_from_the_step_they_were_rendered_at() {
+        // CC :57-70: `handleSecurityContinue` closes over the render's
+        // `currentStepIndex`, so two Enters read together both go to the
+        // step after security; the second does not also leave terminal
+        // setup.
+        let shown = run_steps(OnboardingStepId::Security, false, vec![vec![KeyCode::Enter, KeyCode::Enter]]);
+        assert!(shown.contains("done=0"), "{shown}");
+        assert!(shown.contains("Use Claude Code's terminal setup?"), "{shown}");
     }
 
     #[test]
