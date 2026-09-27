@@ -1,8 +1,9 @@
 //! Maps to: CC `components/design-system/Tabs.tsx` header/body chrome.
 //!
-//! Canonical Tabs/Tab own selection, keybindings and modal body layout for new
-//! source-shaped consumers. Existing screens retain the earlier header primitive
-//! until their controlled focus transports are migrated individually.
+//! Canonical Tabs/Tab own selection, keybindings, header focus with its
+//! `use_tab_header_focus` opt-in, and modal body layout for source-shaped
+//! consumers. Existing screens that assemble `TabsHeader` themselves keep
+//! their own focus state until they are migrated individually.
 
 use crate::keybindings::keybinding_context::KeybindingRuntime;
 use crate::keybindings::types::ContextName;
@@ -200,14 +201,14 @@ pub fn TabsHeader(props: &TabsHeaderProps, mut hooks: Hooks) -> impl Into<AnyEle
     }
 }
 
-/// Maps to: CC `components/design-system/Tabs.tsx:308-312#TabProps`.
+/// Maps to: CC `components/design-system/Tabs.tsx:294-298#TabProps`.
 #[derive(Default, Props)]
 pub struct TabProps {
     pub title: String,
     pub id: Option<String>,
     pub children: Vec<AnyElement<'static>>,
 }
-/// Maps to: CC `components/design-system/Tabs.tsx:313-328#Tab`.
+/// Maps to: CC `components/design-system/Tabs.tsx:300-312#Tab`.
 #[component]
 pub fn Tab<'a>(props: &'a mut TabProps, hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let context = hooks
@@ -220,15 +221,87 @@ pub fn Tab<'a>(props: &'a mut TabProps, hooks: Hooks) -> impl Into<AnyElement<'a
     let inside_modal = crate::context::modal_context::use_is_inside_modal(&hooks);
     element!{View(width:context.width.map(|w|Size::Length(w.into())).unwrap_or(Size::Auto),flex_shrink:if inside_modal{0.0f32}else{1.0f32}){#(props.children.iter_mut())}}.into_any()
 }
-/// Maps to: CC `components/design-system/Tabs.tsx:59-67#TabsContextValue`.
-/// This component path has no focus-opt-in consumers. Existing opt-in screens
-/// still own their focus state; migrating those callers is a separate scope.
+/// Maps to: CC `components/design-system/Tabs.tsx:58-76#TabsContextValue`.
+/// The default, outside a Tabs, is CC's: content has focus and the header
+/// callbacks do nothing. Screens that assemble their own header (Settings,
+/// /permissions) still keep their own focus state.
 #[derive(Clone, Default)]
 struct TabsContextValue {
     selected_tab: Option<String>,
     width: Option<u16>,
+    /// CC `headerFocused`.
+    header_focused: bool,
+    /// The Tabs' header-focus state behind CC `focusHeader`/`blurHeader`.
+    header: Option<State<bool>>,
+    /// The Tabs' opt-in count behind CC `registerOptIn`.
+    opt_ins: Option<State<usize>>,
 }
-/// Maps to: CC `components/design-system/Tabs.tsx:330-333#useTabsWidth`.
+
+/// Maps to: CC `Tabs.tsx:330-334`, what `useTabHeaderFocus()` returns.
+#[derive(Clone, Copy)]
+pub struct TabHeaderFocus {
+    pub header_focused: bool,
+    header: Option<State<bool>>,
+}
+
+impl TabHeaderFocus {
+    /// CC `focusHeader`.
+    pub fn focus_header(&self) {
+        if let Some(mut header) = self.header {
+            header.set(true);
+        }
+    }
+
+    /// CC `blurHeader`.
+    pub fn blur_header(&self) {
+        if let Some(mut header) = self.header {
+            header.set(false);
+        }
+    }
+}
+
+/// CC `registerOptIn` and the cleanup it returns: counted while the guard
+/// lives. iocraft exposes no unmount effect, so the caller keeps the guard
+/// in `use_state` and its drop is the unmount (the `OverlayRegistration`
+/// pattern). A Tabs that unmounts first leaves the write a no-op.
+struct TabHeaderOptIn(Option<State<usize>>);
+
+impl TabHeaderOptIn {
+    fn register(mut opt_ins: Option<State<usize>>) -> Self {
+        if let Some(mut count) = opt_ins.as_mut().and_then(State::try_write) {
+            *count += 1;
+        }
+        Self(opt_ins)
+    }
+}
+
+impl Drop for TabHeaderOptIn {
+    fn drop(&mut self) {
+        if let Some(mut count) = self.0.as_mut().and_then(State::try_write) {
+            *count = count.saturating_sub(1);
+        }
+    }
+}
+
+/// Maps to: CC `Tabs.tsx:319-339#useTabHeaderFocus`. Opts the calling
+/// component into header-focus gating for as long as it is mounted: the
+/// Tabs' ↓ then hands focus to the content. For a Select, disable it while
+/// `header_focused` and call `focus_header` on up-from-first-item. As in CC,
+/// don't call it above an early return that renders static text — split the
+/// component so it only runs where the Select renders.
+pub fn use_tab_header_focus(hooks: &mut Hooks) -> TabHeaderFocus {
+    let context = hooks
+        .try_use_context::<TabsContextValue>()
+        .map(|context| context.clone())
+        .unwrap_or_default();
+    let opt_ins = context.opt_ins;
+    hooks.use_state(move || TabHeaderOptIn::register(opt_ins));
+    TabHeaderFocus {
+        header_focused: context.header_focused,
+        header: context.header,
+    }
+}
+/// Maps to: CC `components/design-system/Tabs.tsx:314-317#useTabsWidth`.
 pub fn use_tabs_width(hooks: &Hooks) -> Option<u16> {
     hooks
         .try_use_context::<TabsContextValue>()
@@ -250,11 +323,16 @@ pub struct TabsProps {
     pub on_tab_change: Handler<String>,
     pub banner: Vec<AnyElement<'static>>,
     pub disable_navigation: bool,
+    /// CC `initialHeaderFocused`, default true (`None`).
+    pub initial_header_focused: Option<bool>,
     pub content_height: Option<u16>,
+    /// CC `navFromContent`.
+    pub nav_from_content: bool,
 }
-/// Maps to: CC `components/design-system/Tabs.tsx:81-306#Tabs`.
-/// Ports the source default header-focus path used by PluginSettings, including
-/// controlled/uncontrolled selection and canonical modal ScrollBox placement.
+/// Maps to: CC `components/design-system/Tabs.tsx:78-292#Tabs`.
+/// Controlled/uncontrolled selection, header focus (`initialHeaderFocused`,
+/// the ↓ hand-off to opted-in content, `navFromContent`) and canonical modal
+/// ScrollBox placement.
 #[component]
 pub fn Tabs<'a>(props: &'a mut TabsProps, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let (terminal_width, _) = hooks.use_terminal_size();
@@ -278,7 +356,7 @@ pub fn Tabs<'a>(props: &'a mut TabsProps, mut hooks: Hooks) -> impl Into<AnyElem
         .as_ref()
         .and_then(|id| tabs.iter().position(|tab| &tab.id == id))
         .unwrap_or(0);
-    let mut internal_selected = hooks.use_state(move || default_index);
+    let internal_selected = hooks.use_state(move || default_index);
     let selected_index = props
         .selected_tab
         .as_ref()
@@ -287,38 +365,96 @@ pub fn Tabs<'a>(props: &'a mut TabsProps, mut hooks: Hooks) -> impl Into<AnyElem
     let controlled = props.selected_tab.is_some();
     let on_change = props.on_tab_change.clone();
     let callback_present = !on_change.is_default();
-    let next_tabs = tabs.clone();
-    let previous_tabs = tabs.clone();
-    let previous_change = on_change.clone();
+    // CC :125-136: the header row starts focused unless the caller says
+    // otherwise; children that call `use_tab_header_focus` are counted.
+    let initial_header_focused = props.initial_header_focused.unwrap_or(true);
+    let mut header_focused = hooks.use_state(move || initial_header_focused);
+    let opt_ins = hooks.use_state(|| 0usize);
+    let opted_in = opt_ins.get() > 0;
+    // CC :138-150 `handleTabChange`: switching is a header action, so the
+    // header keeps focus; the new tab can take it back itself.
+    let change_tab = {
+        let tabs = tabs.clone();
+        move |forward: bool| {
+            let (mut internal_selected, mut header_focused) = (internal_selected, header_focused);
+            if tabs.is_empty() {
+                return;
+            }
+            let offset = if forward { 1 } else { tabs.len() - 1 };
+            let index = (selected_index + offset) % tabs.len();
+            if controlled && callback_present && !tabs[index].id.is_empty() {
+                on_change(tabs[index].id.clone());
+            } else {
+                internal_selected.set(index);
+            }
+            header_focused.set(true);
+        }
+    };
+    let navigable = !props.hidden && !props.disable_navigation;
+    // CC :163-172 `handleKeyDown`: while the header is focused, ↓ hands focus
+    // to the content, but only when a child has opted in — a legacy tab has
+    // no way to give it back. Without an opt-in (as in /plugin) it does not
+    // subscribe at all. `prevent_default` is CC's `e.preventDefault()`: it
+    // marks the key, it does not hide it from later handlers.
+    //
+    // Registered ahead of the tab keybindings: iocraft drains each event
+    // hook's queue before the next hook runs, so with ↓ and a tab key read
+    // in one chunk this order handles ↓ first, as Ink's key-by-key dispatch
+    // does, and the tab switch that follows focuses the header again.
+    // (The other order would blur the header on the new tab, counting the
+    // old tab's opt-in, and a static tab could never take focus back.)
+    let hidden = props.hidden;
+    hooks.use_propagated_terminal_events_for(
+        if opted_in && !hidden {
+            TerminalEventInterest::KEY
+        } else {
+            TerminalEventInterest::NONE
+        },
+        move |event| {
+            let TerminalEvent::Key(KeyEvent { code, kind, .. }) = event.event() else {
+                return;
+            };
+            if *kind == KeyEventKind::Release || *code != KeyCode::Down {
+                return;
+            }
+            if header_focused.get() && opt_ins.get() > 0 && !hidden {
+                header_focused.set(false);
+                event.prevent_default();
+            }
+        },
+    );
+    // CC :152-161: tab/←/→ switch tabs while the header is focused.
     use_tabs_keybindings(
         &mut hooks,
-        !props.hidden && !props.disable_navigation,
-        move || {
-            if !next_tabs.is_empty() {
-                let index = (selected_index + 1) % next_tabs.len();
-                if controlled && callback_present && !next_tabs[index].id.is_empty() {
-                    on_change(next_tabs[index].id.clone());
-                } else {
-                    internal_selected.set(index);
-                }
-            }
+        navigable && header_focused.get(),
+        {
+            let change_tab = change_tab.clone();
+            move || change_tab(true)
         },
-        move || {
-            if !previous_tabs.is_empty() {
-                let index = (selected_index + previous_tabs.len() - 1) % previous_tabs.len();
-                if controlled && callback_present && !previous_tabs[index].id.is_empty() {
-                    previous_change(previous_tabs[index].id.clone());
-                } else {
-                    internal_selected.set(index);
-                }
-            }
+        {
+            let change_tab = change_tab.clone();
+            move || change_tab(false)
         },
+    );
+    // CC :174-196: with `navFromContent`, the same keys switch tabs from
+    // opted-in content too, and focus the header.
+    use_tabs_keybindings(
+        &mut hooks,
+        props.nav_from_content && !header_focused.get() && opted_in && navigable,
+        {
+            let change_tab = change_tab.clone();
+            move || change_tab(true)
+        },
+        move || change_tab(false),
     );
     let modal_scroll_ref = crate::context::modal_context::use_modal_scroll_ref(&hooks);
     let width = props.use_full_width.then_some(terminal_width);
     let context = TabsContextValue {
         selected_tab: tabs.get(selected_index).map(|tab| tab.id.clone()),
         width,
+        header_focused: header_focused.get(),
+        header: Some(header_focused),
+        opt_ins: Some(opt_ins),
     };
     // Borrow source children: a local selection/resize render must not consume
     // props and erase the tab metadata or the previously mounted body.
@@ -340,7 +476,7 @@ pub fn Tabs<'a>(props: &'a mut TabsProps, mut hooks: Hooks) -> impl Into<AnyElem
         borrowed
     });
     element!{ContextProvider(value:Context::owned(context)){View(flex_direction:FlexDirection::Column,tab_index:Some(0),auto_focus:true,flex_shrink:if modal_scroll_ref.is_some(){0.0f32}else{1.0f32}){
-        TabsHeader(title:props.title.clone(),color:props.color,tabs:tabs,selected_index:selected_index,header_focused:true,hidden:props.hidden,use_full_width:props.use_full_width)
+        TabsHeader(title:props.title.clone(),color:props.color,tabs:tabs,selected_index:selected_index,header_focused:header_focused.get(),hidden:props.hidden,use_full_width:props.use_full_width)
         #(banner)
         #(std::iter::once(body))
     }}}.into_any()
@@ -726,6 +862,174 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[derive(Default, Props)]
+    struct OptInBodyProps {
+        label: String,
+    }
+
+    /// A tab body that opts into header focus, shows what it sees, and hands
+    /// focus back to the header on `u` (a Select's up-from-first-item).
+    #[component]
+    fn OptInBody(props: &OptInBodyProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let focus = use_tab_header_focus(&mut hooks);
+        hooks.use_terminal_events(move |event| {
+            if let TerminalEvent::Key(KeyEvent { code: KeyCode::Char('u'), kind, .. }) = event {
+                if kind == KeyEventKind::Press && !focus.header_focused {
+                    focus.focus_header();
+                }
+            }
+        });
+        element! { Text(content: format!("{} header={}", props.label, focus.header_focused)) }
+    }
+
+    #[component]
+    fn KeyCountEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut keys = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                keys.set(keys.get() + 1);
+            }
+        });
+        element! { Text(content: format!("keys={} pressed", keys.get())) }
+    }
+
+    #[derive(Default, Props)]
+    struct FocusHarnessProps {
+        nav_from_content: bool,
+    }
+
+    /// Tab A opts in; tab B is static text that does not.
+    #[component]
+    fn FocusHarness(props: &FocusHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
+            &mut hooks,
+            KeybindingRuntime::with_default_bindings(),
+        );
+        element! {
+            ContextProvider(value: Context::owned(runtime)) {
+                ContextProvider(value: Context::owned(*theme::current())) {
+                    View(flex_direction: FlexDirection::Column) {
+                        Tabs(title: Some("T".to_string()), nav_from_content: props.nav_from_content) {
+                            Tab(id: Some("a".to_string()), title: "A") {
+                                OptInBody(label: "body A")
+                            }
+                            Tab(id: Some("b".to_string()), title: "B") {
+                                Text(content: "body B static")
+                            }
+                        }
+                        KeyCountEcho
+                    }
+                }
+            }
+        }
+    }
+
+    /// Sends one key per frame; returns the body line of the mount frame and
+    /// of the frame after each key.
+    fn drive_focus(nav_from_content: bool, keys_in_order: Vec<KeyCode>) -> Vec<String> {
+        drive_focus_batches(nav_from_content, keys_in_order.into_iter().map(|key| vec![key]).collect())
+    }
+
+    /// Sends each batch of keys back to back, so a batch reaches the app as
+    /// one input chunk; returns the body line of the mount frame and of the
+    /// frame after each batch.
+    fn drive_focus_batches(nav_from_content: bool, batches: Vec<Vec<KeyCode>>) -> Vec<String> {
+        use futures::StreamExt;
+        futures::executor::block_on(async move {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(FocusHarness(nav_from_content: nav_from_content));
+            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(60, 12),
+            ));
+            let mut bodies = Vec::new();
+            let mut sent = 0;
+            while let Some(canvas) = render_loop.next().await {
+                let text = canvas.to_string();
+                if !text.contains(&format!("keys={sent} ")) {
+                    continue;
+                }
+                let body = text
+                    .lines()
+                    .find(|line| line.contains("body"))
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
+                bodies.push(body);
+                let Some(batch) = batches.get(bodies.len() - 1) else {
+                    break;
+                };
+                for code in batch {
+                    keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
+                        .await
+                        .unwrap();
+                }
+                sent += batch.len();
+            }
+            bodies
+        })
+    }
+
+    #[test]
+    fn tabs_down_and_a_tab_key_in_one_chunk_leave_the_header_focused() {
+        // Ink dispatches ↓ then → key by key: ↓ blurs the header (Tabs.tsx
+        // :163-172), → switches tabs and focuses it (:149). Read as one chunk
+        // the port must end the same way, or the static tab B would strand
+        // the panel with no focused header. The next → proves it is focused.
+        let bodies = drive_focus_batches(
+            false,
+            vec![vec![KeyCode::Down, KeyCode::Right], vec![KeyCode::Right]],
+        );
+        assert_eq!(bodies, vec!["body A header=true", "body B static", "body A header=true"]);
+    }
+
+    #[test]
+    fn tabs_hand_focus_to_opted_in_content_on_down_and_take_it_back() {
+        // CC Tabs.tsx:125 the header starts focused; :163-172 ↓ hands focus
+        // to opted-in content; :152-161 tab/←/→ only switch tabs while the
+        // header has focus; the content's focusHeader gives it back.
+        let bodies = drive_focus(
+            false,
+            vec![KeyCode::Down, KeyCode::Right, KeyCode::Char('u'), KeyCode::Right],
+        );
+        assert_eq!(
+            bodies,
+            vec![
+                "body A header=true",
+                "body A header=false",
+                "body A header=false",
+                "body A header=true",
+                "body B static",
+            ]
+        );
+    }
+
+    #[test]
+    fn tabs_keep_the_header_focused_on_a_tab_that_did_not_opt_in() {
+        // CC Tabs.tsx:128-136: only mounted opt-ins count, so once tab A
+        // unmounts ↓ on B leaves the header focused and → still switches.
+        let bodies = drive_focus(false, vec![KeyCode::Right, KeyCode::Down, KeyCode::Right]);
+        assert_eq!(
+            bodies,
+            vec!["body A header=true", "body B static", "body B static", "body A header=true"]
+        );
+    }
+
+    #[test]
+    fn tabs_nav_from_content_switches_tabs_and_focuses_the_header() {
+        // CC Tabs.tsx:174-196: with navFromContent, → from focused content
+        // switches tabs and focuses the header, so ← then switches back.
+        let bodies = drive_focus(true, vec![KeyCode::Down, KeyCode::Right, KeyCode::Left]);
+        assert_eq!(
+            bodies,
+            vec![
+                "body A header=true",
+                "body A header=false",
+                "body B static",
+                "body A header=true",
+            ]
+        );
     }
 
     #[test]
