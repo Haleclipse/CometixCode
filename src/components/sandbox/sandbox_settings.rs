@@ -225,7 +225,7 @@ pub fn SandboxSettings<'a>(
     );
 
     // CC :72-98 `handleSelect`.
-    let select_mode = Handler::from({
+    let handle_select = Handler::from({
         let complete = complete.clone();
         move |mode: SandboxMode| {
             // `setSandboxSettings` logs a failed write and resolves anyway.
@@ -239,7 +239,7 @@ pub fn SandboxSettings<'a>(
             SandboxModeTab(
                 show_socket_warning: show_socket_warning,
                 current_mode: Some(current_mode),
-                on_select: select_mode,
+                on_select: handle_select,
                 on_complete: complete.clone(),
             )
         }

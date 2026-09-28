@@ -140,7 +140,7 @@ pub fn ThinkingToggle<'a>(
     // CC :67-74 `handleSelectChange`.
     let current_value = props.current_value;
     let is_mid_conversation = props.is_mid_conversation;
-    let on_change = move |value: String| {
+    let handle_select_change = move |value: String| {
         let selected = value == "true";
         if thinking_toggle_requires_confirmation(current_value, selected, is_mid_conversation) {
             let mut pending = confirmation_pending;
@@ -176,7 +176,7 @@ pub fn ThinkingToggle<'a>(
                         View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
                             ThinkingToggleSelect(
                                 current_value: current_value,
-                                on_change: on_change,
+                                on_change: handle_select_change,
                                 on_cancel: move |_| decide(outcome, Outcome::Cancel),
                             )
                         }
