@@ -1,7 +1,7 @@
 //! Maps to: CC `hooks/useCancelRequest.ts` — the CancelRequestHandler.
 //!
 //! CC renders a null component that registers `chat:cancel` (Escape) and
-//! `app:interrupt` (Ctrl+C) keybinding handlers with independent isActive
+//! `app:interrupt` (CC's Ctrl+C) keybinding handlers with independent isActive
 //! gates. Cometix keeps the same action names; `CancelRequestHandler` below is
 //! that component, which REPL mounts ahead of PromptInput as CC does
 //! (REPL.tsx:5891, :6133).
@@ -21,8 +21,10 @@
 //!   overlay gate reads `context::overlay_context::is_overlay_active` ✓; the
 //!   special-mode-empty-input and teammate-view exclusions join when those
 //!   states are lifted out of PromptInput/swarm.
-//! - Active-task Ctrl+C resolves `app:interrupt`; idle PromptInput still owns
-//!   its text-level double-press exit because this hook's active gate is false.
+//! - `app:interrupt` is CC's Ctrl+C. Cometix binds Ctrl+C to `app:exit`
+//!   (2.0.x semantics, `default_bindings.rs`), so the interrupt leg answers
+//!   only a key a user binds to it; Ctrl+C stays PromptInput's text-level
+//!   clear and double-press exit, running turn or not.
 
 use iocraft::prelude::*;
 use std::sync::{Arc, Mutex};

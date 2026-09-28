@@ -119,7 +119,7 @@ pub fn SelectMulti<'a>(
     });
     // CC use-multi-select-state.ts:215 `useRegisterOverlay('multi-select')`,
     // for the whole mount, so the cancel-request handler leaves Esc and
-    // Ctrl+C to this list.
+    // app:interrupt to this list.
     let app_store = hooks.try_use_context::<crate::state::store::AppStore>();
     let mut overlay =
         hooks.use_state(|| Option::<crate::context::overlay_context::OverlayRegistration>::None);

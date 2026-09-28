@@ -2146,8 +2146,9 @@ pub fn PromptInput<'a>(
             disable_escape_double_press: has_suggestions,
             // While a query is running, Escape belongs to the Repl-level
             // chat:cancel handler (CC CancelRequestHandler isActive gate);
-            // the input yields Escape. Ctrl+C stays with double-press exit
-            // (default Global binding app:exit — old semantics).
+            // the input yields Escape. Ctrl+C stays with the input's clear and
+            // double-press exit even then: Cometix binds it to app:exit, 2.0.x
+            // semantics (default_bindings.rs).
             cancel_passthrough: props.is_loading,
         },
     );
@@ -2458,7 +2459,7 @@ pub fn PromptInput<'a>(
         cursor_offset: Some(cursor_offset.get()),
     });
 
-    if text_input.exit.should_exit() {
+    if text_input.exit.take_should_exit() {
         (props.on_exit)(());
     }
 

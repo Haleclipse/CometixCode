@@ -145,7 +145,8 @@ mod tests {
         let frames = futures::executor::block_on(async move {
             let (keys, events) = async_channel::unbounded();
             let mut app = element!(CommandHarness(results: Some(Arc::new(Mutex::new(Vec::new())))));
-            // Like the production loop, the mock ends on an unconsumed Ctrl+C.
+            // The mock ends on an unconsumed Ctrl+C (production ignores one:
+            // CC `exitOnCtrlC: false`), so the picker must take both presses.
             let mut render_loop = Box::pin(app.mock_terminal_render_loop(
                 MockTerminalConfig::with_events(events).with_size(100, 40),
             ));

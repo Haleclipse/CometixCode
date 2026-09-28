@@ -80,7 +80,6 @@ pub struct ExitPlanModePermissionRequestProps<'a> {
     pub worker_badge: Option<WorkerBadgeProps>,
     pub on_select: HandlerMut<'a, ExitPlanModePermissionOptionValue>,
     pub on_select_detail: HandlerMut<'a, ExitPlanModePermissionSelection>,
-    pub on_cancel: HandlerMut<'a, ()>,
     /// Deterministic adapter seam for permission image-paste tests.
     pub clipboard_image_override: Option<crate::utils::image_paste::ClipboardImage>,
 }
@@ -354,7 +353,6 @@ pub fn ExitPlanModePermissionRequest<'a>(
     // Select.onCancel (plain rejection), matching CC's separate callbacks.
     let mut pending_select =
         hooks.use_state(|| Option::<(ExitPlanModePermissionOptionValue, bool)>::None);
-    let mut pending_cancel = hooks.use_state(|| false);
     let pasted_contents_snapshot = pasted_contents.read().clone();
     let content_blocks = permission_image_blocks(&pasted_contents_snapshot);
     let image_count = content_blocks.len();
@@ -362,7 +360,6 @@ pub fn ExitPlanModePermissionRequest<'a>(
     hooks.use_terminal_events({
         let mut focused_index = focused_index;
         let mut pending_select = pending_select;
-        let mut pending_cancel = pending_cancel;
         let mut plan_feedback = plan_feedback;
         let options = options.clone();
         move |event| {
@@ -434,9 +431,8 @@ pub fn ExitPlanModePermissionRequest<'a>(
                     // CC Select.onCancel rejects without feedback/images.
                     pending_select.set(Some((ExitPlanModePermissionOptionValue::No, false)));
                 }
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    pending_cancel.set(true);
-                }
+                // No Ctrl+C here: CC's is PermissionRequest's app:interrupt,
+                // and Cometix binds Ctrl+C to app:exit (2.0.x semantics).
                 _ => {}
             }
         }
@@ -455,10 +451,6 @@ pub fn ExitPlanModePermissionRequest<'a>(
                 .then(|| content_blocks.clone())
                 .unwrap_or_default(),
         });
-    }
-    if pending_cancel.get() {
-        pending_cancel.set(false);
-        (props.on_cancel)(());
     }
 
     let focused = focused_index.get().min(option_count.saturating_sub(1));

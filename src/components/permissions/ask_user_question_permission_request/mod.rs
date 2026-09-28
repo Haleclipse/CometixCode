@@ -9,8 +9,8 @@
 //! CC's closures do. Analytics remain outside the component.
 //!
 //! Esc and the other rejections are a `Deny` on `on_select`, as elsewhere
-//! in the port's permission dialogs; Ctrl+C belongs to `PermissionRequest`
-//! (CC `PermissionRequest.tsx:206-214`).
+//! in the port's permission dialogs; `app:interrupt` belongs to
+//! `PermissionRequest` (CC `PermissionRequest.tsx:206-214`).
 
 pub mod preview_box;
 pub mod preview_question_view;
@@ -971,7 +971,7 @@ mod tests {
         // CC use-select-input.ts:101 `useRegisterOverlay('select', …)` and
         // use-multi-select-state.ts:215 `useRegisterOverlay('multi-select')`:
         // with one registered, the REPL's cancel handler leaves Esc and
-        // Ctrl+C to the question.
+        // app:interrupt to the question.
         let run = drive(harness(multi_question_input()), Vec::new());
         assert!(run.last.contains("overlays=[select]"), "{}", run.last);
         let run = drive(harness(multi_question_input()), steps(vec![key(KeyCode::Tab)]));
@@ -1110,12 +1110,12 @@ mod tests {
     }
 
     #[test]
-    fn escape_rejects_once_and_ctrl_c_is_left_to_the_dispatcher() {
+    fn escape_rejects_once_and_ctrl_c_answers_nothing() {
         let run = drive(harness(single_question_input()), steps(vec![key(KeyCode::Esc)]));
         assert_eq!(run.responses.len(), 1);
         assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
-        // CC PermissionRequest.tsx:206-214 owns Ctrl+C; the dialog alone
-        // answers nothing.
+        // The dialog takes no interrupt of its own: CC's is PermissionRequest's
+        // app:interrupt (:206-214), and Cometix binds Ctrl+C to app:exit.
         let run = drive(
             harness(single_question_input()),
             steps(vec![modified_key(KeyCode::Char('c'), KeyModifiers::CONTROL)]),

@@ -464,7 +464,8 @@ mod tests {
 
     #[test]
     fn settings_exit_hook_takes_ctrl_c_ahead_of_the_language_input() {
-        // CC `Settings.tsx:62` registers app:interrupt with the pane, before
+        // CC `Settings.tsx:62` registers the exit hook (app:interrupt and
+        // app:exit, Ctrl+C's action here) with the pane, before
         // LanguagePicker's TextInput mounts, so Ctrl+C arms the exit double
         // press and never clears the typed language. Frame-driven: each step
         // waits for the frame the previous one produced; the trailing `z`

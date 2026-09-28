@@ -277,7 +277,10 @@ pub fn use_keybinding<IsActive, Handler>(
         );
         match result {
             ChordResolveResult::Match { action: resolved } if resolved == action => {
-                if (*shared.lock().expect("keybinding handler lock"))() {
+                let handled = runtime.dispatch(vec![keystroke.clone()], || {
+                    (*shared.lock().expect("keybinding handler lock"))()
+                });
+                if handled {
                     event.stop_propagation();
                 }
             }
@@ -353,7 +356,7 @@ pub fn use_keybindings<IsActive>(
                     .expect("keybinding handlers lock")
                     .get_mut(&action)
                 {
-                    if handler() {
+                    if runtime.dispatch(vec![keystroke.clone()], || handler()) {
                         event.stop_propagation();
                     }
                 }

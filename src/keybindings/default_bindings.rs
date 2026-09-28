@@ -58,10 +58,13 @@ pub fn default_binding_blocks() -> Vec<KeybindingBlock> {
         &[
             // ctrl+c / ctrl+d use special double-press handling; defined so
             // the resolver can find them but non-rebindable (reserved_shortcuts.rs).
-            // Current CC routes Ctrl+C through app:interrupt so active tasks
-            // and dialogs can consume it before idle text input falls back to
-            // double-press exit. Ctrl+D remains app:exit.
-            ("ctrl+c", "app:interrupt"),
+            // Cometix-specific deviation (product requirement — skip in parity
+            // audits): CC 2.1.88 binds Ctrl+C to app:interrupt, which cancels
+            // a running turn and rejects a permission dialog. Cometix keeps
+            // 2.0.x's Ctrl+C: it only exits, on a double press, and Esc is
+            // what interrupts. app:interrupt keeps its consumers for a key a
+            // user binds to it.
+            ("ctrl+c", "app:exit"),
             ("ctrl+d", "app:exit"),
             ("ctrl+l", "app:redraw"),
             ("ctrl+t", "app:toggleTodos"),
@@ -400,7 +403,8 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_c_resolves_app_interrupt_globally() {
+    fn ctrl_c_resolves_app_exit_globally() {
+        // Cometix-specific deviation: CC 2.1.88 resolves app:interrupt here.
         let bindings = default_bindings();
         let contexts: HashSet<_> = [ContextName::Chat, ContextName::Global].into();
         let result = resolve_key_with_chord_state(
@@ -413,7 +417,7 @@ mod tests {
         assert_eq!(
             result,
             ChordResolveResult::Match {
-                action: "app:interrupt".into()
+                action: "app:exit".into()
             }
         );
     }

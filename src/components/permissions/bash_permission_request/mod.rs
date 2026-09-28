@@ -84,7 +84,6 @@ pub struct BashPermissionRequestProps<'a> {
     pub no_input_mode: bool,
     pub current_cwd: Option<String>,
     pub on_select: HandlerMut<'a, BashPermissionSelection>,
-    pub on_cancel: HandlerMut<'a, ()>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -417,7 +416,6 @@ pub fn BashPermissionRequest<'a>(
     let option_count = options.len().max(1);
     let mut focused_index = hooks.use_state(|| 0usize);
     let mut pending_select = hooks.use_state(|| Option::<BashToolUseOptionValue>::None);
-    let mut pending_cancel = hooks.use_state(|| false);
 
     for (action, direction) in [("select:previous", -1isize), ("select:next", 1isize)] {
         let active_options = options.clone();
@@ -508,7 +506,6 @@ pub fn BashPermissionRequest<'a>(
     );
 
     hooks.use_propagated_terminal_events({
-        let mut pending_cancel = pending_cancel;
         let mut feedback_state = feedback_state;
         let accept_feedback = accept_feedback;
         let reject_feedback = reject_feedback;
@@ -517,7 +514,6 @@ pub fn BashPermissionRequest<'a>(
             let TerminalEvent::Key(KeyEvent {
                 code,
                 kind,
-                modifiers,
                 ..
             }) = event.event()
             else {
@@ -541,10 +537,8 @@ pub fn BashPermissionRequest<'a>(
                         event.stop_propagation();
                     }
                 }
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    pending_cancel.set(true);
-                    event.stop_propagation();
-                }
+                // No Ctrl+C here: CC's is PermissionRequest's app:interrupt,
+                // and Cometix binds Ctrl+C to app:exit (2.0.x semantics).
                 _ => {}
             }
         }
@@ -565,10 +559,6 @@ pub fn BashPermissionRequest<'a>(
             .as_ref()
             .map(|_| classifier_description_value.read().clone());
         (props.on_select)(selection);
-    }
-    if pending_cancel.get() {
-        pending_cancel.set(false);
-        (props.on_cancel)(());
     }
 
     let focused = focused_index.get().min(option_count - 1);
@@ -1099,9 +1089,7 @@ mod tests {
     #[test]
     fn bash_permission_request_enter_and_escape_dispatch_official_option_values() {
         let selected = Arc::new(Mutex::new(Vec::new()));
-        let cancelled = Arc::new(Mutex::new(0usize));
         let selected_for_handler = Arc::clone(&selected);
-        let cancelled_for_handler = Arc::clone(&cancelled);
 
         futures::executor::block_on(async move {
             let mut app = element! {
@@ -1113,9 +1101,6 @@ mod tests {
                         request: Some(bash_request("cargo test", "Run tests")),
                         on_select: move |value| {
                             selected_for_handler.lock().expect("selected mutex").push(value);
-                        },
-                        on_cancel: move |_| {
-                            *cancelled_for_handler.lock().expect("cancelled mutex") += 1;
                         },
                         )
                     }
@@ -1152,7 +1137,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![BashToolUseOptionValue::No]
         );
-        assert_eq!(*cancelled.lock().expect("cancelled mutex"), 0);
     }
 
     #[test]

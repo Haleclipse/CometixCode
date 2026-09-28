@@ -138,7 +138,7 @@ pub fn VimTextInput<'a>(
             HistoryDirection::Down => (props.on_history_down)(()),
         }
     }
-    if state.exit.should_exit() {
+    if state.exit.take_should_exit() {
         (props.on_exit)(());
     }
 

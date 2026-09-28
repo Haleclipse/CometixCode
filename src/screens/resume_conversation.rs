@@ -113,40 +113,60 @@ fn filtered_logs(
 }
 
 #[derive(Default, Props)]
-struct NoConversationsMessageProps {}
+struct NoConversationsMessageProps {
+    /// Cometix-specific: a failed resume load shows its error in place of the
+    /// first line (CC rethrows and stays on "Resuming conversation…").
+    error: Option<String>,
+}
 
 /// Maps to: CC `screens/ResumeConversation.tsx` `NoConversationsMessage`.
 ///
 /// iocraft has no process exit-code channel on `App`; `app:interrupt` exits
 /// the retained root while preserving the official visible behavior.
+///
+/// Cometix-specific deviation (product requirement — skip in parity audits):
+/// `app:exit` exits too. Cometix binds Ctrl+C to it (default_bindings.rs),
+/// and "Press Ctrl+C to exit" stays true, as it is in 2.1.88.
 #[component]
 fn NoConversationsMessage(
-    _props: &NoConversationsMessageProps,
+    props: &NoConversationsMessageProps,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let mut app = hooks.use_app();
-    let mut pending_exit = hooks.use_state(|| false);
+    let pending_exit = hooks.use_state(|| false);
     let keybinding_runtime = hooks
         .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
         .map(|runtime| runtime.clone());
-    crate::keybindings::use_keybinding::use_keybinding(
+    crate::keybindings::use_keybinding::use_keybindings(
         &mut hooks,
         keybinding_runtime,
-        "app:interrupt",
+        ["app:interrupt", "app:exit"]
+            .into_iter()
+            .map(|action| {
+                let mut pending_exit = pending_exit;
+                (
+                    action.to_string(),
+                    Box::new(move || {
+                        pending_exit.set(true);
+                        true
+                    }) as crate::keybindings::use_keybinding::KeybindingHandler,
+                )
+            })
+            .collect(),
         crate::keybindings::types::ContextName::Global,
         || true,
-        move || {
-            pending_exit.set(true);
-            true
-        },
     );
     if pending_exit.get() {
         app.exit();
     }
 
+    let first_line = props
+        .error
+        .clone()
+        .unwrap_or_else(|| "No conversations found to resume.".to_string());
     element! {
         View(flex_direction: FlexDirection::Column) {
-            Text(content: "No conversations found to resume.".to_string())
+            Text(content: first_line)
             Text(content: "Press Ctrl+C to exit and start a new conversation.".to_string(), dim: true)
         }
     }
@@ -383,13 +403,9 @@ pub fn ResumeConversation(
     }
 
     if let Some(error) = resume_error.read().clone() {
-        return element! {
-            View(flex_direction: FlexDirection::Column) {
-                Text(content: error)
-                Text(content: "Press Ctrl+C to exit and start a new conversation.".to_string(), dim: true)
-            }
-        }
-        .into_any();
+        // Cometix-specific (CC rethrows and stays on "Resuming conversation…"):
+        // the error, with NoConversationsMessage's way out.
+        return element! { NoConversationsMessage(error: Some(error)) }.into_any();
     }
 
     if let Some(command) = cross_project_command.read().clone() {
@@ -603,6 +619,51 @@ mod tests {
             empty.contains("Press Ctrl+C to exit and start a new conversation."),
             "canvas=\n{empty}"
         );
+    }
+
+    /// Cometix binds Ctrl+C to app:exit; one Ctrl+C (or Ctrl+D) still leaves
+    /// this screen, as its copy says and as 2.1.88's does, and so does the
+    /// load-error variant. The loop ignores unowned Ctrl+C, as production does.
+    #[test]
+    fn no_conversations_message_exits_on_one_ctrl_c_or_ctrl_d() {
+        use futures::{FutureExt, StreamExt};
+        let exits = |error: Option<String>, c: char| {
+            futures::executor::block_on(async move {
+                let mut key = KeyEvent::new(KeyEventKind::Press, KeyCode::Char(c));
+                key.modifiers = KeyModifiers::CONTROL;
+                let events = futures::stream::iter(vec![TerminalEvent::Key(key)])
+                    .chain(futures::stream::pending());
+                let mut app = element! {
+                    ContextProvider(value: Context::owned(
+                        crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
+                    )) {
+                        ContextProvider(value: Context::owned(*theme::current())) {
+                            NoConversationsMessage(error)
+                        }
+                    }
+                };
+                let mut frames = Box::pin(app.mock_terminal_render_loop(
+                    MockTerminalConfig::with_events(events)
+                        .with_size(80, 5)
+                        .with_ignore_ctrl_c(true),
+                ));
+                for _ in 0..20 {
+                    let next = crate::utils::race(frames.next().map(Some), async {
+                        futures_timer::Delay::new(std::time::Duration::from_millis(100)).await;
+                        None
+                    })
+                    .await;
+                    if matches!(next, Some(None)) {
+                        return true;
+                    }
+                }
+                false
+            })
+        };
+        for error in [None, Some("Failed to load conversation".to_string())] {
+            assert!(exits(error.clone(), 'c'), "ctrl+c, error={error:?}");
+            assert!(exits(error.clone(), 'd'), "ctrl+d, error={error:?}");
+        }
     }
 
     #[test]

@@ -61,7 +61,6 @@ pub struct EnterPlanModePermissionRequestProps<'a> {
     pub request: Option<PermissionRequestData>,
     pub worker_badge: Option<WorkerBadgeProps>,
     pub on_select: HandlerMut<'a, EnterPlanModePermissionOptionValue>,
-    pub on_cancel: HandlerMut<'a, ()>,
 }
 
 fn _default_request() -> PermissionRequestData {
@@ -120,18 +119,15 @@ pub fn EnterPlanModePermissionRequest<'a>(
     let option_count = options.len();
     let mut focused_index = hooks.use_state(|| 0usize);
     let mut pending_select = hooks.use_state(|| Option::<EnterPlanModePermissionOptionValue>::None);
-    let mut pending_cancel = hooks.use_state(|| false);
 
     hooks.use_terminal_events({
         let mut focused_index = focused_index;
         let mut pending_select = pending_select;
-        let mut pending_cancel = pending_cancel;
         let options = options.clone();
         move |event| {
             let TerminalEvent::Key(KeyEvent {
                 code,
                 kind,
-                modifiers,
                 ..
             }) = event
             else {
@@ -157,9 +153,8 @@ pub fn EnterPlanModePermissionRequest<'a>(
                     // CC Select.onCancel handles this as the negative response.
                     pending_select.set(Some(EnterPlanModePermissionOptionValue::No));
                 }
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    pending_cancel.set(true);
-                }
+                // No Ctrl+C here: CC's is PermissionRequest's app:interrupt,
+                // and Cometix binds Ctrl+C to app:exit (2.0.x semantics).
                 _ => {}
             }
         }
@@ -169,10 +164,6 @@ pub fn EnterPlanModePermissionRequest<'a>(
     if let Some(value) = selected {
         pending_select.set(None);
         (props.on_select)(value);
-    }
-    if pending_cancel.get() {
-        pending_cancel.set(false);
-        (props.on_cancel)(());
     }
 
     let focused = focused_index.get().min(option_count.saturating_sub(1));

@@ -141,17 +141,23 @@ mod tests {
     fn prompt_dialog_app_interrupt_aborts_through_keybinding_runtime() {
         let abort_count = Arc::new(Mutex::new(0usize));
         let abort_for_handler = Arc::clone(&abort_count);
+        // Cometix binds Ctrl+C to app:exit; F6 stands in for a key a user
+        // binds to app:interrupt.
         let event_stream = stream::once(async {
             futures_timer::Delay::new(Duration::from_millis(30)).await;
-            let mut event = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('c'));
-            event.modifiers = KeyModifiers::CONTROL;
-            TerminalEvent::Key(event)
+            TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::F(6)))
+        });
+        let mut bindings = crate::keybindings::default_bindings::default_bindings();
+        bindings.push(crate::keybindings::types::ParsedBinding {
+            chord: crate::keybindings::parser::parse_chord("f6"),
+            action: Some("app:interrupt".to_string()),
+            context: crate::keybindings::types::ContextName::Global,
         });
 
         futures::executor::block_on(async move {
             let mut app = element! {
                 ContextProvider(value: Context::owned(
-                    KeybindingRuntime::with_default_bindings()
+                    KeybindingRuntime::new(bindings)
                 )) {
                     ContextProvider(value: Context::owned(*theme::current())) {
                         PromptDialog(

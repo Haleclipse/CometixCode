@@ -1696,8 +1696,13 @@ pub fn run(config: crate::cli::CliConfig) {
         });
         let render_result = rt.block_on(async {
             start_settings_change_detector();
+            // CC `createRoot(getBaseRenderOptions(false))` (main.tsx:6029,
+            // :6149): `exitOnCtrlC: false`, so a Ctrl+C no handler takes does
+            // nothing; exiting is the double press in useTextInput and
+            // useExitOnCtrlCD.
             let result = mount()
                 .render_loop()
+                .ignore_ctrl_c()
                 .stdout(utils::asciicast::RecordingStdout(std::io::stdout()))
                 .on_frame_profile(move |event| {
                     if profile_to_stderr {
@@ -1806,8 +1811,10 @@ pub fn run(config: crate::cli::CliConfig) {
     } else {
         let render_result = rt.block_on(async {
             start_settings_change_detector();
+            // `exitOnCtrlC: false`, as above.
             let result = mount()
                 .render_loop()
+                .ignore_ctrl_c()
                 .stdout(utils::asciicast::RecordingStdout(std::io::stdout()))
                 .await;
             if let Err(error) = crate::cost_tracker::save_current_session_costs() {

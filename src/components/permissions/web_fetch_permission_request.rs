@@ -71,7 +71,6 @@ pub struct WebFetchPermissionRequestProps<'a> {
     /// returns `url: "…", prompt: "…"`.
     pub verbose: bool,
     pub on_select: HandlerMut<'a, WebFetchPermissionOptionValue>,
-    pub on_cancel: HandlerMut<'a, ()>,
 }
 
 fn default_request() -> PermissionRequestData {
@@ -226,18 +225,15 @@ pub fn WebFetchPermissionRequest<'a>(
     let option_count = options.len().max(1);
     let mut focused_index = hooks.use_state(|| 0usize);
     let mut pending_select = hooks.use_state(|| Option::<WebFetchPermissionOptionValue>::None);
-    let mut pending_cancel = hooks.use_state(|| false);
 
     hooks.use_terminal_events({
         let mut focused_index = focused_index;
         let mut pending_select = pending_select;
-        let mut pending_cancel = pending_cancel;
         let options = options.clone();
         move |event| {
             let TerminalEvent::Key(KeyEvent {
                 code,
                 kind,
-                modifiers,
                 ..
             }) = event
             else {
@@ -264,9 +260,8 @@ pub fn WebFetchPermissionRequest<'a>(
                     // rejects the fetch rather than emitting a generic cancel.
                     pending_select.set(Some(WebFetchPermissionOptionValue::No));
                 }
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    pending_cancel.set(true);
-                }
+                // No Ctrl+C here: CC's is PermissionRequest's app:interrupt,
+                // and Cometix binds Ctrl+C to app:exit (2.0.x semantics).
                 _ => {}
             }
         }
@@ -276,10 +271,6 @@ pub fn WebFetchPermissionRequest<'a>(
     if let Some(value) = selected {
         pending_select.set(None);
         (props.on_select)(value);
-    }
-    if pending_cancel.get() {
-        pending_cancel.set(false);
-        (props.on_cancel)(());
     }
 
     let focused = focused_index.get().min(option_count - 1);
@@ -553,9 +544,7 @@ mod tests {
     #[test]
     fn web_fetch_permission_request_enter_and_escape_dispatch_official_option_values() {
         let selected = Arc::new(Mutex::new(Vec::new()));
-        let cancelled = Arc::new(Mutex::new(0usize));
         let selected_for_handler = Arc::clone(&selected);
-        let cancelled_for_handler = Arc::clone(&cancelled);
 
         futures::executor::block_on(async move {
             let mut app = element! {
@@ -565,9 +554,6 @@ mod tests {
                         show_always_allow_options: true,
                         on_select: move |value| {
                             selected_for_handler.lock().expect("selected mutex").push(value);
-                        },
-                        on_cancel: move |_| {
-                            *cancelled_for_handler.lock().expect("cancelled mutex") += 1;
                         },
                     )
                 }
@@ -598,6 +584,5 @@ mod tests {
             selected.lock().expect("selected mutex").as_slice(),
             &[WebFetchPermissionOptionValue::No]
         );
-        assert_eq!(*cancelled.lock().expect("cancelled mutex"), 0);
     }
 }

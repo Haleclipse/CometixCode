@@ -38,6 +38,11 @@ struct KeybindingRuntimeInner {
     next_handler_id: AtomicU64,
     /// Maps to: CC `activeContexts: Set<KeybindingContextName>`.
     active_contexts: Mutex<HashSet<ContextName>>,
+    /// The keys whose action is being handled, set around each handler call.
+    /// Cometix-specific deviation (product requirement — skip in parity
+    /// audits): CC handlers learn only the action; the exit hook names the
+    /// key that was pressed, since Ctrl+C is bound to `app:exit` here.
+    dispatching: Mutex<Option<Vec<ParsedKeystroke>>>,
 }
 
 /// Cheap-to-clone runtime handle injected via ContextProvider.
@@ -56,8 +61,36 @@ impl KeybindingRuntime {
                 handlers: Mutex::new(HashMap::new()),
                 next_handler_id: AtomicU64::new(1),
                 active_contexts: Mutex::new(HashSet::new()),
+                dispatching: Mutex::new(None),
             }),
         }
+    }
+
+    /// Runs `handler` with `keys` recorded as the keys being handled (see
+    /// `dispatching`), restoring the previous record afterwards.
+    pub fn dispatch<R>(&self, keys: Vec<ParsedKeystroke>, handler: impl FnOnce() -> R) -> R {
+        let previous = self
+            .inner
+            .dispatching
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .replace(keys);
+        let result = handler();
+        *self
+            .inner
+            .dispatching
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = previous;
+        result
+    }
+
+    /// The keys whose action is being handled, while a handler runs.
+    pub fn dispatching_keys(&self) -> Option<Vec<ParsedKeystroke>> {
+        self.inner
+            .dispatching
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     pub fn with_default_bindings() -> Self {
@@ -199,7 +232,12 @@ impl KeybindingRuntime {
 
     /// Maps to: CC `ChordInterceptor` selecting the first registered handler
     /// whose context participated in resolution.
-    fn invoke_action(&self, action: &str, contexts: &HashSet<ContextName>) {
+    fn invoke_action(
+        &self,
+        action: &str,
+        contexts: &HashSet<ContextName>,
+        chord: Vec<ParsedKeystroke>,
+    ) {
         let handler = self
             .inner
             .handlers
@@ -213,7 +251,7 @@ impl KeybindingRuntime {
                     .map(|registration| Arc::clone(&registration.handler))
             });
         if let Some(handler) = handler {
-            handler();
+            self.dispatch(chord, || handler());
         }
     }
 
@@ -221,7 +259,6 @@ impl KeybindingRuntime {
     /// (KeybindingProviderSetup.tsx). Returns the resolution for observers.
     pub fn observe_keystroke(&self, keystroke: &ParsedKeystroke) -> ChordResolveResult {
         let pending = self.current_pending();
-        let had_pending = pending.is_some();
         let bindings = self.bindings();
         let contexts = self.interceptor_contexts();
         let result = resolve_key_with_chord_state(
@@ -239,8 +276,9 @@ impl KeybindingRuntime {
                 self.set_pending(None);
                 // CC: only chord completions dispatch through the registry;
                 // single-key matches belong to per-component use_keybinding.
-                if had_pending {
-                    self.invoke_action(action, &contexts);
+                if let Some(mut chord) = pending {
+                    chord.push(keystroke.clone());
+                    self.invoke_action(action, &contexts, chord);
                 }
             }
             ChordResolveResult::ChordCancelled | ChordResolveResult::Unbound => {

@@ -116,7 +116,7 @@ pub fn TextInput<'a>(
             HistoryDirection::Down => (props.on_history_down)(()),
         }
     }
-    if state.exit.should_exit() {
+    if state.exit.take_should_exit() {
         (props.on_exit)(());
     }
 
@@ -202,8 +202,9 @@ mod tests {
     fn text_input_escape_passthrough_preserves_nonempty_ctrl_c_editing() {
         // CC useTextInput.ts:108-120 handles Ctrl+C independently of the
         // BaseTextInput → parent Escape propagation restored for rule input.
-        // The real runtime has no parent app:interrupt handler here, so the
-        // text-level branch runs within the normal provider/focus environment.
+        // The real runtime has no parent handler for Ctrl+C's action here, so
+        // the text-level branch runs within the normal provider/focus
+        // environment.
         use futures::StreamExt;
         futures::executor::block_on(async {
             let (keys, events) = async_channel::unbounded();
