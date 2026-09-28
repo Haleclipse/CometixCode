@@ -2,8 +2,7 @@
 
 use super::official_file_result_element;
 use super::utils::{ToolRenderLine, ToolRenderTone};
-use crate::components::interrupted_by_user::InterruptedByUser;
-use crate::components::message_response::MessageResponse;
+use crate::components::fallback_tool_use_rejected_message::FallbackToolUseRejectedMessage;
 use crate::components::notebook_edit_tool_use_rejected_message::NotebookEditToolUseRejectedMessage;
 use crate::types::message::ToolResultStatus;
 use crate::utils::theme::Theme;
@@ -118,12 +117,7 @@ pub fn UserToolRejectMessage(
     if let Some(schema) = migrated_input_schema(&props.tool_name) {
         let input = props.tool_input.clone().unwrap_or(serde_json::Value::Null);
         if crate::utils::zod::safe_parse(schema, &input).is_err() {
-            return element! {
-                MessageResponse {
-                    InterruptedByUser
-                }
-            }
-            .into_any();
+            return element! { FallbackToolUseRejectedMessage }.into_any();
         }
     }
 
@@ -206,12 +200,7 @@ pub fn UserToolRejectMessage(
         .into_any();
     }
 
-    element! {
-        MessageResponse {
-            InterruptedByUser
-        }
-    }
-    .into_any()
+    element! { FallbackToolUseRejectedMessage }.into_any()
 }
 
 #[cfg(test)]
@@ -235,7 +224,7 @@ mod tests {
 
     /// CC `UserToolRejectMessage.tsx:40-43`: `tool.inputSchema.safeParse(input)`
     /// gates the per-tool rejected renderer; a failed parse falls back to
-    /// `FallbackToolUseRejectedMessage` ("Interrupted by user").
+    /// `FallbackToolUseRejectedMessage` (`INTERRUPTED_BY_USER_TEXT`).
     #[test]
     fn schema_failures_fall_back_before_the_per_tool_renderer_like_official() {
         // Required key missing (NotebookEdit.notebook_path / new_source).

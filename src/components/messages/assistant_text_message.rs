@@ -61,7 +61,7 @@ pub fn AssistantTextMessage(
 
     if text == ERROR_MESSAGE_USER_ABORT {
         return element! {
-            MessageResponse {
+            MessageResponse(height: Some(1)) {
                 InterruptedByUser
             }
         }

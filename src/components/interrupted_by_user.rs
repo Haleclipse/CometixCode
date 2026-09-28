@@ -10,14 +10,8 @@ use iocraft::prelude::*;
 
 pub const INTERRUPTED_BY_USER_TEXT: &str = "Interrupted · What should Claude do instead?";
 
-#[derive(Default, Props)]
-pub struct InterruptedByUserProps;
-
 #[component]
-pub fn InterruptedByUser(
-    _props: &InterruptedByUserProps,
-    hooks: Hooks,
-) -> impl Into<AnyElement<'static>> {
+pub fn InterruptedByUser(hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<Theme>();
 
     element! {

@@ -4,17 +4,11 @@ use crate::components::interrupted_by_user::InterruptedByUser;
 use crate::components::message_response::MessageResponse;
 use iocraft::prelude::*;
 
-#[derive(Default, Props)]
-pub struct FallbackToolUseRejectedMessageProps;
-
 /// Maps to: CC `components/FallbackToolUseRejectedMessage.tsx#FallbackToolUseRejectedMessage`.
 #[component]
-pub fn FallbackToolUseRejectedMessage(
-    _props: &FallbackToolUseRejectedMessageProps,
-    _hooks: Hooks,
-) -> impl Into<AnyElement<'static>> {
+pub fn FallbackToolUseRejectedMessage() -> impl Into<AnyElement<'static>> {
     element! {
-        MessageResponse {
+        MessageResponse(height: Some(1)) {
             InterruptedByUser
         }
     }

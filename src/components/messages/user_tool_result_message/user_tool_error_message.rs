@@ -41,7 +41,7 @@ pub fn UserToolErrorMessage(
 
     if content.contains(INTERRUPT_MESSAGE_FOR_TOOL_USE) {
         return element! {
-            MessageResponse {
+            MessageResponse(height: Some(1)) {
                 InterruptedByUser
             }
         }
