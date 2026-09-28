@@ -1,9 +1,15 @@
 //! Maps to: CC
 //! `components/permissions/AskUserQuestionPermissionRequest/SubmitQuestionsView.tsx`.
+//!
+//! The view owns its Select: Enter on "Submit answers" or "Cancel", and the
+//! Select's cancel (Esc), report through `onFinalResponse`.
 
 use super::question_navigation_bar::QuestionNavigationBar;
-use super::use_multiple_choice_state::{AnswerValue, Question, all_questions_answered};
-use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
+use super::use_multiple_choice_state::{AnswerValue, Question, answer_for};
+use crate::components::custom_select::{
+    Select, SelectInputOptionMeta, SelectLayout, SelectOptionData, UseSelectInputOptions,
+    UseSelectStateProps, use_select_input, use_select_state,
+};
 use crate::components::design_system::divider::Divider;
 use crate::components::permissions::permission_request_title::PermissionRequestTitle;
 use crate::components::permissions::permission_rule_explanation::{
@@ -23,18 +29,20 @@ pub enum SubmitQuestionsResponse {
 }
 
 #[derive(Default, Props)]
-pub struct SubmitQuestionsViewProps {
+pub struct SubmitQuestionsViewProps<'a> {
     pub questions: Vec<Question>,
     pub current_question_index: usize,
     pub answers: BTreeMap<String, AnswerValue>,
+    /// CC `allQuestionsAnswered`.
+    pub all_questions_answered: bool,
     /// Maps to: CC `SubmitQuestionsView.tsx:81-84` forwarding
     /// `permissionResult` (i.e. its `decisionReason`) to
     /// `PermissionRuleExplanation`.
     pub decision_reason: Option<PermissionDecisionReason>,
     pub permission_mode: PermissionMode,
     pub min_content_height: Option<u32>,
-    pub focused_index: usize,
-    pub on_final_response: Handler<SubmitQuestionsResponse>,
+    /// CC `onFinalResponse(value)`.
+    pub on_final_response: HandlerMut<'a, SubmitQuestionsResponse>,
 }
 
 fn submit_options() -> Vec<SelectOptionData> {
@@ -52,15 +60,55 @@ fn submit_options() -> Vec<SelectOptionData> {
     ]
 }
 
-/// Maps to: CC `SubmitQuestionsView`.
+/// Maps to: CC `SubmitQuestionsView` (:22-104).
 #[component]
-pub fn SubmitQuestionsView(
-    props: &SubmitQuestionsViewProps,
-    hooks: Hooks,
+pub fn SubmitQuestionsView<'a>(
+    props: &mut SubmitQuestionsViewProps<'a>,
+    mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
-    let theme = hooks.use_context::<Theme>();
-    let all_answered = all_questions_answered(&props.questions, &props.answers);
+    let theme = *hooks.use_context::<Theme>();
+    let all_answered = props.all_questions_answered;
     let options = submit_options();
+    // CC :87-98 `<Select options onChange onCancel>`: the default five-row
+    // viewport, indexes shown.
+    let state = use_select_state(
+        &mut hooks,
+        UseSelectStateProps {
+            visible_option_count: Some(5),
+            values: options.iter().map(|option| option.value.clone()).collect(),
+            default_value: None,
+            focus_value: None,
+        },
+    );
+    let events = use_select_input(
+        &mut hooks,
+        state,
+        UseSelectInputOptions {
+            has_on_cancel: true,
+            option_metas: options
+                .iter()
+                .map(|option| SelectInputOptionMeta {
+                    value: option.value.clone(),
+                    ..Default::default()
+                })
+                .collect(),
+            ..Default::default()
+        },
+    );
+    let accepted = events.take_accepted();
+    let cancelled = events.take_cancelled();
+    if let Some(value) = accepted {
+        (props.on_final_response)(if value == "submit" {
+            SubmitQuestionsResponse::Submit
+        } else {
+            SubmitQuestionsResponse::Cancel
+        });
+    }
+    // An accept and a cancel in one poll report the accept only.
+    else if cancelled {
+        (props.on_final_response)(SubmitQuestionsResponse::Cancel);
+    }
+    let navigation = state.navigation.snapshot();
 
     element! {
         View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
@@ -80,8 +128,9 @@ pub fn SubmitQuestionsView(
                     })})
                     #(if props.answers.is_empty() { None } else { Some(element! {
                         View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
-                            #(props.questions.iter().filter(|question| props.answers.contains_key(&question.question)).map(|question| {
-                                let answer = props.answers.get(&question.question).cloned().unwrap_or_default();
+                            // CC :56-58: questions with a (non-empty) answer.
+                            #(props.questions.iter().filter(|question| answer_for(&props.answers, &question.question).is_some()).map(|question| {
+                                let answer = answer_for(&props.answers, &question.question).cloned().unwrap_or_default();
                                 element! {
                                     View(flex_direction: FlexDirection::Column, margin_left: 1u32) {
                                         Text(content: format!("{} {}", figures().bullet, question.question), wrap: TextWrap::Wrap)
@@ -102,10 +151,12 @@ pub fn SubmitQuestionsView(
                     View(margin_top: 1u32) {
                         Select(
                             options: options,
-                            focused_index: props.focused_index.min(1),
-                            visible_option_count: 2usize,
+                            focused_index: navigation.focused_index().unwrap_or(0),
+                            visible_from_index: navigation.visible_from_index,
+                            visible_option_count: navigation.visible_option_count,
+                            selected_value: state.committed_value(),
                             layout: SelectLayout::Compact,
-                            hide_indexes: true,
+                            hide_indexes: false,
                         )
                     }
                 }

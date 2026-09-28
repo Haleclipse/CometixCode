@@ -1,13 +1,17 @@
 //! Maps to: CC
 //! `components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.tsx`.
 //!
-//! This module ports the official AskUserQuestion permission UI boundary using
-//! the same subcomponent files: `QuestionView`, `PreviewQuestionView`,
-//! `PreviewBox`, `QuestionNavigationBar`, `SubmitQuestionsView`, and the
-//! multiple-choice state reducer. The custom `Other` text input, external
-//! editor handoff, per-question clipboard images, image persistence, and
-//! model-visible permission content blocks are owned by this retained shell;
-//! analytics remain outside the component.
+//! The dialog keeps CC's split: this component owns the answers (the
+//! multiple-choice state), the per-question pasted images and the
+//! question-switching keys, and hands its handlers to the views; each view
+//! owns its own keys (`QuestionView`, `PreviewQuestionView`,
+//! `SubmitQuestionsView`). The handlers hold this render's snapshot, as
+//! CC's closures do. Analytics remain outside the component.
+//!
+//! Esc and the other rejections are a `Deny` on `on_select`, as elsewhere
+//! in the port's permission dialogs; Ctrl+C is `on_cancel`. CC registers
+//! that `app:interrupt` in `PermissionRequest.tsx:206-214` for every
+//! dialog; the port's dialogs each carry it until the dispatcher does.
 
 pub mod preview_box;
 pub mod preview_question_view;
@@ -16,29 +20,33 @@ pub mod question_view;
 pub mod submit_questions_view;
 pub mod use_multiple_choice_state;
 
-use question_view::QuestionView;
-use submit_questions_view::SubmitQuestionsView;
+use question_view::{AnswerLabel, OTHER_VALUE, QuestionAnswer, QuestionStateUpdateCall, QuestionView};
+use submit_questions_view::{SubmitQuestionsResponse, SubmitQuestionsView};
 use use_multiple_choice_state::{
-    MultipleChoiceAction, MultipleChoiceState, Question, QuestionStateUpdate, answer_for_selection,
-    build_updated_input_with_answers, hide_submit_tab, question_has_preview, questions_from_input,
-    reduce_multiple_choice_state, toggle_multi_select_value,
+    AnswerValue, Question, QuestionState, all_questions_answered, answer_for, build_updated_input_with_answers,
+    hide_submit_tab, next_question, prev_question, question_has_preview, questions_from_input,
+    set_answer, set_text_input_mode, update_question_state, use_multiple_choice_state,
 };
 
 use crate::components::permissions::worker_badge::WorkerBadgeProps;
 use crate::components::prompt_input::input_paste::PastedContent;
+use crate::keybindings::keybinding_context::KeybindingRuntime;
+use crate::keybindings::types::ContextName;
 use crate::types::permissions::{
     PermissionContentBlock, PermissionMode, PermissionPromptChoice, PermissionPromptResponse,
     PermissionRequest as PermissionRequestData, PermissionRuleValue,
 };
-use crate::utils::prompt_editor::{EditorResult, ExternalEditorRuntime};
-use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 const MIN_CONTENT_HEIGHT: usize = 12;
 const MIN_CONTENT_WIDTH: usize = 40;
 const CONTENT_CHROME_OVERHEAD: usize = 15;
+
+/// CC `pastedContentsByQuestion`: questions in the order they first got an
+/// image (a JS object's key order), each question's images by paste id (a
+/// JS object's integer keys).
+type PastedByQuestion = indexmap::IndexMap<String, BTreeMap<usize, PastedContent>>;
 
 #[derive(Default, Props)]
 pub struct AskUserQuestionPermissionRequestProps {
@@ -120,164 +128,15 @@ pub fn ask_user_question_content_dimensions(
     )
 }
 
-fn state_with_action(
-    state: &State<MultipleChoiceState>,
-    action: MultipleChoiceAction,
-) -> MultipleChoiceState {
-    reduce_multiple_choice_state(&state.read(), action)
-}
-
-fn reset_question_focus(
-    focused_index: &mut State<usize>,
-    footer_focused: &mut State<bool>,
-    footer_index: &mut State<usize>,
-    submit_focus: &mut State<usize>,
-    notes_focused: &mut State<bool>,
-) {
-    focused_index.set(0);
-    footer_focused.set(false);
-    footer_index.set(0);
-    submit_focus.set(0);
-    notes_focused.set(false);
-}
-
-fn question_text_input(state: &MultipleChoiceState, question_text: &str) -> Option<String> {
-    state
-        .question_states
-        .get(question_text)
-        .map(|state| state.text_input_value.clone())
-}
-
-fn is_other_option_focus(question: &Question, preview_mode: bool, focused_index: usize) -> bool {
-    !preview_mode && focused_index >= question.options.len()
-}
-
-fn update_question_notes(
-    question: &Question,
-    text: String,
-    state: &mut State<MultipleChoiceState>,
-) -> MultipleChoiceState {
-    let next_state = state_with_action(
-        state,
-        MultipleChoiceAction::UpdateQuestionState {
-            question_text: question.question.clone(),
-            updates: QuestionStateUpdate {
-                selected_value: None,
-                text_input_value: Some(text),
-            },
-            is_multi_select: question.multi_select,
-        },
-    );
-    state.set(next_state.clone());
-    next_state
-}
-
-fn update_other_text_for_question(
-    question: &Question,
-    text: String,
-    questions_len: usize,
-    hide_submit_tab_flag: bool,
-    state: &mut State<MultipleChoiceState>,
-) -> MultipleChoiceState {
-    let question_text = question.question.clone();
-    let mut next_state = state_with_action(
-        state,
-        MultipleChoiceAction::UpdateQuestionState {
-            question_text: question_text.clone(),
-            updates: QuestionStateUpdate {
-                selected_value: None,
-                text_input_value: Some(text.clone()),
-            },
-            is_multi_select: question.multi_select,
-        },
-    );
-    state.set(next_state.clone());
-
-    let selected = next_state
-        .question_states
-        .get(&question_text)
-        .map(|state| state.selected_value.clone())
-        .unwrap_or_default();
-    let should_refresh_answer = if question.multi_select {
-        selected.iter().any(|value| value == "__other__")
-    } else {
-        selected.first().is_some_and(|value| value == "__other__")
-    };
-
-    if should_refresh_answer {
-        let answer = if question.multi_select {
-            answer_for_selection("", &selected, Some(&text), true)
-        } else {
-            answer_for_selection("__other__", &[], Some(&text), false)
-        };
-        next_state = state_with_action(
-            state,
-            MultipleChoiceAction::SetAnswer {
-                question_text,
-                answer,
-                should_advance: false,
-                question_count: questions_len,
-                hide_submit_tab: hide_submit_tab_flag,
-            },
-        );
-        state.set(next_state.clone());
-    }
-
-    next_state
-}
-
-fn answer_current_question(
-    question: &Question,
-    label: &str,
-    text_input: Option<&str>,
-    has_images: bool,
-    should_advance: bool,
-    questions_len: usize,
-    hide_submit_tab_flag: bool,
-    state: &mut State<MultipleChoiceState>,
-) -> MultipleChoiceState {
-    let question_text = question.question.clone();
-    let mut next_state = state_with_action(
-        state,
-        MultipleChoiceAction::UpdateQuestionState {
-            question_text: question_text.clone(),
-            updates: QuestionStateUpdate {
-                selected_value: Some(vec![label.to_string()]),
-                text_input_value: None,
-            },
-            is_multi_select: false,
-        },
-    );
-    state.set(next_state.clone());
-    let mut answer = answer_for_selection(label, &[], text_input, false);
-    // Maps to: CC `components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.tsx:430-479`.
-    if label == "__other__" && has_images {
-        answer = if text_input.is_some_and(|text| !text.trim().is_empty()) {
-            format!("{answer} (Image attached)")
-        } else {
-            "(Image attached)".to_string()
-        };
-    }
-    next_state = state_with_action(
-        state,
-        MultipleChoiceAction::SetAnswer {
-            question_text,
-            answer,
-            should_advance,
-            question_count: questions_len,
-            hide_submit_tab: hide_submit_tab_flag,
-        },
-    );
-    state.set(next_state.clone());
-    next_state
-}
-
 /// Maps to CC `handleRespondToClaude` / `handleFinishPlanInterview` question
-/// summary, without analytics or image persistence.
-fn question_feedback_summary(questions: &[Question], state: &MultipleChoiceState) -> String {
+/// summary, without analytics.
+fn question_feedback_summary(
+    questions: &[Question],
+    answers: &BTreeMap<String, AnswerValue>,
+) -> String {
     questions
         .iter()
-        .map(|question| match state.answers.get(&question.question) {
+        .map(|question| match answer_for(answers, &question.question) {
             Some(answer) => format!("- \"{}\"\n  Answer: {answer}", question.question),
             None => format!("- \"{}\"\n  (No answer provided)", question.question),
         })
@@ -285,53 +144,65 @@ fn question_feedback_summary(questions: &[Question], state: &MultipleChoiceState
         .join("\n")
 }
 
-fn respond_to_claude_feedback(questions: &[Question], state: &MultipleChoiceState) -> String {
+fn respond_to_claude_feedback(
+    questions: &[Question],
+    answers: &BTreeMap<String, AnswerValue>,
+) -> String {
     format!(
         "The user wants to clarify these questions.\n    This means they may have additional information, context or questions for you.\n    Take their response into account and then reformulate the questions if appropriate.\n    Start by asking them what they would like to clarify.\n\n    Questions asked:\n{}",
-        question_feedback_summary(questions, state)
+        question_feedback_summary(questions, answers)
     )
 }
 
-fn finish_plan_interview_feedback(questions: &[Question], state: &MultipleChoiceState) -> String {
+fn finish_plan_interview_feedback(
+    questions: &[Question],
+    answers: &BTreeMap<String, AnswerValue>,
+) -> String {
     format!(
         "The user has indicated they have provided enough answers for the plan interview.\nStop asking clarifying questions and proceed to finish the plan with the information you have.\n\nQuestions asked and answers provided:\n{}",
-        question_feedback_summary(questions, state)
+        question_feedback_summary(questions, answers)
     )
 }
 
-/// Maps to: CC `components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.tsx:586-604`.
-fn permission_image_blocks(
-    pasted_by_question: &BTreeMap<String, BTreeMap<usize, PastedContent>>,
-) -> Vec<PermissionContentBlock> {
-    let mut images = pasted_by_question
+/// Maps to: CC `allImageAttachments` (:220-222) through
+/// `convertImagesToBlocks` (:586-604): every question's images in
+/// `pastedContentsByQuestion` order, each through
+/// `maybeResizeAndDownsampleImageBlock`. CC awaits this before answering, and
+/// a failed resize rejects the answer (`.catch(logError)`); the callers do
+/// the same.
+fn convert_images_to_blocks(
+    pasted_by_question: &PastedByQuestion,
+) -> Result<Vec<PermissionContentBlock>, crate::utils::image_resizer::ImageResizeError> {
+    pasted_by_question
         .values()
         .flat_map(BTreeMap::values)
         .filter_map(|content| match content {
             PastedContent::Image {
-                id,
                 media_type,
                 data: Some(data),
                 ..
-            } => Some((
-                *id,
-                PermissionContentBlock::image_base64(
-                    media_type
-                        .clone()
-                        .unwrap_or_else(|| "image/png".to_string()),
-                    data.clone(),
-                ),
-            )),
+            } => Some((media_type.as_deref().unwrap_or("image/png"), data)),
             _ => None,
         })
-        .collect::<Vec<_>>();
-    images.sort_by_key(|(id, _)| *id);
-    images.into_iter().map(|(_, block)| block).collect()
+        .map(|(media_type, data)| {
+            let resized = crate::utils::image_resizer::maybe_resize_and_downsample_image_base64(
+                data,
+                Some(media_type),
+            )?;
+            Ok(PermissionContentBlock::image_base64(
+                resized.media_type.clone(),
+                crate::utils::image_resizer::resize_result_base64(&resized),
+            ))
+        })
+        .collect()
 }
 
-fn question_has_images(
-    pasted_by_question: &BTreeMap<String, BTreeMap<usize, PastedContent>>,
-    question: &str,
-) -> bool {
+/// CC's `.catch(logError)` on a rejected answer.
+fn log_image_error(error: crate::utils::image_resizer::ImageResizeError) {
+    crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
+}
+
+fn question_has_images(pasted_by_question: &PastedByQuestion, question: &str) -> bool {
     pasted_by_question.get(question).is_some_and(|contents| {
         contents
             .values()
@@ -352,777 +223,362 @@ fn cache_and_store_permission_image(id: usize, image: &crate::utils::image_paste
     });
 }
 
-fn submit_response_for_state(
+/// Maps to: CC `submitAnswers` (:370-428): the updated input with answers
+/// and annotations, allowed with explicit empty permission updates.
+fn submit_response(
     request_input: &serde_json::Value,
     questions: &[Question],
-    state: &MultipleChoiceState,
+    answers: &BTreeMap<String, AnswerValue>,
+    question_states: &BTreeMap<String, QuestionState>,
     content_blocks: Vec<PermissionContentBlock>,
 ) -> PermissionPromptResponse {
     PermissionPromptResponse::allow_once_with_input(build_updated_input_with_answers(
         request_input,
         questions,
-        &state.answers,
-        &state.question_states,
+        answers,
+        question_states,
     ))
     // Maps to: CC `AskUserQuestionPermissionRequest.tsx:412-416` explicit empty permission updates.
     .with_permission_updates(Vec::new())
     .with_content_blocks(content_blocks)
 }
 
-/// Maps to: CC `AskUserQuestionPermissionRequest`.
+/// Whether the dialog still shows the question a handler was rendered for.
+///
+/// Deliberate deviation: CC moves on from an answer (`setAnswer(…, true)`,
+/// the multi-select Submit's `nextQuestion`) every time one is given, so an
+/// answer repeated in one read (two Enters) skips the next question, or
+/// steps past the review. The port moves on only from the question the
+/// answer was given on; the repeat still records the same answer.
+fn still_on_question(
+    state: State<use_multiple_choice_state::MultipleChoiceState>,
+    rendered_index: usize,
+) -> bool {
+    state.read().current_question_index == rendered_index
+}
+
+/// Maps to: CC `handleQuestionAnswer`'s answer (:437-459).
+fn answer_text(label: &AnswerLabel, text_input: Option<&str>, has_images: bool) -> String {
+    match label {
+        AnswerLabel::Many(labels) => labels.join(", "),
+        AnswerLabel::One(label) => match text_input.filter(|text| !text.is_empty()) {
+            Some(text) if has_images => format!("{text} (Image attached)"),
+            Some(text) => text.to_string(),
+            None if label == OTHER_VALUE && has_images => "(Image attached)".to_string(),
+            None => label.clone(),
+        },
+    }
+}
+
+/// Maps to: CC `AskUserQuestionPermissionRequestBody` (:74-584).
 #[component]
 pub fn AskUserQuestionPermissionRequest(
     props: &AskUserQuestionPermissionRequestProps,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
-    let theme = hooks.use_context::<Theme>();
     let request = props.request.clone().unwrap_or_else(default_request);
     let questions = questions_from_input(&request.input);
-    let hide_submit_tab_flag = hide_submit_tab(&questions);
-    let mut state = hooks.use_state(MultipleChoiceState::default);
-    // Maps to: CC `components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.tsx:182-222`.
-    let mut pasted_contents_by_question =
-        hooks.use_state(BTreeMap::<String, BTreeMap<usize, PastedContent>>::new);
-    let mut next_paste_id = hooks.use_state(|| 0usize);
-    let mut focused_index = hooks.use_state(|| 0usize);
-    let mut multi_submit_focused = hooks.use_state(|| false);
-    let mut footer_focused = hooks.use_state(|| false);
-    let mut footer_index = hooks.use_state(|| 0usize);
-    let mut submit_focus = hooks.use_state(|| 0usize);
-    let mut notes_focused = hooks.use_state(|| false);
-    let mut pending_response = hooks.use_state(|| Option::<PermissionPromptResponse>::None);
-    let mut pending_cancel = hooks.use_state(|| false);
-    let mut editor_error = hooks.use_state(|| Option::<String>::None);
-    let mut editor_result = hooks.use_state(|| Option::<(Question, EditorResult)>::None);
-    let editor_runtime = hooks
-        .try_use_context::<ExternalEditorRuntime>()
-        .map(|runtime| *runtime);
-    let external_editor_available = editor_runtime.is_some()
-        && crate::utils::prompt_editor::external_editor_command().is_some();
-    let editor_channel =
-        hooks.use_const(|| Arc::new(async_channel::unbounded::<(Question, String)>()));
-    let editor_receiver = editor_channel.1.clone();
-    hooks.use_future(async move {
-        while let Ok((question, current)) = editor_receiver.recv().await {
-            let result = match editor_runtime {
-                Some(runtime) => runtime.edit_prompt(&current).await,
-                None => EditorResult {
-                    content: None,
-                    error: Some("External editor is unavailable".to_string()),
-                },
-            };
-            editor_result.set(Some((question, result)));
-        }
-    });
-    let editor_question_snapshot = {
-        let snapshot = state.read();
-        questions
-            .get(
-                snapshot
-                    .current_question_index
-                    .min(questions.len().saturating_sub(1)),
-            )
-            .cloned()
-    };
-    let editor_sender_for_action = editor_channel.0.clone();
-    let editor_action_active = notes_focused.get()
-        && external_editor_available
-        && editor_question_snapshot
-            .as_ref()
-            .is_some_and(question_has_preview);
-    let editor_action_question = editor_question_snapshot.clone();
-    let editor_action_value = editor_action_question
-        .as_ref()
-        .and_then(|question| question_text_input(&state.read(), &question.question));
-    let keybinding_runtime = hooks
-        .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
-        .map(|runtime| runtime.clone());
-    crate::keybindings::use_keybinding::use_keybinding(
-        &mut hooks,
-        keybinding_runtime,
-        "chat:externalEditor",
-        crate::keybindings::types::ContextName::Chat,
-        move || editor_action_active,
-        move || {
-            let Some(question) = editor_action_question.clone() else {
-                return false;
-            };
-            let _ = editor_sender_for_action
-                .try_send((question, editor_action_value.clone().unwrap_or_default()));
-            true
-        },
-    );
-
-    let completed_editor = editor_result.read().clone();
-    if let Some((question, result)) = completed_editor {
-        editor_result.set(None);
-        if let Some(error) = result.error {
-            editor_error.set(Some(error));
-        } else if let Some(content) = result.content {
-            update_other_text_for_question(
-                &question,
-                content,
-                questions.len(),
-                hide_submit_tab_flag,
-                &mut state,
-            );
-            editor_error.set(None);
-        }
-    }
     let (_, terminal_rows) = hooks.use_terminal_size();
     let (global_content_height, global_content_width) =
         ask_user_question_content_dimensions(&questions, terminal_rows as usize);
-    let pasted_contents_snapshot = pasted_contents_by_question.read().clone();
-    let all_content_blocks = permission_image_blocks(&pasted_contents_snapshot);
 
-    hooks.use_terminal_events({
-        let questions = questions.clone();
-        let request_input = request.input.clone();
-        let request_mode = request.mode;
-        let mut state = state;
-        let mut focused_index = focused_index;
-        let mut multi_submit_focused = multi_submit_focused;
-        let mut footer_focused = footer_focused;
-        let mut footer_index = footer_index;
-        let mut submit_focus = submit_focus;
-        let mut notes_focused = notes_focused;
-        let mut pending_response = pending_response;
-        let mut pending_cancel = pending_cancel;
-        let pasted_contents = pasted_contents_snapshot.clone();
-        let all_content_blocks = all_content_blocks.clone();
-        move |event| {
-            let TerminalEvent::Key(KeyEvent {
-                code,
-                kind,
-                modifiers,
-                ..
-            }) = event
-            else {
-                return;
-            };
-            if kind == KeyEventKind::Release {
-                return;
-            }
-            if modifiers.contains(KeyModifiers::CONTROL) && matches!(code, KeyCode::Char('c')) {
-                pending_cancel.set(true);
-                return;
-            }
-            if questions.is_empty() {
-                if matches!(code, KeyCode::Esc) {
-                    pending_response.set(Some(PermissionPromptResponse::new(
-                        PermissionPromptChoice::Deny,
-                    )));
-                }
-                return;
-            }
+    // CC :182-222.
+    let pasted_contents_by_question = hooks.use_state(PastedByQuestion::new);
+    let next_paste_id = hooks.use_state(|| 0usize);
+    let pasted_snapshot = pasted_contents_by_question.read().clone();
 
-            let hide_submit_tab_flag = hide_submit_tab(&questions);
-            let max_index = if hide_submit_tab_flag {
-                questions.len().saturating_sub(1)
-            } else {
-                questions.len()
-            };
-            let snapshot = state.read().clone();
-            let current_index = snapshot.current_question_index.min(max_index);
+    // CC :224-228.
+    let is_in_plan_mode = request.mode == PermissionMode::Plan;
+    let plan_file_path = is_in_plan_mode
+        .then(|| crate::utils::plans::get_plan_file_path(None).display().to_string());
 
-            if current_index == questions.len() && !hide_submit_tab_flag {
-                match code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        submit_focus.set(submit_focus.get().saturating_sub(1));
-                    }
-                    KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                        submit_focus.set((submit_focus.get() + 1).min(1));
-                    }
-                    KeyCode::Enter => {
-                        if submit_focus.get() == 0 {
-                            pending_response.set(Some(submit_response_for_state(
-                                &request_input,
-                                &questions,
-                                &snapshot,
-                                all_content_blocks.clone(),
-                            )));
-                        } else {
-                            pending_response.set(Some(PermissionPromptResponse::new(
-                                PermissionPromptChoice::Deny,
-                            )));
-                        }
-                    }
-                    KeyCode::Esc => pending_response.set(Some(PermissionPromptResponse::new(
-                        PermissionPromptChoice::Deny,
-                    ))),
-                    KeyCode::Left | KeyCode::BackTab => {
-                        let next = state_with_action(&state, MultipleChoiceAction::PrevQuestion);
-                        state.set(next);
-                        reset_question_focus(
-                            &mut focused_index,
-                            &mut footer_focused,
-                            &mut footer_index,
-                            &mut submit_focus,
-                            &mut notes_focused,
-                        );
-                    }
-                    _ => {}
-                }
-                return;
-            }
-
-            let Some(question) = questions.get(current_index).cloned() else {
-                return;
-            };
-            let preview_mode = question_has_preview(&question);
-            let option_count = question.options.len() + if preview_mode { 0 } else { 1 };
-            let option_count = option_count.max(1);
-            let is_plan_mode = request_mode == PermissionMode::Plan;
-            let focus = focused_index.get().min(option_count.saturating_sub(1));
-            let other_focused = !footer_focused.get()
-                && !multi_submit_focused.get()
-                && is_other_option_focus(&question, preview_mode, focus);
-
-            if notes_focused.get() {
-                match code {
-                    KeyCode::Esc | KeyCode::Enter => {
-                        notes_focused.set(false);
-                        let mut next = state_with_action(
-                            &state,
-                            MultipleChoiceAction::SetTextInputMode { is_in_input: false },
-                        );
-                        state.set(next.clone());
-                        if let Some(selected_label) = snapshot
-                            .question_states
-                            .get(&question.question)
-                            .and_then(|state| state.selected_value.first())
-                            .cloned()
-                        {
-                            next = answer_current_question(
-                                &question,
-                                &selected_label,
-                                None,
-                                false,
-                                true,
-                                questions.len(),
-                                hide_submit_tab_flag,
-                                &mut state,
-                            );
-                            if hide_submit_tab_flag {
-                                pending_response.set(Some(submit_response_for_state(
-                                    &request_input,
-                                    &questions,
-                                    &next,
-                                    all_content_blocks.clone(),
-                                )));
-                            } else {
-                                reset_question_focus(
-                                    &mut focused_index,
-                                    &mut footer_focused,
-                                    &mut footer_index,
-                                    &mut submit_focus,
-                                    &mut notes_focused,
-                                );
-                            }
-                        }
-                    }
-                    KeyCode::Backspace => {
-                        let mut text =
-                            question_text_input(&snapshot, &question.question).unwrap_or_default();
-                        text.pop();
-                        update_question_notes(&question, text, &mut state);
-                    }
-                    KeyCode::Char(c)
-                        if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                    {
-                        let mut text =
-                            question_text_input(&snapshot, &question.question).unwrap_or_default();
-                        text.push(c);
-                        update_question_notes(&question, text, &mut state);
-                    }
-                    _ => {}
-                }
-                return;
-            }
-
-            match code {
-                KeyCode::Esc => pending_response.set(Some(PermissionPromptResponse::new(
-                    PermissionPromptChoice::Deny,
-                ))),
-                KeyCode::Left => {
-                    let next = state_with_action(&state, MultipleChoiceAction::PrevQuestion);
-                    state.set(next);
-                    multi_submit_focused.set(false);
-                    reset_question_focus(
-                        &mut focused_index,
-                        &mut footer_focused,
-                        &mut footer_index,
-                        &mut submit_focus,
-                        &mut notes_focused,
-                    );
-                }
-                KeyCode::Right => {
-                    if current_index < max_index {
-                        let next = state_with_action(
-                            &state,
-                            MultipleChoiceAction::NextQuestion {
-                                question_count: questions.len(),
-                                hide_submit_tab: hide_submit_tab_flag,
-                            },
-                        );
-                        state.set(next);
-                        multi_submit_focused.set(false);
-                        reset_question_focus(
-                            &mut focused_index,
-                            &mut footer_focused,
-                            &mut footer_index,
-                            &mut submit_focus,
-                            &mut notes_focused,
-                        );
-                    }
-                }
-                KeyCode::BackTab => {
-                    if multi_submit_focused.get() {
-                        multi_submit_focused.set(false);
-                        focused_index.set(option_count - 1);
-                    } else if focus == 0 {
-                        focused_index.set(option_count - 1);
-                    } else {
-                        focused_index.set(focus - 1);
-                    }
-                }
-                KeyCode::Tab => {
-                    if question.multi_select && focus + 1 == option_count {
-                        multi_submit_focused.set(true);
-                    } else if !multi_submit_focused.get() {
-                        focused_index.set((focus + 1) % option_count);
-                    }
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    if footer_focused.get() {
-                        if footer_index.get() == 0 {
-                            footer_focused.set(false);
-                        } else {
-                            footer_index.set(footer_index.get().saturating_sub(1));
-                        }
-                    } else if multi_submit_focused.get() {
-                        multi_submit_focused.set(false);
-                        focused_index.set(option_count - 1);
-                    } else {
-                        focused_index.set(if focus == 0 {
-                            option_count - 1
-                        } else {
-                            focus - 1
-                        });
-                    }
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    if footer_focused.get() {
-                        if is_plan_mode && footer_index.get() == 0 {
-                            footer_index.set(1);
-                        }
-                    } else if multi_submit_focused.get() {
-                        footer_focused.set(true);
-                        footer_index.set(0);
-                    } else if focus + 1 < option_count {
-                        focused_index.set(focus + 1);
-                    } else if question.multi_select {
-                        multi_submit_focused.set(true);
-                    } else {
-                        footer_focused.set(true);
-                        footer_index.set(0);
-                    }
-                }
-                KeyCode::Char('n')
-                    if preview_mode
-                        && !footer_focused.get()
-                        && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                {
-                    notes_focused.set(true);
-                    let next = state_with_action(
-                        &state,
-                        MultipleChoiceAction::SetTextInputMode { is_in_input: true },
-                    );
-                    state.set(next);
-                }
-                KeyCode::Backspace if other_focused => {
-                    let mut text =
-                        question_text_input(&snapshot, &question.question).unwrap_or_default();
-                    text.pop();
-                    update_other_text_for_question(
-                        &question,
-                        text,
-                        questions.len(),
-                        hide_submit_tab_flag,
-                        &mut state,
-                    );
-                }
-                KeyCode::Char(c)
-                    if other_focused
-                        && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                {
-                    let mut text =
-                        question_text_input(&snapshot, &question.question).unwrap_or_default();
-                    text.push(c);
-                    update_other_text_for_question(
-                        &question,
-                        text,
-                        questions.len(),
-                        hide_submit_tab_flag,
-                        &mut state,
-                    );
-                }
-                KeyCode::Char(' ')
-                    if question.multi_select
-                        && !footer_focused.get()
-                        && !multi_submit_focused.get() =>
-                {
-                    let value = question
-                        .options
-                        .get(focus)
-                        .map(|option| option.label.clone())
-                        .unwrap_or_else(|| "__other__".to_string());
-                    let question_text = question.question.clone();
-                    let existing = snapshot
-                        .question_states
-                        .get(&question_text)
-                        .cloned()
-                        .unwrap_or_default();
-                    let selected = toggle_multi_select_value(existing.selected_value, &value);
-                    let next_state = state_with_action(
-                        &state,
-                        MultipleChoiceAction::UpdateQuestionState {
-                            question_text: question_text.clone(),
-                            updates: QuestionStateUpdate {
-                                selected_value: Some(selected.clone()),
-                                text_input_value: None,
-                            },
-                            is_multi_select: true,
-                        },
-                    );
-                    state.set(next_state);
-                    let answer = answer_for_selection(
-                        "",
-                        &selected,
-                        Some(existing.text_input_value.as_str()),
-                        true,
-                    );
-                    let next_state = state_with_action(
-                        &state,
-                        MultipleChoiceAction::SetAnswer {
-                            question_text,
-                            answer,
-                            should_advance: false,
-                            question_count: questions.len(),
-                            hide_submit_tab: hide_submit_tab_flag,
-                        },
-                    );
-                    state.set(next_state);
-                }
-                KeyCode::Enter => {
-                    if footer_focused.get() {
-                        let feedback = if footer_index.get() == 0 {
-                            respond_to_claude_feedback(&questions, &snapshot)
-                        } else {
-                            finish_plan_interview_feedback(&questions, &snapshot)
-                        };
-                        pending_response.set(Some(
-                            PermissionPromptResponse::new(PermissionPromptChoice::Deny)
-                                .with_feedback(feedback)
-                                .with_content_blocks(all_content_blocks.clone()),
-                        ));
-                        return;
-                    }
-                    if question.multi_select {
-                        if multi_submit_focused.get() {
-                            let advanced = state_with_action(
-                                &state,
-                                MultipleChoiceAction::NextQuestion {
-                                    question_count: questions.len(),
-                                    hide_submit_tab: hide_submit_tab_flag,
-                                },
-                            );
-                            state.set(advanced);
-                            multi_submit_focused.set(false);
-                            reset_question_focus(
-                                &mut focused_index,
-                                &mut footer_focused,
-                                &mut footer_index,
-                                &mut submit_focus,
-                                &mut notes_focused,
-                            );
-                        } else {
-                            // With a submit button, Enter toggles the focused
-                            // value; only Enter on the submit row advances.
-                            let value = question
-                                .options
-                                .get(focus)
-                                .map(|option| option.label.clone())
-                                .unwrap_or_else(|| "__other__".to_string());
-                            let existing = snapshot
-                                .question_states
-                                .get(&question.question)
-                                .cloned()
-                                .unwrap_or_default();
-                            let selected =
-                                toggle_multi_select_value(existing.selected_value, &value);
-                            let next_state = state_with_action(
-                                &state,
-                                MultipleChoiceAction::UpdateQuestionState {
-                                    question_text: question.question.clone(),
-                                    updates: QuestionStateUpdate {
-                                        selected_value: Some(selected.clone()),
-                                        text_input_value: None,
-                                    },
-                                    is_multi_select: true,
-                                },
-                            );
-                            state.set(next_state);
-                            let answer = answer_for_selection(
-                                "",
-                                &selected,
-                                Some(existing.text_input_value.as_str()),
-                                true,
-                            );
-                            let next_state = state_with_action(
-                                &state,
-                                MultipleChoiceAction::SetAnswer {
-                                    question_text: question.question.clone(),
-                                    answer,
-                                    should_advance: false,
-                                    question_count: questions.len(),
-                                    hide_submit_tab: hide_submit_tab_flag,
-                                },
-                            );
-                            state.set(next_state);
-                        }
-                    } else {
-                        let label = question
-                            .options
-                            .get(focus)
-                            .map(|option| option.label.as_str())
-                            .unwrap_or("__other__");
-                        let text_input = if label == "__other__" {
-                            question_text_input(&snapshot, &question.question)
-                        } else {
-                            None
-                        };
-                        let has_question_images =
-                            question_has_images(&pasted_contents, &question.question);
-                        if label == "__other__"
-                            && !has_question_images
-                            && text_input
-                                .as_deref()
-                                .is_none_or(|text| text.trim().is_empty())
-                        {
-                            pending_response.set(Some(PermissionPromptResponse::new(
-                                PermissionPromptChoice::Deny,
-                            )));
-                            return;
-                        }
-                        let next_state = answer_current_question(
-                            &question,
-                            label,
-                            text_input.as_deref(),
-                            has_question_images,
-                            !hide_submit_tab_flag,
-                            questions.len(),
-                            hide_submit_tab_flag,
-                            &mut state,
-                        );
-                        if hide_submit_tab_flag {
-                            pending_response.set(Some(submit_response_for_state(
-                                &request_input,
-                                &questions,
-                                &next_state,
-                                all_content_blocks.clone(),
-                            )));
-                        } else {
-                            reset_question_focus(
-                                &mut focused_index,
-                                &mut footer_focused,
-                                &mut footer_index,
-                                &mut submit_focus,
-                                &mut notes_focused,
-                            );
-                        }
-                    }
-                }
-                KeyCode::Char(c)
-                    if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
-                {
-                    if let Some(digit) = c.to_digit(10) {
-                        let index = digit as usize;
-                        if index > 0 && index <= option_count {
-                            multi_submit_focused.set(false);
-                            focused_index.set(index - 1);
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    });
-
-    let selected_response = pending_response.read().clone();
-    if let Some(response) = selected_response {
-        pending_response.set(None);
-        (props.on_select)(response);
-    }
-    if pending_cancel.get() {
-        pending_cancel.set(false);
-        (props.on_cancel)(());
-    }
-
+    // CC :230-254.
+    let state = use_multiple_choice_state(&mut hooks);
     let snapshot = state.read().clone();
-    let current_index = snapshot
-        .current_question_index
-        .min(if hide_submit_tab_flag {
-            questions.len().saturating_sub(1)
-        } else {
-            questions.len()
-        });
-    let plan_file_path = (request.mode == PermissionMode::Plan).then(|| "current plan".to_string());
+    let current_question_index = snapshot.current_question_index;
+    let answers = snapshot.answers.clone();
+    let question_states = snapshot.question_states.clone();
+    let current_question = questions.get(current_question_index).cloned();
+    let is_in_submit_view = current_question_index == questions.len();
+    let all_answered = all_questions_answered(&questions, &answers);
+    let hide_submit = hide_submit_tab(&questions);
 
-    if questions.is_empty() {
-        return element! {
-            View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
-                // Cometix-only defensive branch: CC has no `questions.length === 0`
-                // arm in `AskUserQuestionPermissionRequest.tsx`, so this heading
-                // has no CC owner. It used to read the fabricated
-                // `PermissionRequest.title`; the literal keeps the same text
-                // without reviving that field.
-                Text(content: "Answer questions?".to_string(), color: theme.permission, weight: Weight::Bold, wrap: TextWrap::Wrap)
-                Text(content: "Claude asked a question, but the question payload was empty or invalid.".to_string(), color: theme.warning, wrap: TextWrap::Wrap)
-                Text(content: "Esc to reject".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
+    // CC :256-278 `handleCancel`.
+    let handle_cancel = {
+        let on_select = props.on_select.clone();
+        Handler::from(move |()| {
+            on_select(PermissionPromptResponse::new(PermissionPromptChoice::Deny));
+        })
+    };
+    // CC :280-324 `handleRespondToClaude`.
+    let handle_respond_to_claude = {
+        let on_select = props.on_select.clone();
+        let questions = questions.clone();
+        let answers = answers.clone();
+        let pasted = pasted_snapshot.clone();
+        Handler::from(move |()| match convert_images_to_blocks(&pasted) {
+            Ok(blocks) => on_select(
+                PermissionPromptResponse::new(PermissionPromptChoice::Deny)
+                    .with_feedback(respond_to_claude_feedback(&questions, &answers))
+                    .with_content_blocks(blocks),
+            ),
+            Err(error) => log_image_error(error),
+        })
+    };
+    // CC :326-368 `handleFinishPlanInterview`.
+    let handle_finish_plan_interview = {
+        let on_select = props.on_select.clone();
+        let questions = questions.clone();
+        let answers = answers.clone();
+        let pasted = pasted_snapshot.clone();
+        Handler::from(move |()| match convert_images_to_blocks(&pasted) {
+            Ok(blocks) => on_select(
+                PermissionPromptResponse::new(PermissionPromptChoice::Deny)
+                    .with_feedback(finish_plan_interview_feedback(&questions, &answers))
+                    .with_content_blocks(blocks),
+            ),
+            Err(error) => log_image_error(error),
+        })
+    };
+    // CC :370-428 `submitAnswers`.
+    let submit_answers = {
+        let on_select = props.on_select.clone();
+        let request_input = request.input.clone();
+        let questions = questions.clone();
+        let question_states = question_states.clone();
+        let pasted = pasted_snapshot.clone();
+        move |answers_to_submit: &BTreeMap<String, AnswerValue>| match convert_images_to_blocks(
+            &pasted,
+        ) {
+            Ok(blocks) => on_select(submit_response(
+                &request_input,
+                &questions,
+                answers_to_submit,
+                &question_states,
+                blocks,
+            )),
+            Err(error) => log_image_error(error),
+        }
+    };
+    // CC :430-481 `handleQuestionAnswer`.
+    let handle_question_answer = {
+        let submit_answers = submit_answers.clone();
+        let answers = answers.clone();
+        let question_count = questions.len();
+        let pasted = pasted_snapshot.clone();
+        Handler::from(move |call: QuestionAnswer| {
+            let has_images = question_has_images(&pasted, &call.question_text);
+            let answer = answer_text(&call.label, call.text_input.as_deref(), has_images);
+            let is_multi_select = matches!(call.label, AnswerLabel::Many(_));
+            // CC :461-470: a single single-select question submits at once.
+            if !is_multi_select && question_count == 1 && call.should_advance {
+                let mut updated = answers.clone();
+                updated.insert(call.question_text.clone(), answer);
+                submit_answers(&updated);
+                return;
             }
+            let should_advance =
+                call.should_advance && still_on_question(state, current_question_index);
+            set_answer(state, &call.question_text, answer, should_advance);
+        })
+    };
+    // CC :483-492 `handleFinalResponse`.
+    let handle_final_response = {
+        let handle_cancel = handle_cancel.clone();
+        let answers = answers.clone();
+        move |value: SubmitQuestionsResponse| match value {
+            SubmitQuestionsResponse::Cancel => handle_cancel(()),
+            SubmitQuestionsResponse::Submit => submit_answers(&answers),
         }
-        .into_any();
-    }
+    };
 
-    if current_index == questions.len() && !hide_submit_tab_flag {
+    // CC :494-510. Deliberate deviation: CC's callbacks test this render's
+    // index, so two tab keys read together can both pass and step past the
+    // review, which then renders nothing; the port tests the index as it
+    // stands, so each key steps once and stops at the bound.
+    let max_index = if hide_submit {
+        questions.len().max(1) - 1
+    } else {
+        questions.len()
+    };
+    let handle_tab_prev = Handler::from(move |()| {
+        if state.read().current_question_index > 0 {
+            prev_question(state);
+        }
+    });
+    let handle_tab_next = Handler::from(move |()| {
+        if state.read().current_question_index < max_index {
+            next_question(state);
+        }
+    });
+
+    // CC :512-523: question navigation, off while typing in a question.
+    let runtime = hooks
+        .try_use_context::<KeybindingRuntime>()
+        .map(|runtime| runtime.clone());
+    let tabs_active = !(snapshot.is_in_text_input && !is_in_submit_view);
+    crate::keybindings::use_keybinding::use_keybindings(
+        &mut hooks,
+        runtime.clone(),
+        vec![
+            ("tabs:previous".to_string(), {
+                let handle_tab_prev = handle_tab_prev.clone();
+                Box::new(move || {
+                    handle_tab_prev(());
+                    true
+                })
+            }),
+            ("tabs:next".to_string(), {
+                let handle_tab_next = handle_tab_next.clone();
+                Box::new(move || {
+                    handle_tab_next(());
+                    true
+                })
+            }),
+        ],
+        ContextName::Tabs,
+        move || tabs_active,
+    );
+    // CC `PermissionRequest.tsx:206-214` (module doc).
+    crate::keybindings::use_keybinding::use_keybinding(
+        &mut hooks,
+        runtime,
+        "app:interrupt",
+        ContextName::Confirmation,
+        || true,
+        {
+            let on_cancel = props.on_cancel.clone();
+            move || {
+                on_cancel(());
+                true
+            }
+        },
+    );
+
+    if let Some(question) = current_question {
+        let question_text = question.question.clone();
+        let pasted_contents = pasted_snapshot.get(&question_text).cloned().unwrap_or_default();
+        // CC :187-210 `onImagePaste`, for this question.
+        let on_image_paste = {
+            let question_text = question_text.clone();
+            Handler::from(move |image: crate::utils::image_paste::ClipboardImage| {
+                let (mut next_paste_id, mut pasted_contents_by_question) =
+                    (next_paste_id, pasted_contents_by_question);
+                let id = next_paste_id.get();
+                next_paste_id.set(id + 1);
+                cache_and_store_permission_image(id, &image);
+                let mut all = pasted_contents_by_question.read().clone();
+                all.entry(question_text.clone()).or_default().insert(
+                    id,
+                    PastedContent::Image {
+                        id,
+                        media_type: Some(image.media_type),
+                        data: Some(image.base64),
+                        filename: Some("Pasted image".to_string()),
+                        dimensions: image.dimensions,
+                        source_path: None,
+                    },
+                );
+                pasted_contents_by_question.set(all);
+            })
+        };
+        // CC :212-218 `onRemoveImage`.
+        let on_remove_image = {
+            let question_text = question_text.clone();
+            Handler::from(move |id: usize| {
+                let mut pasted_contents_by_question = pasted_contents_by_question;
+                let mut all = pasted_contents_by_question.read().clone();
+                if let Some(contents) = all.get_mut(&question_text) {
+                    contents.remove(&id);
+                }
+                pasted_contents_by_question.set(all);
+            })
+        };
+        // CC :525-563.
         return element! {
-            SubmitQuestionsView(
-                questions: questions.clone(),
-                current_question_index: current_index,
-                answers: snapshot.answers.clone(),
-                decision_reason: request.decision_reason.clone(),
-                permission_mode: request.mode,
-                min_content_height: Some(global_content_height as u32),
-                focused_index: submit_focus.get(),
-            )
-        }
-        .into_any();
-    }
-
-    let current_question = questions
-        .get(current_index)
-        .cloned()
-        .unwrap_or_else(|| questions[0].clone());
-    let current_question_text = current_question.question.clone();
-    let current_pasted_contents = pasted_contents_by_question
-        .read()
-        .get(&current_question_text)
-        .cloned()
-        .unwrap_or_default();
-    let image_question = current_question_text.clone();
-    let on_image_paste = Handler::from(move |image: crate::utils::image_paste::ClipboardImage| {
-        let mut next_paste_id = next_paste_id;
-        let mut pasted_contents_by_question = pasted_contents_by_question;
-        let id = next_paste_id.get();
-        next_paste_id.set(id + 1);
-        cache_and_store_permission_image(id, &image);
-        let mut all = pasted_contents_by_question.read().clone();
-        all.entry(image_question.clone()).or_default().insert(
-            id,
-            PastedContent::Image {
-                id,
-                media_type: Some(image.media_type),
-                data: Some(image.base64),
-                filename: Some("Pasted image".to_string()),
-                dimensions: image.dimensions,
-                source_path: None,
-            },
-        );
-        pasted_contents_by_question.set(all);
-    });
-    let remove_question = current_question_text.clone();
-    let on_remove_image = Handler::from(move |id: usize| {
-        let mut pasted_contents_by_question = pasted_contents_by_question;
-        let mut all = pasted_contents_by_question.read().clone();
-        if let Some(contents) = all.get_mut(&remove_question) {
-            contents.remove(&id);
-        }
-        pasted_contents_by_question.set(all);
-    });
-    let editor_question = current_question.clone();
-    let editor_sender = editor_channel.0.clone();
-    let on_open_editor = Handler::from(move |current: String| {
-        let _ = editor_sender.try_send((editor_question.clone(), current));
-    });
-
-    element! {
-        View(flex_direction: FlexDirection::Column) {
             QuestionView(
-                question: current_question,
+                question,
                 questions: questions.clone(),
-                current_question_index: current_index,
-                answers: snapshot.answers.clone(),
-                question_states: snapshot.question_states.clone(),
-                hide_submit_tab: hide_submit_tab_flag,
-                plan_file_path: plan_file_path,
+                current_question_index,
+                answers: answers.clone(),
+                question_states: question_states.clone(),
+                hide_submit_tab: hide_submit,
+                plan_file_path,
+                is_in_plan_mode,
                 min_content_height: Some(global_content_height as u32),
                 min_content_width: Some(global_content_width),
-                focused_index: focused_index.get(),
-                multi_submit_focused: multi_submit_focused.get(),
-                footer_focused: footer_focused.get(),
-                footer_index: footer_index.get(),
-                notes_focused: notes_focused.get(),
-                external_editor_available: external_editor_available,
-                editor_error: editor_error.read().clone(),
-                pasted_contents: current_pasted_contents,
-                on_remove_image: on_remove_image,
-                on_image_paste: on_image_paste,
-                on_open_editor: on_open_editor,
+                on_update_question_state: Handler::from(move |(question_text, updates, is_multi_select): QuestionStateUpdateCall| {
+                    update_question_state(state, &question_text, updates, is_multi_select);
+                }),
+                on_answer: handle_question_answer,
+                on_text_input_focus: Handler::from(move |is_in_input: bool| set_text_input_mode(state, is_in_input)),
+                on_cancel: handle_cancel,
+                on_submit: Handler::from(move |()| {
+                    if still_on_question(state, current_question_index) {
+                        next_question(state);
+                    }
+                }),
+                on_tab_prev: handle_tab_prev,
+                on_tab_next: handle_tab_next,
+                on_respond_to_claude: handle_respond_to_claude,
+                on_finish_plan_interview: handle_finish_plan_interview,
+                on_image_paste,
+                pasted_contents,
+                on_remove_image,
                 clipboard_image_override: props.clipboard_image_override.clone(),
             )
         }
+        .into_any();
     }
-    .into_any()
+
+    if is_in_submit_view {
+        // CC :566-580.
+        return element! {
+            SubmitQuestionsView(
+                questions: questions.clone(),
+                current_question_index,
+                answers: answers.clone(),
+                all_questions_answered: all_answered,
+                decision_reason: request.decision_reason.clone(),
+                permission_mode: request.mode,
+                min_content_height: Some(global_content_height as u32),
+                on_final_response: handle_final_response,
+            )
+        }
+        .into_any();
+    }
+
+    // CC :582-583: not reached.
+    element! { View }.into_any()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::theme;
-    use futures::{StreamExt, stream};
+    use futures::StreamExt;
     use std::sync::{Arc, Mutex};
-    use std::time::Duration;
 
-    fn key(code: KeyCode) -> TerminalEvent {
-        TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code))
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(KeyEventKind::Press, code)
     }
 
-    fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> TerminalEvent {
+    fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
         let mut event = KeyEvent::new(KeyEventKind::Press, code);
         event.modifiers = modifiers;
-        TerminalEvent::Key(event)
+        event
+    }
+
+    fn chars(text: &str) -> Vec<KeyEvent> {
+        text.chars().map(|c| key(KeyCode::Char(c))).collect()
     }
 
     fn ask_request(input: serde_json::Value) -> PermissionRequestData {
         PermissionRequestData {
-            permission_result: None,
             id: "req".to_string(),
             tool_use_id: "toolu_ask".to_string(),
-            tool_name: "AskUserQuestion".to_string(),
-            mcp_info: None,
-            decision_reason: None,
-            description: String::new(),
-            message: String::new(),
-            input_summary: String::new(),
             input,
-            call_input: None,
-            rule: PermissionRuleValue::new("AskUserQuestion", None),
-            suggestions: Vec::new(),
-            blocked_path: None,
-            metadata: None,
-            is_compound_command: false,
-            mode: PermissionMode::Default,
+            ..default_request()
         }
     }
 
@@ -1176,6 +632,165 @@ mod tests {
         })
     }
 
+    type Responses = Arc<Mutex<Vec<PermissionPromptResponse>>>;
+
+    #[derive(Default, Props)]
+    struct AskHarnessProps {
+        input: serde_json::Value,
+        bindings: Option<Vec<crate::keybindings::types::ParsedBinding>>,
+        clipboard_image_override: Option<crate::utils::image_paste::ClipboardImage>,
+        responses: Option<Responses>,
+        cancels: Option<Arc<Mutex<usize>>>,
+    }
+
+    /// The dialog under the keybinding runtime, theme and AppState it mounts
+    /// with (the Other input's TextInput reads AppState), and a line
+    /// counting key presses (so each read produces a frame).
+    #[component]
+    fn AskHarness(props: &AskHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let bindings = props.bindings.clone();
+        let runtime = hooks.use_const(move || {
+            KeybindingRuntime::new(
+                bindings.unwrap_or_else(crate::keybindings::default_bindings::default_bindings),
+            )
+        });
+        let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
+            &mut hooks, runtime,
+        );
+        let responses = props.responses.clone().unwrap_or_default();
+        let cancels = props.cancels.clone().unwrap_or_default();
+        let input = props.input.clone();
+        let clipboard_image_override = props.clipboard_image_override.clone();
+        element! {
+            ContextProvider(value: Context::owned(runtime)) {
+                ContextProvider(value: Context::owned(*theme::current())) {
+                    crate::state::app_state::AppStateProvider(
+                        children: crate::state::app_state::ProviderChildren::new(move || {
+                            let responses = responses.clone();
+                            let cancels = cancels.clone();
+                            element! {
+                                View(flex_direction: FlexDirection::Column) {
+                                    AskUserQuestionPermissionRequest(
+                                        request: Some(ask_request(input.clone())),
+                                        clipboard_image_override: clipboard_image_override.clone(),
+                                        on_select: move |response| responses.lock().unwrap().push(response),
+                                        on_cancel: move |_| *cancels.lock().unwrap() += 1,
+                                    )
+                                    KeyEcho
+                                    OverlayProbe
+                                }
+                            }
+                            .into_any()
+                        }),
+                    )
+                }
+            }
+        }
+    }
+
+    /// Lists the registered overlays, which gate the REPL's cancel handler.
+    #[component]
+    fn OverlayProbe(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let overlays = crate::state::app_state::use_app_state(&mut hooks, |state| {
+            let mut overlays = state.active_overlays.iter().cloned().collect::<Vec<_>>();
+            overlays.sort();
+            overlays.join(",")
+        });
+        element! { Text(content: format!("overlays=[{overlays}]")) }
+    }
+
+    #[component]
+    fn KeyEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+        let mut keys = hooks.use_state(|| 0usize);
+        hooks.use_terminal_events(move |event| {
+            if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
+                keys.set(keys.get() + 1);
+            }
+        });
+        element! { Text(content: format!("keys={} pressed", keys.get())) }
+    }
+
+    struct Run {
+        responses: Vec<PermissionPromptResponse>,
+        cancels: usize,
+        last: String,
+    }
+
+    /// Sends each batch in one go once the previous one has a frame (and,
+    /// when given, the frame shows `wait_for`), then an unbound F12 to
+    /// settle. Panics when a frame takes over ten seconds.
+    fn drive(harness: AskHarnessProps, batches: Vec<(Vec<KeyEvent>, &'static str)>) -> Run {
+        // The notes and Other inputs' TextInput raises notifications (its
+        // double-Esc hint), whose timers run on the process runtime.
+        crate::utils::process_runtime::initialize_test_process_runtime();
+        let responses: Responses = Arc::default();
+        let cancels = Arc::new(Mutex::new(0usize));
+        let harness = AskHarnessProps {
+            responses: Some(responses.clone()),
+            cancels: Some(cancels.clone()),
+            ..harness
+        };
+        let last = futures::executor::block_on(async move {
+            let (keys, events) = async_channel::unbounded();
+            let mut app = element!(AskHarness(
+                input: harness.input,
+                bindings: harness.bindings,
+                clipboard_image_override: harness.clipboard_image_override,
+                responses: harness.responses,
+                cancels: harness.cancels,
+            ));
+            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
+                MockTerminalConfig::with_events(events).with_size(110, 40),
+            ));
+            let mut batches = batches;
+            batches.push((vec![key(KeyCode::F(12))], ""));
+            let mut next_batch = 0;
+            let mut sent = 0;
+            let mut wait_for = "";
+            let mut last = String::new();
+            loop {
+                let next = crate::utils::race(render_loop.next(), async {
+                    futures_timer::Delay::new(std::time::Duration::from_secs(10)).await;
+                    None
+                })
+                .await;
+                let Some(canvas) = next else {
+                    panic!("no frame after batch {next_batch}; last:\n{last}");
+                };
+                last = canvas.to_string();
+                if !last.contains(&format!("keys={sent} ")) || !last.contains(wait_for) {
+                    continue;
+                }
+                let Some((batch, marker)) = batches.get(next_batch) else {
+                    break;
+                };
+                for event in batch {
+                    keys.send(TerminalEvent::Key(event.clone())).await.unwrap();
+                }
+                sent += batch.len();
+                wait_for = marker;
+                next_batch += 1;
+            }
+            last
+        });
+        Run {
+            responses: responses.lock().unwrap().clone(),
+            cancels: *cancels.lock().unwrap(),
+            last,
+        }
+    }
+
+    fn harness(input: serde_json::Value) -> AskHarnessProps {
+        AskHarnessProps {
+            input,
+            ..AskHarnessProps::default()
+        }
+    }
+
+    fn steps(keys: Vec<KeyEvent>) -> Vec<(Vec<KeyEvent>, &'static str)> {
+        keys.into_iter().map(|key| (vec![key], "")).collect()
+    }
+
     #[test]
     fn content_dimensions_follow_official_minimums() {
         let questions = questions_from_input(&preview_question_input());
@@ -1186,278 +801,139 @@ mod tests {
 
     #[test]
     fn ask_user_question_permission_request_renders_single_question() {
-        let text = element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                AskUserQuestionPermissionRequest(request: Some(ask_request(single_question_input())))
-            }
-        }
-        .render(Some(100))
-        .to_string();
-
+        let run = drive(harness(single_question_input()), Vec::new());
+        let text = &run.last;
         assert!(text.contains("Proceed?"), "canvas=\n{text}");
-        assert!(text.contains("Yes"), "canvas=\n{text}");
-        assert!(text.contains("Other"), "canvas=\n{text}");
-        assert!(text.contains("Chat about this"), "canvas=\n{text}");
+        assert!(text.contains("1. Yes"), "canvas=\n{text}");
+        // CC select-input-option.tsx:341-345: an unfocused, empty Other
+        // shows its placeholder.
+        assert!(text.contains("3. Type something."), "canvas=\n{text}");
+        assert!(text.contains("4. Chat about this"), "canvas=\n{text}");
     }
 
     #[test]
     fn ask_user_question_permission_request_renders_preview_question() {
-        let text = element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                AskUserQuestionPermissionRequest(request: Some(ask_request(preview_question_input())))
-            }
-        }
-        .render(Some(110))
-        .to_string();
-
+        let run = drive(harness(preview_question_input()), Vec::new());
+        let text = &run.last;
         assert!(text.contains("Which layout?"), "canvas=\n{text}");
         assert!(text.contains("List"), "canvas=\n{text}");
         assert!(text.contains("┌"), "canvas=\n{text}");
-        assert!(
-            !text.contains("Other"),
-            "preview questions should not add Other; canvas=\n{text}"
-        );
+        assert!(!text.contains("Type something"), "preview questions have no Other; canvas=\n{text}");
+        assert!(text.contains("press n to add notes"), "canvas=\n{text}");
     }
 
     #[test]
     fn preview_question_notes_submit_with_annotations() {
-        let responses = Arc::new(Mutex::new(Vec::<PermissionPromptResponse>::new()));
-        let responses_for_handler = Arc::clone(&responses);
-        let responses_for_loop = Arc::clone(&responses);
-
-        futures::executor::block_on(async move {
-            let mut app = element! {
-                ContextProvider(value: Context::owned(*theme::current())) {
-                    AskUserQuestionPermissionRequest(
-                        request: Some(ask_request(preview_question_input())),
-                        on_select: move |response| responses_for_handler.lock().expect("responses mutex").push(response),
-                    )
-                }
-            };
-            let events = vec![
-                key(KeyCode::Char('n')),
-                key(KeyCode::Char('o')),
-                key(KeyCode::Char('k')),
-                key(KeyCode::Esc),
-                key(KeyCode::Enter),
-            ];
-            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(stream::iter(events)).with_size(110, 35),
-            ));
-            for _ in 0..16 {
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(100)).await;
-                    None
-                })
-                .await;
-                if next.is_none() {
-                    break;
-                }
-                if !responses_for_loop
-                    .lock()
-                    .expect("responses mutex")
-                    .is_empty()
-                {
-                    break;
-                }
-            }
-        });
-
-        let responses = responses.lock().expect("responses mutex");
-        assert_eq!(responses.len(), 1);
-        let input = responses[0].updated_input.as_ref().expect("updated input");
+        // n opens the notes, Esc leaves them, Enter answers the focused
+        // option; the notes ride along as an annotation.
+        let mut batches = steps(vec![key(KeyCode::Char('n'))]);
+        batches.extend(steps(chars("ok")));
+        batches.extend(steps(vec![key(KeyCode::Esc), key(KeyCode::Enter)]));
+        let run = drive(harness(preview_question_input()), batches);
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        let input = run.responses[0].updated_input.as_ref().expect("updated input");
         assert_eq!(input["answers"]["Which layout?"], "List");
         assert_eq!(input["annotations"]["Which layout?"]["notes"], "ok");
-        assert_eq!(
-            input["annotations"]["Which layout?"]["preview"],
-            "line 1\nline 2"
+        assert_eq!(input["annotations"]["Which layout?"]["preview"], "line 1\nline 2");
+    }
+
+    #[test]
+    fn preview_question_moves_with_arrows_and_digits_and_reaches_the_footer() {
+        // CC PreviewQuestionView.tsx:240-271: ↓ moves, a digit jumps, ↓ from
+        // the last option focuses the footer; Enter there asks to clarify.
+        let run = drive(
+            harness(preview_question_input()),
+            steps(vec![key(KeyCode::Char('2')), key(KeyCode::Down), key(KeyCode::Enter)]),
+        );
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
+        assert!(
+            run.responses[0]
+                .feedback
+                .as_deref()
+                .is_some_and(|feedback| feedback.starts_with("The user wants to clarify these questions.")),
+            "{:?}",
+            run.responses[0].feedback
         );
     }
 
     #[test]
     fn single_select_enter_submits_updated_input() {
-        let responses = Arc::new(Mutex::new(Vec::<PermissionPromptResponse>::new()));
-        let responses_for_handler = Arc::clone(&responses);
-        let responses_for_loop = Arc::clone(&responses);
-
-        futures::executor::block_on(async move {
-            let mut app = element! {
-                ContextProvider(value: Context::owned(*theme::current())) {
-                    AskUserQuestionPermissionRequest(
-                        request: Some(ask_request(single_question_input())),
-                        on_select: move |response| responses_for_handler.lock().expect("responses mutex").push(response),
-                    )
-                }
-            };
-            let mut render_loop = Box::pin(
-                app.mock_terminal_render_loop(
-                    MockTerminalConfig::with_events(stream::iter(vec![key(KeyCode::Enter)]))
-                        .with_size(100, 30),
-                ),
-            );
-            for _ in 0..8 {
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(100)).await;
-                    None
-                })
-                .await;
-                if next.is_none() {
-                    break;
-                }
-                if !responses_for_loop
-                    .lock()
-                    .expect("responses mutex")
-                    .is_empty()
-                {
-                    break;
-                }
-            }
-        });
-
-        let responses = responses.lock().expect("responses mutex");
-        assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].choice, PermissionPromptChoice::AllowOnce);
+        let run = drive(harness(single_question_input()), steps(vec![key(KeyCode::Enter)]));
+        assert_eq!(run.responses.len(), 1);
+        assert_eq!(run.responses[0].choice, PermissionPromptChoice::AllowOnce);
         assert_eq!(
-            responses[0].updated_input.as_ref().unwrap()["answers"]["Proceed?"],
+            run.responses[0].updated_input.as_ref().unwrap()["answers"]["Proceed?"],
             "Yes"
         );
     }
 
     #[test]
     fn single_select_other_text_submits_updated_input() {
-        let responses = Arc::new(Mutex::new(Vec::<PermissionPromptResponse>::new()));
-        let responses_for_handler = Arc::clone(&responses);
-        let responses_for_loop = Arc::clone(&responses);
-
-        futures::executor::block_on(async move {
-            let mut app = element! {
-                ContextProvider(value: Context::owned(*theme::current())) {
-                    AskUserQuestionPermissionRequest(
-                        request: Some(ask_request(single_question_input())),
-                        on_select: move |response| responses_for_handler.lock().expect("responses mutex").push(response),
-                    )
-                }
-            };
-            let events = vec![
-                key(KeyCode::Down),
-                key(KeyCode::Down),
-                key(KeyCode::Char('c')),
-                key(KeyCode::Char('u')),
-                key(KeyCode::Char('s')),
-                key(KeyCode::Char('t')),
-                key(KeyCode::Char('o')),
-                key(KeyCode::Char('m')),
-                key(KeyCode::Enter),
-            ];
-            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(stream::iter(events)).with_size(100, 30),
-            ));
-            for _ in 0..20 {
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(100)).await;
-                    None
-                })
-                .await;
-                if next.is_none() {
-                    break;
-                }
-                if !responses_for_loop
-                    .lock()
-                    .expect("responses mutex")
-                    .is_empty()
-                {
-                    break;
-                }
-            }
-        });
-
-        let responses = responses.lock().expect("responses mutex");
-        assert_eq!(responses.len(), 1);
-        let input = responses[0].updated_input.as_ref().expect("updated input");
+        let mut batches = steps(vec![key(KeyCode::Down), key(KeyCode::Down)]);
+        batches.extend(steps(chars("custom")));
+        batches.extend(steps(vec![key(KeyCode::Enter)]));
+        let run = drive(harness(single_question_input()), batches);
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        let input = run.responses[0].updated_input.as_ref().expect("updated input");
         assert_eq!(input["answers"]["Proceed?"], "custom");
         assert_eq!(input["annotations"]["Proceed?"]["notes"], "custom");
     }
 
     #[test]
+    fn empty_other_submit_cancels() {
+        // CC select.tsx:490-503: an empty input option with no images
+        // cancels, which rejects the question.
+        let run = drive(
+            harness(single_question_input()),
+            steps(vec![key(KeyCode::Down), key(KeyCode::Down), key(KeyCode::Enter)]),
+        );
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
+        assert!(run.responses[0].feedback.is_none());
+    }
+
+    #[test]
     fn other_image_paste_honors_null_unbind_and_live_remap_before_model_transport() {
-        let responses = Arc::new(Mutex::new(Vec::<PermissionPromptResponse>::new()));
-        let responses_for_handler = Arc::clone(&responses);
-        let responses_for_loop = Arc::clone(&responses);
-
-        futures::executor::block_on(async move {
-            let child = element! {
-                ContextProvider(value: Context::owned(*theme::current())) {
-                    AskUserQuestionPermissionRequest(
-                        request: Some(ask_request(single_question_input())),
-                        clipboard_image_override: Some(crate::utils::image_paste::ClipboardImage {
-                            base64: "AAAA".to_string(),
-                            media_type: "image/png".to_string(),
-                            dimensions: None,
-                        }),
-                        on_select: move |response| responses_for_handler.lock().expect("responses mutex").push(response),
-                    )
-                }
-            }
-            .into_any();
-            let mut bindings = crate::keybindings::default_bindings::default_bindings();
-            bindings.push(crate::keybindings::types::ParsedBinding {
-                chord: crate::keybindings::parser::parse_chord("ctrl+v"),
-                action: None,
-                context: crate::keybindings::types::ContextName::Chat,
-            });
-            bindings.push(crate::keybindings::types::ParsedBinding {
-                chord: crate::keybindings::parser::parse_chord("f4"),
-                action: Some("chat:imagePaste".to_string()),
-                context: crate::keybindings::types::ContextName::Chat,
-            });
-            let runtime = crate::keybindings::keybinding_context::KeybindingRuntime::new(bindings);
-            let mut app = element! {
-                ContextProvider(value: Context::owned(runtime)) {
-                    #(vec![child])
-                }
-            };
-            let events = vec![
-                key(KeyCode::Down),
-                key(KeyCode::Down),
-                modified_key(KeyCode::Char('v'), KeyModifiers::CONTROL),
-                key(KeyCode::F(4)),
-                key(KeyCode::Enter),
-            ];
-            let paced = stream::unfold(events.into_iter(), |mut events| async move {
-                let event = std::iter::Iterator::next(&mut events)?;
-                futures_timer::Delay::new(Duration::from_millis(50)).await;
-                Some((event, events))
-            });
-            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(paced).with_size(100, 30),
-            ));
-            for _ in 0..24 {
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(150)).await;
-                    None
-                })
-                .await;
-                if next.is_none()
-                    || !responses_for_loop
-                        .lock()
-                        .expect("responses mutex")
-                        .is_empty()
-                {
-                    break;
-                }
-            }
+        let mut bindings = crate::keybindings::default_bindings::default_bindings();
+        bindings.push(crate::keybindings::types::ParsedBinding {
+            chord: crate::keybindings::parser::parse_chord("ctrl+v"),
+            action: None,
+            context: ContextName::Chat,
         });
-
-        let responses = responses.lock().expect("responses mutex");
-        assert_eq!(responses.len(), 1);
-        assert_eq!(responses[0].choice, PermissionPromptChoice::AllowOnce);
-        assert!(responses[0].permission_updates_explicit);
+        bindings.push(crate::keybindings::types::ParsedBinding {
+            chord: crate::keybindings::parser::parse_chord("f4"),
+            action: Some("chat:imagePaste".to_string()),
+            context: ContextName::Chat,
+        });
+        let run = drive(
+            AskHarnessProps {
+                input: single_question_input(),
+                bindings: Some(bindings),
+                clipboard_image_override: Some(crate::utils::image_paste::ClipboardImage {
+                    base64: "AAAA".to_string(),
+                    media_type: "image/png".to_string(),
+                    dimensions: None,
+                }),
+                ..AskHarnessProps::default()
+            },
+            vec![
+                (vec![key(KeyCode::Down)], ""),
+                (vec![key(KeyCode::Down)], ""),
+                (vec![modified_key(KeyCode::Char('v'), KeyModifiers::CONTROL)], ""),
+                (vec![key(KeyCode::F(4))], "[Image #0]"),
+                (vec![key(KeyCode::Enter)], ""),
+            ],
+        );
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        assert_eq!(run.responses[0].choice, PermissionPromptChoice::AllowOnce);
+        assert!(run.responses[0].permission_updates_explicit);
         assert_eq!(
-            responses[0].updated_input.as_ref().unwrap()["answers"]["Proceed?"],
+            run.responses[0].updated_input.as_ref().unwrap()["answers"]["Proceed?"],
             "(Image attached)"
         );
         assert!(matches!(
-            responses[0].content_blocks.as_slice(),
+            run.responses[0].content_blocks.as_slice(),
             [PermissionContentBlock::Image { source }]
                 if source.media_type == "image/png" && source.data == "AAAA"
         ));
@@ -1465,55 +941,248 @@ mod tests {
 
     #[test]
     fn multi_question_review_submits_all_answers() {
-        let responses = Arc::new(Mutex::new(Vec::<PermissionPromptResponse>::new()));
-        let responses_for_handler = Arc::clone(&responses);
-        let responses_for_loop = Arc::clone(&responses);
-
-        futures::executor::block_on(async move {
-            let mut app = element! {
-                ContextProvider(value: Context::owned(*theme::current())) {
-                    AskUserQuestionPermissionRequest(
-                        request: Some(ask_request(multi_question_input())),
-                        on_select: move |response| responses_for_handler.lock().expect("responses mutex").push(response),
-                    )
-                }
-            };
-            let events = vec![
+        let run = drive(
+            harness(multi_question_input()),
+            steps(vec![
                 key(KeyCode::Enter),     // Library = Serde, advance
                 key(KeyCode::Char(' ')), // Toggle Cache
-                key(KeyCode::Down),      // Compress
+                key(KeyCode::Down),      // Logs
                 key(KeyCode::Down),      // Other
                 key(KeyCode::Down),      // Submit row
-                key(KeyCode::Enter),     // Advance to review
+                key(KeyCode::Enter),     // Next: the review
                 key(KeyCode::Enter),     // Submit answers
-            ];
-            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(stream::iter(events)).with_size(110, 35),
-            ));
-            for _ in 0..16 {
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(100)).await;
-                    None
-                })
-                .await;
-                if next.is_none() {
-                    break;
-                }
-                if !responses_for_loop
-                    .lock()
-                    .expect("responses mutex")
-                    .is_empty()
-                {
-                    break;
-                }
-            }
-        });
-
-        let responses = responses.lock().expect("responses mutex");
-        assert_eq!(responses.len(), 1);
-        let input = responses[0].updated_input.as_ref().expect("updated input");
+            ]),
+        );
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        let input = run.responses[0].updated_input.as_ref().expect("updated input");
         assert_eq!(input["answers"]["Library?"], "Serde");
         assert_eq!(input["answers"]["Features?"], "Cache");
+    }
+
+    #[test]
+    fn tab_keys_switch_questions_up_to_the_review() {
+        // CC :494-523: tab/→ move on up to the review, ←/shift+tab back.
+        let run = drive(harness(multi_question_input()), steps(vec![key(KeyCode::Tab)]));
+        assert!(run.last.contains("Features?"), "{}", run.last);
+        let run = drive(
+            harness(multi_question_input()),
+            steps(vec![key(KeyCode::Right), key(KeyCode::Right), key(KeyCode::Right)]),
+        );
+        assert!(run.last.contains("Review your answers"), "{}", run.last);
+        let run = drive(
+            harness(multi_question_input()),
+            steps(vec![key(KeyCode::Tab), key(KeyCode::Left)]),
+        );
+        assert!(run.last.contains("Library?") && !run.last.contains("Features?\n"), "{}", run.last);
+    }
+
+    #[test]
+    fn typing_in_a_multi_select_other_keeps_the_arrows_in_the_question() {
+        // CC use-multiple-choice-state.ts:70-88: the toggle that typing
+        // makes does not leave text-input mode, so ← stays in the question.
+        let mut batches = steps(vec![key(KeyCode::Tab), key(KeyCode::Down), key(KeyCode::Down)]);
+        batches.extend(steps(chars("x")));
+        batches.extend(steps(vec![key(KeyCode::Left)]));
+        let run = drive(harness(multi_question_input()), batches);
+        // The title is the question; the tab bar shows headers only.
+        assert!(run.last.contains("Features?"), "{}", run.last);
+        assert!(!run.last.contains("Library?"), "{}", run.last);
+    }
+
+    #[test]
+    fn each_list_registers_the_overlay_that_keeps_the_cancel_handler_off() {
+        // CC use-select-input.ts:101 `useRegisterOverlay('select', …)` and
+        // use-multi-select-state.ts:215 `useRegisterOverlay('multi-select')`:
+        // with one registered, the REPL's cancel handler leaves Esc and
+        // Ctrl+C to the question.
+        let run = drive(harness(multi_question_input()), Vec::new());
+        assert!(run.last.contains("overlays=[select]"), "{}", run.last);
+        let run = drive(harness(multi_question_input()), steps(vec![key(KeyCode::Tab)]));
+        assert!(run.last.contains("overlays=[multi-select]"), "{}", run.last);
+    }
+
+    #[test]
+    fn a_multi_select_toggled_back_to_nothing_is_unanswered() {
+        // CC :250 `!!answers[q.question]`: toggling Cache on and off leaves
+        // "", so the review still warns.
+        let input = serde_json::json!({
+            "questions": [{
+                "question": "Features?",
+                "header": "Features",
+                "multiSelect": true,
+                "options": [
+                    {"label": "Cache", "description": "Enable cache"},
+                    {"label": "Logs", "description": "Enable logs"}
+                ]
+            }]
+        });
+        let run = drive(
+            harness(input),
+            steps(vec![
+                key(KeyCode::Char(' ')),
+                key(KeyCode::Char(' ')),
+                key(KeyCode::Down),
+                key(KeyCode::Down),
+                key(KeyCode::Down),
+                key(KeyCode::Enter),
+            ]),
+        );
+        assert!(run.last.contains("Review your answers"), "{}", run.last);
+        assert!(run.last.contains("You have not answered all questions"), "{}", run.last);
+    }
+
+    #[test]
+    fn keys_read_together_never_step_past_the_review() {
+        // Two tab keys on the last question stop at the review (CC's stale
+        // index would step past it and render nothing).
+        let run = drive(
+            harness(multi_question_input()),
+            vec![
+                (vec![key(KeyCode::Tab)], ""),
+                (vec![key(KeyCode::Tab), key(KeyCode::Tab)], ""),
+            ],
+        );
+        assert!(run.last.contains("Review your answers"), "{}", run.last);
+        // An answer given twice in one read moves on once: the second Enter
+        // on a preview question records the same answer without skipping
+        // the next question.
+        let input = serde_json::json!({
+            "questions": [
+                {
+                    "question": "Which layout?",
+                    "header": "Layout",
+                    "options": [
+                        {"label": "List", "description": "Rows", "preview": "line 1"},
+                        {"label": "Grid", "description": "Cards", "preview": "card"}
+                    ]
+                },
+                {
+                    "question": "Library?",
+                    "header": "Library",
+                    "options": [
+                        {"label": "Serde", "description": "Use serde"},
+                        {"label": "Manual", "description": "Write parser"}
+                    ]
+                }
+            ]
+        });
+        let run = drive(harness(input), vec![(vec![key(KeyCode::Enter), key(KeyCode::Enter)], "")]);
+        assert!(run.last.contains("Library?"), "{}", run.last);
+        assert!(!run.last.contains("Review your answers"), "{}", run.last);
+    }
+
+    #[test]
+    fn keys_read_with_the_notes_esc_stay_in_the_notes() {
+        // CC PreviewQuestionView.tsx:193-238: the view's callback closes over
+        // `isInNotesInput`, so a digit read together with the Esc that leaves
+        // the notes is still a notes key (the notes input, mounted until the
+        // next render, takes it) and does not move the option focus.
+        let mut batches = steps(vec![key(KeyCode::Char('n'))]);
+        batches.extend(steps(chars("ok")));
+        batches.push((vec![key(KeyCode::Esc), key(KeyCode::Char('2'))], ""));
+        batches.push((vec![key(KeyCode::Enter)], ""));
+        let run = drive(harness(preview_question_input()), batches);
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        let input = run.responses[0].updated_input.as_ref().expect("updated input");
+        assert_eq!(input["answers"]["Which layout?"], "List");
+    }
+
+    #[test]
+    fn image_blocks_follow_question_order_and_are_resized() {
+        use image::ImageEncoder;
+        // CC :220-222: questions in the order they first got an image, then
+        // by paste id — not by id across questions.
+        let image = |id: usize, data: &str| PastedContent::Image {
+            id,
+            media_type: Some("image/png".to_string()),
+            data: Some(data.to_string()),
+            filename: None,
+            dimensions: None,
+            source_path: None,
+        };
+        let mut pasted = PastedByQuestion::new();
+        pasted.insert("Second?".to_string(), BTreeMap::from([(5, image(5, "BBBB"))]));
+        pasted.insert("First?".to_string(), BTreeMap::from([(3, image(3, "AAAA"))]));
+        let blocks = convert_images_to_blocks(&pasted).expect("blocks");
+        let data = blocks
+            .iter()
+            .map(|block| match block {
+                PermissionContentBlock::Image { source } => source.data.clone(),
+                other => panic!("{other:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(data, vec!["BBBB".to_string(), "AAAA".to_string()]);
+
+        // CC :601 `maybeResizeAndDownsampleImageBlock`: an oversized image
+        // is scaled down before it goes out.
+        let rgba = image::RgbaImage::from_pixel(2500, 500, image::Rgba([16, 32, 48, 255]));
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(rgba.as_raw(), 2500, 500, image::ExtendedColorType::Rgba8)
+            .unwrap();
+        let large = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &png);
+        let mut pasted = PastedByQuestion::new();
+        pasted.insert("Q?".to_string(), BTreeMap::from([(0, image(0, &large))]));
+        let blocks = convert_images_to_blocks(&pasted).expect("blocks");
+        let PermissionContentBlock::Image { source } = &blocks[0] else {
+            panic!("{:?}", blocks[0]);
+        };
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &source.data).unwrap();
+        let decoded = image::load_from_memory(&bytes).unwrap();
+        assert_eq!(image::GenericImageView::dimensions(&decoded), (2000, 400));
+    }
+
+    #[test]
+    fn escape_rejects_once_and_ctrl_c_cancels() {
+        let run = drive(harness(single_question_input()), steps(vec![key(KeyCode::Esc)]));
+        assert_eq!(run.responses.len(), 1);
+        assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
+        assert_eq!(run.cancels, 0);
+        let run = drive(
+            harness(single_question_input()),
+            steps(vec![modified_key(KeyCode::Char('c'), KeyModifiers::CONTROL)]),
+        );
+        assert_eq!(run.cancels, 1);
+        assert!(run.responses.is_empty());
+    }
+
+    #[test]
+    fn footer_takes_focus_from_the_last_option_and_asks_to_clarify() {
+        // CC QuestionView.tsx:106-145: ↓ from Other focuses "Chat about
+        // this"; ↑ gives it back; Enter there sends the clarify feedback.
+        let run = drive(
+            harness(single_question_input()),
+            steps(vec![key(KeyCode::Down), key(KeyCode::Down), key(KeyCode::Down)]),
+        );
+        assert!(run.last.contains("❯ 4. Chat about this"), "{}", run.last);
+        let run = drive(
+            harness(single_question_input()),
+            steps(vec![
+                key(KeyCode::Down),
+                key(KeyCode::Down),
+                key(KeyCode::Down),
+                key(KeyCode::Up),
+                key(KeyCode::Down),
+                key(KeyCode::Enter),
+            ]),
+        );
+        assert_eq!(run.responses.len(), 1, "{}", run.last);
+        assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
+        let feedback = run.responses[0].feedback.as_deref().unwrap_or_default();
+        assert!(feedback.contains("- \"Proceed?\"\n  (No answer provided)"), "{feedback}");
+    }
+
+    #[test]
+    fn review_cancel_and_escape_reject() {
+        for key_code in [KeyCode::Esc, KeyCode::Down] {
+            let mut keys = vec![key(KeyCode::Tab), key(KeyCode::Tab), key(key_code)];
+            if key_code == KeyCode::Down {
+                keys.push(key(KeyCode::Enter));
+            }
+            let run = drive(harness(multi_question_input()), steps(keys));
+            assert_eq!(run.responses.len(), 1, "{key_code:?}: {}", run.last);
+            assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
+        }
     }
 
     #[test]
@@ -1522,17 +1191,11 @@ mod tests {
             question: "Proceed?".to_string(),
             ..Default::default()
         }];
-        let state = MultipleChoiceState {
-            answers: std::collections::BTreeMap::from([(
-                "Proceed?".to_string(),
-                "Yes".to_string(),
-            )]),
-            ..Default::default()
-        };
-        let clarify = respond_to_claude_feedback(&questions, &state);
+        let answers = BTreeMap::from([("Proceed?".to_string(), "Yes".to_string())]);
+        let clarify = respond_to_claude_feedback(&questions, &answers);
         assert!(clarify.starts_with("The user wants to clarify these questions."));
         assert!(clarify.contains("- \"Proceed?\"\n  Answer: Yes"));
-        let finish = finish_plan_interview_feedback(&questions, &state);
+        let finish = finish_plan_interview_feedback(&questions, &answers);
         assert!(finish.starts_with("The user has indicated they have provided enough answers"));
         assert!(finish.contains("Questions asked and answers provided:"));
     }

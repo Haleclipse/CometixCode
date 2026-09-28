@@ -57,8 +57,10 @@ pub struct SelectInputOptionProps {
     pub selected_image_index: usize,
     pub on_images_selected_change: Handler<bool>,
     pub on_selected_image_index_change: Handler<usize>,
-    /// Maps to: CC `components/CustomSelect/select-input-option.tsx:141-148`.
-    pub on_open_editor: Handler<String>,
+    /// Maps to: CC `components/CustomSelect/select-input-option.tsx:141-148`
+    /// `onOpenEditor(currentValue, setValue)`: `setValue` is this option's
+    /// `onInputChange`, so the editor's text lands in the input.
+    pub on_open_editor: Handler<(String, Handler<String>)>,
     /// Maps to: CC `components/CustomSelect/select-input-option.tsx:150-167`.
     pub on_image_paste: Handler<crate::utils::image_paste::ClipboardImage>,
     /// Deterministic adapter seam for component tests. Production reads the
@@ -142,9 +144,11 @@ pub fn SelectInputOption(
         }
     }
 
-    // Maps to: CC `components/CustomSelect/select-input-option.tsx:141-148`.
+    // Maps to: CC `components/CustomSelect/select-input-option.tsx:141-148`
+    // `onOpenEditor?.(inputValue, onInputChange)`.
     let open_editor = props.on_open_editor.clone();
     let editor_value = props.input_value.clone();
+    let set_value = props.on_input_change.clone();
     let editor_active = props.is_focused && !props.on_open_editor.is_default();
     use_keybinding(
         &mut hooks,
@@ -153,7 +157,7 @@ pub fn SelectInputOption(
         ContextName::Chat,
         move || editor_active,
         move || {
-            open_editor(editor_value.clone());
+            open_editor((editor_value.clone(), set_value.clone()));
             true
         },
     );

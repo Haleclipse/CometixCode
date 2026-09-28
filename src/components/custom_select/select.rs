@@ -77,7 +77,8 @@ pub struct SelectProps {
     /// the caller remains the pasted-content/removal owner.
     pub pasted_contents: BTreeMap<usize, PastedContent>,
     pub on_remove_image: Handler<usize>,
-    pub on_open_editor: Handler<String>,
+    /// CC `onOpenEditor(currentValue, setValue)`.
+    pub on_open_editor: Handler<(String, Handler<String>)>,
     pub on_image_paste: Handler<crate::utils::image_paste::ClipboardImage>,
     pub clipboard_image_override: Option<crate::utils::image_paste::ClipboardImage>,
     /// CC input option onChange/onSubmit, keyed by the option value.

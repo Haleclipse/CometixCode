@@ -1505,7 +1505,9 @@ mod tests {
 
         assert!(text.contains("Proceed?"), "canvas=\n{text}");
         assert!(text.contains("Yes"), "canvas=\n{text}");
-        assert!(text.contains("Other"), "canvas=\n{text}");
+        // CC select-input-option.tsx:341-345: the unfocused Other shows its
+        // placeholder.
+        assert!(text.contains("Type something."), "canvas=\n{text}");
         assert!(text.contains("Chat about this"), "canvas=\n{text}");
         assert!(
             !text.contains("Tool use"),

@@ -139,7 +139,8 @@ pub fn QuestionNavigationBar(
             })})
             #(props.questions.iter().enumerate().map(|(index, question)| {
                 let is_selected = index == props.current_question_index;
-                let is_answered = props.answers.contains_key(&question.question);
+                // CC :106 `!!answers[q.question]`.
+                let is_answered = super::use_multiple_choice_state::answer_for(&props.answers, &question.question).is_some();
                 let checkbox = if is_answered { figures().checkbox_on } else { figures().checkbox_off };
                 let display = tab_texts.get(index).cloned().unwrap_or_else(|| if question.header.is_empty() { format!("Q{}", index + 1) } else { question.header.clone() });
                 element! {

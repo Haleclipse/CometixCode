@@ -45,6 +45,13 @@ pub struct SelectMultiProps<'a> {
     pub on_cancel: HandlerMut<'a, ()>,
     pub pasted_contents: BTreeMap<usize, PastedContent>,
     pub on_remove_image: HandlerMut<'a, usize>,
+    /// CC `onOpenEditor(currentValue, setValue)` (SelectMulti.tsx:53-56):
+    /// `setValue` writes this list's input value, as typing does.
+    pub on_open_editor: Handler<(String, Handler<String>)>,
+    /// CC `onImagePaste` (SelectMulti.tsx:57-63).
+    pub on_image_paste: Handler<crate::utils::image_paste::ClipboardImage>,
+    /// Deterministic adapter seam for component tests, as on `Select`.
+    pub clipboard_image_override: Option<crate::utils::image_paste::ClipboardImage>,
 }
 
 pub fn select_multi_toggle(mut selected: Vec<String>, value: &str) -> Vec<String> {
@@ -98,7 +105,32 @@ pub fn SelectMulti<'a>(
     let mut is_submit_focused = hooks.use_state(|| false);
     let mut images_selected = hooks.use_state(|| false);
     let mut selected_image_index = hooks.use_state(|| 0usize);
-    let mut pending_actions = hooks.use_state(Vec::<SelectMultiAction>::new);
+    // CC use-select-navigation.ts:614-618: onFocus also reports the focus
+    // the list mounts with.
+    let initial_focus_value = props
+        .options
+        .get(initial_focus)
+        .map(|option| option.value.clone());
+    let mut pending_actions = hooks.use_state(|| {
+        initial_focus_value
+            .map(SelectMultiAction::Focus)
+            .into_iter()
+            .collect::<Vec<_>>()
+    });
+    // CC use-multi-select-state.ts:215 `useRegisterOverlay('multi-select')`,
+    // for the whole mount, so the cancel-request handler leaves Esc and
+    // Ctrl+C to this list.
+    let app_store = hooks.try_use_context::<crate::state::store::AppStore>();
+    let mut overlay =
+        hooks.use_state(|| Option::<crate::context::overlay_context::OverlayRegistration>::None);
+    if overlay.read().is_none() {
+        if let Some(store) = app_store.as_deref() {
+            overlay.set(Some(crate::context::overlay_context::OverlayRegistration::register(
+                store.clone(),
+                "multi-select",
+            )));
+        }
+    }
 
     let pending = pending_actions.read().clone();
     if !pending.is_empty() {
@@ -426,6 +458,34 @@ pub fn SelectMulti<'a>(
         state.set(index);
     });
     let pasted_contents = props.pasted_contents.clone();
+    // The editor's `setValue` for one input option: the same state update
+    // and callbacks as typing into it.
+    let open_editor_for = |value: String| -> Handler<(String, Handler<String>)> {
+        if props.on_open_editor.is_default() {
+            return Handler::default();
+        }
+        let open_editor = props.on_open_editor.clone();
+        Handler::from(move |(current, _): (String, Handler<String>)| {
+            let value = value.clone();
+            let set_value = Handler::from(move |text: String| {
+                let (mut input_values, mut selected_values, mut pending) =
+                    (input_values, selected_values, pending_actions);
+                let mut values = input_values.read().clone();
+                values.insert(value.clone(), text.clone());
+                input_values.set(values);
+                let next_selected =
+                    update_input_value_selection(&selected_values.read(), &value, &text);
+                selected_values.set(next_selected.clone());
+                let mut actions = pending.read().clone();
+                actions.push(SelectMultiAction::InputChange(value.clone(), text));
+                actions.push(SelectMultiAction::Change(next_selected));
+                pending.set(actions);
+            });
+            open_editor((current, set_value));
+        })
+    };
+    let on_image_paste = props.on_image_paste.clone();
+    let clipboard_image_override = props.clipboard_image_override.clone();
 
     // Maps to: CC SelectMulti.tsx:107-207 — options plus optional submit row.
     element! {
@@ -473,6 +533,9 @@ pub fn SelectMulti<'a>(
                                     selected_image_index: selected_image_index_value,
                                     on_images_selected_change: on_images_selected_change.clone(),
                                     on_selected_image_index_change: on_selected_image_index_change.clone(),
+                                    on_open_editor: open_editor_for(option.value.clone()),
+                                    on_image_paste: on_image_paste.clone(),
+                                    clipboard_image_override: clipboard_image_override.clone(),
                                 ) {
                                     // CC :157-159 — `[✓] ` with trailing space, success when selected.
                                     Text(content: format!("[{}] ", if is_selected { TICK } else { " " }), color: checkbox_color, wrap: TextWrap::NoWrap)

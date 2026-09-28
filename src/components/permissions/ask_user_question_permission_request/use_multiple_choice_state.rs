@@ -2,9 +2,11 @@
 //! `components/permissions/AskUserQuestionPermissionRequest/use-multiple-choice-state.ts`.
 //!
 //! The official file owns the reducer shape used by the AskUserQuestion
-//! permission UI. Rust keeps the same state vocabulary and pure transitions so
-//! the retained iocraft component can render from deterministic state snapshots.
+//! permission UI. Rust keeps the same state vocabulary and pure transitions;
+//! `use_multiple_choice_state` holds the state in one `State`, and the CC
+//! callbacks (`next_question`, `set_answer`, …) dispatch into it.
 
+use iocraft::prelude::*;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
@@ -45,12 +47,10 @@ pub struct MultipleChoiceState {
     pub is_in_text_input: bool,
 }
 
+/// Maps to: CC reducer `Action` (:17-32).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MultipleChoiceAction {
-    NextQuestion {
-        question_count: usize,
-        hide_submit_tab: bool,
-    },
+    NextQuestion,
     PrevQuestion,
     UpdateQuestionState {
         question_text: String,
@@ -61,8 +61,6 @@ pub enum MultipleChoiceAction {
         question_text: String,
         answer: String,
         should_advance: bool,
-        question_count: usize,
-        hide_submit_tab: bool,
     },
     SetTextInputMode {
         is_in_input: bool,
@@ -75,23 +73,19 @@ pub struct QuestionStateUpdate {
     pub text_input_value: Option<String>,
 }
 
-/// Maps to: CC reducer in `use-multiple-choice-state.ts`.
+/// Maps to: CC reducer in `use-multiple-choice-state.ts:34-96`. Unbounded, as
+/// in CC: the callers bound tab navigation (`handleTabNext`), and answering
+/// the last question moves to the review view.
 pub fn reduce_multiple_choice_state(
     state: &MultipleChoiceState,
     action: MultipleChoiceAction,
 ) -> MultipleChoiceState {
     match action {
-        MultipleChoiceAction::NextQuestion {
-            question_count,
-            hide_submit_tab,
-        } => {
-            let max_index = max_question_index(question_count, hide_submit_tab);
-            MultipleChoiceState {
-                current_question_index: (state.current_question_index + 1).min(max_index),
-                is_in_text_input: false,
-                ..state.clone()
-            }
-        }
+        MultipleChoiceAction::NextQuestion => MultipleChoiceState {
+            current_question_index: state.current_question_index + 1,
+            is_in_text_input: false,
+            ..state.clone()
+        },
         MultipleChoiceAction::PrevQuestion => MultipleChoiceState {
             current_question_index: state.current_question_index.saturating_sub(1),
             is_in_text_input: false,
@@ -100,20 +94,16 @@ pub fn reduce_multiple_choice_state(
         MultipleChoiceAction::UpdateQuestionState {
             question_text,
             updates,
-            is_multi_select,
+            is_multi_select: _,
         } => {
             let existing = state.question_states.get(&question_text).cloned();
             let new_state = QuestionState {
+                // CC falls back to `[]` for multi-select and `undefined`
+                // for single; both are an empty list here.
                 selected_value: updates
                     .selected_value
                     .or_else(|| existing.as_ref().map(|state| state.selected_value.clone()))
-                    .unwrap_or_else(|| {
-                        if is_multi_select {
-                            Vec::new()
-                        } else {
-                            Vec::new()
-                        }
-                    }),
+                    .unwrap_or_default(),
                 text_input_value: updates
                     .text_input_value
                     .or_else(|| {
@@ -134,22 +124,22 @@ pub fn reduce_multiple_choice_state(
             question_text,
             answer,
             should_advance,
-            question_count,
-            hide_submit_tab,
         } => {
             let mut answers = state.answers.clone();
             answers.insert(question_text, answer);
-            let current_question_index = if should_advance {
-                (state.current_question_index + 1)
-                    .min(max_question_index(question_count, hide_submit_tab))
+            // CC :79-87: only advancing leaves text-input mode.
+            if should_advance {
+                MultipleChoiceState {
+                    answers,
+                    current_question_index: state.current_question_index + 1,
+                    is_in_text_input: false,
+                    ..state.clone()
+                }
             } else {
-                state.current_question_index
-            };
-            MultipleChoiceState {
-                answers,
-                current_question_index,
-                is_in_text_input: false,
-                ..state.clone()
+                MultipleChoiceState {
+                    answers,
+                    ..state.clone()
+                }
             }
         }
         MultipleChoiceAction::SetTextInputMode { is_in_input } => MultipleChoiceState {
@@ -159,12 +149,64 @@ pub fn reduce_multiple_choice_state(
     }
 }
 
-fn max_question_index(question_count: usize, hide_submit_tab: bool) -> usize {
-    if hide_submit_tab {
-        question_count.saturating_sub(1)
-    } else {
-        question_count
-    }
+/// Maps to: CC `useMultipleChoiceState` (:125-179): the reducer state. The
+/// callbacks below are CC's, dispatching into it.
+pub fn use_multiple_choice_state(hooks: &mut Hooks) -> State<MultipleChoiceState> {
+    hooks.use_state(MultipleChoiceState::default)
+}
+
+fn dispatch(mut state: State<MultipleChoiceState>, action: MultipleChoiceAction) {
+    let next = reduce_multiple_choice_state(&state.read(), action);
+    state.set(next);
+}
+
+/// CC `nextQuestion`.
+pub fn next_question(state: State<MultipleChoiceState>) {
+    dispatch(state, MultipleChoiceAction::NextQuestion);
+}
+
+/// CC `prevQuestion`.
+pub fn prev_question(state: State<MultipleChoiceState>) {
+    dispatch(state, MultipleChoiceAction::PrevQuestion);
+}
+
+/// CC `updateQuestionState`.
+pub fn update_question_state(
+    state: State<MultipleChoiceState>,
+    question_text: &str,
+    updates: QuestionStateUpdate,
+    is_multi_select: bool,
+) {
+    dispatch(
+        state,
+        MultipleChoiceAction::UpdateQuestionState {
+            question_text: question_text.to_string(),
+            updates,
+            is_multi_select,
+        },
+    );
+}
+
+/// CC `setAnswer`.
+pub fn set_answer(
+    state: State<MultipleChoiceState>,
+    question_text: &str,
+    answer: String,
+    should_advance: bool,
+) {
+    dispatch(
+        state,
+        MultipleChoiceAction::SetAnswer {
+            question_text: question_text.to_string(),
+            answer,
+            should_advance,
+        },
+    );
+}
+
+/// CC `setTextInputMode`.
+pub fn set_text_input_mode(state: State<MultipleChoiceState>, is_in_input: bool) {
+    dispatch(state, MultipleChoiceAction::SetTextInputMode { is_in_input });
 }
 
 /// Maps to: CC `AskUserQuestionTool.inputSchema.safeParse(...).data.questions`.
@@ -216,9 +258,13 @@ fn question_option_from_value(value: &Value) -> Option<QuestionOption> {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_string(),
+        // CC tests `opt.preview` for truthiness everywhere (QuestionView.tsx:
+        // 213, PreviewQuestionView.tsx:292, submitAnswers :395), so an empty
+        // preview is none.
         preview: object
             .get("preview")
             .and_then(Value::as_str)
+            .filter(|preview| !preview.is_empty())
             .map(str::to_string),
     })
 }
@@ -239,52 +285,25 @@ pub fn hide_submit_tab(questions: &[Question]) -> bool {
             .is_some_and(|question| question.multi_select)
 }
 
+/// CC `!!answers[q.question]` / `if (answer)`: an empty answer (a
+/// multi-select toggled back to nothing) is no answer.
+pub fn answer_for<'a>(
+    answers: &'a BTreeMap<String, AnswerValue>,
+    question_text: &str,
+) -> Option<&'a AnswerValue> {
+    answers
+        .get(question_text)
+        .filter(|answer| !answer.is_empty())
+}
+
+/// Maps to: CC `AskUserQuestionPermissionRequest.tsx:249-251`.
 pub fn all_questions_answered(
     questions: &[Question],
     answers: &BTreeMap<String, AnswerValue>,
 ) -> bool {
-    questions
-        .iter()
-        .all(|question| !question.question.is_empty() && answers.contains_key(&question.question))
-}
-
-/// Maps to: CC `handleQuestionAnswer(...)` answer-string normalization.
-pub fn answer_for_selection(
-    label: &str,
-    selected_values: &[String],
-    text_input: Option<&str>,
-    is_multi_select: bool,
-) -> String {
-    if is_multi_select {
-        let mut values = selected_values
-            .iter()
-            .filter(|value| value.as_str() != "__other__")
-            .cloned()
-            .collect::<Vec<_>>();
-        if selected_values.iter().any(|value| value == "__other__") {
-            if let Some(text_input) = text_input.filter(|text| !text.trim().is_empty()) {
-                values.push(text_input.to_string());
-            }
-        }
-        return values.join(", ");
-    }
-    if let Some(text_input) = text_input.filter(|text| !text.trim().is_empty()) {
-        return text_input.to_string();
-    }
-    if label == "__other__" {
-        "Other".to_string()
-    } else {
-        label.to_string()
-    }
-}
-
-pub fn toggle_multi_select_value(mut values: Vec<String>, value: &str) -> Vec<String> {
-    if let Some(index) = values.iter().position(|candidate| candidate == value) {
-        values.remove(index);
-    } else {
-        values.push(value.to_string());
-    }
-    values
+    questions.iter().all(|question| {
+        !question.question.is_empty() && answer_for(answers, &question.question).is_some()
+    })
 }
 
 /// Maps to: CC `submitAnswers(...)` `updatedInput` construction, including
@@ -319,20 +338,22 @@ fn build_annotations(
     answers: &BTreeMap<String, AnswerValue>,
     question_states: &BTreeMap<String, QuestionState>,
 ) -> Map<String, Value> {
+    // CC `AskUserQuestionPermissionRequest.tsx:384-401`: every question's
+    // notes count, answered or not; a preview only through its answer.
     let mut annotations = Map::new();
     for question in questions {
-        let Some(answer) = answers.get(&question.question) else {
-            continue;
-        };
+        let answer = answers.get(&question.question);
         let notes = question_states
             .get(&question.question)
             .map(|state| state.text_input_value.trim())
             .filter(|notes| !notes.is_empty());
-        let preview = question
-            .options
-            .iter()
-            .find(|option| option.label == *answer)
-            .and_then(|option| option.preview.as_ref());
+        let preview = answer.and_then(|answer| {
+            question
+                .options
+                .iter()
+                .find(|option| option.label == *answer)
+                .and_then(|option| option.preview.as_ref())
+        });
         if preview.is_none() && notes.is_none() {
             continue;
         }
@@ -361,12 +382,64 @@ mod tests {
                 question_text: "Proceed?".to_string(),
                 answer: "Yes".to_string(),
                 should_advance: true,
-                question_count: 2,
-                hide_submit_tab: false,
             },
         );
         assert_eq!(state.answers.get("Proceed?"), Some(&"Yes".to_string()));
         assert_eq!(state.current_question_index, 1);
+    }
+
+    #[test]
+    fn reducer_keeps_text_input_mode_unless_the_answer_advances() {
+        // CC :70-88: a multi-select toggle (shouldAdvance false) leaves the
+        // user typing in Other.
+        let typing = MultipleChoiceState {
+            is_in_text_input: true,
+            ..MultipleChoiceState::default()
+        };
+        let kept = reduce_multiple_choice_state(
+            &typing,
+            MultipleChoiceAction::SetAnswer {
+                question_text: "Features?".to_string(),
+                answer: "Cache".to_string(),
+                should_advance: false,
+            },
+        );
+        assert!(kept.is_in_text_input);
+        assert_eq!(kept.current_question_index, 0);
+        let advanced = reduce_multiple_choice_state(
+            &typing,
+            MultipleChoiceAction::SetAnswer {
+                question_text: "Features?".to_string(),
+                answer: "Cache".to_string(),
+                should_advance: true,
+            },
+        );
+        assert!(!advanced.is_in_text_input);
+        assert_eq!(advanced.current_question_index, 1);
+    }
+
+    #[test]
+    fn annotations_keep_notes_of_unanswered_questions() {
+        // CC :387-401 walks every question; a question's notes count even
+        // without an answer.
+        let questions = vec![Question {
+            question: "Why?".to_string(),
+            ..Question::default()
+        }];
+        let states = BTreeMap::from([(
+            "Why?".to_string(),
+            QuestionState {
+                selected_value: Vec::new(),
+                text_input_value: " because ".to_string(),
+            },
+        )]);
+        let input = build_updated_input_with_answers(
+            &serde_json::json!({}),
+            &questions,
+            &BTreeMap::new(),
+            &states,
+        );
+        assert_eq!(input["annotations"]["Why?"]["notes"], "because");
     }
 
     #[test]
@@ -402,17 +475,29 @@ mod tests {
     }
 
     #[test]
-    fn answer_for_selection_replaces_multi_select_other_with_custom_text() {
-        let answer = answer_for_selection(
-            "",
-            &["Cache".to_string(), "__other__".to_string()],
-            Some("custom notes"),
-            true,
-        );
-        assert_eq!(answer, "Cache, custom notes");
+    fn an_empty_answer_is_no_answer() {
+        // CC :250 `!!answers[q.question]`: a multi-select toggled back to
+        // nothing leaves "" and the question unanswered.
+        let questions = vec![Question {
+            question: "Features?".to_string(),
+            ..Question::default()
+        }];
+        let answers = BTreeMap::from([("Features?".to_string(), String::new())]);
+        assert!(!all_questions_answered(&questions, &answers));
+        assert_eq!(answer_for(&answers, "Features?"), None);
+    }
 
-        let empty_other = answer_for_selection("", &["__other__".to_string()], Some(""), true);
-        assert_eq!(empty_other, "");
+    #[test]
+    fn an_empty_preview_is_no_preview() {
+        let questions = questions_from_input(&serde_json::json!({
+            "questions": [{
+                "question": "Layout?",
+                "header": "Layout",
+                "options": [{"label": "List", "description": "Rows", "preview": ""}]
+            }]
+        }));
+        assert_eq!(questions[0].options[0].preview, None);
+        assert!(!question_has_preview(&questions[0]));
     }
 
     #[test]
