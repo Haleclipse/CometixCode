@@ -101,6 +101,14 @@ pub struct FooterProps {
     /// owner from the same set `background_task_count` gates on.
     pub background_tasks_label: String,
     pub teammate_count: usize,
+    /// Maps to: CC `PromptInputFooter.tsx:58-60` `tasksSelected` /
+    /// `teamsSelected` / `bridgeSelected`, which PromptInput derives from the
+    /// effective `footerItemSelected` (`PromptInput.tsx:663-682`), so a pill
+    /// that stopped rendering is never drawn selected. `tmuxSelected` is
+    /// ant-only (Tungsten) and has no footer item here.
+    pub tasks_selected: bool,
+    pub teams_selected: bool,
+    pub bridge_selected: bool,
     pub vim_mode: Option<String>,
     pub mode: PromptInputMode,
     pub is_pasting: bool,
@@ -336,6 +344,14 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                 background_task_count: props.background_task_count,
                                 background_tasks_label: props.background_tasks_label.clone(),
                                 teammate_count: props.teammate_count,
+                                // CC :130-132 `pillSelected` also clears when the
+                                // pointer is inside CoordinatorTaskPanel
+                                // (`coordinatorTaskIndex >= 0`). The panel is not
+                                // ported and the index never leaves its -1
+                                // default, so it is `tasksSelected`; restore the
+                                // formula when the panel lands.
+                                tasks_selected: props.tasks_selected,
+                                teams_selected: props.teams_selected,
                             )
                         }
                         #(if has_right_side {
@@ -363,7 +379,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                         None
                                     })
                                     #(if props.status_indicator_count > 0 {
-                                        Some(element! { BridgeStatusIndicator })
+                                        Some(element! { BridgeStatusIndicator(bridge_selected: props.bridge_selected) })
                                     } else {
                                         None
                                     })
@@ -386,7 +402,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
 /// flat `AppState.repl_bridge_*` fields and delegates the status label/color
 /// to the canonical `bridge_status_util::get_bridge_status` port (CC calls
 /// `bridgeStatusUtil.getBridgeStatus`, PromptInputFooter.tsx:257-262);
-/// `selected` is `footer_selection == Bridge`.
+/// `selected` is the component's `bridgeSelected` prop.
 ///
 /// The gates are explicit params because they are NOT AppState in CC either:
 /// `feature_enabled` mirrors PromptInputFooter.tsx:241 `feature('BRIDGE_MODE')`
@@ -461,14 +477,10 @@ pub fn bridge_status_indicator_count_from_app(
     if !feature_enabled || !state.repl_bridge_enabled {
         return 0;
     }
+    // Selection only styles the pill (CC :270-276); it never decides whether
+    // one renders.
     usize::from(
-        bridge_status_indicator(
-            state,
-            feature_enabled,
-            entitlement_enabled(),
-            state.footer_selection == Some(crate::state::app_state_store::FooterItem::Bridge),
-        )
-        .is_some(),
+        bridge_status_indicator(state, feature_enabled, entitlement_enabled(), false).is_some(),
     )
 }
 
@@ -486,13 +498,16 @@ fn indicator_color(color: Option<NotificationColor>, theme: &Theme) -> Color {
     }
 }
 
+/// Maps to: CC `PromptInputFooter.tsx:234-236` `BridgeStatusProps`.
 #[derive(Default, Props)]
-pub struct BridgeStatusIndicatorProps;
+pub struct BridgeStatusIndicatorProps {
+    pub bridge_selected: bool,
+}
 
-/// Maps to: CC `PromptInputFooter.tsx` inline `BridgeStatusIndicator`.
+/// Maps to: CC `PromptInputFooter.tsx:238-279` `BridgeStatusIndicator`.
 #[component]
 pub fn BridgeStatusIndicator(
-    _props: &BridgeStatusIndicatorProps,
+    props: &BridgeStatusIndicatorProps,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     // Maps to: CC PromptInputFooter.tsx:241 `if (!feature('BRIDGE_MODE'))
@@ -503,7 +518,8 @@ pub fn BridgeStatusIndicator(
         return element! { View(width: 0u32, height: 0u32) }.into_any();
     }
     let theme = hooks.use_context::<Theme>();
-    let indicator = use_app_state(&mut hooks, |state| {
+    let bridge_selected = props.bridge_selected;
+    let indicator = use_app_state(&mut hooks, move |state| {
         // Cheap AppState gate first, then the CC PromptInputFooter.tsx:255
         // `isBridgeEnabled()` entitlement. Same documented operand-order
         // deviation as `bridge_status_indicator_count_from_app`: the Rust
@@ -516,7 +532,7 @@ pub fn BridgeStatusIndicator(
             state,
             true,
             crate::bridge::bridge_enabled::is_bridge_enabled(),
-            state.footer_selection == Some(crate::state::app_state_store::FooterItem::Bridge),
+            bridge_selected,
         )
     });
 
@@ -875,6 +891,73 @@ mod tests {
         assert!(text.contains("? for shortcuts"), "canvas=\n{text}");
         assert!(text.contains("Debug mode"), "canvas=\n{text}");
         assert!(text.contains("77 tokens"), "canvas=\n{text}");
+    }
+
+    #[derive(Default, Props)]
+    struct FooterWithTasksPillProps {
+        raw_selection: Option<crate::state::app_state_store::FooterItem>,
+        tasks_selected: bool,
+    }
+
+    /// A tasks pill under an AppState whose raw `footer_selection` may
+    /// disagree with the `tasks_selected` prop.
+    #[component]
+    fn FooterWithTasksPill(
+        props: &FooterWithTasksPillProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
+        let raw_selection = props.raw_selection;
+        let store = hooks.use_const(move || {
+            let mut initial = crate::state::app_state_store::AppState::default();
+            initial.footer_selection = raw_selection;
+            crate::state::store::AppStore::new(initial, None)
+        });
+        let tasks_selected = props.tasks_selected;
+        element! {
+            ContextProvider(value: Context::owned(*theme::current())) {
+                crate::state::app_state::AppStateProvider(
+                    prebuilt_store: Some(store.clone()),
+                    children: crate::state::app_state::ProviderChildren::new(move || element! {
+                        Footer(
+                            suppress_hint: false,
+                            background_task_count: 1usize,
+                            background_tasks_label: "1 shell".to_string(),
+                            tasks_selected: tasks_selected,
+                        )
+                    }.into_any()),
+                )
+            }
+        }
+    }
+
+    /// The background of the tasks pill's first cell.
+    fn tasks_pill_background(
+        raw_selection: Option<crate::state::app_state_store::FooterItem>,
+        tasks_selected: bool,
+    ) -> Option<Color> {
+        let canvas = element!(FooterWithTasksPill(
+            raw_selection: raw_selection,
+            tasks_selected: tasks_selected,
+        ))
+        .render(Some(100));
+        let text = canvas.to_string();
+        let (y, line) = text
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains("1 shell"))
+            .unwrap_or_else(|| panic!("no pill in canvas=\n{text}"));
+        let x = line[..line.find("1 shell").unwrap()].chars().count();
+        canvas.cell(x, y).and_then(|cell| cell.background_color)
+    }
+
+    #[test]
+    fn footer_pills_follow_the_owners_selection_not_the_raw_app_state() {
+        use crate::state::app_state_store::FooterItem;
+        // CC PromptInput.tsx:663-682 hands the pills the owner's effective
+        // selection as props; the raw AppState value does not decide it.
+        let highlight = Some(theme::current().suggestion);
+        assert_eq!(tasks_pill_background(Some(FooterItem::Tasks), false), None);
+        assert_eq!(tasks_pill_background(None, true), highlight);
     }
 
     /// Flat AppState fixture for bridge visibility tests (CC AppStateStore.ts

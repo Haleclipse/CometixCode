@@ -1285,6 +1285,12 @@ pub fn PromptInput<'a>(
             });
         }
     }
+    // Maps to: CC PromptInput.tsx:678-682. No footer item here for
+    // `tmuxSelected` (ant-only) or `bagelSelected` (`bagelFooterVisible` is
+    // hardcoded false, :432-434).
+    let tasks_selected = footer_item_selected == Some(FooterItem::Tasks);
+    let teams_selected = footer_item_selected == Some(FooterItem::Teams);
+    let bridge_selected = footer_item_selected == Some(FooterItem::Bridge);
     let select_footer_item = {
         let store = app_store.clone();
         move |item: Option<FooterItem>| {
@@ -3392,6 +3398,10 @@ pub fn PromptInput<'a>(
                             background_task_count: pill_tasks.len(),
                             background_tasks_label: crate::tasks::pill_label::get_pill_label(&pill_tasks),
                             teammate_count: teams_dialog_data.as_ref().map(|data| data.teammates.len()).unwrap_or(0),
+                            // Maps to: CC PromptInput.tsx:3064-3066.
+                            tasks_selected: tasks_selected,
+                            teams_selected: teams_selected,
+                            bridge_selected: bridge_selected,
                             vim_mode: show_vim_insert_footer.then(|| "INSERT".to_string()),
                             mode: input_mode.get(),
                             is_pasting: false,

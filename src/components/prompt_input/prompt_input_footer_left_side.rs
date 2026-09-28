@@ -38,18 +38,18 @@ pub struct PromptInputFooterLeftSideProps {
     /// the count gates on.
     pub background_tasks_label: String,
     pub teammate_count: usize,
+    /// Maps to: CC `PromptInputFooterLeftSide.tsx:79-80` `tasksSelected` /
+    /// `teamsSelected`, forwarded to `ModeIndicator` (`:183-184`).
+    pub tasks_selected: bool,
+    pub teams_selected: bool,
 }
 
 #[component]
 pub fn PromptInputFooterLeftSide(
     props: &PromptInputFooterLeftSideProps,
-    mut hooks: Hooks,
+    hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<Theme>();
-    // Maps to: CC footer pills reading `AppState.footerSelection`.
-    let selected_footer_item = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.footer_selection.map(|item| item.as_str().to_string())
-    });
     // Source ordering is significant: exit and active paste replace every
     // other left-side item rather than being appended to the status row.
     if let Some(ref hint) = props.exit_hint {
@@ -100,7 +100,8 @@ pub fn PromptInputFooterLeftSide(
                 background_task_count: props.background_task_count,
                 background_tasks_label: props.background_tasks_label.clone(),
                 teammate_count: props.teammate_count,
-                selected_footer_item: selected_footer_item,
+                tasks_selected: props.tasks_selected,
+                teams_selected: props.teams_selected,
             )
         }
     }
@@ -116,7 +117,8 @@ struct ModeIndicatorProps {
     background_task_count: usize,
     background_tasks_label: String,
     teammate_count: usize,
-    selected_footer_item: Option<String>,
+    tasks_selected: bool,
+    teams_selected: bool,
 }
 
 #[component]
@@ -161,8 +163,8 @@ fn ModeIndicator(props: &ModeIndicatorProps, hooks: Hooks) -> impl Into<AnyEleme
                         // SummaryPill renders getPillLabel(runningTasks); the
                         // owner passes the computed label down.
                         content: props.background_tasks_label.clone(),
-                        color: if props.selected_footer_item.as_deref() == Some("tasks") { theme.inverse_text } else { theme.inactive },
-                        background_color: if props.selected_footer_item.as_deref() == Some("tasks") { Some(theme.suggestion) } else { None },
+                        color: if props.tasks_selected { theme.inverse_text } else { theme.inactive },
+                        background_color: if props.tasks_selected { Some(theme.suggestion) } else { None },
                         wrap: TextWrap::NoWrap,
                     )
                 })
@@ -173,8 +175,8 @@ fn ModeIndicator(props: &ModeIndicatorProps, hooks: Hooks) -> impl Into<AnyEleme
                 Some(element! {
                     Text(
                         content: format!("{} teammate{}", props.teammate_count, if props.teammate_count == 1 { "" } else { "s" }),
-                        color: if props.selected_footer_item.as_deref() == Some("teams") { theme.inverse_text } else { theme.inactive },
-                        background_color: if props.selected_footer_item.as_deref() == Some("teams") { Some(theme.suggestion) } else { None },
+                        color: if props.teams_selected { theme.inverse_text } else { theme.inactive },
+                        background_color: if props.teams_selected { Some(theme.suggestion) } else { None },
                         wrap: TextWrap::NoWrap,
                     )
                 })
@@ -184,12 +186,12 @@ fn ModeIndicator(props: &ModeIndicatorProps, hooks: Hooks) -> impl Into<AnyEleme
             #(if props.show_hint && has_tasks && !has_teams {
                 Some(element! {
                     Text(
-                        content: if props.selected_footer_item.as_deref() == Some("tasks") { "Enter to view tasks".to_string() } else { "↓ to manage".to_string() },
+                        content: if props.tasks_selected { "Enter to view tasks".to_string() } else { "↓ to manage".to_string() },
                         color: theme.inactive,
                         wrap: TextWrap::NoWrap,
                     )
                 })
-            } else if props.show_hint && has_teams && !has_tasks && props.selected_footer_item.as_deref() == Some("teams") {
+            } else if props.show_hint && has_teams && !has_tasks && props.teams_selected {
                 Some(element! {
                     Text(content: "· Enter to view".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
                 })
@@ -258,9 +260,8 @@ mod tests {
     fn render(props: PromptInputFooterLeftSideProps) -> String {
         let mut app = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
-                // Reads `state.footer_selection` to decide which pill is
-                // highlighted. Default state (nothing selected) is the fixture:
-                // every test through this harness drives the parts from props.
+                // The history search's TextInput reads AppState; everything
+                // else, pill selection included, comes from props.
                 crate::state::app_state::AppStateProvider(
                     children: crate::state::app_state::ProviderChildren::new(move || element! {
                         PromptInputFooterLeftSide(
@@ -277,6 +278,8 @@ mod tests {
                             background_task_count: props.background_task_count,
                             background_tasks_label: props.background_tasks_label.clone(),
                             teammate_count: props.teammate_count,
+                            tasks_selected: props.tasks_selected,
+                            teams_selected: props.teams_selected,
                         )
                     }.into_any()),
                 )
