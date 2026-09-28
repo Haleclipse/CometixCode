@@ -73,6 +73,10 @@ pub struct SelectProps {
     pub selected_value: Option<String>,
     pub visible_from_index: usize,
     pub layout: SelectLayout,
+    /// Maps to: CC `inlineDescriptions` (select.tsx:152): descriptions follow
+    /// the label in the compact layout, no two-column layout, and input
+    /// options show their label beside the input.
+    pub inline_descriptions: bool,
     /// Maps to: CC Select's attachment props. Select owns the selection mode;
     /// the caller remains the pasted-content/removal owner.
     pub pasted_contents: BTreeMap<usize, PastedContent>,
@@ -99,6 +103,7 @@ impl Default for SelectProps {
             selected_value: None,
             visible_from_index: 0,
             layout: SelectLayout::Compact,
+            inline_descriptions: false,
             pasted_contents: BTreeMap::new(),
             on_remove_image: Handler::default(),
             on_open_editor: Handler::default(),
@@ -206,6 +211,7 @@ pub fn Select(props: &SelectProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
         .iter()
         .any(|option| option.input.is_some());
     let has_two_column_descriptions = layout == SelectLayout::Compact
+        && !props.inline_descriptions
         && !has_input_options
         && props.options[start..end].iter().any(|option| {
             option
@@ -345,7 +351,10 @@ pub fn Select(props: &SelectProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                 on_submit: if editable_inputs { let submit = props.on_input_submit.clone(); let key = option.value.clone(); Handler::from(move |text| submit((key.clone(), text))) } else { Handler::default() },
                                 on_exit: props.on_cancel.clone(),
                                 placeholder: input.placeholder,
-                                show_label_with_value: input.show_label_with_value,
+                                // CC select-input-option.tsx:119 `showLabelProp
+                                // || option.showLabelWithValue`; Select passes
+                                // `inlineDescriptions` as showLabel.
+                                show_label_with_value: input.show_label_with_value || props.inline_descriptions,
                                 label_value_separator: input.label_value_separator,
                                 description: option.description.clone(),
                                 dim_description: option.disabled || option.dim_description,
@@ -413,7 +422,9 @@ pub fn Select(props: &SelectProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                     }.into_any(),
                     // CC select.tsx:849-906: the ordinary Compact branch
                     // returns SelectOption directly; Expanded and Vertical
-                    // retain their non-shrinking per-option columns.
+                    // retain their non-shrinking per-option columns. With
+                    // `inlineDescriptions` the description follows the label
+                    // inside its Text (:874-884).
                     SelectLayout::Compact => element! {
                         SelectOption(
                             key: option.value.clone(),
@@ -426,7 +437,19 @@ pub fn Select(props: &SelectProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                 #(padded_index.clone().map(|index| element! {
                                     Text(content: index, color: theme.inactive, wrap: TextWrap::Wrap)
                                 }))
-                                Text(segments: Some(label_segments.clone()), color: option_color, wrap: TextWrap::Wrap)
+                                Text(
+                                    segments: Some({
+                                        let mut segments = label_segments.clone();
+                                        if let Some(desc) = description.clone().filter(|desc| props.inline_descriptions && !desc.is_empty()) {
+                                            let mut segment = StyledSegment::new(format!(" {desc}"));
+                                            segment.styles.color = desc_color;
+                                            segments.push(segment);
+                                        }
+                                        segments
+                                    }),
+                                    color: option_color,
+                                    wrap: TextWrap::Wrap,
+                                )
                             }
                         }
                     }.into_any(),

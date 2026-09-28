@@ -10,9 +10,7 @@ use super::enter_plan_mode_permission_request::{
 use super::exit_plan_mode_permission_request::{
     ExitPlanModePermissionRequest, exit_plan_mode_selection_to_prompt_response,
 };
-use super::fallback_permission_request::{
-    FallbackPermissionRequest, fallback_permission_option_to_prompt_choice,
-};
+use super::fallback_permission_request::FallbackPermissionRequest;
 use super::file_edit_permission_request::FileEditPermissionRequest;
 use super::file_write_permission_request::FileWritePermissionRequest;
 use super::filesystem_permission_request::FilesystemPermissionRequest;
@@ -118,7 +116,10 @@ fn tool_permission_context_for_request(
 }
 
 #[component]
-pub fn PermissionRequest(props: &PermissionRequestProps) -> impl Into<AnyElement<'static>> {
+pub fn PermissionRequest(
+    props: &PermissionRequestProps,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
     // Maps to: CC `isPermissionExplainerEnabled()` (permissionExplainer.ts:139-141),
     // a config-only gate CC reads leaf-local in `usePermissionExplainerUI`
     // (PermissionExplanation.tsx:101). Re-derived from the live global config on
@@ -180,6 +181,27 @@ pub fn PermissionRequest(props: &PermissionRequestProps) -> impl Into<AnyElement
     let on_cancel = Handler::<()>::from(move |_: ()| {
         (props_on_cancel)(cancel_tool_use_id.clone());
     });
+    // CC :206-214: Ctrl+C (app:interrupt) rejects whichever dialog shows. It
+    // runs after the dialog's own listeners, as a parent's do; the REPL's
+    // cancel handler leaves it the key while the dialog's list registers an
+    // overlay.
+    let runtime = hooks
+        .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
+        .map(|runtime| runtime.clone());
+    crate::keybindings::use_keybinding::use_keybinding(
+        &mut hooks,
+        runtime,
+        "app:interrupt",
+        crate::keybindings::types::ContextName::Confirmation,
+        || true,
+        {
+            let on_cancel = on_cancel.clone();
+            move || {
+                on_cancel(());
+                true
+            }
+        },
+    );
 
     if request.tool_name.eq_ignore_ascii_case("bash") {
         let on_select = props.on_select.clone();
@@ -371,7 +393,6 @@ pub fn PermissionRequest(props: &PermissionRequestProps) -> impl Into<AnyElement
     if request.tool_name == "AskUserQuestion" {
         let on_select = props.on_select.clone();
         let on_select_response = on_select_response.clone();
-        let on_cancel = on_cancel.clone();
 
         return element! {
             AskUserQuestionPermissionRequest(
@@ -379,9 +400,6 @@ pub fn PermissionRequest(props: &PermissionRequestProps) -> impl Into<AnyElement
                 worker_badge: props.worker_badge.clone(),
                 on_select: move |response| {
                     emit_prompt_response(&on_select, &on_select_response, response);
-                },
-                on_cancel: move |_| {
-                    (on_cancel)(());
                 },
             )
         }
@@ -548,19 +566,14 @@ pub fn PermissionRequest(props: &PermissionRequestProps) -> impl Into<AnyElement
     if request.tool_name == "Skill" {
         let on_select = props.on_select.clone();
         let on_select_response = on_select_response.clone();
-        let on_cancel = on_cancel.clone();
 
         return element! {
             SkillPermissionRequest(
                 request: Some(request),
                 worker_badge: props.worker_badge.clone(),
-                show_always_allow_options: true,
-                on_select: move |response| {
+                on_select: Handler::from(move |response| {
                     emit_prompt_response(&on_select, &on_select_response, response);
-                },
-                on_cancel: move |_| {
-                    (on_cancel)(());
-                },
+                }),
             )
         }
         .into_any();
@@ -571,14 +584,10 @@ pub fn PermissionRequest(props: &PermissionRequestProps) -> impl Into<AnyElement
     element! {
         FallbackPermissionRequest(
             request: Some(request),
-            show_always_allow_options: true,
             worker_badge: props.worker_badge.clone(),
-            on_select: move |value| {
-                emit_prompt_choice(&on_select, &on_select_response, fallback_permission_option_to_prompt_choice(value));
-            },
-            on_cancel: move |_| {
-                (on_cancel)(());
-            },
+            on_select: Handler::from(move |response| {
+                emit_prompt_response(&on_select, &on_select_response, response);
+            }),
         )
     }
     .into_any()
@@ -887,7 +896,17 @@ mod tests {
 
     /// Drive a dialog element with `events` until it settles, so the answer
     /// callbacks have fired.
-    async fn drive_dialog(mut app: AnyElement<'static>, events: Vec<TerminalEvent>) {
+    async fn drive_dialog(app: AnyElement<'static>, events: Vec<TerminalEvent>) {
+        // The dialogs answer through keybindings (their Select's, and the
+        // dispatcher's app:interrupt), so they run under a runtime.
+        let runtime =
+            crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings();
+        let mut app = element! {
+            ContextProvider(value: Context::owned(runtime)) {
+                #(vec![app])
+            }
+        }
+        .into_any();
         // `ignore_ctrl_c`: the interrupt keybinding is a dialog answer here
         // (CC `PermissionRequest.tsx:206-214`), so the harness must not take
         // iocraft's default "Ctrl-C ends the render loop" before the component
@@ -976,6 +995,54 @@ mod tests {
         .await;
 
         assert_eq!(cancelled.lock().unwrap().as_slice(), &["toolu".to_string()]);
+    }
+
+    fn skill_request() -> PermissionRequestData {
+        PermissionRequestData {
+            tool_name: "Skill".to_string(),
+            input: serde_json::json!({ "skill": "deploy" }),
+            rule: PermissionRuleValue::new("Skill", Some("deploy".to_string())),
+            ..custom_tool_request()
+        }
+    }
+
+    /// Maps to: CC `PermissionRequest.tsx:206-214` over
+    /// `PermissionPrompt.tsx:219-231`: Ctrl-C is the dispatcher's
+    /// `app:interrupt` (the row's `onReject`), Esc the prompt's own cancel (a
+    /// rejection answer). The prompt keeps no Ctrl-C of its own, so each key
+    /// reaches exactly one of them.
+    #[tokio::test]
+    async fn a_prompt_dialog_leaves_ctrl_c_to_the_dispatcher_and_answers_esc() {
+        for (event, cancels, answers) in [
+            (
+                modified_key(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                vec!["toolu".to_string()],
+                vec![],
+            ),
+            (key(KeyCode::Esc), vec![], vec![PermissionPromptChoice::Deny]),
+        ] {
+            let cancelled = Arc::new(Mutex::new(Vec::<String>::new()));
+            let answered = Arc::new(Mutex::new(Vec::<PermissionPromptChoice>::new()));
+            let (cancel_recorder, answer_recorder) = (cancelled.clone(), answered.clone());
+            drive_dialog(
+                element! {
+                    ContextProvider(value: Context::owned(*theme::current())) {
+                        PermissionRequest(
+                            request: Some(skill_request()),
+                            on_select_response: move |response: PermissionPromptResponse| {
+                                answer_recorder.lock().unwrap().push(response.choice)
+                            },
+                            on_cancel: move |tool_use_id| cancel_recorder.lock().unwrap().push(tool_use_id),
+                        )
+                    }
+                }
+                .into_any(),
+                vec![event],
+            )
+            .await;
+            assert_eq!(*cancelled.lock().unwrap(), cancels);
+            assert_eq!(*answered.lock().unwrap(), answers);
+        }
     }
 
     fn transcript_fixture_messages(count: usize) -> Vec<RenderableMessage> {

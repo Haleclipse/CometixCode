@@ -1,15 +1,16 @@
 //! Maps to: CC
 //! `components/permissions/SkillPermissionRequest/SkillPermissionRequest.tsx`.
 //!
-//! UI-only permission dialog for Skill tool invocations. It mirrors the
-//! official option model (`yes`, `yes-exact`, `yes-prefix`, `no`) and returns
-//! permission-rule updates through the existing Rust prompt response seam;
-//! persistence remains outside this component.
+//! Permission dialog for Skill tool invocations. It mirrors the official
+//! option model (`yes`, `yes-exact`, `yes-prefix`, `no`) through the shared
+//! `PermissionPrompt`, which owns the keys (and so the `select` overlay),
+//! Tab-to-amend and Esc, and returns permission-rule updates through the
+//! Rust prompt response seam.
 
 use super::permission_dialog::PermissionDialog;
+use super::permission_prompt::{FeedbackType, PermissionPrompt, PermissionPromptOption};
 use super::permission_rule_explanation::{PermissionRuleExplanation, PermissionRuleToolType};
 use super::worker_badge::WorkerBadgeProps;
-use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::tools::skill_tool::constants::SKILL_TOOL_NAME;
 use crate::types::permissions::{
     PermissionBehavior, PermissionMode, PermissionPromptChoice, PermissionPromptResponse,
@@ -19,6 +20,7 @@ use crate::types::permissions::{
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
+/// Maps to: CC `SkillOptionValue` (:21).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SkillPermissionOptionValue {
     Yes,
@@ -36,42 +38,20 @@ impl SkillPermissionOptionValue {
             Self::No => "no",
         }
     }
-}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SkillPermissionOption {
-    pub label: String,
-    pub value: SkillPermissionOptionValue,
-}
-
-impl SkillPermissionOption {
-    fn select(label: impl Into<String>, value: SkillPermissionOptionValue) -> Self {
-        Self {
-            label: label.into(),
-            value,
-        }
-    }
-
-    pub fn to_select_option(&self) -> SelectOptionData {
-        SelectOptionData {
-            label: self.label.clone(),
-            description: None,
-            dim_description: true,
-            value: self.value.as_str().to_string(),
-            disabled: false,
-            input: None,
-        }
+    fn from_value(value: &str) -> Option<Self> {
+        [Self::Yes, Self::YesExact, Self::YesPrefix, Self::No]
+            .into_iter()
+            .find(|option| option.as_str() == value)
     }
 }
 
 #[derive(Default, Props)]
-pub struct SkillPermissionRequestProps<'a> {
+pub struct SkillPermissionRequestProps {
     pub request: Option<PermissionRequestData>,
     pub worker_badge: Option<WorkerBadgeProps>,
-    /// Maps to CC `shouldShowAlwaysAllowOptions()`.
-    pub show_always_allow_options: bool,
-    pub on_select: HandlerMut<'a, PermissionPromptResponse>,
-    pub on_cancel: HandlerMut<'a, ()>,
+    /// CC `handleSelect`'s decisions; Esc is a `Deny` here too.
+    pub on_select: Handler<PermissionPromptResponse>,
 }
 
 fn default_request() -> PermissionRequestData {
@@ -118,38 +98,58 @@ fn skill_prefix(skill: &str) -> &str {
     }
 }
 
-/// Maps to: CC `options = useMemo(...)` in `SkillPermissionRequest`.
-pub fn skill_permission_options(
+/// Maps to: CC `options` (SkillPermissionRequest.tsx:64-113): yes/no
+/// amendable, the always-allow labels' skill, prefix and directory bold.
+fn skill_prompt_options(
     skill: &str,
     original_cwd: &str,
     show_always_allow_options: bool,
-) -> Vec<SkillPermissionOption> {
-    let mut options = vec![SkillPermissionOption::select(
-        "Yes",
-        SkillPermissionOptionValue::Yes,
-    )];
+) -> Vec<PermissionPromptOption> {
+    let bold = |text: &str| {
+        let mut segment = StyledSegment::new(text);
+        segment.styles.bold = Some(true);
+        segment
+    };
+    let mut options = vec![
+        PermissionPromptOption::new(SkillPermissionOptionValue::Yes.as_str(), "Yes")
+            .with_feedback(FeedbackType::Accept),
+    ];
 
     if show_always_allow_options {
-        options.push(SkillPermissionOption::select(
-            format!("Yes, and don't ask again for {skill} in {original_cwd}"),
-            SkillPermissionOptionValue::YesExact,
-        ));
+        options.push(
+            PermissionPromptOption::new(
+                SkillPermissionOptionValue::YesExact.as_str(),
+                format!("Yes, and don't ask again for {skill} in {original_cwd}"),
+            )
+            .with_label_segments(vec![
+                StyledSegment::new("Yes, and don't ask again for "),
+                bold(skill),
+                StyledSegment::new(" in "),
+                bold(original_cwd),
+            ]),
+        );
 
         if let Some(space_index) = skill.find(' ').filter(|space_index| *space_index > 0) {
-            let command_prefix = &skill[..space_index];
-            options.push(SkillPermissionOption::select(
-                format!(
-                    "Yes, and don't ask again for {command_prefix}:* commands in {original_cwd}"
-                ),
-                SkillPermissionOptionValue::YesPrefix,
-            ));
+            let command_prefix = format!("{}:*", &skill[..space_index]);
+            options.push(
+                PermissionPromptOption::new(
+                    SkillPermissionOptionValue::YesPrefix.as_str(),
+                    format!("Yes, and don't ask again for {command_prefix} commands in {original_cwd}"),
+                )
+                .with_label_segments(vec![
+                    StyledSegment::new("Yes, and don't ask again for "),
+                    bold(&command_prefix),
+                    StyledSegment::new(" commands in "),
+                    bold(original_cwd),
+                ]),
+            );
         }
     }
 
-    options.push(SkillPermissionOption::select(
-        "No",
-        SkillPermissionOptionValue::No,
-    ));
+    options.push(
+        PermissionPromptOption::new(SkillPermissionOptionValue::No.as_str(), "No")
+            .with_feedback(FeedbackType::Reject),
+    );
     options
 }
 
@@ -193,79 +193,46 @@ pub fn skill_permission_option_to_prompt_response(
 
 /// Maps to: CC `SkillPermissionRequest` render path.
 #[component]
-pub fn SkillPermissionRequest<'a>(
-    props: &mut SkillPermissionRequestProps<'a>,
-    mut hooks: Hooks,
+pub fn SkillPermissionRequest(
+    props: &SkillPermissionRequestProps,
+    hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<Theme>();
     let request = props.request.clone().unwrap_or_else(default_request);
     let skill = skill_name_from_permission_input(&request.input);
     let original_cwd = original_cwd_for_label();
-    let options = skill_permission_options(&skill, &original_cwd, props.show_always_allow_options);
-    let option_count = options.len().max(1);
-    let mut focused_index = hooks.use_state(|| 0usize);
-    let mut pending_select = hooks.use_state(|| Option::<SkillPermissionOptionValue>::None);
-    let mut pending_cancel = hooks.use_state(|| false);
-
-    hooks.use_terminal_events({
-        let mut focused_index = focused_index;
-        let mut pending_select = pending_select;
-        let mut pending_cancel = pending_cancel;
-        let options = options.clone();
-        move |event| {
-            let TerminalEvent::Key(KeyEvent {
-                code,
-                kind,
-                modifiers,
-                ..
-            }) = event
-            else {
+    // CC :65 `shouldShowAlwaysAllowOptions()`.
+    let options = skill_prompt_options(
+        &skill,
+        &original_cwd,
+        crate::utils::permissions::permissions_loader::should_show_always_allow_options(),
+    );
+    // CC :123-215 `handleSelect`: "yes" and "no" carry the amend feedback.
+    let handle_select = {
+        let on_select = props.on_select.clone();
+        let skill = skill.clone();
+        Handler::from(move |(value, feedback): (String, Option<String>)| {
+            let Some(value) = SkillPermissionOptionValue::from_value(&value) else {
                 return;
             };
-            if kind == KeyEventKind::Release {
-                return;
-            }
-            match code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    focused_index.set(focused_index.get().saturating_sub(1));
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                    focused_index
-                        .set((focused_index.get() + 1).min(options.len().saturating_sub(1)));
-                }
-                KeyCode::Enter => {
-                    if let Some(option) = options.get(focused_index.get()) {
-                        pending_select.set(Some(option.value));
-                    }
-                }
-                KeyCode::Esc => {
-                    // CC `PermissionPrompt.onCancel` rejects the tool use.
-                    pending_select.set(Some(SkillPermissionOptionValue::No));
-                }
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    pending_cancel.set(true);
-                }
-                _ => {}
-            }
-        }
-    });
-
-    let selected = { pending_select.read().clone() };
-    if let Some(value) = selected {
-        pending_select.set(None);
-        (props.on_select)(skill_permission_option_to_prompt_response(value, &skill));
-    }
-    if pending_cancel.get() {
-        pending_cancel.set(false);
-        (props.on_cancel)(());
-    }
-
-    let focused = focused_index.get().min(option_count.saturating_sub(1));
-    let select_options = options
-        .iter()
-        .map(SkillPermissionOption::to_select_option)
-        .collect::<Vec<_>>();
-    let visible_from = focused.saturating_sub(6);
+            let response = skill_permission_option_to_prompt_response(value, &skill);
+            let response = match (value, feedback) {
+                (
+                    SkillPermissionOptionValue::Yes | SkillPermissionOptionValue::No,
+                    Some(feedback),
+                ) => response.with_feedback(feedback),
+                _ => response,
+            };
+            on_select(response);
+        })
+    };
+    // CC :217-230 `handleCancel`: the rejection without feedback.
+    let handle_cancel = {
+        let on_select = props.on_select.clone();
+        Handler::from(move |()| {
+            on_select(PermissionPromptResponse::new(PermissionPromptChoice::Deny));
+        })
+    };
     // Maps to: CC `SkillPermissionRequest.tsx:46-52`
     // ```
     // const commandObj =
@@ -306,7 +273,8 @@ pub fn SkillPermissionRequest<'a>(
             // simply resolves to `undefined` and the dim Text is empty, so the
             // `paddingY={1}` block still occupies its rows.
             View(flex_direction: FlexDirection::Column, padding_left: 2u32, padding_right: 2u32, padding_top: 1u32, padding_bottom: 1u32) {
-                Text(content: command_description.clone(), dim: true, wrap: TextWrap::Wrap)
+                // CC :236 `<Text dimColor>`.
+                Text(content: command_description.clone(), color: theme.inactive, wrap: TextWrap::Wrap)
             }
             View(flex_direction: FlexDirection::Column) {
                 PermissionRuleExplanation(
@@ -314,17 +282,12 @@ pub fn SkillPermissionRequest<'a>(
                     tool_type: PermissionRuleToolType::Tool,
                     permission_mode: request.mode,
                 )
-                Select(
-                    options: select_options,
-                    focused_index: focused,
-                    selected_value: None,
-                    visible_option_count: option_count,
-                    visible_from_index: visible_from,
-                    layout: SelectLayout::Expanded,
-                    hide_indexes: true,
-                    is_disabled: false,
+                // CC :244-249.
+                PermissionPrompt(
+                    options,
+                    on_select: handle_select,
+                    on_cancel: handle_cancel,
                 )
-                Text(content: "Esc to cancel".to_string(), color: theme.inactive)
             }
         }
     }
@@ -335,20 +298,16 @@ mod tests {
     use super::*;
     use crate::utils::theme;
 
+    fn option_values(options: &[PermissionPromptOption]) -> Vec<&str> {
+        options.iter().map(|option| option.value.as_str()).collect()
+    }
+
     #[test]
     fn skill_permission_options_match_official_exact_and_prefix_rules() {
-        let options = skill_permission_options("deploy staging", "/repo", true);
+        let options = skill_prompt_options("deploy staging", "/repo", true);
         assert_eq!(
-            options
-                .iter()
-                .map(|option| option.value)
-                .collect::<Vec<_>>(),
-            vec![
-                SkillPermissionOptionValue::Yes,
-                SkillPermissionOptionValue::YesExact,
-                SkillPermissionOptionValue::YesPrefix,
-                SkillPermissionOptionValue::No,
-            ]
+            option_values(&options),
+            vec!["yes", "yes-exact", "yes-prefix", "no"]
         );
         assert_eq!(
             options[1].label,
@@ -358,21 +317,25 @@ mod tests {
             options[2].label,
             "Yes, and don't ask again for deploy:* commands in /repo"
         );
+        // CC :70-71, :108-109: only yes and no are amendable.
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| option.feedback_config.as_ref().map(|config| config.feedback_type))
+                .collect::<Vec<_>>(),
+            vec![Some(FeedbackType::Accept), None, None, Some(FeedbackType::Reject)]
+        );
+        // CC :90-91: no prefix option without an argument.
+        assert_eq!(
+            option_values(&skill_prompt_options("deploy", "/repo", true)),
+            vec!["yes", "yes-exact", "no"]
+        );
     }
 
     #[test]
     fn skill_permission_options_hide_always_allow_when_managed_only() {
-        let options = skill_permission_options("deploy staging", "/repo", false);
-        assert_eq!(
-            options
-                .iter()
-                .map(|option| option.value)
-                .collect::<Vec<_>>(),
-            vec![
-                SkillPermissionOptionValue::Yes,
-                SkillPermissionOptionValue::No
-            ]
-        );
+        let options = skill_prompt_options("deploy staging", "/repo", false);
+        assert_eq!(option_values(&options), vec!["yes", "no"]);
     }
 
     #[test]
@@ -462,9 +425,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 SkillPermissionRequest(
-                    request: Some(request),
-                    show_always_allow_options: true,
-                )
+                    request: Some(request),                )
             }
         }
         .render(Some(120))
@@ -496,9 +457,7 @@ mod tests {
             element! {
                 ContextProvider(value: Context::owned(*theme::current())) {
                     SkillPermissionRequest(
-                        request: Some(request),
-                        show_always_allow_options: true,
-                    )
+                        request: Some(request),                    )
                 }
             }
             .render(Some(120))

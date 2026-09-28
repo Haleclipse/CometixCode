@@ -9,9 +9,8 @@
 //! CC's closures do. Analytics remain outside the component.
 //!
 //! Esc and the other rejections are a `Deny` on `on_select`, as elsewhere
-//! in the port's permission dialogs; Ctrl+C is `on_cancel`. CC registers
-//! that `app:interrupt` in `PermissionRequest.tsx:206-214` for every
-//! dialog; the port's dialogs each carry it until the dispatcher does.
+//! in the port's permission dialogs; Ctrl+C belongs to `PermissionRequest`
+//! (CC `PermissionRequest.tsx:206-214`).
 
 pub mod preview_box;
 pub mod preview_question_view;
@@ -53,7 +52,6 @@ pub struct AskUserQuestionPermissionRequestProps {
     pub request: Option<PermissionRequestData>,
     pub worker_badge: Option<WorkerBadgeProps>,
     pub on_select: Handler<PermissionPromptResponse>,
-    pub on_cancel: Handler<()>,
     /// Deterministic adapter seam for permission image-paste tests.
     pub clipboard_image_override: Option<crate::utils::image_paste::ClipboardImage>,
 }
@@ -439,21 +437,6 @@ pub fn AskUserQuestionPermissionRequest(
         ContextName::Tabs,
         move || tabs_active,
     );
-    // CC `PermissionRequest.tsx:206-214` (module doc).
-    crate::keybindings::use_keybinding::use_keybinding(
-        &mut hooks,
-        runtime,
-        "app:interrupt",
-        ContextName::Confirmation,
-        || true,
-        {
-            let on_cancel = props.on_cancel.clone();
-            move || {
-                on_cancel(());
-                true
-            }
-        },
-    );
 
     if let Some(question) = current_question {
         let question_text = question.question.clone();
@@ -640,7 +623,6 @@ mod tests {
         bindings: Option<Vec<crate::keybindings::types::ParsedBinding>>,
         clipboard_image_override: Option<crate::utils::image_paste::ClipboardImage>,
         responses: Option<Responses>,
-        cancels: Option<Arc<Mutex<usize>>>,
     }
 
     /// The dialog under the keybinding runtime, theme and AppState it mounts
@@ -658,7 +640,6 @@ mod tests {
             &mut hooks, runtime,
         );
         let responses = props.responses.clone().unwrap_or_default();
-        let cancels = props.cancels.clone().unwrap_or_default();
         let input = props.input.clone();
         let clipboard_image_override = props.clipboard_image_override.clone();
         element! {
@@ -667,14 +648,12 @@ mod tests {
                     crate::state::app_state::AppStateProvider(
                         children: crate::state::app_state::ProviderChildren::new(move || {
                             let responses = responses.clone();
-                            let cancels = cancels.clone();
                             element! {
                                 View(flex_direction: FlexDirection::Column) {
                                     AskUserQuestionPermissionRequest(
                                         request: Some(ask_request(input.clone())),
                                         clipboard_image_override: clipboard_image_override.clone(),
                                         on_select: move |response| responses.lock().unwrap().push(response),
-                                        on_cancel: move |_| *cancels.lock().unwrap() += 1,
                                     )
                                     KeyEcho
                                     OverlayProbe
@@ -712,7 +691,6 @@ mod tests {
 
     struct Run {
         responses: Vec<PermissionPromptResponse>,
-        cancels: usize,
         last: String,
     }
 
@@ -724,10 +702,8 @@ mod tests {
         // double-Esc hint), whose timers run on the process runtime.
         crate::utils::process_runtime::initialize_test_process_runtime();
         let responses: Responses = Arc::default();
-        let cancels = Arc::new(Mutex::new(0usize));
         let harness = AskHarnessProps {
             responses: Some(responses.clone()),
-            cancels: Some(cancels.clone()),
             ..harness
         };
         let last = futures::executor::block_on(async move {
@@ -737,10 +713,12 @@ mod tests {
                 bindings: harness.bindings,
                 clipboard_image_override: harness.clipboard_image_override,
                 responses: harness.responses,
-                cancels: harness.cancels,
             ));
+            // Ctrl+C is a dialog key here, not iocraft's default exit.
             let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(events).with_size(110, 40),
+                MockTerminalConfig::with_events(events)
+                    .with_size(110, 40)
+                    .with_ignore_ctrl_c(true),
             ));
             let mut batches = batches;
             batches.push((vec![key(KeyCode::F(12))], ""));
@@ -775,7 +753,6 @@ mod tests {
         });
         Run {
             responses: responses.lock().unwrap().clone(),
-            cancels: *cancels.lock().unwrap(),
             last,
         }
     }
@@ -1133,16 +1110,16 @@ mod tests {
     }
 
     #[test]
-    fn escape_rejects_once_and_ctrl_c_cancels() {
+    fn escape_rejects_once_and_ctrl_c_is_left_to_the_dispatcher() {
         let run = drive(harness(single_question_input()), steps(vec![key(KeyCode::Esc)]));
         assert_eq!(run.responses.len(), 1);
         assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
-        assert_eq!(run.cancels, 0);
+        // CC PermissionRequest.tsx:206-214 owns Ctrl+C; the dialog alone
+        // answers nothing.
         let run = drive(
             harness(single_question_input()),
             steps(vec![modified_key(KeyCode::Char('c'), KeyModifiers::CONTROL)]),
         );
-        assert_eq!(run.cancels, 1);
         assert!(run.responses.is_empty());
     }
 

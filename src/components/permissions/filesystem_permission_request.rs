@@ -104,21 +104,14 @@ pub fn FilesystemPermissionRequest(
     let Some(path) = filesystem_permission_path(&request) else {
         let on_select = props.on_select.clone();
         let on_select_response = props.on_select_response.clone();
-        let on_cancel = props.on_cancel.clone();
         return element! {
             super::fallback_permission_request::FallbackPermissionRequest(
                 request: Some(request),
                 worker_badge: props.worker_badge.clone(),
-                show_always_allow_options:
-                    crate::utils::permissions::permissions_loader::should_show_always_allow_options(),
-                on_select: move |value| {
-                    let choice = super::fallback_permission_request::fallback_permission_option_to_prompt_choice(value);
-                    (on_select)(choice);
-                    (on_select_response)(PermissionPromptResponse::new(choice));
-                },
-                on_cancel: move |_| {
-                    (on_cancel)(());
-                },
+                on_select: Handler::from(move |response: PermissionPromptResponse| {
+                    (on_select)(response.choice);
+                    (on_select_response)(response);
+                }),
             )
         }
         .into_any();

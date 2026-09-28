@@ -59,6 +59,9 @@ pub struct UseSelectInputOptions {
     /// CC: `onDownFromLastItem` provided — pressing down on the last item
     /// emits the edge event instead of wrapping (:116-125).
     pub has_on_down_from_last_item: bool,
+    /// CC: `onInputModeToggle` provided — Tab reports the focused value
+    /// (:181-184).
+    pub has_on_input_mode_toggle: bool,
     pub option_metas: Vec<SelectInputOptionMeta>,
 }
 
@@ -71,6 +74,7 @@ impl Default for UseSelectInputOptions {
             has_on_cancel: false,
             has_on_up_from_first_item: false,
             has_on_down_from_last_item: false,
+            has_on_input_mode_toggle: false,
             option_metas: Vec::new(),
         }
     }
@@ -86,9 +90,20 @@ pub struct SelectInputEvents {
     toggled: State<Option<String>>,
     up_from_first: State<bool>,
     down_from_last: State<bool>,
+    input_mode_toggled: State<Option<String>>,
 }
 
 impl SelectInputEvents {
+    /// Tab on the focused option (CC onInputModeToggle, :181-184).
+    pub fn take_input_mode_toggle(&self) -> Option<String> {
+        let toggled = self.input_mode_toggled.read().clone();
+        if toggled.is_some() {
+            let mut state = self.input_mode_toggled;
+            state.set(None);
+        }
+        toggled
+    }
+
     /// The value committed via Enter or a number key (CC onChange).
     pub fn take_accepted(&self) -> Option<String> {
         let accepted = self.accepted.read().clone();
@@ -169,13 +184,16 @@ pub fn use_select_input(
     let toggled = hooks.use_state(|| Option::<String>::None);
     let up_from_first = hooks.use_state(|| false);
     let down_from_last = hooks.use_state(|| false);
+    let input_mode_toggled = hooks.use_state(|| Option::<String>::None);
     let events = SelectInputEvents {
         accepted,
         cancelled,
         toggled,
         up_from_first,
         down_from_last,
+        input_mode_toggled,
     };
+    let has_on_input_mode_toggle = options.has_on_input_mode_toggle;
 
     // CC :99-101 — register the 'select' overlay while cancellable so the
     // cancel-request handler won't intercept Escape.
@@ -317,6 +335,17 @@ pub fn use_select_input(
             };
             if key_event.kind == KeyEventKind::Release {
                 return;
+            }
+            // CC :181-184: Tab (shift or not) toggles the focused option's
+            // input mode; the key is not stopped.
+            if has_on_input_mode_toggle
+                && matches!(key_event.code, KeyCode::Tab | KeyCode::BackTab)
+            {
+                if let Some(value) = state.focused_value() {
+                    let mut toggled = input_mode_toggled;
+                    toggled.set(Some(value));
+                    return;
+                }
             }
             let in_input = focused_meta(&state, &metas).is_some_and(|meta| meta.is_input);
             // CC use-select-input.ts:197-225: raw arrows/Ctrl-N/P still

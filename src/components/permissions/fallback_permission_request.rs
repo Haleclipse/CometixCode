@@ -1,21 +1,23 @@
 //! Maps to: CC `components/permissions/FallbackPermissionRequest.tsx`.
 //!
 //! Official fallback permission dialog for tools without a bespoke permission
-//! request component. Analytics, feedback text editing, and persistence remain
-//! outside this UI-only seam; selection is projected to the existing Rust
-//! `PermissionPromptChoice` path.
+//! request component. Its options go through the shared `PermissionPrompt`,
+//! which owns the keys (and so the `select` overlay), the Tab-to-amend
+//! feedback inputs and Esc. Analytics are not ported.
 
 use super::permission_dialog::PermissionDialog;
+use super::permission_prompt::{FeedbackType, PermissionPrompt, PermissionPromptOption};
 use super::permission_rule_explanation::{PermissionRuleExplanation, PermissionRuleToolType};
 use super::worker_badge::WorkerBadgeProps;
-use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::types::permissions::{
-    PermissionMode, PermissionPromptChoice, PermissionRequest as PermissionRequestData,
-    PermissionRuleValue,
+    PermissionBehavior, PermissionMode, PermissionPromptChoice, PermissionPromptResponse,
+    PermissionRequest as PermissionRequestData, PermissionRuleValue, PermissionUpdate,
+    PermissionUpdateDestination,
 };
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
+/// Maps to: CC `FallbackOptionValue` (:19).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FallbackPermissionOptionValue {
     Yes,
@@ -31,41 +33,20 @@ impl FallbackPermissionOptionValue {
             Self::No => "no",
         }
     }
-}
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FallbackPermissionOption {
-    pub label: String,
-    pub value: FallbackPermissionOptionValue,
-}
-
-impl FallbackPermissionOption {
-    fn select(label: impl Into<String>, value: FallbackPermissionOptionValue) -> Self {
-        Self {
-            label: label.into(),
-            value,
-        }
-    }
-
-    pub fn to_select_option(&self) -> SelectOptionData {
-        SelectOptionData {
-            label: self.label.clone(),
-            description: None,
-            dim_description: true,
-            value: self.value.as_str().to_string(),
-            disabled: false,
-            input: None,
-        }
+    fn from_value(value: &str) -> Option<Self> {
+        [Self::Yes, Self::YesDontAskAgain, Self::No]
+            .into_iter()
+            .find(|option| option.as_str() == value)
     }
 }
 
 #[derive(Default, Props)]
-pub struct FallbackPermissionRequestProps<'a> {
+pub struct FallbackPermissionRequestProps {
     pub request: Option<PermissionRequestData>,
     pub worker_badge: Option<WorkerBadgeProps>,
-    pub show_always_allow_options: bool,
-    pub on_select: HandlerMut<'a, FallbackPermissionOptionValue>,
-    pub on_cancel: HandlerMut<'a, ()>,
+    /// CC `handleSelect`'s decisions; Esc is a `Deny` here too.
+    pub on_select: Handler<PermissionPromptResponse>,
 }
 
 fn default_request() -> PermissionRequestData {
@@ -90,37 +71,72 @@ fn default_request() -> PermissionRequestData {
     }
 }
 
-/// Maps to: CC `FallbackOptionValue` selection branches.
-pub fn fallback_permission_option_to_prompt_choice(
+/// Maps to: CC `handleSelect(value, feedback)` (FallbackPermissionRequest.tsx
+/// :47-106): "yes" and "no" carry the amend feedback (`onAllow(…, [],
+/// feedback)` / `onReject(feedback)`); "don't ask again" allows with a
+/// localSettings rule for the whole tool (`{ toolName: tool.name }`) and no
+/// feedback.
+pub fn fallback_permission_response(
     value: FallbackPermissionOptionValue,
-) -> PermissionPromptChoice {
+    feedback: Option<String>,
+    tool_name: &str,
+) -> PermissionPromptResponse {
+    let with_feedback = |response: PermissionPromptResponse| match feedback {
+        Some(feedback) => response.with_feedback(feedback),
+        None => response,
+    };
     match value {
-        FallbackPermissionOptionValue::Yes => PermissionPromptChoice::AllowOnce,
-        FallbackPermissionOptionValue::YesDontAskAgain => PermissionPromptChoice::AlwaysAllow,
-        FallbackPermissionOptionValue::No => PermissionPromptChoice::Deny,
+        FallbackPermissionOptionValue::Yes => {
+            with_feedback(PermissionPromptResponse::new(PermissionPromptChoice::AllowOnce))
+        }
+        FallbackPermissionOptionValue::YesDontAskAgain => {
+            PermissionPromptResponse::new(PermissionPromptChoice::AlwaysAllow)
+                .with_permission_updates(vec![PermissionUpdate::AddRules {
+                    destination: PermissionUpdateDestination::LocalSettings,
+                    behavior: PermissionBehavior::Allow,
+                    rules: vec![PermissionRuleValue::new(tool_name, None)],
+                }])
+        }
+        FallbackPermissionOptionValue::No => {
+            with_feedback(PermissionPromptResponse::new(PermissionPromptChoice::Deny))
+        }
     }
 }
 
-/// Maps to: CC fallback option construction, including MCP suffix stripping.
-pub fn fallback_permission_options(
+/// Maps to: CC `options` (FallbackPermissionRequest.tsx:125-153): yes/no
+/// amendable, the always-allow label's name and directory bold.
+fn fallback_prompt_options(
     user_facing_name: &str,
     original_cwd: &str,
     show_always_allow_options: bool,
-) -> Vec<FallbackPermissionOption> {
-    let mut options = vec![FallbackPermissionOption::select(
-        "Yes",
-        FallbackPermissionOptionValue::Yes,
-    )];
+) -> Vec<PermissionPromptOption> {
+    let mut options = vec![
+        PermissionPromptOption::new(FallbackPermissionOptionValue::Yes.as_str(), "Yes")
+            .with_feedback(FeedbackType::Accept),
+    ];
     if show_always_allow_options {
-        options.push(FallbackPermissionOption::select(
-            format!("Yes, and don't ask again for {user_facing_name} commands in {original_cwd}"),
-            FallbackPermissionOptionValue::YesDontAskAgain,
-        ));
+        let bold = |text: &str| {
+            let mut segment = StyledSegment::new(text);
+            segment.styles.bold = Some(true);
+            segment
+        };
+        options.push(
+            PermissionPromptOption::new(
+                FallbackPermissionOptionValue::YesDontAskAgain.as_str(),
+                format!("Yes, and don't ask again for {user_facing_name} commands in {original_cwd}"),
+            )
+            .with_label_segments(vec![
+                StyledSegment::new("Yes, and don't ask again for "),
+                bold(user_facing_name),
+                StyledSegment::new(" commands in "),
+                bold(original_cwd),
+            ]),
+        );
     }
-    options.push(FallbackPermissionOption::select(
-        "No",
-        FallbackPermissionOptionValue::No,
-    ));
+    options.push(
+        PermissionPromptOption::new(FallbackPermissionOptionValue::No.as_str(), "No")
+            .with_feedback(FeedbackType::Reject),
+    );
     options
 }
 
@@ -221,82 +237,37 @@ pub fn truncate_to_lines(input: &str, max_lines: usize) -> String {
 
 /// Maps to: CC `FallbackPermissionRequest` render path.
 #[component]
-pub fn FallbackPermissionRequest<'a>(
-    props: &mut FallbackPermissionRequestProps<'a>,
-    mut hooks: Hooks,
+pub fn FallbackPermissionRequest(
+    props: &FallbackPermissionRequestProps,
+    hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<Theme>();
     let request = props.request.clone().unwrap_or_else(default_request);
     let (user_facing_name, _) = fallback_user_facing_names(&request);
     let original_cwd = original_cwd_for_label();
-    let options = fallback_permission_options(
+    // CC :124 `shouldShowAlwaysAllowOptions()`.
+    let options = fallback_prompt_options(
         &user_facing_name,
         &original_cwd,
-        props.show_always_allow_options,
+        crate::utils::permissions::permissions_loader::should_show_always_allow_options(),
     );
-    let option_count = options.len().max(1);
-    let mut focused_index = hooks.use_state(|| 0usize);
-    let mut pending_select = hooks.use_state(|| Option::<FallbackPermissionOptionValue>::None);
-    let mut pending_cancel = hooks.use_state(|| false);
-
-    hooks.use_terminal_events({
-        let mut focused_index = focused_index;
-        let mut pending_select = pending_select;
-        let mut pending_cancel = pending_cancel;
-        let options = options.clone();
-        move |event| {
-            let TerminalEvent::Key(KeyEvent {
-                code,
-                kind,
-                modifiers,
-                ..
-            }) = event
-            else {
-                return;
-            };
-            if kind == KeyEventKind::Release {
-                return;
+    // CC :47-106 `handleSelect`.
+    let handle_select = {
+        let on_select = props.on_select.clone();
+        let tool_name = request.tool_name.clone();
+        Handler::from(move |(value, feedback): (String, Option<String>)| {
+            if let Some(value) = FallbackPermissionOptionValue::from_value(&value) {
+                on_select(fallback_permission_response(value, feedback, &tool_name));
             }
-            match code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    focused_index.set(focused_index.get().saturating_sub(1));
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Tab => {
-                    focused_index
-                        .set((focused_index.get() + 1).min(options.len().saturating_sub(1)));
-                }
-                KeyCode::Enter => {
-                    if let Some(option) = options.get(focused_index.get()) {
-                        pending_select.set(Some(option.value));
-                    }
-                }
-                KeyCode::Esc => {
-                    // CC PermissionPrompt.onCancel in Fallback rejects the tool use.
-                    pending_select.set(Some(FallbackPermissionOptionValue::No));
-                }
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    pending_cancel.set(true);
-                }
-                _ => {}
-            }
-        }
-    });
-
-    let selected = { pending_select.read().clone() };
-    if let Some(value) = selected {
-        pending_select.set(None);
-        (props.on_select)(value);
-    }
-    if pending_cancel.get() {
-        pending_cancel.set(false);
-        (props.on_cancel)(());
-    }
-
-    let select_options = options
-        .iter()
-        .map(FallbackPermissionOption::to_select_option)
-        .collect::<Vec<_>>();
-    let focused = focused_index.get().min(option_count - 1);
+        })
+    };
+    // CC :107-121 `handleCancel`: the rejection without feedback.
+    let handle_cancel = {
+        let on_select = props.on_select.clone();
+        Handler::from(move |()| {
+            on_select(PermissionPromptResponse::new(PermissionPromptChoice::Deny));
+        })
+    };
     let preview = fallback_tool_preview(&request);
     let description = truncate_to_lines(&request.description, 3);
 
@@ -319,17 +290,12 @@ pub fn FallbackPermissionRequest<'a>(
                     tool_type: PermissionRuleToolType::Tool,
                     permission_mode: request.mode,
                 )
-                Text(content: "Do you want to proceed?".to_string(), wrap: TextWrap::NoWrap)
-                Select(
-                    options: select_options,
-                    focused_index: focused,
-                    visible_option_count: option_count,
-                    layout: SelectLayout::Compact,
-                    hide_indexes: true,
+                // CC :185-190.
+                PermissionPrompt(
+                    options,
+                    on_select: handle_select,
+                    on_cancel: handle_cancel,
                 )
-                View(margin_top: 1u32) {
-                    Text(content: "Esc to cancel".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
-                }
             }
         }
     }
@@ -401,14 +367,62 @@ mod tests {
 
     #[test]
     fn fallback_permission_options_include_official_always_allow_label() {
-        let options = fallback_permission_options("CustomTool", "/repo", true);
-        assert_eq!(options.len(), 3);
-        assert_eq!(options[0].label, "Yes");
+        let options = fallback_prompt_options("CustomTool", "/repo", true);
         assert_eq!(
-            options[1].label,
-            "Yes, and don't ask again for CustomTool commands in /repo"
+            options.iter().map(|option| option.label.as_str()).collect::<Vec<_>>(),
+            vec![
+                "Yes",
+                "Yes, and don't ask again for CustomTool commands in /repo",
+                "No",
+            ]
         );
-        assert_eq!(options[2].label, "No");
+        // CC :130,:148: only yes and no are amendable.
+        assert_eq!(
+            options
+                .iter()
+                .map(|option| option.feedback_config.as_ref().map(|config| config.feedback_type))
+                .collect::<Vec<_>>(),
+            vec![Some(FeedbackType::Accept), None, Some(FeedbackType::Reject)]
+        );
+        // CC :134 `if (showAlwaysAllowOptions)`.
+        let managed_only = fallback_prompt_options("CustomTool", "/repo", false);
+        assert_eq!(
+            managed_only.iter().map(|option| option.value.as_str()).collect::<Vec<_>>(),
+            vec!["yes", "no"]
+        );
+    }
+
+    /// Maps to: CC `handleSelect` (FallbackPermissionRequest.tsx:47-106).
+    #[test]
+    fn fallback_permission_response_matches_official_handle_select() {
+        let feedback = || Some("be careful".to_string());
+        let yes = fallback_permission_response(FallbackPermissionOptionValue::Yes, feedback(), "CustomTool");
+        assert_eq!(
+            yes,
+            PermissionPromptResponse::new(PermissionPromptChoice::AllowOnce).with_feedback("be careful")
+        );
+        // CC :74-85: a localSettings allow rule for the tool as a whole, even
+        // when the request's own rule carries content; no feedback.
+        let always = fallback_permission_response(
+            FallbackPermissionOptionValue::YesDontAskAgain,
+            feedback(),
+            "CustomTool",
+        );
+        assert_eq!(always.choice, PermissionPromptChoice::AlwaysAllow);
+        assert_eq!(always.feedback, None);
+        assert_eq!(
+            always.permission_updates,
+            vec![PermissionUpdate::AddRules {
+                destination: PermissionUpdateDestination::LocalSettings,
+                behavior: PermissionBehavior::Allow,
+                rules: vec![PermissionRuleValue::new("CustomTool", None)],
+            }]
+        );
+        let no = fallback_permission_response(FallbackPermissionOptionValue::No, feedback(), "CustomTool");
+        assert_eq!(
+            no,
+            PermissionPromptResponse::new(PermissionPromptChoice::Deny).with_feedback("be careful")
+        );
     }
 
     #[test]
@@ -416,9 +430,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 FallbackPermissionRequest(
-                    request: Some(fallback_request()),
-                    show_always_allow_options: true,
-                )
+                    request: Some(fallback_request()),                )
             }
         }
         .render(Some(120))
@@ -443,9 +455,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 FallbackPermissionRequest(
-                    request: Some(request),
-                    show_always_allow_options: true,
-                )
+                    request: Some(request),                )
             }
         }
         .render(Some(140))
@@ -475,7 +485,7 @@ mod tests {
         assert!(!is_mcp);
 
         let cwd = original_cwd_for_label();
-        let options = fallback_permission_options(&user_facing_name, &cwd, true);
+        let options = fallback_prompt_options(&user_facing_name, &cwd, true);
         assert_eq!(
             options[1].label,
             format!("Yes, and don't ask again for Explore commands in {cwd}")
@@ -484,9 +494,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 FallbackPermissionRequest(
-                    request: Some(agent_request(explore_input())),
-                    show_always_allow_options: true,
-                )
+                    request: Some(agent_request(explore_input())),                )
             }
         }
         .render(Some(200))
@@ -558,9 +566,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 FallbackPermissionRequest(
-                    request: Some(passthrough_ask),
-                    show_always_allow_options: true,
-                )
+                    request: Some(passthrough_ask),                )
             }
         }
         .render(Some(140))
@@ -584,9 +590,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 FallbackPermissionRequest(
-                    request: Some(matched),
-                    show_always_allow_options: true,
-                )
+                    request: Some(matched),                )
             }
         }
         .render(Some(140))
@@ -631,9 +635,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 FallbackPermissionRequest(
-                    request: Some(request),
-                    show_always_allow_options: true,
-                )
+                    request: Some(request),                )
             }
         }
         .render(Some(160))
@@ -666,9 +668,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 FallbackPermissionRequest(
-                    request: Some(request),
-                    show_always_allow_options: true,
-                )
+                    request: Some(request),                )
             }
         }
         .render(Some(140))
@@ -682,15 +682,17 @@ mod tests {
 
     #[tokio::test]
     async fn fallback_permission_request_escape_rejects_like_official_cancel() {
-        let selected = Arc::new(Mutex::new(Vec::new()));
+        let selected = Arc::new(Mutex::new(Vec::<PermissionPromptResponse>::new()));
         let selected_clone = selected.clone();
         let mut app = element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                FallbackPermissionRequest(
-                    request: Some(fallback_request()),
-                    show_always_allow_options: true,
-                    on_select: move |value| selected_clone.lock().unwrap().push(value),
-                )
+            ContextProvider(value: Context::owned(
+                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
+            )) {
+                ContextProvider(value: Context::owned(*theme::current())) {
+                    FallbackPermissionRequest(
+                        request: Some(fallback_request()),                        on_select: Handler::from(move |response| selected_clone.lock().unwrap().push(response)),
+                    )
+                }
             }
         };
         let mut render_loop = Box::pin(
@@ -709,9 +711,11 @@ mod tests {
                 break;
             }
         }
+        // CC PermissionPrompt.tsx:219-231 → `handleCancel`: a rejection
+        // without feedback.
         assert_eq!(
             selected.lock().unwrap().as_slice(),
-            &[FallbackPermissionOptionValue::No]
+            &[PermissionPromptResponse::new(PermissionPromptChoice::Deny)]
         );
     }
 }
