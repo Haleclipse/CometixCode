@@ -13,6 +13,7 @@ pub use crate::utils::auth::AwsCredentials;
 use crate::utils::auth::{is_claude_ai_subscriber, refresh_and_get_aws_credentials};
 use crate::utils::env_utils::{get_aws_region, get_vertex_region_for_model};
 use crate::utils::model::model::get_small_fast_model;
+use anthropic_sdk::Nullable;
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 use std::env;
@@ -105,7 +106,8 @@ async fn configure_api_key_headers(headers: &mut HashMap<String, Option<String>>
 /// Maps to: CC services/api/client.ts:88-99
 #[derive(Clone, Debug, Default)]
 pub struct GetAnthropicClientOptions {
-    /// Override API key (falls back to ANTHROPIC_API_KEY env var).
+    /// Override API key (an empty one falls back, as CC's `apiKey ||`, to
+    /// `get_anthropic_api_key`).
     pub api_key: Option<String>,
     /// Maximum retries on transient errors.
     pub max_retries: u32,
@@ -329,7 +331,11 @@ pub async fn get_anthropic_client(
         // Maps to: CC services/api/client.ts:191-220
         // ---------------------------------------------------------------
         ApiProvider::Foundry => {
-            let foundry_auth = if env::var("ANTHROPIC_FOUNDRY_API_KEY").is_ok() {
+            // CC `client.ts:196`: `if (!process.env.ANTHROPIC_FOUNDRY_API_KEY)`
+            // is a truthiness test, so an empty key selects Azure AD / skip-auth.
+            let foundry_auth = if env::var("ANTHROPIC_FOUNDRY_API_KEY")
+                .is_ok_and(|key| !key.is_empty())
+            {
                 FoundryAuth::ApiKey
             } else if crate::utils::env_utils::is_env_truthy(
                 std::env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
@@ -426,16 +432,30 @@ pub async fn get_anthropic_client(
         // Maps to: CC services/api/client.ts:300-316
         // ---------------------------------------------------------------
         ApiProvider::FirstParty => {
-            let resolved_api_key = if is_claude_ai_subscriber() {
-                None
-            } else {
-                api_key.or_else(crate::utils::auth::get_anthropic_api_key)
-            };
+            let subscriber = is_claude_ai_subscriber();
 
-            let auth_token = if is_claude_ai_subscriber() {
-                crate::utils::auth::get_claude_ai_oauth_tokens().map(|tokens| tokens.access_token)
-            } else {
+            // CC `client.ts:302`: `apiKey: isClaudeAISubscriber() ? null :
+            // apiKey || getAnthropicApiKey()` is always explicit, since
+            // `getAnthropicApiKey()` returns `null` for no key: the SDK never
+            // falls back to `ANTHROPIC_API_KEY` here. `||` also skips an
+            // empty caller key.
+            let resolved_api_key = Nullable::from_resolved(if subscriber {
                 None
+            } else {
+                api_key
+                    .filter(|key| !key.is_empty())
+                    .or_else(crate::utils::auth::get_anthropic_api_key)
+            });
+
+            // CC `client.ts:303-305`: `authToken: isClaudeAISubscriber() ?
+            // getClaudeAIOAuthTokens()?.accessToken : undefined`; `undefined`
+            // leaves the SDK's `ANTHROPIC_AUTH_TOKEN` default in place.
+            let auth_token = match subscriber
+                .then(crate::utils::auth::get_claude_ai_oauth_tokens)
+                .flatten()
+            {
+                Some(tokens) => Nullable::Set(tokens.access_token),
+                None => Nullable::Unset,
             };
 
             // Maps to: CC `services/api/client.ts:306-311`: only ant staging
@@ -492,7 +512,7 @@ pub enum BedrockAuth {
 /// Maps to: CC services/api/client.ts:195-211
 #[derive(Clone, Debug)]
 pub enum FoundryAuth {
-    /// Use `ANTHROPIC_FOUNDRY_API_KEY` (SDK reads it automatically).
+    /// Use `ANTHROPIC_FOUNDRY_API_KEY`, passed to the client as its API key.
     ApiKey,
     /// Delegate Azure AD authentication to `DefaultAzureCredential`.
     AzureAd,
@@ -520,9 +540,13 @@ pub enum VertexAuth {
 #[derive(Clone, Debug)]
 pub enum ProviderConfig {
     /// Direct API access via api.anthropic.com.
+    ///
+    /// The credentials keep the shape CC hands the SDK (`client.ts:300-305`):
+    /// `Unset` is TS `undefined` (the SDK's environment default applies),
+    /// `Null` is TS `null` (none, and the environment is not read).
     Direct {
-        api_key: Option<String>,
-        auth_token: Option<String>,
+        api_key: Nullable<String>,
+        auth_token: Nullable<String>,
         base_url: Option<String>,
     },
     /// AWS Bedrock provider.
@@ -569,8 +593,8 @@ impl AnthropicClientHandle {
     /// For the Direct provider the construction will look like:
     /// ```ignore
     /// let client_opts = anthropic_sdk::ClientOptions {
-    ///     api_key,
-    ///     auth_token,
+    ///     api_key,    // Nullable: Null where CC passes `null`
+    ///     auth_token, // Nullable: Unset where CC passes `undefined`
     ///     base_url,
     ///     max_retries: Some(self.max_retries),
     ///     timeout: Some(self.timeout_ms),
@@ -617,15 +641,26 @@ impl AnthropicClientHandle {
                         "ANTHROPIC_FOUNDRY_BASE_URL or ANTHROPIC_FOUNDRY_RESOURCE".to_string(),
                     ));
                 };
+                // The TS `AnthropicFoundry` CC builds (`client.ts:191-219`)
+                // overrides `authHeaders`: the SDK itself sends only the
+                // Foundry key or the Azure token, never reading
+                // `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`. (An Authorization
+                // that CC's `configureApiKeyHeaders` put in `defaultHeaders`
+                // still goes out; `default_headers` carries it here too.) On
+                // the core client that is an explicit `Null` for whatever is
+                // not the Foundry key.
                 let (api_key, auth_token) = match auth {
-                    FoundryAuth::ApiKey => (env::var("ANTHROPIC_FOUNDRY_API_KEY").ok(), None),
+                    FoundryAuth::ApiKey => (
+                        Nullable::from_resolved(env::var("ANTHROPIC_FOUNDRY_API_KEY").ok()),
+                        Nullable::Null,
+                    ),
                     FoundryAuth::AzureAd => {
                         return Err(ClientError::Sdk(
                             "Foundry DefaultAzureCredential requires the provider SDK adapter"
                                 .to_string(),
                         ));
                     }
-                    FoundryAuth::SkipAuth => (None, None),
+                    FoundryAuth::SkipAuth => (Nullable::Null, Nullable::Null),
                 };
                 build_direct_client(
                     api_key,
@@ -658,8 +693,8 @@ impl AnthropicClientHandle {
 pub type ClientBuildOutput = anthropic_sdk::Anthropic;
 
 fn build_direct_client(
-    api_key: Option<String>,
-    auth_token: Option<String>,
+    api_key: Nullable<String>,
+    auth_token: Nullable<String>,
     base_url: Option<String>,
     timeout_ms: u64,
     max_retries: u32,
@@ -954,11 +989,75 @@ mod tests {
         assert!(matches!(
             handle.provider,
             ProviderConfig::Direct {
-                api_key: Some(ref key),
-                auth_token: None,
+                api_key: Nullable::Set(ref key),
+                auth_token: Nullable::Unset,
                 ..
             } if key == "sk-ant-test"
         ));
+        let _ = std::fs::remove_dir_all(config_home);
+    }
+
+    /// CC `client.ts:301-304`: a subscriber's `apiKey` is an explicit `null`
+    /// and `authToken` is the OAuth access token, so an `ANTHROPIC_API_KEY`
+    /// in the environment (even an empty one) never reaches the request.
+    #[tokio::test]
+    async fn subscriber_passes_null_api_key_and_the_oauth_token_like_cc() {
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let config_home = std::env::temp_dir().join(format!(
+            "cometix-subscriber-null-key-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_home).unwrap();
+        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
+        // Exported but empty: CC still treats the user as a subscriber, and
+        // the SDK would keep `''` if it were asked to read the variable.
+        let _api_key = EnvGuard::set("ANTHROPIC_API_KEY", "");
+        let _auth_token = EnvGuard::remove("ANTHROPIC_AUTH_TOKEN");
+        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
+        std::fs::write(
+            config_home.join(".credentials.json"),
+            serde_json::json!({
+                "claudeAiOauth": {
+                    "accessToken": "live-access",
+                    "refreshToken": "refresh-token",
+                    "expiresAt": 4_102_444_800_000_u64,
+                    "scopes": ["user:inference"]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let handle = get_anthropic_client(GetAnthropicClientOptions::default())
+            .await
+            .expect("a live subscriber token builds a client");
+        assert!(
+            matches!(
+                handle.provider,
+                ProviderConfig::Direct {
+                    api_key: Nullable::Null,
+                    auth_token: Nullable::Set(ref token),
+                    ..
+                } if token == "live-access"
+            ),
+            "{:?}",
+            handle.provider
+        );
+        // On the wire: only the OAuth bearer, no `x-api-key`. Building the
+        // SDK client needs the process TLS provider, as at startup.
+        crate::utils::tls_provider::install_crypto_provider();
+        let headers = handle
+            .build()
+            .expect("client builds")
+            .build_headers(0, None)
+            .expect("headers build");
+        assert!(headers.get("x-api-key").is_none(), "{headers:?}");
+        assert_eq!(headers.get("authorization").unwrap(), "Bearer live-access");
         let _ = std::fs::remove_dir_all(config_home);
     }
 
@@ -1006,8 +1105,8 @@ mod tests {
     fn provider_config_direct_has_correct_type() {
         let handle = AnthropicClientHandle {
             provider: ProviderConfig::Direct {
-                api_key: Some("sk-test".to_string()),
-                auth_token: None,
+                api_key: "sk-test".into(),
+                auth_token: Nullable::Unset,
                 base_url: None,
             },
             default_headers: HashMap::new(),
