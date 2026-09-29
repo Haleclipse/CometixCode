@@ -126,7 +126,18 @@ http = { version = "1", optional = true }
 # Shared features only — do not put native-tls / rustls here or both platforms
 # get a feature union and native-tls always wins.
 flate2 = "1.1.9"
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream"] }
+# Cometix-specific deviation: `system-proxy`, as in Codex's reqwest default.
+# CC reads only the proxy environment variables (`utils/proxy.ts:64-66`), and
+# Node has no notion of the OS proxy. With this feature, a "set as system
+# proxy" tool works with no configuration. The feature changes reqwest's
+# automatic proxy detection, so it applies to every reqwest client in the
+# process that sets no explicit `.proxy()`/`.no_proxy()`. That includes the
+# anthropic-sdk and rmcp clients, through feature unification. When a client
+# is built, hyper-util fills each HTTP/HTTPS slot that `HTTP(S)_PROXY` left
+# empty from the macOS/Windows settings; `ALL_PROXY` does not fill a slot.
+# `NO_PROXY` still applies. On macOS it reads the HTTP and HTTPS entries only:
+# not the exceptions list, PAC or SOCKS.
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "system-proxy"] }
 sse-stream = { version = "0.2", optional = true }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"], optional = true }
 
