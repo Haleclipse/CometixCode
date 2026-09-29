@@ -15390,13 +15390,23 @@ mod tests {
         let _projects = crate::utils::session_storage::set_test_projects_dir_override(&root);
         let _cache =
             crate::utils::stats_cache::set_test_stats_cache_path(root.join("stats-cache.json"));
-        let mut events = text_input_events("/stats")
-            .into_iter()
-            .map(|event| (event, 0))
-            .collect::<Vec<_>>();
-        events.push((key(KeyCode::Esc), 500));
-
-        let text = last_repl_text(timed_stream(events), 1_500, 40);
+        // Esc goes out only once the loaded panel is on screen: the stats
+        // load runs off the render thread, and an Esc that lands before the
+        // panel mounts is consumed by PromptInput instead.
+        let canvases = run_repl_script(
+            element!(ReplHarness).into_any(),
+            vec![
+                script_step(&[], text_input_events("/stats")),
+                script_step(&["Overview", "Esc to cancel"], vec![key(KeyCode::Esc)]),
+                script_step(&["Stats dialog dismissed"], Vec::new()),
+            ],
+        );
+        let text = canvas_lines(
+            canvases
+                .last()
+                .expect("mock render should produce a final canvas"),
+        )
+        .join("\n");
 
         assert!(text.contains("/stats"), "canvas=\n{text}");
         assert!(text.contains("Stats dialog dismissed"), "canvas=\n{text}");
@@ -16731,50 +16741,20 @@ mod tests {
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _write_guard = EnvVarGuard::set("COMETIX_WRITE_ENABLED", &PathBuf::from("0"));
 
-        let mut events = text_input_events("/status")
-            .into_iter()
-            .map(|event| (event, 0))
-            .collect::<Vec<_>>();
-        // 300ms gap: under a saturated suite the render loop lags the event
-        // clock — Esc landing before the panel mounts means the dismissal
-        // output never appears (same class as the permissions tests).
-        events.push((key(KeyCode::Esc), 300));
-        let event_stream = stream::unfold(events.into_iter(), |mut events| async move {
-            let (event, delay_ms) = events.next()?;
-            if delay_ms > 0 {
-                futures_timer::Delay::new(Duration::from_millis(delay_ms)).await;
-            }
-            Some((event, events))
-        });
-        let canvases = futures::executor::block_on(async {
-            let mut app = element!(ReplHarness);
-            let mut render_loop = Box::pin(
-                app.mock_terminal_render_loop(MockTerminalConfig::with_events(event_stream)),
-            );
-            let mut canvases = Vec::new();
-            // Explicit settle: collect until the dismissal output lands (the
-            // terminal state this test asserts) instead of a silence window —
-            // the silence-settled collector truncates under load.
-            let deadline = std::time::Instant::now() + Duration::from_millis(10_000);
-            loop {
-                let settled = canvases
-                    .last()
-                    .map(|canvas| canvas_lines(canvas).join("\n"))
-                    .is_some_and(|text| text.contains("Status dialog dismissed"));
-                if settled || std::time::Instant::now() >= deadline {
-                    break;
-                }
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(100)).await;
-                    None
-                })
-                .await;
-                if let Some(canvas) = next {
-                    canvases.push(canvas);
-                }
-            }
-            canvases
-        });
+        // Esc goes out only once the Settings tab header is on screen: an Esc
+        // that lands before the panel mounts is consumed by PromptInput and
+        // the dismissal output never appears.
+        let canvases = run_repl_script(
+            element!(ReplHarness).into_any(),
+            vec![
+                script_step(&[], text_input_events("/status")),
+                script_step(
+                    &["Settings", "Status", "Config", "Usage"],
+                    vec![key(KeyCode::Esc)],
+                ),
+                script_step(&["Status dialog dismissed"], Vec::new()),
+            ],
+        );
         let rendered = canvases
             .iter()
             .map(canvas_lines)
