@@ -108,7 +108,9 @@ pub fn build_effective_system_prompt(args: BuildEffectiveSystemPromptArgs<'_>) -
     // here to prevent circular deps during test module loading).
     if feature_enabled(FeatureFlag::CoordinatorMode)
         && crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_COORDINATOR_MODE").as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_COORDINATOR_MODE")
+                .ok()
+                .as_deref(),
         )
         && args.main_thread_agent_definition.is_none()
     {

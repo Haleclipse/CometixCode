@@ -485,7 +485,7 @@ mod runtime {
                     "authServerMetadataUrl must use https:// (got: {configured_metadata_url})"
                 );
             }
-            let client = reqwest::Client::builder()
+            let client = crate::utils::http::client_builder()
                 .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
                 .build()?;
             let request = client
@@ -1515,7 +1515,7 @@ mod runtime {
         auth_method: &str,
     ) -> anyhow::Result<()> {
         // Maps to: CC `services/mcp/auth.ts#revokeToken`.
-        let client = reqwest::Client::builder()
+        let client = crate::utils::http::client_builder()
             .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
             .build()?;
         let mut params = vec![
@@ -2095,7 +2095,7 @@ mod runtime {
         else {
             return Ok(None);
         };
-        let client = reqwest::Client::builder()
+        let client = crate::utils::http::client_builder()
             .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
             .build()?;
         let request = client
@@ -2262,10 +2262,13 @@ mod runtime {
             .and_then(Value::as_bool)
             .unwrap_or(false)
         {
-            let client_metadata_url = std::env::var("MCP_OAUTH_CLIENT_METADATA_URL")
-                .ok()
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| crate::constants::oauth::MCP_CLIENT_METADATA_URL.to_string());
+            let client_metadata_url =
+                crate::utils::process_env::var("MCP_OAUTH_CLIENT_METADATA_URL")
+                    .ok()
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| {
+                        crate::constants::oauth::MCP_CLIENT_METADATA_URL.to_string()
+                    });
             let client_config =
                 OAuthClientConfig::new(client_metadata_url.clone(), redirect_uri.clone())
                     .with_scopes(scopes.clone());

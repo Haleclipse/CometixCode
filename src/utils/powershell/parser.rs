@@ -218,7 +218,7 @@ const DEFAULT_PARSE_TIMEOUT_MS: u64 = 5_000;
 
 /// Maps to: CC `parser.ts:208-215#getParseTimeoutMs`.
 fn get_parse_timeout_ms() -> u64 {
-    std::env::var("CLAUDE_CODE_PWSH_PARSE_TIMEOUT_MS")
+    crate::utils::process_env::var("CLAUDE_CODE_PWSH_PARSE_TIMEOUT_MS")
         .ok()
         .filter(|value| !value.is_empty())
         .and_then(|value| value.parse::<u64>().ok())
@@ -1124,7 +1124,7 @@ fn spawn_pwsh(program: &str, args: &[&str], timeout: Duration) -> Result<SpawnOu
         captured
     }
 
-    let mut child = std::process::Command::new(program)
+    let mut child = crate::utils::subprocess_env::command(program)
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())

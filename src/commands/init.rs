@@ -252,7 +252,9 @@ pub fn is_new_init_enabled() -> bool {
     is_new_init_enabled_for_audience(
         crate::utils::build_profile::build_audience(),
         crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_NEW_INIT").ok().as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_NEW_INIT")
+                .ok()
+                .as_deref(),
         ),
     )
 }

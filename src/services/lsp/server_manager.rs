@@ -621,7 +621,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn manager_routes_fake_lsp_diagnostics_into_passive_registry() {
-        if std::process::Command::new("node")
+        if crate::utils::subprocess_env::command("node")
             .arg("--version")
             .output()
             .is_err()
@@ -676,7 +676,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn manager_restarts_crashed_lsp_server_on_next_request_like_official() {
-        if std::process::Command::new("node")
+        if crate::utils::subprocess_env::command("node")
             .arg("--version")
             .output()
             .is_err()
@@ -748,7 +748,7 @@ mod tests {
     /// instance is already `error` before anyone asks it anything.
     #[tokio::test(flavor = "current_thread")]
     async fn crash_between_requests_flips_state_at_crash_time_via_on_crash() {
-        if std::process::Command::new("node")
+        if crate::utils::subprocess_env::command("node")
             .arg("--version")
             .output()
             .is_err()
@@ -825,7 +825,7 @@ mod tests {
     /// slot and the tool answered "No LSP server available for file type: .rs".
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn concurrent_readers_see_the_manager_while_a_request_is_in_flight() {
-        if std::process::Command::new("node")
+        if crate::utils::subprocess_env::command("node")
             .arg("--version")
             .output()
             .is_err()

@@ -238,7 +238,7 @@ fn run_snapshot_command(
             }
             #[cfg(windows)]
             {
-                let _ = std::process::Command::new("taskkill")
+                let _ = crate::utils::subprocess_env::command("taskkill")
                     .args(["/PID", &child.id().to_string(), "/T", "/F"])
                     .status();
             }
@@ -279,7 +279,7 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
     ));
     let script = get_snapshot_script(bin_shell, &snapshot, config.is_file(), &process_env);
 
-    let mut command = std::process::Command::new(bin_shell);
+    let mut command = crate::utils::subprocess_env::command(bin_shell);
     // CC `ShellSnapshot.ts:460-467`: the base env is `subprocessEnv()` unless
     // CLAUDE_CODE_DONT_INHERIT_ENV is set (then an empty env); SHELL /
     // GIT_EDITOR / CLAUDECODE are spread over that base afterwards.

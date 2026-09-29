@@ -73,7 +73,11 @@ pub fn get_system_prompt_with_settings(
     #[cfg(test)]
     crate::constants::system_prompt_sections::clear_system_prompt_sections();
 
-    if crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
+    ) {
         return get_simple_system_prompt_if_enabled();
     }
 
@@ -172,8 +176,11 @@ fn prompt_settings_snapshot() -> crate::utils::settings::types::SettingsJson {
 
 /// Maps to: CC `constants/prompts.ts` `getSystemPrompt(...)` simple-mode branch.
 pub fn get_simple_system_prompt_if_enabled() -> SystemPrompt {
-    if !crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref())
-    {
+    if !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
+    ) {
         return Vec::new();
     }
 
@@ -743,6 +750,7 @@ fn get_knowledge_cutoff(model_id: &str) -> Option<&'static str> {
 /// Maps to CC `constants/prompts.ts` `getShellInfoLine()`.
 fn get_shell_info_line() -> String {
     let shell = crate::utils::process_env::var("SHELL")
+        .ok()
         .filter(|shell| !shell.is_empty())
         .unwrap_or_else(|| "unknown".to_string());
     let shell_name = if shell.contains("zsh") {
@@ -767,7 +775,7 @@ fn get_shell_info_line() -> String {
 pub fn get_uname_sr() -> String {
     #[cfg(target_os = "windows")]
     {
-        std::env::var("OS").unwrap_or_else(|_| "Windows_NT".to_string())
+        crate::utils::process_env::var("OS").unwrap_or_else(|_| "Windows_NT".to_string())
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -1379,7 +1387,7 @@ mod tests {
     #[cfg(unix)]
     fn get_uname_sr_matches_official_os_api_independently_of_path() {
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let output = std::process::Command::new("/usr/bin/uname")
+        let output = crate::utils::subprocess_env::command("/usr/bin/uname")
             .arg("-sr")
             .output()
             .unwrap();

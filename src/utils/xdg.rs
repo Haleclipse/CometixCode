@@ -16,8 +16,8 @@ pub struct XdgOptions {
 fn resolve_home(options: Option<&XdgOptions>) -> String {
     options
         .and_then(|options| options.home.clone())
-        .or_else(|| std::env::var("HOME").ok())
-        .or_else(|| std::env::var("USERPROFILE").ok())
+        .or_else(|| crate::utils::process_env::var("HOME").ok())
+        .or_else(|| crate::utils::process_env::var("USERPROFILE").ok())
         .unwrap_or_else(|| ".".to_string())
 }
 
@@ -29,7 +29,7 @@ pub fn get_xdg_state_home() -> PathBuf {
 pub fn get_xdg_state_home_with_options(options: Option<&XdgOptions>) -> PathBuf {
     options
         .and_then(|options| options.xdg_state_home.clone())
-        .or_else(|| std::env::var("XDG_STATE_HOME").ok())
+        .or_else(|| crate::utils::process_env::var("XDG_STATE_HOME").ok())
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             PathBuf::from(resolve_home(options))
@@ -46,7 +46,7 @@ pub fn get_xdg_cache_home() -> PathBuf {
 pub fn get_xdg_cache_home_with_options(options: Option<&XdgOptions>) -> PathBuf {
     options
         .and_then(|options| options.xdg_cache_home.clone())
-        .or_else(|| std::env::var("XDG_CACHE_HOME").ok())
+        .or_else(|| crate::utils::process_env::var("XDG_CACHE_HOME").ok())
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(resolve_home(options)).join(".cache"))
 }
@@ -59,7 +59,7 @@ pub fn get_xdg_data_home() -> PathBuf {
 pub fn get_xdg_data_home_with_options(options: Option<&XdgOptions>) -> PathBuf {
     options
         .and_then(|options| options.xdg_data_home.clone())
-        .or_else(|| std::env::var("XDG_DATA_HOME").ok())
+        .or_else(|| crate::utils::process_env::var("XDG_DATA_HOME").ok())
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             PathBuf::from(resolve_home(options))

@@ -24,20 +24,22 @@ pub(crate) fn time_based_microcompact_config_from_env() -> TimeBasedMicrocompact
     config.enabled = crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::TimeBasedMicrocompact,
     ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_TIME_BASED_MICROCOMPACT")
+        crate::utils::process_env::var("COMETIX_TIME_BASED_MICROCOMPACT")
             .ok()
             .as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_TIME_BASED_MICROCOMPACT")
+        crate::utils::process_env::var("CLAUDE_CODE_TIME_BASED_MICROCOMPACT")
             .ok()
             .as_deref(),
     );
-    if let Ok(value) = std::env::var("COMETIX_TIME_BASED_MICROCOMPACT_GAP_MINUTES") {
+    if let Ok(value) = crate::utils::process_env::var("COMETIX_TIME_BASED_MICROCOMPACT_GAP_MINUTES")
+    {
         if let Ok(minutes) = value.parse::<f64>() {
             config.gap_threshold_minutes = minutes;
         }
     }
-    if let Ok(value) = std::env::var("COMETIX_TIME_BASED_MICROCOMPACT_KEEP_RECENT") {
+    if let Ok(value) = crate::utils::process_env::var("COMETIX_TIME_BASED_MICROCOMPACT_KEEP_RECENT")
+    {
         if let Ok(keep_recent) = value.parse::<usize>() {
             config.keep_recent = keep_recent;
         }

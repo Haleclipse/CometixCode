@@ -76,7 +76,7 @@ pub fn process_rss_bytes() -> u64 {
         if let Some(bytes) = macos_task_resident_size_bytes() {
             return bytes;
         }
-        if let Ok(output) = std::process::Command::new("ps")
+        if let Ok(output) = crate::utils::subprocess_env::command("ps")
             .args(["-o", "rss=", "-p"])
             .arg(std::process::id().to_string())
             .output()

@@ -23,7 +23,7 @@ fn run_project_search(root: &Path, query: &str) -> (Vec<GlobalSearchMatch>, bool
     if query.trim().is_empty() {
         return (Vec::new(), false);
     }
-    let output = std::process::Command::new("rg")
+    let output = crate::utils::subprocess_env::command("rg")
         .current_dir(root)
         .args([
             "--line-number",

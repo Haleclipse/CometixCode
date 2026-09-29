@@ -106,7 +106,7 @@ pub fn should_show_project_onboarding_for_path(
 
 pub fn should_show_project_onboarding() -> bool {
     let project_config = get_current_project_config();
-    let is_demo = std::env::var("IS_DEMO").is_ok_and(|value| !value.is_empty());
+    let is_demo = crate::utils::process_env::var("IS_DEMO").is_ok_and(|value| !value.is_empty());
     should_show_project_onboarding_for_config_and_steps(&project_config, &get_steps(), is_demo)
 }
 

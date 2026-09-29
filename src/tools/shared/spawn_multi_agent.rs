@@ -364,7 +364,9 @@ struct TmuxCommandResult {
 }
 
 fn run_tmux(args: &[String]) -> TmuxCommandResult {
-    let output = std::process::Command::new(TMUX_COMMAND).args(args).output();
+    let output = crate::utils::subprocess_env::command(TMUX_COMMAND)
+        .args(args)
+        .output();
     match output {
         Ok(output) => TmuxCommandResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),

@@ -2,17 +2,22 @@
 //!
 //! CC mutates Node's ordered `process.env` object after startup. Rust's
 //! process environment is neither an ordered object nor a safe concurrent
-//! mutation surface, so this boundary exposes immutable snapshots to migrated
-//! readers and the migration-time subprocess adapter. It owns representation
-//! and lifecycle only; business policy remains in source-shaped callers.
+//! mutation surface, so this carrier is the process's only mutable
+//! environment and the real one stays the frozen startup capture. Readers,
+//! children (`subprocess_env`) and HTTP clients (`utils::http`) all observe
+//! committed immutable versions; a writer stages one turn and publishes it
+//! with a single pointer swap. It owns representation and lifecycle only;
+//! business policy remains in source-shaped callers.
 //!
 //! Rust-only, policy-free representation/lifecycle adapter for Node
 //! `process.env`; domain writes remain in their source-shaped CC owners.
 //! See `PORTING.md` "Global process.env carrier" and `docs/MODULE_MAP.tsv`.
 
+use std::borrow::Cow;
 use std::cell::Cell;
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::sync::{Arc, LazyLock, RwLock, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, RwLock};
 
 #[derive(Clone, Debug)]
 struct EnvEntry {
@@ -25,6 +30,33 @@ struct EnvEntry {
 struct EnvTable {
     entries: Vec<EnvEntry>,
     next_insertion_ordinal: usize,
+    /// Lookup index for this version, built on first read and dropped by every
+    /// mutation, so a published version pays for it once.
+    index: OnceLock<KeyIndex>,
+}
+
+/// Entry positions by [`key_identity`]; names without one stay pairwise.
+#[derive(Clone, Debug, Default)]
+struct KeyIndex {
+    positions: HashMap<Box<[u8]>, usize>,
+    pairwise: Vec<usize>,
+}
+
+impl KeyIndex {
+    fn build(entries: &[EnvEntry]) -> Self {
+        let mut index = Self::default();
+        for (position, entry) in entries.iter().enumerate() {
+            match key_identity(&entry.key) {
+                Some(identity) => {
+                    index
+                        .positions
+                        .insert(identity.into_owned().into_boxed_slice(), position);
+                }
+                None => index.pairwise.push(position),
+            }
+        }
+        index
+    }
 }
 
 impl EnvTable {
@@ -35,7 +67,23 @@ impl EnvTable {
     }
 
     fn entry(&self, key: &OsStr) -> Option<&EnvEntry> {
-        self.position(key).map(|index| &self.entries[index])
+        let index = self.index.get_or_init(|| KeyIndex::build(&self.entries));
+        let position = match key_identity(key) {
+            Some(identity) => index.positions.get(identity.as_ref()).copied().or_else(|| {
+                index
+                    .pairwise
+                    .iter()
+                    .copied()
+                    .find(|&position| keys_equal(&self.entries[position].key, key))
+            }),
+            None => self.position(key),
+        }?;
+        Some(&self.entries[position])
+    }
+
+    fn entries_mut(&mut self) -> &mut Vec<EnvEntry> {
+        self.index = OnceLock::new();
+        &mut self.entries
     }
 
     /// JS assignment replaces in place; only delete followed by re-add moves
@@ -43,7 +91,7 @@ impl EnvTable {
     fn insert(&mut self, key: OsString, value: OsString) {
         if let Some(index) = self.position(&key) {
             let insertion_ordinal = self.entries[index].insertion_ordinal;
-            self.entries[index] = EnvEntry {
+            self.entries_mut()[index] = EnvEntry {
                 key,
                 value,
                 insertion_ordinal,
@@ -51,7 +99,7 @@ impl EnvTable {
         } else {
             let insertion_ordinal = self.next_insertion_ordinal;
             self.next_insertion_ordinal += 1;
-            self.entries.push(EnvEntry {
+            self.entries_mut().push(EnvEntry {
                 key,
                 value,
                 insertion_ordinal,
@@ -61,7 +109,7 @@ impl EnvTable {
 
     fn remove(&mut self, key: &OsStr) -> bool {
         if let Some(index) = self.position(key) {
-            self.entries.remove(index);
+            self.entries_mut().remove(index);
             true
         } else {
             false
@@ -126,12 +174,12 @@ where
 
 impl EnvSnapshot {
     pub fn var_os(&self, key: impl AsRef<OsStr>) -> Option<&OsStr> {
-        let key = normalize_key(key.as_ref())?;
+        let key = lookup_key(key.as_ref())?;
         self.0.entry(&key).map(|entry| entry.value.as_os_str())
     }
 
     pub fn var(&self, key: impl AsRef<OsStr>) -> Option<&str> {
-        let key = normalize_key(key.as_ref())?;
+        let key = lookup_key(key.as_ref())?;
         self.0.entry(&key)?.value.to_str()
     }
 
@@ -154,7 +202,7 @@ impl EnvSnapshot {
 
     #[cfg(all(test, windows))]
     pub(crate) fn entry(&self, key: impl AsRef<OsStr>) -> Option<(&OsStr, &OsStr)> {
-        let key = normalize_key(key.as_ref())?;
+        let key = lookup_key(key.as_ref())?;
         self.0
             .entry(&key)
             .map(|entry| (entry.key.as_os_str(), entry.value.as_os_str()))
@@ -182,10 +230,15 @@ pub(crate) fn save_entry_for_restore(key: impl AsRef<OsStr>) -> EnvEntryRestore 
 
 struct ProcessEnv {
     startup: Arc<EnvTable>,
+    /// The committed version. Its lock is held only to clone or replace the
+    /// `Arc`, never across staging, so a reader never waits on a writer.
     current: RwLock<Arc<EnvTable>>,
+    /// Serializes read-modify-write turns; staging runs under this lock only.
+    writer: Mutex<()>,
 }
 
 impl ProcessEnv {
+    #[allow(clippy::disallowed_methods)] // The one sanctioned read of the real environment.
     fn capture() -> Self {
         let mut table = EnvTable::default();
         for (key, value) in std::env::vars_os() {
@@ -196,8 +249,13 @@ impl ProcessEnv {
         let startup = Arc::new(table);
         Self {
             current: RwLock::new(Arc::clone(&startup)),
+            writer: Mutex::new(()),
             startup,
         }
+    }
+
+    fn committed(&self) -> Arc<EnvTable> {
+        Arc::clone(&self.current.read().unwrap_or_else(PoisonError::into_inner))
     }
 }
 
@@ -207,13 +265,18 @@ thread_local! {
     static UPDATE_OPEN: Cell<bool> = const { Cell::new(false) };
 }
 
+/// A global read inside this thread's open update observes the last committed
+/// version, not the staged one. That is never a deadlock, only a likely stale
+/// read, so it is diagnosed in debug builds rather than in production.
 fn assert_global_access() {
-    UPDATE_OPEN.with(|open| {
-        assert!(
-            !open.get(),
-            "process_env global read during an open update; use EnvUpdate::snapshot()"
-        );
-    });
+    if cfg!(debug_assertions) {
+        UPDATE_OPEN.with(|open| {
+            assert!(
+                !open.get(),
+                "process_env global read during an open update; use EnvUpdate::snapshot()"
+            );
+        });
+    }
 }
 
 /// Forces the frozen startup capture. Repeated calls are idempotent.
@@ -234,25 +297,28 @@ pub(crate) fn startup_snapshot() -> EnvSnapshot {
 /// Returns the currently committed immutable environment version.
 pub fn snapshot() -> EnvSnapshot {
     assert_global_access();
-    let current = PROCESS_ENV
-        .current
-        .read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    EnvSnapshot(Arc::clone(&current))
+    EnvSnapshot(PROCESS_ENV.committed())
 }
 
+/// `std::env::var_os` over the effective `process.env`.
 pub fn var_os(key: impl AsRef<OsStr>) -> Option<OsString> {
     snapshot().var_os(key).map(OsStr::to_os_string)
 }
 
-pub fn var(key: impl AsRef<OsStr>) -> Option<String> {
-    snapshot().var(key).map(str::to_owned)
+/// `std::env::var` over the effective `process.env`, with the same signature
+/// so a raw read migrates by path alone.
+pub fn var(key: impl AsRef<OsStr>) -> Result<String, std::env::VarError> {
+    var_os(key)
+        .ok_or(std::env::VarError::NotPresent)?
+        .into_string()
+        .map_err(std::env::VarError::NotUnicode)
 }
 
-/// Begins one source-synchronous environment staging turn. The lock covers
-/// only staging/publication; callers must not perform I/O, callbacks, awaits,
-/// or joins while it is held. A nested writer on the same thread panics before
-/// attempting the non-reentrant lock.
+/// Begins one source-synchronous environment staging turn. Turns serialize on
+/// the writer lock, which covers only staging and publication; callers must not
+/// perform I/O, callbacks, awaits, or joins while it is held. Readers are never
+/// blocked by it. A nested writer on the same thread panics before attempting
+/// the non-reentrant lock.
 pub(crate) fn begin_update() -> EnvUpdate<'static> {
     UPDATE_OPEN.with(|open| {
         assert!(
@@ -260,16 +326,15 @@ pub(crate) fn begin_update() -> EnvUpdate<'static> {
             "nested process_env update; pass the outer EnvUpdate or its staged snapshot"
         );
     });
-    let guard = PROCESS_ENV
-        .current
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let staged = Arc::clone(&guard);
+    // The lock guards `()`: an unwound turn leaves nothing half-written, since
+    // its staged table was never published.
+    let writer = PROCESS_ENV
+        .writer
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     EnvUpdate {
-        guard,
-        staged,
-        #[cfg(unix)]
-        os_operations: Vec::new(),
+        _writer: writer,
+        staged: PROCESS_ENV.committed(),
     }
 }
 
@@ -297,43 +362,30 @@ pub(crate) fn restore_entry(saved: EnvEntryRestore) {
     let current = update.staged.position(&saved.key);
     match saved.previous {
         Some(entry) => {
-            let table = Arc::make_mut(&mut update.staged);
+            let entries = Arc::make_mut(&mut update.staged).entries_mut();
             if let Some(current) = current {
-                table.entries.remove(current);
+                entries.remove(current);
             }
-            let position = table
-                .entries
+            let position = entries
                 .partition_point(|candidate| candidate.insertion_ordinal < entry.insertion_ordinal);
-            table.entries.insert(position, entry.clone());
-            #[cfg(unix)]
-            update
-                .os_operations
-                .push(OsOperation::Set(entry.key, entry.value));
+            entries.insert(position, entry);
         }
         None => {
             if let Some(current) = current {
-                Arc::make_mut(&mut update.staged).entries.remove(current);
-                #[cfg(unix)]
-                update.os_operations.push(OsOperation::Remove(saved.key));
+                Arc::make_mut(&mut update.staged)
+                    .entries_mut()
+                    .remove(current);
             }
         }
     }
     update.commit();
 }
 
-#[cfg(unix)]
-enum OsOperation {
-    Set(OsString, OsString),
-    Remove(OsString),
-}
-
 /// A staged environment update. Only [`EnvUpdate::commit`] publishes it;
 /// dropping or unwinding aborts the complete turn.
 pub(crate) struct EnvUpdate<'a> {
-    guard: RwLockWriteGuard<'a, Arc<EnvTable>>,
+    _writer: MutexGuard<'a, ()>,
     staged: Arc<EnvTable>,
-    #[cfg(unix)]
-    os_operations: Vec<OsOperation>,
 }
 
 impl EnvUpdate<'_> {
@@ -347,9 +399,7 @@ impl EnvUpdate<'_> {
         let Some((key, value)) = normalize_assignment(key.as_ref(), value.as_ref()) else {
             return;
         };
-        Arc::make_mut(&mut self.staged).insert(key.clone(), value.clone());
-        #[cfg(unix)]
-        self.os_operations.push(OsOperation::Set(key, value));
+        Arc::make_mut(&mut self.staged).insert(key, value);
     }
 
     pub(crate) fn remove(&mut self, key: impl AsRef<OsStr>) {
@@ -360,8 +410,6 @@ impl EnvUpdate<'_> {
             return;
         }
         Arc::make_mut(&mut self.staged).remove(&key);
-        #[cfg(unix)]
-        self.os_operations.push(OsOperation::Remove(key));
     }
 
     pub(crate) fn apply<I, K, V>(&mut self, variables: I)
@@ -375,25 +423,15 @@ impl EnvUpdate<'_> {
         }
     }
 
-    /// Publishes the complete staged version exactly once. Until production
-    /// raw readers are migrated, Unix mirrors the already-normalized operations
-    /// into the real environment at this boundary only.
-    #[allow(clippy::disallowed_methods)] // Transitional carrier-owned Unix write-through.
-    pub(crate) fn commit(mut self) -> EnvSnapshot {
-        #[cfg(unix)]
-        for operation in &self.os_operations {
-            // SAFETY: normalization removes NUL/`=` cases that make std's API
-            // panic, but this transitional write-through remains unsound with
-            // concurrent raw OS readers/writers and is not atomic with carrier
-            // publication. The final integration child removes the bridge.
-            unsafe {
-                match operation {
-                    OsOperation::Set(key, value) => std::env::set_var(key, value),
-                    OsOperation::Remove(key) => std::env::remove_var(key),
-                }
-            }
-        }
-        *self.guard = Arc::clone(&self.staged);
+    /// Publishes the complete staged version exactly once, as one pointer swap:
+    /// a concurrent reader observes either the previous version or this one.
+    /// The real environment is never written; children receive this version
+    /// through `subprocess_env`.
+    pub(crate) fn commit(self) -> EnvSnapshot {
+        *PROCESS_ENV
+            .current
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Arc::clone(&self.staged);
         EnvSnapshot(Arc::clone(&self.staged))
     }
 }
@@ -415,6 +453,39 @@ fn normalize_key(key: &OsStr) -> Option<OsString> {
     } else {
         Some(key)
     }
+}
+
+/// [`normalize_key`] for reads: a NUL-free name, the only kind real callers
+/// pass, is checked in place instead of being re-encoded. NUL and `=` are
+/// single bytes in every `OsStr` encoding, so the byte tests are exact.
+fn lookup_key(key: &OsStr) -> Option<Cow<'_, OsStr>> {
+    let bytes = key.as_encoded_bytes();
+    if bytes.contains(&0) {
+        return normalize_key(key).map(Cow::Owned);
+    }
+    (!bytes.is_empty() && !bytes.contains(&b'=')).then_some(Cow::Borrowed(key))
+}
+
+/// A key's hashable identity under [`keys_equal`], where one exists: the exact
+/// bytes, or on Windows the uppercased bytes of an ASCII name, for which that
+/// fold is exactly the ordinal ignore-case comparison. Other Windows names
+/// have none and are compared pairwise.
+#[cfg(not(windows))]
+fn key_identity(key: &OsStr) -> Option<Cow<'_, [u8]>> {
+    Some(Cow::Borrowed(key.as_encoded_bytes()))
+}
+
+#[cfg(windows)]
+fn key_identity(key: &OsStr) -> Option<Cow<'_, [u8]>> {
+    let bytes = key.as_encoded_bytes();
+    if !bytes.is_ascii() {
+        return None;
+    }
+    Some(if bytes.iter().any(u8::is_ascii_lowercase) {
+        Cow::Owned(bytes.to_ascii_uppercase())
+    } else {
+        Cow::Borrowed(bytes)
+    })
 }
 
 #[cfg(unix)]
@@ -483,6 +554,13 @@ fn keys_equal(left: &OsStr, right: &OsStr) -> bool {
             count2: i32,
             ignore_case: i32,
         ) -> i32;
+    }
+
+    // Nearly every variable name is ASCII, where the ordinal ignore-case table
+    // folds exactly `a-z`; compare those without the UTF-16 copies below.
+    let (left_bytes, right_bytes) = (left.as_encoded_bytes(), right.as_encoded_bytes());
+    if left_bytes.is_ascii() && right_bytes.is_ascii() {
+        return left_bytes.eq_ignore_ascii_case(right_bytes);
     }
 
     let left = left.encode_wide().collect::<Vec<_>>();
@@ -564,9 +642,8 @@ mod tests {
 
         capture_startup();
         let recaptured = snapshot();
-        // On Unix the transitional write-through makes raw values unsuitable
-        // as a recapture oracle. Pointer identity proves capture_startup neither
-        // rebuilt nor republished the carrier.
+        // Pointer identity proves capture_startup neither rebuilt nor
+        // republished the carrier.
         assert!(assigned.same_version(&recaptured));
         assert_eq!(recaptured.var(key), Some("runtime-value"));
         assert!(initial.same_version(&startup_snapshot()));
@@ -713,12 +790,12 @@ mod tests {
             Some("kept")
         );
         assert_eq!(committed.var_os("ALSO=IGNORED"), None);
-        #[cfg(unix)]
-        assert_eq!(std::env::var(key).as_deref(), Ok("kept"));
     }
 
     /// CC `cli/structuredIO.ts:352-360` applies and logs one synchronous update
-    /// before the event loop can process another observer.
+    /// before the event loop can process another observer: a concurrent reader
+    /// sees the complete previous version while the turn stages, never waits on
+    /// it, and sees the complete turn once it commits.
     #[test]
     fn staged_snapshots_match_official_complete_turn_visibility() {
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
@@ -726,33 +803,72 @@ mod tests {
         let second_key = "COMETIX_PROCESS_ENV_ATOMIC_B";
         let _first = EnvVarGuard::unset(first_key);
         let _second = EnvVarGuard::unset(second_key);
+        let read_elsewhere = || {
+            let (send, receive) = std::sync::mpsc::channel();
+            let reader = std::thread::spawn(move || {
+                let current = snapshot();
+                send.send((
+                    current.var(first_key).map(str::to_owned),
+                    current.var(second_key).map(str::to_owned),
+                ))
+                .unwrap();
+            });
+            let observed = receive
+                .recv_timeout(Duration::from_secs(2))
+                .expect("a reader never waits on a staging writer");
+            reader.join().unwrap();
+            observed
+        };
 
         let mut update = begin_update();
         update.set(first_key, "new-a");
         let staged_before_second = update.snapshot();
-        let (ready_send, ready_receive) = std::sync::mpsc::channel();
-        let (send, receive) = std::sync::mpsc::channel();
-        let reader = std::thread::spawn(move || {
-            ready_send.send(()).unwrap();
-            let current = snapshot();
-            send.send((
-                current.var(first_key).map(str::to_owned),
-                current.var(second_key).map(str::to_owned),
-            ))
-            .unwrap();
-        });
-        ready_receive
-            .recv_timeout(Duration::from_secs(2))
-            .expect("reader reached the snapshot boundary");
-        assert!(receive.recv_timeout(Duration::from_millis(50)).is_err());
+        assert_eq!(read_elsewhere(), (None, None));
         update.set(second_key, "new-b");
         assert_eq!(staged_before_second.var_os(second_key), None);
         update.commit();
         assert_eq!(
-            receive.recv_timeout(Duration::from_secs(2)).unwrap(),
+            read_elsewhere(),
             (Some("new-a".into()), Some("new-b".into()))
         );
-        reader.join().unwrap();
+    }
+
+    /// The same complete-turn visibility under contention: readers racing a
+    /// stream of two-key turns never observe one key from each version.
+    #[test]
+    fn concurrent_readers_never_observe_a_partial_turn() {
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let keys = ["COMETIX_PROCESS_ENV_TORN_A", "COMETIX_PROCESS_ENV_TORN_B"];
+        let _guards = keys.map(EnvVarGuard::unset);
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let start = Arc::new(std::sync::Barrier::new(5));
+        let readers = (0..4)
+            .map(|_| {
+                let (done, start) = (Arc::clone(&done), Arc::clone(&start));
+                std::thread::spawn(move || {
+                    start.wait();
+                    loop {
+                        let current = snapshot();
+                        assert_eq!(current.var(keys[0]), current.var(keys[1]));
+                        if done.load(std::sync::atomic::Ordering::Acquire) {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        start.wait();
+        for round in 0..200 {
+            let value = round.to_string();
+            let mut update = begin_update();
+            update.set(keys[0], &value);
+            update.set(keys[1], &value);
+            update.commit();
+        }
+        done.store(true, std::sync::atomic::Ordering::Release);
+        for reader in readers {
+            reader.join().expect("a reader observed a partial turn");
+        }
     }
 
     #[test]
@@ -769,6 +885,7 @@ mod tests {
         begin_update().commit();
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "use EnvUpdate::snapshot()")]
     fn global_read_inside_update_trips_the_fuse() {
@@ -777,7 +894,7 @@ mod tests {
     }
 
     /// CC uses Node's platform `process.env` key identity; on Unix names are
-    /// byte-exact. Write-through remains only for this migration phase.
+    /// byte-exact.
     #[cfg(unix)]
     #[test]
     fn unix_identity_and_commit_match_official_process_env_behavior() {
@@ -790,10 +907,8 @@ mod tests {
         update.set(lower, "lower");
         update.set(upper, "upper");
         update.commit();
-        assert_eq!(var(lower).as_deref(), Some("lower"));
-        assert_eq!(var(upper).as_deref(), Some("upper"));
-        assert_eq!(std::env::var(lower).as_deref(), Ok("lower"));
-        assert_eq!(std::env::var(upper).as_deref(), Ok("upper"));
+        assert_eq!(var(lower).as_deref(), Ok("lower"));
+        assert_eq!(var(upper).as_deref(), Ok("upper"));
     }
 
     /// CC uses Node's Windows `process.env` identity: ordinal ignore-case with
@@ -827,16 +942,55 @@ mod tests {
         let second = OsString::from_wide(&[0xD801]);
         assert_eq!(first.to_string_lossy(), second.to_string_lossy());
         assert!(!keys_equal(&first, &second));
+
+        // Reads go through the version's index and keep the same identity:
+        // ASCII names fold there, other names stay pairwise.
+        let value = |table: &EnvTable, key: &str| {
+            table
+                .entry(OsStr::new(key))
+                .map(|entry| entry.value.clone())
+        };
+        assert_eq!(value(&table, "PATH"), Some("three".into()));
+        assert_eq!(value(&table, "other"), Some("middle".into()));
+        table.insert("ÄRGER".into(), "umlaut".into());
+        table.insert(first.clone(), "surrogate".into());
+        assert_eq!(value(&table, "ärger"), Some("umlaut".into()));
+        assert_eq!(
+            table.entry(&first).map(|entry| entry.value.clone()),
+            Some("surrogate".into())
+        );
+        assert!(table.entry(&second).is_none());
     }
 
-    /// The Windows carrier is the L1 owner for ordinary CC `process.env`
-    /// assignments (`cli/structuredIO.ts:348-360`); only the later bootstrap
-    /// hardening owner may mutate the real Windows environment.
-    #[cfg(windows)]
+    /// The read index is per version: every mutation drops it, including the
+    /// removals that shift later positions.
     #[test]
-    fn windows_carrier_operations_leave_real_environment_unchanged() {
+    fn read_index_tracks_every_mutation() {
+        let mut table = EnvTable::default();
+        let value = |table: &EnvTable, key: &str| {
+            table
+                .entry(OsStr::new(key))
+                .map(|entry| entry.value.clone())
+        };
+        table.insert("COMETIX_INDEX_A".into(), "one".into());
+        assert_eq!(value(&table, "COMETIX_INDEX_A"), Some("one".into()));
+        table.insert("COMETIX_INDEX_A".into(), "two".into());
+        table.insert("COMETIX_INDEX_B".into(), "b".into());
+        assert_eq!(value(&table, "COMETIX_INDEX_A"), Some("two".into()));
+        assert_eq!(value(&table, "COMETIX_INDEX_B"), Some("b".into()));
+        assert!(table.remove(OsStr::new("COMETIX_INDEX_A")));
+        assert_eq!(value(&table, "COMETIX_INDEX_A"), None);
+        assert_eq!(value(&table, "COMETIX_INDEX_B"), Some("b".into()));
+    }
+
+    /// The carrier is the L1 owner for ordinary CC `process.env` assignments
+    /// (`cli/structuredIO.ts:348-360`) on every platform; only the Windows
+    /// bootstrap hardening owner may mutate the real environment.
+    #[test]
+    #[allow(clippy::disallowed_methods)] // Inspects the real environment.
+    fn carrier_operations_leave_real_environment_unchanged() {
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let key = "COMETIX_PROCESS_ENV_WINDOWS_OS_UNCHANGED";
+        let key = "COMETIX_PROCESS_ENV_OS_UNCHANGED";
         let real_before = std::env::vars_os().collect::<Vec<_>>();
         let raw_value_before = std::env::var_os(key);
         let _carrier = EnvVarGuard::unset(key);
@@ -850,7 +1004,7 @@ mod tests {
         assert_eq!(std::env::vars_os().collect::<Vec<_>>(), real_before);
 
         set(key, "valid\0truncated");
-        assert_eq!(var(key).as_deref(), Some("valid"));
+        assert_eq!(var(key).as_deref(), Ok("valid"));
         assert_eq!(std::env::vars_os().collect::<Vec<_>>(), real_before);
         remove(key);
         assert_eq!(std::env::vars_os().collect::<Vec<_>>(), real_before);

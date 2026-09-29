@@ -1046,7 +1046,7 @@ mod tests {
             ("1".to_string(), "exact".to_string()),
         ]));
         assert_eq!(
-            crate::utils::process_env::var("1").as_deref(),
+            crate::utils::process_env::var("1").ok().as_deref(),
             Some("malformed")
         );
     }

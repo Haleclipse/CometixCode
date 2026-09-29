@@ -4132,7 +4132,7 @@ fn should_escalate_max_output_tokens(current_override: Option<u32>) -> bool {
             crate::utils::feature_flags::FeatureFlag::MaxOutputTokensEscalation,
         ),
         current_override,
-        std::env::var_os("CLAUDE_CODE_MAX_OUTPUT_TOKENS").is_some(),
+        crate::utils::process_env::var_os("CLAUDE_CODE_MAX_OUTPUT_TOKENS").is_some(),
     )
 }
 
@@ -5580,7 +5580,7 @@ fn redact_error_text(text: &str) -> String {
         "CLAUDE_CODE_OAUTH_TOKEN",
     ] {
         sanitized = sanitized.replace(key, "<redacted>");
-        if let Ok(secret) = std::env::var(key) {
+        if let Ok(secret) = crate::utils::process_env::var(key) {
             let trimmed = secret.trim();
             if !trimmed.is_empty() {
                 sanitized = sanitized.replace(trimmed, "<redacted>");

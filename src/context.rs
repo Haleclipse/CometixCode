@@ -103,7 +103,7 @@ pub fn get_user_context() -> BTreeMap<String, String> {
     }
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let context = build_user_context(
-        |key| std::env::var(key).ok(),
+        |key| crate::utils::process_env::var(key).ok(),
         || crate::utils::claudemd::build_claude_md_context(),
         crate::constants::common::get_local_iso_date,
         !additional_dirs.is_empty(),
@@ -135,7 +135,7 @@ pub fn get_system_context() -> BTreeMap<String, String> {
     }
     let settings = crate::utils::settings::get_initial_settings();
     let context = build_system_context(
-        |key| std::env::var(key).ok(),
+        |key| crate::utils::process_env::var(key).ok(),
         settings.include_git_instructions,
         get_git_status,
     );
@@ -272,7 +272,10 @@ fn get_git_status() -> Option<String> {
 }
 
 fn run_git<const N: usize>(args: [&str; N]) -> Option<String> {
-    let output = std::process::Command::new("git").args(args).output().ok()?;
+    let output = crate::utils::subprocess_env::command("git")
+        .args(args)
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }

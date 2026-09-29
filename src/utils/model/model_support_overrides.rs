@@ -71,10 +71,10 @@ pub fn get_3p_model_capability_override(
     }
     let m = model.to_lowercase();
     for (model_env_var, capabilities_env_var) in TIERS {
-        let Ok(pinned) = std::env::var(model_env_var) else {
+        let Ok(pinned) = crate::utils::process_env::var(model_env_var) else {
             continue;
         };
-        let Ok(capabilities) = std::env::var(capabilities_env_var) else {
+        let Ok(capabilities) = crate::utils::process_env::var(capabilities_env_var) else {
             continue;
         };
         if pinned.is_empty() {

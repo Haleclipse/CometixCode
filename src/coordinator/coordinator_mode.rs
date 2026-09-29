@@ -60,7 +60,9 @@ pub fn is_coordinator_mode() -> bool {
         return false;
     }
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_COORDINATOR_MODE").as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_COORDINATOR_MODE")
+            .ok()
+            .as_deref(),
     )
 }
 
@@ -161,7 +163,9 @@ pub fn get_coordinator_user_context(
 /// Maps to: CC `coordinatorMode.ts#getCoordinatorSystemPrompt`.
 pub fn get_coordinator_system_prompt() -> String {
     let worker_capabilities = if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
     ) {
         "Workers have access to Bash, Read, and Edit tools, plus MCP tools from configured MCP servers."
     } else {

@@ -227,7 +227,9 @@ fn maybe_dump_auto_mode(
 ) {
     if !has_internal_capability(InternalCapability::Permissions)
         || !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DUMP_AUTO_MODE").as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_DUMP_AUTO_MODE")
+                .ok()
+                .as_deref(),
         )
     {
         return;
@@ -1057,7 +1059,7 @@ pub async fn classify_yolo_action(
 /// Maps to: CC `yoloClassifier.ts:1334-1347` `getClassifierModel`.
 fn get_classifier_model() -> String {
     if has_internal_capability(InternalCapability::Permissions) {
-        if let Some(model) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_MODE_MODEL") {
+        if let Some(model) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_MODE_MODEL").ok() {
             if !model.is_empty() {
                 return model;
             }
@@ -1075,7 +1077,7 @@ fn get_classifier_model() -> String {
 /// Maps to: CC `yoloClassifier.ts:1353-1369` `resolveTwoStageClassifier`.
 fn resolve_two_stage_classifier() -> Option<Value> {
     if has_internal_capability(InternalCapability::Permissions) {
-        let env = crate::utils::process_env::var("CLAUDE_CODE_TWO_STAGE_CLASSIFIER");
+        let env = crate::utils::process_env::var("CLAUDE_CODE_TWO_STAGE_CLASSIFIER").ok();
         if matches!(env.as_deref(), Some("fast" | "thinking")) {
             return env.map(Value::String);
         }
@@ -1104,7 +1106,7 @@ fn is_two_stage_classifier_enabled() -> bool {
 /// Maps to: CC `yoloClassifier.ts:1379-1390` `isJsonlTranscriptEnabled`.
 fn is_jsonl_transcript_enabled() -> bool {
     if has_internal_capability(InternalCapability::Permissions) {
-        let env = crate::utils::process_env::var("CLAUDE_CODE_JSONL_TRANSCRIPT");
+        let env = crate::utils::process_env::var("CLAUDE_CODE_JSONL_TRANSCRIPT").ok();
         if crate::utils::env_utils::is_env_truthy(env.as_deref()) {
             return true;
         }
@@ -1223,7 +1225,7 @@ pub fn yolo_result_to_decision(result: YoloClassifierResult) -> YoloClassifierDe
 /// Unit-test injection only. No production environment can skip classification.
 #[cfg(test)]
 pub fn forced_classifier_decision(tool_name: &str) -> Option<YoloClassifierDecision> {
-    if let Some(force) = crate::utils::process_env::var("COMETIX_AUTO_CLASSIFIER_FORCE") {
+    if let Some(force) = crate::utils::process_env::var("COMETIX_AUTO_CLASSIFIER_FORCE").ok() {
         match force.to_ascii_lowercase().as_str() {
             "allow" => {
                 return Some(YoloClassifierDecision::Allow {
@@ -1247,7 +1249,9 @@ pub fn forced_classifier_decision(tool_name: &str) -> Option<YoloClassifierDecis
         }
     }
     if !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("COMETIX_AUTO_CLASSIFIER_LIVE").as_deref(),
+        crate::utils::process_env::var("COMETIX_AUTO_CLASSIFIER_LIVE")
+            .ok()
+            .as_deref(),
     ) {
         return Some(YoloClassifierDecision::Unavailable {
             reason: format!("classifier live API disabled in tests for {tool_name}"),

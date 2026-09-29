@@ -3062,9 +3062,9 @@ pub fn PromptInput<'a>(
     let history_failed_match = history_search.failed_match.get();
     let input_row_height = rendered_lines.len().max(1);
     let terminal_focus = hooks.use_terminal_focus();
-    let editor_for_external_hint = std::env::var("EDITOR")
+    let editor_for_external_hint = crate::utils::process_env::var("EDITOR")
         .ok()
-        .or_else(|| std::env::var("VISUAL").ok());
+        .or_else(|| crate::utils::process_env::var("VISUAL").ok());
     let external_editor_hint = external_editor_hint_notification_from_state(
         input_row_height > 1,
         false,

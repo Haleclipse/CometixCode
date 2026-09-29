@@ -83,15 +83,15 @@ fn bun_which(_command: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
-    use std::process::Command;
 
     fn native_lookup_fresh_process_probe() {
-        let Ok(command) = std::env::var("COMETIX_WHICH_PROBE_COMMAND") else {
+        let Ok(command) = crate::utils::process_env::var("COMETIX_WHICH_PROBE_COMMAND") else {
             return;
         };
         crate::utils::process_env::capture_startup();
-        let expected = std::env::var("COMETIX_WHICH_PROBE_RESULT").ok();
-        if let Ok(replacement) = std::env::var("COMETIX_WHICH_PROBE_REPLACE_PATH") {
+        let expected = crate::utils::process_env::var("COMETIX_WHICH_PROBE_RESULT").ok();
+        if let Ok(replacement) = crate::utils::process_env::var("COMETIX_WHICH_PROBE_REPLACE_PATH")
+        {
             crate::utils::process_env::set("PATH", replacement);
         }
         let result = which_sync(&command).map(|p| p.to_string_lossy().into_owned());
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn native_lookup_matches_official_bun_path_order_spelling_and_startup_snapshot() {
-        if std::env::var_os("COMETIX_WHICH_PROBE_COMMAND").is_some() {
+        if crate::utils::process_env::var_os("COMETIX_WHICH_PROBE_COMMAND").is_some() {
             native_lookup_fresh_process_probe();
             return;
         }
@@ -150,7 +150,7 @@ mod tests {
                    command: &str,
                    expected: Option<&str>,
                    replacement: Option<&str>| {
-            let mut child = Command::new(std::env::current_exe().unwrap());
+            let mut child = crate::utils::subprocess_env::command(std::env::current_exe().unwrap());
             child.args(["--exact", "utils::which::tests::native_lookup_matches_official_bun_path_order_spelling_and_startup_snapshot", "--nocapture"])
                 .current_dir(&root).env("COMETIX_WHICH_PROBE_COMMAND", command)
                 .env_remove("COMETIX_WHICH_PROBE_RESULT").env_remove("COMETIX_WHICH_PROBE_REPLACE_PATH").env_remove("PATH");

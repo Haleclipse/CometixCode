@@ -8,7 +8,6 @@
 //! the interactive prompt flow (`It2SetupPrompt.tsx`).
 
 use std::path::PathBuf;
-use std::process::Command;
 
 /// Maps to: CC `PythonPackageManager`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -55,7 +54,7 @@ pub struct SetupCommandResult {
 }
 
 fn run_command(program: &str, args: &[&str], cwd: Option<PathBuf>) -> SetupCommandResult {
-    let mut command = Command::new(program);
+    let mut command = crate::utils::subprocess_env::command(program);
     command.args(args);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
@@ -75,8 +74,8 @@ fn run_command(program: &str, args: &[&str], cwd: Option<PathBuf>) -> SetupComma
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
 }

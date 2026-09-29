@@ -466,7 +466,9 @@ pub fn initial_permission_mode_from_cli(
         .filter(|v| !v.is_empty())
     {
         let remote = crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_REMOTE")
+                .ok()
+                .as_deref(),
         );
         if remote && !["acceptEdits", "plan", "default"].contains(&mode) {
             crate::utils::debug::log_for_debugging(&format!(
@@ -512,7 +514,7 @@ pub fn is_transcript_classifier_feature_enabled() -> bool {
     crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::TranscriptClassifier,
     ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_TRANSCRIPT_CLASSIFIER")
+        crate::utils::process_env::var("COMETIX_TRANSCRIPT_CLASSIFIER")
             .ok()
             .as_deref(),
     )

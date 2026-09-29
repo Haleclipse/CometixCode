@@ -13,7 +13,11 @@ pub mod ui;
 
 /// Maps to: CC `tools.ts` gate `isEnvTruthy(process.env.ENABLE_LSP_TOOL)`.
 pub fn is_lsp_tool_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("ENABLE_LSP_TOOL").ok().as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("ENABLE_LSP_TOOL")
+            .ok()
+            .as_deref(),
+    )
 }
 
 /// Maps to: CC `LSPTool.ts:59-85` `inputSchema`.
@@ -757,7 +761,8 @@ mod tests {
 
     #[test]
     fn expand_lsp_file_path_expands_home_notation() {
-        let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"));
+        let home = crate::utils::process_env::var("HOME")
+            .or_else(|_| crate::utils::process_env::var("USERPROFILE"));
         let Ok(home) = home else {
             return;
         };

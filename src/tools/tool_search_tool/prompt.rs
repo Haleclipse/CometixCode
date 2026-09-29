@@ -104,13 +104,13 @@ pub fn is_tool_search_enabled_for_request(
 /// Maps to CC `utils/toolSearch.ts` `isToolSearchEnabledOptimistic()`.
 pub fn is_tool_search_enabled_optimistic() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
             .ok()
             .as_deref(),
     ) {
         return false;
     }
-    if let Ok(value) = std::env::var("ENABLE_TOOL_SEARCH") {
+    if let Ok(value) = crate::utils::process_env::var("ENABLE_TOOL_SEARCH") {
         let normalized = value.trim().to_ascii_lowercase();
         if matches!(
             normalized.as_str(),

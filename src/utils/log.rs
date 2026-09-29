@@ -229,10 +229,11 @@ pub fn log_error(error: impl Into<McpLogError>) {
         "CLAUDE_CODE_USE_FOUNDRY",
     ]
     .iter()
-    .any(|key| crate::utils::env_utils::is_env_truthy(std::env::var(key).ok().as_deref()))
-        || std::env::var("DISABLE_ERROR_REPORTING")
-            .ok()
-            .is_some_and(|value| !value.is_empty())
+    .any(|key| {
+        crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).ok().as_deref())
+    }) || crate::utils::process_env::var("DISABLE_ERROR_REPORTING")
+        .ok()
+        .is_some_and(|value| !value.is_empty())
         || crate::utils::privacy_level::is_essential_traffic_only()
     {
         return;

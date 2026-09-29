@@ -414,7 +414,7 @@ mod tests {
     fn plugin_variable_substitution_matches_bun_lazy_data_directory_and_errors() {
         let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("plugin-vars-{}", uuid::Uuid::new_v4()));
-        let previous = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR");
+        let previous = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR").ok();
         struct Restore(Option<String>, std::path::PathBuf);
         impl Drop for Restore {
             fn drop(&mut self) {

@@ -658,8 +658,8 @@ fn grep_output_with_context(
         SearchResultMode::FilesWithMatches => {
             // Maps to CC `GrepTool.ts:540-562`: production mtime-descending,
             // filename tiebreaker; NODE_ENV=test uses filename-only ordering.
-            let filename_only_sort =
-                cfg!(test) || std::env::var("NODE_ENV").is_ok_and(|value| value == "test");
+            let filename_only_sort = cfg!(test)
+                || crate::utils::process_env::var("NODE_ENV").is_ok_and(|value| value == "test");
             let mtimes = futures::executor::block_on(file_match_mtimes(&results));
             let mut times = mtimes.into_iter();
             let sorted =

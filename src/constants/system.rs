@@ -60,6 +60,7 @@ pub fn get_cli_sysprompt_prefix(
 /// so the official gate skips assembling the header on production requests.
 fn is_attribution_header_enabled() -> bool {
     let value = crate::utils::process_env::var("CLAUDE_CODE_ATTRIBUTION_HEADER")
+        .ok()
         .unwrap_or_else(|| "0".to_string());
     if crate::utils::env_utils::is_env_defined_falsy(Some(&value)) {
         return false;
@@ -87,8 +88,8 @@ pub fn get_attribution_header(fingerprint: &str) -> String {
     // Maps to: CC `const version = \`${MACRO.VERSION}.${fingerprint}\``
     let version = format!("{}.{}", crate::constants::product::VERSION, fingerprint);
     // Maps to: CC `process.env.CLAUDE_CODE_ENTRYPOINT ?? 'unknown'`
-    let entrypoint =
-        std::env::var("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|_| "unknown".to_string());
+    let entrypoint = crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT")
+        .unwrap_or_else(|_| "unknown".to_string());
     // cch=00000 placeholder is Bun-native attestation — omitted in Cometix.
     format!("x-anthropic-billing-header: cc_version={version}; cc_entrypoint={entrypoint};")
 }

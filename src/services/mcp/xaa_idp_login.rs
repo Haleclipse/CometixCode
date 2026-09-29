@@ -66,7 +66,11 @@ pub struct OidcMetadata {
 
 /// Maps to: CC `services/mcp/xaaIdpLogin.ts#isXaaEnabled`.
 pub fn is_xaa_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var(CLAUDE_CODE_ENABLE_XAA).ok().as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var(CLAUDE_CODE_ENABLE_XAA)
+            .ok()
+            .as_deref(),
+    )
 }
 
 /// Maps to: CC `services/mcp/xaaIdpLogin.ts#getXaaIdpSettings`.
@@ -248,7 +252,7 @@ mod runtime {
     use tokio::net::TcpListener as TokioTcpListener;
 
     fn http_client() -> anyhow::Result<reqwest::Client> {
-        Ok(reqwest::Client::builder()
+        Ok(crate::utils::http::client_builder()
             .timeout(std::time::Duration::from_secs(IDP_REQUEST_TIMEOUT_SECS))
             .build()?)
     }

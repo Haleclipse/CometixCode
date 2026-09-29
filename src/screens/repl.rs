@@ -3870,7 +3870,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // Maps to: CC `REPL.tsx:939-942` mount-time env gate.
     let terminal_title_disabled = hooks.use_const(|| {
         crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_TERMINAL_TITLE")
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_TERMINAL_TITLE")
                 .ok()
                 .as_deref(),
         )
@@ -5652,8 +5652,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
 
                             // Maps to CC `QueryEngine.query()` eager/cowork
                             // result boundary.
-                            if crate::utils::env_utils::is_env_truthy(std::env::var(
-                                "CLAUDE_CODE_EAGER_FLUSH").ok().as_deref()) || crate::utils::env_utils::is_env_truthy(std::env::var(
+                            if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(
+                                "CLAUDE_CODE_EAGER_FLUSH").ok().as_deref()) || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(
                                 "CLAUDE_CODE_IS_COWORK").ok().as_deref()) {
                                 if let Err(error) =
                                     crate::utils::session_storage::flush_session_storage().await

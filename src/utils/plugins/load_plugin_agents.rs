@@ -310,7 +310,9 @@ fn parse_slash_command_tools_from_value(value: Option<&Value>) -> Vec<String> {
 
 fn is_auto_memory_enabled_for_plugin_agents() -> bool {
     let settings = crate::utils::settings::get_initial_settings();
-    crate::memdir::paths::is_auto_memory_enabled_with_env(&settings, &|key| std::env::var(key).ok())
+    crate::memdir::paths::is_auto_memory_enabled_with_env(&settings, &|key| {
+        crate::utils::process_env::var(key).ok()
+    })
 }
 
 fn inject_agent_memory_tools(tools: &mut Option<Vec<String>>) {

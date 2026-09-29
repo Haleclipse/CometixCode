@@ -46,7 +46,7 @@ fn is_executable(shell_path: &Path) -> bool {
     if shell_path.is_file() {
         return true;
     }
-    std::process::Command::new(shell_path)
+    crate::utils::subprocess_env::command(shell_path)
         .arg("--version")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -70,7 +70,7 @@ fn is_executable(shell_path: &Path) -> bool {
 }
 
 fn which(executable: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = crate::utils::process_env::var_os("PATH")?;
     std::env::split_paths(&path)
         .map(|directory| {
             if cfg!(windows) {
@@ -87,7 +87,7 @@ pub fn find_suitable_shell() -> Result<PathBuf, String> {
     if cfg!(windows) {
         return crate::utils::windows_paths::find_git_bash_path();
     }
-    if let Some(override_path) = std::env::var_os("CLAUDE_CODE_SHELL") {
+    if let Some(override_path) = crate::utils::process_env::var_os("CLAUDE_CODE_SHELL") {
         let override_path = PathBuf::from(override_path);
         let text = override_path.display().to_string();
         if (text.contains("bash") || text.contains("zsh")) && is_executable(&override_path) {
@@ -95,7 +95,7 @@ pub fn find_suitable_shell() -> Result<PathBuf, String> {
         }
     }
 
-    let env_shell = std::env::var_os("SHELL").map(PathBuf::from);
+    let env_shell = crate::utils::process_env::var_os("SHELL").map(PathBuf::from);
     let prefer_bash = env_shell
         .as_ref()
         .is_some_and(|path| path.display().to_string().contains("bash"));
@@ -252,7 +252,7 @@ pub fn exec(
     let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
     let file_mode = crate::utils::session_storage::is_session_write_enabled();
     let task_output = crate::utils::task::task_output::TaskOutput::new(&task_id, file_mode);
-    let mut process = std::process::Command::new(&program);
+    let mut process = crate::utils::subprocess_env::command(&program);
     // User-authorized L2: unlike CC Shell.ts:330-332's open stdin pipe,
     // give non-interactive Bash an EOF source. The eval trailer redirects only
     // the final command of an &&/; list; earlier readers (including ls=eza)
@@ -389,7 +389,7 @@ pub fn run_command_streaming(
         crate::task::generate_task_id(crate::task::TaskType::LocalBash),
         false,
     );
-    let mut process = std::process::Command::new(program);
+    let mut process = crate::utils::subprocess_env::command(program);
     process
         .args(args)
         .stdin(std::process::Stdio::piped())

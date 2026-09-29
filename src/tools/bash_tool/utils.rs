@@ -171,7 +171,7 @@ pub(crate) fn reset_cwd_if_outside_project(
     };
     let original = crate::bootstrap::state::get_original_cwd();
     let maintain = crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR")
+        crate::utils::process_env::var("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR")
             .ok()
             .as_deref(),
     );

@@ -8,11 +8,9 @@
 //! round-trip, and inside a `use_future` async block it still blocks, since
 //! that future is polled on the render loop.
 
-use std::process::Command;
-
 /// Maps to: CC `utils/getWorktreePaths.ts#getWorktreePaths`.
 pub fn get_worktree_paths(cwd: &str) -> Vec<String> {
-    let Ok(output) = Command::new("git")
+    let Ok(output) = crate::utils::subprocess_env::command("git")
         .args(["worktree", "list", "--porcelain"])
         .current_dir(cwd)
         .output()

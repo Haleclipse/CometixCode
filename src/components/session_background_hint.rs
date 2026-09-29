@@ -53,7 +53,7 @@ pub fn SessionBackgroundHint(
         move || has_foreground,
         move || {
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
+                crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
                     .ok()
                     .as_deref(),
             ) {
@@ -183,11 +183,11 @@ mod tests {
                     None,
                 );
                 let mut shell = foreground.then(|| {
-                    use std::process::{Command, Stdio};
+                    use std::process::Stdio;
                     let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
                     let output = crate::utils::task::task_output::TaskOutput::new(&task_id, false);
                     let command = "IFS= read -r marker && printf '%s' \"$marker\"";
-                    let mut process = Command::new("/bin/sh");
+                    let mut process = crate::utils::subprocess_env::command("/bin/sh");
                     process
                         .args(["-c", command])
                         .stdin(Stdio::piped())

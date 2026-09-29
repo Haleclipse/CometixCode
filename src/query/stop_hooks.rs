@@ -139,14 +139,15 @@ fn stop_hooks_config(tool_use_context: &ToolUseContext) -> RegisteredHooks {
 #[cfg(not(test))]
 pub async fn handle_stop_hooks(params: StopHookParams) -> StopHookResult {
     let cache_safe_params = maybe_save_cache_safe_params(&params);
-    let prompt_suggestion_env_disabled = std::env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
-        .ok()
-        .is_some_and(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "" | "0" | "false" | "no" | "off"
-            )
-        });
+    let prompt_suggestion_env_disabled =
+        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
+            .ok()
+            .is_some_and(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "" | "0" | "false" | "no" | "off"
+                )
+            });
     if matches!(params.query_source, QuerySource::Prompt)
         && !prompt_suggestion_env_disabled
         && !crate::utils::env_utils::is_bare_mode()

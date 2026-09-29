@@ -353,7 +353,7 @@ const DEFAULT_PLUGIN_GIT_TIMEOUT_MS: f64 = 120_000.0;
 
 /// Maps to: CC `utils/plugins/marketplaceManager.ts:517-526#getPluginGitTimeoutMs`.
 fn get_plugin_git_timeout_ms() -> f64 {
-    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS") {
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS").ok() {
         // ECMAScript trim and decimal-prefix parseInt; preserve Number rounding.
         let trimmed = value.trim_start_matches(|c: char| matches!(c, '\u{9}'..='\u{d}' | '\u{20}' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'));
         let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
@@ -1392,7 +1392,7 @@ fn cache_marketplace_from_url(
         }
         let started = std::time::Instant::now();
         let fetched:anyhow::Result<serde_json::Value>=async {
-        let client=reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build()?;
+        let client=crate::utils::http::client_builder().timeout(std::time::Duration::from_secs(10)).build()?;
         let mut headers=reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::ACCEPT,reqwest::header::HeaderValue::from_static("application/json, text/plain, */*"));
         if let Some(custom_headers)=custom_headers {for(key,value)in custom_headers {headers.insert(reqwest::header::HeaderName::from_bytes(key.as_bytes())?,reqwest::header::HeaderValue::from_str(value.as_str().unwrap_or(""))?);}}
@@ -1969,7 +1969,7 @@ pub async fn refresh_marketplace(
             "github"|"git"=>{
                 let sparse=source["sparsePaths"].as_array().map(|a|a.iter().map(|v|v.as_str().unwrap_or("").to_owned()).collect::<Vec<_>>());let git_ref=source["ref"].as_str();
                 if source["source"]=="github"{let repo=source["repo"].as_str().unwrap_or("");let ssh=format!("git@github.com:{repo}.git");let https=format!("https://github.com/{repo}.git");
-                    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref()){cache_marketplace_from_git(&https,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
+                    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").ok().as_deref()){cache_marketplace_from_git(&https,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
                     else{let configured=is_github_ssh_likely_configured().await;let(first,second)=if configured{(&ssh,&https)}else{(&https,&ssh)};if cache_marketplace_from_git(first,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await.is_err(){crate::utils::debug::log_for_debugging_with_level(&format!("Marketplace refresh failed with {} for {repo}, falling back to {}",if configured{"SSH"}else{"HTTPS"},if configured{"HTTPS"}else{"SSH"}),crate::utils::debug::DebugLogLevel::Info);cache_marketplace_from_git(second,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}}
                 }else{cache_marketplace_from_git(source["url"].as_str().unwrap_or(""),path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
                 if read_cached_marketplace(path).await.is_err(){let display=if source["source"]=="github"{source["repo"].as_str().unwrap_or("").to_owned()}else{redact_url_credentials(source["url"].as_str().unwrap_or(""))};let reason=if name=="claude-code-plugins"{"We've deprecated \"claude-code-plugins\" in favor of \"claude-plugins-official\"."}else{"This marketplace may have been deprecated or moved to a new location."};anyhow::bail!("The marketplace.json file is no longer present in this repository.\n\n{reason}\nSource: {display}\n\nYou can remove this marketplace with: claude plugin marketplace remove \"{name}\"");}

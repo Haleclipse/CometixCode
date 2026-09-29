@@ -385,7 +385,7 @@ mod tests {
         apply_filtered(&mut update, Some(&env));
         update.commit();
 
-        assert_eq!(process_env::var("1").as_deref(), Some("malformed"));
+        assert_eq!(process_env::var("1").ok().as_deref(), Some("malformed"));
     }
 
     #[test]

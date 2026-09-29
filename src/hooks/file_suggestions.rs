@@ -164,7 +164,7 @@ async fn get_files_using_git(cwd: &Path, respect_gitignore: bool) -> Option<Vec<
     if respect_gitignore {
         args.push("--exclude-standard".to_string());
     }
-    let output = tokio::process::Command::new("git")
+    let output = crate::utils::subprocess_env::tokio_command("git")
         .args(args)
         // CC `execFileNoThrowWithCwd(..., { cwd: repoRoot })` — rows must be
         // repo-root relative before `normalizeGitPaths` rebases them onto cwd.
@@ -715,7 +715,7 @@ mod tests {
             std::fs::write(root.join("src").join(name), "").unwrap();
         }
         assert!(
-            std::process::Command::new("git")
+            crate::utils::subprocess_env::command("git")
                 .args(["init", "--quiet"])
                 .current_dir(&root)
                 .status()
@@ -769,7 +769,7 @@ mod tests {
         // so `git ls-files --others --exclude-standard` still reports it.
         std::fs::write(root.join(".ignore"), "vendor/\n").unwrap();
         assert!(
-            std::process::Command::new("git")
+            crate::utils::subprocess_env::command("git")
                 .args(["init", "--quiet"])
                 .current_dir(&root)
                 .status()
@@ -814,7 +814,7 @@ mod tests {
         std::fs::write(root.join(".gitignore"), "/.test/\n").unwrap();
         std::fs::write(root.join(".test/workdir/artifact.log"), "").unwrap();
         assert!(
-            std::process::Command::new("git")
+            crate::utils::subprocess_env::command("git")
                 .args(["init", "--quiet"])
                 .current_dir(&root)
                 .status()

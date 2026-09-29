@@ -12485,26 +12485,26 @@ rl.on('line', line => {
             std::env::temp_dir().join(format!("cometix-worktree-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(&repo).expect("mkdir repo");
-        let status = std::process::Command::new("git")
+        let status = crate::utils::subprocess_env::command("git")
             .args(["init"])
             .current_dir(&repo)
             .status()
             .expect("git init");
         assert!(status.success());
-        let _ = std::process::Command::new("git")
+        let _ = crate::utils::subprocess_env::command("git")
             .args(["config", "user.email", "test@example.com"])
             .current_dir(&repo)
             .status();
-        let _ = std::process::Command::new("git")
+        let _ = crate::utils::subprocess_env::command("git")
             .args(["config", "user.name", "Test"])
             .current_dir(&repo)
             .status();
         std::fs::write(repo.join("README"), "hi").expect("write");
-        let _ = std::process::Command::new("git")
+        let _ = crate::utils::subprocess_env::command("git")
             .args(["add", "."])
             .current_dir(&repo)
             .status();
-        let _ = std::process::Command::new("git")
+        let _ = crate::utils::subprocess_env::command("git")
             .args(["commit", "-m", "init"])
             .current_dir(&repo)
             .status();

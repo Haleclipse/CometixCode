@@ -121,7 +121,9 @@ pub fn discover_claude_md_files() -> Vec<ClaudeMdFile> {
 
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
     );
     let files = discover_claude_md_files_with_options(include_default_discovery, &additional_dirs);
 
@@ -316,7 +318,7 @@ pub fn discover_claude_md_files_with_external_policy(
     }
 
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD")
+        crate::utils::process_env::var("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD")
             .ok()
             .as_deref(),
     ) {
@@ -422,7 +424,9 @@ pub fn should_show_claude_md_external_includes_warning() -> bool {
 
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
     );
     let files = discover_claude_md_files_with_external_policy(
         include_default_discovery,
@@ -1622,7 +1626,7 @@ mod tests {
         let _sources = AllowedSettingSourcesGuard::capture();
         let root = temp_dir("nested-worktree-parent-filter");
         let run_git = |args: &[&str]| {
-            std::process::Command::new("git")
+            crate::utils::subprocess_env::command("git")
                 .args(args)
                 .current_dir(&root)
                 .status()

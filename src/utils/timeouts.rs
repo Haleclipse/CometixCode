@@ -39,7 +39,11 @@ pub fn get_default_bash_timeout_ms_from_value(value: Option<&str>) -> u64 {
 
 /// Maps to CC `getDefaultBashTimeoutMs(env)`.
 pub fn get_default_bash_timeout_ms() -> u64 {
-    get_default_bash_timeout_ms_from_value(std::env::var("BASH_DEFAULT_TIMEOUT_MS").ok().as_deref())
+    get_default_bash_timeout_ms_from_value(
+        crate::utils::process_env::var("BASH_DEFAULT_TIMEOUT_MS")
+            .ok()
+            .as_deref(),
+    )
 }
 
 pub fn get_max_bash_timeout_ms_from_values(maximum: Option<&str>, default: Option<&str>) -> u64 {
@@ -52,8 +56,8 @@ pub fn get_max_bash_timeout_ms_from_values(maximum: Option<&str>, default: Optio
 
 /// Maps to CC `getMaxBashTimeoutMs(env)`.
 pub fn get_max_bash_timeout_ms() -> u64 {
-    let maximum = std::env::var("BASH_MAX_TIMEOUT_MS").ok();
-    let default = std::env::var("BASH_DEFAULT_TIMEOUT_MS").ok();
+    let maximum = crate::utils::process_env::var("BASH_MAX_TIMEOUT_MS").ok();
+    let default = crate::utils::process_env::var("BASH_DEFAULT_TIMEOUT_MS").ok();
     get_max_bash_timeout_ms_from_values(maximum.as_deref(), default.as_deref())
 }
 

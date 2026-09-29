@@ -138,16 +138,18 @@ pub async fn exec_command_hook(
         // any part of `execCommandHook` setup.
         #[cfg(windows)]
         let mut shell = {
-            let mut shell = tokio::process::Command::new("cmd");
+            let mut shell = crate::utils::subprocess_env::tokio_command("cmd");
             shell.kill_on_drop(true).args(["/C", command.as_str()]);
             shell
         };
         #[cfg(not(windows))]
         let mut shell = {
-            let mut shell = tokio::process::Command::new("sh");
+            let mut shell = crate::utils::subprocess_env::tokio_command("sh");
             shell.kill_on_drop(true).args(["-c", command.as_str()]);
             shell
         };
+        // CC layers the hook variables over `subprocessEnv()` (`hooks.ts:881-926`).
+        crate::utils::subprocess_env::apply_subprocess_env(&mut shell);
         let mut child = match shell
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

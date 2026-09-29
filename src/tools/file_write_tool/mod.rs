@@ -692,7 +692,7 @@ impl ToolCall for FileWriteTool {
             // CC: FileWriteTool.ts:339-342 `logEvent('tengu_write_claudemd',
             // {})` on `${sep}CLAUDE.md` paths — joins with analytics.
 
-            let git_diff = if crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref())
+            let git_diff = if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").ok().as_deref())
                 && remote_git_diff_enabled()
             {
                 // CC: logEvent('tengu_tool_use_diff_computed', {isWriteTool,
@@ -1367,7 +1367,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).unwrap();
         let git = |args: &[&str]| {
-            let output = std::process::Command::new("git")
+            let output = crate::utils::subprocess_env::command("git")
                 .args(args)
                 .current_dir(&root)
                 .env("GIT_CONFIG_NOSYSTEM", "1")

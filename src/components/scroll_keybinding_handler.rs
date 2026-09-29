@@ -140,7 +140,11 @@ pub fn read_scroll_speed_base_from_value(raw: Option<&str>) -> f64 {
 
 /// Maps to: CC `ScrollKeybindingHandler.tsx#readScrollSpeedBase`.
 pub fn read_scroll_speed_base() -> f64 {
-    read_scroll_speed_base_from_value(std::env::var("CLAUDE_CODE_SCROLL_SPEED").ok().as_deref())
+    read_scroll_speed_base_from_value(
+        crate::utils::process_env::var("CLAUDE_CODE_SCROLL_SPEED")
+            .ok()
+            .as_deref(),
+    )
 }
 
 /// Maps to: CC `ScrollKeybindingHandler.tsx#initWheelAccel`.
@@ -520,7 +524,7 @@ pub fn ScrollKeybindingHandler(
 ) -> impl Into<AnyElement<'static>> {
     let wheel = hooks.use_state(|| {
         init_wheel_accel(
-            std::env::var("TERM_PROGRAM")
+            crate::utils::process_env::var("TERM_PROGRAM")
                 .ok()
                 .is_some_and(|value| value.eq_ignore_ascii_case("vscode")),
             read_scroll_speed_base(),

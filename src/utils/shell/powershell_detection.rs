@@ -27,7 +27,7 @@ fn is_executable_file(path: &Path) -> bool {
 
 /// Maps to: CC `utils/which.ts#which`, scoped to the PowerShell lookup.
 fn which(executable: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = crate::utils::process_env::var_os("PATH")?;
     std::env::split_paths(&path)
         .map(|directory| {
             if cfg!(windows) {

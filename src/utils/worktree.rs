@@ -170,7 +170,7 @@ fn command_output(mut command: Command) -> anyhow::Result<(i32, String, String)>
 }
 
 fn git_no_prompt(cwd: &Path, args: &[&str]) -> anyhow::Result<(i32, String, String)> {
-    let mut command = Command::new("git");
+    let mut command = crate::utils::subprocess_env::command("git");
     command
         .args(args)
         .current_dir(cwd)
@@ -419,7 +419,7 @@ fn get_branch(cwd: &Path) -> anyhow::Result<String> {
 
 /// Maps to: CC `utils/worktree.ts` `killTmuxSession(...)`.
 pub fn kill_tmux_session(session_name: &str) -> bool {
-    let mut command = Command::new("tmux");
+    let mut command = crate::utils::subprocess_env::command("tmux");
     command.args(["kill-session", "-t", session_name]);
     match command_output(command) {
         Ok((code, _, _)) => code == 0,
@@ -798,7 +798,7 @@ mod tests {
     }
 
     fn git_available() -> bool {
-        Command::new("git")
+        crate::utils::subprocess_env::command("git")
             .arg("--version")
             .output()
             .map(|output| output.status.success())
@@ -806,7 +806,7 @@ mod tests {
     }
 
     fn run_git(cwd: &Path, args: &[&str]) {
-        let status = Command::new("git")
+        let status = crate::utils::subprocess_env::command("git")
             .args(args)
             .current_dir(cwd)
             .env("GIT_TERMINAL_PROMPT", "0")

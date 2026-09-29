@@ -239,7 +239,9 @@ fn hook_name(event: HookEvent, match_query: &str) -> String {
 ///
 pub fn bare_mode_disables_hooks() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE")
+            .ok()
+            .as_deref(),
     )
 }
 

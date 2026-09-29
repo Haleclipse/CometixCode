@@ -18,7 +18,7 @@ pub struct RgbColor {
 
 /// Maps to CC `getDefaultCharacters()`.
 pub fn get_default_characters() -> &'static [&'static str] {
-    if std::env::var("TERM").as_deref() == Ok("xterm-ghostty") {
+    if crate::utils::process_env::var("TERM").as_deref() == Ok("xterm-ghostty") {
         &GHOSTTY_DEFAULT_CHARACTERS
     } else if cfg!(target_os = "macos") {
         &MACOS_DEFAULT_CHARACTERS

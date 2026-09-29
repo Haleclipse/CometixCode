@@ -58,7 +58,7 @@ static SHORTSTAT_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 async fn git_output(cwd: &Path, args: &[&str]) -> Option<(i32, String)> {
-    let mut command = tokio::process::Command::new("git");
+    let mut command = crate::utils::subprocess_env::tokio_command("git");
     command
         .args(args)
         .current_dir(cwd)
@@ -426,7 +426,7 @@ impl ToolUseDiff {
 async fn run_single_file_git(root: &Path, args: &[&str]) -> Option<(bool, String)> {
     let output = tokio::time::timeout(
         Duration::from_millis(3_000),
-        tokio::process::Command::new("git")
+        crate::utils::subprocess_env::tokio_command("git")
             .args(args)
             .current_dir(root)
             .env("GIT_TERMINAL_PROMPT", "0")
@@ -493,7 +493,7 @@ fn parse_raw_single_file_diff(
 }
 
 async fn get_single_file_diff_ref(root: &Path) -> String {
-    let base_branch = if let Some(base_ref) = std::env::var("CLAUDE_CODE_BASE_REF")
+    let base_branch = if let Some(base_ref) = crate::utils::process_env::var("CLAUDE_CODE_BASE_REF")
         .ok()
         .filter(|value| !value.trim().is_empty())
     {
@@ -666,7 +666,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).unwrap();
         let git = |args: &[&str]| {
-            let output = std::process::Command::new("git")
+            let output = crate::utils::subprocess_env::command("git")
                 .args(args)
                 .current_dir(&root)
                 .env("GIT_CONFIG_NOSYSTEM", "1")

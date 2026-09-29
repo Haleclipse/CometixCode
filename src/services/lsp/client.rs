@@ -33,7 +33,7 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot};
 use tokio::task::JoinHandle;
 
@@ -230,7 +230,7 @@ impl LspClient {
 
         self.clear_crash_error();
         let options = options.unwrap_or_default();
-        let mut child_command = Command::new(command);
+        let mut child_command = crate::utils::subprocess_env::tokio_command(command);
         child_command
             .args(args)
             .stdin(Stdio::piped())
@@ -810,7 +810,7 @@ mod tests {
 
     #[tokio::test]
     async fn lsp_client_initializes_and_sends_request_over_stdio() {
-        if std::process::Command::new("node")
+        if crate::utils::subprocess_env::command("node")
             .arg("--version")
             .output()
             .is_err()

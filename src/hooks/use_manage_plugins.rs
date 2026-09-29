@@ -28,6 +28,7 @@ pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>, enabled: bool) {
                     let names = metrics.as_object_mut().unwrap().remove("ant_enabled_names");
                     metrics["has_custom_plugin_cache_dir"] = json!(
                         crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR")
+                            .ok()
                             .is_some_and(|s| !s.is_empty())
                     );
                     let mut event = metrics.clone();
@@ -195,7 +196,7 @@ async fn initial_plugin_load(store: AppStore, mut notifications: NotificationsWr
                 .map(|m| m["hooks"].as_array().map_or(0, |h| h.len()))
                 .sum();
             let mut metrics = json!({"enabled_count":loaded.enabled.len(),"disabled_count":loaded.disabled.len(),"inline_count":loaded.enabled.iter().filter(|p|p.source.ends_with("@inline")).count(),"marketplace_count":loaded.enabled.iter().filter(|p|!p.source.ends_with("@inline")).count(),"error_count":error_count,"skill_count":commands.len(),"agent_count":agents.len(),"hook_count":hook_count,"mcp_count":mcp_count,"lsp_count":lsp_count});
-            if crate::utils::process_env::var("USER_TYPE").as_deref() == Some("ant")
+            if crate::utils::process_env::var("USER_TYPE").ok().as_deref() == Some("ant")
                 && !loaded.enabled.is_empty()
             {
                 let mut names = loaded

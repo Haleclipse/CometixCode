@@ -8,7 +8,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::process::Command;
 
 use super::types::{ConfigScope, ScopedMcpServerConfig};
 
@@ -39,15 +38,14 @@ pub async fn get_mcp_headers_from_helper(
     }
 
     let mut command = if cfg!(target_os = "windows") {
-        let mut command = Command::new("cmd");
+        let mut command = crate::utils::subprocess_env::tokio_command("cmd");
         command.args(["/C", helper]);
         command
     } else {
-        let mut command = Command::new("sh");
+        let mut command = crate::utils::subprocess_env::tokio_command("sh");
         command.args(["-c", helper]);
         command
     };
-    command.envs(std::env::vars());
     command.env("CLAUDE_CODE_MCP_SERVER_NAME", server_name);
     if let Some(url) = config.url.as_deref() {
         command.env("CLAUDE_CODE_MCP_SERVER_URL", url);

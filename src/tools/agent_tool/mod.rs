@@ -29,7 +29,7 @@ pub mod ui;
 /// Maps to CC `AgentTool.tsx:145-147` `isBackgroundTasksDisabled`.
 fn is_background_tasks_disabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
             .ok()
             .as_deref(),
     )
@@ -298,7 +298,7 @@ fn can_read_agent_output_file(context: &crate::tool::ToolUseContext) -> bool {
 /// Maps to CC `AgentTool.tsx#getAutoBackgroundMs` env branch.
 fn get_auto_background_ms_for_agent_tool() -> Option<u64> {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_AUTO_BACKGROUND_TASKS")
+        crate::utils::process_env::var("CLAUDE_AUTO_BACKGROUND_TASKS")
             .ok()
             .as_deref(),
     )
@@ -2303,7 +2303,7 @@ impl crate::tool::ToolCall for AgentTool {
                 on_progress,
             );
             let foreground_registration = (!crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
+                crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
                     .ok()
                     .as_deref(),
             ))

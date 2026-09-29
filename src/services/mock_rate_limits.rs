@@ -473,7 +473,7 @@ pub fn get_mock_headerless_429_message() -> Option<String> {
     if !internal_mock_capability() {
         return None;
     }
-    if let Ok(value) = std::env::var("CLAUDE_MOCK_HEADERLESS_429") {
+    if let Ok(value) = crate::utils::process_env::var("CLAUDE_MOCK_HEADERLESS_429") {
         if !value.is_empty() {
             return Some(value);
         }
@@ -506,7 +506,7 @@ pub fn should_process_mock_limits() -> bool {
     if !internal_mock_capability() {
         return false;
     }
-    let env_enabled = std::env::var("CLAUDE_MOCK_HEADERLESS_429")
+    let env_enabled = crate::utils::process_env::var("CLAUDE_MOCK_HEADERLESS_429")
         .ok()
         .is_some_and(|value| !value.is_empty());
     MOCK_STATE

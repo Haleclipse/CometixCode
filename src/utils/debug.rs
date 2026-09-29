@@ -57,7 +57,7 @@ impl DebugLogLevel {
 
 /// Maps to: CC `utils/debug.ts#getMinDebugLogLevel`.
 pub fn get_min_debug_log_level() -> DebugLogLevel {
-    std::env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
+    crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
         .ok()
         .as_deref()
         .and_then(DebugLogLevel::from_env_name)
@@ -69,7 +69,7 @@ pub fn get_debug_log_path() -> PathBuf {
     if let Some(path) = config().debug_file.clone() {
         return path;
     }
-    if let Ok(dir) = std::env::var("CLAUDE_CODE_DEBUG_LOGS_DIR") {
+    if let Ok(dir) = crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOGS_DIR") {
         return PathBuf::from(dir)
             .join(format!("{}.log", crate::bootstrap::state::get_session_id()));
     }
@@ -227,7 +227,11 @@ impl ProfileSelection {
 
     /// `COMETIX_DEBUG_PROFILES`: the same list, from the environment.
     fn from_env() -> Self {
-        Self::parse(std::env::var("COMETIX_DEBUG_PROFILES").ok().as_deref())
+        Self::parse(
+            crate::utils::process_env::var("COMETIX_DEBUG_PROFILES")
+                .ok()
+                .as_deref(),
+        )
     }
 
     fn or(self, other: Self) -> Self {
@@ -328,7 +332,7 @@ pub fn frame_profile_enabled() -> bool {
 /// bench-only per-frame JSONL for offline analysis. The Rust twin uses the
 /// same record shape so one analysis script can consume both sides.
 pub fn frame_timing_log_path() -> Option<std::path::PathBuf> {
-    std::env::var_os("COMETIX_FRAME_TIMING_LOG")
+    crate::utils::process_env::var_os("COMETIX_FRAME_TIMING_LOG")
         .filter(|value| !value.is_empty())
         .map(std::path::PathBuf::from)
 }
@@ -341,7 +345,7 @@ pub fn frame_timing_sample_tick() -> bool {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     let every = *EVERY.get_or_init(|| {
-        std::env::var("COMETIX_FRAME_TIMING_SAMPLE_EVERY")
+        crate::utils::process_env::var("COMETIX_FRAME_TIMING_SAMPLE_EVERY")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|&value| value >= 1)
@@ -401,10 +405,16 @@ impl DebugConfig {
             || debug_to_stderr
             || debug_file.is_some()
             || debug_filter.is_some()
-            || crate::utils::env_utils::is_env_truthy(std::env::var("DEBUG").ok().as_deref())
-            || crate::utils::env_utils::is_env_truthy(std::env::var("DEBUG_SDK").ok().as_deref())
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DEBUG").ok().as_deref(),
+                crate::utils::process_env::var("DEBUG").ok().as_deref(),
+            )
+            || crate::utils::env_utils::is_env_truthy(
+                crate::utils::process_env::var("DEBUG_SDK").ok().as_deref(),
+            )
+            || crate::utils::env_utils::is_env_truthy(
+                crate::utils::process_env::var("CLAUDE_CODE_DEBUG")
+                    .ok()
+                    .as_deref(),
             );
 
         let profiles = ProfileSelection::parse(debug_filter).or(ProfileSelection::from_env());
@@ -492,7 +502,7 @@ mod tests {
     #[test]
     fn log_ant_error_matches_official_audience_stack_and_error_level() {
         const CHILD: &str = "COMETIX_TEST_LOG_ANT_ERROR_CHILD";
-        if std::env::var_os(CHILD).is_some() {
+        if crate::utils::process_env::var_os(CHILD).is_some() {
             init_from_parts(false, true, None, None);
             log_ant_error("absent-stack", None);
             log_ant_error("empty-stack", Some(""));
@@ -505,7 +515,7 @@ mod tests {
 
         // Separate process keeps the production OnceLock and stderr sink real
         // without changing other tests' debug configuration.
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = crate::utils::subprocess_env::command(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "utils::debug::tests::log_ant_error_matches_official_audience_stack_and_error_level",

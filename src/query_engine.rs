@@ -895,7 +895,7 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
         }
     }
     let mut outcome = QueryEngineOutcome::default();
-    let max_attempts = std::env::var("MAX_STRUCTURED_OUTPUT_RETRIES")
+    let max_attempts = crate::utils::process_env::var("MAX_STRUCTURED_OUTPUT_RETRIES")
         .ok()
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
@@ -2175,7 +2175,7 @@ mod sdk_mapper_tests {
     #[test]
     fn first_local_query_without_sdk_initialize_keeps_process_executor_live() {
         const CHILD: &str = "COMETIX_FIRST_QUERY_PLUGIN_CHILD";
-        if let Some(root) = std::env::var_os(CHILD) {
+        if let Some(root) = crate::utils::process_env::var_os(CHILD) {
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
             crate::utils::process_env::set("CLAUDE_CONFIG_DIR", root.join("config"));
@@ -2259,7 +2259,7 @@ mod sdk_mapper_tests {
             "---\nname: reviewer\ndescription: Never execute\n---\nFixture",
         )
         .unwrap();
-        let mut child=std::process::Command::new(std::env::current_exe().unwrap())
+        let mut child=crate::utils::subprocess_env::command(std::env::current_exe().unwrap())
             .args(["--exact","query_engine::sdk_mapper_tests::first_local_query_without_sdk_initialize_keeps_process_executor_live","--nocapture"])
             .env(CHILD,&root).current_dir(&root).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);

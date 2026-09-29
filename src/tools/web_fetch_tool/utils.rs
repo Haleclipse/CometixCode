@@ -369,7 +369,7 @@ pub(crate) async fn get_url_markdown_content(
         }
     }
 
-    let client = reqwest::Client::builder()
+    let client = crate::utils::http::client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_millis(FETCH_TIMEOUT_MS))
         .build()?;
@@ -483,7 +483,7 @@ async fn check_domain_blocklist(
         }
     }
 
-    let client = reqwest::Client::builder()
+    let client = crate::utils::http::client_builder()
         .timeout(Duration::from_millis(DOMAIN_CHECK_TIMEOUT_MS))
         .build()?;
     let mut url = reqwest::Url::parse("https://api.anthropic.com/api/web/domain_info")?;

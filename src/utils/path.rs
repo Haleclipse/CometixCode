@@ -64,8 +64,8 @@ pub fn expand_path(path: &str, base_dir: Option<&Path>) -> Result<PathBuf, Strin
     if trimmed.is_empty() {
         return Ok(normalize_path(&base));
     }
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    let home = crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(PathBuf::from);
     if trimmed == "~" {
         return Ok(normalize_path(home.as_deref().unwrap_or(Path::new("~"))));

@@ -929,12 +929,12 @@ pub const FALLBACK_SYMBOLS: FigureSet = FigureSet {
 
 /// Mirrors `is-unicode-supported`, the dependency used by npm `figures`.
 pub fn is_unicode_supported() -> bool {
-    let term = std::env::var("TERM").ok();
-    let term_program = std::env::var("TERM_PROGRAM").ok();
-    let wt_session = std::env::var("WT_SESSION").ok();
-    let terminus_sublime = std::env::var("TERMINUS_SUBLIME").ok();
-    let con_emu_task = std::env::var("ConEmuTask").ok();
-    let terminal_emulator = std::env::var("TERMINAL_EMULATOR").ok();
+    let term = crate::utils::process_env::var("TERM").ok();
+    let term_program = crate::utils::process_env::var("TERM_PROGRAM").ok();
+    let wt_session = crate::utils::process_env::var("WT_SESSION").ok();
+    let terminus_sublime = crate::utils::process_env::var("TERMINUS_SUBLIME").ok();
+    let con_emu_task = crate::utils::process_env::var("ConEmuTask").ok();
+    let terminal_emulator = crate::utils::process_env::var("TERMINAL_EMULATOR").ok();
 
     is_unicode_supported_with_env(
         cfg!(windows),

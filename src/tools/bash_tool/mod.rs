@@ -411,7 +411,7 @@ pub fn input_schema() -> &'static crate::utils::zod::Schema {
     static SCHEMA: std::sync::OnceLock<crate::utils::zod::Schema> = std::sync::OnceLock::new();
     SCHEMA.get_or_init(|| {
         let background_disabled = crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
                 .ok()
                 .as_deref(),
         );
@@ -674,7 +674,7 @@ fn run_shell_command(
         );
     }
     let background_disabled = crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
             .ok()
             .as_deref(),
     );
@@ -1172,7 +1172,7 @@ impl crate::tool::ToolCall for BashTool {
         let mut ast_commands = None;
         if crate::utils::build_profile::build_audience().is_internal()
             && !crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
+                crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
                     .ok()
                     .as_deref(),
             )

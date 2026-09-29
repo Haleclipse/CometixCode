@@ -149,7 +149,7 @@ fn resolve_thinking_launch(
         _ => {
             // Maps to: CC MAX_THINKING_TOKENS env (truthy) ?? options.maxThinkingTokens.
             // Invalid non-empty env parses to NaN and blocks CLI fallback.
-            let env_max = std::env::var("MAX_THINKING_TOKENS")
+            let env_max = crate::utils::process_env::var("MAX_THINKING_TOKENS")
                 .ok()
                 .filter(|value| !value.is_empty());
             let max_thinking_tokens = match env_max.as_deref() {
@@ -418,7 +418,7 @@ fn build_initial_app_state_with_thinking(
         crate::bootstrap::state::get_is_non_interactive_session(),
         crate::utils::agent_swarms_enabled::is_agent_swarms_enabled()
             && crate::utils::teammate::is_teammate(),
-        std::env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
+        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
             .ok()
             .as_deref(),
     );

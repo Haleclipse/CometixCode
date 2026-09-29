@@ -89,7 +89,7 @@ pub fn add_to_history_with_pasted(
 ) {
     if !history_write_enabled()
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY")
+            crate::utils::process_env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY")
                 .ok()
                 .as_deref(),
         )
@@ -257,7 +257,7 @@ fn pasted_contents_from_json(value: &serde_json::Value) -> BTreeMap<usize, Paste
 }
 
 fn history_write_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+    crate::utils::env_utils::is_cometix_write_enabled()
 }
 
 fn append_log_entry(entry: &LogEntry) -> anyhow::Result<()> {

@@ -1,7 +1,6 @@
 //! iTerm2 pane backend for teammate execution.
 //! Maps to: CC `utils/swarm/backends/ITermBackend.ts`.
 
-use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 
 use crate::tools::agent_tool::agent_color_manager::AgentColorName;
@@ -25,7 +24,9 @@ static PANE_CREATION_LOCK: LazyLock<tokio::sync::Mutex<()>> =
     LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 fn run_it2(args: &[String]) -> It2CommandResult {
-    let output = Command::new(IT2_COMMAND).args(args).output();
+    let output = crate::utils::subprocess_env::command(IT2_COMMAND)
+        .args(args)
+        .output();
     match output {
         Ok(output) => It2CommandResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -67,7 +68,11 @@ pub fn leader_session_id_from_env(iterm_session_id: Option<&str>) -> Option<Stri
 }
 
 fn get_leader_session_id() -> Option<String> {
-    leader_session_id_from_env(std::env::var("ITERM_SESSION_ID").ok().as_deref())
+    leader_session_id_from_env(
+        crate::utils::process_env::var("ITERM_SESSION_ID")
+            .ok()
+            .as_deref(),
+    )
 }
 
 /// Pure split-target/orientation calculation from CC

@@ -31,7 +31,7 @@ fn get_credential_from_fd(
         return cached;
     }
 
-    let Some(fd_env) = std::env::var(env_var)
+    let Some(fd_env) = crate::utils::process_env::var(env_var)
         .ok()
         .filter(|value| !value.is_empty())
     else {
