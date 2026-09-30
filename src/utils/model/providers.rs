@@ -12,17 +12,12 @@ pub enum ApiProvider {
 
 /// Maps to CC `utils/model/providers.ts` `getAPIProvider()`.
 pub fn get_api_provider() -> ApiProvider {
-    if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_BEDROCK").ok().as_deref(),
-    ) {
+    let env = crate::utils::process_env::snapshot();
+    if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_USE_BEDROCK")) {
         ApiProvider::Bedrock
-    } else if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_VERTEX").ok().as_deref(),
-    ) {
+    } else if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_USE_VERTEX")) {
         ApiProvider::Vertex
-    } else if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_FOUNDRY").ok().as_deref(),
-    ) {
+    } else if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_USE_FOUNDRY")) {
         ApiProvider::Foundry
     } else {
         ApiProvider::FirstParty
@@ -44,7 +39,8 @@ pub fn is_first_party_anthropic_base_url_for_audience(
     base_url: Option<&str>,
     audience: crate::utils::build_profile::BuildAudience,
 ) -> bool {
-    let Some(base_url) = base_url else {
+    // CC `if (!baseUrl) return true`: an empty value is unset.
+    let Some(base_url) = base_url.filter(|url| !url.is_empty()) else {
         return true;
     };
     let allowed_hosts: &[&str] = if crate::utils::build_profile::audience_has_internal_capability(
@@ -63,37 +59,23 @@ pub fn is_first_party_anthropic_base_url_for_audience(
 
 /// Maps to CC `utils/model/providers.ts#isFirstPartyAnthropicBaseUrl`.
 pub fn is_first_party_anthropic_base_url() -> bool {
-    let base_url = std::env::var("ANTHROPIC_BASE_URL").ok();
+    let base_url = crate::utils::process_env::var("ANTHROPIC_BASE_URL");
     is_first_party_anthropic_base_url_for_audience(
         base_url.as_deref(),
         crate::utils::build_profile::build_audience(),
     )
 }
 
+/// CC `new URL(baseUrl).host` (`providers.ts:31`): the WHATWG host, with a
+/// non-default port and without a default one (`https://h:443` is `h`).
+/// `None` where `new URL` throws.
 fn parse_url_host(url: &str) -> Option<String> {
-    let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let Some((scheme, after_scheme)) = trimmed.split_once("://") else {
-        return None;
-    };
-    if scheme.is_empty() {
-        return None;
-    }
-    let authority = after_scheme
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default();
-    if authority.is_empty() {
-        return None;
-    }
-    let host_port = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    let host = host_port.to_string();
-    let host = host.trim().to_ascii_lowercase();
-    if host.is_empty() { None } else { Some(host) }
+    let parsed = url::Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    Some(match parsed.port() {
+        Some(port) => format!("{host}:{port}"),
+        None => host.to_owned(),
+    })
 }
 
 #[cfg(test)]
@@ -130,8 +112,16 @@ mod tests {
 
         crate::utils::process_env::set("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1");
         assert!(is_first_party_anthropic_base_url());
+        // `new URL(...).host` drops a default port and keeps any other.
         crate::utils::process_env::set("ANTHROPIC_BASE_URL", "https://api.anthropic.com:443");
+        assert!(is_first_party_anthropic_base_url());
+        crate::utils::process_env::set("ANTHROPIC_BASE_URL", "https://api.anthropic.com:8443");
         assert!(!is_first_party_anthropic_base_url());
+        crate::utils::process_env::set("ANTHROPIC_BASE_URL", "HTTPS://API.Anthropic.COM/v1");
+        assert!(is_first_party_anthropic_base_url());
+        // `!baseUrl`: an empty value is unset.
+        crate::utils::process_env::set("ANTHROPIC_BASE_URL", "");
+        assert!(is_first_party_anthropic_base_url());
 
         crate::utils::process_env::set("ANTHROPIC_BASE_URL", "https://api-staging.anthropic.com");
         assert!(is_first_party_anthropic_base_url_for_audience(

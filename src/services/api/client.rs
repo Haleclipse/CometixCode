@@ -15,8 +15,8 @@ use crate::utils::env_utils::{get_aws_region, get_vertex_region_for_model};
 use crate::utils::model::model::get_small_fast_model;
 use anthropic_sdk::Nullable;
 use sha2::{Digest as _, Sha256};
+use crate::utils::process_env::{self, EnvSnapshot};
 use std::collections::HashMap;
-use std::env;
 
 // ---------------------------------------------------------------------------
 // Stub types for modules not yet ported
@@ -44,16 +44,34 @@ const DEFAULT_API_TIMEOUT_MS: u64 = 600_000;
 // Custom headers
 // ---------------------------------------------------------------------------
 
+/// Stands in for the SDK's `readEnv(key)`: `process.env[key]?.trim()`, with
+/// `''` kept. CC leaves these options to the SDK; Cometix computes them from
+/// `env` and passes them explicitly, because the SDK reads the OS
+/// environment, which the carrier does not write through on Windows.
+fn read_env(env: &EnvSnapshot, key: &str) -> Option<String> {
+    // Node decodes a non-UTF-8 value lossily; `String.prototype.trim`
+    // (White_Space plus U+FEFF, minus U+0085) is not `str::trim`.
+    env.var_os(key).map(|value| {
+        value
+            .to_string_lossy()
+            .trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
+            .to_owned()
+    })
+}
+
 /// Parse the `ANTHROPIC_CUSTOM_HEADERS` environment variable into a header map.
 ///
 /// Format: newline-separated `Name: Value` pairs (curl style).
 ///
 /// Maps to: CC services/api/client.ts:330-354
-fn get_custom_headers() -> HashMap<String, String> {
+fn get_custom_headers(env: &EnvSnapshot) -> HashMap<String, String> {
     let mut headers = HashMap::new();
-    let raw = match env::var("ANTHROPIC_CUSTOM_HEADERS") {
-        Ok(v) => v,
-        Err(_) => return headers,
+    // CC `if (!customHeadersEnv) return`.
+    let Some(raw) = env
+        .var("ANTHROPIC_CUSTOM_HEADERS")
+        .filter(|value| !value.is_empty())
+    else {
+        return headers;
     };
 
     for line in raw.lines() {
@@ -80,19 +98,22 @@ fn get_custom_headers() -> HashMap<String, String> {
 /// Configure API key / bearer token headers for non-subscriber clients.
 ///
 /// Maps to: CC services/api/client.ts:318-328
-async fn configure_api_key_headers(headers: &mut HashMap<String, Option<String>>) {
+async fn configure_api_key_headers(
+    headers: &mut HashMap<String, Option<String>>,
+    env: &EnvSnapshot,
+) {
     let is_non_interactive = crate::bootstrap::state::get_is_non_interactive_session();
-    let token = env::var("ANTHROPIC_AUTH_TOKEN")
-        .ok()
-        .filter(|t| !t.trim().is_empty());
-
-    // Try the async api key helper if no env token
-    let token = match token {
-        Some(t) => Some(t),
+    // CC `process.env.ANTHROPIC_AUTH_TOKEN || helper`: only an empty value is
+    // falsy, and the value is used as set (a whitespace-only token is sent).
+    let token = match env
+        .var("ANTHROPIC_AUTH_TOKEN")
+        .filter(|value| !value.is_empty())
+    {
+        Some(token) => Some(token.to_owned()),
         None => crate::utils::auth::get_api_key_from_api_key_helper(is_non_interactive),
     };
 
-    if let Some(t) = token {
+    if let Some(t) = token.filter(|token| !token.is_empty()) {
         headers.insert("Authorization".to_string(), Some(format!("Bearer {t}")));
     }
 }
@@ -159,16 +180,31 @@ pub async fn get_anthropic_client(
         model,
         source,
     } = opts;
+    // One read of the environment for the whole construction: headers,
+    // timeout, credentials, base URL and provider settings all come from it.
+    // Deliberate deviation (environment redesign §9.1): CC re-reads
+    // `process.env` after its `await`s (the OAuth refresh, the API key
+    // helper), while this snapshot spans them. The provider, region and auth
+    // helpers called here read the environment for themselves, as CC's do;
+    // those still on the OS environment move to the carrier in C4/C5.
+    let env = process_env::snapshot();
     let oauth_auth_selected = crate::utils::model::providers::get_api_provider()
         == ApiProvider::FirstParty
         && is_claude_ai_subscriber();
 
     // ----- Build default headers -----
-    // Maps to: CC services/api/client.ts:101-129
-    let container_id = env::var("CLAUDE_CODE_CONTAINER_ID").ok();
-    let remote_session_id = env::var("CLAUDE_CODE_REMOTE_SESSION_ID").ok();
-    let client_app = env::var("CLAUDE_AGENT_SDK_CLIENT_APP").ok();
-    let custom_headers = get_custom_headers();
+    // Maps to: CC services/api/client.ts:101-129. The `?:` spreads are
+    // truthiness tests, so an empty value adds no header.
+    let container_id = env
+        .var("CLAUDE_CODE_CONTAINER_ID")
+        .filter(|value| !value.is_empty());
+    let remote_session_id = env
+        .var("CLAUDE_CODE_REMOTE_SESSION_ID")
+        .filter(|value| !value.is_empty());
+    let client_app = env
+        .var("CLAUDE_AGENT_SDK_CLIENT_APP")
+        .filter(|value| !value.is_empty());
+    let custom_headers = get_custom_headers(&env);
 
     let mut default_headers: HashMap<String, Option<String>> = HashMap::new();
     default_headers.insert("x-app".to_string(), Some("cli".to_string()));
@@ -186,32 +222,31 @@ pub async fn get_anthropic_client(
         default_headers.insert(k.clone(), Some(v.clone()));
     }
 
-    if let Some(cid) = &container_id {
+    if let Some(cid) = container_id {
         default_headers.insert(
             "x-claude-remote-container-id".to_string(),
-            Some(cid.clone()),
+            Some(cid.to_string()),
         );
     }
-    if let Some(rsid) = &remote_session_id {
-        default_headers.insert("x-claude-remote-session-id".to_string(), Some(rsid.clone()));
+    if let Some(rsid) = remote_session_id {
+        default_headers.insert(
+            "x-claude-remote-session-id".to_string(),
+            Some(rsid.to_string()),
+        );
     }
-    if let Some(app) = &client_app {
-        default_headers.insert("x-client-app".to_string(), Some(app.clone()));
+    if let Some(app) = client_app {
+        default_headers.insert("x-client-app".to_string(), Some(app.to_string()));
     }
 
     crate::utils::debug::log_for_debugging(&format!(
         "[API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: {}, has Authorization header: {}",
-        env::var("ANTHROPIC_CUSTOM_HEADERS").is_ok(),
+        env.var("ANTHROPIC_CUSTOM_HEADERS").is_some_and(|value| !value.is_empty()),
         custom_headers.contains_key("Authorization"),
     ));
 
     // Additional protection header
     // Maps to: CC services/api/client.ts:124-129
-    if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_ADDITIONAL_PROTECTION")
-            .ok()
-            .as_deref(),
-    ) {
+    if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_ADDITIONAL_PROTECTION")) {
         default_headers.insert(
             "x-anthropic-additional-protection".to_string(),
             Some("true".to_string()),
@@ -246,20 +281,54 @@ pub async fn get_anthropic_client(
     // ----- API key headers for non-subscriber path -----
     // Maps to: CC services/api/client.ts:135-138
     if !is_claude_ai_subscriber() {
-        configure_api_key_headers(&mut default_headers).await;
+        configure_api_key_headers(&mut default_headers, &env).await;
     }
 
+    // Maps to: CC services/api/client.ts:140 `buildFetch(fetchOverride, source)`.
+    let resolved_fetch = build_fetch(source);
+
     // ----- Common client args -----
-    // Maps to: CC services/api/client.ts:141-152
-    let timeout_ms: u64 = env::var("API_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse().ok())
+    // Maps to: CC services/api/client.ts:142-152:
+    // `parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10)`, that
+    // is leading ECMAScript whitespace (not U+0085), an optional sign, then
+    // the longest digit run. Node's `setTimeout` treats NaN, zero, negative
+    // and over-2^31-1 delays as 1 ms, so such values time CC's requests out
+    // at once; the default is used instead.
+    let timeout_ms: u64 = env
+        .var("API_TIMEOUT_MS")
+        .filter(|value| !value.is_empty())
+        .and_then(|value| {
+            let value = value.trim_start_matches(|c: char| {
+                (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
+            });
+            let digits = value.strip_prefix('+').unwrap_or(value);
+            let end = digits
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(digits.len());
+            digits[..end].parse::<u64>().ok()
+        })
+        .filter(|timeout| (1..=i32::MAX as u64).contains(timeout))
         .unwrap_or(DEFAULT_API_TIMEOUT_MS);
 
-    // Whether to inject x-client-request-id for first-party API calls only
-    let inject_client_request_id = crate::utils::model::providers::get_api_provider()
-        == ApiProvider::FirstParty
-        && crate::utils::model::providers::is_first_party_anthropic_base_url();
+    // The SDK's `logLevel` default, `parseLogLevel(readEnv('ANTHROPIC_LOG'))`
+    // (`log.ts:29-31`), from the snapshot. An empty value is unset; an
+    // unknown one warns as the SDK does, through the client's logger (CC's
+    // `createStderrLogger` under `--debug-to-stderr`) or else `tracing`, and
+    // falls back to `warn`.
+    let log_level = match read_env(&env, "ANTHROPIC_LOG").filter(|value| !value.is_empty()) {
+        None => anthropic_sdk::LogLevel::Warn,
+        Some(value) => anthropic_sdk::LogLevel::from_env_value(&value).unwrap_or_else(|| {
+            let warning = format!(
+                "process.env['ANTHROPIC_LOG'] was set to {value:?}, expected one of [\"off\",\"error\",\"warn\",\"info\",\"debug\"]"
+            );
+            if crate::utils::debug::debug_to_stderr_flag() {
+                create_stderr_logger().warn(&warning);
+            } else {
+                tracing::warn!("{warning}");
+            }
+            anthropic_sdk::LogLevel::Warn
+        }),
+    };
 
     // ----- Provider dispatch -----
     let provider = crate::utils::model::providers::get_api_provider();
@@ -270,26 +339,33 @@ pub async fn get_anthropic_client(
         // Maps to: CC services/api/client.ts:153-190
         // ---------------------------------------------------------------
         ApiProvider::Bedrock => {
+            // CC `:157-161`: `model === getSmallFastModel() &&
+            // process.env.ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION ? ... :
+            // getAWSRegion()`, so an empty override falls through.
             let small_fast_model = get_small_fast_model();
-            let aws_region = if model.as_deref() == Some(small_fast_model.as_str()) {
-                env::var("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION")
-                    .ok()
-                    .unwrap_or_else(get_aws_region)
-            } else {
-                get_aws_region()
+            let aws_region = match env
+                .var("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION")
+                .filter(|value| !value.is_empty())
+            {
+                Some(region) if model.as_deref() == Some(small_fast_model.as_str()) => {
+                    region.to_owned()
+                }
+                _ => get_aws_region(),
             };
+            let skip_auth =
+                crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SKIP_BEDROCK_AUTH"));
 
             crate::utils::debug::log_for_debugging(&format!(
-                "[API:bedrock] region={aws_region}, skip_auth={}",
-                crate::utils::env_utils::is_env_truthy(
-                    std::env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH")
-                        .ok()
-                        .as_deref()
-                ),
+                "[API:bedrock] region={aws_region}, skip_auth={skip_auth}",
             ));
 
-            // Determine auth strategy
-            let bedrock_auth = if let Ok(bearer) = env::var("AWS_BEARER_TOKEN_BEDROCK") {
+            // Determine auth strategy. CC `:172`
+            // `if (process.env.AWS_BEARER_TOKEN_BEDROCK)`: an empty token is
+            // no token.
+            let bedrock_auth = if let Some(bearer) = env
+                .var("AWS_BEARER_TOKEN_BEDROCK")
+                .filter(|value| !value.is_empty())
+            {
                 // Bearer token auth overrides everything
                 let mut hdrs = default_headers.clone();
                 hdrs.insert(
@@ -299,11 +375,7 @@ pub async fn get_anthropic_client(
                 BedrockAuth::BearerToken {
                     extra_headers: hdrs,
                 }
-            } else if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH")
-                    .ok()
-                    .as_deref(),
-            ) {
+            } else if skip_auth {
                 BedrockAuth::SkipAuth
             } else {
                 // Refresh and use AWS credentials
@@ -321,8 +393,8 @@ pub async fn get_anthropic_client(
                 default_headers,
                 max_retries,
                 timeout_ms,
-                inject_client_request_id,
-                source,
+                fetch: resolved_fetch,
+                log_level,
             })
         }
 
@@ -333,36 +405,37 @@ pub async fn get_anthropic_client(
         ApiProvider::Foundry => {
             // CC `client.ts:196`: `if (!process.env.ANTHROPIC_FOUNDRY_API_KEY)`
             // is a truthiness test, so an empty key selects Azure AD / skip-auth.
-            let foundry_auth = if env::var("ANTHROPIC_FOUNDRY_API_KEY")
-                .is_ok_and(|key| !key.is_empty())
+            let skip_auth =
+                crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH"));
+            let foundry_auth = if env
+                .var("ANTHROPIC_FOUNDRY_API_KEY")
+                .is_some_and(|value| !value.is_empty())
             {
                 FoundryAuth::ApiKey
-            } else if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
-                    .ok()
-                    .as_deref(),
-            ) {
+            } else if skip_auth {
                 FoundryAuth::SkipAuth
             } else {
                 FoundryAuth::AzureAd
             };
 
             crate::utils::debug::log_for_debugging(&format!(
-                "[API:foundry] auth={foundry_auth:?}, skip_auth={}",
-                crate::utils::env_utils::is_env_truthy(
-                    std::env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
-                        .ok()
-                        .as_deref()
-                ),
+                "[API:foundry] auth={foundry_auth:?}, skip_auth={skip_auth}",
             ));
 
             Ok(AnthropicClientHandle {
-                provider: ProviderConfig::Foundry { auth: foundry_auth },
+                provider: ProviderConfig::Foundry {
+                    auth: foundry_auth,
+                    // CC passes none of these; `AnthropicFoundry` reads them
+                    // with `readEnv` (`foundry-sdk client.ts:58-60`).
+                    base_url: read_env(&env, "ANTHROPIC_FOUNDRY_BASE_URL"),
+                    resource: read_env(&env, "ANTHROPIC_FOUNDRY_RESOURCE"),
+                    api_key: read_env(&env, "ANTHROPIC_FOUNDRY_API_KEY"),
+                },
                 default_headers,
                 max_retries,
                 timeout_ms,
-                inject_client_request_id,
-                source,
+                fetch: resolved_fetch,
+                log_level,
             })
         }
 
@@ -376,41 +449,45 @@ pub async fn get_anthropic_client(
             // consumer-owned redefinition of the imported auth function.
 
             let region = get_vertex_region_for_model(model.as_deref());
-            let project_id = env::var("ANTHROPIC_VERTEX_PROJECT_ID").ok();
+            // CC passes no `projectId`; `AnthropicVertex` reads it with
+            // `readEnv('ANTHROPIC_VERTEX_PROJECT_ID') ?? null`
+            // (`vertex-sdk client.ts:79`) and tests it with `if (!this.projectId)`,
+            // so `''` is none here.
+            let project_id =
+                read_env(&env, "ANTHROPIC_VERTEX_PROJECT_ID").filter(|value| !value.is_empty());
 
             // Determine whether GoogleAuth needs an explicit projectId fallback
             // to avoid the 12-second GCE metadata server timeout.
-            // Maps to: CC services/api/client.ts:253-288
-            let has_project_env_var = env::var("GCLOUD_PROJECT").is_ok()
-                || env::var("GOOGLE_CLOUD_PROJECT").is_ok()
-                || env::var("gcloud_project").is_ok()
-                || env::var("google_cloud_project").is_ok();
-            let has_key_file = env::var("GOOGLE_APPLICATION_CREDENTIALS").is_ok()
-                || env::var("google_application_credentials").is_ok();
+            // Maps to: CC services/api/client.ts:253-288. Both tests are JS
+            // truthiness, and the fallback is the raw `process.env` value.
+            let has_project_env_var = [
+                "GCLOUD_PROJECT",
+                "GOOGLE_CLOUD_PROJECT",
+                "gcloud_project",
+                "google_cloud_project",
+            ]
+            .iter()
+            .any(|key| env.var(key).is_some_and(|value| !value.is_empty()));
+            let has_key_file = ["GOOGLE_APPLICATION_CREDENTIALS", "google_application_credentials"]
+                .iter()
+                .any(|key| env.var(key).is_some_and(|value| !value.is_empty()));
+            let skip_auth =
+                crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SKIP_VERTEX_AUTH"));
 
-            let vertex_auth = if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH")
-                    .ok()
-                    .as_deref(),
-            ) {
+            let vertex_auth = if skip_auth {
                 VertexAuth::SkipAuth
             } else {
                 VertexAuth::GoogleAuth {
                     project_id_fallback: if has_project_env_var || has_key_file {
                         None
                     } else {
-                        project_id.clone()
+                        env.var("ANTHROPIC_VERTEX_PROJECT_ID").map(str::to_owned)
                     },
                 }
             };
 
             crate::utils::debug::log_for_debugging(&format!(
-                "[API:vertex] region={region}, project_id={project_id:?}, skip_auth={}",
-                crate::utils::env_utils::is_env_truthy(
-                    std::env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH")
-                        .ok()
-                        .as_deref()
-                ),
+                "[API:vertex] region={region}, project_id={project_id:?}, skip_auth={skip_auth}",
             ));
 
             Ok(AnthropicClientHandle {
@@ -422,8 +499,8 @@ pub async fn get_anthropic_client(
                 default_headers,
                 max_retries,
                 timeout_ms,
-                inject_client_request_id,
-                source,
+                fetch: resolved_fetch,
+                log_level,
             })
         }
 
@@ -448,26 +525,28 @@ pub async fn get_anthropic_client(
             });
 
             // CC `client.ts:303-305`: `authToken: isClaudeAISubscriber() ?
-            // getClaudeAIOAuthTokens()?.accessToken : undefined`; `undefined`
-            // leaves the SDK's `ANTHROPIC_AUTH_TOKEN` default in place.
+            // getClaudeAIOAuthTokens()?.accessToken : undefined`. `undefined`
+            // (also a subscriber without tokens) takes the SDK default,
+            // `readEnv('ANTHROPIC_AUTH_TOKEN') ?? null`, computed here.
             let auth_token = match subscriber
                 .then(crate::utils::auth::get_claude_ai_oauth_tokens)
                 .flatten()
             {
                 Some(tokens) => Nullable::Set(tokens.access_token),
-                None => Nullable::Unset,
+                None => Nullable::from_resolved(read_env(&env, "ANTHROPIC_AUTH_TOKEN")),
             };
 
             // Maps to: CC `services/api/client.ts:306-311`: only ant staging
             // sessions source their API base URL from the canonical OAuth
-            // configuration owner.
-            let base_url = if env::var("USER_TYPE").ok().as_deref() == Some("ant")
-                && crate::utils::env_utils::is_env_truthy(
-                    std::env::var("USE_STAGING_OAUTH").ok().as_deref(),
-                ) {
+            // configuration owner. Elsewhere CC passes none, and the SDK takes
+            // `readEnv('ANTHROPIC_BASE_URL') || default`; `Some("")` is the
+            // SDK's default without its own environment read.
+            let base_url = if env.var("USER_TYPE") == Some("ant")
+                && crate::utils::env_utils::is_env_truthy(env.var("USE_STAGING_OAUTH"))
+            {
                 Some(crate::constants::oauth::get_oauth_config()?.base_api_url)
             } else {
-                env::var("ANTHROPIC_BASE_URL").ok()
+                Some(read_env(&env, "ANTHROPIC_BASE_URL").unwrap_or_default())
             };
 
             Ok(AnthropicClientHandle {
@@ -479,8 +558,8 @@ pub async fn get_anthropic_client(
                 default_headers,
                 max_retries,
                 timeout_ms,
-                inject_client_request_id,
-                source,
+                fetch: resolved_fetch,
+                log_level,
             })
         }
     }
@@ -541,9 +620,11 @@ pub enum VertexAuth {
 pub enum ProviderConfig {
     /// Direct API access via api.anthropic.com.
     ///
-    /// The credentials keep the shape CC hands the SDK (`client.ts:300-305`):
-    /// `Unset` is TS `undefined` (the SDK's environment default applies),
-    /// `Null` is TS `null` (none, and the environment is not read).
+    /// The credentials keep the shape CC hands the SDK (`client.ts:300-305`),
+    /// with each option CC leaves `undefined` already resolved to the SDK's
+    /// default from the environment snapshot. `Null` is TS `null`: none, and
+    /// the environment is not read. The SDK never reads the environment for
+    /// these.
     Direct {
         api_key: Nullable<String>,
         auth_token: Nullable<String>,
@@ -551,8 +632,14 @@ pub enum ProviderConfig {
     },
     /// AWS Bedrock provider.
     Bedrock { region: String, auth: BedrockAuth },
-    /// Azure Foundry provider.
-    Foundry { auth: FoundryAuth },
+    /// Azure Foundry provider. The endpoint and key are the `readEnv` values
+    /// `AnthropicFoundry` reads for itself (`foundry-sdk client.ts:58-60`).
+    Foundry {
+        auth: FoundryAuth,
+        base_url: Option<String>,
+        resource: Option<String>,
+        api_key: Option<String>,
+    },
     /// GCP Vertex AI provider.
     Vertex {
         region: String,
@@ -578,35 +665,20 @@ pub struct AnthropicClientHandle {
     pub max_retries: u32,
     /// Request timeout in milliseconds.
     pub timeout_ms: u64,
-    /// Whether to inject `x-client-request-id` headers (first-party only).
-    pub inject_client_request_id: bool,
-    /// Caller-provided source tag for debug logging.
-    pub source: Option<String>,
+    /// CC `ARGS.fetch`, the wrapper [`build_fetch`] returns.
+    pub fetch: ResolvedFetch,
+    /// The SDK's `logLevel`, resolved from `ANTHROPIC_LOG` in the snapshot.
+    pub log_level: anthropic_sdk::LogLevel,
 }
 
 impl AnthropicClientHandle {
     /// Build an `anthropic_sdk::Anthropic` client from this handle.
     ///
-    /// Direct first-party API construction is wired in Phase 1. Provider SDKs
-    /// remain explicit future work.
-    ///
-    /// For the Direct provider the construction will look like:
-    /// ```ignore
-    /// let client_opts = anthropic_sdk::ClientOptions {
-    ///     api_key,    // Nullable: Null where CC passes `null`
-    ///     auth_token, // Nullable: Unset where CC passes `undefined`
-    ///     base_url,
-    ///     max_retries: Some(self.max_retries),
-    ///     timeout: Some(self.timeout_ms),
-    ///     default_headers: sdk_headers,
-    ///     ..Default::default()
-    /// };
-    /// anthropic_sdk::Anthropic::new(client_opts)
-    /// ```
-    ///
-    /// For Bedrock/Vertex/Foundry, the SDK client is constructed with
-    /// provider-specific options and cast to the common `Anthropic` type
-    /// (matching CC's `as unknown as Anthropic` pattern).
+    /// Direct and Foundry are built on the core client, with the options CC
+    /// hands the SDK and every option CC leaves to `readEnv` already resolved
+    /// (see [`ProviderConfig::Direct`]). Bedrock and Vertex need their provider
+    /// SDKs (environment redesign C2c); CC casts those clients to `Anthropic`
+    /// (`as unknown as Anthropic`).
     ///
     /// Maps to: CC services/api/client.ts:141-316
     ///
@@ -619,28 +691,16 @@ impl AnthropicClientHandle {
                 api_key,
                 auth_token,
                 base_url,
-            } => build_direct_client(
-                api_key.clone(),
-                auth_token.clone(),
-                base_url.clone(),
-                self.timeout_ms,
-                self.max_retries,
-                self.default_headers.clone(),
-            ),
+            } => self.build_direct_client(api_key.clone(), auth_token.clone(), base_url.clone()),
             ProviderConfig::Bedrock { .. } => Err(ClientError::Sdk(
                 "Bedrock provider SDK is not wired in Cometix Phase 1; use Direct API".to_string(),
             )),
-            ProviderConfig::Foundry { auth } => {
-                let base_url = env::var("ANTHROPIC_FOUNDRY_BASE_URL").ok().or_else(|| {
-                    env::var("ANTHROPIC_FOUNDRY_RESOURCE").ok().map(|resource| {
-                        format!("https://{resource}.services.ai.azure.com/anthropic/")
-                    })
-                });
-                let Some(base_url) = base_url else {
-                    return Err(ClientError::MissingConfig(
-                        "ANTHROPIC_FOUNDRY_BASE_URL or ANTHROPIC_FOUNDRY_RESOURCE".to_string(),
-                    ));
-                };
+            ProviderConfig::Foundry {
+                auth,
+                base_url,
+                resource,
+                api_key,
+            } => {
                 // The TS `AnthropicFoundry` CC builds (`client.ts:191-219`)
                 // overrides `authHeaders`: the SDK itself sends only the
                 // Foundry key or the Azure token, never reading
@@ -649,11 +709,30 @@ impl AnthropicClientHandle {
                 // still goes out; `default_headers` carries it here too.) On
                 // the core client that is an explicit `Null` for whatever is
                 // not the Foundry key.
+                // The endpoint and credential checks belong to `AnthropicFoundry`
+                // (`foundry-sdk client.ts:69-93`) and arrive with that crate
+                // (environment redesign C2c). Until then the endpoint keeps its
+                // truthiness (`if (!baseURL)`, `if (!resource)`): an empty base
+                // URL must not fall through to the SDK's default and send the
+                // Foundry key to api.anthropic.com.
+                let base_url = base_url
+                    .clone()
+                    .filter(|url| !url.is_empty())
+                    .or_else(|| {
+                        resource
+                            .as_ref()
+                            .filter(|resource| !resource.is_empty())
+                            .map(|resource| {
+                                format!("https://{resource}.services.ai.azure.com/anthropic/")
+                            })
+                    });
+                let Some(base_url) = base_url else {
+                    return Err(ClientError::MissingConfig(
+                        "ANTHROPIC_FOUNDRY_BASE_URL or ANTHROPIC_FOUNDRY_RESOURCE".to_string(),
+                    ));
+                };
                 let (api_key, auth_token) = match auth {
-                    FoundryAuth::ApiKey => (
-                        Nullable::from_resolved(env::var("ANTHROPIC_FOUNDRY_API_KEY").ok()),
-                        Nullable::Null,
-                    ),
+                    FoundryAuth::ApiKey => (Nullable::from_resolved(api_key.clone()), Nullable::Null),
                     FoundryAuth::AzureAd => {
                         return Err(ClientError::Sdk(
                             "Foundry DefaultAzureCredential requires the provider SDK adapter"
@@ -662,14 +741,7 @@ impl AnthropicClientHandle {
                     }
                     FoundryAuth::SkipAuth => (Nullable::Null, Nullable::Null),
                 };
-                build_direct_client(
-                    api_key,
-                    auth_token,
-                    Some(base_url),
-                    self.timeout_ms,
-                    self.max_retries,
-                    self.default_headers.clone(),
-                )
+                self.build_direct_client(api_key, auth_token, Some(base_url))
             }
             ProviderConfig::Vertex { .. } => Err(ClientError::Sdk(
                 "Vertex provider SDK is not wired in Cometix Phase 1; use Direct API".to_string(),
@@ -688,38 +760,106 @@ impl AnthropicClientHandle {
             ProviderConfig::Vertex { .. } => ApiProvider::Vertex,
         }
     }
+
+    /// Every `ClientOptions` field is explicit, so the SDK reads none of its
+    /// option variables. Its default HTTP client still reads the proxy
+    /// variables and the system proxy; CC's proxy and TLS options arrive in
+    /// environment redesign C2b.
+    fn build_direct_client(
+        &self,
+        api_key: Nullable<String>,
+        auth_token: Nullable<String>,
+        base_url: Option<String>,
+    ) -> Result<ClientBuildOutput, ClientError> {
+        anthropic_sdk::Anthropic::new(anthropic_sdk::ClientOptions {
+            api_key,
+            auth_token,
+            base_url,
+            timeout: Some(self.timeout_ms),
+            max_retries: Some(self.max_retries),
+            default_headers: Some(self.default_headers.clone()),
+            log_level: Some(self.log_level),
+            // CC `client.ts:168,216,294,312`:
+            // `...(isDebugToStdErr() && { logger: createStderrLogger() })`.
+            logger: crate::utils::debug::debug_to_stderr_flag().then(create_stderr_logger),
+            // CC `ARGS.fetch: resolvedFetch`.
+            middlewares: vec![std::sync::Arc::new(self.fetch.clone())],
+            ..Default::default()
+        })
+        .map_err(|error| ClientError::Sdk(error.to_string()))
+    }
 }
 
 pub type ClientBuildOutput = anthropic_sdk::Anthropic;
 
-fn build_direct_client(
-    api_key: Nullable<String>,
-    auth_token: Nullable<String>,
-    base_url: Option<String>,
-    timeout_ms: u64,
-    max_retries: u32,
-    default_headers: HashMap<String, Option<String>>,
-) -> Result<ClientBuildOutput, ClientError> {
-    anthropic_sdk::Anthropic::new(anthropic_sdk::ClientOptions {
-        api_key,
-        auth_token,
-        base_url,
-        timeout: Some(timeout_ms),
-        max_retries: Some(max_retries),
-        default_headers: Some(default_headers),
-        // CC `client.ts:168,216,294,312`:
-        // `...(isDebugToStdErr() && { logger: createStderrLogger() })`.
-        logger: crate::utils::debug::debug_to_stderr_flag()
-            .then(|| std::sync::Arc::new(StderrLogger) as std::sync::Arc<dyn anthropic_sdk::SdkLogger>),
-        ..Default::default()
-    })
-    .map_err(|error| ClientError::Sdk(error.to_string()))
+/// Maps to: CC `services/api/client.ts:358-390` `buildFetch(fetchOverride,
+/// source)`, the wrapper around every SDK fetch. For the first-party API only
+/// (`getAPIProvider() === 'firstParty' && isFirstPartyAnthropicBaseUrl()`,
+/// decided here as in CC), it sets `x-client-request-id` to a fresh UUID
+/// unless the caller already set one. Timeouts return no server request ID,
+/// so this lets them be correlated. It logs every request's path either way.
+/// The SDK runs middleware on each attempt, as CC's wrapper runs on each
+/// fetch. CC's one `fetchOverride` is `dumpPromptsFetch` (`query.ts:688`,
+/// passed at `claude.ts:848,1783`); Cometix's `claude.rs` dumps prompts
+/// itself, so it needs no override.
+fn build_fetch(source: Option<String>) -> ResolvedFetch {
+    ResolvedFetch {
+        inject_client_request_id: crate::utils::model::providers::get_api_provider()
+            == ApiProvider::FirstParty
+            && crate::utils::model::providers::is_first_party_anthropic_base_url(),
+        source,
+    }
 }
 
-/// Maps to: CC `services/api/client.ts:73-86` `createStderrLogger`. The SDK
-/// still filters by its own level (`ANTHROPIC_LOG`, default `warn`), so
-/// request lines such as `sending request: POST <url>` need
-/// `ANTHROPIC_LOG=debug`.
+/// The fetch wrapper [`build_fetch`] returns, as SDK middleware.
+#[derive(Clone, Debug)]
+pub struct ResolvedFetch {
+    inject_client_request_id: bool,
+    source: Option<String>,
+}
+
+impl anthropic_sdk::HttpMiddleware for ResolvedFetch {
+    fn before_request<'a>(
+        &'a self,
+        request: &'a mut reqwest::Request,
+    ) -> futures::future::BoxFuture<'a, Result<(), anthropic_sdk::ApiError>> {
+        Box::pin(async move {
+            if self.inject_client_request_id
+                && !request.headers().contains_key(CLIENT_REQUEST_ID_HEADER)
+            {
+                if let Ok(id) = reqwest::header::HeaderValue::from_str(&uuid::Uuid::new_v4().to_string())
+                {
+                    request.headers_mut().insert(CLIENT_REQUEST_ID_HEADER, id);
+                }
+            }
+            // `headers.get` is a ByteString (one char per byte); `id ? ... : ''`
+            // omits an empty preset.
+            let id = request
+                .headers()
+                .get(CLIENT_REQUEST_ID_HEADER)
+                .map(|value| value.as_bytes().iter().map(|&byte| char::from(byte)).collect::<String>())
+                .filter(|id| !id.is_empty())
+                .map(|id| format!(" {CLIENT_REQUEST_ID_HEADER}={id}"))
+                .unwrap_or_default();
+            crate::utils::debug::log_for_debugging(&format!(
+                "[API REQUEST] {}{id} source={}",
+                request.url().path(),
+                self.source.as_deref().unwrap_or("unknown"),
+            ));
+            Ok(())
+        })
+    }
+}
+
+/// Maps to: CC `services/api/client.ts:73-86` `createStderrLogger`: every
+/// level goes to stderr as `[Anthropic SDK <LEVEL>] <message>`. The SDK still
+/// filters by its own level (`ANTHROPIC_LOG`, default `warn`), so request
+/// lines such as `sending request: POST <url>` need `ANTHROPIC_LOG=debug`.
+fn create_stderr_logger() -> std::sync::Arc<dyn anthropic_sdk::SdkLogger> {
+    std::sync::Arc::new(StderrLogger)
+}
+
+/// The logger object [`create_stderr_logger`] returns.
 struct StderrLogger;
 
 impl anthropic_sdk::SdkLogger for StderrLogger {
@@ -878,9 +1018,10 @@ pub(crate) async fn send_bedrock_request(
         request = request.body(body.clone());
     }
     match auth {
-        BedrockAuth::BearerToken { .. } => {
-            let token = std::env::var("AWS_BEARER_TOKEN_BEDROCK").ok()?;
-            request = request.bearer_auth(token);
+        // The `Authorization` `get_anthropic_client` built from its snapshot.
+        BedrockAuth::BearerToken { extra_headers } => {
+            let authorization = extra_headers.get("Authorization").cloned().flatten()?;
+            request = request.header(reqwest::header::AUTHORIZATION, authorization);
         }
         BedrockAuth::Credentials(credentials) => {
             for (name, value) in
@@ -1000,6 +1141,7 @@ mod tests {
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
+        let _auth_token = EnvGuard::remove("ANTHROPIC_AUTH_TOKEN");
         let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
         let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -1009,13 +1151,232 @@ mod tests {
         })
         .await
         .expect("unrelated explicit API-key auth must remain available");
+        // No `ANTHROPIC_AUTH_TOKEN`: the SDK default `readEnv(...) ?? null` is
+        // `null`, passed explicitly.
         assert!(matches!(
             handle.provider,
             ProviderConfig::Direct {
                 api_key: Nullable::Set(ref key),
-                auth_token: Nullable::Unset,
+                auth_token: Nullable::Null,
                 ..
             } if key == "sk-ant-test"
+        ));
+        let _ = std::fs::remove_dir_all(config_home);
+    }
+
+    /// CC leaves `authToken` and `baseURL` to the SDK, which takes
+    /// `readEnv(key)`: trimmed, `''` kept, then `baseURL || default`. They are
+    /// computed from the snapshot and passed explicitly, so the SDK reads no
+    /// environment variable.
+    #[tokio::test]
+    async fn sdk_defaults_are_computed_from_the_snapshot_like_read_env() {
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let config_home = std::env::temp_dir().join(format!(
+            "cometix-sdk-defaults-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_home).unwrap();
+        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
+        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
+        let _base_url = EnvGuard::set("ANTHROPIC_BASE_URL", " https://gateway.example/ \n");
+        let _auth_token = EnvGuard::set("ANTHROPIC_AUTH_TOKEN", "\u{feff} tok ");
+        let _timeout = EnvGuard::set("API_TIMEOUT_MS", " 90000ms");
+
+        let handle = get_anthropic_client(GetAnthropicClientOptions {
+            api_key: Some("sk-ant-test".to_string()),
+            ..GetAnthropicClientOptions::default()
+        })
+        .await
+        .unwrap();
+
+        let ProviderConfig::Direct {
+            ref auth_token,
+            ref base_url,
+            ..
+        } = handle.provider
+        else {
+            panic!("first-party provider expected");
+        };
+        assert_eq!(auth_token, &Nullable::Set("tok".to_string()));
+        assert_eq!(base_url.as_deref(), Some("https://gateway.example/"));
+        // `parseInt(' 90000ms', 10)` is 90000.
+        assert_eq!(handle.timeout_ms, 90_000);
+        // CC's own `process.env.ANTHROPIC_AUTH_TOKEN || helper` uses the value
+        // as set, untrimmed.
+        assert_eq!(
+            handle.default_headers.get("Authorization"),
+            Some(&Some("Bearer \u{feff} tok ".to_string()))
+        );
+        let _ = std::fs::remove_dir_all(config_home);
+    }
+
+    /// An unset `ANTHROPIC_BASE_URL` is `Some("")`: the SDK default without
+    /// its own environment read.
+    #[tokio::test]
+    async fn unset_base_url_is_the_sdk_default_without_an_environment_read() {
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let config_home = std::env::temp_dir().join(format!(
+            "cometix-sdk-base-url-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_home).unwrap();
+        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
+        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
+        let _base_url = EnvGuard::remove("ANTHROPIC_BASE_URL");
+
+        let handle = get_anthropic_client(GetAnthropicClientOptions {
+            api_key: Some("sk-ant-test".to_string()),
+            ..GetAnthropicClientOptions::default()
+        })
+        .await
+        .unwrap();
+        assert!(matches!(
+            handle.provider,
+            ProviderConfig::Direct { base_url: Some(ref url), .. } if url.is_empty()
+        ));
+        crate::utils::tls_provider::install_crypto_provider();
+        let client = handle.build().unwrap();
+        assert_eq!(client.base_url(), "https://api.anthropic.com");
+        let _ = std::fs::remove_dir_all(config_home);
+    }
+
+    /// CC `buildFetch` (`client.ts:358-390`): `x-client-request-id` is added
+    /// only when injection applies and the caller has not set one.
+    #[tokio::test]
+    async fn resolved_fetch_adds_a_client_request_id_only_when_injecting() {
+        use anthropic_sdk::HttpMiddleware as _;
+        let request = || {
+            reqwest::Request::new(
+                reqwest::Method::POST,
+                "https://api.anthropic.com/v1/messages".parse().unwrap(),
+            )
+        };
+
+        let injecting = ResolvedFetch {
+            inject_client_request_id: true,
+            source: Some("repl".to_string()),
+        };
+        let mut fresh = request();
+        injecting.before_request(&mut fresh).await.unwrap();
+        let id = fresh.headers().get(CLIENT_REQUEST_ID_HEADER).unwrap();
+        assert!(uuid::Uuid::parse_str(id.to_str().unwrap()).is_ok());
+
+        let mut preset = request();
+        preset
+            .headers_mut()
+            .insert(CLIENT_REQUEST_ID_HEADER, "caller-id".parse().unwrap());
+        injecting.before_request(&mut preset).await.unwrap();
+        assert_eq!(preset.headers().get(CLIENT_REQUEST_ID_HEADER).unwrap(), "caller-id");
+
+        let mut other = request();
+        ResolvedFetch {
+            inject_client_request_id: false,
+            source: None,
+        }
+        .before_request(&mut other)
+        .await
+        .unwrap();
+        assert!(other.headers().get(CLIENT_REQUEST_ID_HEADER).is_none());
+    }
+
+    /// `build()` hands `ResolvedFetch` to the SDK, so the header reaches the
+    /// wire, as CC's `ARGS.fetch` wraps every SDK request.
+    #[tokio::test]
+    async fn built_client_sends_requests_through_resolved_fetch() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // The SDK's default HTTP client honours proxies until C2b.
+        let _no_proxy = EnvGuard::set("NO_PROXY", "127.0.0.1");
+        let _no_proxy_lower = EnvGuard::set("no_proxy", "127.0.0.1");
+        crate::utils::tls_provider::install_crypto_provider();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before headers");
+                request.extend_from_slice(&buffer[..count]);
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                      content-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request).to_ascii_lowercase()
+        });
+        let handle = AnthropicClientHandle {
+            provider: ProviderConfig::Direct {
+                api_key: Nullable::Set("sk-ant-test".to_string()),
+                auth_token: Nullable::Null,
+                base_url: Some(format!("http://{address}")),
+            },
+            default_headers: HashMap::new(),
+            max_retries: 0,
+            timeout_ms: 5_000,
+            fetch: ResolvedFetch {
+                inject_client_request_id: true,
+                source: Some("test".to_string()),
+            },
+            log_level: anthropic_sdk::LogLevel::Warn,
+        };
+        let _ = handle.build().unwrap().models().retrieve("model", None).await;
+        let request = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(request.contains("\r\nx-client-request-id: "), "{request}");
+    }
+
+    /// CC `process.env.ANTHROPIC_AUTH_TOKEN || helper`, then `if (token)`: a
+    /// whitespace-only token is truthy and goes out as set. The SDK's own
+    /// `readEnv` trims the same value to `''`.
+    #[tokio::test]
+    async fn whitespace_auth_token_is_truthy_for_cc_and_empty_for_the_sdk() {
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let config_home = std::env::temp_dir().join(format!(
+            "cometix-blank-auth-token-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_home).unwrap();
+        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
+        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
+        let _auth_token = EnvGuard::set("ANTHROPIC_AUTH_TOKEN", "  ");
+
+        let handle = get_anthropic_client(GetAnthropicClientOptions {
+            api_key: Some("sk-ant-test".to_string()),
+            ..GetAnthropicClientOptions::default()
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            handle.default_headers.get("Authorization"),
+            Some(&Some("Bearer   ".to_string()))
+        );
+        assert!(matches!(
+            handle.provider,
+            ProviderConfig::Direct { auth_token: Nullable::Set(ref token), .. } if token.is_empty()
         ));
         let _ = std::fs::remove_dir_all(config_home);
     }
@@ -1135,8 +1496,8 @@ mod tests {
             default_headers: HashMap::new(),
             max_retries: 2,
             timeout_ms: 600_000,
-            inject_client_request_id: true,
-            source: Some("test".to_string()),
+            fetch: build_fetch(Some("test".to_string())),
+            log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::FirstParty);
     }
@@ -1151,8 +1512,8 @@ mod tests {
             default_headers: HashMap::new(),
             max_retries: 2,
             timeout_ms: 600_000,
-            inject_client_request_id: false,
-            source: None,
+            fetch: build_fetch(None),
+            log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::Bedrock);
     }
@@ -1162,12 +1523,15 @@ mod tests {
         let handle = AnthropicClientHandle {
             provider: ProviderConfig::Foundry {
                 auth: FoundryAuth::SkipAuth,
+                base_url: None,
+                resource: Some("example".to_string()),
+                api_key: None,
             },
             default_headers: HashMap::new(),
             max_retries: 2,
             timeout_ms: 600_000,
-            inject_client_request_id: false,
-            source: None,
+            fetch: build_fetch(None),
+            log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::Foundry);
     }
@@ -1183,8 +1547,8 @@ mod tests {
             default_headers: HashMap::new(),
             max_retries: 2,
             timeout_ms: 600_000,
-            inject_client_request_id: false,
-            source: None,
+            fetch: build_fetch(None),
+            log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::Vertex);
     }
