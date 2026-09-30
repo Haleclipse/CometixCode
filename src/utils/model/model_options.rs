@@ -76,6 +76,33 @@ fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
 }
 
+fn configured_opus_label(with_1m_context: bool) -> String {
+    if is_3p() {
+        return if with_1m_context {
+            "Opus 4.6 with 1M context".to_string()
+        } else {
+            "Opus 4.6".to_string()
+        };
+    }
+
+    let configured = get_default_opus_model();
+    let configured = if with_1m_context && !crate::utils::context::has_1m_context(&configured) {
+        format!("{configured}[1m]")
+    } else {
+        configured
+    };
+    let marketing = get_marketing_name_for_model(&configured).unwrap_or_else(|| "Opus".to_string());
+    let label = marketing
+        .strip_suffix(" (with 1M context)")
+        .unwrap_or(&marketing)
+        .to_string();
+    if with_1m_context {
+        format!("{label} with 1M context")
+    } else {
+        label
+    }
+}
+
 /// Maps to: CC `utils/model/modelOptions.ts:45-74` `getDefaultOptionForUser`.
 pub fn get_default_option_for_user(fast_mode: bool) -> ModelOption {
     get_default_option_for_user_for_audience(
@@ -231,11 +258,15 @@ fn get_opus_46_option(fast_mode: bool) -> ModelOption {
         Some(&value),
         "Opus",
         format!(
-            "Opus 4.6 · Most capable for complex work{}",
-            get_opus_46_pricing_suffix(fast_mode)
+            "{} · Most capable for complex work{}",
+            configured_opus_label(false),
+            get_opus_46_pricing_suffix(fast_mode),
         ),
     )
-    .with_description_for_model("Opus 4.6 - most capable for complex work")
+    .with_description_for_model(&format!(
+        "{} - most capable for complex work",
+        configured_opus_label(false)
+    ))
 }
 
 /// Maps to: CC `utils/model/modelOptions.ts:143-152` `getSonnet46_1MOption`.
@@ -266,13 +297,15 @@ pub fn get_opus_46_1m_option(fast_mode: bool) -> ModelOption {
         Some(&value),
         "Opus (1M context)",
         format!(
-            "Opus 4.6 for long sessions{}",
-            get_opus_46_pricing_suffix(fast_mode)
+            "{} for long sessions{}",
+            configured_opus_label(false),
+            get_opus_46_pricing_suffix(fast_mode),
         ),
     )
-    .with_description_for_model(
-        "Opus 4.6 with 1M context window - for long sessions with large codebases",
-    )
+    .with_description_for_model(&format!(
+        "{} with 1M context window - for long sessions with large codebases",
+        configured_opus_label(false)
+    ))
 }
 
 /// Maps to: CC `utils/model/modelOptions.ts:165-179` `getCustomHaikuOption`.
@@ -351,7 +384,10 @@ fn get_max_opus_option(fast_mode: bool) -> ModelOption {
     ModelOption::new(
         Some("opus"),
         "Opus",
-        format!("Opus 4.6 · Most capable for complex work{suffix}"),
+        format!(
+            "{} · Most capable for complex work{suffix}",
+            configured_opus_label(false)
+        ),
     )
 }
 
@@ -383,7 +419,8 @@ pub fn get_max_opus_46_1m_option(fast_mode: bool) -> ModelOption {
         Some("opus[1m]"),
         "Opus (1M context)",
         format!(
-            "Opus 4.6 with 1M context{billing_info}{}",
+            "{} with 1M context{billing_info}{}",
+            configured_opus_label(false),
             get_opus_46_pricing_suffix(fast_mode)
         ),
     )
@@ -405,9 +442,15 @@ fn get_merged_opus_1m_option(fast_mode: bool) -> ModelOption {
     ModelOption::new(
         Some(&value),
         "Opus (1M context)",
-        format!("Opus 4.6 with 1M context · Most capable for complex work{suffix}"),
+        format!(
+            "{} · Most capable for complex work{suffix}",
+            configured_opus_label(true)
+        ),
     )
-    .with_description_for_model("Opus 4.6 with 1M context - most capable for complex work")
+    .with_description_for_model(&format!(
+        "{} - most capable for complex work",
+        configured_opus_label(true)
+    ))
 }
 
 /// Maps to: CC `utils/model/modelOptions.ts:249-253` `MaxSonnet46Option`.
@@ -433,7 +476,10 @@ fn get_opus_plan_option() -> ModelOption {
     ModelOption::new(
         Some("opusplan"),
         "Opus Plan Mode",
-        "Use Opus 4.6 in plan mode, Sonnet 4.6 otherwise".to_string(),
+        format!(
+            "Use {} in plan mode, Sonnet 4.6 otherwise",
+            configured_opus_label(false)
+        ),
     )
 }
 
@@ -582,7 +628,7 @@ fn get_model_family_info(model: &str) -> Option<(&'static str, String)> {
         }
     }
 
-    if canonical.contains("claude-opus-4") {
+    if canonical.contains("claude-opus-") {
         if let Some(current_name) = get_marketing_name_for_model(&get_default_opus_model()) {
             return Some(("Opus", current_name));
         }
@@ -835,6 +881,25 @@ mod tests {
             options[3].description,
             "Haiku 4.5 · Fastest for quick answers · $1/$5 per Mtok"
         );
+    }
+
+    #[test]
+    fn configured_first_party_opus_model_drives_option_copy() {
+        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _fixture = OptionsFixture::new(serde_json::json!({}));
+        crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-5-5");
+
+        let options = get_model_options_for_audience(BuildAudience::External, false);
+        assert_eq!(
+            options[2].description,
+            "Opus 5.5 with 1M context · Most capable for complex work"
+        );
+        assert_eq!(
+            options[2].description_for_model.as_deref(),
+            Some("Opus 5.5 with 1M context - most capable for complex work")
+        );
+
+        crate::utils::process_env::remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
     }
 
     /// Maps to: CC `utils/model/modelOptions.ts:332-339` — with the merge off,
