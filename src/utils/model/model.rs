@@ -10,18 +10,20 @@ pub const DEFAULT_SONNET_MODEL: &str = "claude-sonnet-4-6";
 /// Maps to: CC `utils/model/configs.ts` `CLAUDE_OPUS_4_6_CONFIG.firstParty`.
 pub const DEFAULT_OPUS_MODEL: &str = "claude-opus-4-6";
 
-use crate::utils::env_utils::truthy_env_var;
+fn model_env_var(key: &str) -> Option<String> {
+    crate::utils::process_env::var(key).filter(|value| !value.is_empty())
+}
 
 /// Maps to: CC `utils/model/model.ts:36-38` `getSmallFastModel()`.
 pub fn get_small_fast_model() -> String {
-    truthy_env_var("ANTHROPIC_SMALL_FAST_MODEL").unwrap_or_else(get_default_haiku_model)
+    model_env_var("ANTHROPIC_SMALL_FAST_MODEL").unwrap_or_else(get_default_haiku_model)
 }
 
 /// Maps to: CC `utils/model/model.ts` `getDefaultSonnetModel()`.
 /// TODO: Port provider-specific model string tables; first-party defaults are
 /// kept in sync with CC `utils/model/configs.ts`.
 pub fn get_default_sonnet_model() -> String {
-    truthy_env_var("ANTHROPIC_DEFAULT_SONNET_MODEL")
+    model_env_var("ANTHROPIC_DEFAULT_SONNET_MODEL")
         .unwrap_or_else(|| DEFAULT_SONNET_MODEL.to_string())
 }
 
@@ -29,14 +31,14 @@ pub fn get_default_sonnet_model() -> String {
 /// TODO: Port provider-specific model string tables; first-party defaults are
 /// kept in sync with CC `utils/model/configs.ts`.
 pub fn get_default_opus_model() -> String {
-    truthy_env_var("ANTHROPIC_DEFAULT_OPUS_MODEL").unwrap_or_else(|| DEFAULT_OPUS_MODEL.to_string())
+    model_env_var("ANTHROPIC_DEFAULT_OPUS_MODEL").unwrap_or_else(|| DEFAULT_OPUS_MODEL.to_string())
 }
 
 /// Maps to: CC `utils/model/model.ts:131-138` `getDefaultHaikuModel()`.
 /// TODO: Port provider-specific model string tables; first-party defaults are
 /// kept in sync with CC `utils/model/configs.ts`.
 pub fn get_default_haiku_model() -> String {
-    truthy_env_var("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+    model_env_var("ANTHROPIC_DEFAULT_HAIKU_MODEL")
         .unwrap_or_else(|| DEFAULT_HAIKU_MODEL.to_string())
 }
 
@@ -77,7 +79,7 @@ pub fn get_user_specified_model_setting() -> Option<String> {
         if let Some(model_override) = crate::bootstrap::state::get_main_loop_model_override() {
             model_override
         } else {
-            truthy_env_var("ANTHROPIC_MODEL")
+            model_env_var("ANTHROPIC_MODEL")
                 .or_else(|| crate::utils::settings::get_initial_settings().model)
         };
 
@@ -202,6 +204,10 @@ pub fn first_party_name_to_canonical(name: &str) -> String {
         }
     }
 
+    if let Some((major, minor)) = first_party_opus_version(&name) {
+        return format!("claude-opus-{major}-{minor}");
+    }
+
     static FALLBACK: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         regex::Regex::new(r"(claude-(?:\d+-\d+-)?\w+)").expect("canonical model regex")
     });
@@ -212,6 +218,21 @@ pub fn first_party_name_to_canonical(name: &str) -> String {
         return matched.as_str().to_string();
     }
     name
+}
+
+fn first_party_opus_version(model: &str) -> Option<(String, String)> {
+    let normalized = normalize_model_string_for_api(model).to_ascii_lowercase();
+    let version = normalized.split_once("claude-opus-")?.1;
+    let (major, remainder) = version.split_once('-')?;
+    let minor = remainder.split('-').next()?;
+    if major.is_empty()
+        || minor.is_empty()
+        || !major.bytes().all(|byte| byte.is_ascii_digit())
+        || !minor.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    Some((major.to_string(), minor.to_string()))
 }
 
 /// Maps to: CC `utils/model/model.ts:279-283#getCanonicalName`.
@@ -238,36 +259,38 @@ pub fn get_public_model_display_name(model: &str) -> Option<String> {
     let has_1m = crate::utils::context::has_1m_context(model);
     let lower = model.to_ascii_lowercase();
     let name = if lower.contains("opus-4-6") {
-        "Opus 4.6"
+        "Opus 4.6".to_string()
     } else if lower.contains("opus-4-5") {
-        "Opus 4.5"
+        "Opus 4.5".to_string()
     } else if lower.contains("opus-4-1") {
-        "Opus 4.1"
+        "Opus 4.1".to_string()
+    } else if let Some((major, minor)) = first_party_opus_version(model) {
+        format!("Opus {major}.{minor}")
     } else if lower.contains("claude-opus-4") || lower.contains("opus-4") {
-        "Opus 4"
+        "Opus 4".to_string()
     } else if lower.contains("sonnet-4-6") {
-        "Sonnet 4.6"
+        "Sonnet 4.6".to_string()
     } else if lower.contains("sonnet-4-5") {
-        "Sonnet 4.5"
+        "Sonnet 4.5".to_string()
     } else if lower.contains("sonnet-4") {
-        "Sonnet 4"
+        "Sonnet 4".to_string()
     } else if lower.contains("haiku-4-5") || lower.contains("haiku-4") {
-        "Haiku 4.5"
+        "Haiku 4.5".to_string()
     } else if lower == "opus" || lower == "opus[1m]" {
-        if has_1m { "Opus 1M" } else { "Opus" }
+        (if has_1m { "Opus 1M" } else { "Opus" }).to_string()
     } else if lower == "sonnet" || lower == "sonnet[1m]" {
-        if has_1m { "Sonnet 1M" } else { "Sonnet" }
+        (if has_1m { "Sonnet 1M" } else { "Sonnet" }).to_string()
     } else if lower == "haiku" {
-        "Haiku"
+        "Haiku".to_string()
     } else if lower == "default" || lower == "__no_preference__" {
-        "Default"
+        "Default".to_string()
     } else {
         return None;
     };
     Some(if has_1m && !name.contains("1M") {
         format!("{name} 1M")
     } else {
-        name.to_string()
+        name
     })
 }
 
@@ -306,7 +329,7 @@ pub fn is_non_custom_opus_model(model: &str) -> bool {
     // CC compares against provider-specific `getModelStrings().opus*` values.
     // Cometix does not yet port provider model string profiles, so match the
     // canonical non-custom Opus 4 family names and provider IDs by substring.
-    model.contains("claude-opus-4")
+    first_party_opus_version(&model).is_some()
 }
 
 /// Maps to: CC `utils/model/model.ts` `isOpus1mMergeEnabled()` — a zero-argument
@@ -344,15 +367,20 @@ pub fn is_opus_1m_merge_enabled() -> bool {
 /// Maps to: CC `utils/model/model.ts:286-296#getClaudeAiUserDefaultModelDescription`.
 pub fn get_claude_ai_user_default_model_description(fast_mode: bool) -> String {
     if crate::utils::auth::is_max_subscriber() || crate::utils::auth::is_team_premium_subscriber() {
+        let opus_name = get_marketing_name_for_model(&get_default_opus_model())
+            .unwrap_or_else(|| "Opus".to_string());
         let suffix = if fast_mode {
             get_opus_46_pricing_suffix(true)
         } else {
             String::new()
         };
         if is_opus_1m_merge_enabled() {
-            return format!("Opus 4.6 with 1M context · Most capable for complex work{suffix}");
+            let opus_name = opus_name
+                .strip_suffix(" (with 1M context)")
+                .unwrap_or(&opus_name);
+            return format!("{opus_name} with 1M context · Most capable for complex work{suffix}");
         }
-        return format!("Opus 4.6 · Most capable for complex work{suffix}");
+        return format!("{opus_name} · Most capable for complex work{suffix}");
     }
     "Sonnet 4.6 · Best for everyday tasks".to_string()
 }
@@ -360,7 +388,11 @@ pub fn get_claude_ai_user_default_model_description(fast_mode: bool) -> String {
 /// Maps to: CC `utils/model/model.ts:298-305#renderDefaultModelSetting`.
 pub fn render_default_model_setting(setting: &str) -> String {
     if setting == "opusplan" {
-        return "Opus 4.6 in plan mode, else Sonnet 4.6".to_string();
+        let opus = get_marketing_name_for_model(&get_default_opus_model())
+            .unwrap_or_else(|| "Opus".to_string());
+        let sonnet = get_marketing_name_for_model(&get_default_sonnet_model())
+            .unwrap_or_else(|| "Sonnet".to_string());
+        return format!("{opus} in plan mode, else {sonnet}");
     }
     render_model_name(&parse_user_specified_model(setting))
 }
@@ -442,6 +474,11 @@ pub fn get_marketing_name_for_model(model_id: &str) -> Option<String> {
         "Opus 4.5"
     } else if canonical.contains("claude-opus-4-1") {
         "Opus 4.1"
+    } else if let Some((major, minor)) = first_party_opus_version(&canonical) {
+        if has_1m {
+            return Some(format!("Opus {major}.{minor} (with 1M context)"));
+        }
+        return Some(format!("Opus {major}.{minor}"));
     } else if canonical.contains("claude-opus-4") {
         "Opus 4"
     } else if canonical.contains("claude-sonnet-4-6") {
@@ -808,6 +845,33 @@ mod tests {
             first_party_name_to_canonical("claude-strudel-v6-p"),
             "claude-strudel"
         );
+    }
+
+    #[test]
+    fn configured_opus_version_flows_through_identity_and_plan_copy() {
+        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-5-5");
+
+        assert_eq!(get_default_opus_model(), "claude-opus-5-5");
+        assert_eq!(
+            first_party_name_to_canonical("claude-opus-5-5-20250929"),
+            "claude-opus-5-5"
+        );
+        assert_eq!(
+            get_public_model_display_name("claude-opus-5-5"),
+            Some("Opus 5.5".to_string())
+        );
+        assert_eq!(
+            get_marketing_name_for_model("claude-opus-5-5[1m]"),
+            Some("Opus 5.5 (with 1M context)".to_string())
+        );
+        assert_eq!(
+            render_default_model_setting("opusplan"),
+            "Opus 5.5 in plan mode, else Sonnet 4.6"
+        );
+        assert!(is_non_custom_opus_model("us.anthropic.claude-opus-5-5-v1"));
+
+        crate::utils::process_env::remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
     }
 
     #[test]
