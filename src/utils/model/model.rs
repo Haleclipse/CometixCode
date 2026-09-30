@@ -227,6 +227,7 @@ fn first_party_opus_version(model: &str) -> Option<(String, String)> {
     let minor = remainder.split('-').next()?;
     if major.is_empty()
         || minor.is_empty()
+        || (minor.len() == 8 && minor.bytes().all(|byte| byte.is_ascii_digit()))
         || !major.bytes().all(|byte| byte.is_ascii_digit())
         || !minor.bytes().all(|byte| byte.is_ascii_digit())
     {
@@ -328,8 +329,8 @@ pub fn is_non_custom_opus_model(model: &str) -> bool {
 
     // CC compares against provider-specific `getModelStrings().opus*` values.
     // Cometix does not yet port provider model string profiles, so match the
-    // canonical non-custom Opus 4 family names and provider IDs by substring.
-    first_party_opus_version(&model).is_some()
+    // canonical non-custom Opus family names and provider IDs by substring.
+    model.contains("claude-opus-4") || first_party_opus_version(&model).is_some()
 }
 
 /// Maps to: CC `utils/model/model.ts` `isOpus1mMergeEnabled()` — a zero-argument
@@ -845,6 +846,10 @@ mod tests {
             first_party_name_to_canonical("claude-strudel-v6-p"),
             "claude-strudel"
         );
+        assert_eq!(
+            get_public_model_display_name("claude-opus-4-20250514"),
+            Some("Opus 4".to_string())
+        );
     }
 
     #[test]
@@ -888,6 +893,7 @@ mod tests {
 
     #[test]
     fn is_non_custom_opus_model_matches_canonical_opus_family() {
+        assert!(is_non_custom_opus_model("claude-opus-4"));
         assert!(is_non_custom_opus_model("claude-opus-4-20250514"));
         assert!(is_non_custom_opus_model("us.anthropic.claude-opus-4-6-v1"));
         assert!(!is_non_custom_opus_model("claude-sonnet-4-20250514"));
