@@ -342,13 +342,15 @@ pub fn apply_config_environment_variables() {
     apply_filtered(&mut update, global.env.as_ref());
     apply_filtered(&mut update, merged.env.as_deref());
 
-    // (:192-198) CC clears the CA-certs/mTLS/proxy caches and reconfigures the
-    // global agents inside this same synchronous pass. Those owners
-    // (`utils/caCerts.ts`, `utils/mtls.ts`, `utils/proxy.ts`) are not ported
-    // (MODULE_MAP: missing); when they land, prebuild their resources before
-    // this turn, commit the env, then apply the effects from the committed
-    // snapshot under the approved StoreTurn—not under the EnvUpdate lock.
     update.commit();
+
+    // (:192-198) Clear the caches so the agents are rebuilt from the new
+    // environment, then reconfigure them. They read files and the committed
+    // environment, so this runs after the commit, outside the EnvUpdate lock.
+    crate::utils::ca_certs::clear_ca_certs_cache();
+    crate::utils::mtls::clear_mtls_cache();
+    crate::utils::proxy::clear_proxy_cache();
+    crate::utils::proxy::configure_global_agents();
 }
 
 #[cfg(test)]

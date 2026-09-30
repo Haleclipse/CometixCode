@@ -286,6 +286,9 @@ pub async fn get_anthropic_client(
 
     // Maps to: CC services/api/client.ts:140 `buildFetch(fetchOverride, source)`.
     let resolved_fetch = build_fetch(source);
+    // CC `ARGS.fetchOptions: getProxyFetchOptions({ forAnthropicAPI: true })`
+    // (`client.ts:146-148`).
+    let fetch_options = crate::utils::proxy::get_proxy_fetch_options(true)?;
 
     // ----- Common client args -----
     // Maps to: CC services/api/client.ts:142-152:
@@ -394,6 +397,7 @@ pub async fn get_anthropic_client(
                 max_retries,
                 timeout_ms,
                 fetch: resolved_fetch,
+                fetch_options,
                 log_level,
             })
         }
@@ -435,6 +439,7 @@ pub async fn get_anthropic_client(
                 max_retries,
                 timeout_ms,
                 fetch: resolved_fetch,
+                fetch_options,
                 log_level,
             })
         }
@@ -500,6 +505,7 @@ pub async fn get_anthropic_client(
                 max_retries,
                 timeout_ms,
                 fetch: resolved_fetch,
+                fetch_options,
                 log_level,
             })
         }
@@ -559,6 +565,7 @@ pub async fn get_anthropic_client(
                 max_retries,
                 timeout_ms,
                 fetch: resolved_fetch,
+                fetch_options,
                 log_level,
             })
         }
@@ -667,6 +674,9 @@ pub struct AnthropicClientHandle {
     pub timeout_ms: u64,
     /// CC `ARGS.fetch`, the wrapper [`build_fetch`] returns.
     pub fetch: ResolvedFetch,
+    /// CC `ARGS.fetchOptions`: the proxy, TLS and socket transport, carried by
+    /// the client [`crate::utils::proxy::get_proxy_fetch_options`] returns.
+    pub fetch_options: reqwest::Client,
     /// The SDK's `logLevel`, resolved from `ANTHROPIC_LOG` in the snapshot.
     pub log_level: anthropic_sdk::LogLevel,
 }
@@ -762,9 +772,7 @@ impl AnthropicClientHandle {
     }
 
     /// Every `ClientOptions` field is explicit, so the SDK reads none of its
-    /// option variables. Its default HTTP client still reads the proxy
-    /// variables and the system proxy; CC's proxy and TLS options arrive in
-    /// environment redesign C2b.
+    /// option variables, and its HTTP client is the handle's `fetch_options`.
     fn build_direct_client(
         &self,
         api_key: Nullable<String>,
@@ -784,6 +792,8 @@ impl AnthropicClientHandle {
             logger: crate::utils::debug::debug_to_stderr_flag().then(create_stderr_logger),
             // CC `ARGS.fetch: resolvedFetch`.
             middlewares: vec![std::sync::Arc::new(self.fetch.clone())],
+            // CC `ARGS.fetchOptions`.
+            http_client: Some(self.fetch_options.clone()),
             ..Default::default()
         })
         .map_err(|error| ClientError::Sdk(error.to_string()))
@@ -1070,6 +1080,12 @@ mod tests {
         }
     }
 
+    /// A transport without proxy or TLS options, for handles built by hand.
+    fn direct_client() -> reqwest::Client {
+        crate::utils::tls_provider::install_crypto_provider();
+        reqwest::Client::builder().no_proxy().build().unwrap()
+    }
+
     #[test]
     fn client_request_id_header_value_matches_cc() {
         assert_eq!(CLIENT_REQUEST_ID_HEADER, "x-client-request-id");
@@ -1294,13 +1310,6 @@ mod tests {
     #[tokio::test]
     async fn built_client_sends_requests_through_resolved_fetch() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // The SDK's default HTTP client honours proxies until C2b.
-        let _no_proxy = EnvGuard::set("NO_PROXY", "127.0.0.1");
-        let _no_proxy_lower = EnvGuard::set("no_proxy", "127.0.0.1");
-        crate::utils::tls_provider::install_crypto_provider();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
@@ -1334,6 +1343,7 @@ mod tests {
                 inject_client_request_id: true,
                 source: Some("test".to_string()),
             },
+            fetch_options: direct_client(),
             log_level: anthropic_sdk::LogLevel::Warn,
         };
         let _ = handle.build().unwrap().models().retrieve("model", None).await;
@@ -1342,6 +1352,75 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(request.contains("\r\nx-client-request-id: "), "{request}");
+    }
+
+    /// CC `ARGS.fetchOptions`: the SDK sends through the environment's proxy.
+    /// `HTTPS_PROXY` carries an `http://` request too, CC's one proxy for
+    /// every scheme; reqwest's own detection would send it direct.
+    #[tokio::test]
+    async fn sdk_requests_take_the_proxy_from_fetch_options() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let config_home = std::env::temp_dir().join(format!(
+            "cometix-sdk-proxy-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_home).unwrap();
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_address = proxy.local_addr().unwrap();
+        let _guards = [
+            EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN"),
+            EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK"),
+            EnvGuard::remove("CLAUDE_CODE_USE_VERTEX"),
+            EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvGuard::remove("ANTHROPIC_UNIX_SOCKET"),
+            EnvGuard::set("ANTHROPIC_BASE_URL", "http://api.invalid"),
+            EnvGuard::remove("https_proxy"),
+            EnvGuard::set("HTTPS_PROXY", format!("http://{proxy_address}")),
+            EnvGuard::remove("http_proxy"),
+            EnvGuard::remove("HTTP_PROXY"),
+            EnvGuard::remove("no_proxy"),
+            EnvGuard::remove("NO_PROXY"),
+        ];
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = proxy.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before headers");
+                request.extend_from_slice(&buffer[..count]);
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                      content-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request).into_owned()
+        });
+
+        let handle = get_anthropic_client(GetAnthropicClientOptions {
+            api_key: Some("sk-ant-test".to_string()),
+            max_retries: 0,
+            ..GetAnthropicClientOptions::default()
+        })
+        .await
+        .unwrap();
+        let _ = handle.build().unwrap().models().retrieve("model", None).await;
+        let request = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            request.starts_with("GET http://api.invalid/v1/models/model"),
+            "{request}"
+        );
+        let _ = std::fs::remove_dir_all(config_home);
     }
 
     /// CC `process.env.ANTHROPIC_AUTH_TOKEN || helper`, then `if (token)`: a
@@ -1497,6 +1576,7 @@ mod tests {
             max_retries: 2,
             timeout_ms: 600_000,
             fetch: build_fetch(Some("test".to_string())),
+            fetch_options: direct_client(),
             log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::FirstParty);
@@ -1513,6 +1593,7 @@ mod tests {
             max_retries: 2,
             timeout_ms: 600_000,
             fetch: build_fetch(None),
+            fetch_options: direct_client(),
             log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::Bedrock);
@@ -1531,6 +1612,7 @@ mod tests {
             max_retries: 2,
             timeout_ms: 600_000,
             fetch: build_fetch(None),
+            fetch_options: direct_client(),
             log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::Foundry);
@@ -1548,6 +1630,7 @@ mod tests {
             max_retries: 2,
             timeout_ms: 600_000,
             fetch: build_fetch(None),
+            fetch_options: direct_client(),
             log_level: anthropic_sdk::LogLevel::Warn,
         };
         assert_eq!(handle.provider_type(), ApiProvider::Vertex);

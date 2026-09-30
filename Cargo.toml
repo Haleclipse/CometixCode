@@ -137,7 +137,11 @@ flate2 = "1.1.9"
 # empty from the macOS/Windows settings; `ALL_PROXY` does not fill a slot.
 # `NO_PROXY` still applies. On macOS it reads the HTTP and HTTPS entries only:
 # not the exceptions list, PAC or SOCKS.
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "system-proxy"] }
+#
+# `socks`: CC's fetch path (undici) takes `socks5://` and `socks://` proxies;
+# `utils/proxy.rs` sends them as `socks5h`. It adds no crate: hyper-util's
+# SOCKS connector is already built.
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "system-proxy", "socks"] }
 sse-stream = { version = "0.2", optional = true }
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"], optional = true }
 

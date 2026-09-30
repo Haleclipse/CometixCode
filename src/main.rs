@@ -1471,6 +1471,11 @@ pub fn run(config: crate::cli::CliConfig) {
     // before the render root exists; subsequent auth reads are memory hits.
     utils::secure_storage::keychain_prefetch::ensure_keychain_prefetch_completed();
     utils::managed_env::apply_safe_config_environment_variables();
+    // Maps to CC `entrypoints/init.ts:79`, before any TLS connection, then
+    // `:136-150`: load the mTLS configuration and the proxy agents.
+    utils::ca_certs_config::apply_extra_ca_certs_from_config();
+    utils::mtls::configure_global_mtls();
+    utils::proxy::configure_global_agents();
     // Maps to CC main.tsx:1273-1274 preAction; setup.ts:371 uses the same
     // idempotent sink entry. Run before subcommands and MCP startup producers.
     if let Err(error) = utils::sinks::init_sinks() {

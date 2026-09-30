@@ -107,6 +107,10 @@ pub fn run(config: &CliConfig) -> i32 {
     }
     crate::utils::secure_storage::keychain_prefetch::ensure_keychain_prefetch_completed();
     crate::utils::managed_env::apply_safe_config_environment_variables();
+    // Maps to CC `entrypoints/init.ts:79` and `:136-150`, as in `main::run`.
+    crate::utils::ca_certs_config::apply_extra_ca_certs_from_config();
+    crate::utils::mtls::configure_global_mtls();
+    crate::utils::proxy::configure_global_agents();
     // Maps to CC main.tsx:1273-1274 / setup.ts:371. This headless launcher
     // bypasses main::run, so it must attach the same sink before tool work.
     if let Err(error) = crate::utils::sinks::init_sinks() {

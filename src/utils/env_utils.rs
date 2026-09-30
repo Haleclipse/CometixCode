@@ -209,6 +209,18 @@ pub fn truthy_env_value(value: Option<String>) -> Option<String> {
     value.filter(|value| !value.is_empty())
 }
 
+/// Maps to: CC `utils/envUtils.ts:24-30` `hasNodeOption`: `flag` is one of
+/// the `NODE_OPTIONS` words split on `/\s+/` (JS whitespace).
+pub fn has_node_option(flag: &str) -> bool {
+    crate::utils::process_env::var("NODE_OPTIONS")
+        .filter(|options| !options.is_empty())
+        .is_some_and(|options| {
+            options
+                .split(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
+                .any(|word| word == flag)
+        })
+}
+
 /// Maps to: CC `utils/envUtils.ts:32-37` `isEnvTruthy`.
 /// Rust's environment carrier supplies the source string/undefined cases; no
 /// current Rust caller requires the TypeScript-only boolean union branch.

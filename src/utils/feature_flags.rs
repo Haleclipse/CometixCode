@@ -147,6 +147,9 @@ pub enum FeatureFlag {
     MemoryCorrectionHint,
     /// Maps to CC GrowthBook `tengu_workflows_enabled` (official fallback true).
     WorkflowsEnabled,
+    /// Maps to CC GrowthBook `tengu_disable_keepalive_on_econnreset`
+    /// (`services/api/withRetry.ts:220-223`, fallback false).
+    DisableKeepaliveOnEconnreset,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -546,6 +549,12 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_workflows_enabled",
         enabled: false,
         note: "Official GrowthBook fallback is true. The Workflow tool is not ported, so this source-controlled switch stays off; isDynamicWorkflowsEnabled / isUltracodeAvailable follow it.",
+    },
+    FeatureSwitch {
+        flag: FeatureFlag::DisableKeepaliveOnEconnreset,
+        cc_growthbook_name: "tengu_disable_keepalive_on_econnreset",
+        enabled: false,
+        note: "CC's own fallback is false (withRetry.ts:220-223 getFeatureValue_CACHED_MAY_BE_STALE(..., false)): a stale ECONNRESET/EPIPE connection does not call disableKeepAlive unless this switch is flipped.",
     },
 ];
 

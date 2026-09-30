@@ -215,7 +215,7 @@ fn push_env_property(properties: &mut Vec<Property>, label: &'static str, key: &
     }
 }
 
-/// Maps to: CC `utils/status.tsx:332-445` `buildAPIProviderProperties`.
+/// Maps to: CC `utils/status.tsx:332-460` `buildAPIProviderProperties`.
 pub fn build_api_provider_properties() -> Vec<Property> {
     use crate::utils::model::providers::ApiProvider;
 
@@ -282,25 +282,25 @@ pub fn build_api_provider_properties() -> Vec<Property> {
         }
     }
 
-    for key in ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"] {
-        if let Some(proxy) = std::env::var(key).ok().filter(|value| !value.is_empty()) {
-            properties.push(property("Proxy", proxy));
-            break;
-        }
+    // Maps to CC `status.tsx:428-457`.
+    let env = crate::utils::process_env::snapshot();
+    if let Some(proxy_url) = crate::utils::proxy::get_proxy_url(&env) {
+        properties.push(property("Proxy", proxy_url));
     }
-    push_env_property(
-        &mut properties,
-        "Additional CA cert(s)",
-        "NODE_EXTRA_CA_CERTS",
-    );
-    for (label, key) in [
-        ("mTLS client cert", "CLAUDE_CODE_CLIENT_CERT"),
-        ("mTLS client key", "CLAUDE_CODE_CLIENT_KEY"),
-    ] {
-        if let Some(path) = std::env::var(key).ok().filter(|value| !value.is_empty()) {
-            if std::fs::read_to_string(&path).is_ok() {
-                properties.push(property(label, path));
-            }
+
+    let mtls_config = crate::utils::mtls::get_mtls_config();
+    let truthy = |key: &str| env.var(key).filter(|value| !value.is_empty()).map(str::to_owned);
+    if let Some(extra_certs) = truthy("NODE_EXTRA_CA_CERTS") {
+        properties.push(property("Additional CA cert(s)", extra_certs));
+    }
+    if let Some(mtls_config) = mtls_config {
+        // `mtlsConfig.cert && ...`: an empty file's contents are falsy.
+        let loaded = |contents: &Option<String>| contents.as_deref().is_some_and(|c| !c.is_empty());
+        if let Some(cert_path) = truthy("CLAUDE_CODE_CLIENT_CERT").filter(|_| loaded(&mtls_config.cert)) {
+            properties.push(property("mTLS client cert", cert_path));
+        }
+        if let Some(key_path) = truthy("CLAUDE_CODE_CLIENT_KEY").filter(|_| loaded(&mtls_config.key)) {
+            properties.push(property("mTLS client key", key_path));
         }
     }
     properties
@@ -404,6 +404,8 @@ mod tests {
             EnvGuard::set("CLAUDE_CODE_CLIENT_CERT", &cert),
             EnvGuard::unset("CLAUDE_CODE_CLIENT_KEY"),
         ];
+        // `getMTLSConfig` is memoized.
+        crate::utils::mtls::clear_mtls_cache();
 
         assert_eq!(
             build_api_provider_properties(),
@@ -419,6 +421,7 @@ mod tests {
         );
 
         drop(guards);
+        crate::utils::mtls::clear_mtls_cache();
         let _ = std::fs::remove_file(cert);
     }
 

@@ -841,6 +841,21 @@ where
             was_fast_mode_active,
         );
 
+        // Maps to CC `withRetry.ts:217-230`: after a stale keep-alive socket,
+        // behind its gate, stop pooling so the retry opens a fresh connection.
+        // CC throws a mock error (`:207-209`) before this runs.
+        if mock_error.is_none()
+            && last_error.as_ref().is_some_and(is_stale_connection_error)
+            && crate::utils::feature_flags::feature_enabled(
+                crate::utils::feature_flags::FeatureFlag::DisableKeepaliveOnEconnreset,
+            )
+        {
+            crate::utils::debug::log_for_debugging(
+                "Stale connection (ECONNRESET/EPIPE) — disabling keep-alive for retry",
+            );
+            crate::utils::proxy::disable_keep_alive();
+        }
+
         // Refresh client when needed (first attempt, after auth errors, stale connections)
         let needs_client_refresh = !client_initialized
             || last_error
@@ -1626,6 +1641,53 @@ mod tests {
             "attempt 6 delay repeated {} across 64 draws",
             first
         );
+    }
+
+    /// CC `withRetry.ts:217-230`: a stale connection turns keep-alive off
+    /// only behind `tengu_disable_keepalive_on_econnreset`, whose frozen
+    /// default is CC's fallback, off.
+    #[tokio::test]
+    async fn stale_connection_keeps_keep_alive_while_its_gate_is_off() {
+        assert!(!crate::utils::feature_flags::feature_enabled(
+            crate::utils::feature_flags::FeatureFlag::DisableKeepaliveOnEconnreset
+        ));
+        async fn reset_then_succeed() {
+            let attempts = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+            let (heartbeat_tx, _heartbeat_rx) = tokio::sync::mpsc::channel(4);
+            let result: Result<(), WithRetryError> = with_retry(
+                || async { Ok(()) },
+                move |_attempt, _context| {
+                    let attempts = attempts.clone();
+                    async move {
+                        if attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                            Err(RetryableError::Connection(ConnectionError {
+                                message: "connection reset".to_string(),
+                                code: Some("ECONNRESET".to_string()),
+                            }))
+                        } else {
+                            Ok(())
+                        }
+                    }
+                },
+                RetryOptions {
+                    max_retries: Some(2),
+                    model: "claude-sonnet-4-20250514".to_string(),
+                    fallback_model: None,
+                    thinking_config: ThinkingConfig::Disabled,
+                    fast_mode: None,
+                    abort_rx: None,
+                    query_source: Some(RetryQuerySource::ReplMainThread),
+                    initial_consecutive_529_errors: None,
+                },
+                heartbeat_tx,
+            )
+            .await;
+            assert!(result.is_ok());
+        }
+
+        crate::utils::proxy::reset_keep_alive_for_testing();
+        reset_then_succeed().await;
+        assert!(!crate::utils::proxy::is_keep_alive_disabled_for_testing());
     }
 
     // -- is_stale_connection_error --
