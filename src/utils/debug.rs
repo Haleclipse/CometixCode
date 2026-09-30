@@ -320,6 +320,14 @@ pub fn is_debug_to_stderr() -> bool {
     config().debug_to_stderr
 }
 
+/// Maps to: CC `utils/debug.ts:85-89` `isDebugToStdErr`, which checks only
+/// whether argv holds `--debug-to-stderr` or `-d2e`. [`is_debug_to_stderr`] is
+/// the configured log sink instead, and print mode always points that sink at
+/// stderr.
+pub fn debug_to_stderr_flag() -> bool {
+    std::env::args_os().any(|argument| argument == "--debug-to-stderr" || argument == "-d2e")
+}
+
 pub fn frame_profile_enabled() -> bool {
     config().profiles.frame
 }

@@ -707,9 +707,32 @@ fn build_direct_client(
         timeout: Some(timeout_ms),
         max_retries: Some(max_retries),
         default_headers: Some(default_headers),
+        // CC `client.ts:168,216,294,312`:
+        // `...(isDebugToStdErr() && { logger: createStderrLogger() })`.
+        logger: crate::utils::debug::debug_to_stderr_flag()
+            .then(|| std::sync::Arc::new(StderrLogger) as std::sync::Arc<dyn anthropic_sdk::SdkLogger>),
         ..Default::default()
     })
     .map_err(|error| ClientError::Sdk(error.to_string()))
+}
+
+/// Maps to: CC `services/api/client.ts:73-86` `createStderrLogger`. The SDK
+/// still filters by its own level (`ANTHROPIC_LOG`, default `warn`), so
+/// request lines such as `sending request: POST <url>` need
+/// `ANTHROPIC_LOG=debug`.
+struct StderrLogger;
+
+impl anthropic_sdk::SdkLogger for StderrLogger {
+    fn log(&self, level: anthropic_sdk::LogLevel, message: &str) {
+        let tag = match level {
+            anthropic_sdk::LogLevel::Error => "ERROR",
+            anthropic_sdk::LogLevel::Warn => "WARN",
+            anthropic_sdk::LogLevel::Info => "INFO",
+            anthropic_sdk::LogLevel::Debug => "DEBUG",
+            anthropic_sdk::LogLevel::Off => return,
+        };
+        eprintln!("[Anthropic SDK {tag}] {message}");
+    }
 }
 
 fn hex_lower(bytes: &[u8]) -> String {
