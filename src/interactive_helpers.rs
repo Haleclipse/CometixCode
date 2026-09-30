@@ -106,7 +106,9 @@ pub fn setup_screens_snapshot_from_readonly_runtime(
     terminal_name: Option<String>,
     platform: runtime_env::Platform,
 ) -> SetupScreensSnapshot {
-    if crate::utils::env_utils::is_env_truthy(get_env("IS_DEMO").as_deref()) {
+    // CC `:157` tests `process.env.IS_DEMO` for plain truthiness: any
+    // non-empty value, `0` included.
+    if get_env("IS_DEMO").is_some_and(|value| !value.is_empty()) {
         return SetupScreensSnapshot::default();
     }
 
@@ -329,6 +331,12 @@ fn SetupScreensHost<'a>(
     let mut claude_md_dismissed = hooks.use_state(|| false);
     let trust_risk_snapshot = hooks.use_const(build_trust_dialog_risk_snapshot);
     let claude_md_external_includes = hooks.use_const(load_claude_md_external_includes_for_setup);
+    // The Onboarding store's settings seed, built once (see the Onboarding
+    // arm below).
+    let onboarding_settings_seed = hooks.use_const({
+        let startup_settings = startup_settings.clone();
+        move || Arc::new(startup_settings.settings.clone())
+    });
 
     // Maps to: CC `interactiveHelpers.tsx:218` + `mcpServerApproval.tsx:16-19`
     // — both derive the pending list from the settings snapshot read off disk.
@@ -340,6 +348,7 @@ fn SetupScreensHost<'a>(
     // Maps to: CC main.tsx `[STARTUP] Running showSetupScreens()...` once per mount.
     let mut setup_screens_started = hooks.use_state(|| false);
     let mut setup_screens_completed_logged = hooks.use_state(|| false);
+    let mut config_env_applied = hooks.use_state(|| false);
     if !setup_screens_started.get() {
         setup_screens_started.set(true);
         crate::utils::debug::log_for_debugging("[STARTUP] Running showSetupScreens()...");
@@ -353,13 +362,41 @@ fn SetupScreensHost<'a>(
         should_show_claude_md_external_includes_gate() && !claude_md_dismissed.get();
 
     let pending_mcpjson_servers = { pending_mcpjson_servers_state.read().clone() };
-    let setup_gate = resolve_setup_screen_gate(
-        show_onboarding,
-        show_trust_dialog,
-        !pending_mcpjson_servers.is_empty(),
-        show_claude_md_external_includes,
-        show_claude_in_chrome_onboarding,
-    );
+    // CC `:154-161`: demo mode returns before every step, the env application
+    // at :252 included.
+    let setup_gate = if is_demo_mode() {
+        SetupScreenGate::Ready
+    } else {
+        resolve_setup_screen_gate(
+            show_onboarding,
+            show_trust_dialog,
+            !pending_mcpjson_servers.is_empty(),
+            show_claude_md_external_includes,
+            show_claude_in_chrome_onboarding,
+        )
+    };
+
+    // Maps to: CC `interactiveHelpers.tsx:248-252`. The full settings env,
+    // potentially dangerous variables included, applies once trust is settled.
+    // That is after the trust dialog, the `.mcp.json` approvals and the
+    // CLAUDE.md external-includes warning, and before the dialogs that follow,
+    // among them Claude in Chrome (:390-400). It applies whether or not the
+    // trust dialog showed, as CC's call does, but not in demo mode, which
+    // returns first.
+    if matches!(
+        setup_gate,
+        SetupScreenGate::ClaudeInChrome | SetupScreenGate::Ready
+    ) && !config_env_applied.get()
+        && !is_demo_mode()
+    {
+        config_env_applied.set(true);
+        // Settings may have changed on disk during the dialogs. `Main`'s
+        // completion re-reads them right after this, so reset the cache
+        // first. The env applied here and AppState.settings then come from
+        // the same read, as in CC, where both read one cache.
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        crate::utils::managed_env::apply_config_environment_variables();
+    }
 
     let gate_element = match setup_gate {
         SetupScreenGate::Onboarding => {
@@ -370,14 +407,17 @@ fn SetupScreensHost<'a>(
             // AppState yet and keep only the KeybindingSetup below (seam).
             let snapshot = setup_screens_snapshot.clone();
             let keybinding_key = format!("{setup_gate:?}");
-            // SEAM: CC's `getDefaultAppState()` seeds `settings:
-            // getInitialSettings()` (AppStateStore.ts:469), which the picker's
-            // syntax toggle reads. Seeding it here waits for the env redesign:
-            // the port's onChangeAppState re-applies settings env on any
-            // settings write that carries one, which a toggle would then do
-            // before trust.
+            // CC's `getDefaultAppState()` seeds `settings: getInitialSettings()`
+            // (AppStateStore.ts:469), which the picker's syntax toggle reads.
+            // `startup_settings` is that disk read. It is safe before trust:
+            // the toggle is a spread that keeps the env reference, so
+            // onChangeAppState does not re-apply it (env redesign F2). The
+            // settings watcher only starts after setup (F3).
+            let mut seed = crate::state::app_state_store::AppState::default();
+            seed.settings = onboarding_settings_seed.clone();
             element! {
                 crate::state::app_state::AppStateProvider(
+                    initial_state: Some(seed),
                     on_change_app_state: Some(crate::state::on_change_app_state::default_on_change()),
                     children: crate::state::app_state::ProviderChildren::new(move || {
                         let snapshot = snapshot.clone();
@@ -916,6 +956,13 @@ pub enum SetupScreenGate {
     Ready,
 }
 
+/// Maps to: CC `interactiveHelpers.tsx:154-161`, the demo-mode return of
+/// `showSetupScreens`. `process.env.IS_DEMO` is tested for plain
+/// truthiness, not `isEnvTruthy`: any non-empty value counts.
+pub fn is_demo_mode() -> bool {
+    std::env::var("IS_DEMO").is_ok_and(|value| !value.is_empty())
+}
+
 /// Maps to: CC `interactiveHelpers.tsx` CLAUBBIT / demo skip of trust.
 pub fn should_skip_trust_dialog_for_env() -> bool {
     crate::utils::env_utils::is_env_truthy(std::env::var("CLAUBBIT").ok().as_deref())
@@ -1119,5 +1166,95 @@ mod tests {
         assert!(check_has_trust_dialog_accepted());
         crate::bootstrap::state::set_session_trust_accepted(false);
         reset_trust_dialog_accepted_cache_for_testing();
+    }
+
+    struct CwdGuard {
+        old: std::path::PathBuf,
+    }
+
+    impl CwdGuard {
+        fn set(path: &Path) -> Self {
+            let old = std::env::current_dir().unwrap();
+            std::env::set_current_dir(path).unwrap();
+            Self { old }
+        }
+    }
+
+    impl Drop for CwdGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.old);
+        }
+    }
+
+    /// Renders the setup phase with no step to show. Returns whether `on_done`
+    /// fired and what a non-safe settings env variable held afterwards.
+    fn render_setup_with_settings_env(demo: bool) -> (bool, Option<String>) {
+        use crate::utils::env_utils::EnvVarGuard;
+        use futures::StreamExt as _;
+        use std::sync::atomic::AtomicBool;
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = std::env::temp_dir().join(format!(
+            "cometix-setup-env-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("settings.json"),
+            r#"{"env":{"COMETIX_SETUP_ENV_PROBE":"applied"}}"#,
+        )
+        .unwrap();
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _probe = EnvVarGuard::unset("COMETIX_SETUP_ENV_PROBE");
+        // `.mcp.json` approvals walk up from the cwd; keep a host's out.
+        let project = root.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let _cwd = CwdGuard::set(&project);
+        // CLAUBBIT skips the trust dialog and the CLAUDE.md warning.
+        let _claubbit = EnvVarGuard::set("CLAUBBIT", "1");
+        let _demo = if demo {
+            EnvVarGuard::set("IS_DEMO", "1")
+        } else {
+            EnvVarGuard::unset("IS_DEMO")
+        };
+        crate::utils::settings::settings_cache::reset_settings_cache();
+
+        let done = Arc::new(AtomicBool::new(false));
+        let done_in_callback = Arc::clone(&done);
+        futures::executor::block_on(async move {
+            show_setup_screens(
+                SetupScreensSnapshot::default(),
+                crate::main::McpStartupConfig::default(),
+                Arc::new(SettingsWithErrors::default()),
+                None,
+                move |_| done_in_callback.store(true, Ordering::SeqCst),
+            )
+            .mock_terminal_render_loop(MockTerminalConfig::default())
+            .next()
+            .await;
+        });
+        let applied = crate::utils::process_env::var("COMETIX_SETUP_ENV_PROBE");
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        let _ = std::fs::remove_dir_all(root);
+        (done.load(Ordering::SeqCst), applied)
+    }
+
+    /// CC `interactiveHelpers.tsx:252`: the full settings env, not just the
+    /// safe allowlist, is applied by the time setup completes.
+    #[test]
+    fn setup_applies_the_full_settings_env_before_completing() {
+        let (done, applied) = render_setup_with_settings_env(false);
+        assert!(done, "setup with no step to show completes on the first frame");
+        assert_eq!(applied.as_deref(), Some("applied"));
+    }
+
+    /// CC `:154-161`: demo mode returns before every step, so the full env is
+    /// never applied.
+    #[test]
+    fn demo_mode_completes_setup_without_applying_the_settings_env() {
+        let (done, applied) = render_setup_with_settings_env(true);
+        assert!(done);
+        assert_eq!(applied, None);
     }
 }

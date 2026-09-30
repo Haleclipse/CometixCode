@@ -666,11 +666,15 @@ pub fn register_mcp_connection_handlers(store: &AppStore) {
 
 /// Start the process-wide settings change detector.
 ///
-/// Maps to: CC `main.tsx:689` `void settingsChangeDetector.initialize()` — a
-/// launch-phase call, because the detector is a process-wide notifier. The
-/// AppState side of it is the Provider-scoped subscription
-/// (`AppState.tsx:104-110`), which keeps one fan-out with a single cache reset
-/// per change.
+/// Maps to: CC `main.tsx:689` `void settingsChangeDetector.initialize()`,
+/// inside `startDeferredPrefetches()`. In interactive mode CC calls that from
+/// `renderAndRun` (`interactiveHelpers.tsx:142`), after `showSetupScreens`, so
+/// the detector starts once setup and trust are done. The call sits in the
+/// retained setup phase's completion (`Main`). Started any earlier, an
+/// external settings edit during onboarding would fan out, and re-apply the
+/// settings env, before trust. The AppState side of it is the
+/// Provider-scoped subscription (`AppState.tsx:104-110`), which keeps one
+/// fan-out with a single cache reset per change.
 ///
 /// Everything else this function used to spawn moved to its mount at P5 G10,
 /// because each one is a mounted effect at the source and spawning it here
@@ -684,6 +688,13 @@ pub fn register_mcp_connection_handlers(store: &AppStore) {
 ///   also a functional fix: computing it once from a launch snapshot left the
 ///   status line stale for the whole session.
 pub fn start_settings_change_detector() {
+    // CC `startDeferredPrefetches` returns early in bare mode (`main.tsx:651-661`),
+    // and `initialize()` in remote mode (`changeDetector.ts:84`).
+    // `CLAUDE_CODE_EXIT_AFTER_FIRST_RENDER`, the other early return, is not
+    // ported.
+    if crate::utils::env_utils::is_bare_mode() || crate::bootstrap::state::get_is_remote_mode() {
+        return;
+    }
     #[cfg(not(test))]
     crate::utils::settings::change_detector::initialize();
 }
@@ -1070,6 +1081,9 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     // traffic starts only after setup/trust and remains off the
                     // retained frame.
                     crate::services::claude_ai_limits::spawn_quota_status_preflight();
+                    // CC `renderAndRun` → `startDeferredPrefetches()`
+                    // (`interactiveHelpers.tsx:142`, `main.tsx:689`): after setup.
+                    start_settings_change_detector();
                     setup_complete.set(true)
                 }
             },
@@ -1695,7 +1709,6 @@ pub fn run(config: crate::cli::CliConfig) {
                 .ok()
         });
         let render_result = rt.block_on(async {
-            start_settings_change_detector();
             // CC `createRoot(getBaseRenderOptions(false))` (main.tsx:6029,
             // :6149): `exitOnCtrlC: false`, so a Ctrl+C no handler takes does
             // nothing; exiting is the double press in useTextInput and
@@ -1810,7 +1823,6 @@ pub fn run(config: crate::cli::CliConfig) {
         );
     } else {
         let render_result = rt.block_on(async {
-            start_settings_change_detector();
             // `exitOnCtrlC: false`, as above.
             let result = mount()
                 .render_loop()

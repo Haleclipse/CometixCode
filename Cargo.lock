@@ -58,7 +58,7 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk"
 version = "0.74.0"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#7f5213a26a08ccdd54532b50d7dedda7ba19996b"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#d23fa17f7118d8396a1952d45196366201225ae3"
 dependencies = [
  "async-trait",
  "bytes",
