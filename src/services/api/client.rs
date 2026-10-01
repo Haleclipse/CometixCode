@@ -457,34 +457,19 @@ pub async fn get_anthropic_client(
             let project_id =
                 read_env(&env, "ANTHROPIC_VERTEX_PROJECT_ID").filter(|value| !value.is_empty());
 
-            // Determine whether GoogleAuth needs an explicit projectId fallback
-            // to avoid the 12-second GCE metadata server timeout.
-            // Maps to: CC services/api/client.ts:253-288. Both tests are JS
-            // truthiness, and the fallback is the raw `process.env` value.
-            let has_project_env_var = [
-                "GCLOUD_PROJECT",
-                "GOOGLE_CLOUD_PROJECT",
-                "gcloud_project",
-                "google_cloud_project",
-            ]
-            .iter()
-            .any(|key| env.var(key).is_some_and(|value| !value.is_empty()));
-            let has_key_file = ["GOOGLE_APPLICATION_CREDENTIALS", "google_application_credentials"]
-                .iter()
-                .any(|key| env.var(key).is_some_and(|value| !value.is_empty()));
+            // CC `client.ts:253-288` gives `GoogleAuth` a `projectId` fallback
+            // when no project variable or key file is set, so that
+            // google-auth-library does not ask the GCE metadata server for the
+            // project (a 12 s timeout off GCP). The SDK's `GoogleAuth` takes the
+            // project from the credential file or the quota project only and
+            // never asks the metadata server for one, so there is nothing to
+            // guard here.
             let skip_auth =
                 crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SKIP_VERTEX_AUTH"));
-
             let vertex_auth = if skip_auth {
                 VertexAuth::SkipAuth
             } else {
-                VertexAuth::GoogleAuth {
-                    project_id_fallback: if has_project_env_var || has_key_file {
-                        None
-                    } else {
-                        env.var("ANTHROPIC_VERTEX_PROJECT_ID").map(str::to_owned)
-                    },
-                }
+                VertexAuth::GoogleAuth
             };
 
             crate::utils::debug::log_for_debugging(&format!(
@@ -496,6 +481,11 @@ pub async fn get_anthropic_client(
                     region,
                     project_id,
                     auth: vertex_auth,
+                    // `AnthropicVertex`'s own `readEnv` (`vertex-sdk
+                    // client.ts:78`) and the core's `apiKey` default, which
+                    // CC leaves to the SDK.
+                    base_url: read_env(&env, "ANTHROPIC_VERTEX_BASE_URL"),
+                    api_key: read_env(&env, "ANTHROPIC_API_KEY"),
                 },
                 default_headers,
                 max_retries,
@@ -607,12 +597,10 @@ pub enum FoundryAuth {
 /// Maps to: CC services/api/client.ts:266-288
 #[derive(Clone, Debug)]
 pub enum VertexAuth {
-    /// Use `google-auth-library` (or gcp-auth crate equivalent).
-    GoogleAuth {
-        /// Fallback project ID to avoid metadata server timeout.
-        project_id_fallback: Option<String>,
-    },
-    /// Skip authentication (for proxies / testing).
+    /// `new GoogleAuth(...)`: the SDK's Application Default Credentials.
+    GoogleAuth,
+    /// CC's mock `GoogleAuth` (`client.ts:265-271`), for proxies and tests:
+    /// `getRequestHeaders()` returns no header.
     SkipAuth,
 }
 
@@ -643,11 +631,15 @@ pub enum ProviderConfig {
         resource: Option<String>,
         api_key: Option<String>,
     },
-    /// GCP Vertex AI provider.
+    /// GCP Vertex AI provider. The project, endpoint and key are the `readEnv`
+    /// values `AnthropicVertex` and the core read for themselves
+    /// (`vertex-sdk client.ts:78-80`); an empty project is none.
     Vertex {
         region: String,
         project_id: Option<String>,
         auth: VertexAuth,
+        base_url: Option<String>,
+        api_key: Option<String>,
     },
 }
 
@@ -678,13 +670,13 @@ pub struct AnthropicClientHandle {
 }
 
 impl AnthropicClientHandle {
-    /// Build an `anthropic_sdk::Anthropic` client from this handle.
+    /// Build the SDK client for this handle.
     ///
-    /// Direct and Foundry are built on the core client, with the options CC
-    /// hands the SDK and every option CC leaves to `readEnv` already resolved
-    /// (see [`ProviderConfig::Direct`]). Bedrock and Vertex need their provider
-    /// SDKs (environment redesign C2c); CC casts those clients to `Anthropic`
-    /// (`as unknown as Anthropic`).
+    /// Every client takes the options CC hands the SDK, with each option CC
+    /// leaves to `readEnv` already resolved (see [`ProviderConfig::Direct`]).
+    /// Direct and Foundry are the core client, Vertex its provider client;
+    /// Bedrock still needs its provider SDK (environment redesign C2c). See
+    /// [`ClientBuildOutput`] for CC's `as unknown as Anthropic`.
     ///
     /// Maps to: CC services/api/client.ts:141-316
     ///
@@ -749,9 +741,40 @@ impl AnthropicClientHandle {
                 };
                 self.build_direct_client(api_key, auth_token, Some(base_url))
             }
-            ProviderConfig::Vertex { .. } => Err(ClientError::Sdk(
-                "Vertex provider SDK is not wired in Cometix Phase 1; use Direct API".to_string(),
-            )),
+            ProviderConfig::Vertex {
+                region,
+                project_id,
+                auth,
+                base_url,
+                api_key,
+            } => {
+                // CC `new AnthropicVertex({ ...ARGS, region, googleAuth })`
+                // (`client.ts:290-297`).
+                let token_provider: Option<
+                    std::sync::Arc<dyn anthropic_sdk_vertex::TokenProvider>,
+                > = match auth {
+                    VertexAuth::GoogleAuth => None,
+                    VertexAuth::SkipAuth => Some(std::sync::Arc::new(SkipVertexAuth)),
+                };
+                let config = anthropic_sdk_vertex::VertexConfig {
+                    project_id: project_id.clone().unwrap_or_default(),
+                    region: region.clone(),
+                    access_token: None,
+                    token_provider,
+                    base_url: base_url.clone(),
+                };
+                // `ARGS` carries no `apiKey`: the core default
+                // `readEnv('ANTHROPIC_API_KEY') ?? null`, read from the
+                // snapshot. The Vertex client sets the token and base URL.
+                let core_options = self.core_client_options(
+                    Nullable::from_resolved(api_key.clone()),
+                    Nullable::Unset,
+                    None,
+                );
+                anthropic_sdk_vertex::AnthropicVertex::new_with_core_options(&config, core_options)
+                    .map(ClientBuildOutput::Vertex)
+                    .map_err(|error| ClientError::Sdk(error.to_string()))
+            }
         }
     }
 
@@ -767,15 +790,17 @@ impl AnthropicClientHandle {
         }
     }
 
-    /// Every `ClientOptions` field is explicit, so the SDK reads none of its
-    /// option variables, and its HTTP client is the handle's `fetch_options`.
-    fn build_direct_client(
+    /// CC's `ARGS` (`client.ts:141-152`) with the credentials and base URL the
+    /// caller resolved. Every `ClientOptions` field is explicit, so the SDK
+    /// reads none of its option variables, and its HTTP client is the
+    /// handle's `fetch_options`.
+    fn core_client_options(
         &self,
         api_key: Nullable<String>,
         auth_token: Nullable<String>,
         base_url: Option<String>,
-    ) -> Result<ClientBuildOutput, ClientError> {
-        anthropic_sdk::Anthropic::new(anthropic_sdk::ClientOptions {
+    ) -> anthropic_sdk::ClientOptions {
+        anthropic_sdk::ClientOptions {
             api_key,
             auth_token,
             base_url,
@@ -791,12 +816,182 @@ impl AnthropicClientHandle {
             // CC `ARGS.fetchOptions`.
             http_client: Some(self.fetch_options.clone()),
             ..Default::default()
-        })
-        .map_err(|error| ClientError::Sdk(error.to_string()))
+        }
+    }
+
+    fn build_direct_client(
+        &self,
+        api_key: Nullable<String>,
+        auth_token: Nullable<String>,
+        base_url: Option<String>,
+    ) -> Result<ClientBuildOutput, ClientError> {
+        anthropic_sdk::Anthropic::new(self.core_client_options(api_key, auth_token, base_url))
+            .map(ClientBuildOutput::Anthropic)
+            .map_err(|error| ClientError::Sdk(error.to_string()))
     }
 }
 
-pub type ClientBuildOutput = anthropic_sdk::Anthropic;
+/// CC's skip-auth stand-in for `GoogleAuth` (`client.ts:265-271`), whose
+/// `getRequestHeaders()` returns `{}`: no Google credential is sent.
+struct SkipVertexAuth;
+
+impl anthropic_sdk_vertex::TokenProvider for SkipVertexAuth {
+    fn get_token(&self) -> futures::future::BoxFuture<'_, Result<String, anthropic_sdk::ApiError>> {
+        Box::pin(async { Ok(String::new()) })
+    }
+
+    fn request_headers(
+        &self,
+    ) -> futures::future::BoxFuture<'_, Result<HashMap<String, String>, anthropic_sdk::ApiError>>
+    {
+        Box::pin(async { Ok(HashMap::new()) })
+    }
+}
+
+/// The client [`AnthropicClientHandle::build`] returns. CC returns every
+/// provider client as `Anthropic` (`as unknown as Anthropic`,
+/// `client.ts:189,219,297`). The TS Vertex client rewrites requests in its own
+/// `prepareOptions`/`buildRequest` (`vertex-sdk/src/client.ts:122-185`), so
+/// every call through the cast keeps the endpoint rewriting and auth. The Rust
+/// provider SDKs rewrite in their `messages`/`beta().messages()` wrappers
+/// instead, so the provider client is kept and [`ClientBuildOutput::beta`]
+/// dispatches to it. There is deliberately no `Deref` to the core client: a
+/// `&Anthropic` parameter would take one silently and send a Vertex request to
+/// the core path. [`ClientBuildOutput::as_client`] is the explicit way out.
+#[derive(Clone)]
+pub enum ClientBuildOutput {
+    Anthropic(anthropic_sdk::Anthropic),
+    Vertex(anthropic_sdk_vertex::AnthropicVertex),
+}
+
+impl ClientBuildOutput {
+    /// `anthropic.beta`, through the provider's override.
+    pub fn beta(&self) -> ClientBeta<'_> {
+        ClientBeta(self)
+    }
+
+    /// The core client, with the provider's base URL and auth but without its
+    /// request rewriting (as the provider SDKs' own `as_client`).
+    pub fn as_client(&self) -> &anthropic_sdk::Anthropic {
+        match self {
+            Self::Anthropic(client) => client,
+            Self::Vertex(client) => client.as_client(),
+        }
+    }
+}
+
+/// `anthropic.beta` of a [`ClientBuildOutput`].
+pub struct ClientBeta<'a>(&'a ClientBuildOutput);
+
+impl<'a> ClientBeta<'a> {
+    /// `anthropic.beta.messages`, through the provider's override.
+    pub fn messages(&self) -> ClientBetaMessages<'a> {
+        ClientBetaMessages(self.0)
+    }
+}
+
+/// `anthropic.beta.messages` of a [`ClientBuildOutput`]: the calls Cometix
+/// makes, each sent through the provider client.
+pub struct ClientBetaMessages<'a>(&'a ClientBuildOutput);
+
+impl ClientBetaMessages<'_> {
+    pub async fn create_with_options(
+        &self,
+        params: &anthropic_sdk::resources::beta::messages::BetaMessageCreateParams,
+        options: Option<&anthropic_sdk::RequestOptions>,
+    ) -> Result<anthropic_sdk::resources::beta::messages::BetaMessage, anthropic_sdk::ApiError>
+    {
+        match self.0 {
+            ClientBuildOutput::Anthropic(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_with_options(params, options)
+                    .await
+            }
+            ClientBuildOutput::Vertex(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_with_options(params, options)
+                    .await
+            }
+        }
+    }
+
+    pub async fn create_with_response_and_options(
+        &self,
+        params: &anthropic_sdk::resources::beta::messages::BetaMessageCreateParams,
+        options: Option<&anthropic_sdk::RequestOptions>,
+    ) -> Result<
+        anthropic_sdk::ApiResponse<anthropic_sdk::resources::beta::messages::BetaMessage>,
+        anthropic_sdk::ApiError,
+    > {
+        match self.0 {
+            ClientBuildOutput::Anthropic(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_with_response_and_options(params, options)
+                    .await
+            }
+            ClientBuildOutput::Vertex(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_with_response_and_options(params, options)
+                    .await
+            }
+        }
+    }
+
+    pub async fn create_stream_with_response_and_options(
+        &self,
+        params: &anthropic_sdk::resources::beta::messages::BetaMessageCreateParams,
+        options: Option<&anthropic_sdk::RequestOptions>,
+    ) -> Result<
+        anthropic_sdk::ApiResponse<
+            anthropic_sdk::core::streaming::SseStream<
+                anthropic_sdk::resources::beta::messages::BetaMessageStreamEvent,
+            >,
+        >,
+        anthropic_sdk::ApiError,
+    > {
+        match self.0 {
+            ClientBuildOutput::Anthropic(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_stream_with_response_and_options(params, options)
+                    .await
+            }
+            ClientBuildOutput::Vertex(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_stream_with_response_and_options(params, options)
+                    .await
+            }
+        }
+    }
+
+    pub async fn count_tokens(
+        &self,
+        params: &anthropic_sdk::resources::beta::messages::BetaMessageCountTokensParams,
+    ) -> Result<
+        anthropic_sdk::resources::beta::messages::BetaMessageTokensCount,
+        anthropic_sdk::ApiError,
+    > {
+        match self.0 {
+            ClientBuildOutput::Anthropic(client) => {
+                client.beta().messages().count_tokens(params).await
+            }
+            ClientBuildOutput::Vertex(client) => {
+                client.beta().messages().count_tokens(params).await
+            }
+        }
+    }
+}
 
 /// Maps to: CC `services/api/client.ts:358-390` `buildFetch(fetchOverride,
 /// source)`, the wrapper around every SDK fetch. For the first-party API only
@@ -1258,7 +1453,7 @@ mod tests {
         ));
         crate::utils::tls_provider::install_crypto_provider();
         let client = handle.build().unwrap();
-        assert_eq!(client.base_url(), "https://api.anthropic.com");
+        assert_eq!(client.as_client().base_url(), "https://api.anthropic.com");
         let _ = std::fs::remove_dir_all(config_home);
     }
 
@@ -1342,12 +1537,197 @@ mod tests {
             fetch_options: direct_client(),
             log_level: anthropic_sdk::LogLevel::Warn,
         };
-        let _ = handle.build().unwrap().models().retrieve("model", None).await;
+        let _ = handle
+            .build()
+            .unwrap()
+            .as_client()
+            .models()
+            .retrieve("model", None)
+            .await;
         let request = tokio::time::timeout(std::time::Duration::from_secs(10), server)
             .await
             .unwrap()
             .unwrap();
         assert!(request.contains("\r\nx-client-request-id: "), "{request}");
+    }
+
+    /// CC `new AnthropicVertex({ ...ARGS, region, googleAuth })` cast to
+    /// `Anthropic`: each `beta.messages` call Cometix makes is rewritten as
+    /// the TS client's `buildRequest` does (`vertex-sdk/src/client.ts:139-182`)
+    /// and carries `ARGS`'s headers. The skip-auth mock sends no Google
+    /// credential; the key is the one read from the snapshot.
+    #[tokio::test]
+    async fn vertex_messages_go_to_the_vertex_endpoint_through_args() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut requests = Vec::new();
+            for _ in 0..4 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                let head_end = loop {
+                    if let Some(at) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                        break at + 4;
+                    }
+                    let mut buffer = [0; 4096];
+                    let count = stream.read(&mut buffer).await.unwrap();
+                    assert_ne!(count, 0, "HTTP request ended before headers");
+                    request.extend_from_slice(&buffer[..count]);
+                };
+                let head = String::from_utf8_lossy(&request[..head_end]).to_ascii_lowercase();
+                let length = head
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+                while request.len() < head_end + length {
+                    let mut buffer = [0; 4096];
+                    let count = stream.read(&mut buffer).await.unwrap();
+                    assert_ne!(count, 0, "HTTP request ended before its body");
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                stream
+                    .write_all(
+                        b"HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                          content-length: 2\r\nconnection: close\r\n\r\n{}",
+                    )
+                    .await
+                    .unwrap();
+                requests.push(String::from_utf8_lossy(&request).to_ascii_lowercase());
+            }
+            requests
+        });
+        let handle = AnthropicClientHandle {
+            provider: ProviderConfig::Vertex {
+                region: "us-east5".to_string(),
+                project_id: Some("test-project".to_string()),
+                auth: VertexAuth::SkipAuth,
+                base_url: Some(format!("http://{address}/v1")),
+                api_key: Some("snapshot-key".to_string()),
+            },
+            default_headers: HashMap::from([("x-app".to_string(), Some("cli".to_string()))]),
+            max_retries: 0,
+            timeout_ms: 5_000,
+            fetch: ResolvedFetch {
+                inject_client_request_id: false,
+                source: Some("test".to_string()),
+            },
+            fetch_options: direct_client(),
+            log_level: anthropic_sdk::LogLevel::Warn,
+        };
+        let client = handle.build().unwrap();
+        assert!(matches!(client, ClientBuildOutput::Vertex(_)));
+        let params = anthropic_sdk::resources::beta::messages::BetaMessageCreateParams {
+            model: "claude-test".to_string(),
+            max_tokens: 16,
+            messages: vec![anthropic_sdk::resources::beta::messages::BetaMessageParam {
+                role: "user".to_string(),
+                content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
+                    "hi".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+        let count_params = anthropic_sdk::resources::beta::messages::BetaMessageCountTokensParams {
+            model: "claude-test".to_string(),
+            messages: params.messages.clone(),
+            ..Default::default()
+        };
+        let messages = client.beta().messages();
+        let _ = messages.create_with_options(&params, None).await;
+        let _ = messages
+            .create_with_response_and_options(&params, None)
+            .await;
+        let _ = messages
+            .create_stream_with_response_and_options(&params, None)
+            .await;
+        let _ = messages.count_tokens(&count_params).await;
+        let requests = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .unwrap()
+            .unwrap();
+        let [create, create_with_response, stream, count] = requests.as_slice() else {
+            panic!("four requests expected: {requests:?}");
+        };
+        let models =
+            "post /v1/projects/test-project/locations/us-east5/publishers/anthropic/models/";
+        for request in [create, create_with_response] {
+            assert!(
+                request.starts_with(&format!("{models}claude-test:rawpredict ")),
+                "{request}"
+            );
+        }
+        assert!(
+            stream.starts_with(&format!("{models}claude-test:streamrawpredict ")),
+            "{stream}"
+        );
+        assert!(stream.contains("\"stream\":true"), "{stream}");
+        assert!(
+            count.starts_with(&format!("{models}count-tokens:rawpredict ")),
+            "{count}"
+        );
+        assert!(count.contains("token-counting-2024-11-01"), "{count}");
+        assert!(count.contains("\"model\":\"claude-test\""), "{count}");
+        for request in [create, create_with_response, stream] {
+            assert!(!request.contains("\"model\""), "{request}");
+        }
+        for request in [create, create_with_response, stream, count] {
+            assert!(
+                request.contains("\"anthropic_version\":\"vertex-2023-10-16\""),
+                "{request}"
+            );
+            assert!(request.contains("\r\nx-app: cli"), "{request}");
+            assert!(request.contains("\r\nx-api-key: snapshot-key"), "{request}");
+            assert!(!request.contains("\r\nauthorization:"), "{request}");
+        }
+    }
+
+    /// The Vertex endpoint and key are `readEnv` values taken from the
+    /// snapshot (`vertex-sdk client.ts:78`, the core's `apiKey` default).
+    #[tokio::test]
+    async fn vertex_handle_reads_its_sdk_defaults_from_the_snapshot() {
+        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let config_home =
+            std::env::temp_dir().join(format!("cometix-vertex-defaults-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&config_home).unwrap();
+        let _guards = [
+            EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK"),
+            EnvGuard::set("CLAUDE_CODE_USE_VERTEX", "1"),
+            EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvGuard::set("CLAUDE_CODE_SKIP_VERTEX_AUTH", "1"),
+            EnvGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", " vertex-project "),
+            EnvGuard::set("ANTHROPIC_VERTEX_BASE_URL", " https://vertex.example/v1 "),
+            EnvGuard::set("ANTHROPIC_API_KEY", " env-key "),
+        ];
+        // The OS environment disagrees with the carrier, so a read that went
+        // around the snapshot would surface here. The guards restore both.
+        #[cfg(unix)]
+        unsafe {
+            std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", "os-project");
+            std::env::set_var("ANTHROPIC_VERTEX_BASE_URL", "https://os.example/v1");
+            std::env::set_var("ANTHROPIC_API_KEY", "os-key");
+        }
+        let handle = get_anthropic_client(GetAnthropicClientOptions::default())
+            .await
+            .unwrap();
+        let ProviderConfig::Vertex {
+            project_id,
+            auth,
+            base_url,
+            api_key,
+            ..
+        } = &handle.provider
+        else {
+            panic!("Vertex expected: {:?}", handle.provider);
+        };
+        assert_eq!(project_id.as_deref(), Some("vertex-project"));
+        assert!(matches!(auth, VertexAuth::SkipAuth));
+        assert_eq!(base_url.as_deref(), Some("https://vertex.example/v1"));
+        assert_eq!(api_key.as_deref(), Some("env-key"));
+        let _ = std::fs::remove_dir_all(config_home);
     }
 
     /// CC `ARGS.fetchOptions`: the SDK sends through the environment's proxy.
@@ -1407,7 +1787,13 @@ mod tests {
         })
         .await
         .unwrap();
-        let _ = handle.build().unwrap().models().retrieve("model", None).await;
+        let _ = handle
+            .build()
+            .unwrap()
+            .as_client()
+            .models()
+            .retrieve("model", None)
+            .await;
         let request = tokio::time::timeout(std::time::Duration::from_secs(10), server)
             .await
             .unwrap()
@@ -1513,6 +1899,7 @@ mod tests {
         let headers = handle
             .build()
             .expect("client builds")
+            .as_client()
             .build_headers(0, None)
             .expect("headers build");
         assert!(headers.get("x-api-key").is_none(), "{headers:?}");
@@ -1621,6 +2008,8 @@ mod tests {
                 region: "us-east5".to_string(),
                 project_id: None,
                 auth: VertexAuth::SkipAuth,
+                base_url: None,
+                api_key: None,
             },
             default_headers: HashMap::new(),
             max_retries: 2,

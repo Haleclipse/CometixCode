@@ -58,7 +58,7 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk"
 version = "0.74.0"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#d23fa17f7118d8396a1952d45196366201225ae3"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#39fd413f8add2e093187fc1ecebec62a3d6a89cf"
 dependencies = [
  "async-trait",
  "bytes",
@@ -74,6 +74,22 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tracing",
+ "url",
+]
+
+[[package]]
+name = "anthropic-sdk-vertex"
+version = "0.14.3"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#39fd413f8add2e093187fc1ecebec62a3d6a89cf"
+dependencies = [
+ "anthropic-sdk",
+ "base64 0.22.1",
+ "futures",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
  "url",
 ]
 
@@ -381,6 +397,7 @@ name = "cometix-code"
 version = "0.2.0"
 dependencies = [
  "anthropic-sdk",
+ "anthropic-sdk-vertex",
  "anyhow",
  "async-channel",
  "base64 0.22.1",

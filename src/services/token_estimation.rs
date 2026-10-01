@@ -115,72 +115,6 @@ async fn count_tokens_with_bedrock(
         .and_then(|tokens| usize::try_from(tokens).ok())
 }
 
-/// Maps to: CC `services/tokenEstimation.ts#countMessagesTokensWithAPI`
-/// Vertex branch (:161-178); extracted only as the documented Rust provider
-/// count-token wire adapter.
-async fn count_tokens_with_vertex(
-    handle: &crate::services::api::client::AnthropicClientHandle,
-    params: &anthropic_sdk::resources::beta::messages::BetaMessageCountTokensParams,
-    betas: &[String],
-) -> Option<usize> {
-    let crate::services::api::client::ProviderConfig::Vertex {
-        region,
-        project_id,
-        auth,
-    } = &handle.provider
-    else {
-        return None;
-    };
-    let project_id = project_id
-        .clone()
-        .or_else(|| std::env::var("ANTHROPIC_VERTEX_PROJECT_ID").ok())?;
-    let base_url = std::env::var("ANTHROPIC_VERTEX_BASE_URL").unwrap_or_else(|_| {
-        if region == "global" {
-            "https://aiplatform.googleapis.com/v1".to_string()
-        } else {
-            format!("https://{region}-aiplatform.googleapis.com/v1")
-        }
-    });
-    let url = format!(
-        "{}/projects/{project_id}/locations/{region}/publishers/anthropic/models/count-tokens:rawPredict",
-        base_url.trim_end_matches('/')
-    );
-    let mut body = serde_json::to_value(params).ok()?;
-    body["anthropic_version"] = Value::String("vertex-2023-10-16".to_string());
-    // CC's `countTokens` runs on the client's `fetchOptions`
-    // (`client.ts:146-148`), with the client's timeout per request.
-    let mut request = handle
-        .fetch_options
-        .post(url)
-        .timeout(std::time::Duration::from_millis(handle.timeout_ms))
-        .json(&body);
-    for (name, value) in &handle.default_headers {
-        if let Some(value) = value {
-            request = request.header(name, value);
-        }
-    }
-    if !betas.is_empty() {
-        request = request.header("anthropic-beta", betas.join(","));
-    }
-    match auth {
-        crate::services::api::client::VertexAuth::SkipAuth => {}
-        crate::services::api::client::VertexAuth::GoogleAuth { .. } => {
-            tracing::warn!("Vertex GoogleAuth requires the provider SDK adapter");
-            return None;
-        }
-    }
-    let response = request.send().await.ok()?;
-    if !response.status().is_success() {
-        tracing::warn!(status = %response.status(), "Vertex count_tokens request failed");
-        return None;
-    }
-    let response = response.json::<Value>().await.ok()?;
-    response
-        .get("input_tokens")
-        .and_then(Value::as_u64)
-        .and_then(|tokens| usize::try_from(tokens).ok())
-}
-
 /// Maps to: CC `services/tokenEstimation.ts:203-208` `roughTokenCountEstimation`
 /// with the source's default `bytesPerToken = 4`.
 pub fn rough_token_count_estimation(content: &str) -> i64 {
@@ -452,11 +386,11 @@ pub async fn count_messages_tokens_with_api(
             )
             .await
         }
-        crate::utils::model::providers::ApiProvider::Vertex => {
-            count_tokens_with_vertex(&handle, &params, &betas).await
-        }
+        // CC `anthropic.beta.messages.countTokens` (`tokenEstimation.ts:172`),
+        // through the provider client; Vertex's betas are filtered above.
         crate::utils::model::providers::ApiProvider::FirstParty
-        | crate::utils::model::providers::ApiProvider::Foundry => {
+        | crate::utils::model::providers::ApiProvider::Foundry
+        | crate::utils::model::providers::ApiProvider::Vertex => {
             let client = handle.build().ok()?;
             match client.beta().messages().count_tokens(&params).await {
                 Ok(response) if response.input_tokens >= 0 => Some(response.input_tokens as usize),

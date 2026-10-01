@@ -54,6 +54,8 @@ chalk = { git = "https://github.com/Haleclipse/CometixTUI" }
 
 # Rust port of @anthropic-ai/sdk.
 anthropic-sdk = { git = "https://github.com/Haleclipse/anthropic-sdk-rs" }
+# CC's `@anthropic-ai/vertex-sdk`.
+anthropic-sdk-vertex = { git = "https://github.com/Haleclipse/anthropic-sdk-rs" }
 
 # Async runtime: tokio for API/network/process I/O. iocraft's render loop is
 # runtime-agnostic (futures traits only); tokio drives it from main().

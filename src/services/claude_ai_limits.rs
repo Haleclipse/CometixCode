@@ -504,7 +504,7 @@ pub async fn check_quota_status() {
 
 /// Maps to CC `services/claudeAiLimits.ts:199-218` `makeTestQuery()`.
 async fn make_test_query(
-    client: &anthropic_sdk::Anthropic,
+    client: &crate::services::api::client::ClientBuildOutput,
     model: &str,
 ) -> Result<
     anthropic_sdk::core::response::ApiResponse<
@@ -528,7 +528,11 @@ async fn make_test_query(
         betas: (!betas.is_empty()).then_some(betas),
         ..Default::default()
     };
-    client.beta().messages().create_with_response(&params).await
+    client
+        .beta()
+        .messages()
+        .create_with_response_and_options(&params, None)
+        .await
 }
 
 /// Starts the preflight without putting network I/O on the retained frame.
