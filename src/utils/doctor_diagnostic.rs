@@ -226,8 +226,9 @@ pub fn detect_configuration_issues(installation_type: &InstallationType) -> Vec<
         });
     }
 
-    let installation_checks_disabled = crate::utils::process_env::var("DISABLE_INSTALLATION_CHECKS")
-        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"));
+    let installation_checks_disabled = crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_INSTALLATION_CHECKS").as_deref(),
+    );
     if !installation_checks_disabled {
         if *installation_type == InstallationType::NpmLocal && install_method != "local" {
             warnings.push(DiagnosticWarning {

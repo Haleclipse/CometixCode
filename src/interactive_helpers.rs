@@ -43,6 +43,7 @@ use crate::utils::env as runtime_env;
 use crate::utils::env_utils::is_running_on_homespace;
 use crate::utils::ide::IDEExtensionInstallationStatus;
 use crate::utils::ide::{is_jetbrains_ide, to_ide_display_name};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::SettingSource;
 use crate::utils::settings::get_settings_for_source;
 use crate::utils::status_notice_definitions::{MemoryFileInfo, StatusNoticeContext};
@@ -93,7 +94,7 @@ fn api_key_needing_onboarding_approval(
     // CC Onboarding.tsx:132-138: only an empty value is absent, and the
     // suffix is taken from the value as set; auth matches the same
     // untrimmed bytes, so a trimmed suffix would never be found approved.
-    let api_key = get_env("ANTHROPIC_API_KEY").filter(|value| !value.is_empty())?;
+    let api_key = get_env("ANTHROPIC_API_KEY").truthy()?;
     let truncated = normalize_api_key_for_config(&api_key);
     (get_custom_api_key_status(global_config, &truncated) == CustomApiKeyStatus::New)
         .then_some(truncated)
@@ -108,7 +109,7 @@ pub fn setup_screens_snapshot_from_readonly_runtime(
 ) -> SetupScreensSnapshot {
     // CC `:157` tests `process.env.IS_DEMO` for plain truthiness: any
     // non-empty value, `0` included.
-    if get_env("IS_DEMO").is_some_and(|value| !value.is_empty()) {
+    if get_env("IS_DEMO").truthy().is_some() {
         return SetupScreensSnapshot::default();
     }
 
@@ -960,13 +961,14 @@ pub enum SetupScreenGate {
 /// `showSetupScreens`. `process.env.IS_DEMO` is tested for plain
 /// truthiness, not `isEnvTruthy`: any non-empty value counts.
 pub fn is_demo_mode() -> bool {
-    crate::utils::process_env::var("IS_DEMO").is_some_and(|value| !value.is_empty())
+    crate::utils::process_env::var("IS_DEMO").truthy().is_some()
 }
 
-/// Maps to: CC `interactiveHelpers.tsx` CLAUBBIT / demo skip of trust.
+/// Maps to: CC `interactiveHelpers.tsx:191` `if (!isEnvTruthy(process.env.CLAUBBIT))`.
+/// Demo mode returned earlier (`:155-160`, [`is_demo_mode`]), so it is not
+/// tested here.
 pub fn should_skip_trust_dialog_for_env() -> bool {
     crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUBBIT").as_deref())
-        || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("IS_DEMO").as_deref())
 }
 
 /// Whether TrustDialog must still be shown (CC fast-path when already accepted).
@@ -978,7 +980,7 @@ pub fn should_show_trust_dialog() -> bool {
 }
 
 /// Maps to: CC showSetupScreens ClaudeMdExternalIncludes gate predicate.
-/// Skipped under CLAUBBIT/IS_DEMO with the same trust-block as official.
+/// Skipped under CLAUBBIT, inside the same trust block as official.
 pub fn should_show_claude_md_external_includes_gate() -> bool {
     if should_skip_trust_dialog_for_env() {
         return false;

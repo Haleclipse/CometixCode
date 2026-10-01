@@ -9,6 +9,7 @@
 use crate::constants::query_source::QuerySource;
 use crate::tool::ToolUseContext;
 use crate::types::message::Message;
+use crate::utils::process_env::JsTruthy;
 use std::collections::BTreeMap;
 
 pub const MAX_OUTPUT_TOKENS_FOR_SUMMARY: i64 = 20_000;
@@ -75,7 +76,7 @@ pub fn get_effective_context_window_size(model: &str) -> i64 {
             .min(MAX_OUTPUT_TOKENS_FOR_SUMMARY);
     let mut context_window = crate::utils::context::get_context_window_for_model(model, &[]);
 
-    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_COMPACT_WINDOW") {
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_COMPACT_WINDOW").truthy() {
         if let Ok(parsed) = value.parse::<i64>() {
             if parsed > 0 {
                 context_window = context_window.min(parsed);
@@ -91,7 +92,7 @@ pub fn get_auto_compact_threshold(model: &str) -> i64 {
     let effective_context_window = get_effective_context_window_size(model);
     let autocompact_threshold = effective_context_window - AUTOCOMPACT_BUFFER_TOKENS;
 
-    if let Some(value) = crate::utils::process_env::var("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") {
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE").truthy() {
         if let Ok(parsed) = value.parse::<f64>() {
             if parsed > 0.0 && parsed <= 100.0 {
                 let percentage_threshold =

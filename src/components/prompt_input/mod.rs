@@ -3068,8 +3068,15 @@ pub fn PromptInput<'a>(
     let history_failed_match = history_search.failed_match.get();
     let input_row_height = rendered_lines.len().max(1);
     let terminal_focus = hooks.use_terminal_focus();
-    let editor_for_external_hint = crate::utils::process_env::var("EDITOR")
-        .or_else(|| crate::utils::process_env::var("VISUAL"));
+    // CC `Notifications.tsx:131` `getExternalEditor()` (`utils/editor.ts:166-171`):
+    // $VISUAL wins over $EDITOR, each only when non-blank after trim. Residual:
+    // the platform fallbacks (`:175-182`: notepad, code/vi/nano) are not
+    // consulted for this hint yet.
+    let editor_for_external_hint = crate::utils::process_env::var("VISUAL")
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            crate::utils::process_env::var("EDITOR").filter(|value| !value.trim().is_empty())
+        });
     let external_editor_hint = external_editor_hint_notification_from_state(
         input_row_height > 1,
         false,

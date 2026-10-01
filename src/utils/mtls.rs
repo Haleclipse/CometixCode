@@ -20,6 +20,7 @@
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::utils::debug::{DebugLogLevel, log_for_debugging, log_for_debugging_with_level};
+use crate::utils::process_env::JsTruthy;
 
 /// Maps to: CC `utils/mtls.ts:10-14` `MTLSConfig`: the file contents, not
 /// the paths.
@@ -100,7 +101,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
     let env = crate::utils::process_env::snapshot();
     let mut config = MTLSConfig::default();
 
-    if let Some(path) = env.var("CLAUDE_CODE_CLIENT_CERT").filter(|path| !path.is_empty()) {
+    if let Some(path) = env.var("CLAUDE_CODE_CLIENT_CERT").truthy() {
         match read_file(path) {
             Ok(cert) => {
                 config.cert = Some(cert);
@@ -113,7 +114,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
         }
     }
 
-    if let Some(path) = env.var("CLAUDE_CODE_CLIENT_KEY").filter(|path| !path.is_empty()) {
+    if let Some(path) = env.var("CLAUDE_CODE_CLIENT_KEY").truthy() {
         match read_file(path) {
             Ok(key) => {
                 config.key = Some(key);
@@ -126,10 +127,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
         }
     }
 
-    if let Some(passphrase) = env
-        .var("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE")
-        .filter(|passphrase| !passphrase.is_empty())
-    {
+    if let Some(passphrase) = env.var("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE").truthy() {
         config.passphrase = Some(passphrase.to_owned());
         log_for_debugging("mTLS: Using client key passphrase");
     }
@@ -209,7 +207,10 @@ pub fn configure_global_mtls() {
     if get_mtls_config().is_none() {
         return;
     }
-    if crate::utils::process_env::var("NODE_EXTRA_CA_CERTS").is_some_and(|path| !path.is_empty()) {
+    if crate::utils::process_env::var("NODE_EXTRA_CA_CERTS")
+        .truthy()
+        .is_some()
+    {
         log_for_debugging("NODE_EXTRA_CA_CERTS detected - appended to the platform CAs");
     }
 }

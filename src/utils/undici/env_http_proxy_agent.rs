@@ -7,6 +7,8 @@
 //! [`EnvHttpProxyAgent::get_proxy_for_url`] for each connection, and the
 //! agents are the reqwest client itself.
 
+use crate::utils::process_env::JsTruthy;
+
 /// `DEFAULT_PORTS` (`:8-11`); anything else is `0`.
 fn default_port(scheme: &str) -> u64 {
     match scheme {
@@ -48,10 +50,10 @@ impl EnvHttpProxyAgent {
         };
         let http_proxy = http_proxy
             .or_else(|| from_env("http_proxy", "HTTP_PROXY"))
-            .filter(|proxy| !proxy.is_empty());
+            .truthy();
         let https_proxy = https_proxy
             .or_else(|| from_env("https_proxy", "HTTPS_PROXY"))
-            .filter(|proxy| !proxy.is_empty())
+            .truthy()
             .or_else(|| http_proxy.clone());
         Self {
             http_proxy,

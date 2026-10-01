@@ -2,6 +2,7 @@
 //! Log/session display, loading, and API capture remain with their existing
 //! owners or unported; this file does not claim those independent functions.
 
+use crate::utils::process_env::JsTruthy;
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::Value;
 use std::{
@@ -231,7 +232,8 @@ pub fn log_error(error: impl Into<McpLogError>) {
     .iter()
     .any(|key| crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref()))
         || crate::utils::process_env::var("DISABLE_ERROR_REPORTING")
-            .is_some_and(|value| !value.is_empty())
+            .truthy()
+            .is_some()
         || crate::utils::privacy_level::is_essential_traffic_only()
     {
         return;

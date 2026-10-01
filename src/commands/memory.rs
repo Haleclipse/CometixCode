@@ -8,6 +8,7 @@
 
 use crate::components::design_system::dialog::Dialog;
 use crate::components::memory::{MemoryFileSelector, get_relative_memory_path};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::prompt_editor::{EditorResult, ExternalEditorRuntime};
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
@@ -61,10 +62,12 @@ pub fn MemoryCommandPanel<'a>(
                 // CC ignores EditorResult.error here and still reports which
                 // file was selected; only mkdir/create failures reject.
                 let _ = editor_result;
-                let editor_info = if let Some(value) = crate::utils::process_env::var("VISUAL") {
-                    (!value.is_empty()).then(|| format!("Using $VISUAL=\"{value}\"."))
-                } else if let Some(value) = crate::utils::process_env::var("EDITOR") {
-                    (!value.is_empty()).then(|| format!("Using $EDITOR=\"{value}\"."))
+                let editor_info = if let Some(value) =
+                    crate::utils::process_env::var("VISUAL").truthy()
+                {
+                    Some(format!("Using $VISUAL=\"{value}\"."))
+                } else if let Some(value) = crate::utils::process_env::var("EDITOR").truthy() {
+                    Some(format!("Using $EDITOR=\"{value}\"."))
                 } else {
                     None
                 };

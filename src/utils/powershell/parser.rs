@@ -11,6 +11,7 @@
 //! "cannot validate", never as "safe", so a host without PowerShell installed
 //! degrades to prompting rather than auto-allowing.
 
+use crate::utils::process_env::JsTruthy;
 use serde::{Deserialize, Deserializer};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{LazyLock, Mutex};
@@ -219,7 +220,7 @@ const DEFAULT_PARSE_TIMEOUT_MS: u64 = 5_000;
 /// Maps to: CC `parser.ts:208-215#getParseTimeoutMs`.
 fn get_parse_timeout_ms() -> u64 {
     crate::utils::process_env::var("CLAUDE_CODE_PWSH_PARSE_TIMEOUT_MS")
-        .filter(|value| !value.is_empty())
+        .truthy()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|parsed| *parsed > 0)
         .unwrap_or(DEFAULT_PARSE_TIMEOUT_MS)

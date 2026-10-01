@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use indexmap::IndexMap;
 use std::sync::RwLock;
 
-use crate::utils::process_env::{self, EnvSnapshot, EnvUpdate};
+use crate::utils::process_env::{self, EnvSnapshot, EnvUpdate, JsTruthy};
 use crate::utils::settings::{
     SettingSource, get_initial_settings, get_settings_for_source, is_setting_source_enabled,
 };
@@ -245,9 +245,7 @@ fn filter_settings_env(
     process: &EnvSnapshot,
 ) -> Vec<(String, String)> {
     // JS truthiness: an empty ANTHROPIC_UNIX_SOCKET disables the filter (:27).
-    let ssh_tunnel = process
-        .var("ANTHROPIC_UNIX_SOCKET")
-        .is_some_and(|value| !value.is_empty());
+    let ssh_tunnel = process.var("ANTHROPIC_UNIX_SOCKET").truthy().is_some();
     let host_managed =
         crate::utils::env_utils::is_env_truthy(process.var("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"));
     // CC `withoutCcdSpawnEnvKeys` (:71-80) is a no-op until applySafe captured

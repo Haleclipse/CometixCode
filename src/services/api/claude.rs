@@ -33,6 +33,7 @@ use crate::utils::model::model::{
     get_default_opus_model, get_default_sonnet_model, get_main_loop_model, get_small_fast_model,
     normalize_model_string_for_api,
 };
+use crate::utils::process_env::JsTruthy;
 use crate::utils::thinking::{
     ThinkingConfig, model_supports_adaptive_thinking, model_supports_thinking,
     production_thinking_config_from_env_and_settings,
@@ -542,21 +543,20 @@ pub fn get_extra_body_params(
     let mut result = serde_json::Map::new();
 
     // Parse user's extra body parameters first
-    if let Some(extra_body_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_BODY") {
-        if !extra_body_str.is_empty() {
-            match crate::utils::json::safe_parse_json(Some(&extra_body_str), true).as_ref() {
-                JsonValue::Object(obj) => {
-                    // Clone before mutation to avoid poisoning the shared parse cache.
-                    result = obj.clone();
-                }
-                _ => {
-                    crate::utils::debug::log_for_debugging_with_level(
-                        &format!(
-                            "CLAUDE_CODE_EXTRA_BODY env var must be a JSON object, but was given {extra_body_str}"
-                        ),
-                        crate::utils::debug::DebugLogLevel::Error,
-                    );
-                }
+    if let Some(extra_body_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_BODY").truthy()
+    {
+        match crate::utils::json::safe_parse_json(Some(&extra_body_str), true).as_ref() {
+            JsonValue::Object(obj) => {
+                // Clone before mutation to avoid poisoning the shared parse cache.
+                result = obj.clone();
+            }
+            _ => {
+                crate::utils::debug::log_for_debugging_with_level(
+                    &format!(
+                        "CLAUDE_CODE_EXTRA_BODY env var must be a JSON object, but was given {extra_body_str}"
+                    ),
+                    crate::utils::debug::DebugLogLevel::Error,
+                );
             }
         }
     }
@@ -761,20 +761,18 @@ pub fn get_api_metadata() -> ApiMetadata {
     let mut extra = serde_json::Map::new();
 
     // Parse CLAUDE_CODE_EXTRA_METADATA env var
-    if let Some(extra_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_METADATA") {
-        if !extra_str.is_empty() {
-            match crate::utils::json::safe_parse_json(Some(&extra_str), false).as_ref() {
-                JsonValue::Object(obj) => {
-                    extra = obj.clone();
-                }
-                _ => {
-                    crate::utils::debug::log_for_debugging_with_level(
-                        &format!(
-                            "CLAUDE_CODE_EXTRA_METADATA env var must be a JSON object, but was given {extra_str}"
-                        ),
-                        crate::utils::debug::DebugLogLevel::Error,
-                    );
-                }
+    if let Some(extra_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_METADATA").truthy() {
+        match crate::utils::json::safe_parse_json(Some(&extra_str), false).as_ref() {
+            JsonValue::Object(obj) => {
+                extra = obj.clone();
+            }
+            _ => {
+                crate::utils::debug::log_for_debugging_with_level(
+                    &format!(
+                        "CLAUDE_CODE_EXTRA_METADATA env var must be a JSON object, but was given {extra_str}"
+                    ),
+                    crate::utils::debug::DebugLogLevel::Error,
+                );
             }
         }
     }

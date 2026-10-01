@@ -5,6 +5,8 @@
 
 #![allow(dead_code)]
 
+use crate::utils::process_env::JsTruthy;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FigureSet {
     /// Upstream `figures.circleQuestionMark`.
@@ -960,8 +962,8 @@ pub fn is_unicode_supported_with_env(
         return term != Some("linux");
     }
 
-    wt_session.is_some_and(|value| !value.is_empty())
-        || terminus_sublime.is_some_and(|value| !value.is_empty())
+    wt_session.truthy().is_some()
+        || terminus_sublime.truthy().is_some()
         || con_emu_task == Some("{cmd::Cmder}")
         || term_program == Some("Terminus-Sublime")
         || term_program == Some("vscode")

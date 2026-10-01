@@ -59,6 +59,7 @@ impl DebugLogLevel {
 pub fn get_min_debug_log_level() -> DebugLogLevel {
     crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
         .as_deref()
+        .map(str::trim)
         .and_then(DebugLogLevel::from_env_name)
         .unwrap_or(DebugLogLevel::Debug)
 }

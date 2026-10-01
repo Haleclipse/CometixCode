@@ -6,6 +6,7 @@
 //! `utils/betas.rs` exactly where CC imports `get3PModelCapabilityOverride`.
 
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
+use crate::utils::process_env::JsTruthy;
 
 /// Maps to: CC `modelSupportOverrides.ts:4-9` `ModelCapabilityOverride`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -71,15 +72,12 @@ pub fn get_3p_model_capability_override(
     }
     let m = model.to_lowercase();
     for (model_env_var, capabilities_env_var) in TIERS {
-        let Some(pinned) = crate::utils::process_env::var(model_env_var) else {
+        let Some(pinned) = crate::utils::process_env::var(model_env_var).truthy() else {
             continue;
         };
         let Some(capabilities) = crate::utils::process_env::var(capabilities_env_var) else {
             continue;
         };
-        if pinned.is_empty() {
-            continue;
-        }
         if m != pinned.to_lowercase() {
             continue;
         }

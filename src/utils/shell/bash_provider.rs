@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use super::shell_provider::{BuiltExecCommand, ShellProvider, ShellType};
+use crate::utils::process_env::JsTruthy;
 
 pub struct BashShellProvider {
     shell_path: PathBuf,
@@ -35,7 +36,11 @@ impl std::fmt::Debug for BashShellProvider {
 }
 
 fn get_disable_extglob_command(shell_path: &str) -> Option<&'static str> {
-    if crate::utils::process_env::var_os("CLAUDE_CODE_SHELL_PREFIX").is_some_and(|value| !value.is_empty()) {
+    if crate::utils::process_env::var_os("CLAUDE_CODE_SHELL_PREFIX")
+        .as_deref()
+        .truthy()
+        .is_some()
+    {
         return Some("{ shopt -u extglob || setopt NO_EXTENDED_GLOB; } >/dev/null 2>&1 || true");
     }
     if shell_path.contains("bash") {
@@ -156,13 +161,11 @@ impl ShellProvider for BashShellProvider {
             crate::utils::bash::shell_quote::quote(&[&shell_cwd])
         ));
         let mut command_string = parts.join(" && ");
-        if let Some(prefix) = crate::utils::process_env::var("CLAUDE_CODE_SHELL_PREFIX") {
-            if !prefix.is_empty() {
-                command_string = crate::utils::bash::shell_prefix::format_shell_prefix_command(
-                    &prefix,
-                    &command_string,
-                );
-            }
+        if let Some(prefix) = crate::utils::process_env::var("CLAUDE_CODE_SHELL_PREFIX").truthy() {
+            command_string = crate::utils::bash::shell_prefix::format_shell_prefix_command(
+                &prefix,
+                &command_string,
+            );
         }
 
         Ok(BuiltExecCommand {

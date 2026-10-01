@@ -6,6 +6,7 @@
 
 use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::use_keybinding;
+use crate::utils::process_env::JsTruthy;
 use iocraft::prelude::*;
 
 const WHEEL_ACCEL_WINDOW_MS: f64 = 40.0;
@@ -140,7 +141,11 @@ pub fn read_scroll_speed_base_from_value(raw: Option<&str>) -> f64 {
 
 /// Maps to: CC `ScrollKeybindingHandler.tsx#readScrollSpeedBase`.
 pub fn read_scroll_speed_base() -> f64 {
-    read_scroll_speed_base_from_value(crate::utils::process_env::var("CLAUDE_CODE_SCROLL_SPEED").as_deref())
+    read_scroll_speed_base_from_value(
+        crate::utils::process_env::var("CLAUDE_CODE_SCROLL_SPEED")
+            .truthy()
+            .as_deref(),
+    )
 }
 
 /// Maps to: CC `ScrollKeybindingHandler.tsx#initWheelAccel`.
@@ -520,8 +525,7 @@ pub fn ScrollKeybindingHandler(
 ) -> impl Into<AnyElement<'static>> {
     let wheel = hooks.use_state(|| {
         init_wheel_accel(
-            crate::utils::process_env::var("TERM_PROGRAM")
-                .is_some_and(|value| value.eq_ignore_ascii_case("vscode")),
+            crate::utils::process_env::var("TERM_PROGRAM").as_deref() == Some("vscode"),
             read_scroll_speed_base(),
         )
     });

@@ -6,6 +6,7 @@
 //! and retain the official five-second timeout.
 
 use crate::types::message::StructuredDiffHunk;
+use crate::utils::process_env::JsTruthy;
 use regex::Regex;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -493,8 +494,8 @@ fn parse_raw_single_file_diff(
 }
 
 async fn get_single_file_diff_ref(root: &Path) -> String {
-    let base_branch = if let Some(base_ref) = crate::utils::process_env::var("CLAUDE_CODE_BASE_REF")
-        .filter(|value| !value.trim().is_empty())
+    let base_branch = if let Some(base_ref) =
+        crate::utils::process_env::var("CLAUDE_CODE_BASE_REF").truthy()
     {
         base_ref
     } else {

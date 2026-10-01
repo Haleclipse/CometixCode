@@ -8,6 +8,8 @@ use std::sync::{LazyLock, Mutex};
 
 use serde::{Deserialize, Serialize};
 
+use crate::utils::process_env::JsTruthy;
+
 const HIGH_WATER_MARK_FILE: &str = ".highwatermark";
 
 /// Maps to: CC `utils/tasks.ts:69` `TASK_STATUSES`.
@@ -55,10 +57,9 @@ pub fn clear_leader_team_name() {
 
 /// Maps to: CC `utils/tasks.ts#getTaskListId`.
 pub fn get_task_list_id() -> String {
-    if let Some(task_list_id) = crate::utils::process_env::var("CLAUDE_CODE_TASK_LIST_ID") {
-        if !task_list_id.trim().is_empty() {
-            return task_list_id;
-        }
+    if let Some(task_list_id) = crate::utils::process_env::var("CLAUDE_CODE_TASK_LIST_ID").truthy()
+    {
+        return task_list_id;
     }
     crate::utils::teammate::get_team_name(None)
         .or_else(|| LEADER_TEAM_NAME.lock().unwrap().clone())

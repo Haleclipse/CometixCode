@@ -1,6 +1,8 @@
 //! Bedrock model ID helpers.
 //! Maps to CC `utils/model/bedrock.ts` region-prefix helpers.
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to CC `utils/model/bedrock.ts#BEDROCK_REGION_PREFIXES`.
 pub const BEDROCK_REGION_PREFIXES: &[&str] = &["us", "eu", "apac", "global"];
 
@@ -27,7 +29,8 @@ pub async fn get_inference_profile_backing_model(
     auth: &crate::services::api::client::BedrockAuth,
 ) -> Option<String> {
     let endpoint = crate::utils::process_env::var("ANTHROPIC_BEDROCK_BASE_URL")
-        .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK"))
+        .truthy()
+        .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK").truthy())
         .unwrap_or_else(|| format!("https://bedrock.{region}.amazonaws.com"));
     let response = crate::services::api::client::send_bedrock_request(
         reqwest::Method::GET,

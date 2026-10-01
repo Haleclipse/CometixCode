@@ -5,6 +5,7 @@
 
 use crate::tool::AbortController;
 use crate::utils::debug::log_for_debugging;
+use crate::utils::process_env::JsTruthy;
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -218,6 +219,7 @@ fn platform_default_timeout_seconds() -> u64 {
 
 fn default_timeout() -> Duration {
     let parsed_seconds = crate::utils::process_env::var("CLAUDE_CODE_GLOB_TIMEOUT_SECONDS")
+        .truthy()
         .map(|value| parse_timeout_seconds(&value))
         .unwrap_or(0);
     if parsed_seconds > 0 {

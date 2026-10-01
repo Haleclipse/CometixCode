@@ -440,9 +440,9 @@ pub fn load_memory_prompt_for_dir(settings: &SettingsJson, memory_dir: PathBuf) 
             );
         }
     }
+    // CC memdir.ts:441-446 gates on the trimmed text but threads the raw value.
     let extra_guidelines = crate::utils::process_env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES")
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .map(|value| vec![value]);
     Some(
         build_memory_lines(

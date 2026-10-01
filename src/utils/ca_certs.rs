@@ -16,6 +16,7 @@
 use std::sync::{Arc, LazyLock, RwLock};
 
 use crate::utils::debug::{DebugLogLevel, log_for_debugging, log_for_debugging_with_level};
+use crate::utils::process_env::JsTruthy;
 
 /// The extra certificates, parsed once for every client.
 pub type CaCertificates = Arc<Vec<reqwest::Certificate>>;
@@ -63,7 +64,7 @@ fn load_ca_certificates() -> Option<CaCertificates> {
         "CA certs: useSystemCA={use_system_ca}, extraCertsPath={}",
         extra_certs_path.as_deref().unwrap_or("undefined"),
     ));
-    let extra_certs_path = extra_certs_path.filter(|path| !path.is_empty())?;
+    let extra_certs_path = extra_certs_path.truthy()?;
 
     let extra_cert = match crate::utils::fs_operations::get_fs_implementation().read_file_sync(
         std::path::Path::new(&extra_certs_path),

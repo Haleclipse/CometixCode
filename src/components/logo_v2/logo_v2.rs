@@ -28,6 +28,7 @@ use crate::constants::product;
 use crate::project_onboarding_state;
 use crate::utils::file::get_display_path;
 use crate::utils::logo_v2_utils;
+use crate::utils::process_env::JsTruthy;
 use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::utils::release_notes as release_notes_utils;
 use iocraft::prelude::*;
@@ -141,7 +142,7 @@ impl LogoDisplayData {
         let project_config = crate::utils::config::get_current_project_config();
         let settings = crate::utils::settings::get_initial_settings();
         let session_id = crate::bootstrap::state::get_session_id();
-        let is_demo = crate::utils::process_env::var("IS_DEMO").is_some_and(|value| !value.is_empty());
+        let is_demo = crate::utils::process_env::var("IS_DEMO").truthy().is_some();
         let show_project_onboarding =
             project_onboarding_state::should_show_project_onboarding_for_config_and_steps(
                 &project_config,
@@ -281,11 +282,15 @@ impl LogoDisplayData {
             voice_notice_seen_count: global_config.voice_notice_seen_count.unwrap_or(0),
             company_announcement,
             show_sandbox_status,
-            tmux_session: crate::utils::process_env::var("CLAUDE_CODE_TMUX_SESSION")
-                .filter(|value| !value.is_empty()),
-            tmux_prefix: crate::utils::process_env::var("CLAUDE_CODE_TMUX_PREFIX")
-                .filter(|value| !value.is_empty()),
-            tmux_prefix_conflicts: crate::utils::process_env::var("CLAUDE_CODE_TMUX_PREFIX_CONFLICTS").is_some_and(|value| !value.is_empty()),
+            tmux_session: crate::utils::process_env::var("CLAUDE_CODE_TMUX_SESSION").truthy(),
+            // CC interpolates the raw value with no truthiness guard
+            // (LogoV2.tsx:207-208), so an empty prefix is kept as-is.
+            tmux_prefix: crate::utils::process_env::var("CLAUDE_CODE_TMUX_PREFIX"),
+            tmux_prefix_conflicts: crate::utils::process_env::var(
+                "CLAUDE_CODE_TMUX_PREFIX_CONFLICTS",
+            )
+            .truthy()
+            .is_some(),
         }
     }
 

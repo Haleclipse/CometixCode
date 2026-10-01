@@ -15,6 +15,7 @@ use crate::utils::auth_file_descriptor::{
 };
 use crate::utils::config::{GlobalConfig, normalize_api_key_for_config};
 use crate::utils::env_utils::is_running_on_homespace;
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::SettingSource;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -168,7 +169,7 @@ fn env_value(get_env: &impl Fn(&str) -> Option<String>, key: &str) -> Option<Str
     // JavaScript `process.env[key]` truthiness rejects only the empty string;
     // callers that parse booleans or numbers apply their own source-defined
     // whitespace handling. Credential bytes must remain unmodified.
-    get_env(key).filter(|value| !value.is_empty())
+    get_env(key).truthy()
 }
 
 /// Maps to: CC `utils/auth.ts:88-96` `isManagedOAuthContext`.
@@ -230,8 +231,7 @@ static API_KEY_HELPER_STATE: LazyLock<Mutex<ApiKeyHelperState>> =
 
 /// Maps to: CC `utils/auth.ts:435-452` `calculateApiKeyHelperTTL`.
 pub fn calculate_api_key_helper_ttl() -> u64 {
-    if let Some(raw) = crate::utils::process_env::var("CLAUDE_CODE_API_KEY_HELPER_TTL_MS")
-        .filter(|value| !value.is_empty())
+    if let Some(raw) = crate::utils::process_env::var("CLAUDE_CODE_API_KEY_HELPER_TTL_MS").truthy()
     {
         if let Ok(parsed) = raw.parse::<u64>() {
             return parsed;
@@ -698,9 +698,7 @@ pub fn get_claude_ai_oauth_tokens() -> Option<ClaudeAiOAuthTokensSnapshot> {
     if crate::utils::env_utils::is_bare_mode() {
         return None;
     }
-    if let Some(access_token) = crate::utils::process_env::var("CLAUDE_CODE_OAUTH_TOKEN")
-        .filter(|token| !token.is_empty())
-    {
+    if let Some(access_token) = crate::utils::process_env::var("CLAUDE_CODE_OAUTH_TOKEN").truthy() {
         return Some(ClaudeAiOAuthTokensSnapshot {
             access_token,
             refresh_token: None,
@@ -881,7 +879,8 @@ pub fn get_auth_token_source() -> AuthTokenSourceStatus {
     }
 
     if crate::utils::process_env::var("ANTHROPIC_AUTH_TOKEN")
-        .is_some_and(|token| !token.is_empty())
+        .truthy()
+        .is_some()
         && !is_managed_oauth_context()
     {
         return AuthTokenSourceStatus {
@@ -891,7 +890,8 @@ pub fn get_auth_token_source() -> AuthTokenSourceStatus {
     }
 
     if crate::utils::process_env::var("CLAUDE_CODE_OAUTH_TOKEN")
-        .is_some_and(|token| !token.is_empty())
+        .truthy()
+        .is_some()
     {
         return AuthTokenSourceStatus {
             source: AuthTokenSource::ClaudeCodeOauthToken,
@@ -901,7 +901,11 @@ pub fn get_auth_token_source() -> AuthTokenSourceStatus {
 
     if get_oauth_token_from_file_descriptor().is_some() {
         return AuthTokenSourceStatus {
-            source: if crate::utils::process_env::var_os("CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR").is_some() {
+            source: if crate::utils::process_env::var_os("CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR")
+                .as_deref()
+                .truthy()
+                .is_some()
+            {
                 AuthTokenSource::ClaudeCodeOauthTokenFileDescriptor
             } else {
                 AuthTokenSource::CcrOauthTokenFile
@@ -1068,10 +1072,12 @@ pub fn is_anthropic_auth_enabled() -> bool {
     }
 
     if crate::utils::process_env::var("ANTHROPIC_UNIX_SOCKET")
-        .is_some_and(|value| !value.is_empty())
+        .truthy()
+        .is_some()
     {
         return crate::utils::process_env::var("CLAUDE_CODE_OAUTH_TOKEN")
-            .is_some_and(|value| !value.is_empty());
+            .truthy()
+            .is_some();
     }
 
     let is_3p = crate::utils::env_utils::is_env_truthy(
@@ -1082,10 +1088,12 @@ pub fn is_anthropic_auth_enabled() -> bool {
         crate::utils::process_env::var("CLAUDE_CODE_USE_FOUNDRY").as_deref(),
     );
     let has_external_auth_token = crate::utils::process_env::var("ANTHROPIC_AUTH_TOKEN")
-        .is_some_and(|value| !value.is_empty())
+        .truthy()
+        .is_some()
         || get_configured_api_key_helper().is_some()
         || crate::utils::process_env::var("CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR")
-            .is_some_and(|value| !value.is_empty());
+            .truthy()
+            .is_some();
     let api_key_source = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions {
         skip_retrieving_key_from_api_key_helper: true,
     })

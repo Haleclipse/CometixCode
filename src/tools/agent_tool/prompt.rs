@@ -10,15 +10,12 @@ use crate::tools::send_message_tool::prompt::SEND_MESSAGE_TOOL_NAME;
 /// Maps to CC `tools/AgentTool/prompt.ts:59-64`
 /// `shouldInjectAgentListInMessages()`.
 pub fn should_inject_agent_list_in_messages() -> bool {
-    match crate::utils::process_env::var("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES") {
-        Some(value) => matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
-        // GrowthBook delivery is intentionally absent; preserve the source
-        // default rather than assigning this process to a fabricated cohort.
-        None => false,
-    }
+    // The `isEnvDefinedFalsy` branch and the GrowthBook fallback both yield
+    // `false`: GrowthBook delivery is intentionally absent; preserve the source
+    // default rather than assigning this process to a fabricated cohort.
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES").as_deref(),
+    )
 }
 
 /// Maps to CC `tools/AgentTool/prompt.ts:15-37` `getToolsDescription(agent)`.

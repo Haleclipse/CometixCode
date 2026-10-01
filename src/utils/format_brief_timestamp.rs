@@ -1,11 +1,13 @@
 //! Maps to: CC `utils/formatBriefTimestamp.ts` (complete file).
 
+use crate::utils::process_env::JsTruthy;
 use chrono::{DateTime, Datelike, Local};
 
 fn locale_prefers_12_hour_clock() -> bool {
     let locale = crate::utils::process_env::var("LC_ALL")
-        .or_else(|| crate::utils::process_env::var("LC_TIME"))
-        .or_else(|| crate::utils::process_env::var("LANG"))
+        .truthy()
+        .or_else(|| crate::utils::process_env::var("LC_TIME").truthy())
+        .or_else(|| crate::utils::process_env::var("LANG").truthy())
         .unwrap_or_default()
         .replace('-', "_")
         .to_ascii_lowercase();

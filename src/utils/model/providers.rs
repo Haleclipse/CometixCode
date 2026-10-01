@@ -1,6 +1,8 @@
 //! API provider helpers.
 //! Maps to CC `utils/model/providers.ts`.
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to CC `utils/model/providers.ts` `APIProvider`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApiProvider {
@@ -39,8 +41,8 @@ pub fn is_first_party_anthropic_base_url_for_audience(
     base_url: Option<&str>,
     audience: crate::utils::build_profile::BuildAudience,
 ) -> bool {
-    // CC `if (!baseUrl) return true`: an empty value is unset.
-    let Some(base_url) = base_url.filter(|url| !url.is_empty()) else {
+    // CC `if (!baseUrl) return true`.
+    let Some(base_url) = base_url.truthy() else {
         return true;
     };
     let allowed_hosts: &[&str] = if crate::utils::build_profile::audience_has_internal_capability(

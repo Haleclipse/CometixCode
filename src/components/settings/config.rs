@@ -365,13 +365,10 @@ fn auto_updates_disabled_env_var() -> Option<&'static str> {
             .as_deref(),
     ) {
         Some("CLAUDE_CODE_DISABLE_AUTOUPDATER")
-    } else if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
-            .as_deref(),
-    ) {
-        Some("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
     } else {
-        None
+        // CC `config.ts:1742` `getEssentialTrafficOnlyReason()`: a plain
+        // truthiness test, not `isEnvTruthy`.
+        crate::utils::privacy_level::get_essential_traffic_only_reason()
     }
 }
 

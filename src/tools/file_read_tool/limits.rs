@@ -3,6 +3,7 @@
 //! Maps to: CC `tools/FileReadTool/limits.ts`.
 
 use crate::utils::file::MAX_OUTPUT_SIZE;
+use crate::utils::process_env::JsTruthy;
 use std::sync::OnceLock;
 
 /// Maps to: CC `DEFAULT_MAX_OUTPUT_TOKENS`.
@@ -25,10 +26,8 @@ pub struct FileReadingLimits {
 /// Maps to: CC `getEnvMaxTokens` (:24-33), including `parseInt(..., 10)`
 /// decimal-prefix behavior and JavaScript Number overflow.
 fn get_env_max_tokens() -> Option<f64> {
-    let override_value = crate::utils::process_env::var("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS")?;
-    if override_value.is_empty() {
-        return None;
-    }
+    let override_value =
+        crate::utils::process_env::var("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS").truthy()?;
     let trimmed = override_value.trim_start_matches(|character| {
         matches!(
             character,

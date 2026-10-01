@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::types::permissions::PermissionMode;
+use crate::utils::process_env::JsTruthy;
 use crate::utils::swarm::backends::teammate_mode_snapshot::get_teammate_mode_from_snapshot;
 use crate::utils::swarm::constants::TEAMMATE_COMMAND_ENV_VAR;
 
@@ -56,7 +57,7 @@ pub fn get_teammate_command_from_parts(
     teammate_command_env: Option<&str>,
     current_executable: impl Into<PathBuf>,
 ) -> String {
-    if let Some(command) = teammate_command_env.filter(|value| !value.is_empty()) {
+    if let Some(command) = teammate_command_env.truthy() {
         return command.to_string();
     }
     current_executable.into().display().to_string()

@@ -12,6 +12,7 @@ use crate::types::permissions::{
 };
 use crate::utils::feature_flags::{FeatureFlag, feature_enabled};
 use crate::utils::permissions::permission_result::{PermissionDecisionReason, PermissionResult};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::SettingSource;
 use ignore::Match;
 use ignore::gitignore::GitignoreBuilder;
@@ -585,7 +586,11 @@ pub(crate) fn check_editable_internal_path(
     // compile-time `anthropic_internal` Cargo feature so the env key and
     // policy are absent from external binaries.
     #[cfg(feature = "anthropic_internal")]
-    if let Some(job_dir) = crate::utils::process_env::var_os("CLAUDE_JOB_DIR").map(PathBuf::from) {
+    if let Some(job_dir) = crate::utils::process_env::var_os("CLAUDE_JOB_DIR")
+        .as_deref()
+        .truthy()
+        .map(PathBuf::from)
+    {
         let jobs_root = crate::utils::env_utils::get_claude_config_home_dir().join("jobs");
         let job_forms = paths_to_check(&job_dir.display().to_string(), cwd);
         let jobs_root_forms = paths_to_check(&jobs_root.display().to_string(), cwd);
@@ -735,6 +740,8 @@ pub fn get_claude_temp_dir_name() -> String {
 /// Maps to CC `getClaudeTempDir()`.
 pub fn get_claude_temp_dir() -> PathBuf {
     let base_tmp_dir = crate::utils::process_env::var_os("CLAUDE_CODE_TMPDIR")
+        .as_deref()
+        .truthy()
         .map(PathBuf::from)
         .unwrap_or_else(default_base_tmp_dir);
     let resolved = crate::utils::fs_operations::get_fs_implementation()

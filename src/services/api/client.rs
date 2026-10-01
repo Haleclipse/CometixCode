@@ -15,7 +15,7 @@ use crate::utils::env_utils::{get_aws_region, get_vertex_region_for_model};
 use crate::utils::model::model::get_small_fast_model;
 use anthropic_sdk::Nullable;
 use sha2::{Digest as _, Sha256};
-use crate::utils::process_env::{self, EnvSnapshot};
+use crate::utils::process_env::{self, EnvSnapshot, JsTruthy};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -63,10 +63,7 @@ fn read_env(env: &EnvSnapshot, key: &str) -> Option<String> {
 fn get_custom_headers(env: &EnvSnapshot) -> HashMap<String, String> {
     let mut headers = HashMap::new();
     // CC `if (!customHeadersEnv) return`.
-    let Some(raw) = env
-        .var("ANTHROPIC_CUSTOM_HEADERS")
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(raw) = env.var("ANTHROPIC_CUSTOM_HEADERS").truthy() else {
         return headers;
     };
 
@@ -101,10 +98,7 @@ async fn configure_api_key_headers(
     let is_non_interactive = crate::bootstrap::state::get_is_non_interactive_session();
     // CC `process.env.ANTHROPIC_AUTH_TOKEN || helper`: only an empty value is
     // falsy, and the value is used as set (a whitespace-only token is sent).
-    let token = match env
-        .var("ANTHROPIC_AUTH_TOKEN")
-        .filter(|value| !value.is_empty())
-    {
+    let token = match env.var("ANTHROPIC_AUTH_TOKEN").truthy() {
         Some(token) => Some(token.to_owned()),
         None => crate::utils::auth::get_api_key_from_api_key_helper(is_non_interactive),
     };
@@ -191,15 +185,9 @@ pub async fn get_anthropic_client(
     // ----- Build default headers -----
     // Maps to: CC services/api/client.ts:101-129. The `?:` spreads are
     // truthiness tests, so an empty value adds no header.
-    let container_id = env
-        .var("CLAUDE_CODE_CONTAINER_ID")
-        .filter(|value| !value.is_empty());
-    let remote_session_id = env
-        .var("CLAUDE_CODE_REMOTE_SESSION_ID")
-        .filter(|value| !value.is_empty());
-    let client_app = env
-        .var("CLAUDE_AGENT_SDK_CLIENT_APP")
-        .filter(|value| !value.is_empty());
+    let container_id = env.var("CLAUDE_CODE_CONTAINER_ID").truthy();
+    let remote_session_id = env.var("CLAUDE_CODE_REMOTE_SESSION_ID").truthy();
+    let client_app = env.var("CLAUDE_AGENT_SDK_CLIENT_APP").truthy();
     let custom_headers = get_custom_headers(&env);
 
     let mut default_headers: HashMap<String, Option<String>> = HashMap::new();
@@ -236,7 +224,7 @@ pub async fn get_anthropic_client(
 
     crate::utils::debug::log_for_debugging(&format!(
         "[API:request] Creating client, ANTHROPIC_CUSTOM_HEADERS present: {}, has Authorization header: {}",
-        env.var("ANTHROPIC_CUSTOM_HEADERS").is_some_and(|value| !value.is_empty()),
+        env.var("ANTHROPIC_CUSTOM_HEADERS").truthy().is_some(),
         custom_headers.contains_key("Authorization"),
     ));
 
@@ -295,7 +283,7 @@ pub async fn get_anthropic_client(
     // at once; the default is used instead.
     let timeout_ms: u64 = env
         .var("API_TIMEOUT_MS")
-        .filter(|value| !value.is_empty())
+        .truthy()
         .and_then(|value| {
             let value = value.trim_start_matches(|c: char| {
                 (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
@@ -342,10 +330,7 @@ pub async fn get_anthropic_client(
             // process.env.ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION ? ... :
             // getAWSRegion()`, so an empty override falls through.
             let small_fast_model = get_small_fast_model();
-            let aws_region = match env
-                .var("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION")
-                .filter(|value| !value.is_empty())
-            {
+            let aws_region = match env.var("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION").truthy() {
                 Some(region) if model.as_deref() == Some(small_fast_model.as_str()) => {
                     region.to_owned()
                 }
@@ -361,10 +346,7 @@ pub async fn get_anthropic_client(
             // Determine auth strategy. CC `:172`
             // `if (process.env.AWS_BEARER_TOKEN_BEDROCK)`: an empty token is
             // no token.
-            let bedrock_auth = if let Some(bearer) = env
-                .var("AWS_BEARER_TOKEN_BEDROCK")
-                .filter(|value| !value.is_empty())
-            {
+            let bedrock_auth = if let Some(bearer) = env.var("AWS_BEARER_TOKEN_BEDROCK").truthy() {
                 // Bearer token auth overrides everything
                 let mut hdrs = default_headers.clone();
                 hdrs.insert(
@@ -407,10 +389,7 @@ pub async fn get_anthropic_client(
             // is a truthiness test, so an empty key selects Azure AD / skip-auth.
             let skip_auth =
                 crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH"));
-            let foundry_auth = if env
-                .var("ANTHROPIC_FOUNDRY_API_KEY")
-                .is_some_and(|value| !value.is_empty())
-            {
+            let foundry_auth = if env.var("ANTHROPIC_FOUNDRY_API_KEY").truthy().is_some() {
                 FoundryAuth::ApiKey
             } else if skip_auth {
                 FoundryAuth::SkipAuth

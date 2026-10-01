@@ -12,6 +12,8 @@ use std::sync::{LazyLock, Mutex};
 
 use chrono::{Datelike, Local, TimeZone, Utc};
 
+use crate::utils::process_env::JsTruthy;
+
 pub type MockHeaders = HashMap<String, String>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -473,10 +475,8 @@ pub fn get_mock_headerless_429_message() -> Option<String> {
     if !internal_mock_capability() {
         return None;
     }
-    if let Some(value) = crate::utils::process_env::var("CLAUDE_MOCK_HEADERLESS_429") {
-        if !value.is_empty() {
-            return Some(value);
-        }
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_MOCK_HEADERLESS_429").truthy() {
+        return Some(value);
     }
     let state = MOCK_STATE.lock().expect("mock limits lock poisoned");
     state
@@ -507,7 +507,8 @@ pub fn should_process_mock_limits() -> bool {
         return false;
     }
     let env_enabled = crate::utils::process_env::var("CLAUDE_MOCK_HEADERLESS_429")
-        .is_some_and(|value| !value.is_empty());
+        .truthy()
+        .is_some();
     MOCK_STATE
         .lock()
         .expect("mock limits lock poisoned")

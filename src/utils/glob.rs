@@ -4,6 +4,7 @@
 
 use crate::tool::AbortController;
 use crate::tool::ToolPermissionContext;
+use crate::utils::process_env::JsTruthy;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -157,14 +158,14 @@ pub fn effective_glob_search_root(file_pattern: &str, cwd: &Path) -> PathBuf {
     cwd.to_path_buf()
 }
 
+/// Maps to: CC `utils/glob.ts:98-99` `isEnvTruthy(process.env.K || 'true')`.
 fn env_default_true(key: &str) -> bool {
-    match crate::utils::process_env::var(key) {
-        Some(value) if !value.is_empty() => matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
-        _ => true,
-    }
+    crate::utils::env_utils::is_env_truthy(Some(
+        crate::utils::process_env::var(key)
+            .truthy()
+            .as_deref()
+            .unwrap_or("true"),
+    ))
 }
 
 fn escape_ripgrep_glob_literal(path: &str) -> String {

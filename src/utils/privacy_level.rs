@@ -2,6 +2,8 @@
 //!
 //! Maps to: CC `utils/privacyLevel.ts:1-52`.
 
+use crate::utils::process_env::JsTruthy;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PrivacyLevel {
     #[default]
@@ -11,9 +13,9 @@ pub enum PrivacyLevel {
 }
 
 pub fn get_privacy_level_with(get_env: &impl Fn(&str) -> Option<String>) -> PrivacyLevel {
-    if get_env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").is_some_and(|value| !value.is_empty()) {
+    if get_env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").truthy().is_some() {
         PrivacyLevel::EssentialTraffic
-    } else if get_env("DISABLE_TELEMETRY").is_some_and(|value| !value.is_empty()) {
+    } else if get_env("DISABLE_TELEMETRY").truthy().is_some() {
         PrivacyLevel::NoTelemetry
     } else {
         PrivacyLevel::Default
@@ -34,7 +36,8 @@ pub fn is_telemetry_disabled() -> bool {
 
 pub fn get_essential_traffic_only_reason() -> Option<&'static str> {
     crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
-        .is_some_and(|value| !value.is_empty())
+        .truthy()
+        .is_some()
         .then_some("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
 }
 

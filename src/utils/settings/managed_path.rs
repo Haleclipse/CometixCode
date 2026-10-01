@@ -2,9 +2,14 @@
 
 use std::path::PathBuf;
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to: CC `utils/settings/managedPath.ts#getManagedFilePath`.
 pub(crate) fn get_managed_file_path() -> PathBuf {
-    let override_path = crate::utils::process_env::var_os("CLAUDE_CODE_MANAGED_SETTINGS_PATH").map(PathBuf::from);
+    let override_path = crate::utils::process_env::var_os("CLAUDE_CODE_MANAGED_SETTINGS_PATH")
+        .as_deref()
+        .truthy()
+        .map(PathBuf::from);
     #[cfg(test)]
     if let Some(path) = override_path.clone() {
         // Unit tests inject an isolated managed root while holding TEST_ENV_LOCK.

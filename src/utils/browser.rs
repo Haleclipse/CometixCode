@@ -1,6 +1,7 @@
 //! Local browser/path opener helpers.
 //! Maps to: CC `utils/browser.ts`.
 
+use crate::utils::process_env::JsTruthy;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -19,7 +20,10 @@ pub async fn open_browser(url: &str) -> anyhow::Result<bool> {
         return Ok(false);
     }
 
-    let browser = crate::utils::process_env::var_os("BROWSER").filter(|value| !value.is_empty());
+    let browser = crate::utils::process_env::var_os("BROWSER")
+        .as_deref()
+        .truthy()
+        .map(std::ffi::OsStr::to_os_string);
     let mut command = if cfg!(target_os = "windows") {
         if let Some(browser) = browser {
             let mut command = Command::new(browser);

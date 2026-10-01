@@ -5,8 +5,10 @@
 //! service/auth boundaries. This module owns the shared user-agent helpers that
 //! were previously duplicated in API/MCP/WebFetch code.
 
+use crate::utils::process_env::JsTruthy;
+
 fn env_non_empty(key: &str) -> Option<String> {
-    crate::utils::process_env::var(key).filter(|value| !value.is_empty())
+    crate::utils::process_env::var(key).truthy()
 }
 
 /// Maps to: CC `utils/http.ts#getUserAgent`.

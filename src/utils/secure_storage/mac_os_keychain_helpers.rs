@@ -1,5 +1,6 @@
 //! Maps to: CC `utils/secureStorage/macOsKeychainHelpers.ts`.
 
+use crate::utils::process_env::JsTruthy;
 use sha2::{Digest, Sha256};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -14,7 +15,11 @@ pub(crate) fn get_mac_os_keychain_storage_service_name(
     service_suffix: &str,
 ) -> anyhow::Result<String> {
     let config_dir = crate::utils::config::get_config_home();
-    let dir_hash = if crate::utils::process_env::var_os("CLAUDE_CONFIG_DIR").is_none() {
+    let dir_hash = if crate::utils::process_env::var_os("CLAUDE_CONFIG_DIR")
+        .as_deref()
+        .truthy()
+        .is_none()
+    {
         String::new()
     } else {
         let digest = Sha256::digest(config_dir.to_string_lossy().as_bytes());
@@ -34,7 +39,7 @@ pub(crate) fn get_mac_os_keychain_storage_service_name(
 /// Maps to: CC `utils/secureStorage/macOsKeychainHelpers.ts:43-49`
 /// `getUsername`.
 pub(crate) fn get_username() -> String {
-    if let Some(username) = crate::utils::process_env::var("USER").filter(|value| !value.is_empty()) {
+    if let Some(username) = crate::utils::process_env::var("USER").truthy() {
         return username;
     }
 
@@ -67,9 +72,7 @@ pub(crate) fn get_username() -> String {
     }
 
     #[cfg(windows)]
-    if let Some(username) = crate::utils::process_env::var("USERNAME")
-        .filter(|value| !value.is_empty())
-    {
+    if let Some(username) = crate::utils::process_env::var("USERNAME").truthy() {
         return username;
     }
 

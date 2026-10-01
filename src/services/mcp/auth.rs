@@ -436,6 +436,7 @@ impl ClaudeAuthProvider {
 mod runtime {
     use super::super::types::{ScopedMcpServerConfig, Transport};
     use super::*;
+    use crate::utils::process_env::JsTruthy;
     use rmcp::transport::auth::{
         AuthError, AuthorizationManager, AuthorizationMetadata, CredentialStore,
         InMemoryCredentialStore, OAuthClientConfig, OAuthTokenResponse, StoredCredentials,
@@ -2345,7 +2346,7 @@ mod runtime {
             .unwrap_or(false)
         {
             let client_metadata_url = crate::utils::process_env::var("MCP_OAUTH_CLIENT_METADATA_URL")
-                .filter(|value| !value.is_empty())
+                .truthy()
                 .unwrap_or_else(|| crate::constants::oauth::MCP_CLIENT_METADATA_URL.to_string());
             let client_config =
                 OAuthClientConfig::new(client_metadata_url.clone(), redirect_uri.clone())

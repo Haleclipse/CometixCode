@@ -6,13 +6,14 @@
 //! early from the two user-controlled files, never from project settings.
 
 use crate::utils::debug::log_for_debugging;
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::{SettingSource, get_settings_for_source};
 
 /// Maps to: CC `utils/caCertsConfig.ts:34-45` `applyExtraCACertsFromConfig`,
 /// run right after the safe environment at startup (`init.ts:79`), before
 /// any TLS connection.
 pub fn apply_extra_ca_certs_from_config() {
-    if crate::utils::process_env::var("NODE_EXTRA_CA_CERTS").is_some_and(|path| !path.is_empty()) {
+    if crate::utils::process_env::var("NODE_EXTRA_CA_CERTS").truthy().is_some() {
         return;
     }
     if let Some(config_path) = get_extra_certs_path_from_config() {

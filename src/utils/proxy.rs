@@ -46,7 +46,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::utils::debug::log_for_debugging;
-use crate::utils::process_env::EnvSnapshot;
+use crate::utils::process_env::{EnvSnapshot, JsTruthy};
 use crate::utils::undici::env_http_proxy_agent::EnvHttpProxyAgent;
 
 /// Maps to: CC `utils/proxy.ts:27` `keepAliveDisabled`: sticky for the
@@ -85,7 +85,7 @@ pub fn get_proxy_url(env: &EnvSnapshot) -> Option<String> {
 /// Maps to: CC `utils/proxy.ts:73-75` `getNoProxy`: `no_proxy || NO_PROXY`.
 pub fn get_no_proxy(env: &EnvSnapshot) -> Option<String> {
     env.var("no_proxy")
-        .filter(|value| !value.is_empty())
+        .truthy()
         .or_else(|| env.var("NO_PROXY"))
         .map(str::to_owned)
 }
@@ -217,7 +217,7 @@ pub fn get_proxy_agent(uri: &str) -> anyhow::Result<reqwest::ClientBuilder> {
     let env = crate::utils::process_env::snapshot();
     let no_proxy = env
         .var("NO_PROXY")
-        .filter(|value| !value.is_empty())
+        .truthy()
         .or_else(|| env.var("no_proxy"))
         .map(str::to_owned);
     let agent = EnvHttpProxyAgent::new(Some(proxy.to_string()), Some(proxy.to_string()), no_proxy);
@@ -248,10 +248,7 @@ pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwes
     let env = crate::utils::process_env::snapshot();
 
     if for_anthropic_api {
-        if let Some(unix_socket) = env
-            .var("ANTHROPIC_UNIX_SOCKET")
-            .filter(|socket| !socket.is_empty())
-        {
+        if let Some(unix_socket) = env.var("ANTHROPIC_UNIX_SOCKET").truthy() {
             // `.no_proxy()`: reqwest ignores proxies on a socket but would
             // still attach a system proxy's credentials to the request.
             #[cfg(unix)]

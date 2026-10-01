@@ -31,14 +31,8 @@ pub fn is_powershell_tool_enabled_for_platform(
         audience,
         crate::utils::build_profile::InternalCapability::Tools,
     ) {
-        !matches!(
-            env_value,
-            Some("0" | "false" | "FALSE" | "no" | "NO" | "off" | "OFF")
-        )
+        !crate::utils::env_utils::is_env_defined_falsy(env_value)
     } else {
-        matches!(
-            env_value,
-            Some("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
-        )
+        crate::utils::env_utils::is_env_truthy(env_value)
     }
 }

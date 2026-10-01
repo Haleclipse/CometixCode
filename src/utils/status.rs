@@ -2,6 +2,7 @@
 
 use crate::services::mcp::types::{McpClientSnapshot, McpServerConnectionType};
 use crate::utils::config::{GlobalConfig, ProjectConfig};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::get_setting_source_display_name_capitalized;
 use crate::utils::settings::{
     SettingSource, SettingsJson, get_enabled_setting_sources, get_managed_file_settings_presence,
@@ -198,7 +199,7 @@ pub fn build_account_properties() -> Vec<Property> {
     {
         properties.push(property("API key", api_key_source));
     }
-    if crate::utils::process_env::var_os("IS_DEMO").is_none() {
+    if crate::utils::process_env::var_os("IS_DEMO").as_deref().truthy().is_none() {
         if let Some(organization) = account_info.organization {
             properties.push(property("Organization", organization));
         }
@@ -210,7 +211,7 @@ pub fn build_account_properties() -> Vec<Property> {
 }
 
 fn push_env_property(properties: &mut Vec<Property>, label: &'static str, key: &str) {
-    if let Some(value) = crate::utils::process_env::var(key).filter(|value| !value.is_empty()) {
+    if let Some(value) = crate::utils::process_env::var(key).truthy() {
         properties.push(property(label, value));
     }
 }
@@ -286,7 +287,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
     }
 
     let mtls_config = crate::utils::mtls::get_mtls_config();
-    let truthy = |key: &str| env.var(key).filter(|value| !value.is_empty()).map(str::to_owned);
+    let truthy = |key: &str| env.var(key).truthy().map(str::to_owned);
     if let Some(extra_certs) = truthy("NODE_EXTRA_CA_CERTS") {
         properties.push(property("Additional CA cert(s)", extra_certs));
     }

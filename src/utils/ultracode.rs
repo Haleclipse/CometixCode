@@ -5,6 +5,7 @@
 //! unavailable.
 
 use crate::utils::effort::{EffortValue, resolve_applied_effort, to_persistable_effort};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::workflows::is_dynamic_workflows_enabled;
 
 pub(crate) struct CatalogEntry {
@@ -500,7 +501,7 @@ pub fn is_launch_effort_pinned(model: &str) -> bool {
         "unpinOpus48LaunchEffort"
     } else if normalized.contains("fable-5")
         || crate::utils::process_env::var("ANTHROPIC_DEFAULT_FABLE_MODEL")
-            .filter(|value| !value.is_empty())
+            .truthy()
             .is_some_and(|value| {
                 value.to_lowercase().trim_end_matches("[1m]")
                     == model.to_lowercase().trim_end_matches("[1m]")

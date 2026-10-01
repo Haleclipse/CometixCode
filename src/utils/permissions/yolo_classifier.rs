@@ -7,6 +7,7 @@ use crate::types::message::{AssistantContent, Message, UserContent};
 use crate::types::permissions::{ClassifierPromptLengths, ClassifierUsage, YoloClassifierResult};
 use crate::types::tools::Tool;
 use crate::utils::build_profile::{InternalCapability, has_internal_capability};
+use crate::utils::process_env::JsTruthy;
 #[cfg(not(test))]
 use crate::utils::side_query::side_query;
 use crate::utils::side_query::{SideQueryOptions, SideQuerySystem, SideQueryThinking};
@@ -1057,10 +1058,9 @@ pub async fn classify_yolo_action(
 /// Maps to: CC `yoloClassifier.ts:1334-1347` `getClassifierModel`.
 fn get_classifier_model() -> String {
     if has_internal_capability(InternalCapability::Permissions) {
-        if let Some(model) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_MODE_MODEL") {
-            if !model.is_empty() {
-                return model;
-            }
+        if let Some(model) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_MODE_MODEL").truthy()
+        {
+            return model;
         }
     }
     let config = crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(

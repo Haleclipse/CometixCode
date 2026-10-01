@@ -11,6 +11,7 @@ use crate::types::permissions::{
     PermissionUpdate, PermissionUpdateDestination,
 };
 use crate::utils::fs_operations::{get_fs_implementation, safe_resolve_path};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::types::SettingsJson;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -1021,9 +1022,7 @@ pub async fn initialize_tool_permission_context(
 
     // Maps to: CC permissionSetup.ts:912-931. Keep the original logical PWD
     // spelling and the session source; validation below sees this initial map.
-    if let Some(process_pwd) =
-        crate::utils::process_env::var_os("PWD").filter(|pwd| !pwd.is_empty())
-    {
+    if let Some(process_pwd) = crate::utils::process_env::var_os("PWD").as_deref().truthy() {
         let original_cwd = crate::bootstrap::state::get_original_cwd();
         let process_pwd_path = std::path::Path::new(&process_pwd);
         if process_pwd_path.as_os_str() != original_cwd.as_os_str()

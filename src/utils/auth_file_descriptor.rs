@@ -2,6 +2,8 @@
 //!
 //! Maps to: CC `utils/authFileDescriptor.ts`.
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to: CC `utils/authFileDescriptor.ts:23` `CCR_OAUTH_TOKEN_PATH`.
 pub const CCR_OAUTH_TOKEN_PATH: &str = "/home/claude/.claude/remote/.oauth_token";
 /// Maps to: CC `utils/authFileDescriptor.ts:24` `CCR_API_KEY_PATH`.
@@ -31,9 +33,7 @@ fn get_credential_from_fd(
         return cached;
     }
 
-    let Some(fd_env) = crate::utils::process_env::var(env_var)
-        .filter(|value| !value.is_empty())
-    else {
+    let Some(fd_env) = crate::utils::process_env::var(env_var).truthy() else {
         let token = read_token_from_well_known_file(well_known_path, label);
         set_cached(token.clone());
         return token;

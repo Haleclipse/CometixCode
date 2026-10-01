@@ -5,6 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to: CC `utils/plugins/marketplaceManager.ts:2188-2191,2220-2223`
 /// anonymous cache-only lookup result. The unchecked first configuration read
 /// can return any installLocation value if the second read observes a change;
@@ -353,7 +355,9 @@ const DEFAULT_PLUGIN_GIT_TIMEOUT_MS: f64 = 120_000.0;
 
 /// Maps to: CC `utils/plugins/marketplaceManager.ts:517-526#getPluginGitTimeoutMs`.
 fn get_plugin_git_timeout_ms() -> f64 {
-    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS") {
+    if let Some(value) =
+        crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS").truthy()
+    {
         // ECMAScript trim and decimal-prefix parseInt; preserve Number rounding.
         let trimmed = value.trim_start_matches(|c: char| matches!(c, '\u{9}'..='\u{d}' | '\u{20}' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'));
         let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);

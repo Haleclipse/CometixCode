@@ -14,6 +14,7 @@ pub mod read_only_command_validation;
 pub mod shell_provider;
 pub mod shell_tool_utils;
 
+use crate::utils::process_env::JsTruthy;
 use shell_provider::{ShellProvider, ShellType};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -91,8 +92,11 @@ pub fn find_suitable_shell() -> Result<PathBuf, String> {
     if cfg!(windows) {
         return crate::utils::windows_paths::find_git_bash_path();
     }
-    if let Some(override_path) = crate::utils::process_env::var_os("CLAUDE_CODE_SHELL") {
-        let override_path = PathBuf::from(override_path);
+    if let Some(override_path) = crate::utils::process_env::var_os("CLAUDE_CODE_SHELL")
+        .as_deref()
+        .truthy()
+        .map(PathBuf::from)
+    {
         let text = override_path.display().to_string();
         if (text.contains("bash") || text.contains("zsh")) && is_executable(&override_path) {
             return Ok(override_path);

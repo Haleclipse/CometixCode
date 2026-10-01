@@ -2,6 +2,8 @@
 //!
 //! Maps to: CC `utils/timeouts.ts`.
 
+use crate::utils::process_env::JsTruthy;
+
 const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 const MAX_TIMEOUT_MS: u64 = 600_000;
 
@@ -39,7 +41,11 @@ pub fn get_default_bash_timeout_ms_from_value(value: Option<&str>) -> u64 {
 
 /// Maps to CC `getDefaultBashTimeoutMs(env)`.
 pub fn get_default_bash_timeout_ms() -> u64 {
-    get_default_bash_timeout_ms_from_value(crate::utils::process_env::var("BASH_DEFAULT_TIMEOUT_MS").as_deref())
+    get_default_bash_timeout_ms_from_value(
+        crate::utils::process_env::var("BASH_DEFAULT_TIMEOUT_MS")
+            .truthy()
+            .as_deref(),
+    )
 }
 
 pub fn get_max_bash_timeout_ms_from_values(maximum: Option<&str>, default: Option<&str>) -> u64 {
@@ -52,8 +58,8 @@ pub fn get_max_bash_timeout_ms_from_values(maximum: Option<&str>, default: Optio
 
 /// Maps to CC `getMaxBashTimeoutMs(env)`.
 pub fn get_max_bash_timeout_ms() -> u64 {
-    let maximum = crate::utils::process_env::var("BASH_MAX_TIMEOUT_MS");
-    let default = crate::utils::process_env::var("BASH_DEFAULT_TIMEOUT_MS");
+    let maximum = crate::utils::process_env::var("BASH_MAX_TIMEOUT_MS").truthy();
+    let default = crate::utils::process_env::var("BASH_DEFAULT_TIMEOUT_MS").truthy();
     get_max_bash_timeout_ms_from_values(maximum.as_deref(), default.as_deref())
 }
 

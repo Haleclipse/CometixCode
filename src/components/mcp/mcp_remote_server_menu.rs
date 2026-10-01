@@ -17,6 +17,7 @@ use crate::constants::figures;
 use crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings;
 use crate::services::mcp::types::{McpServerConnectionType, Transport};
 use crate::services::mcp::utils::describe_mcp_config_file_path;
+use crate::utils::process_env::JsTruthy;
 use iocraft::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -192,7 +193,7 @@ async fn handle_claude_ai_auth(
             .map(|suffix| format!("mcpsrv{suffix}"))
             .unwrap_or_else(|| server_id.to_string());
         let product_surface = crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT")
-            .filter(|value| !value.is_empty())
+            .truthy()
             .unwrap_or_else(|| "cli".to_string());
         let mut encoded_product_surface = String::new();
         for byte in product_surface.bytes() {

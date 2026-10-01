@@ -2,12 +2,14 @@
 //!
 //! Maps to CC `constants/common.ts`.
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to: CC `constants/common.ts` `getLocalISODate()`.
 pub fn get_local_iso_date() -> String {
-    if let Some(override_date) = crate::utils::process_env::var("CLAUDE_CODE_OVERRIDE_DATE") {
-        if !override_date.is_empty() {
-            return override_date;
-        }
+    if let Some(override_date) =
+        crate::utils::process_env::var("CLAUDE_CODE_OVERRIDE_DATE").truthy()
+    {
+        return override_date;
     }
 
     chrono::Local::now().format("%Y-%m-%d").to_string()
@@ -18,7 +20,9 @@ pub fn get_local_iso_date() -> String {
 /// same `CLAUDE_CODE_OVERRIDE_DATE` override; an unparseable override falls
 /// back to now (CC would render "Invalid Date").
 pub fn get_local_month_year() -> String {
-    if let Some(override_date) = crate::utils::process_env::var("CLAUDE_CODE_OVERRIDE_DATE") {
+    if let Some(override_date) =
+        crate::utils::process_env::var("CLAUDE_CODE_OVERRIDE_DATE").truthy()
+    {
         if let Ok(date) = chrono::NaiveDate::parse_from_str(&override_date, "%Y-%m-%d") {
             return date.format("%B %Y").to_string();
         }

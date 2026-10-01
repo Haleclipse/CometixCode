@@ -9,6 +9,7 @@ use crate::components::logo_v2::feed_configs::ProjectOnboardingStep;
 use crate::utils::config::{
     ProjectConfig, get_current_project_config, save_current_project_config,
 };
+use crate::utils::process_env::JsTruthy;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,7 +107,7 @@ pub fn should_show_project_onboarding_for_path(
 
 pub fn should_show_project_onboarding() -> bool {
     let project_config = get_current_project_config();
-    let is_demo = crate::utils::process_env::var("IS_DEMO").is_some_and(|value| !value.is_empty());
+    let is_demo = crate::utils::process_env::var("IS_DEMO").truthy().is_some();
     should_show_project_onboarding_for_config_and_steps(&project_config, &get_steps(), is_demo)
 }
 

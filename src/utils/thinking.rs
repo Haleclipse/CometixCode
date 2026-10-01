@@ -6,6 +6,7 @@ use crate::utils::model::model_support_overrides::{
     ModelCapabilityOverride, get_3p_model_capability_override,
 };
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::types::SettingsJson;
 use crate::utils::theme::Theme;
 use iocraft::prelude::Color;
@@ -106,12 +107,9 @@ pub fn parse_js_decimal_i64(value: &str) -> Option<i64> {
 /// No GrowthBook / feature gates (ultrathink is separate). Settings source is
 /// `alwaysThinkingEnabled` from merged settings, same as CC `getSettingsWithErrors()`.
 pub fn should_enable_thinking_by_default(settings: &SettingsJson) -> bool {
-    // JS: if (process.env.MAX_THINKING_TOKENS) — empty string is falsy.
-    if let Some(value) = crate::utils::process_env::var("MAX_THINKING_TOKENS") {
-        if !value.is_empty() {
-            // parseInt → NaN yields false for `NaN > 0`.
-            return parse_js_decimal_i64(&value).is_some_and(|tokens| tokens > 0);
-        }
+    if let Some(value) = crate::utils::process_env::var("MAX_THINKING_TOKENS").truthy() {
+        // parseInt → NaN yields false for `NaN > 0`.
+        return parse_js_decimal_i64(&value).is_some_and(|tokens| tokens > 0);
     }
 
     if settings.always_thinking_enabled == Some(false) {
@@ -203,21 +201,19 @@ pub fn production_thinking_config_from_env_and_settings(settings: &SettingsJson)
 
     // main.tsx else branch when no --thinking: env MAX_THINKING_TOKENS only
     // (CLI maxThinkingTokens is applied by resolve_thinking_launch in main).
-    if let Some(value) = crate::utils::process_env::var("MAX_THINKING_TOKENS") {
-        if !value.is_empty() {
-            if let Some(tokens) = parse_js_decimal_i64(&value) {
-                if tokens > 0 {
-                    return ThinkingConfig::Enabled {
-                        budget_tokens: Some(tokens),
-                    };
-                }
-                if tokens == 0 {
-                    return ThinkingConfig::Disabled;
-                }
+    if let Some(value) = crate::utils::process_env::var("MAX_THINKING_TOKENS").truthy() {
+        if let Some(tokens) = parse_js_decimal_i64(&value) {
+            if tokens > 0 {
+                return ThinkingConfig::Enabled {
+                    budget_tokens: Some(tokens),
+                };
             }
-            // Invalid/NaN: keep first-stage config (enable already false).
-            return config;
+            if tokens == 0 {
+                return ThinkingConfig::Disabled;
+            }
         }
+        // Invalid/NaN: keep first-stage config (enable already false).
+        return config;
     }
 
     config

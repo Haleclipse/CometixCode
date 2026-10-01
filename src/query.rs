@@ -30,6 +30,7 @@ use crate::types::permissions::{
     PermissionPromptChoice, PermissionPromptResponse, PermissionRequest,
 };
 use crate::utils::classifier_approvals::ClassifierChecking;
+use crate::utils::process_env::JsTruthy;
 use std::{sync::Arc, time::Duration};
 
 /// Maps to CC `query.ts` `MAX_OUTPUT_TOKENS_RECOVERY_LIMIT`.
@@ -4132,7 +4133,10 @@ fn should_escalate_max_output_tokens(current_override: Option<u32>) -> bool {
             crate::utils::feature_flags::FeatureFlag::MaxOutputTokensEscalation,
         ),
         current_override,
-        crate::utils::process_env::var_os("CLAUDE_CODE_MAX_OUTPUT_TOKENS").is_some(),
+        crate::utils::process_env::var_os("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
+            .as_deref()
+            .truthy()
+            .is_some(),
     )
 }
 

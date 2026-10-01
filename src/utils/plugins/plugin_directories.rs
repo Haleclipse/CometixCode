@@ -7,6 +7,8 @@
 
 use std::path::PathBuf;
 
+use crate::utils::process_env::JsTruthy;
+
 const PLUGINS_DIR: &str = "plugins";
 const COWORK_PLUGINS_DIR: &str = "cowork_plugins";
 
@@ -25,17 +27,15 @@ fn get_plugins_directory_name() -> &'static str {
 
 /// Maps to CC `pluginDirectories.ts#getPluginsDirectory`.
 pub fn get_plugins_directory() -> PathBuf {
-    if let Some(path) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR") {
-        if !path.is_empty() {
-            return expand_tilde_path(&path);
-        }
+    if let Some(path) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR").truthy() {
+        return expand_tilde_path(&path);
     }
     crate::utils::config::get_config_home().join(get_plugins_directory_name())
 }
 
 /// Maps to CC `pluginDirectories.ts#getPluginSeedDirs`.
 pub fn get_plugin_seed_dirs() -> Vec<PathBuf> {
-    let Some(raw) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_SEED_DIR") else {
+    let Some(raw) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_SEED_DIR").truthy() else {
         return Vec::new();
     };
     let delimiter = if cfg!(windows) { ';' } else { ':' };

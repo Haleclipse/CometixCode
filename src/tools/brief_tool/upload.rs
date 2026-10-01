@@ -15,6 +15,8 @@
 //! this file consumes are inlined below with their own source attribution
 //! rather than reaching across an unported boundary.
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to: CC `tools/BriefTool/upload.ts:32` — matches the private_api backend
 /// limit.
 const MAX_UPLOAD_BYTES: u64 = 30 * 1024 * 1024;
@@ -66,8 +68,7 @@ fn get_bridge_token_override() -> Option<String> {
     ) {
         return None;
     }
-    crate::utils::process_env::var("CLAUDE_BRIDGE_OAUTH_TOKEN")
-        .filter(|token| !token.is_empty())
+    crate::utils::process_env::var("CLAUDE_BRIDGE_OAUTH_TOKEN").truthy()
 }
 
 /// Maps to: CC `bridge/bridgeConfig.ts:27-32` `getBridgeBaseUrlOverride`.
@@ -77,8 +78,7 @@ fn get_bridge_base_url_override() -> Option<String> {
     ) {
         return None;
     }
-    crate::utils::process_env::var("CLAUDE_BRIDGE_BASE_URL")
-        .filter(|base_url| !base_url.is_empty())
+    crate::utils::process_env::var("CLAUDE_BRIDGE_BASE_URL").truthy()
 }
 
 /// Maps to: CC `bridge/bridgeConfig.ts:38-40` `getBridgeAccessToken`. `None`
@@ -103,9 +103,7 @@ fn get_bridge_base_url() -> Option<String> {
         return Some(override_url);
     }
     if let Some(base_url) = crate::utils::process_env::var("ANTHROPIC_BASE_URL") {
-        if !base_url.is_empty() {
-            return Some(base_url);
-        }
+        return Some(base_url);
     }
     crate::constants::oauth::get_oauth_config()
         .ok()

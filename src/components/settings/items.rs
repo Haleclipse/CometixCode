@@ -83,10 +83,8 @@ fn auto_updates_are_disabled(config: &GlobalConfig) -> bool {
             crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
                 .as_deref(),
         )
-        || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
-                .as_deref(),
-        )
+        // CC `config.ts:1742` `getEssentialTrafficOnlyReason()`.
+        || crate::utils::privacy_level::get_essential_traffic_only_reason().is_some()
 }
 
 fn auto_updates_channel_display(config: &GlobalConfig, settings: &SettingsJson) -> String {

@@ -446,9 +446,10 @@ fn is_internal_build() -> bool {
     )
 }
 
+/// CC `commands.ts:343`: `USER_TYPE === 'ant' && !process.env.IS_DEMO`.
 fn is_internal_non_demo() -> bool {
-    is_internal_build()
-        && !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("IS_DEMO").as_deref())
+    use crate::utils::process_env::JsTruthy as _;
+    is_internal_build() && crate::utils::process_env::var("IS_DEMO").truthy().is_none()
 }
 
 fn compact_enabled() -> bool {

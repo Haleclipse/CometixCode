@@ -5,6 +5,8 @@
 use std::path::PathBuf;
 use std::sync::{LazyLock, RwLock};
 
+use crate::utils::process_env::JsTruthy;
+
 #[derive(Clone, Debug)]
 enum SessionEnvCache {
     NotLoaded,
@@ -98,7 +100,10 @@ pub fn get_session_environment_script() -> Option<String> {
     }
 
     let mut scripts = Vec::new();
-    if let Some(env_file) = crate::utils::process_env::var_os("CLAUDE_ENV_FILE") {
+    if let Some(env_file) = crate::utils::process_env::var_os("CLAUDE_ENV_FILE")
+        .as_deref()
+        .truthy()
+    {
         if let Ok(content) = std::fs::read_to_string(env_file) {
             let content = content.trim();
             if !content.is_empty() {

@@ -6,6 +6,7 @@ use crate::components::markdown::{Markdown, StreamingMarkdown};
 use crate::components::message_response::MessageResponse;
 use crate::components::messages::rate_limit_message::RateLimitMessage;
 use crate::utils::messages::{NO_RESPONSE_REQUESTED, is_empty_message_text};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
@@ -184,11 +185,11 @@ fn assistant_text_special_response(
         | ORG_DISABLED_ERROR_MESSAGE_ENV_KEY
         | ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH
         | TOKEN_REVOKED_ERROR_MESSAGE => Some(text.to_string()),
-        API_TIMEOUT_ERROR_MESSAGE => Some(match crate::utils::process_env::var("API_TIMEOUT_MS") {
-            Some(ms) if !ms.trim().is_empty() => {
+        API_TIMEOUT_ERROR_MESSAGE => Some(match crate::utils::process_env::var("API_TIMEOUT_MS").truthy() {
+            Some(ms) => {
                 format!("{API_TIMEOUT_ERROR_MESSAGE} (API_TIMEOUT_MS={ms}ms, try increasing it)")
             }
-            _ => API_TIMEOUT_ERROR_MESSAGE.to_string(),
+            None => API_TIMEOUT_ERROR_MESSAGE.to_string(),
         }),
         CUSTOM_OFF_SWITCH_MESSAGE => Some(
             "We are experiencing high demand for Opus 4.\nTo continue immediately, use /model to switch to Sonnet and continue coding."

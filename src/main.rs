@@ -35,6 +35,7 @@ use crate::state::store::AppStore;
 use crate::utils;
 use crate::utils::config::check_has_trust_dialog_accepted;
 use crate::utils::config::load_global_config;
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::get_settings_with_errors;
 use crate::utils::settings::{
     SettingSource, SettingsWithErrors, has_skip_dangerous_mode_permission_prompt,
@@ -149,8 +150,7 @@ fn resolve_thinking_launch(
         _ => {
             // Maps to: CC MAX_THINKING_TOKENS env (truthy) ?? options.maxThinkingTokens.
             // Invalid non-empty env parses to NaN and blocks CLI fallback.
-            let env_max = crate::utils::process_env::var("MAX_THINKING_TOKENS")
-                .filter(|value| !value.is_empty());
+            let env_max = crate::utils::process_env::var("MAX_THINKING_TOKENS").truthy();
             let max_thinking_tokens = match env_max.as_deref() {
                 Some(value) => parse_js_decimal_i64(value),
                 None => cli

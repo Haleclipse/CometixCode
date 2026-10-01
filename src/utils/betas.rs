@@ -13,6 +13,7 @@ use crate::utils::model::model_support_overrides::{
     ModelCapabilityOverride, get_3p_model_capability_override,
 };
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
+use crate::utils::process_env::JsTruthy;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
@@ -283,7 +284,7 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
         beta_headers.push(PROMPT_CACHING_SCOPE_BETA_HEADER.to_string());
     }
 
-    if let Some(extra_betas) = crate::utils::process_env::var("ANTHROPIC_BETAS") {
+    if let Some(extra_betas) = crate::utils::process_env::var("ANTHROPIC_BETAS").truthy() {
         beta_headers.extend(
             extra_betas
                 .split(',')

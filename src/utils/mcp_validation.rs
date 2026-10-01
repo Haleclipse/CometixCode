@@ -2,6 +2,7 @@
 //!
 //! Maps to: CC `utils/mcpValidation.ts` (complete file).
 
+use crate::utils::process_env::JsTruthy;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -17,7 +18,7 @@ const DEFAULT_MAX_MCP_OUTPUT_TOKENS: f64 = 25_000.0;
 /// Cometix resolves the `tengu_satin_quoll` override map from the
 /// source-controlled switch table instead of GrowthBook.
 pub fn get_max_mcp_output_tokens() -> f64 {
-    if let Some(value) = crate::utils::process_env::var("MAX_MCP_OUTPUT_TOKENS") {
+    if let Some(value) = crate::utils::process_env::var("MAX_MCP_OUTPUT_TOKENS").truthy() {
         let bytes = value.as_bytes();
         let mut index = 0usize;
         while index < bytes.len() && bytes[index].is_ascii_whitespace() {

@@ -8,6 +8,8 @@ mod runtime {
     use std::sync::{LazyLock, Mutex};
     use std::time::Duration;
 
+    use crate::utils::process_env::JsTruthy;
+
     const REGISTRY_URL: &str =
         "https://api.anthropic.com/mcp-registry/v0/servers?version=latest&visibility=commercial";
     const FETCH_TIMEOUT_MS: u64 = 5_000;
@@ -48,7 +50,11 @@ mod runtime {
 
     /// Maps to: CC `services/mcp/officialRegistry.ts#prefetchOfficialMcpUrls`.
     pub async fn prefetch_official_mcp_urls() {
-        if crate::utils::process_env::var_os("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").is_some() {
+        if crate::utils::process_env::var_os("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+            .as_deref()
+            .truthy()
+            .is_some()
+        {
             return;
         }
 

@@ -4,6 +4,7 @@
 //! API boundary and reuses the canonical provider/auth client factory.
 
 use crate::types::message::{AssistantContent, Message, UserContent};
+use crate::utils::process_env::JsTruthy;
 use base64::Engine as _;
 use serde_json::Value;
 
@@ -94,7 +95,8 @@ async fn count_tokens_with_bedrock(
     }))
     .ok()?;
     let endpoint = crate::utils::process_env::var("ANTHROPIC_BEDROCK_BASE_URL")
-        .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK_RUNTIME"))
+        .truthy()
+        .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").truthy())
         .unwrap_or_else(|| format!("https://bedrock-runtime.{region}.amazonaws.com"));
     let response = crate::services::api::client::send_bedrock_request(
         reqwest::Method::POST,

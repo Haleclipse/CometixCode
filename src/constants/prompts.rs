@@ -5,6 +5,7 @@
 use std::collections::HashSet;
 
 use crate::services::api::claude::SystemPrompt;
+use crate::utils::process_env::JsTruthy;
 
 /// Maps to CC `constants/prompts.ts` `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`.
 pub const SYSTEM_PROMPT_DYNAMIC_BOUNDARY: &str = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__";
@@ -743,7 +744,7 @@ fn get_knowledge_cutoff(model_id: &str) -> Option<&'static str> {
 /// Maps to CC `constants/prompts.ts` `getShellInfoLine()`.
 fn get_shell_info_line() -> String {
     let shell = crate::utils::process_env::var("SHELL")
-        .filter(|shell| !shell.is_empty())
+        .truthy()
         .unwrap_or_else(|| "unknown".to_string());
     let shell_name = if shell.contains("zsh") {
         "zsh".to_string()

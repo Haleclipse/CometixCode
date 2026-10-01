@@ -14,6 +14,8 @@ use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
+use crate::utils::process_env::JsTruthy;
+
 #[derive(Default)]
 struct EnvOverridesCache {
     parsed: bool,
@@ -37,6 +39,7 @@ fn get_env_overrides() -> Option<Map<String, Value>> {
             crate::utils::build_profile::InternalCapability::Api,
         ) {
             cache.overrides = crate::utils::process_env::var("CLAUDE_INTERNAL_FC_OVERRIDES")
+                .truthy()
                 .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
                 .and_then(|value| value.as_object().cloned());
         }

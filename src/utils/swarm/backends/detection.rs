@@ -54,7 +54,7 @@ pub fn is_in_iterm2_from_env(
     detected_terminal: Option<&str>,
 ) -> bool {
     term_program == Some("iTerm.app")
-        || iterm_session_id.is_some_and(|value| !value.is_empty())
+        || iterm_session_id.truthy().is_some()
         || detected_terminal == Some("iTerm.app")
 }
 

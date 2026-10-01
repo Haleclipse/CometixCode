@@ -3,6 +3,7 @@ use crate::context::notifications::{
     Notification, NotificationColor, NotificationPriority, NotificationsWriter,
 };
 use crate::state::store::{AppStore, UpdateDecision};
+use crate::utils::process_env::JsTruthy;
 use crate::types::plugin::PluginError;
 use iocraft::prelude::*;
 use serde_json::{Value, json};
@@ -28,7 +29,8 @@ pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>, enabled: bool) {
                     let names = metrics.as_object_mut().unwrap().remove("ant_enabled_names");
                     metrics["has_custom_plugin_cache_dir"] = json!(
                         crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR")
-                            .is_some_and(|s| !s.is_empty())
+                            .truthy()
+                            .is_some()
                     );
                     let mut event = metrics.clone();
                     if let Some(names) = names.filter(|v| !v.is_null()) {

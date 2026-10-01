@@ -9,6 +9,7 @@
 use crate::components::mcp::MCPSettings;
 use crate::components::mcp::mcp_reconnect::MCPReconnect;
 use crate::services::mcp::types::{McpClientSnapshot, McpServerConnectionType};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::SettingSource;
 use crate::utils::settings::get_settings_file_path_for_source;
 use crate::utils::status::StartupDiagnosticsSnapshot;
@@ -177,9 +178,11 @@ fn run_xaa_setup(args: &[String]) -> anyhow::Result<()> {
     let callback_port = parse_callback_port(args)?;
     let secret = if has_flag(args, "--client-secret") {
         Some(
-            crate::utils::process_env::var("MCP_XAA_IDP_CLIENT_SECRET").ok_or_else(|| {
-                cli_error("Error: --client-secret requires MCP_XAA_IDP_CLIENT_SECRET env var")
-            })?,
+            crate::utils::process_env::var("MCP_XAA_IDP_CLIENT_SECRET")
+                .truthy()
+                .ok_or_else(|| {
+                    cli_error("Error: --client-secret requires MCP_XAA_IDP_CLIENT_SECRET env var")
+                })?,
         )
     } else {
         None

@@ -7,6 +7,7 @@
 //! prompt temp files, launch the editor inside the handoff closure, and read
 //! the result back after the user-triggered child exits.
 
+use crate::utils::process_env::JsTruthy;
 use iocraft::hooks::AppHandle;
 use std::path::{Path, PathBuf};
 
@@ -174,10 +175,12 @@ pub fn external_editor_command() -> Option<(String, Vec<String>)> {
 
 fn resolve_external_editor_command() -> Option<(String, Vec<String>)> {
     let configured = crate::utils::process_env::var("VISUAL")
-        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.trim().to_string())
+        .truthy()
         .or_else(|| {
             crate::utils::process_env::var("EDITOR")
-                .filter(|value| !value.trim().is_empty())
+                .map(|value| value.trim().to_string())
+                .truthy()
         });
     let editor = configured.or_else(|| {
         ["code", "vi", "nano"]

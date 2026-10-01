@@ -21,6 +21,7 @@ use crate::utils::model::providers::{ApiProvider, get_api_provider};
 use crate::utils::model_cost::{
     COST_HAIKU_35, COST_HAIKU_45, COST_TIER_3_15, format_model_pricing,
 };
+use crate::utils::process_env::JsTruthy;
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -70,10 +71,6 @@ fn tier_3_15_suffix() -> String {
     } else {
         format!(" · {}", format_model_pricing(COST_TIER_3_15))
     }
-}
-
-fn env(name: &str) -> Option<String> {
-    crate::utils::process_env::var(name).filter(|value| !value.is_empty())
 }
 
 /// Maps to: CC `utils/model/modelOptions.ts:45-74` `getDefaultOptionForUser`.
@@ -138,16 +135,17 @@ pub fn get_default_option_for_user_for_audience(
 
 /// Maps to: CC `utils/model/modelOptions.ts:76-92` `getCustomSonnetOption`.
 fn get_custom_sonnet_option() -> Option<ModelOption> {
-    let custom_sonnet_model = env("ANTHROPIC_DEFAULT_SONNET_MODEL")?;
+    let custom_sonnet_model =
+        crate::utils::process_env::var("ANTHROPIC_DEFAULT_SONNET_MODEL").truthy()?;
     if !is_3p() {
         return None;
     }
     let is_1m = crate::utils::context::has_1m_context(&custom_sonnet_model);
-    let description = env("ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION");
+    let description = crate::utils::process_env::var("ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION");
     Some(
         ModelOption::new(
             Some("sonnet"),
-            &env("ANTHROPIC_DEFAULT_SONNET_MODEL_NAME")
+            &crate::utils::process_env::var("ANTHROPIC_DEFAULT_SONNET_MODEL_NAME")
                 .unwrap_or_else(|| custom_sonnet_model.clone()),
             description.clone().unwrap_or_else(|| {
                 format!(
@@ -187,16 +185,18 @@ fn get_sonnet_46_option() -> ModelOption {
 
 /// Maps to: CC `utils/model/modelOptions.ts:107-122` `getCustomOpusOption`.
 fn get_custom_opus_option() -> Option<ModelOption> {
-    let custom_opus_model = env("ANTHROPIC_DEFAULT_OPUS_MODEL")?;
+    let custom_opus_model =
+        crate::utils::process_env::var("ANTHROPIC_DEFAULT_OPUS_MODEL").truthy()?;
     if !is_3p() {
         return None;
     }
     let is_1m = crate::utils::context::has_1m_context(&custom_opus_model);
-    let description = env("ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION");
+    let description = crate::utils::process_env::var("ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION");
     Some(
         ModelOption::new(
             Some("opus"),
-            &env("ANTHROPIC_DEFAULT_OPUS_MODEL_NAME").unwrap_or_else(|| custom_opus_model.clone()),
+            &crate::utils::process_env::var("ANTHROPIC_DEFAULT_OPUS_MODEL_NAME")
+                .unwrap_or_else(|| custom_opus_model.clone()),
             description.clone().unwrap_or_else(|| {
                 format!(
                     "Custom Opus model{}",
@@ -277,15 +277,16 @@ pub fn get_opus_46_1m_option(fast_mode: bool) -> ModelOption {
 
 /// Maps to: CC `utils/model/modelOptions.ts:165-179` `getCustomHaikuOption`.
 fn get_custom_haiku_option() -> Option<ModelOption> {
-    let custom_haiku_model = env("ANTHROPIC_DEFAULT_HAIKU_MODEL")?;
+    let custom_haiku_model =
+        crate::utils::process_env::var("ANTHROPIC_DEFAULT_HAIKU_MODEL").truthy()?;
     if !is_3p() {
         return None;
     }
-    let description = env("ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION");
+    let description = crate::utils::process_env::var("ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION");
     Some(
         ModelOption::new(
             Some("haiku"),
-            &env("ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME")
+            &crate::utils::process_env::var("ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME")
                 .unwrap_or_else(|| custom_haiku_model.clone()),
             description
                 .clone()
@@ -638,16 +639,18 @@ pub fn get_model_options_for_audience(
     let mut options = get_model_options_base(audience, fast_mode);
 
     // The custom model from the ANTHROPIC_CUSTOM_MODEL_OPTION env var.
-    if let Some(env_custom_model) = env("ANTHROPIC_CUSTOM_MODEL_OPTION") {
+    if let Some(env_custom_model) =
+        crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION").truthy()
+    {
         if !options
             .iter()
             .any(|existing| existing.value.as_deref() == Some(env_custom_model.as_str()))
         {
             options.push(ModelOption::new(
                 Some(&env_custom_model),
-                &env("ANTHROPIC_CUSTOM_MODEL_OPTION_NAME")
+                &crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION_NAME")
                     .unwrap_or_else(|| env_custom_model.clone()),
-                env("ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION")
+                crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION")
                     .unwrap_or_else(|| format!("Custom model ({env_custom_model})")),
             ));
         }

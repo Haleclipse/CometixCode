@@ -10,6 +10,7 @@ use crate::types::message::SystemMessage;
 use crate::utils::fast_mode::{is_fast_mode_cooldown, is_fast_mode_enabled};
 use crate::utils::messages::create_system_api_error_message;
 use crate::utils::model::model::is_non_custom_opus_model;
+use crate::utils::process_env::JsTruthy;
 use crate::utils::thinking::ThinkingConfig;
 use std::collections::HashSet;
 use std::fmt;
@@ -1023,7 +1024,7 @@ where
                     // TODO: Check FALLBACK_FOR_ALL_PRIMARY_MODELS and isNonCustomOpusModel
                     // once model utils are ported.
                     // See CC `utils/model/model.ts:isNonCustomOpusModel`.
-                    let should_track = crate::utils::process_env::var("FALLBACK_FOR_ALL_PRIMARY_MODELS").is_some()
+                    let should_track = crate::utils::process_env::var("FALLBACK_FOR_ALL_PRIMARY_MODELS").truthy().is_some()
                         || is_non_custom_opus_model(&options.model);
                     if should_track {
                         consecutive_529_errors += 1;
@@ -1039,7 +1040,7 @@ where
                             // External users (non-sandbox, non-persistent) get a terminal error
                             if !crate::utils::build_profile::has_internal_capability(
                                 crate::utils::build_profile::InternalCapability::Api,
-                            ) && crate::utils::process_env::var("IS_SANDBOX").is_none()
+                            ) && crate::utils::process_env::var("IS_SANDBOX").truthy().is_none()
                                 && !is_persistent_retry_enabled()
                             {
                                 return Err(CannotRetryError {

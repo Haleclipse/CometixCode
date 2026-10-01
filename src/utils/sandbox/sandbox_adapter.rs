@@ -12,6 +12,7 @@ use crate::tools::web_fetch_tool::prompt::WEB_FETCH_TOOL_NAME;
 use crate::types::permissions::PermissionUpdate;
 use crate::utils::permissions::filesystem::get_claude_temp_dir;
 use crate::utils::permissions::permission_rule_parser::permission_rule_value_from_string;
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::SettingSource;
 use crate::utils::settings::managed_path::get_managed_settings_drop_in_dir;
 use crate::utils::settings::types::SettingsJson;
@@ -876,11 +877,13 @@ fn wrap_shell_command_macos(
 }
 
 fn proxy_environment(http_port: u16, socks_port: u16) -> Vec<String> {
-    let tmpdir = crate::utils::process_env::var("CLAUDE_TMPDIR").unwrap_or_else(|| {
-        crate::utils::permissions::filesystem::get_claude_temp_dir()
-            .display()
-            .to_string()
-    });
+    let tmpdir = crate::utils::process_env::var("CLAUDE_TMPDIR")
+        .truthy()
+        .unwrap_or_else(|| {
+            crate::utils::permissions::filesystem::get_claude_temp_dir()
+                .display()
+                .to_string()
+        });
     let no_proxy = "localhost,127.0.0.1,::1,*.local,.local,169.254.0.0/16,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
     vec![
         "SANDBOX_RUNTIME=1".to_string(),
