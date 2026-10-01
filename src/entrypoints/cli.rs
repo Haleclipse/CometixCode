@@ -24,7 +24,7 @@ fn apply_cli_bootstrap_env() {
     crate::utils::process_env::set("NoDefaultCurrentDirectoryInExePath", "1");
 
     // COREPACK_ENABLE_AUTO_PIN — Node-only; no-op on Rust binary.
-    if crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref()) {
         let _ = std::env::var("NODE_OPTIONS");
     }
 }

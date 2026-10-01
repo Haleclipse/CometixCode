@@ -100,7 +100,7 @@ pub fn format_precondition_error(error: BackgroundRemoteSessionPrecondition) -> 
 /// Maps to: CC `RemoteAgentTask.tsx:1100-1102` `getRemoteTaskSessionUrl` —
 /// `getRemoteSessionUrl(sessionId, process.env.SESSION_INGRESS_URL)`.
 pub fn get_remote_task_session_url(session_id: &str) -> String {
-    let ingress = std::env::var("SESSION_INGRESS_URL").ok();
+    let ingress = crate::utils::process_env::var("SESSION_INGRESS_URL");
     crate::bridge::bridge_status_util::get_remote_session_url(session_id, ingress.as_deref())
 }
 

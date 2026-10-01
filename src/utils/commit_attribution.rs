@@ -35,7 +35,7 @@ pub struct AttributionState {
 
 /// Maps to: CC `getClientSurface()`.
 pub fn get_client_surface() -> String {
-    std::env::var("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|_| "cli".into())
+    crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|| "cli".into())
 }
 
 /// Maps to: CC `createEmptyAttributionState()`.

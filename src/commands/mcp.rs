@@ -176,9 +176,11 @@ fn run_xaa_setup(args: &[String]) -> anyhow::Result<()> {
     validate_setup_issuer(&issuer)?;
     let callback_port = parse_callback_port(args)?;
     let secret = if has_flag(args, "--client-secret") {
-        Some(std::env::var("MCP_XAA_IDP_CLIENT_SECRET").map_err(|_| {
-            cli_error("Error: --client-secret requires MCP_XAA_IDP_CLIENT_SECRET env var")
-        })?)
+        Some(
+            crate::utils::process_env::var("MCP_XAA_IDP_CLIENT_SECRET").ok_or_else(|| {
+                cli_error("Error: --client-secret requires MCP_XAA_IDP_CLIENT_SECRET env var")
+            })?,
+        )
     } else {
         None
     };

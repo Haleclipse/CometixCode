@@ -12,13 +12,12 @@ use crate::utils::feature_flags::{FeatureFlag, feature_enabled};
 /// Maps to: CC `utils/workflows.ts#isDynamicWorkflowsEnabled` (`gO` / `dS`).
 pub fn is_dynamic_workflows_enabled() -> bool {
     if is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_WORKFLOWS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_WORKFLOWS")
             .as_deref(),
     ) {
         return false;
     }
-    if is_env_defined_falsy(std::env::var("CLAUDE_CODE_WORKFLOWS").ok().as_deref()) {
+    if is_env_defined_falsy(crate::utils::process_env::var("CLAUDE_CODE_WORKFLOWS").as_deref()) {
         return false;
     }
     feature_enabled(FeatureFlag::WorkflowsEnabled)

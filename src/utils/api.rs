@@ -94,7 +94,7 @@ pub fn prepend_user_context(
     messages: Vec<Message>,
     context: &BTreeMap<String, String>,
 ) -> Vec<Message> {
-    if std::env::var("NODE_ENV").as_deref() == Ok("test") || context.is_empty() {
+    if crate::utils::process_env::var("NODE_ENV").as_deref() == Some("test") || context.is_empty() {
         return messages;
     }
 
@@ -213,8 +213,7 @@ pub fn tool_to_api_schema(
                     && (crate::utils::feature_flags::feature_enabled(
                         crate::utils::feature_flags::FeatureFlag::FineGrainedToolStreaming,
                     ) || crate::utils::env_utils::is_env_truthy(
-                        std::env::var("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING")
-                            .ok()
+                        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING")
                             .as_deref(),
                     )))
                 .then_some(true),
@@ -225,8 +224,7 @@ pub fn tool_to_api_schema(
     };
 
     let disable_experimental_betas = crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
             .as_deref(),
     );
     let strict = (!disable_experimental_betas)

@@ -61,7 +61,7 @@ pub fn is_tmux_control_mode() -> bool {
     if let Some(value) = *cached {
         return value;
     }
-    let value = probe_tmux_control_mode_sync(&|key| std::env::var(key).ok());
+    let value = probe_tmux_control_mode_sync(&|key| crate::utils::process_env::var(key));
     *cached = Some(value);
     value
 }
@@ -92,7 +92,7 @@ pub fn is_fullscreen_env_enabled_for_audience(
 pub fn is_fullscreen_env_enabled() -> bool {
     let tmux_control_mode = is_tmux_control_mode();
     let enabled = is_fullscreen_env_enabled_for_audience(
-        &|key| std::env::var(key).ok(),
+        &|key| crate::utils::process_env::var(key),
         tmux_control_mode,
         crate::utils::build_profile::build_audience(),
     );
@@ -113,15 +113,14 @@ pub fn is_fullscreen_env_enabled() -> bool {
 /// Maps to: CC `utils/fullscreen.ts:137-149` `isMouseTrackingEnabled`.
 pub fn is_mouse_tracking_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_MOUSE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_MOUSE").as_deref(),
     )
 }
 
 /// Maps to: CC `utils/fullscreen.ts:151-160` `isMouseClicksDisabled`.
 pub fn is_mouse_clicks_disabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_MOUSE_CLICKS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_MOUSE_CLICKS")
             .as_deref(),
     )
 }

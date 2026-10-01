@@ -19,7 +19,7 @@ pub async fn open_browser(url: &str) -> anyhow::Result<bool> {
         return Ok(false);
     }
 
-    let browser = std::env::var_os("BROWSER").filter(|value| !value.is_empty());
+    let browser = crate::utils::process_env::var_os("BROWSER").filter(|value| !value.is_empty());
     let mut command = if cfg!(target_os = "windows") {
         if let Some(browser) = browser {
             let mut command = Command::new(browser);

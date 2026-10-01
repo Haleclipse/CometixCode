@@ -123,8 +123,7 @@ pub fn cached_microcompact_config_from_env() -> CachedMicrocompactConfig {
     config.enabled = crate::utils::env_utils::is_env_truthy(
         std::env::var("COMETIX_CACHED_MICROCOMPACT").ok().as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_CACHED_MICROCOMPACT")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_CACHED_MICROCOMPACT")
             .as_deref(),
     );
     if let Ok(value) = std::env::var("COMETIX_CACHED_MC_TRIGGER_THRESHOLD") {

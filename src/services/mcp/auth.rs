@@ -2344,8 +2344,7 @@ mod runtime {
             .and_then(Value::as_bool)
             .unwrap_or(false)
         {
-            let client_metadata_url = std::env::var("MCP_OAUTH_CLIENT_METADATA_URL")
-                .ok()
+            let client_metadata_url = crate::utils::process_env::var("MCP_OAUTH_CLIENT_METADATA_URL")
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| crate::constants::oauth::MCP_CLIENT_METADATA_URL.to_string());
             let client_config =

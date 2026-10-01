@@ -3346,7 +3346,7 @@ Treat this as a fresh planning session. Do not assume the existing plan is relev
         Attachment::CompactionReminder => vec![meta_message("Auto-compact is enabled. When the context window is nearly full, older messages will be automatically summarized so you can continue working seamlessly. There is no need to stop or rush — you have unlimited context through automatic compaction.")],
         Attachment::CompanionIntro { name, species } => vec![meta_message(crate::buddy::prompt::companion_intro_text(name,species))],
         Attachment::VerifyPlanReminder => {
-            let tool_name = if crate::utils::build_profile::has_internal_capability(crate::utils::build_profile::InternalCapability::Prompts) && std::env::var("CLAUDE_CODE_VERIFY_PLAN").ok().as_deref() == Some("true") { "VerifyPlanExecution" } else { "" };
+            let tool_name = if crate::utils::build_profile::has_internal_capability(crate::utils::build_profile::InternalCapability::Prompts) && crate::utils::process_env::var("CLAUDE_CODE_VERIFY_PLAN").as_deref() == Some("true") { "VerifyPlanExecution" } else { "" };
             vec![meta_message(format!("You have completed implementing the plan. Please call the \"{tool_name}\" tool directly (NOT the Agent tool or an agent) to verify that all plan items were completed correctly."))]
         }
         Attachment::DynamicSkill { .. }

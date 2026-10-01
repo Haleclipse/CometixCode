@@ -158,8 +158,8 @@ pub fn effective_glob_search_root(file_pattern: &str, cwd: &Path) -> PathBuf {
 }
 
 fn env_default_true(key: &str) -> bool {
-    match std::env::var(key) {
-        Ok(value) if !value.is_empty() => matches!(
+    match crate::utils::process_env::var(key) {
+        Some(value) if !value.is_empty() => matches!(
             value.trim().to_ascii_lowercase().as_str(),
             "1" | "true" | "yes" | "on"
         ),

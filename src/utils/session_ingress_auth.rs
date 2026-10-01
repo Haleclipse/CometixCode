@@ -66,7 +66,7 @@ pub fn get_session_ingress_auth_token_with_env(
 
 /// Maps to: CC `sessionIngressAuth.ts#getSessionIngressAuthToken`.
 pub fn get_session_ingress_auth_token() -> Option<String> {
-    get_session_ingress_auth_token_with_env(&|key| std::env::var(key).ok())
+    get_session_ingress_auth_token_with_env(&|key| crate::utils::process_env::var(key))
 }
 
 /// Maps to: CC `sessionIngressAuth.ts#getSessionIngressAuthHeaders`.
@@ -92,7 +92,7 @@ pub fn get_session_ingress_auth_headers_with_env(
 
 /// Maps to: CC `sessionIngressAuth.ts#getSessionIngressAuthHeaders`.
 pub fn get_session_ingress_auth_headers() -> std::collections::BTreeMap<String, String> {
-    get_session_ingress_auth_headers_with_env(&|key| std::env::var(key).ok())
+    get_session_ingress_auth_headers_with_env(&|key| crate::utils::process_env::var(key))
 }
 
 #[cfg(test)]

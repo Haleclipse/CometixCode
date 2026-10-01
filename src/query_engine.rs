@@ -895,8 +895,7 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
         }
     }
     let mut outcome = QueryEngineOutcome::default();
-    let max_attempts = std::env::var("MAX_STRUCTURED_OUTPUT_RETRIES")
-        .ok()
+    let max_attempts = crate::utils::process_env::var("MAX_STRUCTURED_OUTPUT_RETRIES")
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(5);

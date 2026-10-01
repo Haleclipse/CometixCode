@@ -57,7 +57,7 @@ fn doctor_validate_env_var(
     default: usize,
     upper_limit: usize,
 ) -> Option<EnvValidationWarning> {
-    let value = std::env::var(name).ok();
+    let value = crate::utils::process_env::var(name);
     doctor_validate_env_value(name, value.as_deref(), default, upper_limit)
 }
 

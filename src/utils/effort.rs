@@ -143,8 +143,7 @@ pub fn model_supports_effort(model: &str) -> bool {
         return false;
     }
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT")
             .as_deref(),
     ) {
         return true;
@@ -223,7 +222,7 @@ fn provider_supports_effort_default() -> bool {
 /// `None` = absent/invalid, `Some(None)` = `auto`/`unset`, and
 /// `Some(Some(value))` = an explicit override.
 pub fn get_effort_env_override() -> Option<Option<EffortValue>> {
-    let env_override = std::env::var("CLAUDE_CODE_EFFORT_LEVEL").ok()?;
+    let env_override = crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL")?;
     let lower = env_override.to_lowercase();
     if matches!(lower.as_str(), "unset" | "auto") {
         return Some(None);

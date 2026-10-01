@@ -105,8 +105,7 @@ pub fn should_enable_prompt_suggestion() -> bool {
         settings.prompt_suggestion_enabled,
         crate::bootstrap::state::get_is_non_interactive_session(),
         swarm_teammate,
-        std::env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
             .as_deref(),
     )
 }

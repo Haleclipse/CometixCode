@@ -61,8 +61,8 @@ pub fn is_in_iterm2_from_env(
 /// Maps to: CC `isInITerm2()`.
 pub fn is_in_iterm2() -> bool {
     is_in_iterm2_from_env(
-        std::env::var("TERM_PROGRAM").ok().as_deref(),
-        std::env::var("ITERM_SESSION_ID").ok().as_deref(),
+        crate::utils::process_env::var("TERM_PROGRAM").as_deref(),
+        crate::utils::process_env::var("ITERM_SESSION_ID").as_deref(),
         crate::utils::env::get().terminal.as_deref(),
     )
 }

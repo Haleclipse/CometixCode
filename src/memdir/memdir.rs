@@ -440,8 +440,7 @@ pub fn load_memory_prompt_for_dir(settings: &SettingsJson, memory_dir: PathBuf) 
             );
         }
     }
-    let extra_guidelines = std::env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES")
-        .ok()
+    let extra_guidelines = crate::utils::process_env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES")
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .map(|value| vec![value]);

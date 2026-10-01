@@ -66,7 +66,7 @@ pub fn get_teammate_command_from_parts(
 pub fn get_teammate_command() -> String {
     let executable = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("cometix"));
     get_teammate_command_from_parts(
-        std::env::var(TEAMMATE_COMMAND_ENV_VAR).ok().as_deref(),
+        crate::utils::process_env::var(TEAMMATE_COMMAND_ENV_VAR).as_deref(),
         executable,
     )
 }

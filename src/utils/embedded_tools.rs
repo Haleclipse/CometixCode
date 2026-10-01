@@ -9,11 +9,11 @@
 /// Maps to: CC `hasEmbeddedSearchTools()`.
 pub fn has_embedded_search_tools() -> bool {
     if !crate::utils::env_utils::is_env_truthy(
-        std::env::var("EMBEDDED_SEARCH_TOOLS").ok().as_deref(),
+        crate::utils::process_env::var("EMBEDDED_SEARCH_TOOLS").as_deref(),
     ) {
         return false;
     }
-    match std::env::var("CLAUDE_CODE_ENTRYPOINT").ok().as_deref() {
+    match crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() {
         Some("sdk-ts") | Some("sdk-py") | Some("sdk-cli") | Some("local-agent") => false,
         _ => true,
     }

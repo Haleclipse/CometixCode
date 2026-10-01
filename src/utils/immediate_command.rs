@@ -36,7 +36,7 @@ pub fn should_inference_config_command_be_immediate_from_config(
 pub fn should_inference_config_command_be_immediate() -> bool {
     let config = load_global_config();
     should_inference_config_command_be_immediate_from_config(&config, &|key| {
-        std::env::var(key).ok()
+        crate::utils::process_env::var(key)
     })
 }
 

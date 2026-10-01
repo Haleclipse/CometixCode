@@ -15,7 +15,7 @@ const AUTO_MEM_ENTRYPOINT_NAME: &str = "MEMORY.md";
 
 /// Maps to CC `memdir/paths.ts` `isAutoMemoryEnabled()`.
 pub fn is_auto_memory_enabled(settings: &SettingsJson) -> bool {
-    is_auto_memory_enabled_with_env(settings, &|key| std::env::var(key).ok())
+    is_auto_memory_enabled_with_env(settings, &|key| crate::utils::process_env::var(key))
 }
 
 pub fn is_auto_memory_enabled_with_env(
@@ -43,7 +43,7 @@ pub fn is_auto_memory_enabled_with_env(
 
 /// Maps to CC `memdir/paths.ts` `hasAutoMemPathOverride()`.
 pub fn has_auto_mem_path_override() -> bool {
-    has_auto_mem_path_override_with_env(&|key| std::env::var(key).ok())
+    has_auto_mem_path_override_with_env(&|key| crate::utils::process_env::var(key))
 }
 
 pub fn has_auto_mem_path_override_with_env(get_env: &impl Fn(&str) -> Option<String>) -> bool {
@@ -86,12 +86,10 @@ pub(crate) fn settings_with_trusted_auto_memory_directory(
 pub fn get_auto_mem_path(settings: &SettingsJson) -> PathBuf {
     let cwd = crate::bootstrap::state::get_original_cwd();
     let config_home = crate::utils::config::get_config_home();
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
+    let home = crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
         .map(PathBuf::from);
     get_auto_mem_path_with_env(settings, &cwd, &config_home, home.as_deref(), &|key| {
-        std::env::var(key).ok()
+        crate::utils::process_env::var(key)
     })
 }
 
@@ -137,7 +135,7 @@ pub fn get_auto_mem_path_with_env(
 /// Maps to CC `memdir/paths.ts` `getMemoryBaseDir()`.
 pub fn get_memory_base_dir() -> PathBuf {
     memory_base_dir(&crate::utils::config::get_config_home(), &|key| {
-        std::env::var(key).ok()
+        crate::utils::process_env::var(key)
     })
 }
 

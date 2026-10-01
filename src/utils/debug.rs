@@ -57,8 +57,7 @@ impl DebugLogLevel {
 
 /// Maps to: CC `utils/debug.ts#getMinDebugLogLevel`.
 pub fn get_min_debug_log_level() -> DebugLogLevel {
-    std::env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
-        .ok()
+    crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
         .as_deref()
         .and_then(DebugLogLevel::from_env_name)
         .unwrap_or(DebugLogLevel::Debug)
@@ -69,7 +68,7 @@ pub fn get_debug_log_path() -> PathBuf {
     if let Some(path) = config().debug_file.clone() {
         return path;
     }
-    if let Ok(dir) = std::env::var("CLAUDE_CODE_DEBUG_LOGS_DIR") {
+    if let Some(dir) = crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOGS_DIR") {
         return PathBuf::from(dir)
             .join(format!("{}.log", crate::bootstrap::state::get_session_id()));
     }
@@ -409,10 +408,10 @@ impl DebugConfig {
             || debug_to_stderr
             || debug_file.is_some()
             || debug_filter.is_some()
-            || crate::utils::env_utils::is_env_truthy(std::env::var("DEBUG").ok().as_deref())
-            || crate::utils::env_utils::is_env_truthy(std::env::var("DEBUG_SDK").ok().as_deref())
+            || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DEBUG").as_deref())
+            || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DEBUG_SDK").as_deref())
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DEBUG").ok().as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_DEBUG").as_deref(),
             );
 
         let profiles = ProfileSelection::parse(debug_filter).or(ProfileSelection::from_env());

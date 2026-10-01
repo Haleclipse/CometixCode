@@ -88,7 +88,7 @@ pub fn get_attribution_header(fingerprint: &str) -> String {
     let version = format!("{}.{}", crate::constants::product::VERSION, fingerprint);
     // Maps to: CC `process.env.CLAUDE_CODE_ENTRYPOINT ?? 'unknown'`
     let entrypoint =
-        std::env::var("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|_| "unknown".to_string());
+        crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|| "unknown".to_string());
     // cch=00000 placeholder is Bun-native attestation — omitted in Cometix.
     format!("x-anthropic-billing-header: cc_version={version}; cc_entrypoint={entrypoint};")
 }

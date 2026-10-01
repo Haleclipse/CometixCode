@@ -38,7 +38,7 @@ pub fn apply_settings_change(source: SettingSource, store: &AppStore) {
         // Maps to CC's internal-distribution broad-shell re-strip after sync.
         if crate::utils::build_profile::has_internal_capability(
             crate::utils::build_profile::InternalCapability::Permissions,
-        ) && std::env::var("CLAUDE_CODE_ENTRYPOINT").ok().as_deref() != Some("local-agent")
+        ) && crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() != Some("local-agent")
         {
             let dangerous =
                 crate::utils::permissions::permission_setup::find_overly_broad_bash_permissions(

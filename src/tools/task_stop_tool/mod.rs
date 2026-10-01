@@ -125,7 +125,7 @@ impl crate::tool::ToolCall for TaskStopTool {
     /// Maps to: CC `TaskStopTool.ts:46` `userFacingName: () =>
     /// process.env.USER_TYPE === 'ant' ? '' : 'Stop Task'`.
     fn user_facing_name(&self, _args: Option<&serde_json::Value>) -> String {
-        if std::env::var("USER_TYPE").ok().as_deref() == Some("ant") {
+        if crate::utils::process_env::var("USER_TYPE").as_deref() == Some("ant") {
             String::new()
         } else {
             "Stop Task".to_string()

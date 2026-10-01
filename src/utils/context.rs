@@ -53,8 +53,7 @@ pub fn get_model_max_output_tokens(model: &str) -> ModelMaxOutputTokens {
 /// Maps to CC `utils/context.ts` `is1mContextDisabled()`.
 pub fn is_1m_context_disabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_1M_CONTEXT")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_1M_CONTEXT")
             .as_deref(),
     )
 }
@@ -134,7 +133,7 @@ pub fn get_context_window_for_model(model: &str, betas: &[String]) -> i64 {
         model,
         betas,
         crate::utils::build_profile::build_audience(),
-        &|key| std::env::var(key).ok(),
+        &|key| crate::utils::process_env::var(key),
     )
 }
 

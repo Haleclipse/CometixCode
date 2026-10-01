@@ -5,7 +5,7 @@
 
 use crate::utils::theme::Theme;
 use iocraft::Color;
-use std::{collections::HashMap, env, sync::OnceLock};
+use std::{collections::HashMap, sync::OnceLock};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyntaxHighlightTheme {
@@ -83,8 +83,8 @@ pub fn default_syntax_theme_name(theme_name: &str) -> &'static str {
 }
 
 pub fn get_syntax_theme(theme_name: &str) -> SyntaxTheme {
-    let claude_code = env::var("CLAUDE_CODE_SYNTAX_HIGHLIGHT").ok();
-    let bat_theme = env::var("BAT_THEME").ok();
+    let claude_code = crate::utils::process_env::var("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
+    let bat_theme = crate::utils::process_env::var("BAT_THEME");
     get_syntax_theme_with_env(theme_name, claude_code.as_deref(), bat_theme.as_deref())
 }
 
@@ -116,7 +116,7 @@ pub fn get_syntax_theme_with_env(
 }
 
 pub fn syntax_highlighting_disabled_by_env() -> Option<String> {
-    let claude_code = env::var("CLAUDE_CODE_SYNTAX_HIGHLIGHT").ok();
+    let claude_code = crate::utils::process_env::var("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
     syntax_highlighting_disabled_by_env_value(claude_code.as_deref())
 }
 

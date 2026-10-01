@@ -294,9 +294,12 @@ pub fn check_dependencies_readonly() -> SandboxDependencyCheck {
     }
 }
 
+/// sandbox-runtime's `whichSync` (`utils/which.js`) is Bun.which, which reads
+/// the startup PATH, as `utils/which.rs` does.
 fn command_exists(command: &str) -> bool {
-    std::env::var_os("PATH")
-        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(command).is_file()))
+    crate::utils::process_env::startup_snapshot()
+        .var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(path).any(|dir| dir.join(command).is_file()))
 }
 
 /// Maps to: CC `utils/sandbox/sandbox-adapter.ts:491-493` `isSupportedPlatform`.
@@ -873,7 +876,7 @@ fn wrap_shell_command_macos(
 }
 
 fn proxy_environment(http_port: u16, socks_port: u16) -> Vec<String> {
-    let tmpdir = std::env::var("CLAUDE_TMPDIR").unwrap_or_else(|_| {
+    let tmpdir = crate::utils::process_env::var("CLAUDE_TMPDIR").unwrap_or_else(|| {
         crate::utils::permissions::filesystem::get_claude_temp_dir()
             .display()
             .to_string()
@@ -1914,9 +1917,7 @@ fn normalize_path_string(path: PathBuf) -> String {
 }
 
 fn home_dir() -> Option<String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
+    crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
 }
 
 #[cfg(test)]

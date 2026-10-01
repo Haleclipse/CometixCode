@@ -75,8 +75,8 @@ fn run_command(program: &str, args: &[&str], cwd: Option<PathBuf>) -> SetupComma
 }
 
 fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
 }

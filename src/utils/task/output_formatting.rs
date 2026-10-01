@@ -13,7 +13,7 @@ pub struct FormattedTaskOutput {
 
 /// Maps to CC `utils/task/outputFormatting.ts#getMaxTaskOutputLength`.
 pub fn get_max_task_output_length() -> usize {
-    let value = std::env::var("TASK_MAX_OUTPUT_LENGTH").ok();
+    let value = crate::utils::process_env::var("TASK_MAX_OUTPUT_LENGTH");
     get_max_task_output_length_from_value(value.as_deref())
 }
 

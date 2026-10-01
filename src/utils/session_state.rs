@@ -224,8 +224,7 @@ pub fn notify_session_state_changed(state: SessionState, details: Option<&Requir
     // but the emit cannot be made. The env check is kept so the seam is visible
     // at the exact branch CC emits from rather than only in this comment.
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS")
             .as_deref(),
     ) {
         tracing::debug!(

@@ -26,8 +26,11 @@ fn is_executable_file(path: &Path) -> bool {
 }
 
 /// Maps to: CC `utils/which.ts#which`, scoped to the PowerShell lookup.
+/// Bun.which reads the startup PATH, as `utils/which.rs` does.
 fn which(executable: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = crate::utils::process_env::startup_snapshot()
+        .var_os("PATH")?
+        .to_os_string();
     std::env::split_paths(&path)
         .map(|directory| {
             if cfg!(windows) {

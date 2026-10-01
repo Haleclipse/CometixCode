@@ -57,8 +57,8 @@ enum MemoryFocus {
 }
 
 fn home_dir_path() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(PathBuf::from)
 }
 
@@ -341,14 +341,14 @@ pub fn MemoryFileSelector<'a>(
         .unwrap_or_else(get_initial_settings);
     let initial_auto_memory =
         auto_memory_snapshot(&settings, &cwd, &config_home, home.as_deref(), &|key| {
-            std::env::var(key).ok()
+            crate::utils::process_env::var(key)
         });
     let resolved_auto_memory_path = crate::memdir::paths::get_auto_mem_path_with_env(
         &settings,
         &cwd,
         &config_home,
         home.as_deref(),
-        &|key| std::env::var(key).ok(),
+        &|key| crate::utils::process_env::var(key),
     );
     let mut auto_memory_on = hooks.use_state({
         let enabled = initial_auto_memory.enabled;

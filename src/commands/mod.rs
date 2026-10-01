@@ -448,31 +448,30 @@ fn is_internal_build() -> bool {
 
 fn is_internal_non_demo() -> bool {
     is_internal_build()
-        && !crate::utils::env_utils::is_env_truthy(std::env::var("IS_DEMO").ok().as_deref())
+        && !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("IS_DEMO").as_deref())
 }
 
 fn compact_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_COMPACT").ok().as_deref())
+    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_COMPACT").as_deref())
 }
 
 fn doctor_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_DOCTOR_COMMAND").ok().as_deref())
+    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_DOCTOR_COMMAND").as_deref())
 }
 
 fn install_github_app_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        std::env::var("DISABLE_INSTALL_GITHUB_APP_COMMAND")
-            .ok()
+        crate::utils::process_env::var("DISABLE_INSTALL_GITHUB_APP_COMMAND")
             .as_deref(),
     )
 }
 
 fn login_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_LOGIN_COMMAND").ok().as_deref())
+    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_LOGIN_COMMAND").as_deref())
 }
 
 fn logout_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_LOGOUT_COMMAND").ok().as_deref())
+    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_LOGOUT_COMMAND").as_deref())
 }
 
 fn is_using_3p_services() -> bool {
@@ -482,7 +481,7 @@ fn is_using_3p_services() -> bool {
         "CLAUDE_CODE_USE_FOUNDRY",
     ]
     .into_iter()
-    .any(|key| crate::utils::env_utils::is_env_truthy(std::env::var(key).ok().as_deref()))
+    .any(|key| crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref()))
 }
 
 fn is_console_user() -> bool {
@@ -519,16 +518,16 @@ fn terminal_setup_hidden() -> bool {
 }
 
 fn session_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref())
+    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
 }
 
 fn feedback_enabled() -> bool {
     !is_using_3p_services()
         && !crate::utils::env_utils::is_env_truthy(
-            std::env::var("DISABLE_FEEDBACK_COMMAND").ok().as_deref(),
+            crate::utils::process_env::var("DISABLE_FEEDBACK_COMMAND").as_deref(),
         )
         && !crate::utils::env_utils::is_env_truthy(
-            std::env::var("DISABLE_BUG_COMMAND").ok().as_deref(),
+            crate::utils::process_env::var("DISABLE_BUG_COMMAND").as_deref(),
         )
         && !is_internal_build()
 }
@@ -553,7 +552,7 @@ fn privacy_settings_enabled() -> bool {
 
 fn upgrade_enabled() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("DISABLE_UPGRADE_COMMAND").ok().as_deref(),
+        crate::utils::process_env::var("DISABLE_UPGRADE_COMMAND").as_deref(),
     ) {
         return false;
     }

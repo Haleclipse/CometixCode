@@ -48,7 +48,7 @@ mod runtime {
 
     /// Maps to: CC `services/mcp/officialRegistry.ts#prefetchOfficialMcpUrls`.
     pub async fn prefetch_official_mcp_urls() {
-        if std::env::var_os("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").is_some() {
+        if crate::utils::process_env::var_os("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").is_some() {
             return;
         }
 

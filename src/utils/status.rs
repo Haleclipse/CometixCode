@@ -198,7 +198,7 @@ pub fn build_account_properties() -> Vec<Property> {
     {
         properties.push(property("API key", api_key_source));
     }
-    if std::env::var_os("IS_DEMO").is_none() {
+    if crate::utils::process_env::var_os("IS_DEMO").is_none() {
         if let Some(organization) = account_info.organization {
             properties.push(property("Organization", organization));
         }
@@ -210,7 +210,7 @@ pub fn build_account_properties() -> Vec<Property> {
 }
 
 fn push_env_property(properties: &mut Vec<Property>, label: &'static str, key: &str) {
-    if let Some(value) = std::env::var(key).ok().filter(|value| !value.is_empty()) {
+    if let Some(value) = crate::utils::process_env::var(key).filter(|value| !value.is_empty()) {
         properties.push(property(label, value));
     }
 }
@@ -233,8 +233,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 crate::utils::env_utils::get_aws_region(),
             ));
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH")
-                    .ok()
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH")
                     .as_deref(),
             ) {
                 properties.push(unlabeled_property("AWS auth skipped"));
@@ -253,8 +252,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 crate::utils::env_utils::get_default_vertex_region(),
             ));
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH")
-                    .ok()
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH")
                     .as_deref(),
             ) {
                 properties.push(unlabeled_property("GCP auth skipped"));
@@ -273,8 +271,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 "ANTHROPIC_FOUNDRY_RESOURCE",
             );
             if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
-                    .ok()
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
                     .as_deref(),
             ) {
                 properties.push(unlabeled_property("Microsoft Foundry auth skipped"));

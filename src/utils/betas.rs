@@ -108,8 +108,7 @@ pub fn model_supports_auto_mode(model: &str) -> bool {
 
 fn has_1m_context(model: &str) -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_1M_CONTEXT")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_1M_CONTEXT")
             .as_deref(),
     ) && model.to_ascii_lowercase().contains("[1m]")
 }
@@ -154,8 +153,7 @@ pub fn should_include_first_party_only_betas() -> bool {
         get_api_provider(),
         ApiProvider::FirstParty | ApiProvider::Foundry
     ) && !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
             .as_deref(),
     )
 }
@@ -164,8 +162,7 @@ pub fn should_include_first_party_only_betas() -> bool {
 pub fn should_use_global_cache_scope() -> bool {
     get_api_provider() == ApiProvider::FirstParty
         && !crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
-                .ok()
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
                 .as_deref(),
         )
 }
@@ -229,7 +226,7 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
         beta_headers.push(CLAUDE_CODE_20250219_BETA_HEADER.to_string());
         if crate::utils::build_profile::has_internal_capability(
             crate::utils::build_profile::InternalCapability::Api,
-        ) && std::env::var("CLAUDE_CODE_ENTRYPOINT").ok().as_deref() == Some("cli")
+        ) && crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() == Some("cli")
             && !CLI_INTERNAL_BETA_HEADER.is_empty()
         {
             beta_headers.push(CLI_INTERNAL_BETA_HEADER.to_string());
@@ -241,8 +238,7 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
     }
 
     if !crate::utils::env_utils::is_env_truthy(
-        std::env::var("DISABLE_INTERLEAVED_THINKING")
-            .ok()
+        crate::utils::process_env::var("DISABLE_INTERLEAVED_THINKING")
             .as_deref(),
     ) && model_supports_isp(model)
     {
@@ -287,7 +283,7 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
         beta_headers.push(PROMPT_CACHING_SCOPE_BETA_HEADER.to_string());
     }
 
-    if let Ok(extra_betas) = std::env::var("ANTHROPIC_BETAS") {
+    if let Some(extra_betas) = crate::utils::process_env::var("ANTHROPIC_BETAS") {
         beta_headers.extend(
             extra_betas
                 .split(',')
@@ -362,7 +358,7 @@ pub fn get_merged_betas(model: &str, is_agentic_query: bool) -> Vec<String> {
         }
         if crate::utils::build_profile::has_internal_capability(
             crate::utils::build_profile::InternalCapability::Api,
-        ) && std::env::var("CLAUDE_CODE_ENTRYPOINT").ok().as_deref() == Some("cli")
+        ) && crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() == Some("cli")
             && !CLI_INTERNAL_BETA_HEADER.is_empty()
             && !beta_headers
                 .iter()

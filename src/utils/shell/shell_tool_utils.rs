@@ -13,8 +13,7 @@ pub fn is_powershell_tool_enabled() -> bool {
     is_powershell_tool_enabled_for_platform(
         std::env::consts::OS,
         crate::utils::build_profile::build_audience(),
-        std::env::var("CLAUDE_CODE_USE_POWERSHELL_TOOL")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_USE_POWERSHELL_TOOL")
             .as_deref(),
     )
 }

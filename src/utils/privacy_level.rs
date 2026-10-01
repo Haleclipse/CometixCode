@@ -21,7 +21,7 @@ pub fn get_privacy_level_with(get_env: &impl Fn(&str) -> Option<String>) -> Priv
 }
 
 pub fn get_privacy_level() -> PrivacyLevel {
-    get_privacy_level_with(&|key| std::env::var(key).ok())
+    get_privacy_level_with(&|key| crate::utils::process_env::var(key))
 }
 
 pub fn is_essential_traffic_only() -> bool {
@@ -33,8 +33,7 @@ pub fn is_telemetry_disabled() -> bool {
 }
 
 pub fn get_essential_traffic_only_reason() -> Option<&'static str> {
-    std::env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
-        .ok()
+    crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
         .is_some_and(|value| !value.is_empty())
         .then_some("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
 }

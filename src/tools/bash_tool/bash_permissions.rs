@@ -893,8 +893,7 @@ fn check_command_and_suggest_rules(
     }
 
     if !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
             .as_deref(),
     ) {
         let safety_result = super::bash_security::bash_command_is_safe_deprecated(command);
@@ -1293,8 +1292,7 @@ pub fn bash_tool_has_permission(
     }
 
     if !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
             .as_deref(),
     ) {
         let safety_result = super::bash_security::bash_command_is_safe_deprecated(command);

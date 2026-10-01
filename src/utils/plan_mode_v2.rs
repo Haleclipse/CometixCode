@@ -3,8 +3,7 @@
 //! Maps to CC `utils/planModeV2.ts:1-60`.
 
 fn env_count(key: &str) -> Option<usize> {
-    std::env::var(key)
-        .ok()
+    crate::utils::process_env::var(key)
         .and_then(|value| {
             // CC parseInt(value, 10) accepts a decimal prefix and JS whitespace.
             let trimmed = value.trim_start_matches(|ch: char| {
@@ -48,14 +47,14 @@ pub fn is_plan_mode_interview_phase_enabled() -> bool {
     ) {
         return true;
     }
-    match std::env::var("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE") {
-        Ok(value) => matches!(
+    match crate::utils::process_env::var("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE") {
+        Some(value) => matches!(
             value.trim().to_ascii_lowercase().as_str(),
             "1" | "true" | "yes" | "on"
         ),
         // GrowthBook delivery is intentionally absent. Preserve its source
         // default (`false`) rather than inventing a cohort assignment.
-        Err(_) => false,
+        None => false,
     }
 }
 

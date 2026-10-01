@@ -154,7 +154,7 @@ impl Default for FeedbackIssueEnvironment {
     fn default() -> Self {
         Self {
             platform: std::env::consts::OS.to_string(),
-            terminal: std::env::var("TERM").unwrap_or_else(|_| "unknown".to_string()),
+            terminal: crate::utils::process_env::var("TERM").unwrap_or_else(|| "unknown".to_string()),
             version: option_env!("CARGO_PKG_VERSION").map(ToOwned::to_owned),
         }
     }

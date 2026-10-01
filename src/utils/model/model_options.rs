@@ -73,7 +73,7 @@ fn tier_3_15_suffix() -> String {
 }
 
 fn env(name: &str) -> Option<String> {
-    std::env::var(name).ok().filter(|value| !value.is_empty())
+    crate::utils::process_env::var(name).filter(|value| !value.is_empty())
 }
 
 /// Maps to: CC `utils/model/modelOptions.ts:45-74` `getDefaultOptionForUser`.

@@ -20,8 +20,7 @@ pub fn is_agent_swarms_enabled_for(
 
 pub fn is_agent_swarms_enabled() -> bool {
     let external_opt_in = crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS")
             .as_deref(),
     ) || std::env::args().any(|arg| arg == "--agent-teams");
     is_agent_swarms_enabled_for(

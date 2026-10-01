@@ -89,8 +89,7 @@ pub fn add_to_history_with_pasted(
 ) {
     if !history_write_enabled()
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY")
-                .ok()
+            crate::utils::process_env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY")
                 .as_deref(),
         )
     {

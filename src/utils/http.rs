@@ -6,7 +6,7 @@
 //! were previously duplicated in API/MCP/WebFetch code.
 
 fn env_non_empty(key: &str) -> Option<String> {
-    std::env::var(key).ok().filter(|value| !value.is_empty())
+    crate::utils::process_env::var(key).filter(|value| !value.is_empty())
 }
 
 /// Maps to: CC `utils/http.ts#getUserAgent`.
@@ -21,7 +21,7 @@ pub fn get_user_agent() -> String {
         .map(|value| format!(", workload/{value}"))
         .unwrap_or_default();
     let user_type = crate::utils::build_profile::build_audience().as_str();
-    let entrypoint = std::env::var("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|_| "cli".to_string());
+    let entrypoint = crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").unwrap_or_else(|| "cli".to_string());
     format!(
         "claude-cli/{} ({user_type}, {entrypoint}{agent_sdk_version}{client_app}{workload})",
         crate::constants::product::USER_AGENT_VERSION

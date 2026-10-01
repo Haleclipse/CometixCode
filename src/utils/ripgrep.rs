@@ -124,7 +124,7 @@ fn get_ripgrep_config() -> RipgrepConfig {
         .get_or_init(|| {
             // USE_BUILTIN_RIPGREP falsy → prefer system `rg`.
             if crate::utils::env_utils::is_env_defined_falsy(
-                std::env::var("USE_BUILTIN_RIPGREP").ok().as_deref(),
+                crate::utils::process_env::var("USE_BUILTIN_RIPGREP").as_deref(),
             ) && system_rg_path().is_some()
             {
                 return RipgrepConfig {
@@ -217,8 +217,7 @@ fn platform_default_timeout_seconds() -> u64 {
 }
 
 fn default_timeout() -> Duration {
-    let parsed_seconds = std::env::var("CLAUDE_CODE_GLOB_TIMEOUT_SECONDS")
-        .ok()
+    let parsed_seconds = crate::utils::process_env::var("CLAUDE_CODE_GLOB_TIMEOUT_SECONDS")
         .map(|value| parse_timeout_seconds(&value))
         .unwrap_or(0);
     if parsed_seconds > 0 {
@@ -586,8 +585,8 @@ pub fn count_files_rounded_rg(
         }
     }
 
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
+    let home = crate::utils::process_env::var_os("HOME")
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
         .map(PathBuf::from);
     if let Some(home) = home {
         if let (Ok(resolved_dir), Ok(resolved_home)) =
@@ -875,8 +874,10 @@ fn system_rg_path_in(path: &std::ffi::OsStr) -> Option<PathBuf> {
     for dir in std::env::split_paths(path) {
         #[cfg(windows)]
         {
-            let path_ext =
-                std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+            let path_ext = crate::utils::process_env::startup_snapshot()
+                .var("PATHEXT")
+                .unwrap_or(".COM;.EXE;.BAT;.CMD")
+                .to_string();
             for extension in path_ext
                 .split(';')
                 .filter(|extension| !extension.is_empty())
@@ -898,9 +899,11 @@ fn system_rg_path_in(path: &std::ffi::OsStr) -> Option<PathBuf> {
     None
 }
 
-/// Resolve executable `rg` on PATH, mirroring CC's `which` / `where.exe` gate.
+/// Resolve executable `rg` on PATH, mirroring CC's `which` / `where.exe` gate
+/// (`findExecutable` → `whichSync`): Bun.which reads the startup PATH, as
+/// `utils/which.rs` does.
 pub fn system_rg_path() -> Option<PathBuf> {
-    system_rg_path_in(&std::env::var_os("PATH")?)
+    system_rg_path_in(crate::utils::process_env::startup_snapshot().var_os("PATH")?)
 }
 
 #[cfg(test)]

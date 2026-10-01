@@ -485,8 +485,7 @@ pub async fn process_mcp_result(
     }
 
     if crate::utils::env_utils::is_env_defined_falsy(
-        std::env::var("ENABLE_MCP_LARGE_OUTPUT_FILES")
-            .ok()
+        crate::utils::process_env::var("ENABLE_MCP_LARGE_OUTPUT_FILES")
             .as_deref(),
     ) || content_contains_images(&transformed.content)
     {
@@ -592,8 +591,7 @@ fn project_mcp_server_tools(
                         .as_ref()
                         .is_some_and(|config| config.transport == Transport::Sdk)
                         && crate::utils::env_utils::is_env_truthy(
-                            std::env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
-                                .ok()
+                            crate::utils::process_env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
                                 .as_deref(),
                         );
                     crate::types::tools::Tool {
@@ -831,8 +829,7 @@ pub fn resolve_mcp_tool_invocation(
                     .as_ref()
                     .is_some_and(|config| config.transport == Transport::Sdk)
                     && crate::utils::env_utils::is_env_truthy(
-                        std::env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
-                            .ok()
+                        crate::utils::process_env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX")
                             .as_deref(),
                     );
                 let candidate = if skip_prefix {
@@ -2048,8 +2045,7 @@ mod runtime {
     }
 
     fn connection_timeout_ms() -> u64 {
-        std::env::var("MCP_TIMEOUT")
-            .ok()
+        crate::utils::process_env::var("MCP_TIMEOUT")
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|value| *value > 0)
             .unwrap_or(DEFAULT_MCP_CONNECTION_TIMEOUT_MS)
@@ -2058,8 +2054,7 @@ mod runtime {
     /// Maps to: CC `services/mcp/client.ts:552-554`
     /// `getMcpServerConnectionBatchSize`.
     pub(super) fn get_mcp_server_connection_batch_size() -> usize {
-        std::env::var("MCP_SERVER_CONNECTION_BATCH_SIZE")
-            .ok()
+        crate::utils::process_env::var("MCP_SERVER_CONNECTION_BATCH_SIZE")
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|value| *value > 0)
             .unwrap_or(3)
@@ -2068,8 +2063,7 @@ mod runtime {
     /// Maps to: CC `services/mcp/client.ts:556-561`
     /// `getRemoteMcpServerConnectionBatchSize`.
     pub(super) fn get_remote_mcp_server_connection_batch_size() -> usize {
-        std::env::var("MCP_REMOTE_SERVER_CONNECTION_BATCH_SIZE")
-            .ok()
+        crate::utils::process_env::var("MCP_REMOTE_SERVER_CONNECTION_BATCH_SIZE")
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|value| *value > 0)
             .unwrap_or(20)
@@ -3639,7 +3633,7 @@ mod runtime {
         meta: Option<Map<String, Value>>,
     ) -> Result<Value, (anyhow::Error, Option<ScopedMcpServerConfig>)> {
         let timeout = Duration::from_millis(super::get_mcp_tool_timeout_ms_from_env(|key| {
-            std::env::var(key).ok()
+            crate::utils::process_env::var(key)
         }));
         let (peer, config) = {
             let clients = CONNECTED_CLIENTS.lock().unwrap();

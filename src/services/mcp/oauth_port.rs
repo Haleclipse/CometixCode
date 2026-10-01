@@ -25,7 +25,7 @@ pub fn build_redirect_uri(port: Option<u16>) -> String {
 
 /// Maps to: CC `services/mcp/oauthPort.ts:27-33` `getMcpOAuthCallbackPort`.
 fn get_mcp_oauth_callback_port() -> Option<u16> {
-    let value = std::env::var("MCP_OAUTH_CALLBACK_PORT").ok()?;
+    let value = crate::utils::process_env::var("MCP_OAUTH_CALLBACK_PORT")?;
     let digits = value
         .trim_start()
         .chars()

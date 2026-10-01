@@ -1345,7 +1345,7 @@ fn is_git_safe(args: &[String], raw_command: &str) -> bool {
 /// Maps to: CC `readOnlyValidation.ts:1703-1757#isGhSafe`.
 fn is_gh_safe(args: &[String], raw_command: &str) -> bool {
     // gh commands are network-dependent; only allow for ant users.
-    if std::env::var("USER_TYPE").ok().as_deref() != Some("ant") {
+    if crate::utils::process_env::var("USER_TYPE").as_deref() != Some("ant") {
         return false;
     }
 

@@ -93,9 +93,9 @@ async fn count_tokens_with_bedrock(
         "input": {"invokeModel": {"body": encoded_body}}
     }))
     .ok()?;
-    let endpoint = std::env::var("ANTHROPIC_BEDROCK_BASE_URL")
-        .or_else(|_| std::env::var("AWS_ENDPOINT_URL_BEDROCK_RUNTIME"))
-        .unwrap_or_else(|_| format!("https://bedrock-runtime.{region}.amazonaws.com"));
+    let endpoint = crate::utils::process_env::var("ANTHROPIC_BEDROCK_BASE_URL")
+        .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK_RUNTIME"))
+        .unwrap_or_else(|| format!("https://bedrock-runtime.{region}.amazonaws.com"));
     let response = crate::services::api::client::send_bedrock_request(
         reqwest::Method::POST,
         &endpoint,

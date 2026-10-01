@@ -441,8 +441,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
         }
     } else {
         if !crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_POLICY_SKILLS")
-                .ok()
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_POLICY_SKILLS")
                 .as_deref(),
         ) {
             let managed = crate::utils::settings::managed_path::get_managed_file_path()

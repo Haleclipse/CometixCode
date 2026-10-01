@@ -631,7 +631,7 @@ impl crate::tool::ToolCall for FileEditTool {
             let touched_paths = [full_path.clone()];
             let mut dynamic_skill_dirs = Vec::new();
             if !crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
             ) {
                 let skill_dirs = crate::skills::load_skills_dir::discover_skill_dirs_for_paths(
                     &touched_paths,
@@ -842,7 +842,7 @@ impl crate::tool::ToolCall for FileEditTool {
             // newStringBytes, replaceAll}) — joins with analytics.
 
             let git_diff = if crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
             ) && remote_git_diff_enabled()
             {
                 // CC: logEvent('tengu_tool_use_diff_computed', {isEditTool,

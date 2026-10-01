@@ -55,7 +55,7 @@ pub fn clear_leader_team_name() {
 
 /// Maps to: CC `utils/tasks.ts#getTaskListId`.
 pub fn get_task_list_id() -> String {
-    if let Ok(task_list_id) = std::env::var("CLAUDE_CODE_TASK_LIST_ID") {
+    if let Some(task_list_id) = crate::utils::process_env::var("CLAUDE_CODE_TASK_LIST_ID") {
         if !task_list_id.trim().is_empty() {
             return task_list_id;
         }
@@ -150,7 +150,7 @@ pub fn reset_task_list(task_list_id: &str) -> std::io::Result<()> {
 /// (`getIsNonInteractiveSession()`), not an env var.
 pub fn is_todo_v2_enabled() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_ENABLE_TASKS").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_TASKS").as_deref(),
     ) {
         return true;
     }

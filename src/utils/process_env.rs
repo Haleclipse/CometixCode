@@ -202,10 +202,18 @@ struct ProcessEnv {
 
 impl ProcessEnv {
     fn capture() -> Self {
+        Self::capture_from(std::env::vars_os())
+    }
+
+    /// When the inherited environment repeats a key, the first entry wins:
+    /// that is the one `getenv` returns, and so Node's `process.env.X`.
+    fn capture_from(variables: impl IntoIterator<Item = (OsString, OsString)>) -> Self {
         let mut table = EnvTable::default();
-        for (key, value) in std::env::vars_os() {
+        for (key, value) in variables {
             if let Some((key, value)) = normalize_assignment(&key, &value) {
-                table.insert(key, value);
+                if table.position(&key).is_none() {
+                    table.insert(key, value);
+                }
             }
         }
         let startup = Arc::new(table);
@@ -297,6 +305,11 @@ impl JsTruthy for Option<&OsStr> {
 /// only staging/publication; callers must not perform I/O, callbacks, awaits,
 /// or joins while it is held. A nested writer on the same thread panics before
 /// attempting the non-reentrant lock.
+///
+/// Any global read on this thread before `commit()` or drop panics too. Most
+/// code reads the carrier now, the debug and error logs included
+/// (`log_for_debugging`, `log_error`), so log after the commit, from values
+/// computed before or from [`EnvUpdate::snapshot`].
 pub(crate) fn begin_update() -> EnvUpdate<'static> {
     UPDATE_OPEN.with(|open| {
         assert!(
@@ -591,6 +604,26 @@ mod tests {
                     .then(|| (key.to_string(), value.to_string_lossy().into_owned()))
             })
             .collect()
+    }
+
+    /// A repeated key in the inherited environment keeps its first value,
+    /// the one `getenv` (and so Node's `process.env.X`) returns.
+    #[test]
+    fn capture_keeps_the_first_of_repeated_keys_as_getenv() {
+        let captured = ProcessEnv::capture_from([
+            (OsString::from("COMETIX_DUP"), OsString::from("first")),
+            (OsString::from("COMETIX_OTHER"), OsString::from("x")),
+            (OsString::from("COMETIX_DUP"), OsString::from("second")),
+        ]);
+        let snapshot = EnvSnapshot(Arc::clone(&captured.startup));
+        assert_eq!(snapshot.var("COMETIX_DUP"), Some("first"));
+        assert_eq!(
+            snapshot
+                .iter()
+                .map(|(key, _)| key.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            ["COMETIX_DUP", "COMETIX_OTHER"]
+        );
     }
 
     /// Rust process startup owns one frozen view, matching Node's one

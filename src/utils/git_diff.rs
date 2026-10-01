@@ -493,8 +493,7 @@ fn parse_raw_single_file_diff(
 }
 
 async fn get_single_file_diff_ref(root: &Path) -> String {
-    let base_branch = if let Some(base_ref) = std::env::var("CLAUDE_CODE_BASE_REF")
-        .ok()
+    let base_branch = if let Some(base_ref) = crate::utils::process_env::var("CLAUDE_CODE_BASE_REF")
         .filter(|value| !value.trim().is_empty())
     {
         base_ref

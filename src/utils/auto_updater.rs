@@ -105,8 +105,7 @@ pub fn current_version() -> String {
 /// build-time guard inside each child `checkForUpdates`.
 pub(crate) fn is_test_or_dev_env() -> bool {
     cfg!(test)
-        || std::env::var("NODE_ENV")
-            .ok()
+        || crate::utils::process_env::var("NODE_ENV")
             .is_some_and(|v| matches!(v.as_str(), "test" | "development"))
         || std::env::var("COMETIX_ENV")
             .ok()

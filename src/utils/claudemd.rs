@@ -121,7 +121,7 @@ pub fn discover_claude_md_files() -> Vec<ClaudeMdFile> {
 
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
     );
     let files = discover_claude_md_files_with_options(include_default_discovery, &additional_dirs);
 
@@ -316,8 +316,7 @@ pub fn discover_claude_md_files_with_external_policy(
     }
 
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD")
             .as_deref(),
     ) {
         for dir in additional_dirs {
@@ -422,7 +421,7 @@ pub fn should_show_claude_md_external_includes_warning() -> bool {
 
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
     );
     let files = discover_claude_md_files_with_external_policy(
         include_default_discovery,

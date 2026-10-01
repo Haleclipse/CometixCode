@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 /// Maps to: CC `services/mcp/config.ts#getEnterpriseMcpFilePath`.
 pub fn get_enterprise_mcp_file_path_readonly() -> PathBuf {
-    if let Ok(path) = std::env::var("CLAUDE_CODE_MANAGED_SETTINGS_PATH") {
+    if let Some(path) = crate::utils::process_env::var("CLAUDE_CODE_MANAGED_SETTINGS_PATH") {
         return PathBuf::from(path).join("managed-mcp.json");
     }
 

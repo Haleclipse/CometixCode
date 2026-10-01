@@ -67,7 +67,7 @@ pub fn leader_session_id_from_env(iterm_session_id: Option<&str>) -> Option<Stri
 }
 
 fn get_leader_session_id() -> Option<String> {
-    leader_session_id_from_env(std::env::var("ITERM_SESSION_ID").ok().as_deref())
+    leader_session_id_from_env(crate::utils::process_env::var("ITERM_SESSION_ID").as_deref())
 }
 
 /// Pure split-target/orientation calculation from CC

@@ -354,7 +354,7 @@ pub fn get_oauth_org_not_allowed_error_message() -> &'static str {
 ///
 /// Maps to: CC services/api/errors.ts:217-219
 fn is_ccr_mode() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref())
+    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
 }
 
 // ---------------------------------------------------------------------------
@@ -673,7 +673,7 @@ pub fn classify_api_error(error: &ApiErrorInfo) -> ApiErrorClass {
 
     // Bedrock model access
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_BEDROCK").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK").as_deref(),
     ) && msg_lower.contains("model id")
     {
         return ApiErrorClass::BedrockModelAccess;
@@ -1058,7 +1058,7 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
 
     // --- Bedrock model ID errors ---
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_USE_BEDROCK").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK").as_deref(),
     ) && msg_lower.contains("model id")
     {
         let switch_cmd = if get_is_non_interactive_session() {

@@ -303,8 +303,7 @@ fn can_read_agent_output_file(context: &crate::tool::ToolUseContext) -> bool {
 /// Maps to CC `AgentTool.tsx#getAutoBackgroundMs` env branch.
 fn get_auto_background_ms_for_agent_tool() -> Option<u64> {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_AUTO_BACKGROUND_TASKS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_AUTO_BACKGROUND_TASKS")
             .as_deref(),
     )
     .then_some(120_000)

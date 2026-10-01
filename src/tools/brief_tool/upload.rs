@@ -66,8 +66,7 @@ fn get_bridge_token_override() -> Option<String> {
     ) {
         return None;
     }
-    std::env::var("CLAUDE_BRIDGE_OAUTH_TOKEN")
-        .ok()
+    crate::utils::process_env::var("CLAUDE_BRIDGE_OAUTH_TOKEN")
         .filter(|token| !token.is_empty())
 }
 
@@ -78,8 +77,7 @@ fn get_bridge_base_url_override() -> Option<String> {
     ) {
         return None;
     }
-    std::env::var("CLAUDE_BRIDGE_BASE_URL")
-        .ok()
+    crate::utils::process_env::var("CLAUDE_BRIDGE_BASE_URL")
         .filter(|base_url| !base_url.is_empty())
 }
 
@@ -104,7 +102,7 @@ fn get_bridge_base_url() -> Option<String> {
     if let Some(override_url) = get_bridge_base_url_override() {
         return Some(override_url);
     }
-    if let Ok(base_url) = std::env::var("ANTHROPIC_BASE_URL") {
+    if let Some(base_url) = crate::utils::process_env::var("ANTHROPIC_BASE_URL") {
         if !base_url.is_empty() {
             return Some(base_url);
         }

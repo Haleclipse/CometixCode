@@ -135,7 +135,7 @@ static HAS_DEV_CHANNELS: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(f
 /// it, so the initial value is derived here.
 static USER_MSG_OPT_IN: LazyLock<RwLock<bool>> = LazyLock::new(|| {
     RwLock::new(crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_BRIEF").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_BRIEF").as_deref(),
     ))
 });
 /// Maps to: CC `bootstrap/state.ts:82` `STATE.questionPreviewFormat`.
@@ -146,8 +146,7 @@ static USER_MSG_OPT_IN: LazyLock<RwLock<bool>> = LazyLock::new(|| {
 static QUESTION_PREVIEW_FORMAT: LazyLock<RwLock<Option<QuestionPreviewFormat>>> =
     LazyLock::new(|| {
         RwLock::new(
-            match std::env::var("CLAUDE_CODE_QUESTION_PREVIEW_FORMAT")
-                .unwrap_or_default()
+            match crate::utils::process_env::var("CLAUDE_CODE_QUESTION_PREVIEW_FORMAT").unwrap_or_default()
                 .as_str()
             {
                 "html" => Some(QuestionPreviewFormat::Html),
@@ -760,7 +759,7 @@ impl Drop for IsInteractiveGuard {
 /// `preferThirdPartyAuthentication`.
 pub fn prefer_third_party_authentication() -> bool {
     get_is_non_interactive_session()
-        && std::env::var("CLAUDE_CODE_ENTRYPOINT").ok().as_deref() != Some("claude-vscode")
+        && crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() != Some("claude-vscode")
 }
 
 /// Maps to CC `getKairosActive()`.

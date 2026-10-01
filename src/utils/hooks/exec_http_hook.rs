@@ -136,7 +136,7 @@ pub fn interpolate_env_vars_with(
 
 /// Maps to: CC `interpolateEnvVars(...)`.
 pub fn interpolate_env_vars(value: &str, allowed_env_vars: &HashSet<String>) -> String {
-    interpolate_env_vars_with(value, allowed_env_vars, |name| std::env::var(name).ok())
+    interpolate_env_vars_with(value, allowed_env_vars, |name| crate::utils::process_env::var(name))
 }
 
 fn effective_allowed_env_vars(hook: &HttpHook, policy: &HttpHookPolicy) -> HashSet<String> {
@@ -268,7 +268,7 @@ pub async fn exec_http_hook_with_policy(
         }
     }
 
-    let headers = match build_headers_with(hook, policy, |name| std::env::var(name).ok()) {
+    let headers = match build_headers_with(hook, policy, |name| crate::utils::process_env::var(name)) {
         Ok(headers) => headers,
         Err(error) => {
             return ExecHttpHookResult {

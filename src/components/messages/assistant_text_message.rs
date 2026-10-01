@@ -184,8 +184,8 @@ fn assistant_text_special_response(
         | ORG_DISABLED_ERROR_MESSAGE_ENV_KEY
         | ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH
         | TOKEN_REVOKED_ERROR_MESSAGE => Some(text.to_string()),
-        API_TIMEOUT_ERROR_MESSAGE => Some(match std::env::var("API_TIMEOUT_MS") {
-            Ok(ms) if !ms.trim().is_empty() => {
+        API_TIMEOUT_ERROR_MESSAGE => Some(match crate::utils::process_env::var("API_TIMEOUT_MS") {
+            Some(ms) if !ms.trim().is_empty() => {
                 format!("{API_TIMEOUT_ERROR_MESSAGE} (API_TIMEOUT_MS={ms}ms, try increasing it)")
             }
             _ => API_TIMEOUT_ERROR_MESSAGE.to_string(),

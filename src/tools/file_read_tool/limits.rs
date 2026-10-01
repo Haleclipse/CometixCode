@@ -25,7 +25,7 @@ pub struct FileReadingLimits {
 /// Maps to: CC `getEnvMaxTokens` (:24-33), including `parseInt(..., 10)`
 /// decimal-prefix behavior and JavaScript Number overflow.
 fn get_env_max_tokens() -> Option<f64> {
-    let override_value = std::env::var("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS").ok()?;
+    let override_value = crate::utils::process_env::var("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS")?;
     if override_value.is_empty() {
         return None;
     }

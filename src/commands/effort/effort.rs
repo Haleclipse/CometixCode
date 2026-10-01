@@ -160,7 +160,7 @@ fn set_effort_value(effort_value: EffortValue, model: &str) -> EffortCommandResu
         None => false,
     };
     if env_conflicts {
-        let env_raw = std::env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
+        let env_raw = crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
         if persistable.is_none() {
             return EffortCommandResult::with_update(
                 format!(
@@ -241,7 +241,7 @@ fn unset_effort_level() -> EffortCommandResult {
 
     unpin_launch_effort();
     if matches!(get_effort_env_override(), Some(Some(_))) {
-        let env_raw = std::env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
+        let env_raw = crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
         return EffortCommandResult::with_update(
             format!(
                 "Cleared effort from settings, but CLAUDE_CODE_EFFORT_LEVEL={env_raw} still controls this session"
@@ -280,7 +280,7 @@ fn set_ultracode_effort(model: &str) -> EffortCommandResult {
     };
     let value = EffortValue::Named("xhigh".to_string());
     if env_conflicts {
-        let env_raw = std::env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
+        let env_raw = crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
         return EffortCommandResult::with_ultracode(
             format!(
                 "CLAUDE_CODE_EFFORT_LEVEL={env_raw} overrides effort this session — clear it and ultracode takes over"

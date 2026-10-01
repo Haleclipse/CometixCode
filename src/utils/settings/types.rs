@@ -659,7 +659,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
         // remaining internal-only schema fields.
         // @cometix: persist `max` as a production effortLevel (CC 2.1.88: ant-only).
         let is_ant = crate::utils::build_profile::build_audience().is_internal();
-        let xaa = is_env_truthy(std::env::var("CLAUDE_CODE_ENABLE_XAA").ok().as_deref());
+        let xaa = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_ENABLE_XAA").as_deref());
 
         let mut shape = vec![
             (

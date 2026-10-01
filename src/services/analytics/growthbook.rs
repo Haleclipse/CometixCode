@@ -36,8 +36,7 @@ fn get_env_overrides() -> Option<Map<String, Value>> {
         if crate::utils::build_profile::has_internal_capability(
             crate::utils::build_profile::InternalCapability::Api,
         ) {
-            cache.overrides = std::env::var("CLAUDE_INTERNAL_FC_OVERRIDES")
-                .ok()
+            cache.overrides = crate::utils::process_env::var("CLAUDE_INTERNAL_FC_OVERRIDES")
                 .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
                 .and_then(|value| value.as_object().cloned());
         }

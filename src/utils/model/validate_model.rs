@@ -29,8 +29,7 @@ pub async fn validate_model(model: &str) -> Result<(), String> {
     // the cache and the live probe.
     let lower = normalized.to_ascii_lowercase();
     if crate::utils::model::aliases::is_model_alias(&lower)
-        || std::env::var("ANTHROPIC_CUSTOM_MODEL_OPTION")
-            .ok()
+        || crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION")
             .as_deref()
             == Some(normalized)
     {

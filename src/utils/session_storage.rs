@@ -132,8 +132,7 @@ impl Project {
         if !SESSION_WRITE_ENABLED
             || crate::bootstrap::state::is_session_persistence_disabled()
             || crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY")
-                    .ok()
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY")
                     .as_deref(),
             )
         {
@@ -2255,8 +2254,7 @@ fn read_transcript_entries(path: &Path) -> Vec<serde_json::Value> {
 
     if file_size > SKIP_PRECOMPACT_THRESHOLD
         && !crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP")
-                .ok()
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP")
                 .as_deref(),
         )
     {
@@ -4790,8 +4788,7 @@ fn attachment_row_is_withheld(payload: &serde_json::Value) -> bool {
     let is_hook_context =
         payload.get("type").and_then(|value| value.as_str()) == Some("hook_additional_context");
     let keep_hook_context = crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT")
             .as_deref(),
     );
     !(is_hook_context && keep_hook_context)

@@ -461,9 +461,7 @@ fn expand_path_for_display(path: &str, cwd: &std::path::Path) -> String {
 }
 
 fn home_dir() -> Option<String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
+    crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
 }
 
 #[cfg(test)]

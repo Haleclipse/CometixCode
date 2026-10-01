@@ -9,7 +9,7 @@ pub const CRON_LIST_TOOL_NAME: &str = "CronList";
 /// Cometix reads the hardcoded feature-switch collection instead of GrowthBook.
 pub fn is_kairos_cron_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_CRON").ok().as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_CRON").as_deref(),
     ) && crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::KairosCron,
     )

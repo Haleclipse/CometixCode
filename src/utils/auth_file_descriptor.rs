@@ -31,8 +31,7 @@ fn get_credential_from_fd(
         return cached;
     }
 
-    let Some(fd_env) = std::env::var(env_var)
-        .ok()
+    let Some(fd_env) = crate::utils::process_env::var(env_var)
         .filter(|value| !value.is_empty())
     else {
         let token = read_token_from_well_known_file(well_known_path, label);

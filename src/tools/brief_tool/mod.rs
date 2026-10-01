@@ -13,7 +13,7 @@ pub fn is_brief_entitled() -> bool {
     }
     crate::bootstrap::state::get_kairos_active()
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_BRIEF").ok().as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_BRIEF").as_deref(),
         )
         || crate::utils::feature_flags::feature_enabled(
             crate::utils::feature_flags::FeatureFlag::KairosBriefEntitlement,
@@ -191,7 +191,7 @@ async fn resolve_attachments(
         .get_app_state()
         .is_some_and(|state| state.repl_bridge_enabled)
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_BRIEF_UPLOAD").ok().as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_BRIEF_UPLOAD").as_deref(),
         );
     let uploads = stated.iter().map(|attachment| {
         let ctx = upload::BriefUploadContext {

@@ -193,7 +193,7 @@ pub fn get_oauth_config_for_audience(
 /// Maps to: CC `constants/oauth.ts:186-238` `getOauthConfig`.
 pub fn get_oauth_config() -> anyhow::Result<OauthConfig> {
     get_oauth_config_for_audience(
-        |key| std::env::var(key).ok(),
+        |key| crate::utils::process_env::var(key),
         crate::utils::build_profile::build_audience(),
     )
 }
@@ -226,7 +226,7 @@ pub fn file_suffix_for_oauth_config_for_audience(
 /// Maps to: CC `constants/oauth.ts:18-29` `fileSuffixForOauthConfig`.
 pub fn file_suffix_for_oauth_config() -> String {
     file_suffix_for_oauth_config_for_audience(
-        |key| std::env::var(key).ok(),
+        |key| crate::utils::process_env::var(key),
         crate::utils::build_profile::build_audience(),
     )
 }

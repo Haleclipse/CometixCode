@@ -56,7 +56,7 @@ impl RateLimitUiContext {
             has_billing_access,
             overage_provisioning_allowed,
             is_remote_mode: crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
             ),
         }
     }

@@ -7,7 +7,7 @@ pub const BASH_MAX_OUTPUT_DEFAULT: usize = 30_000;
 
 /// Maps to CC `utils/shell/outputLimits.ts#getMaxOutputLength`.
 pub fn get_max_output_length() -> usize {
-    let value = std::env::var("BASH_MAX_OUTPUT_LENGTH").ok();
+    let value = crate::utils::process_env::var("BASH_MAX_OUTPUT_LENGTH");
     validate_bounded_int_env_var(
         "BASH_MAX_OUTPUT_LENGTH",
         value.as_deref(),

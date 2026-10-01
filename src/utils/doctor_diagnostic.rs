@@ -107,7 +107,7 @@ pub fn get_normalized_paths() -> (String, String) {
 
 /// Maps to CC `getCurrentInstallationType()`.
 pub fn get_current_installation_type() -> InstallationType {
-    if std::env::var("NODE_ENV").ok().as_deref() == Some("development") {
+    if crate::utils::process_env::var("NODE_ENV").as_deref() == Some("development") {
         return InstallationType::Development;
     }
 
@@ -141,7 +141,7 @@ pub fn get_current_installation_type() -> InstallationType {
 
 /// Maps to CC local `getInstallationPath()`.
 pub fn get_installation_path() -> String {
-    if std::env::var("NODE_ENV").ok().as_deref() == Some("development") {
+    if crate::utils::process_env::var("NODE_ENV").as_deref() == Some("development") {
         return std::env::current_dir()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|_| "unknown".to_string());
@@ -226,8 +226,7 @@ pub fn detect_configuration_issues(installation_type: &InstallationType) -> Vec<
         });
     }
 
-    let installation_checks_disabled = std::env::var("DISABLE_INSTALLATION_CHECKS")
-        .ok()
+    let installation_checks_disabled = crate::utils::process_env::var("DISABLE_INSTALLATION_CHECKS")
         .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"));
     if !installation_checks_disabled {
         if *installation_type == InstallationType::NpmLocal && install_method != "local" {
@@ -444,7 +443,7 @@ fn path_contains_local_bin() -> bool {
         return false;
     };
     let local_bin = home.join(".local").join("bin");
-    let Some(path) = std::env::var_os("PATH") else {
+    let Some(path) = crate::utils::process_env::var_os("PATH") else {
         return false;
     };
     std::env::split_paths(&path).any(|entry| same_path_text(&entry, &local_bin))
@@ -462,7 +461,7 @@ fn normalize_path_text(path: &Path) -> String {
 }
 
 fn which_in_path(binary: &str) -> Option<String> {
-    let path = std::env::var_os("PATH")?;
+    let path = crate::utils::process_env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         let candidate = dir.join(binary);
         if candidate.is_file() {
@@ -479,9 +478,9 @@ fn which_in_path(binary: &str) -> Option<String> {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
+    crate::utils::process_env::var_os("HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE").map(PathBuf::from))
 }
 
 #[cfg(test)]

@@ -35,8 +35,7 @@ pub fn get_record_file_path() -> Option<PathBuf> {
     if !crate::utils::build_profile::has_internal_capability(
         crate::utils::build_profile::InternalCapability::Ui,
     ) || !is_env_truthy(
-        std::env::var("CLAUDE_CODE_TERMINAL_RECORDING")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_TERMINAL_RECORDING")
             .as_deref(),
     ) {
         return None;
@@ -179,7 +178,7 @@ pub fn install_asciicast_recorder() -> io::Result<()> {
     let start_time = Instant::now();
     let header = json!({"version":2,"width":cols,"height":rows,
         "timestamp":SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
-        "env":{"SHELL":std::env::var("SHELL").unwrap_or_default(),"TERM":std::env::var("TERM").unwrap_or_default()}});
+        "env":{"SHELL":crate::utils::process_env::var("SHELL").unwrap_or_default(),"TERM":crate::utils::process_env::var("TERM").unwrap_or_default()}});
     // fsOperations.ts#mkdirSync uses recursive:true (:528-537).
     if let Some(parent) = file_path.parent() {
         let _ = fs::create_dir_all(parent);

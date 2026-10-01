@@ -75,7 +75,7 @@ pub fn get_effective_context_window_size(model: &str) -> i64 {
             .min(MAX_OUTPUT_TOKENS_FOR_SUMMARY);
     let mut context_window = crate::utils::context::get_context_window_for_model(model, &[]);
 
-    if let Ok(value) = std::env::var("CLAUDE_CODE_AUTO_COMPACT_WINDOW") {
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_COMPACT_WINDOW") {
         if let Ok(parsed) = value.parse::<i64>() {
             if parsed > 0 {
                 context_window = context_window.min(parsed);
@@ -91,7 +91,7 @@ pub fn get_auto_compact_threshold(model: &str) -> i64 {
     let effective_context_window = get_effective_context_window_size(model);
     let autocompact_threshold = effective_context_window - AUTOCOMPACT_BUFFER_TOKENS;
 
-    if let Ok(value) = std::env::var("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") {
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE") {
         if let Ok(parsed) = value.parse::<f64>() {
             if parsed > 0.0 && parsed <= 100.0 {
                 let percentage_threshold =
@@ -110,9 +110,9 @@ pub fn is_auto_compact_enabled() -> bool {
 }
 
 pub fn is_auto_compact_enabled_with_config(config: &crate::utils::config::GlobalConfig) -> bool {
-    if crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_COMPACT").ok().as_deref())
+    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_COMPACT").as_deref())
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("DISABLE_AUTO_COMPACT").ok().as_deref(),
+            crate::utils::process_env::var("DISABLE_AUTO_COMPACT").as_deref(),
         )
     {
         return false;
@@ -148,8 +148,7 @@ pub fn calculate_token_warning_state_with_config(
     let error_threshold = threshold - ERROR_THRESHOLD_BUFFER_TOKENS;
     let actual_context_window = get_effective_context_window_size(model);
     let default_blocking_limit = actual_context_window - MANUAL_COMPACT_BUFFER_TOKENS;
-    let blocking_limit = std::env::var("CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE")
-        .ok()
+    let blocking_limit = crate::utils::process_env::var("CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE")
         .and_then(|value| value.parse::<i64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default_blocking_limit);
@@ -203,7 +202,7 @@ pub async fn auto_compact_if_needed(
     tracking: Option<AutoCompactTrackingState>,
     snip_tokens_freed: i64,
 ) -> AutocompactResult {
-    if crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_COMPACT").ok().as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_COMPACT").as_deref()) {
         return AutocompactResult {
             messages: messages_for_query,
             compacted: false,

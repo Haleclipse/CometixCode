@@ -243,8 +243,7 @@ fn should_1h_cache_ttl(query_source: Option<&str>) -> bool {
     // Maps to CC `services/api/claude.ts:393-434` `should1hCacheTTL(...)`.
     let provider = crate::utils::model::providers::get_api_provider();
     let bedrock_opt_in = crate::utils::env_utils::is_env_truthy(
-        std::env::var("ENABLE_PROMPT_CACHING_1H_BEDROCK")
-            .ok()
+        crate::utils::process_env::var("ENABLE_PROMPT_CACHING_1H_BEDROCK")
             .as_deref(),
     );
     should_1h_cache_ttl_with_inputs(
@@ -543,7 +542,7 @@ pub fn get_extra_body_params(
     let mut result = serde_json::Map::new();
 
     // Parse user's extra body parameters first
-    if let Ok(extra_body_str) = std::env::var("CLAUDE_CODE_EXTRA_BODY") {
+    if let Some(extra_body_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_BODY") {
         if !extra_body_str.is_empty() {
             match crate::utils::json::safe_parse_json(Some(&extra_body_str), true).as_ref() {
                 JsonValue::Object(obj) => {
@@ -607,15 +606,14 @@ pub fn get_extra_body_params(
 pub fn get_prompt_caching_enabled(model: &str) -> bool {
     // Global disable takes precedence
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("DISABLE_PROMPT_CACHING").ok().as_deref(),
+        crate::utils::process_env::var("DISABLE_PROMPT_CACHING").as_deref(),
     ) {
         return false;
     }
 
     // Check if we should disable for small/fast model
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("DISABLE_PROMPT_CACHING_HAIKU")
-            .ok()
+        crate::utils::process_env::var("DISABLE_PROMPT_CACHING_HAIKU")
             .as_deref(),
     ) {
         let small_fast_model = get_small_fast_model();
@@ -626,8 +624,7 @@ pub fn get_prompt_caching_enabled(model: &str) -> bool {
 
     // Check if we should disable for default Sonnet
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("DISABLE_PROMPT_CACHING_SONNET")
-            .ok()
+        crate::utils::process_env::var("DISABLE_PROMPT_CACHING_SONNET")
             .as_deref(),
     ) {
         let default_sonnet = get_default_sonnet_model();
@@ -638,7 +635,7 @@ pub fn get_prompt_caching_enabled(model: &str) -> bool {
 
     // Check if we should disable for default Opus
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("DISABLE_PROMPT_CACHING_OPUS").ok().as_deref(),
+        crate::utils::process_env::var("DISABLE_PROMPT_CACHING_OPUS").as_deref(),
     ) {
         let default_opus = get_default_opus_model();
         if model == default_opus {
@@ -764,7 +761,7 @@ pub fn get_api_metadata() -> ApiMetadata {
     let mut extra = serde_json::Map::new();
 
     // Parse CLAUDE_CODE_EXTRA_METADATA env var
-    if let Ok(extra_str) = std::env::var("CLAUDE_CODE_EXTRA_METADATA") {
+    if let Some(extra_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_METADATA") {
         if !extra_str.is_empty() {
             match crate::utils::json::safe_parse_json(Some(&extra_str), false).as_ref() {
                 JsonValue::Object(obj) => {
@@ -1762,8 +1759,7 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
     // Env var override: CLAUDE_CODE_MAX_OUTPUT_TOKENS
     crate::utils::env_validation::validate_bounded_int_env_var(
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
-        std::env::var("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
             .as_deref(),
         default_tokens as usize,
         max_output.upper_limit as usize,
@@ -1781,14 +1777,14 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
 /// Reads API_TIMEOUT_MS when set. Remote sessions default to 120s.
 /// Otherwise defaults to 300s.
 pub fn get_nonstreaming_fallback_timeout_ms() -> u64 {
-    if let Ok(override_str) = std::env::var("API_TIMEOUT_MS") {
+    if let Some(override_str) = crate::utils::process_env::var("API_TIMEOUT_MS") {
         if let Ok(ms) = override_str.parse::<u64>() {
             if ms > 0 {
                 return ms;
             }
         }
     }
-    if crate::utils::env_utils::is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref()) {
         120_000
     } else {
         300_000
@@ -2662,8 +2658,7 @@ fn params_from_context(
         sdk_thinking,
         anthropic_sdk::resources::messages::ThinkingConfig::Disabled
     ) && !crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_THINKING")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_THINKING")
             .as_deref(),
     );
     let context_management = if betas.contains(&CONTEXT_MANAGEMENT_BETA_HEADER.to_string()) {
@@ -2778,7 +2773,7 @@ fn sdk_error_message_without_secrets(error: impl std::fmt::Display) -> String {
         "CLAUDE_CODE_OAUTH_TOKEN",
     ] {
         sanitized = sanitized.replace(key, "<redacted>");
-        if let Ok(secret) = std::env::var(key) {
+        if let Some(secret) = crate::utils::process_env::var(key) {
             let trimmed = secret.trim();
             if !trimmed.is_empty() {
                 sanitized = sanitized.replace(trimmed, "<redacted>");
@@ -3707,16 +3702,14 @@ fn streaming_attempt_options_from_retry_context(
 /// Maps to CC `CLAUDE_ENABLE_STREAM_WATCHDOG` gate around the idle timers.
 fn stream_watchdog_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_ENABLE_STREAM_WATCHDOG")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_ENABLE_STREAM_WATCHDOG")
             .as_deref(),
     )
 }
 
 /// Maps to CC `STREAM_IDLE_TIMEOUT_MS` (`CLAUDE_STREAM_IDLE_TIMEOUT_MS` or 90s).
 fn stream_idle_timeout_ms() -> u64 {
-    std::env::var("CLAUDE_STREAM_IDLE_TIMEOUT_MS")
-        .ok()
+    crate::utils::process_env::var("CLAUDE_STREAM_IDLE_TIMEOUT_MS")
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|ms| *ms > 0)
         .unwrap_or(90_000)
@@ -4449,8 +4442,7 @@ fn is_non_streaming_fallback_disabled() -> bool {
     // are not available in Cometix's direct API adapter, so only the explicit
     // env kill switch is honored here.
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK")
             .as_deref(),
     )
 }

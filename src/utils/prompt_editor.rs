@@ -147,9 +147,13 @@ fn command_exists(command: &str) -> bool {
     if candidate.components().count() > 1 {
         return candidate.is_file();
     }
-    std::env::var_os("PATH").is_some_and(|path| {
-        std::env::split_paths(&path).any(|directory| directory.join(command).is_file())
-    })
+    // CC `editor.ts:14` resolves through `which`, which reads the startup
+    // PATH (Bun.which), as `utils/which.rs` does.
+    crate::utils::process_env::startup_snapshot()
+        .var_os("PATH")
+        .is_some_and(|path| {
+            std::env::split_paths(path).any(|directory| directory.join(command).is_file())
+        })
 }
 
 /// Resolves `$VISUAL`, `$EDITOR`, then the official `code`, `vi`, `nano`
@@ -169,12 +173,10 @@ pub fn external_editor_command() -> Option<(String, Vec<String>)> {
 }
 
 fn resolve_external_editor_command() -> Option<(String, Vec<String>)> {
-    let configured = std::env::var("VISUAL")
-        .ok()
+    let configured = crate::utils::process_env::var("VISUAL")
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
-            std::env::var("EDITOR")
-                .ok()
+            crate::utils::process_env::var("EDITOR")
                 .filter(|value| !value.trim().is_empty())
         });
     let editor = configured.or_else(|| {

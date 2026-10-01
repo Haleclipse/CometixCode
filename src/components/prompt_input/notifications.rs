@@ -214,7 +214,7 @@ pub fn direct_footer_row_count_from_app(
             count += 1;
         }
     }
-    let is_remote_mode = is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref());
+    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
     if auth_status_indicator(api_key_status, is_remote_mode).is_some() {
         count += 1;
     }
@@ -351,7 +351,7 @@ pub fn Notifications(
         },
         std::sync::Arc::as_ptr(&props.messages) as usize,
     );
-    let is_remote_mode = is_env_truthy(std::env::var("CLAUDE_CODE_REMOTE").ok().as_deref());
+    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
     // Same documented operand-order deviation as
     // `direct_footer_row_count_from_app` / the bridge indicator: CC's
     // `getSubscriptionType()` is an in-memory read, the Rust one performs

@@ -25,7 +25,7 @@ pub struct QueryConfigGates {
 /// starting analytics, or executing model/tool I/O.
 pub fn build_query_config() -> QueryConfig {
     build_query_config_from_env_and_session(
-        |key| std::env::var(key).ok(),
+        |key| crate::utils::process_env::var(key),
         || SessionId(crate::bootstrap::state::get_session_id()),
     )
 }

@@ -74,9 +74,9 @@ fn normalize_path_for_comparison(path: &Path) -> String {
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME")
+    crate::utils::process_env::var_os("HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+        .or_else(|| crate::utils::process_env::var_os("USERPROFILE").map(PathBuf::from))
 }
 
 /// Maps to: CC `utils/markdownConfigLoader.ts#getProjectDirsUpToHome`.

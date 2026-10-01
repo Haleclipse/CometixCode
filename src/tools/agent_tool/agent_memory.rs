@@ -126,7 +126,7 @@ pub fn load_agent_memory_prompt(agent_type: &str, scope: AgentMemoryScope, cwd: 
 
     let memory_dir = get_agent_memory_dir(agent_type, scope, cwd);
     let mut extra_guidelines = vec![scope_note.to_string()];
-    if let Ok(extra) = std::env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES") {
+    if let Some(extra) = crate::utils::process_env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES") {
         let trimmed = extra.trim();
         if !trimmed.is_empty() {
             extra_guidelines.push(trimmed.to_string());

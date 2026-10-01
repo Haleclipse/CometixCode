@@ -499,8 +499,7 @@ pub fn is_launch_effort_pinned(model: &str) -> bool {
     } else if normalized.contains("opus-4-8") {
         "unpinOpus48LaunchEffort"
     } else if normalized.contains("fable-5")
-        || std::env::var("ANTHROPIC_DEFAULT_FABLE_MODEL")
-            .ok()
+        || crate::utils::process_env::var("ANTHROPIC_DEFAULT_FABLE_MODEL")
             .filter(|value| !value.is_empty())
             .is_some_and(|value| {
                 value.to_lowercase().trim_end_matches("[1m]")

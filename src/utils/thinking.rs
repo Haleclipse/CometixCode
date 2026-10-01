@@ -107,7 +107,7 @@ pub fn parse_js_decimal_i64(value: &str) -> Option<i64> {
 /// `alwaysThinkingEnabled` from merged settings, same as CC `getSettingsWithErrors()`.
 pub fn should_enable_thinking_by_default(settings: &SettingsJson) -> bool {
     // JS: if (process.env.MAX_THINKING_TOKENS) — empty string is falsy.
-    if let Ok(value) = std::env::var("MAX_THINKING_TOKENS") {
+    if let Some(value) = crate::utils::process_env::var("MAX_THINKING_TOKENS") {
         if !value.is_empty() {
             // parseInt → NaN yields false for `NaN > 0`.
             return parse_js_decimal_i64(&value).is_some_and(|tokens| tokens > 0);
@@ -203,7 +203,7 @@ pub fn production_thinking_config_from_env_and_settings(settings: &SettingsJson)
 
     // main.tsx else branch when no --thinking: env MAX_THINKING_TOKENS only
     // (CLI maxThinkingTokens is applied by resolve_thinking_launch in main).
-    if let Ok(value) = std::env::var("MAX_THINKING_TOKENS") {
+    if let Some(value) = crate::utils::process_env::var("MAX_THINKING_TOKENS") {
         if !value.is_empty() {
             if let Some(tokens) = parse_js_decimal_i64(&value) {
                 if tokens > 0 {

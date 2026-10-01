@@ -69,8 +69,12 @@ fn is_executable(shell_path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+/// CC `Shell.ts:99` `which`: Bun.which reads the startup PATH, as
+/// `utils/which.rs` does.
 fn which(executable: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = crate::utils::process_env::startup_snapshot()
+        .var_os("PATH")?
+        .to_os_string();
     std::env::split_paths(&path)
         .map(|directory| {
             if cfg!(windows) {
@@ -87,7 +91,7 @@ pub fn find_suitable_shell() -> Result<PathBuf, String> {
     if cfg!(windows) {
         return crate::utils::windows_paths::find_git_bash_path();
     }
-    if let Some(override_path) = std::env::var_os("CLAUDE_CODE_SHELL") {
+    if let Some(override_path) = crate::utils::process_env::var_os("CLAUDE_CODE_SHELL") {
         let override_path = PathBuf::from(override_path);
         let text = override_path.display().to_string();
         if (text.contains("bash") || text.contains("zsh")) && is_executable(&override_path) {
@@ -95,7 +99,7 @@ pub fn find_suitable_shell() -> Result<PathBuf, String> {
         }
     }
 
-    let env_shell = std::env::var_os("SHELL").map(PathBuf::from);
+    let env_shell = crate::utils::process_env::var_os("SHELL").map(PathBuf::from);
     let prefer_bash = env_shell
         .as_ref()
         .is_some_and(|path| path.display().to_string().contains("bash"));

@@ -191,8 +191,7 @@ async fn handle_claude_ai_auth(
             .strip_prefix("mcprs")
             .map(|suffix| format!("mcpsrv{suffix}"))
             .unwrap_or_else(|| server_id.to_string());
-        let product_surface = std::env::var("CLAUDE_CODE_ENTRYPOINT")
-            .ok()
+        let product_surface = crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT")
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| "cli".to_string());
         let mut encoded_product_surface = String::new();

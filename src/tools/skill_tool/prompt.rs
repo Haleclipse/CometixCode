@@ -9,8 +9,7 @@ const MIN_DESC_LENGTH: usize = 20;
 
 /// Maps to CC `tools/SkillTool/prompt.ts:getCharBudget`.
 pub(crate) fn get_char_budget(context_window_tokens: i64) -> usize {
-    let env_budget = std::env::var("SLASH_COMMAND_TOOL_CHAR_BUDGET")
-        .ok()
+    let env_budget = crate::utils::process_env::var("SLASH_COMMAND_TOOL_CHAR_BUDGET")
         .and_then(|value| value.parse::<f64>().ok())
         .filter(|value| *value != 0.0)
         .map(|value| value.max(0.0) as usize);

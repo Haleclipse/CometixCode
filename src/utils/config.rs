@@ -1802,7 +1802,7 @@ fn is_write_enabled() -> bool {
 
 pub fn should_skip_plugin_autoupdate() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        std::env::var("FORCE_AUTOUPDATE_PLUGINS").ok().as_deref(),
+        crate::utils::process_env::var("FORCE_AUTOUPDATE_PLUGINS").as_deref(),
     ) {
         return false;
     }
@@ -1810,10 +1810,9 @@ pub fn should_skip_plugin_autoupdate() -> bool {
 }
 
 pub fn get_auto_updater_disabled_reason() -> Option<&'static str> {
-    if crate::utils::env_utils::is_env_truthy(std::env::var("DISABLE_AUTOUPDATER").ok().as_deref())
+    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref())
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
-                .ok()
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
                 .as_deref(),
         )
     {
@@ -1822,8 +1821,7 @@ pub fn get_auto_updater_disabled_reason() -> Option<&'static str> {
 
     if cfg!(debug_assertions)
         && !crate::utils::env_utils::is_env_truthy(
-            std::env::var("ENABLE_AUTOUPDATER_IN_DEVELOPMENT")
-                .ok()
+            crate::utils::process_env::var("ENABLE_AUTOUPDATER_IN_DEVELOPMENT")
                 .as_deref(),
         )
     {

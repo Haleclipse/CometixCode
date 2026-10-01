@@ -18,8 +18,7 @@ use std::thread;
 
 /// Maps to: CC `getMaxToolUseConcurrency()`.
 fn get_max_tool_use_concurrency() -> usize {
-    std::env::var("CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY")
-        .ok()
+    crate::utils::process_env::var("CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY")
         .and_then(|value| value.parse::<usize>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(10)

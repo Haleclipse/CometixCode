@@ -72,12 +72,12 @@ pub fn plugin_data_dir_path(plugin_id: &str) -> PathBuf {
 /// `pluginDirectories.ts#getPluginsDirectory` and `getPluginSeedDirs`.
 pub fn expand_tilde_path(path: &str) -> PathBuf {
     if path == "~" {
-        return std::env::var("HOME")
+        return crate::utils::process_env::var("HOME")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(path));
+            .unwrap_or_else(|| PathBuf::from(path));
     }
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
+        if let Some(home) = crate::utils::process_env::var("HOME") {
             return PathBuf::from(home).join(rest);
         }
     }

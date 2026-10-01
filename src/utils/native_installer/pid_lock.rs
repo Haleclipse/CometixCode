@@ -38,7 +38,7 @@ pub struct LockInfo {
 /// run in Cometix; when the env override is unset or unrecognized this returns
 /// false, matching the external-user default.
 pub fn is_pid_based_locking_enabled() -> bool {
-    let value = std::env::var("ENABLE_PID_BASED_VERSION_LOCKING").ok();
+    let value = crate::utils::process_env::var("ENABLE_PID_BASED_VERSION_LOCKING");
     if crate::utils::env_utils::is_env_truthy(value.as_deref()) {
         return true;
     }

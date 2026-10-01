@@ -273,7 +273,7 @@ const SOURCE_PRIORITY: [AgentDefinitionSource; 6] = [
 
 /// Maps to CC `getAgentDefinitionsWithOverrides(cwd)`.
 pub fn get_agent_definitions_with_overrides_readonly(cwd: &Path) -> AgentDefinitionsResult {
-    get_agent_definitions_with_overrides_from_env(cwd, &|key| std::env::var(key).ok())
+    get_agent_definitions_with_overrides_from_env(cwd, &|key| crate::utils::process_env::var(key))
 }
 
 /// Maps to CC `getAgentDefinitionsWithOverrides(cwd)` with explicit env input
@@ -664,7 +664,7 @@ pub fn parse_agent_from_json(
     // explicitly declared (`tools !== undefined`).
     if agent.memory.is_some()
         && agent.tools.is_some()
-        && is_auto_memory_enabled_for_agents(&|key| std::env::var(key).ok())
+        && is_auto_memory_enabled_for_agents(&|key| crate::utils::process_env::var(key))
     {
         inject_agent_memory_tools(&mut agent.tools);
     }

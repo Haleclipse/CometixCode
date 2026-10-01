@@ -28,8 +28,7 @@ pub(crate) fn time_based_microcompact_config_from_env() -> TimeBasedMicrocompact
             .ok()
             .as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_TIME_BASED_MICROCOMPACT")
-            .ok()
+        crate::utils::process_env::var("CLAUDE_CODE_TIME_BASED_MICROCOMPACT")
             .as_deref(),
     );
     if let Ok(value) = std::env::var("COMETIX_TIME_BASED_MICROCOMPACT_GAP_MINUTES") {

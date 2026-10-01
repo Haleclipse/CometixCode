@@ -1173,8 +1173,7 @@ impl crate::tool::ToolCall for BashTool {
         let mut ast_commands = None;
         if crate::utils::build_profile::build_audience().is_internal()
             && !crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
-                    .ok()
+                crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
                     .as_deref(),
             )
         {

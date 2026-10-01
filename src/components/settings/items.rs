@@ -77,16 +77,14 @@ impl SettingItem {
 fn auto_updates_are_disabled(config: &GlobalConfig) -> bool {
     config.auto_updates == Some(false)
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("DISABLE_AUTOUPDATER").ok().as_deref(),
+            crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref(),
         )
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
-                .ok()
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
                 .as_deref(),
         )
         || crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
-                .ok()
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
                 .as_deref(),
         )
 }
