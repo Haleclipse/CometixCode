@@ -206,6 +206,7 @@ fn build_interactive_launch_with_system_prompts(
 ) -> anyhow::Result<InteractiveLaunch> {
     let thinking = resolve_thinking_launch(settings, cli);
     let agents = resolve_agent_launch(settings, cli);
+    apply_launch_model_override(cli, &agents);
     let initial_state = build_initial_app_state_with_thinking(
         settings,
         settings_errors,
@@ -242,6 +243,68 @@ pub fn build_initial_app_state(
     Ok(build_interactive_launch(settings, settings_errors, workspace_trusted, cli)?.initial_state)
 }
 
+/// The headless store's `AppState` (CC `main.tsx:3701-3731`
+/// `headlessInitialState`). It leaves the main-loop override alone: headless
+/// launch wrote it before `runHeadless` ([`apply_headless_launch_model`]),
+/// and control requests may have moved it since.
+pub(crate) fn build_headless_initial_app_state(
+    settings: &SettingsJson,
+    settings_errors: &[ValidationError],
+    workspace_trusted: bool,
+    cli: &crate::cli::CliConfig,
+) -> anyhow::Result<AppState> {
+    let thinking = resolve_thinking_launch(settings, cli);
+    let agents = resolve_agent_launch(settings, cli);
+    build_initial_app_state_with_thinking(
+        settings,
+        settings_errors,
+        workspace_trusted,
+        cli,
+        thinking.enabled,
+        &agents,
+    )
+}
+
+/// Maps to: CC `main.tsx:2941,3052-3071`: only an explicit CLI model or a
+/// non-inherit main-thread agent model becomes the runtime override, and the
+/// launch model is captured. Leaving the override undefined is significant
+/// because ANTHROPIC_MODEL and saved settings must remain eligible in
+/// `getUserSpecifiedModelSetting()`. Returns CC's `effectiveModel`.
+fn apply_launch_model_override(
+    cli: &crate::cli::CliConfig,
+    agents: &ResolvedAgentLaunch,
+) -> Option<String> {
+    let effective_model = match cli.model.as_deref() {
+        Some("default") => Some(crate::utils::model::model::get_default_main_loop_model()),
+        Some(model) => Some(model.to_string()),
+        None => agents
+            .main_thread_agent_definition
+            .as_ref()
+            .and_then(|agent| agent.model.as_deref())
+            .filter(|model| *model != "inherit")
+            .map(crate::utils::model::model::parse_user_specified_model),
+    };
+    crate::bootstrap::state::set_main_loop_model_override(effective_model.clone().map(Some));
+    // Maps to: CC `main.tsx:3068`
+    // `setInitialMainLoopModel(getUserSpecifiedModelSetting() || null)` — `||`
+    // rather than `??`, so an empty setting is captured as unset.
+    crate::bootstrap::state::set_initial_main_loop_model(
+        crate::utils::model::model::get_user_specified_model_setting()
+            .filter(|model| !model.is_empty()),
+    );
+    effective_model
+}
+
+/// [`apply_launch_model_override`] for the headless launch, before
+/// `runHeadless`. The result is `runHeadless`'s `userSpecifiedModel`
+/// (`main.tsx:3928,3952`).
+pub(crate) fn apply_headless_launch_model(
+    settings: &SettingsJson,
+    cli: &crate::cli::CliConfig,
+) -> Option<String> {
+    apply_launch_model_override(cli, &resolve_agent_launch(settings, cli))
+}
+
 fn build_initial_app_state_with_thinking(
     settings: &SettingsJson,
     settings_errors: &[ValidationError],
@@ -256,28 +319,8 @@ fn build_initial_app_state_with_thinking(
     // Maps to: CC AppStateStore.ts:469 `settings: getInitialSettings()`.
     initial.settings = std::sync::Arc::new(settings.clone());
 
-    // Maps to: CC `main.tsx:2941,3052-3071`: only an explicit CLI model or
-    // non-inherit main-thread agent model becomes the runtime override. Leaving
-    // the override undefined is significant because ANTHROPIC_MODEL and saved
-    // settings must remain eligible in `getUserSpecifiedModelSetting()`.
-    let effective_model_override = match cli.model.as_deref() {
-        Some("default") => Some(crate::utils::model::model::get_default_main_loop_model()),
-        Some(model) => Some(model.to_string()),
-        None => agents
-            .main_thread_agent_definition
-            .as_ref()
-            .and_then(|agent| agent.model.as_deref())
-            .filter(|model| *model != "inherit")
-            .map(crate::utils::model::model::parse_user_specified_model),
-    };
-    crate::bootstrap::state::set_main_loop_model_override(effective_model_override.map(Some));
-    // Maps to: CC `main.tsx:3068`
-    // `setInitialMainLoopModel(getUserSpecifiedModelSetting() || null)` — `||`
-    // rather than `??`, so an empty setting is captured as unset.
-    crate::bootstrap::state::set_initial_main_loop_model(
-        crate::utils::model::model::get_user_specified_model_setting()
-            .filter(|model| !model.is_empty()),
-    );
+    // The launch model override is already in place
+    // ([`apply_launch_model_override`]).
     initial.main_loop_model = crate::utils::model::model::get_user_specified_model_setting();
     // Maps to CC `main.tsx` initial AppState projection through
     // `getInitialAdvisorSetting()`. The feature gate intentionally keeps this
@@ -2535,6 +2578,25 @@ mod tests {
     }
 
     #[test]
+    fn headless_initial_app_state_leaves_the_launch_override_alone() {
+        // CC `main.tsx:3701-3731` builds the headless store without touching
+        // the override `:3065` set; a control request may have moved it.
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let original = crate::bootstrap::state::get_main_loop_model_override();
+        let cli = crate::cli::parse_cli_config(&argv(&["--model", "sonnet"]));
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some("moved".into())));
+        let state = build_headless_initial_app_state(&SettingsJson::default(), &[], true, &cli).unwrap();
+        assert_eq!(
+            crate::bootstrap::state::get_main_loop_model_override(),
+            Some(Some("moved".to_string()))
+        );
+        assert_eq!(state.main_loop_model.as_deref(), Some("moved"));
+        crate::bootstrap::state::set_main_loop_model_override(original);
+    }
+
+    #[test]
     fn build_initial_app_state_applies_cli_model_effort_verbose_and_permissions() {
         let cli = crate::cli::parse_cli_config(&argv(&[
             "--model",
@@ -2641,6 +2703,7 @@ mod tests {
         };
         let launch = |cli: &crate::cli::CliConfig| {
             crate::bootstrap::state::set_initial_main_loop_model(Some("stale".to_string()));
+            apply_launch_model_override(cli, &agents);
             build_initial_app_state_with_thinking(
                 &SettingsJson::default(),
                 &[],
@@ -2692,6 +2755,10 @@ mod tests {
             main_thread_agent_definition: Some(agent.clone()),
         };
 
+        assert_eq!(
+            apply_launch_model_override(&crate::cli::CliConfig::default(), &agents).as_deref(),
+            Some(crate::utils::model::model::DEFAULT_SONNET_MODEL)
+        );
         let state = build_initial_app_state_with_thinking(
             &SettingsJson::default(),
             &[],

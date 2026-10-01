@@ -121,6 +121,13 @@ pub fn run(config: &CliConfig) -> i32 {
     // here. Maps to: CC `main.tsx:3657-3660` (and the equivalent
     // non-interactive apply at `main.tsx:2866-2879`).
     crate::utils::managed_env::apply_config_environment_variables();
+    // Maps to CC `main.tsx:3052-3071`, before `runHeadless`: the launch model
+    // override, in place before any control request can read or move it. The
+    // result is `runHeadless`'s `userSpecifiedModel` (`:3928,3952`).
+    let user_specified_model = crate::main::apply_headless_launch_model(
+        &crate::utils::settings::get_initial_settings(),
+        config,
+    );
     crate::utils::workload_context::set_process_workload(config.workload.clone());
     crate::bootstrap::state::set_session_persistence_disabled(
         config.session_persistence == Some(false),
@@ -196,7 +203,7 @@ pub fn run(config: &CliConfig) -> i32 {
         if config.prompt.is_some() {
             return fail("--input-format=stream-json reads user messages from stdin");
         }
-        return runtime.block_on(run_stream_json(config, schema));
+        return runtime.block_on(run_stream_json(config, schema, user_specified_model));
     }
 
     let prompt = match read_prompt(config) {
@@ -216,6 +223,7 @@ pub fn run(config: &CliConfig) -> i32 {
             output_sink: None,
             permission_resolver: None,
             handle_elicitation: crate::tool::HandleElicitationCallback::default(),
+            user_specified_model,
         });
         crate::query_engine::ask(&mut engine, prompt, None).await
     }) {
@@ -366,7 +374,11 @@ fn apply_headless_mcp_connection_attempt(
         .retain(|command| command_names.insert(command.name.clone()));
 }
 
-async fn run_stream_json(config: &CliConfig, schema: Option<serde_json::Value>) -> i32 {
+async fn run_stream_json(
+    config: &CliConfig,
+    schema: Option<serde_json::Value>,
+    user_specified_model: Option<String>,
+) -> i32 {
     let launch_cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(error) => return fail(&error.to_string()),
@@ -441,6 +453,7 @@ async fn run_stream_json(config: &CliConfig, schema: Option<serde_json::Value>) 
         output_sink: Some(QueryEngine::output_sink(json_line)),
         permission_resolver,
         handle_elicitation,
+        user_specified_model,
     });
     let engine_control = engine.control_handle();
 
@@ -769,11 +782,16 @@ async fn handle_control_request(
                 .get("model")
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or("default");
-            engine.set_model(if requested == "default" {
+            let model = if requested == "default" {
                 crate::utils::model::model::get_default_main_loop_model()
             } else {
                 requested.to_string()
-            });
+            };
+            // CC `print.ts:2939-2940`: `activeUserSpecifiedModel = model` and
+            // `setMainLoopModelOverride(model)`, so `getMainLoopModel()`
+            // readers see the switch too.
+            crate::bootstrap::state::set_main_loop_model_override(Some(Some(model.clone())));
+            engine.set_model(model);
             control_success(&control.request_id, None);
         }
         "set_max_thinking_tokens" => {
@@ -959,6 +977,8 @@ async fn handle_control_request(
                 control_error(&control.request_id, "settings must be an object");
                 return false;
             };
+            // CC `print.ts:3700-3702`: the model before, to detect a switch.
+            let prev_model = crate::utils::model::model::get_main_loop_model();
             let mut merged = crate::utils::settings::get_flag_settings_inline()
                 .and_then(|settings| settings.as_object().cloned())
                 .unwrap_or_default();
@@ -970,19 +990,28 @@ async fn handle_control_request(
                 }
             }
             crate::utils::settings::set_flag_settings_inline(Some(merged.into()));
-            if incoming.contains_key("model") {
-                engine.set_model_override(
-                    incoming
-                        .get("model")
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_string),
-                );
+            // `:3731-3741`: a model key moves the override, which outranks the
+            // settings cascade in `getUserSpecifiedModelSetting()`; `null`
+            // clears it. `String(incoming.model)` for anything else.
+            if let Some(model) = incoming.get("model") {
+                crate::bootstrap::state::set_main_loop_model_override(match model {
+                    serde_json::Value::Null => None,
+                    serde_json::Value::String(model) => Some(Some(model.clone())),
+                    other => Some(Some(other.to_string())),
+                });
+            }
+            // `:3745-3752`: only a switch sets `activeUserSpecifiedModel`, to
+            // the resolved model.
+            let new_model = crate::utils::model::model::get_main_loop_model();
+            if new_model != prev_model {
+                engine.set_model(new_model);
             }
             control_success(&control.request_id, None);
         }
         "get_settings" => {
             let settings = crate::utils::settings::get_initial_settings();
-            let model = engine.current_model();
+            // CC `print.ts:3758`: `getMainLoopModel()`.
+            let model = crate::utils::model::model::get_main_loop_model();
             control_success(
                 &control.request_id,
                 Some(serde_json::json!({
@@ -2233,13 +2262,13 @@ fn validate_headless_options(
             .filter(|tokens| *tokens > 0)
             .ok_or_else(|| "--task-budget must be a positive integer".to_string())?;
     }
-    if let Some(fallback) = config.fallback_model.as_deref() {
-        let fallback = if fallback == "default" {
-            crate::utils::model::model::get_default_main_loop_model()
-        } else {
-            crate::utils::model::model::parse_user_specified_model(fallback)
-        };
-        if fallback == crate::query_engine::resolve_model(config) {
+    // Maps to CC `main.tsx:2099`: `fallbackModel && options.model &&
+    // fallbackModel === options.model`, the flags as given.
+    if let (Some(fallback), Some(model)) = (
+        config.fallback_model.as_deref().filter(|model| !model.is_empty()),
+        config.model.as_deref().filter(|model| !model.is_empty()),
+    ) {
+        if fallback == model {
             return Err(
                 "Fallback model cannot be the same as the main model. Please specify a different model for --fallback-model."
                     .to_string(),
@@ -2838,6 +2867,118 @@ mod tests {
         ));
     }
 
+    /// CC `main.tsx:3052-3071` then `print.ts:1220`, `:2932-2940` and
+    /// `:3700-3752`: the launch model is the override and
+    /// `activeUserSpecifiedModel` before any control request; `set_model`
+    /// moves both; `apply_flag_settings` moves the override and sets
+    /// `activeUserSpecifiedModel` to the resolved model, only on a switch.
+    #[tokio::test]
+    async fn model_controls_move_the_main_loop_model_like_cc() {
+        use crate::utils::env_utils::EnvVarGuard;
+        use crate::utils::model::model::get_main_loop_model;
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _model = EnvVarGuard::unset("ANTHROPIC_MODEL");
+        let _opus = EnvVarGuard::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "custom-opus");
+        let _sonnet = EnvVarGuard::set("ANTHROPIC_DEFAULT_SONNET_MODEL", "custom-sonnet");
+        let _haiku = EnvVarGuard::set("ANTHROPIC_DEFAULT_HAIKU_MODEL", "custom-haiku");
+        let original_override = crate::bootstrap::state::get_main_loop_model_override();
+        let original_flags = crate::utils::settings::get_flag_settings_inline();
+
+        let cli = CliConfig {
+            model: Some("haiku".to_string()),
+            ..CliConfig::default()
+        };
+        let user_specified_model = crate::main::apply_headless_launch_model(
+            &crate::utils::settings::types::SettingsJson::default(),
+            &cli,
+        );
+        assert_eq!(user_specified_model.as_deref(), Some("haiku"));
+        // No submit yet: a control request already sees the launch model.
+        assert_eq!(get_main_loop_model(), "custom-haiku");
+
+        let mut engine = QueryEngine::new(crate::query_engine::QueryEngineConfig {
+            cli_config: cli,
+            schema: None,
+            resume_seed: None,
+            mcp_state: Some(crate::state::app_state_store::McpState::default()),
+            output_sink: None,
+            permission_resolver: None,
+            handle_elicitation: crate::tool::HandleElicitationCallback::default(),
+            user_specified_model,
+        });
+        assert_eq!(engine.user_specified_model_for_test(), Some("haiku"));
+        let bridge = SdkControlBridge::default();
+        let mut initialized = true;
+        let control = |request| ControlInput {
+            request_id: "1".to_string(),
+            request,
+        };
+
+        handle_control_request(
+            control(serde_json::json!({"subtype": "set_model", "model": "opus"})),
+            &mut initialized,
+            &mut engine,
+            &bridge,
+        )
+        .await;
+        assert_eq!(engine.user_specified_model_for_test(), Some("opus"));
+        assert_eq!(get_main_loop_model(), "custom-opus");
+
+        handle_control_request(
+            control(serde_json::json!({"subtype": "apply_flag_settings", "settings": {"model": "sonnet"}})),
+            &mut initialized,
+            &mut engine,
+            &bridge,
+        )
+        .await;
+        assert_eq!(get_main_loop_model(), "custom-sonnet");
+        assert_eq!(engine.user_specified_model_for_test(), Some("custom-sonnet"));
+
+        // No switch: `activeUserSpecifiedModel` stays.
+        engine.set_model("kept".to_string());
+        handle_control_request(
+            control(serde_json::json!({"subtype": "apply_flag_settings", "settings": {"model": "sonnet"}})),
+            &mut initialized,
+            &mut engine,
+            &bridge,
+        )
+        .await;
+        assert_eq!(engine.user_specified_model_for_test(), Some("kept"));
+
+        // `null` clears the override; on a switch the new model is adopted.
+        engine.set_model("custom-sonnet".to_string());
+        handle_control_request(
+            control(serde_json::json!({"subtype": "apply_flag_settings", "settings": {"model": null}})),
+            &mut initialized,
+            &mut engine,
+            &bridge,
+        )
+        .await;
+        assert_eq!(crate::bootstrap::state::get_main_loop_model_override(), None);
+        assert_eq!(
+            engine.user_specified_model_for_test(),
+            Some(get_main_loop_model().as_str())
+        );
+
+        crate::bootstrap::state::set_main_loop_model_override(original_override);
+        crate::utils::settings::set_flag_settings_inline(original_flags);
+    }
+
+    #[test]
+    fn fallback_model_is_compared_as_given_like_cc() {
+        // `main.tsx:2099` compares the flags, not what they resolve to.
+        let config = |model: &str, fallback: &str| CliConfig {
+            model: Some(model.to_string()),
+            fallback_model: Some(fallback.to_string()),
+            ..CliConfig::default()
+        };
+        let validate = |config: CliConfig| validate_headless_options(&config, "text", "text");
+        assert!(validate(config("sonnet", "sonnet")).is_err());
+        assert!(validate(config("sonnet", "claude-sonnet-4-6")).is_ok());
+    }
+
     #[test]
     fn stream_json_parses_tool_result_history() {
         let parsed = parse_stream_json_line(
@@ -2930,8 +3071,8 @@ mod tests {
         assert!(parse_schema(None).unwrap().is_none());
     }
 
-    /// Maps to: CC `main.tsx:2098-2106` / `print.ts` — `--fallback-model`
-    /// cannot equal the resolved main model (including after `"default"`).
+    /// Maps to: CC `main.tsx:2098-2106` — `--fallback-model` cannot equal
+    /// `--model` as given.
     #[test]
     fn headless_fallback_model_cannot_match_main_model() {
         let config = CliConfig {
