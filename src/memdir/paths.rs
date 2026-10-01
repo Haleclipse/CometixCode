@@ -6,7 +6,8 @@ use std::path::{Component, Path, PathBuf};
 
 use chrono::Datelike;
 
-use crate::utils::env_utils::{is_env_defined_falsy, is_env_truthy, truthy_env_value};
+use crate::utils::env_utils::{is_env_defined_falsy, is_env_truthy};
+use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::types::SettingsJson;
 
 const AUTO_MEM_DIRNAME: &str = "memory";
@@ -33,7 +34,7 @@ pub fn is_auto_memory_enabled_with_env(
     }
     // CC: `isEnvTruthy(CLAUDE_CODE_REMOTE) && !process.env.CLAUDE_CODE_REMOTE_MEMORY_DIR`.
     if is_env_truthy(get_env("CLAUDE_CODE_REMOTE").as_deref())
-        && truthy_env_value(get_env("CLAUDE_CODE_REMOTE_MEMORY_DIR")).is_none()
+        && get_env("CLAUDE_CODE_REMOTE_MEMORY_DIR").truthy().is_none()
     {
         return false;
     }
@@ -141,7 +142,8 @@ pub fn get_memory_base_dir() -> PathBuf {
 }
 
 fn memory_base_dir(config_home: &Path, get_env: &impl Fn(&str) -> Option<String>) -> PathBuf {
-    truthy_env_value(get_env("CLAUDE_CODE_REMOTE_MEMORY_DIR"))
+    get_env("CLAUDE_CODE_REMOTE_MEMORY_DIR")
+        .truthy()
         .map(PathBuf::from)
         .unwrap_or_else(|| config_home.to_path_buf())
 }

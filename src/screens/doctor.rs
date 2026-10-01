@@ -211,7 +211,9 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
     }
 
     let diagnostic = get_doctor_diagnostic();
-    let env_warnings = env_validation_warnings();
+    // CC `Doctor.tsx:157-168` `useMemo(..., [])`: validated once per mount, so
+    // its debug logging does not repeat on every frame.
+    let env_warnings = hooks.use_memo(env_validation_warnings, ());
     let auto_update_channel = doctor_auto_update_channel();
     let search_status = doctor_search_status(&diagnostic);
     let keybinding_warnings = props.keybinding_warnings.clone();

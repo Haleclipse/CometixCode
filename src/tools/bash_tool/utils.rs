@@ -170,11 +170,7 @@ pub(crate) fn reset_cwd_if_outside_project(
         return (None, false);
     };
     let original = crate::bootstrap::state::get_original_cwd();
-    let maintain = crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR")
-            .ok()
-            .as_deref(),
-    );
+    let maintain = crate::utils::env_utils::should_maintain_project_working_dir();
     let outside = cwd_after != original
         && !crate::utils::permissions::filesystem::path_in_allowed_working_path(
             &cwd_after.display().to_string(),

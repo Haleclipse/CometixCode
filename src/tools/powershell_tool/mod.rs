@@ -217,16 +217,24 @@ fn full_input_fields() -> Vec<crate::utils::zod::ObjectField> {
     ]
 }
 
-/// Maps to: CC `PowerShellTool.tsx:299-303` `inputSchema` — the same
-/// module-load `isBackgroundTasksDisabled` gate BashTool uses, read once.
+/// Maps to: CC `PowerShellTool.tsx:273-275` module-level
+/// `isBackgroundTasksDisabled`. Unlike BashTool, the module is not in
+/// `main.js`'s static import graph: `tools.ts:150-155` requires it at the
+/// first `getTools()`, after `init()` applied the safe settings env. `main::run`
+/// and `cli/print.rs` force it at that point.
+pub(crate) static IS_BACKGROUND_TASKS_DISABLED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| {
+        crate::utils::env_utils::is_env_truthy(
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+        )
+    });
+
+/// Maps to: CC `PowerShellTool.tsx:299-303` `inputSchema`, gated on
+/// [`IS_BACKGROUND_TASKS_DISABLED`].
 pub fn input_schema() -> &'static crate::utils::zod::Schema {
     static SCHEMA: std::sync::OnceLock<crate::utils::zod::Schema> = std::sync::OnceLock::new();
     SCHEMA.get_or_init(|| {
-        let background_disabled = crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
-                .ok()
-                .as_deref(),
-        );
+        let background_disabled = *IS_BACKGROUND_TASKS_DISABLED;
         let fields = full_input_fields()
             .into_iter()
             .filter(|(name, _)| !(background_disabled && *name == "run_in_background"))

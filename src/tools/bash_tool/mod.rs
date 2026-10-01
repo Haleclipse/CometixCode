@@ -395,26 +395,30 @@ fn full_input_fields() -> Vec<crate::utils::zod::ObjectField> {
     ]
 }
 
+/// Maps to: CC `BashTool.tsx:332-335` module-level `isBackgroundTasksDisabled`,
+/// evaluated at import, before `init()` applies settings env (its eslint
+/// exemption reads "Intentional: schema must be defined at module load").
+/// `entrypoints/cli.rs` forces it in the startup window, so a value only
+/// settings env sets is not seen here, as in CC; a mid-process change does not
+/// re-shape the schema either.
+pub(crate) static IS_BACKGROUND_TASKS_DISABLED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| {
+        crate::utils::env_utils::is_env_truthy(
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+        )
+    });
+
 /// Maps to: CC `BashTool.tsx:378-385` `inputSchema`.
 ///
 /// `_simulatedSedEdit` is ALWAYS omitted: it is set by SedEditPermissionRequest
 /// after the user approves a preview, and exposing it would let the model pair
 /// an innocuous command with an arbitrary file write, bypassing both the
 /// permission check and the sandbox. `run_in_background` is additionally
-/// omitted when background tasks are off.
-///
-/// The gate is read once, matching CC's module-load `isBackgroundTasksDisabled`
-/// (`BashTool.tsx:332-334`, which carries an explicit eslint exemption reading
-/// "Intentional: schema must be defined at module load"). A mid-process env
-/// change therefore does NOT re-shape the schema, in either implementation.
+/// omitted when background tasks are off ([`IS_BACKGROUND_TASKS_DISABLED`]).
 pub fn input_schema() -> &'static crate::utils::zod::Schema {
     static SCHEMA: std::sync::OnceLock<crate::utils::zod::Schema> = std::sync::OnceLock::new();
     SCHEMA.get_or_init(|| {
-        let background_disabled = crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
-                .ok()
-                .as_deref(),
-        );
+        let background_disabled = *IS_BACKGROUND_TASKS_DISABLED;
         // CC composes with `.omit()`; the contract puts composition at the
         // definition site, so the field list is filtered here instead.
         let fields = full_input_fields()
@@ -673,11 +677,8 @@ fn run_shell_command(
             crate::tools::shared::write_gate::BACKGROUND_COMMAND_DISABLED_ERROR.to_string(),
         );
     }
-    let background_disabled = crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
-            .ok()
-            .as_deref(),
-    );
+    // CC `BashTool.tsx:1159` reads the module-level constant.
+    let background_disabled = *IS_BACKGROUND_TASKS_DISABLED;
     let should_auto_background = !background_disabled
         && is_auto_backgrounding_allowed(command)
         && task_store(context).is_some()

@@ -2,7 +2,7 @@
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 const MAX_SANITIZED_LENGTH: usize = 200;
 
@@ -47,13 +47,12 @@ fn get_project_dir(cwd: &str) -> String {
 /// `utils/cachePaths.ts:6`. The env-paths implementation is outside the allowed
 /// source tree; this conventional platform layout is not a claim of full
 /// dependency equivalence. macOS layout is also observed in the original cache.
-fn cache_root() -> io::Result<&'static PathBuf> {
-    static ROOT: OnceLock<PathBuf> = OnceLock::new();
-    if let Some(root) = ROOT.get() {
-        return Ok(root);
-    }
-    let home = std::env::home_dir()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory unavailable"))?;
+///
+/// `const paths = envPaths('claude-cli')` runs at import, before settings env
+/// applies, so `entrypoints/cli.rs` forces this in the startup window. `None`
+/// when there is no home directory.
+pub(crate) static CACHE_ROOT: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
+    let home = std::env::home_dir()?;
     #[cfg(target_os = "macos")]
     let root = home
         .join("Library")
@@ -72,7 +71,13 @@ fn cache_root() -> io::Result<&'static PathBuf> {
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".cache"))
         .join("claude-cli-nodejs");
-    Ok(ROOT.get_or_init(|| root))
+    Some(root)
+});
+
+fn cache_root() -> io::Result<&'static PathBuf> {
+    CACHE_ROOT
+        .as_ref()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory unavailable"))
 }
 
 /// Maps to: CC `utils/cachePaths.ts#CACHE_PATHS:25-38` (object carrier).

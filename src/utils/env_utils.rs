@@ -1,4 +1,6 @@
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
+
+use crate::utils::process_env::{self, JsTruthy};
 
 /// Serialises the ~200 test modules that mutate process-wide state.
 ///
@@ -194,26 +196,11 @@ impl Drop for PinnedProjectDir {
     }
 }
 
-/// JS-truthiness read of an environment variable: CC's ubiquitous
-/// `process.env.X || fallback` / `if (process.env.X)` shapes treat an empty
-/// value as unset, while `std::env::var` returns `Ok("")` for it. L1 language
-/// carrier with no single CC function — the `||` operator is the source.
-/// Use this instead of `env::var(..).ok()` when porting those shapes.
-pub fn truthy_env_var(key: &str) -> Option<String> {
-    truthy_env_value(std::env::var(key).ok())
-}
-
-/// Value-level companion to [`truthy_env_var`] for call sites that read the
-/// environment through an injected `get_env` test seam (the memdir family).
-pub fn truthy_env_value(value: Option<String>) -> Option<String> {
-    value.filter(|value| !value.is_empty())
-}
-
 /// Maps to: CC `utils/envUtils.ts:24-30` `hasNodeOption`: `flag` is one of
 /// the `NODE_OPTIONS` words split on `/\s+/` (JS whitespace).
 pub fn has_node_option(flag: &str) -> bool {
-    crate::utils::process_env::var("NODE_OPTIONS")
-        .filter(|options| !options.is_empty())
+    process_env::var("NODE_OPTIONS")
+        .truthy()
         .is_some_and(|options| {
             options
                 .split(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
@@ -247,29 +234,30 @@ pub fn is_env_defined_falsy(env_var: Option<&str>) -> bool {
 
 /// Maps to: CC `utils/envUtils.ts:60-65` `isBareMode`.
 pub fn is_bare_mode() -> bool {
-    is_env_truthy(env::var("CLAUDE_CODE_SIMPLE").ok().as_deref())
+    is_env_truthy(process_env::var("CLAUDE_CODE_SIMPLE").as_deref())
         || std::env::args_os().any(|argument| argument == std::ffi::OsStr::new("--bare"))
 }
 
-/// Maps to: CC `utils/envUtils.ts#getAWSRegion`.
+/// Maps to: CC `utils/envUtils.ts:96-98` `getAWSRegion`.
 pub fn get_aws_region() -> String {
-    env::var("AWS_REGION")
-        .ok()
-        .filter(|region| !region.is_empty())
-        .or_else(|| {
-            env::var("AWS_DEFAULT_REGION")
-                .ok()
-                .filter(|region| !region.is_empty())
-        })
-        .unwrap_or_else(|| "us-east-1".to_string())
+    let env = process_env::snapshot();
+    env.var("AWS_REGION")
+        .truthy()
+        .or_else(|| env.var("AWS_DEFAULT_REGION").truthy())
+        .unwrap_or("us-east-1")
+        .to_string()
 }
 
-/// Maps to: CC `utils/envUtils.ts#getDefaultVertexRegion`.
+/// Maps to: CC `utils/envUtils.ts:103-105` `getDefaultVertexRegion`.
 pub fn get_default_vertex_region() -> String {
-    env::var("CLOUD_ML_REGION")
-        .ok()
-        .filter(|region| !region.is_empty())
+    process_env::var("CLOUD_ML_REGION")
+        .truthy()
         .unwrap_or_else(|| "us-east5".to_string())
+}
+
+/// Maps to: CC `utils/envUtils.ts:111-113` `shouldMaintainProjectWorkingDir`.
+pub fn should_maintain_project_working_dir() -> bool {
+    is_env_truthy(process_env::var("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR").as_deref())
 }
 
 /// Maps to: CC `utils/envUtils.ts#getVertexRegionForModel` and its ordered
@@ -291,10 +279,8 @@ pub fn get_vertex_region_for_model(model: Option<&str>) -> String {
             .iter()
             .find(|(prefix, _)| model.starts_with(prefix))
     }) {
-        if let Ok(region) = env::var(variable) {
-            if !region.is_empty() {
-                return region;
-            }
+        if let Some(region) = process_env::var(variable).truthy() {
+            return region;
         }
     }
     get_default_vertex_region()
@@ -302,44 +288,69 @@ pub fn get_vertex_region_for_model(model: Option<&str>) -> String {
 
 /// Repository-wide mutation gate, independent of transcript persistence.
 /// Production writes unless explicitly disabled; tests must explicitly opt in.
+///
+/// Rust-only; it moves to its callers with the other `COMETIX_*` reads in C5.
+/// Until then it reads the OS environment, which `use_log_messages.rs`'s
+/// tests write directly (environment redesign §11).
 pub fn is_cometix_write_enabled() -> bool {
     #[cfg(test)]
     {
-        is_env_truthy(env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+        is_env_truthy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
     }
     #[cfg(not(test))]
     {
-        !is_env_defined_falsy(env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+        !is_env_defined_falsy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
     }
 }
 
-/// Explicit-snapshot form of CC `utils/envUtils.ts#getClaudeConfigHomeDir` for
-/// multi-key operations that must not mix environment versions.
-pub fn get_claude_config_home_dir_from_snapshot(
-    env: &crate::utils::process_env::EnvSnapshot,
-) -> PathBuf {
-    if let Some(dir) = env.var_os("CLAUDE_CONFIG_DIR") {
-        PathBuf::from(dir)
-    } else if let Some(home) = env.var_os("HOME") {
-        PathBuf::from(home).join(".claude")
-    } else if let Some(home) = env.var_os("USERPROFILE") {
-        PathBuf::from(home).join(".claude")
-    } else {
-        PathBuf::from(".claude")
-    }
-}
-
-/// Maps to: CC `utils/envUtils.ts#getClaudeConfigHomeDir`.
+/// Maps to: CC `utils/envUtils.ts:7-14` `getClaudeConfigHomeDir`:
+/// `(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'))
+/// .normalize('NFC')`. `??` keeps an empty `CLAUDE_CONFIG_DIR`.
+///
+/// Residual: CC memoizes keyed on `CLAUDE_CONFIG_DIR` alone, so with it unset
+/// the first `homedir()` answer is kept even if `HOME` changes later. This
+/// recomputes, following a later `HOME` (environment redesign §12, C5).
 pub fn get_claude_config_home_dir() -> PathBuf {
-    if let Ok(dir) = env::var("CLAUDE_CONFIG_DIR") {
-        PathBuf::from(dir)
-    } else if let Ok(home) = env::var("HOME") {
-        PathBuf::from(home).join(".claude")
-    } else if let Ok(home) = env::var("USERPROFILE") {
-        PathBuf::from(home).join(".claude")
-    } else {
-        PathBuf::from(".claude")
+    get_claude_config_home_dir_from_snapshot(&process_env::snapshot())
+}
+
+/// [`get_claude_config_home_dir`] against a given snapshot, for multi-key
+/// operations that must not mix environment versions.
+pub fn get_claude_config_home_dir_from_snapshot(env: &process_env::EnvSnapshot) -> PathBuf {
+    claude_config_home_dir_with(|key| env.var_os(key).map(std::ffi::OsStr::to_os_string))
+}
+
+/// The one implementation of [`get_claude_config_home_dir`], over any
+/// environment source: the carrier, a snapshot, or a loader's injected
+/// `get_env`.
+pub(crate) fn claude_config_home_dir_with(
+    var_os: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> PathBuf {
+    let dir = match var_os("CLAUDE_CONFIG_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => homedir_with(&var_os).join(".claude"),
+    };
+    match dir.to_str() {
+        Some(dir) => {
+            use unicode_normalization::UnicodeNormalization as _;
+            PathBuf::from(dir.nfc().collect::<String>())
+        }
+        None => dir,
     }
+}
+
+/// Node `os.homedir()` (libuv `uv_os_homedir`): `HOME` (Windows:
+/// `USERPROFILE`) when set, even to an empty string; otherwise the account's
+/// home directory, which `std::env::home_dir` returns once that variable is
+/// unset. That fallback reads the OS environment: after C8 removes the Unix
+/// write-through, a variable deleted only from the carrier would still be
+/// seen there.
+pub(crate) fn homedir_with(var_os: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBuf {
+    let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    var_os(key)
+        .map(PathBuf::from)
+        .or_else(std::env::home_dir)
+        .unwrap_or_default()
 }
 
 /// Maps to: CC `utils/envUtils.ts#getTeamsDir`.
@@ -361,7 +372,7 @@ pub fn is_running_on_homespace_for_audience(
 /// Maps to: CC `utils/envUtils.ts:114-123` `isRunningOnHomespace`.
 pub fn is_running_on_homespace() -> bool {
     is_running_on_homespace_for_audience(
-        &|key| env::var(key).ok(),
+        &|key| process_env::var(key),
         crate::utils::build_profile::build_audience(),
     )
 }
@@ -512,6 +523,29 @@ mod tests {
             .filter(|candidate| candidate.eq_ignore_ascii_case(key) || candidate == neighbor)
             .collect::<Vec<_>>();
         assert_eq!(keys, ["Cometix_Env_Var_Guard_Windows", neighbor]);
+    }
+
+    /// CC `envUtils.ts:7-14`: `??` keeps an empty `CLAUDE_CONFIG_DIR`, the
+    /// result is NFC, and `homedir()` takes `HOME` (Windows: `USERPROFILE`).
+    #[test]
+    fn config_home_dir_matches_official_nullish_nfc_and_homedir() {
+        use crate::utils::process_env::EnvSnapshot;
+        use std::path::PathBuf;
+        let dir = |pairs: &[(&str, &str)]| {
+            super::get_claude_config_home_dir_from_snapshot(&EnvSnapshot::from_pairs(
+                pairs.iter().copied(),
+            ))
+        };
+        assert_eq!(dir(&[("CLAUDE_CONFIG_DIR", "")]), PathBuf::from(""));
+        assert_eq!(
+            dir(&[("CLAUDE_CONFIG_DIR", "/tmp/cafe\u{301}")]),
+            PathBuf::from("/tmp/caf\u{e9}")
+        );
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        assert_eq!(
+            dir(&[(home_key, "/home/someone")]),
+            PathBuf::from("/home/someone").join(".claude")
+        );
     }
 
     #[test]

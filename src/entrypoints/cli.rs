@@ -29,6 +29,39 @@ fn apply_cli_bootstrap_env() {
     }
 }
 
+/// Maps to: CC's module evaluation when `cli.tsx` imports `main.js`. The
+/// constants that modules in `main.js`'s static import graph compute at
+/// import see the environment as it is after cli.tsx's own writes and before
+/// `init()` applies settings env. Two ast-grep queries found them:
+/// `process.env` reads outside any function, and module-level calls of a
+/// function that reads it (`const X = f()`). Rust has no import time, so
+/// each one is a `LazyLock` its module owns, forced here; afterwards none of
+/// them reads the environment again.
+///
+/// `PowerShellTool.tsx` is not in that graph (`tools.ts:150-155` requires it
+/// lazily), so its constant is forced after `init()` instead.
+fn evaluate_import_time_constants() {
+    // `env.ts:316-333`: `isCI`, `platform`, `terminal`.
+    crate::utils::env::get();
+    // `BashTool.tsx:332`, `AgentTool.tsx:145`.
+    std::sync::LazyLock::force(&crate::tools::bash_tool::IS_BACKGROUND_TASKS_DISABLED);
+    std::sync::LazyLock::force(&crate::tools::agent_tool::IS_BACKGROUND_TASKS_DISABLED);
+    // `swarm/backends/detection.ts:10,19`.
+    std::sync::LazyLock::force(&crate::utils::swarm::backends::detection::ORIGINAL_USER_TMUX);
+    std::sync::LazyLock::force(&crate::utils::swarm::backends::detection::ORIGINAL_TMUX_PANE);
+    // `Spinner.tsx:52`, `Spinner/SpinnerGlyph.tsx:11`: `getDefaultCharacters()`.
+    std::sync::LazyLock::force(&crate::components::spinner::utils::DEFAULT_CHARACTERS);
+    // `cachePaths.ts:6`: `envPaths('claude-cli')`.
+    std::sync::LazyLock::force(&crate::utils::cache_paths::CACHE_ROOT);
+    // npm `figures`: `shouldUseMain = isUnicodeSupported()`.
+    std::sync::LazyLock::force(&crate::constants::figures::SHOULD_USE_MAIN);
+    // chalk's import-time level detection and `ink/colorize.ts:61-62`'s
+    // xterm.js boost and tmux clamp, which the chalk port applies on first
+    // read.
+    chalk::stdout_level();
+    chalk::stderr_level();
+}
+
 /// Zero-dependency version fast-path (CC cli.tsx before importing main).
 ///
 /// Returns `Some(0)` only for a lone `--version`/`-v`/`-V`. All other flags
@@ -51,6 +84,8 @@ pub fn run() {
     if let Some(code) = try_version_fast_path(&args) {
         crate::utils::cleanup_registry::exit_process(code);
     }
+
+    evaluate_import_time_constants();
 
     // Maps to: CC `main.tsx:1104-1120`, which sits in `main()` between the
     // `claude ssh` argv rewrite and Commander's `.parse()`. `args` is
@@ -75,6 +110,42 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The import-time constants keep the startup window's environment: a
+    /// later write, as settings env makes, does not reach them.
+    #[test]
+    fn import_time_constants_ignore_later_environment_writes() {
+        use crate::utils::env_utils::EnvVarGuard;
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _startup = [
+            EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"),
+            EnvVarGuard::unset("TMUX"),
+            EnvVarGuard::unset("TMUX_PANE"),
+            EnvVarGuard::set("TERM", "xterm-256color"),
+        ];
+        evaluate_import_time_constants();
+        let terminal = crate::utils::env::get().terminal.clone();
+        let spinner = crate::components::spinner::utils::spinner_frame(5);
+
+        let _later = [
+            EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
+            EnvVarGuard::set("TMUX", "/tmp/tmux-501/default,1,0"),
+            EnvVarGuard::set("TMUX_PANE", "%3"),
+            EnvVarGuard::set("TERM", "xterm-ghostty"),
+            EnvVarGuard::set("TERM_PROGRAM", "WezTerm"),
+        ];
+        assert!(!*crate::tools::bash_tool::IS_BACKGROUND_TASKS_DISABLED);
+        assert!(!*crate::tools::agent_tool::IS_BACKGROUND_TASKS_DISABLED);
+        assert!(!crate::utils::swarm::backends::detection::is_inside_tmux_sync());
+        assert_eq!(
+            crate::utils::swarm::backends::detection::get_leader_pane_id(),
+            None
+        );
+        assert_eq!(crate::utils::env::get().terminal, terminal);
+        // Ghostty's set would put `*` here.
+        assert_eq!(crate::components::spinner::utils::spinner_frame(5), spinner);
+        assert_ne!(spinner, "*");
+    }
 
     #[test]
     fn version_fast_path_matches_official_flag_set() {

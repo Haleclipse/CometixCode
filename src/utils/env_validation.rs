@@ -1,9 +1,8 @@
 //! Maps to: CC `utils/envValidation.ts`.
 //!
 //! Environment variable validation helpers shared by Doctor, shell output
-//! limits, and task output formatting. Debug logging from the official helper
-//! is intentionally omitted here; diagnostics return the official status and
-//! message strings without telemetry/log side effects.
+//! limits, and task output formatting. Invalid and capped values are logged
+//! as `${name} ${message}` to the debug log, as CC does.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EnvVarValidationStatus {
@@ -32,7 +31,7 @@ pub struct EnvVarValidationResult {
 
 /// Maps to CC `utils/envValidation.ts#validateBoundedIntEnvVar`.
 pub fn validate_bounded_int_env_var(
-    _name: &str,
+    name: &str,
     value: Option<&str>,
     default_value: usize,
     upper_limit: usize,
@@ -55,32 +54,24 @@ pub fn validate_bounded_int_env_var(
         };
     }
 
-    let parsed = parse_js_decimal_int_prefix(value);
-    let Some(parsed) = parsed else {
+    // `isNaN(parsed) || parsed <= 0`.
+    let Some(parsed) = parse_js_decimal_int_prefix(value).filter(|parsed| *parsed > 0) else {
+        let message = format!("Invalid value \"{value}\" (using default: {default_value})");
+        crate::utils::debug::log_for_debugging(&format!("{name} {message}"));
         return EnvVarValidationResult {
             effective: default_value,
             status: EnvVarValidationStatus::Invalid,
-            message: Some(format!(
-                "Invalid value \"{value}\" (using default: {default_value})"
-            )),
+            message: Some(message),
         };
     };
 
-    if parsed <= 0 {
-        return EnvVarValidationResult {
-            effective: default_value,
-            status: EnvVarValidationStatus::Invalid,
-            message: Some(format!(
-                "Invalid value \"{value}\" (using default: {default_value})"
-            )),
-        };
-    }
-
     if parsed > upper_limit as i64 {
+        let message = format!("Capped from {parsed} to {upper_limit}");
+        crate::utils::debug::log_for_debugging(&format!("{name} {message}"));
         return EnvVarValidationResult {
             effective: upper_limit,
             status: EnvVarValidationStatus::Capped,
-            message: Some(format!("Capped from {parsed} to {upper_limit}")),
+            message: Some(message),
         };
     }
 

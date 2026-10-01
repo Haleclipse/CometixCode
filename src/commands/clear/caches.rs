@@ -61,10 +61,13 @@ pub fn clear_session_caches(preserved_agent_ids: &HashSet<String>) {
     }
 
     // CC: Tungsten / COMMIT_ATTRIBUTION / repository / bash prefix / dump /
-    // invoked skills / git dir / magic docs / session env /
+    // invoked skills / git dir / magic docs /
     // ToolSearch / agent definitions / SkillTool prompt — land with owners.
 
     crate::services::lsp::diagnostic_registry::reset_all_lsp_diagnostic_state();
+    // CC `caches.ts:127` `clearSessionEnvVars()`: `/env` values end with the
+    // conversation.
+    crate::utils::session_env_vars::clear_session_env_vars();
     crate::tools::web_fetch_tool::utils::clear_web_fetch_cache();
 }
 

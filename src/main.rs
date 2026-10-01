@@ -1519,6 +1519,11 @@ pub fn run(config: crate::cli::CliConfig) {
     utils::ca_certs_config::apply_extra_ca_certs_from_config();
     utils::mtls::configure_global_mtls();
     utils::proxy::configure_global_agents();
+    // CC `tools.ts:150-155` requires PowerShellTool lazily, at the first
+    // `getTools()` (`main.tsx:2755`): after `init()` applied the safe settings
+    // env and before the full apply. Its module-level
+    // `isBackgroundTasksDisabled` is evaluated at that point.
+    std::sync::LazyLock::force(&crate::tools::powershell_tool::IS_BACKGROUND_TASKS_DISABLED);
     // Maps to CC main.tsx:1273-1274 preAction; setup.ts:371 uses the same
     // idempotent sink entry. Run before subcommands and MCP startup producers.
     if let Err(error) = utils::sinks::init_sinks() {

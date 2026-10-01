@@ -18700,6 +18700,8 @@ mod tests {
             EnvVarGuard::set("TERM_PROGRAM", "alacritty"),
             EnvVarGuard::unset("CURSOR_TRACE_ID"),
             EnvVarGuard::unset("VSCODE_GIT_ASKPASS_MAIN"),
+            // A host IDE's bundle ID would be detected before TERM_PROGRAM.
+            EnvVarGuard::unset("__CFBundleIdentifier"),
             EnvVarGuard::set("XDG_CONFIG_HOME", root.join("xdg")),
         ];
         let runtime = tokio::runtime::Runtime::new().unwrap();

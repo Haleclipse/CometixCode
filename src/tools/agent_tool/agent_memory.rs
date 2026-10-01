@@ -9,6 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to CC `agentMemory.ts#AgentMemoryScope`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AgentMemoryScope {
@@ -70,7 +72,7 @@ pub fn is_agent_memory_path(absolute_path: &Path, cwd: &Path) -> bool {
         return true;
     }
     if let Some(remote_memory_dir) =
-        crate::utils::env_utils::truthy_env_var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR").truthy()
     {
         let remote_projects = PathBuf::from(remote_memory_dir).join("projects");
         normalized.starts_with(&remote_projects)
@@ -140,7 +142,7 @@ pub fn load_agent_memory_prompt(agent_type: &str, scope: AgentMemoryScope, cwd: 
 
 fn get_local_agent_memory_dir(dir_name: &str, cwd: &Path) -> PathBuf {
     if let Some(remote_memory_dir) =
-        crate::utils::env_utils::truthy_env_var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR").truthy()
     {
         // CC agentMemory.ts:35-36:
         // `sanitizePath(findCanonicalGitRoot(getProjectRoot()) ?? getProjectRoot())`
@@ -168,7 +170,8 @@ fn get_local_agent_memory_dir(dir_name: &str, cwd: &Path) -> PathBuf {
 }
 
 fn get_memory_base_dir() -> PathBuf {
-    crate::utils::env_utils::truthy_env_var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
+    crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
+        .truthy()
         .map(PathBuf::from)
         .unwrap_or_else(crate::utils::config::get_config_home)
 }

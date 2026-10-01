@@ -111,6 +111,9 @@ pub fn run(config: &CliConfig) -> i32 {
     crate::utils::ca_certs_config::apply_extra_ca_certs_from_config();
     crate::utils::mtls::configure_global_mtls();
     crate::utils::proxy::configure_global_agents();
+    // PowerShellTool's module-level constant, evaluated where CC first
+    // requires the module, as in `main::run`.
+    std::sync::LazyLock::force(&crate::tools::powershell_tool::IS_BACKGROUND_TASKS_DISABLED);
     // Maps to CC main.tsx:1273-1274 / setup.ts:371. This headless launcher
     // bypasses main::run, so it must attach the same sink before tool work.
     if let Err(error) = crate::utils::sinks::init_sinks() {

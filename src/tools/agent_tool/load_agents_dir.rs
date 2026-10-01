@@ -889,17 +889,12 @@ fn frontmatter_value_truthy(value: &serde_json::Value) -> bool {
     }
 }
 
+/// CC `markdownConfigLoader.ts:303` `getClaudeConfigHomeDir()`, over the
+/// loader's injected environment.
 fn config_home_from_env(get_env: &impl Fn(&str) -> Option<String>) -> PathBuf {
-    get_env("CLAUDE_CONFIG_DIR")
-        .or_else(|| {
-            get_env("HOME").map(|home| PathBuf::from(home).join(".claude").display().to_string())
-        })
-        .or_else(|| {
-            get_env("USERPROFILE")
-                .map(|home| PathBuf::from(home).join(".claude").display().to_string())
-        })
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(".claude"))
+    crate::utils::env_utils::claude_config_home_dir_with(|key| {
+        get_env(key).map(std::ffi::OsString::from)
+    })
 }
 
 fn managed_agent_dir_for_audience(

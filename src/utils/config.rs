@@ -132,27 +132,24 @@ pub fn is_project_config_key(key: &str) -> bool {
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
+/// CC `getClaudeConfigHomeDir` under its old Rust name; the one
+/// implementation is [`crate::utils::env_utils::get_claude_config_home_dir`].
+/// The 46 callers move to that name in a later cleanup.
 pub fn get_config_home() -> PathBuf {
-    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
-        PathBuf::from(dir)
-    } else if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".claude")
-    } else if let Ok(home) = std::env::var("USERPROFILE") {
-        PathBuf::from(home).join(".claude")
-    } else {
-        PathBuf::from(".claude")
-    }
+    crate::utils::env_utils::get_claude_config_home_dir()
 }
 
+/// Maps to: CC `env.ts:25` `process.env.CLAUDE_CONFIG_DIR || homedir()`, the
+/// root of `.claude.json`: the same environment and home directory as
+/// [`get_config_home`], with `||` dropping an empty value.
 fn get_global_config_file_home() -> PathBuf {
-    if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
-        PathBuf::from(dir)
-    } else if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home)
-    } else if let Ok(home) = std::env::var("USERPROFILE") {
-        PathBuf::from(home)
-    } else {
-        PathBuf::from(".")
+    use crate::utils::process_env::JsTruthy as _;
+    let env = crate::utils::process_env::snapshot();
+    match env.var_os("CLAUDE_CONFIG_DIR").truthy() {
+        Some(dir) => PathBuf::from(dir),
+        None => crate::utils::env_utils::homedir_with(|key| {
+            env.var_os(key).map(std::ffi::OsStr::to_os_string)
+        }),
     }
 }
 

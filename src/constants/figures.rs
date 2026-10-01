@@ -972,9 +972,15 @@ pub fn is_unicode_supported_with_env(
         || terminal_emulator == Some("JetBrains-JediTerm")
 }
 
+/// Mirrors npm `figures`' module-level `const shouldUseMain =
+/// isUnicodeSupported()`: computed at import, before settings env applies.
+/// `entrypoints/cli.rs` forces it in the startup window.
+pub(crate) static SHOULD_USE_MAIN: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(is_unicode_supported);
+
 /// Returns the active figures set for the current terminal.
 pub fn figures() -> &'static FigureSet {
-    if is_unicode_supported() {
+    if *SHOULD_USE_MAIN {
         &MAIN_SYMBOLS
     } else {
         &FALLBACK_SYMBOLS
@@ -988,7 +994,7 @@ pub fn get() -> &'static FigureSet {
 
 /// Mirrors upstream `replaceSymbols(string, {useFallback})`.
 pub fn replace_symbols(input: &str, use_fallback: Option<bool>) -> String {
-    let use_fallback = use_fallback.unwrap_or_else(|| !is_unicode_supported());
+    let use_fallback = use_fallback.unwrap_or(!*SHOULD_USE_MAIN);
     if !use_fallback {
         return input.to_string();
     }

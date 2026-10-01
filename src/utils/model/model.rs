@@ -1,6 +1,8 @@
 //! Model identity helpers.
 //! Maps to CC `utils/model/model.ts`.
 
+use crate::utils::process_env::JsTruthy;
+
 /// Maps to: CC `utils/model/configs.ts` `CLAUDE_HAIKU_4_5_CONFIG.firstParty`.
 pub const DEFAULT_HAIKU_MODEL: &str = "claude-haiku-4-5-20251001";
 
@@ -10,18 +12,20 @@ pub const DEFAULT_SONNET_MODEL: &str = "claude-sonnet-4-6";
 /// Maps to: CC `utils/model/configs.ts` `CLAUDE_OPUS_4_6_CONFIG.firstParty`.
 pub const DEFAULT_OPUS_MODEL: &str = "claude-opus-4-6";
 
-use crate::utils::env_utils::truthy_env_var;
-
-/// Maps to: CC `utils/model/model.ts:36-38` `getSmallFastModel()`.
+/// Maps to: CC `utils/model/model.ts:36-38` `getSmallFastModel()`:
+/// `process.env.ANTHROPIC_SMALL_FAST_MODEL || getDefaultHaikuModel()`.
 pub fn get_small_fast_model() -> String {
-    truthy_env_var("ANTHROPIC_SMALL_FAST_MODEL").unwrap_or_else(get_default_haiku_model)
+    crate::utils::process_env::var("ANTHROPIC_SMALL_FAST_MODEL")
+        .truthy()
+        .unwrap_or_else(get_default_haiku_model)
 }
 
 /// Maps to: CC `utils/model/model.ts` `getDefaultSonnetModel()`.
 /// TODO: Port provider-specific model string tables; first-party defaults are
 /// kept in sync with CC `utils/model/configs.ts`.
 pub fn get_default_sonnet_model() -> String {
-    truthy_env_var("ANTHROPIC_DEFAULT_SONNET_MODEL")
+    crate::utils::process_env::var("ANTHROPIC_DEFAULT_SONNET_MODEL")
+        .truthy()
         .unwrap_or_else(|| DEFAULT_SONNET_MODEL.to_string())
 }
 
@@ -29,14 +33,17 @@ pub fn get_default_sonnet_model() -> String {
 /// TODO: Port provider-specific model string tables; first-party defaults are
 /// kept in sync with CC `utils/model/configs.ts`.
 pub fn get_default_opus_model() -> String {
-    truthy_env_var("ANTHROPIC_DEFAULT_OPUS_MODEL").unwrap_or_else(|| DEFAULT_OPUS_MODEL.to_string())
+    crate::utils::process_env::var("ANTHROPIC_DEFAULT_OPUS_MODEL")
+        .truthy()
+        .unwrap_or_else(|| DEFAULT_OPUS_MODEL.to_string())
 }
 
 /// Maps to: CC `utils/model/model.ts:131-138` `getDefaultHaikuModel()`.
 /// TODO: Port provider-specific model string tables; first-party defaults are
 /// kept in sync with CC `utils/model/configs.ts`.
 pub fn get_default_haiku_model() -> String {
-    truthy_env_var("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+    crate::utils::process_env::var("ANTHROPIC_DEFAULT_HAIKU_MODEL")
+        .truthy()
         .unwrap_or_else(|| DEFAULT_HAIKU_MODEL.to_string())
 }
 
@@ -77,7 +84,8 @@ pub fn get_user_specified_model_setting() -> Option<String> {
         if let Some(model_override) = crate::bootstrap::state::get_main_loop_model_override() {
             model_override
         } else {
-            truthy_env_var("ANTHROPIC_MODEL")
+            crate::utils::process_env::var("ANTHROPIC_MODEL")
+                .truthy()
                 .or_else(|| crate::utils::settings::get_initial_settings().model)
         };
 

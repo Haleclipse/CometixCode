@@ -26,13 +26,18 @@ pub mod resume_agent;
 pub mod run_agent;
 pub mod ui;
 
-/// Maps to CC `AgentTool.tsx:145-147` `isBackgroundTasksDisabled`.
+/// Maps to CC `AgentTool.tsx:145-147` module-level `isBackgroundTasksDisabled`,
+/// evaluated at import, before `init()` applies settings env.
+/// `entrypoints/cli.rs` forces it in the startup window, as BashTool's.
+pub(crate) static IS_BACKGROUND_TASKS_DISABLED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| {
+        crate::utils::env_utils::is_env_truthy(
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+        )
+    });
+
 fn is_background_tasks_disabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
-            .ok()
-            .as_deref(),
-    )
+    *IS_BACKGROUND_TASKS_DISABLED
 }
 
 /// Maps to CC `AgentTool.tsx:252-254` — the fork gate routes every spawn
@@ -2302,12 +2307,9 @@ impl crate::tool::ToolCall for AgentTool {
                 &request.tool_use_id,
                 on_progress,
             );
-            let foreground_registration = (!crate::utils::env_utils::is_env_truthy(
-                std::env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS")
-                    .ok()
-                    .as_deref(),
-            ))
-            .then(|| {
+            // CC `:1104` `if (!isBackgroundTasksDisabled)`, the module-level
+            // constant.
+            let foreground_registration = (!is_background_tasks_disabled()).then(|| {
                 crate::tasks::local_agent_task::register_agent_foreground_with_store(
                     crate::tasks::local_agent_task::RegisterAgentForegroundParams {
                         // CC `:1106` `agentId: syncAgentId` — the registration

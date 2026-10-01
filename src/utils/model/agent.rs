@@ -2,9 +2,9 @@
 //! Maps to CC `utils/model/agent.ts`.
 
 use crate::types::permissions::PermissionMode;
-use crate::utils::env_utils::truthy_env_var;
 use crate::utils::model::model::{get_runtime_main_loop_model, parse_user_specified_model};
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
+use crate::utils::process_env::JsTruthy;
 
 /// Maps to CC `utils/model/agent.ts#AGENT_MODEL_OPTIONS`.
 pub const AGENT_MODEL_OPTIONS: &[&str] = &[
@@ -31,10 +31,10 @@ pub fn get_agent_model(
     permission_mode: Option<PermissionMode>,
 ) -> String {
     // Maps to CC `agent.ts:42-44`: `if (process.env.CLAUDE_CODE_SUBAGENT_MODEL)`
-    // — plain JS truthiness on the env value, which `truthy_env_var` carries.
-    // A whitespace-only value is truthy in JS and reaches
-    // `parseUserSpecifiedModel`; trimming here would have swallowed it.
-    if let Some(env_model) = truthy_env_var("CLAUDE_CODE_SUBAGENT_MODEL") {
+    // — plain JS truthiness on the env value. A whitespace-only value is
+    // truthy in JS and reaches `parseUserSpecifiedModel`; trimming here would
+    // have swallowed it.
+    if let Some(env_model) = crate::utils::process_env::var("CLAUDE_CODE_SUBAGENT_MODEL").truthy() {
         return parse_user_specified_model(&env_model);
     }
 

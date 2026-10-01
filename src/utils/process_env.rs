@@ -164,6 +164,21 @@ impl EnvSnapshot {
     fn same_version(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
     }
+
+    /// A detached snapshot holding exactly `pairs`, for tests of code that
+    /// takes an [`EnvSnapshot`]: the host environment cannot leak in.
+    #[cfg(test)]
+    pub(crate) fn from_pairs<K: AsRef<OsStr>, V: AsRef<OsStr>>(
+        pairs: impl IntoIterator<Item = (K, V)>,
+    ) -> Self {
+        let mut table = EnvTable::default();
+        for (key, value) in pairs {
+            if let Some((key, value)) = normalize_assignment(key.as_ref(), value.as_ref()) {
+                table.insert(key, value);
+            }
+        }
+        Self(Arc::new(table))
+    }
 }
 
 /// Test-only token for restoring one entry without replacing unrelated state.
@@ -247,6 +262,35 @@ pub fn var_os(key: impl AsRef<OsStr>) -> Option<OsString> {
 
 pub fn var(key: impl AsRef<OsStr>) -> Option<String> {
     snapshot().var(key).map(str::to_owned)
+}
+
+/// L1 (`JS string truthiness`): CC's `x || …`, `if (x)` and `!x` on a
+/// `string | undefined` treat the empty string as falsy. `.truthy()` turns
+/// it into `None`, the same for a current read (`process_env::var`), a
+/// snapshot read (`env.var`) or an injected `get_env`. Presence checks
+/// (`??`, `!== undefined`) do not use it, and `isEnvTruthy` stays
+/// `env_utils::is_env_truthy`.
+pub trait JsTruthy: Sized {
+    fn truthy(self) -> Self;
+}
+
+impl JsTruthy for Option<String> {
+    fn truthy(self) -> Self {
+        self.filter(|value| !value.is_empty())
+    }
+}
+
+impl JsTruthy for Option<&str> {
+    fn truthy(self) -> Self {
+        self.filter(|value| !value.is_empty())
+    }
+}
+
+/// For path-valued variables read with `var_os`.
+impl JsTruthy for Option<&OsStr> {
+    fn truthy(self) -> Self {
+        self.filter(|value| !value.is_empty())
+    }
 }
 
 /// Begins one source-synchronous environment staging turn. The lock covers

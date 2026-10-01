@@ -3,16 +3,29 @@
 
 use std::process::Command;
 
+use crate::utils::process_env::JsTruthy;
 use crate::utils::swarm::constants::TMUX_COMMAND;
 
-/// Maps to: CC `ORIGINAL_USER_TMUX` consumer in `isInsideTmuxSync()`.
+/// Maps to: CC `detection.ts:10` `ORIGINAL_USER_TMUX`, captured at module load
+/// because Shell.ts may override `TMUX` later. `entrypoints/cli.rs` forces it
+/// in the startup window.
+pub(crate) static ORIGINAL_USER_TMUX: std::sync::LazyLock<Option<String>> =
+    std::sync::LazyLock::new(|| crate::utils::process_env::var("TMUX"));
+
+/// Maps to: CC `detection.ts:19` `ORIGINAL_TMUX_PANE`, the leader's pane,
+/// captured at module load so a later pane switch does not move it.
+pub(crate) static ORIGINAL_TMUX_PANE: std::sync::LazyLock<Option<String>> =
+    std::sync::LazyLock::new(|| crate::utils::process_env::var("TMUX_PANE"));
+
+/// Maps to: CC `ORIGINAL_USER_TMUX` consumer in `isInsideTmuxSync()`:
+/// `!!ORIGINAL_USER_TMUX`.
 pub fn is_inside_tmux_sync_from_env(original_user_tmux: Option<&str>) -> bool {
-    original_user_tmux.is_some_and(|value| !value.is_empty())
+    original_user_tmux.truthy().is_some()
 }
 
 /// Maps to: CC `isInsideTmuxSync()`.
 pub fn is_inside_tmux_sync() -> bool {
-    is_inside_tmux_sync_from_env(std::env::var("TMUX").ok().as_deref())
+    is_inside_tmux_sync_from_env(ORIGINAL_USER_TMUX.as_deref())
 }
 
 /// Maps to: CC `isInsideTmux()`.
@@ -20,11 +33,9 @@ pub async fn is_inside_tmux() -> bool {
     is_inside_tmux_sync()
 }
 
-/// Maps to: CC `getLeaderPaneId()`.
+/// Maps to: CC `getLeaderPaneId()`: `ORIGINAL_TMUX_PANE || null`.
 pub fn get_leader_pane_id() -> Option<String> {
-    std::env::var("TMUX_PANE")
-        .ok()
-        .filter(|value| !value.is_empty())
+    ORIGINAL_TMUX_PANE.clone().truthy()
 }
 
 /// Maps to: CC `isTmuxAvailable()`.

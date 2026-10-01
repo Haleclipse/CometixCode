@@ -18,7 +18,7 @@ pub struct RgbColor {
 
 /// Maps to CC `getDefaultCharacters()`.
 pub fn get_default_characters() -> &'static [&'static str] {
-    if std::env::var("TERM").as_deref() == Ok("xterm-ghostty") {
+    if crate::utils::process_env::var("TERM").as_deref() == Some("xterm-ghostty") {
         &GHOSTTY_DEFAULT_CHARACTERS
     } else if cfg!(target_os = "macos") {
         &MACOS_DEFAULT_CHARACTERS
@@ -27,9 +27,16 @@ pub fn get_default_characters() -> &'static [&'static str] {
     }
 }
 
+/// Maps to CC `DEFAULT_CHARACTERS = getDefaultCharacters()` at module level in
+/// `Spinner.tsx:52` and `Spinner/SpinnerGlyph.tsx:11`: computed at import,
+/// before settings env applies. `entrypoints/cli.rs` forces it in the startup
+/// window.
+pub(crate) static DEFAULT_CHARACTERS: std::sync::LazyLock<&'static [&'static str]> =
+    std::sync::LazyLock::new(get_default_characters);
+
 /// Maps to CC `SPINNER_FRAMES = [...DEFAULT_CHARACTERS, ...reverse]`.
 pub fn spinner_frame(frame: usize) -> &'static str {
-    let chars = get_default_characters();
+    let chars = *DEFAULT_CHARACTERS;
     let cycle_len = chars.len() * 2;
     let idx = frame % cycle_len;
     if idx < chars.len() {
