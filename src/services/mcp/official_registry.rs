@@ -53,7 +53,9 @@ mod runtime {
         }
 
         let result = async {
-            let response = reqwest::Client::builder()
+            // CC `axios.get` (`officialRegistry.ts:39-42`), through the global
+            // interceptor.
+            let response = crate::utils::proxy::create_axios_instance()?
                 .timeout(Duration::from_millis(FETCH_TIMEOUT_MS))
                 .build()?
                 .get(REGISTRY_URL)

@@ -247,8 +247,10 @@ mod runtime {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener as TokioTcpListener;
 
+    /// CC's IdP requests (`xaaIdpLogin.ts:208-211,453-465`) use the global
+    /// `fetch`, whose dispatcher carries the proxy and TLS options.
     fn http_client() -> anyhow::Result<reqwest::Client> {
-        Ok(reqwest::Client::builder()
+        Ok(crate::utils::proxy::get_proxy_fetch_options(false)?
             .timeout(std::time::Duration::from_secs(IDP_REQUEST_TIMEOUT_SECS))
             .build()?)
     }

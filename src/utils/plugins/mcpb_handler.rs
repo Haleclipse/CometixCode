@@ -404,7 +404,9 @@ async fn download_mcpb(
     let start = std::time::Instant::now();
     let mut fired = false;
     let result: anyhow::Result<Vec<u8>> = async {
-        let client = reqwest::Client::builder()
+        // CC `axios.get` (`mcpbHandler.ts:495-507`), through the global
+        // interceptor.
+        let client = crate::utils::proxy::create_axios_instance()?
             .timeout(std::time::Duration::from_secs(120))
             .redirect(reqwest::redirect::Policy::limited(5))
             .build()?;

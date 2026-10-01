@@ -24,10 +24,6 @@ use std::collections::HashMap;
 
 pub use crate::utils::model::providers::ApiProvider;
 
-/// CC `utils/proxy.ts#getProxyFetchOptions` joins here through reqwest's
-/// built-in `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY` handling; no parallel Rust
-/// function is declared for that deferred SDK representation seam.
-
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -288,7 +284,7 @@ pub async fn get_anthropic_client(
     let resolved_fetch = build_fetch(source);
     // CC `ARGS.fetchOptions: getProxyFetchOptions({ forAnthropicAPI: true })`
     // (`client.ts:146-148`).
-    let fetch_options = crate::utils::proxy::get_proxy_fetch_options(true)?;
+    let fetch_options = crate::utils::proxy::get_proxy_fetch_options(true)?.build()?;
 
     // ----- Common client args -----
     // Maps to: CC services/api/client.ts:142-152:
@@ -675,7 +671,7 @@ pub struct AnthropicClientHandle {
     /// CC `ARGS.fetch`, the wrapper [`build_fetch`] returns.
     pub fetch: ResolvedFetch,
     /// CC `ARGS.fetchOptions`: the proxy, TLS and socket transport, carried by
-    /// the client [`crate::utils::proxy::get_proxy_fetch_options`] returns.
+    /// the client built from [`crate::utils::proxy::get_proxy_fetch_options`].
     pub fetch_options: reqwest::Client,
     /// The SDK's `logLevel`, resolved from `ANTHROPIC_LOG` in the snapshot.
     pub log_level: anthropic_sdk::LogLevel,

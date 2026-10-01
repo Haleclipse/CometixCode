@@ -230,10 +230,9 @@ async fn fetch_install_counts_from_git_hub() -> anyhow::Result<Vec<JsoncValue>> 
     ));
     let started = std::time::Instant::now();
     let result: anyhow::Result<Vec<JsoncValue>> = async {
-        // Reuse the project's selected provider and reqwest's environment proxy
-        // support. No new proxy/CA policy or user-visible override is invented.
-        crate::utils::tls_provider::install_crypto_provider();
-        let client = reqwest::Client::builder()
+        // CC `axios.get` (`installCounts.ts:191-193`), through the global
+        // interceptor; `create_axios_instance` resolves the same transport.
+        let client = crate::utils::proxy::create_axios_instance()?
             .timeout(std::time::Duration::from_millis(10000))
             .build()?;
         let url = INSTALL_COUNTS_URL.to_owned();

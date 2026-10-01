@@ -1392,7 +1392,9 @@ fn cache_marketplace_from_url(
         }
         let started = std::time::Instant::now();
         let fetched:anyhow::Result<serde_json::Value>=async {
-        let client=reqwest::Client::builder().timeout(std::time::Duration::from_secs(10)).build()?;
+        // CC `axios.get` (`marketplaceManager.ts:1282-1285`), through the
+        // global interceptor.
+        let client=crate::utils::proxy::create_axios_instance()?.timeout(std::time::Duration::from_secs(10)).build()?;
         let mut headers=reqwest::header::HeaderMap::new();
         headers.insert(reqwest::header::ACCEPT,reqwest::header::HeaderValue::from_static("application/json, text/plain, */*"));
         if let Some(custom_headers)=custom_headers {for(key,value)in custom_headers {headers.insert(reqwest::header::HeaderName::from_bytes(key.as_bytes())?,reqwest::header::HeaderValue::from_str(value.as_str().unwrap_or(""))?);}}

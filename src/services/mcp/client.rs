@@ -1985,12 +1985,9 @@ mod runtime {
         headers: BTreeMap<String, String>,
     ) -> anyhow::Result<LegacySseTransport> {
         // Maps to: CC `new SSEClientTransport(new URL(serverRef.url), ...)`.
-        // Rust-only transport initialization: CC uses Node's HTTP/TLS stack;
-        // Cometix compiles reqwest/rustls with `rustls-no-provider`, so tests
-        // and library callers that do not enter `main()` still need the
-        // selected crypto provider installed before building the HTTP client.
-        crate::utils::tls_provider::install_crypto_provider();
-        let client = reqwest::Client::new();
+        // Its event stream spreads `getProxyFetchOptions()` (`client.ts:657-669`)
+        // and its POSTs take the global `fetch`: the same transport.
+        let client = crate::utils::proxy::get_proxy_fetch_options(false)?.build()?;
         let mut request = client.get(url).header("Accept", "text/event-stream");
         for (key, value) in &headers {
             request = request.header(key, value);
@@ -2284,20 +2281,28 @@ mod runtime {
         config: &ScopedMcpServerConfig,
         url: &str,
     ) -> anyhow::Result<RunningService<RoleClient, CometixMcpClientHandler>> {
-        // Rust-only transport initialization: CC uses Node's HTTP/TLS stack;
-        // Cometix compiles reqwest/rustls with `rustls-no-provider`, so tests
-        // and library callers that do not enter `main()` still need the
-        // selected crypto provider installed before building the HTTP client.
-        crate::utils::tls_provider::install_crypto_provider();
-
         let mut transport_config = streamable_http_config(name, config, url).await?;
         if transport_config.auth_header.as_deref() == Some("") {
             transport_config.auth_header = None;
         }
-        let transport = StreamableHttpClientTransport::from_config(transport_config);
+        let transport = StreamableHttpClientTransport::with_client(
+            streamable_http_client()?,
+            transport_config,
+        );
         let handler = CometixMcpClientHandler::new(name);
         let timeout = Duration::from_millis(connection_timeout_ms());
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
+    }
+
+    /// The client rmcp's Streamable HTTP transport sends with. CC spreads
+    /// `getProxyFetchOptions()` into the transport's `requestInit`
+    /// (`client.ts:815-831`, `:887`). rmcp's own default has no idle pool and
+    /// follows no redirect (`default_http_client`); both are kept.
+    pub(super) fn streamable_http_client() -> anyhow::Result<reqwest::Client> {
+        Ok(crate::utils::proxy::get_proxy_fetch_options(false)?
+            .pool_max_idle_per_host(0)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?)
     }
 
     async fn serve_claude_ai_proxy_http_with_token(
@@ -2308,7 +2313,10 @@ mod runtime {
         // Rust/rmcp transport boundary for the source's nested `doRequest`:
         // each retry must start a new service with the bearer token it sends.
         let transport_config = claude_ai_proxy_http_config(proxy_url, token)?;
-        let transport = StreamableHttpClientTransport::from_config(transport_config);
+        let transport = StreamableHttpClientTransport::with_client(
+            streamable_http_client()?,
+            transport_config,
+        );
         let handler = CometixMcpClientHandler::new(name);
         let timeout = Duration::from_millis(connection_timeout_ms());
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
@@ -4134,6 +4142,60 @@ mod tests {
     use image::GenericImageView;
     use std::collections::BTreeMap;
     use std::io::{Read as _, Write as _};
+
+    /// rmcp's Streamable HTTP default follows no redirect, so a server's
+    /// custom headers never reach a redirect target; the proxy-aware client
+    /// keeps that.
+    #[cfg(feature = "mcp_runtime")]
+    #[tokio::test]
+    async fn streamable_http_client_follows_no_redirect() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _env: Vec<_> = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "no_proxy"]
+            .into_iter()
+            .map(EnvVarGuard::unset)
+            .chain([EnvVarGuard::set("NO_PROXY", "127.0.0.1")])
+            .collect();
+        let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_address = target.local_addr().unwrap();
+        let target_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let hit = target_hit.clone();
+        let target_server = tokio::spawn(async move {
+            let (mut stream, _) = target.accept().await.unwrap();
+            hit.store(true, std::sync::atomic::Ordering::SeqCst);
+            let mut buffer = [0; 4096];
+            let _ = stream.read(&mut buffer).await;
+            let _ = stream
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                .await;
+        });
+        let origin = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin_address = origin.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = origin.accept().await.unwrap();
+            let mut buffer = [0; 4096];
+            let _ = stream.read(&mut buffer).await;
+            let reply = format!(
+                "HTTP/1.1 302 Found\r\nlocation: http://{target_address}/leak\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+            );
+            stream.write_all(reply.as_bytes()).await.unwrap();
+        });
+
+        let response = super::runtime::streamable_http_client()
+            .unwrap()
+            .get(format!("http://{origin_address}/mcp"))
+            .header("x-api-key", "secret")
+            .send()
+            .await
+            .unwrap();
+        server.await.unwrap();
+        target_server.abort();
+        assert_eq!(response.status(), 302);
+        // A followed redirect reaches the target before `send` resolves.
+        assert!(!target_hit.load(std::sync::atomic::Ordering::SeqCst));
+    }
 
     #[test]
     fn resource_helper_callback_scope_and_reconnect_match_actual_bun_oracle() {

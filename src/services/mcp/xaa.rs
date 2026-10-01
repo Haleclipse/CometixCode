@@ -98,8 +98,10 @@ mod runtime {
 
     const XAA_REQUEST_TIMEOUT_SECS: u64 = 30;
 
+    /// CC `makeXaaFetch` (`xaa.ts:42-54`) wraps the global `fetch`, whose
+    /// dispatcher carries the proxy and TLS options.
     fn http_client() -> anyhow::Result<reqwest::Client> {
-        Ok(reqwest::Client::builder()
+        Ok(crate::utils::proxy::get_proxy_fetch_options(false)?
             .timeout(std::time::Duration::from_secs(XAA_REQUEST_TIMEOUT_SECS))
             .build()?)
     }
@@ -313,7 +315,13 @@ mod runtime {
     pub async fn discover_authorization_server(
         as_url: &str,
     ) -> anyhow::Result<XaaAuthorizationServerMetadata> {
-        let manager = AuthorizationManager::new(as_url.to_string()).await?;
+        // CC passes `makeXaaFetch` as `fetchFn` (`xaa.ts:178-210`, `:183`):
+        // the global `fetch`.
+        let manager = AuthorizationManager::new_with_oauth_http_client(
+            as_url.to_string(),
+            crate::services::mcp::auth::oauth_http_client()?,
+        )
+        .await?;
         if !crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
             return Err(crate::constants::oauth::OAuthCredentialSideEffectsUnavailable.into());
         }

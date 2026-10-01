@@ -94,10 +94,9 @@ pub async fn refresh_oauth_token(
             Some((config.token_url.clone(), body.clone()));
     }
 
-    // Rust-only transport initialization: the binary installs this at startup,
-    // while library/test callers can enter this service boundary directly.
-    crate::utils::tls_provider::install_crypto_provider();
-    let client = reqwest::Client::builder()
+    // CC `axios.post` (`client.ts:166-169`), through the global interceptor;
+    // `create_axios_instance` resolves the same proxy, NO_PROXY, mTLS and CA.
+    let client = crate::utils::proxy::create_axios_instance()?
         .timeout(Duration::from_millis(15_000))
         .build()?;
     let request = client

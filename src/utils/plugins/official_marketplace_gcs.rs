@@ -66,7 +66,9 @@ pub async fn fetch_official_marketplace_from_gcs(
     let mut bytes = None;
     let mut err_kind = None;
     let fetched:anyhow::Result<String>=async {
-        let client=reqwest::Client::new();
+        // CC `axios.get` (`officialMarketplaceGcs.ts:81-84,107-110`), through
+        // the global interceptor.
+        let client=crate::utils::proxy::create_axios_instance()?.build()?;
         let latest=client.get(format!("{GCS_BASE}/latest")).timeout(std::time::Duration::from_secs(10)).send().await?.error_for_status()?.text().await?;
         let latest=latest.trim_matches(|c:char|matches!(c,'\u{9}'..='\u{d}'|'\u{20}'|'\u{a0}'|'\u{1680}'|'\u{2000}'..='\u{200a}'|'\u{2028}'|'\u{2029}'|'\u{202f}'|'\u{205f}'|'\u{3000}'|'\u{feff}')).to_owned();sha=Some(latest.clone());if latest.is_empty(){anyhow::bail!("latest pointer returned empty body");}
         let sentinel=gcs_path!(install_location,".gcs-sha");let current=tokio::fs::read(&sentinel).await.ok().map(|b|String::from_utf8_lossy(&b).trim_matches(|c:char|matches!(c,'\u{9}'..='\u{d}'|'\u{20}'|'\u{a0}'|'\u{1680}'|'\u{2000}'..='\u{200a}'|'\u{2028}'|'\u{2029}'|'\u{202f}'|'\u{205f}'|'\u{3000}'|'\u{feff}')).to_owned());

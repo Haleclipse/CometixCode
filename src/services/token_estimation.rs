@@ -147,11 +147,13 @@ async fn count_tokens_with_vertex(
     );
     let mut body = serde_json::to_value(params).ok()?;
     body["anthropic_version"] = Value::String("vertex-2023-10-16".to_string());
-    let client = reqwest::Client::builder()
+    // CC's `countTokens` runs on the client's `fetchOptions`
+    // (`client.ts:146-148`), with the client's timeout per request.
+    let mut request = handle
+        .fetch_options
+        .post(url)
         .timeout(std::time::Duration::from_millis(handle.timeout_ms))
-        .build()
-        .ok()?;
-    let mut request = client.post(url).json(&body);
+        .json(&body);
     for (name, value) in &handle.default_headers {
         if let Some(value) = value {
             request = request.header(name, value);

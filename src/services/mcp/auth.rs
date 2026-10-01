@@ -448,6 +448,78 @@ mod runtime {
     const AUTH_REQUEST_TIMEOUT_MS: u64 = 30_000;
     const AUTH_CALLBACK_TIMEOUT_SECS: u64 = 5 * 60;
 
+    /// rmcp's `ReqwestOAuthHttpClient` limit (`MAX_OAUTH_HTTP_RESPONSE_BODY_BYTES`).
+    const MAX_OAUTH_HTTP_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
+
+    /// The HTTP client rmcp's `AuthorizationManager` sends every OAuth request
+    /// with. CC's MCP auth requests run on the global `fetch` (the SDK's
+    /// default `fetchFn`, or `createAuthFetch`, `:198-237`), whose dispatcher
+    /// carries the proxy and TLS options; rmcp builds plain clients unless it
+    /// is handed one. The rest is rmcp's own: one client per redirect policy,
+    /// a 30 s timeout, a 1 MiB body limit.
+    pub(crate) fn oauth_http_client()
+    -> anyhow::Result<Arc<dyn rmcp::transport::auth::OAuthHttpClient>> {
+        let build = |redirect: reqwest::redirect::Policy| -> anyhow::Result<reqwest::Client> {
+            Ok(crate::utils::proxy::get_proxy_fetch_options(false)?
+                .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
+                .redirect(redirect)
+                .build()?)
+        };
+        Ok(Arc::new(FetchOAuthHttpClient {
+            follow_redirects: build(reqwest::redirect::Policy::default())?,
+            stop_redirects: build(reqwest::redirect::Policy::none())?,
+        }))
+    }
+
+    struct FetchOAuthHttpClient {
+        follow_redirects: reqwest::Client,
+        stop_redirects: reqwest::Client,
+    }
+
+    impl rmcp::transport::auth::OAuthHttpClient for FetchOAuthHttpClient {
+        fn execute(
+            &self,
+            request: rmcp::transport::auth::OAuthHttpRequest,
+        ) -> rmcp::transport::auth::OAuthHttpClientFuture<'_> {
+            use futures::StreamExt as _;
+            use rmcp::transport::auth::{OAuthHttpClientError, OAuthHttpRedirectPolicy};
+            Box::pin(async move {
+                // `non_exhaustive`: a policy added later stops, the safer side.
+                let client = match request.redirect_policy {
+                    OAuthHttpRedirectPolicy::Follow => &self.follow_redirects,
+                    _ => &self.stop_redirects,
+                };
+                let request = reqwest::Request::try_from(request.request)
+                    .map_err(|error| OAuthHttpClientError::new(error.to_string()))?;
+                let response = client
+                    .execute(request)
+                    .await
+                    .map_err(|error| OAuthHttpClientError::new(error.to_string()))?;
+                let mut builder = http::Response::builder()
+                    .status(response.status())
+                    .version(response.version());
+                for (name, value) in response.headers() {
+                    builder = builder.header(name, value);
+                }
+                let mut body = Vec::new();
+                let mut stream = response.bytes_stream();
+                while let Some(chunk) = stream.next().await {
+                    let chunk =
+                        chunk.map_err(|error| OAuthHttpClientError::new(error.to_string()))?;
+                    if chunk.len() > MAX_OAUTH_HTTP_RESPONSE_BODY_BYTES - body.len() {
+                        return Err(OAuthHttpClientError::new(format!(
+                            "OAuth HTTP response body exceeds {MAX_OAUTH_HTTP_RESPONSE_BODY_BYTES} bytes"
+                        )));
+                    }
+                    body.extend_from_slice(&chunk);
+                }
+                builder
+                    .body(body)
+                    .map_err(|error| OAuthHttpClientError::new(error.to_string()))
+            })
+        }
+    }
+
     impl From<AuthorizationMetadata> for McpAuthorizationServerMetadata {
         fn from(metadata: AuthorizationMetadata) -> Self {
             let scope = metadata
@@ -485,7 +557,9 @@ mod runtime {
                     "authServerMetadataUrl must use https:// (got: {configured_metadata_url})"
                 );
             }
-            let client = reqwest::Client::builder()
+            // CC `createAuthFetch` (`auth.ts:198-237`) wraps the global
+            // `fetch`, whose dispatcher carries the proxy and TLS options.
+            let client = crate::utils::proxy::get_proxy_fetch_options(false)?
                 .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
                 .build()?;
             let request = client
@@ -506,7 +580,9 @@ mod runtime {
             return Ok(Some(metadata));
         }
 
-        let manager = AuthorizationManager::new(server_url).await?;
+        let manager =
+            AuthorizationManager::new_with_oauth_http_client(server_url, oauth_http_client()?)
+                .await?;
         if !crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
             return Err(crate::constants::oauth::OAuthCredentialSideEffectsUnavailable.into());
         }
@@ -1263,7 +1339,9 @@ mod runtime {
         }
         store.save(stored_credentials).await?;
 
-        let mut manager = AuthorizationManager::new(server_url).await?;
+        let mut manager =
+            AuthorizationManager::new_with_oauth_http_client(server_url, oauth_http_client()?)
+                .await?;
         manager.set_metadata(metadata.clone());
         manager.set_credential_store(store);
         let redirect_uri = build_redirect_uri(oauth_configured_callback_port(config));
@@ -1514,8 +1592,9 @@ mod runtime {
         access_token: Option<&str>,
         auth_method: &str,
     ) -> anyhow::Result<()> {
-        // Maps to: CC `services/mcp/auth.ts#revokeToken`.
-        let client = reqwest::Client::builder()
+        // Maps to: CC `services/mcp/auth.ts#revokeToken`, an `axios.post`
+        // through the global interceptor.
+        let client = crate::utils::proxy::create_axios_instance()?
             .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
             .build()?;
         let mut params = vec![
@@ -2095,7 +2174,8 @@ mod runtime {
         else {
             return Ok(None);
         };
-        let client = reqwest::Client::builder()
+        // The SDK's default `fetch`: the global dispatcher.
+        let client = crate::utils::proxy::get_proxy_fetch_options(false)?
             .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
             .build()?;
         let request = client
@@ -2236,7 +2316,9 @@ mod runtime {
                     None,
                 )
             };
-        let mut manager = AuthorizationManager::new(server_url).await?;
+        let mut manager =
+            AuthorizationManager::new_with_oauth_http_client(server_url, oauth_http_client()?)
+                .await?;
         manager.set_metadata(metadata.clone());
         let scopes = if let Some(step_up_scope) = cached_reauth_state.step_up_scope.as_deref() {
             step_up_scope
@@ -2458,6 +2540,8 @@ pub use runtime::{
     refresh_mcp_oauth_access_token_after_auth_failure, revoke_server_tokens,
     save_mcp_client_secret,
 };
+#[cfg(feature = "mcp_runtime")]
+pub(crate) use runtime::oauth_http_client;
 
 #[cfg(test)]
 mod tests {
@@ -2470,6 +2554,60 @@ mod tests {
             get_server_key("docs", "http", "https://example.com/mcp", &headers),
             "docs|9a364a44ea6c0ebc"
         );
+    }
+
+    /// CC's MCP auth requests run on the global `fetch`: rmcp's OAuth
+    /// discovery goes through the environment's proxy. `HTTPS_PROXY` carries
+    /// an `http://` server too, CC's one proxy for every scheme, where rmcp's
+    /// built-in client would connect direct. Discovery asks for no redirect
+    /// and follows same-origin ones itself, so a cross-origin 302 is never
+    /// followed.
+    #[cfg(feature = "mcp_runtime")]
+    #[tokio::test]
+    async fn oauth_discovery_goes_through_the_fetch_proxy() {
+        use crate::utils::env_utils::EnvVarGuard;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::utils::tls_provider::install_crypto_provider();
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_address = proxy.local_addr().unwrap();
+        let _env: Vec<_> = ["https_proxy", "http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY"]
+            .into_iter()
+            .map(EnvVarGuard::unset)
+            .chain([EnvVarGuard::set("HTTPS_PROXY", format!("http://{proxy_address}"))])
+            .collect();
+        let (seen_tx, mut seen_rx) = tokio::sync::mpsc::unbounded_channel();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = proxy.accept().await.unwrap();
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap_or(0);
+                let head = String::from_utf8_lossy(&buffer[..count]).into_owned();
+                let _ = seen_tx.send(head.lines().next().unwrap_or_default().to_owned());
+                let _ = stream
+                    .write_all(
+                        b"HTTP/1.1 302 Found\r\nlocation: http://other.invalid/metadata\r\n\
+                          content-length: 0\r\nconnection: close\r\n\r\n",
+                    )
+                    .await;
+            }
+        });
+
+        let manager = rmcp::transport::auth::AuthorizationManager::new_with_oauth_http_client(
+            "http://mcp.invalid/mcp",
+            oauth_http_client().unwrap(),
+        )
+        .await
+        .unwrap();
+        let _ = manager.discover_metadata().await;
+        server.abort();
+        let first = seen_rx.recv().await.expect("a request reached the proxy");
+        assert!(first.starts_with("GET http://mcp.invalid/"), "{first}");
+        while let Ok(line) = seen_rx.try_recv() {
+            assert!(!line.contains("other.invalid"), "followed a cross-origin redirect: {line}");
+        }
     }
 
     #[cfg(feature = "mcp_runtime")]

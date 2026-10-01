@@ -90,7 +90,9 @@ mod runtime {
                 debug_log(format!("[claudeai-mcp] Fetching from {url}"));
 
                 let result = async {
-                    let response = reqwest::Client::builder()
+                    // CC `axios.get` (`claudeai.ts:82-90`), through the
+                    // global interceptor.
+                    let response = crate::utils::proxy::create_axios_instance()?
                         .timeout(Duration::from_millis(FETCH_TIMEOUT_MS))
                         .build()?
                         .get(&url)

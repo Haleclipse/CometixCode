@@ -369,7 +369,9 @@ pub(crate) async fn get_url_markdown_content(
         }
     }
 
-    let client = reqwest::Client::builder()
+    // CC's `axios.get` (`utils.ts:272-282`) goes through the global axios
+    // interceptor; `create_axios_instance` resolves the same transport.
+    let client = crate::utils::proxy::create_axios_instance()?
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_millis(FETCH_TIMEOUT_MS))
         .build()?;
@@ -483,7 +485,8 @@ async fn check_domain_blocklist(
         }
     }
 
-    let client = reqwest::Client::builder()
+    // CC `axios.get` (`utils.ts:183-186`), through the global interceptor.
+    let client = crate::utils::proxy::create_axios_instance()?
         .timeout(Duration::from_millis(DOMAIN_CHECK_TIMEOUT_MS))
         .build()?;
     let mut url = reqwest::Url::parse("https://api.anthropic.com/api/web/domain_info")?;

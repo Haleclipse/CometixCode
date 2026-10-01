@@ -4,8 +4,9 @@
 //! Node reaches every client through two globals that `configureGlobalAgents`
 //! installs: an axios request interceptor and undici's global dispatcher.
 //! Rust has neither, so a client takes its transport from here when it is
-//! built. The Anthropic API client takes [`get_proxy_fetch_options`], callers
-//! CC makes through axios take [`create_axios_instance`].
+//! built. Callers CC makes through `fetch` (the Anthropic API client, MCP
+//! transports and OAuth, XAA) take [`get_proxy_fetch_options`]; callers CC
+//! makes through axios take [`create_axios_instance`].
 //!
 //! The two paths keep CC's two NO_PROXY rule sets: [`should_bypass_proxy`] for
 //! axios, and undici's `EnvHttpProxyAgent` for `fetch`
@@ -52,8 +53,10 @@ use crate::utils::undici::env_http_proxy_agent::EnvHttpProxyAgent;
 /// process once a pooled connection turned out dead.
 static KEEP_ALIVE_DISABLED: AtomicBool = AtomicBool::new(false);
 
-/// Maps to: CC `utils/proxy.ts:29-31` `disableKeepAlive`. The next client
-/// [`get_proxy_fetch_options`] returns keeps no idle connection.
+/// Maps to: CC `utils/proxy.ts:29-31` `disableKeepAlive`. Clients built from
+/// [`get_proxy_fetch_options`] after this keep no idle connection. CC's flag
+/// rides only the calls that spread `getProxyFetchOptions()`; here every
+/// fetch-path client takes it, plain `fetch` callers included.
 pub fn disable_keep_alive() {
     KEEP_ALIVE_DISABLED.store(true, Ordering::Relaxed);
 }
@@ -194,23 +197,22 @@ pub fn create_axios_instance() -> anyhow::Result<reqwest::ClientBuilder> {
     })))
 }
 
-/// Build a fetch client. CC passes `keepalive: false` per request; reqwest
-/// pools per client, so the flag is read here.
-fn build_fetch_client(builder: reqwest::ClientBuilder) -> anyhow::Result<reqwest::Client> {
-    let builder = if KEEP_ALIVE_DISABLED.load(Ordering::Relaxed) {
+/// CC passes `keepalive: false` per request; reqwest pools per client, so the
+/// flag is read when the fetch builder is made.
+fn fetch_builder(builder: reqwest::ClientBuilder) -> reqwest::ClientBuilder {
+    if KEEP_ALIVE_DISABLED.load(Ordering::Relaxed) {
         builder.pool_max_idle_per_host(0)
     } else {
         builder
-    };
-    Ok(builder.build()?)
+    }
 }
 
 /// Maps to: CC `utils/proxy.ts:198-237` `getProxyAgent`: an
 /// `EnvHttpProxyAgent` with `uri` as both proxies and
 /// `NO_PROXY || no_proxy`, with the mTLS and CA options on the tunnelled and
-/// the direct connections alike. Built on every call, not memoized (see the
-/// module docs).
-pub fn get_proxy_agent(uri: &str) -> anyhow::Result<reqwest::Client> {
+/// the direct connections alike. A new builder on every call, not memoized
+/// (see the module docs).
+pub fn get_proxy_agent(uri: &str) -> anyhow::Result<reqwest::ClientBuilder> {
     let proxy = parse_proxy_url(uri)?;
     let env = crate::utils::process_env::snapshot();
     let no_proxy = env
@@ -223,20 +225,26 @@ pub fn get_proxy_agent(uri: &str) -> anyhow::Result<reqwest::Client> {
     if let Some(mtls_agent) = crate::utils::mtls::get_mtls_agent() {
         builder = mtls_agent.apply(builder);
     }
-    build_fetch_client(builder.proxy(reqwest::Proxy::custom(move |url| {
+    Ok(fetch_builder(builder.proxy(reqwest::Proxy::custom(move |url| {
         agent.get_proxy_for_url(url).map(str::to_owned)
-    })))
+    }))))
 }
 
 /// Maps to: CC `utils/proxy.ts:288-319` `getProxyFetchOptions`: the transport
-/// for `fetch`, here the client that carries it.
+/// for `fetch`, here a client builder that carries it. Callers add their own
+/// request options (timeout, redirects) and build, as CC's spread the options
+/// into their own `fetch` init.
 /// - `for_anthropic_api` with `ANTHROPIC_UNIX_SOCKET`: that socket, without
 ///   proxy or TLS options. CC does this only under Bun, which Cometix, a
 ///   native binary, follows. Unix only; elsewhere the variable is ignored.
 /// - A proxy: [`get_proxy_agent`].
 /// - Otherwise the mTLS and CA options if any (`getTLSFetchOptions`,
 ///   `mtls.ts:117-152`), else the defaults.
-pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwest::Client> {
+///
+/// CC's plain `fetch` calls take undici's global dispatcher, which
+/// `configureGlobalAgents` sets to the same agent (`:370-386`); they map here
+/// with `for_anthropic_api: false`.
+pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwest::ClientBuilder> {
     let env = crate::utils::process_env::snapshot();
 
     if for_anthropic_api {
@@ -247,7 +255,7 @@ pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwes
             // `.no_proxy()`: reqwest ignores proxies on a socket but would
             // still attach a system proxy's credentials to the request.
             #[cfg(unix)]
-            return build_fetch_client(client_builder().no_proxy().unix_socket(unix_socket));
+            return Ok(fetch_builder(client_builder().no_proxy().unix_socket(unix_socket)));
             #[cfg(not(unix))]
             log_for_debugging(&format!(
                 "ANTHROPIC_UNIX_SOCKET={unix_socket} is not supported on this platform; ignored"
@@ -260,13 +268,13 @@ pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwes
     }
 
     let builder = client_builder();
-    build_fetch_client(match crate::utils::mtls::get_mtls_agent() {
+    Ok(fetch_builder(match crate::utils::mtls::get_mtls_agent() {
         Some(mtls_agent) => {
             log_for_debugging("TLS: Created undici agent with custom certificates");
             mtls_agent.apply(builder)
         }
         None => builder,
-    })
+    }))
 }
 
 /// Maps to: CC `utils/proxy.ts:327-388` `configureGlobalAgents`. There are
@@ -427,7 +435,7 @@ mod tests {
         let proxy_address = proxy.local_addr().unwrap();
         crate::utils::process_env::set("HTTPS_PROXY", format!("http://{proxy_address}"));
         let seen = tokio::spawn(accept_one(proxy));
-        let client = get_proxy_fetch_options(true).unwrap();
+        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
         let response = client.get("http://origin.invalid/v1/models").send().await.unwrap();
         assert_eq!(response.status(), 204);
         let request = seen.await.unwrap();
@@ -441,7 +449,7 @@ mod tests {
         let origin_address = origin.local_addr().unwrap();
         crate::utils::process_env::set("NO_PROXY", "127.0.0.1");
         let seen = tokio::spawn(accept_one(origin));
-        let client = get_proxy_fetch_options(true).unwrap();
+        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
         let response = client
             .get(format!("http://{origin_address}/direct"))
             .send()
@@ -478,7 +486,7 @@ mod tests {
                 });
             }
         });
-        let client = get_proxy_fetch_options(true).unwrap();
+        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
         for _ in 0..requests {
             let response = client.get(format!("http://{address}/")).send().await.unwrap();
             assert_eq!(response.status(), 204);
@@ -534,7 +542,7 @@ mod tests {
                 .unwrap();
             String::from_utf8_lossy(&request).to_ascii_lowercase()
         });
-        let client = get_proxy_fetch_options(true).unwrap();
+        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
         let response = client.get("http://localhost/v1/models").send().await.unwrap();
         assert_eq!(response.status(), 204);
         let request = server.await.unwrap();

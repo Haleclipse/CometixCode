@@ -243,13 +243,13 @@ pub(crate) async fn upload_brief_attachment(
     let boundary = format!("----FormBoundary{}", uuid::Uuid::new_v4());
     let body = build_multipart_body(&boundary, &filename, mime_type, &content);
 
-    // Rust-only transport initialization: the binary installs this at startup,
-    // while library/test callers can enter this boundary directly.
-    crate::utils::tls_provider::install_crypto_provider();
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(UPLOAD_TIMEOUT_MS))
-        .build()
-    {
+    // CC posts through the global axios instance (`configureGlobalAgents`);
+    // `create_axios_instance` resolves the same proxy, NO_PROXY, mTLS and CA.
+    let client = match crate::utils::proxy::create_axios_instance().and_then(|builder| {
+        Ok(builder
+            .timeout(std::time::Duration::from_millis(UPLOAD_TIMEOUT_MS))
+            .build()?)
+    }) {
         Ok(client) => client,
         Err(error) => {
             debug(&format!("upload threw for {full_path}: {error}"));
