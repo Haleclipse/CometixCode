@@ -729,19 +729,18 @@ mod tests {
     #[ignore = "requires authorized real provider settings and Kitty"]
     async fn real_provider_matches_official_agent_hook_outcomes() {
         assert_eq!(
-            std::env::var("COMETIX_RUN_REAL_AGENT_HOOK").as_deref(),
-            Ok("1")
+            crate::utils::process_env::var("COMETIX_RUN_REAL_AGENT_HOOK").as_deref(),
+            Some("1")
         );
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let workdir = root.join(".test/kitty-workdir");
         assert_eq!(
-            std::env::var("CLAUDE_CONFIG_DIR").unwrap(),
+            crate::utils::process_env::var("CLAUDE_CONFIG_DIR").unwrap(),
             root.join(".test/kitty-config").display().to_string()
         );
         std::env::set_current_dir(&workdir).unwrap();
         crate::bootstrap::state::set_original_cwd(&workdir);
-        let settings = std::path::PathBuf::from(std::env::var("HOME").unwrap())
-            .join(".claude/settings.grok.json");
+        let settings = crate::utils::node_os::homedir().join(".claude/settings.grok.json");
         crate::main::apply_live_startup_flags(&[
             "cometix-code".into(),
             "--settings".into(),

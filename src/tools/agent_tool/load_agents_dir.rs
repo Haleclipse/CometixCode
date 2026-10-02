@@ -1106,8 +1106,8 @@ mod tests {
         write_file(&root.join(".claude/agents/above.md"), &agent("above"));
 
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, &home);
+        let _home =
+            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, &home);
         let _config =
             crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config"));
         let result = get_agent_definitions_with_overrides_from_env(&cwd, &|key| match key {

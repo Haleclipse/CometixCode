@@ -155,7 +155,10 @@ mod tests {
             crate::utils::env_utils::EnvVarGuard::preserve("CLAUDE_CODE_USE_COWORK_PLUGINS"),
             crate::utils::env_utils::EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_SEED_DIR"),
         ];
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+        // `expandTilde` takes `homedir()`: pin it to a literal.
+        let home = "/home/someone";
+        let _home =
+            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, home);
         crate::utils::process_env::remove("CLAUDE_CODE_USE_COWORK_PLUGINS");
         crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_SEED_DIR");
         crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", "~/custom-plugins");

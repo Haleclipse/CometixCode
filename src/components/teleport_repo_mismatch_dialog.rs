@@ -171,7 +171,7 @@ pub fn TeleportRepoMismatchDialog<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};
@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn teleport_repo_options_match_official_use_labels_and_cancel_order() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _home_guard = EnvVarGuard::set("HOME", "/home/alice");
+        let _home_guard = EnvVarGuard::set(HOME_VAR, "/home/alice");
         let paths = vec![
             "/home/alice/src/repo".to_string(),
             "/work/other/repo".to_string(),
@@ -203,7 +203,7 @@ mod tests {
     #[test]
     fn teleport_repo_invalid_path_message_matches_official_copy() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _home_guard = EnvVarGuard::set("HOME", "/home/alice");
+        let _home_guard = EnvVarGuard::set(HOME_VAR, "/home/alice");
 
         assert_eq!(
             teleport_repo_mismatch_error_message("/home/alice/src/repo"),
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn teleport_repo_dialog_renders_available_paths_and_cancel() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _home_guard = EnvVarGuard::set("HOME", "/home/alice");
+        let _home_guard = EnvVarGuard::set(HOME_VAR, "/home/alice");
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 TeleportRepoMismatchDialog(

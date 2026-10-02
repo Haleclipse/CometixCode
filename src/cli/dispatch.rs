@@ -98,7 +98,7 @@ mod tests {
         let c = parse_cli_config(&argv(&["--bare"]));
         assert_eq!(dispatch(&c), None);
         assert!(crate::utils::env_utils::is_env_truthy(
-            std::env::var("CLAUDE_CODE_SIMPLE").ok().as_deref()
+            crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref()
         ));
     }
 

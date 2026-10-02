@@ -14,7 +14,7 @@ const CHILD_ENV: &str = "SUGAR_PATH_RELATIVE_WITHOUT_CWD";
 
 #[test]
 fn cwd_independent_relative_inputs_do_not_read_the_current_directory() {
-    if let Some(doomed) = env::var_os(CHILD_ENV) {
+    if let Some(doomed) = crate::utils::process_env::var_os(CHILD_ENV) {
         fs::remove_dir(&doomed).expect("remove the child's current directory");
         assert!(env::current_dir().is_err());
 

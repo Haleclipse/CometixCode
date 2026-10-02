@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn log_ant_error_matches_official_audience_stack_and_error_level() {
         const CHILD: &str = "COMETIX_TEST_LOG_ANT_ERROR_CHILD";
-        if std::env::var_os(CHILD).is_some() {
+        if crate::utils::process_env::var_os(CHILD).is_some() {
             init_from_parts(false, true, None, None);
             log_ant_error("absent-stack", None);
             log_ant_error("empty-stack", Some(""));

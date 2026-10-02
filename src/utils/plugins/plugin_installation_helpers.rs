@@ -472,6 +472,7 @@ pub async fn install_plugin_from_marketplace(params: InstallPluginParams) -> Ins
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::HOME_VAR;
 
     // Test fixture only: resolve the imported marketplace then call the real
     // UI wrapper and inspect canonical registry output, without a second DFS,
@@ -615,7 +616,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set("HOME", &root);
+        let _home = EnvGuard::set(HOME_VAR, &root);
         let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
 
         let marketplace = root.join("market");
@@ -700,7 +701,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set("HOME", &root);
+        let _home = EnvGuard::set(HOME_VAR, &root);
         let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _managed = EnvGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", root.join("managed"));
         let marketplace = root.join("market");
@@ -769,7 +770,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set("HOME", &root);
+        let _home = EnvGuard::set(HOME_VAR, &root);
         let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
         let marketplace = root.join("market");
         std::fs::create_dir_all(marketplace.join("plugins/root/.claude-plugin")).unwrap();
@@ -821,7 +822,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set("HOME", &root);
+        let _home = EnvGuard::set(HOME_VAR, &root);
         let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
         let marketplace = root.join("market");
         std::fs::create_dir_all(marketplace.join("plugins/root/.claude-plugin")).unwrap();
@@ -911,7 +912,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("cometix-plugin-order-{}", uuid::Uuid::new_v4()));
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set("HOME", &root);
+        let _home = EnvGuard::set(HOME_VAR, &root);
         let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
         order_fixture(&root, true);
         let error = install_fixture("root@claude-plugins-official")
@@ -958,7 +959,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set("HOME", &root);
+        let _home = EnvGuard::set(HOME_VAR, &root);
         let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
         order_fixture(&root, false);
         std::fs::create_dir(root.join("plugins/installed_plugins.json")).unwrap();

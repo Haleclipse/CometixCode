@@ -183,9 +183,9 @@ mod tests {
         // the zero-argument memo nor Bun-compatible startup PATH is reset by
         // a test-only production hook. A candidate is never executed.
         const PROBE: &str = "COMETIX_GIT_EXE_MEMO_PROBE";
-        if let Ok(mode) = std::env::var(PROBE) {
+        if let Some(mode) = crate::utils::process_env::var(PROBE) {
             crate::utils::process_env::capture_startup();
-            let directory = PathBuf::from(std::env::var_os("PATH").unwrap());
+            let directory = PathBuf::from(crate::utils::process_env::var_os("PATH").unwrap());
             let executable = directory.join("git");
             let expected = if mode == "found" {
                 executable.clone()

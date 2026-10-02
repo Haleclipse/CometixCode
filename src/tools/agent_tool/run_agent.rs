@@ -4526,7 +4526,7 @@ mod input_contract_tests {
     #[test]
     fn get_agent_system_prompt_matches_official_custom_memory_inside_original_block() {
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let previous = std::env::var("CLAUDE_CODE_DISABLE_AUTO_MEMORY").ok();
+        let previous = crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
         let root =
             std::env::temp_dir().join(format!("cometix-agent-input-{}", uuid::Uuid::new_v4()));
@@ -4611,7 +4611,7 @@ mod input_contract_tests {
         ];
         fixture.previous_env = env
             .iter()
-            .map(|(key, _)| (*key, std::env::var(key).ok()))
+            .map(|(key, _)| (*key, crate::utils::process_env::var(key)))
             .collect();
         for (key, value) in &env {
             crate::utils::process_env::set(key, value);
@@ -4897,7 +4897,7 @@ mod input_contract_tests {
     #[test]
     fn background_agent_plugin_preparation_keeps_published_current_thread_live() {
         const CHILD: &str = "COMETIX_BACKGROUND_AGENT_PLUGIN_CHILD";
-        if let Some(root) = std::env::var_os(CHILD) {
+        if let Some(root) = crate::utils::process_env::var_os(CHILD) {
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
             crate::utils::process_env::set("CLAUDE_CONFIG_DIR", root.join("config"));

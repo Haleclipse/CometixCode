@@ -6538,7 +6538,7 @@ mod tests {
         let mut permissions = fs::metadata(&git).unwrap().permissions();
         permissions.set_mode(0o755);
         fs::set_permissions(&git, permissions).unwrap();
-        let old_path = std::env::var("PATH").unwrap_or_default();
+        let old_path = crate::utils::process_env::var("PATH").unwrap_or_default();
         let _path_guard =
             EnvRestore::set("PATH", &format!("{}:{}", bin.to_string_lossy(), old_path));
 
@@ -9148,7 +9148,7 @@ mod tests {
             &format!(
                 "{}:{}",
                 bin.display(),
-                std::env::var("PATH").unwrap_or_default()
+                crate::utils::process_env::var("PATH").unwrap_or_default()
             ),
         );
         let write = |dir: &Path, id: &str, title: &str, time: u64, extra: Value| {

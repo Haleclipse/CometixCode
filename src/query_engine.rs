@@ -2220,7 +2220,7 @@ mod sdk_mapper_tests {
     #[test]
     fn first_local_query_without_sdk_initialize_keeps_process_executor_live() {
         const CHILD: &str = "COMETIX_FIRST_QUERY_PLUGIN_CHILD";
-        if let Some(root) = std::env::var_os(CHILD) {
+        if let Some(root) = crate::utils::process_env::var_os(CHILD) {
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
             crate::utils::process_env::set("CLAUDE_CONFIG_DIR", root.join("config"));

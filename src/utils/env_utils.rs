@@ -58,6 +58,11 @@ impl Drop for TestEnvGuard<'_> {
 pub static TEST_ENV_LOCK: std::sync::LazyLock<TestEnvLock> =
     std::sync::LazyLock::new(|| TestEnvLock(std::sync::Mutex::new(())));
 
+/// The variable `node_os::homedir()` reads, `USERPROFILE` on Windows and
+/// `HOME` elsewhere: tests pin the home directory through it.
+#[cfg(test)]
+pub const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+
 /// The other half of `TEST_ENV_LOCK`'s bargain: the lock serialises the
 /// mutations, this undoes them.
 ///
@@ -514,8 +519,7 @@ mod tests {
     fn config_home_dir_matches_official_nullish_nfc_homedir_and_memo() {
         use std::path::PathBuf;
         let _lock = super::TEST_ENV_LOCK.lock().unwrap();
-        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-        let _home = super::EnvVarGuard::set(home_key, "/home/first");
+        let _home = super::EnvVarGuard::set(super::HOME_VAR, "/home/first");
         {
             let _dir = super::EnvVarGuard::set("CLAUDE_CONFIG_DIR", "");
             assert_eq!(super::get_claude_config_home_dir(), PathBuf::from(""));
@@ -530,7 +534,7 @@ mod tests {
         let _dir = super::EnvVarGuard::unset("CLAUDE_CONFIG_DIR");
         let first = PathBuf::from("/home/first").join(".claude");
         assert_eq!(super::get_claude_config_home_dir(), first);
-        let _later = super::EnvVarGuard::set(home_key, "/home/later");
+        let _later = super::EnvVarGuard::set(super::HOME_VAR, "/home/later");
         assert_eq!(super::get_claude_config_home_dir(), first);
     }
 

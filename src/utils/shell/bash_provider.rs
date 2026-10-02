@@ -255,7 +255,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set("HOME", &root);
+        let _home = EnvGuard::set(crate::utils::env_utils::HOME_VAR, &root);
         let _writes = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
         let provider = create_bash_shell_provider(PathBuf::from("/bin/bash"), false);
         let snapshot = provider

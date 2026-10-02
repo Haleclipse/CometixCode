@@ -254,7 +254,7 @@ pub(crate) fn _clear_log_writers_for_testing() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
     use crate::utils::log::{self, AxiosErrorContext};
 
     struct TempDir(PathBuf);
@@ -290,7 +290,7 @@ mod tests {
     fn mcp_resource_log_matches_official_startup_queue_and_shutdown_persistence() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let home = TempDir::new();
-        let _home = EnvVarGuard::set("HOME", home.path());
+        let _home = EnvVarGuard::set(HOME_VAR, home.path());
         let _privacy = EnvVarGuard::set("DISABLE_ERROR_REPORTING", "1");
         let _traffic = EnvVarGuard::set("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
         log::_reset_error_log_for_testing();
@@ -348,7 +348,7 @@ mod tests {
     fn mcp_resource_log_matches_official_no_content_and_displayable_silence() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let home = TempDir::new();
-        let _home = EnvVarGuard::set("HOME", home.path());
+        let _home = EnvVarGuard::set(HOME_VAR, home.path());
         log::_reset_error_log_for_testing();
         crate::utils::sinks::init_sinks().unwrap();
         for contents in [json!([]), json!([{"text":""}]), json!([{"blob":"AA=="}])] {
@@ -367,7 +367,7 @@ mod tests {
     fn mcp_error_rows_match_official_error_stack_unknown_values_and_empty_stack() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let home = TempDir::new();
-        let _home = EnvVarGuard::set("HOME", home.path());
+        let _home = EnvVarGuard::set(HOME_VAR, home.path());
         let error = |stack| LogError {
             name: "TypeError".into(),
             message: "message".into(),
@@ -399,7 +399,7 @@ mod tests {
     fn ordinary_error_rows_match_official_audience_axios_context_and_metadata() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let home = TempDir::new();
-        let _home = EnvVarGuard::set("HOME", home.path());
+        let _home = EnvVarGuard::set(HOME_VAR, home.path());
         let error = LogError {
             name: "AxiosError".into(),
             message: "failed".into(),

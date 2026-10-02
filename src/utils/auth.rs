@@ -1585,7 +1585,7 @@ mod tests {
 
         let _config_guard = EnvGuard::set_path("CLAUDE_CONFIG_DIR", &dir);
         crate::utils::config::set_test_global_config(Some(GlobalConfig::default()));
-        let get_env = |key: &str| std::env::var(key).ok();
+        let get_env = |key: &str| crate::utils::process_env::var(key);
         assert!(is_claude_ai_subscriber());
         assert_eq!(
             read_claude_ai_credentials_snapshot(&get_env)

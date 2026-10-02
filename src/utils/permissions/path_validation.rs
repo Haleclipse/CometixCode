@@ -490,6 +490,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     fn ctx() -> ToolPermissionContext {
         ToolPermissionContext::default()
@@ -511,9 +512,8 @@ mod tests {
         assert_eq!(get_glob_base_directory("*.txt"), ".");
         assert_eq!(get_glob_base_directory("/tmp/no-glob"), "/tmp/no-glob");
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, "/home/someone");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _home = EnvVarGuard::set(HOME_VAR, "/home/someone");
         assert_eq!(expand_tilde("~/file"), "/home/someone/file");
         assert_eq!(expand_tilde("~root/file"), "~root/file");
     }
@@ -524,9 +524,8 @@ mod tests {
         assert!(is_dangerous_removal_path("/"));
         assert!(is_dangerous_removal_path("/tmp"));
         assert!(is_dangerous_removal_path("C:\\Windows"));
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, "/home/someone");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _home = EnvVarGuard::set(HOME_VAR, "/home/someone");
         assert!(is_dangerous_removal_path("/home/someone"));
         assert!(!is_dangerous_removal_path("/tmp/project/file.txt"));
     }

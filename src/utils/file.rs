@@ -708,8 +708,10 @@ mod tests {
 
         assert_eq!(get_display_path("src"), "src");
         assert_eq!(get_display_path(&cwd.join("src").to_string_lossy()), "src");
-        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, "/home/someone");
+        let _home = crate::utils::env_utils::EnvVarGuard::set(
+            crate::utils::env_utils::HOME_VAR,
+            "/home/someone",
+        );
         assert_eq!(
             get_display_path("/home/someone/outside-project/file.rs"),
             "~/outside-project/file.rs"

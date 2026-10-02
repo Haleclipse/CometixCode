@@ -757,10 +757,11 @@ mod tests {
 
     #[test]
     fn expand_lsp_file_path_expands_home_notation() {
-        let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"));
-        let Ok(home) = home else {
-            return;
-        };
+        // `~` expands to `homedir()`: pin it to a literal.
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let home = "/home/someone";
+        let _home =
+            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, home);
         assert_eq!(
             super::expand_lsp_file_path("~/project/main.rs", std::path::Path::new("/unused")),
             std::path::Path::new(&home)
