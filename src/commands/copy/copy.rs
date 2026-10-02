@@ -197,9 +197,6 @@ pub fn truncate_line(text: &str, max_len: usize) -> String {
 /// Maps to: CC `commands/copy/copy.tsx:264-307` `call` up to the
 /// terminal/UI side-effect boundary.
 pub fn call(messages: &[Message], args: &str) -> CopyCall {
-    // Running `/copy` loads `copy.tsx` (`index.ts:12`), which evaluates
-    // `COPY_DIR` whether or not this call writes a file.
-    std::sync::LazyLock::force(&COPY_DIR);
     prepare_call(
         messages,
         args,
@@ -266,22 +263,129 @@ fn prepare_call(messages: &[Message], args: &str, copy_full_response: bool) -> C
     })
 }
 
-/// CC `copy.tsx:23` `const COPY_DIR = join(tmpdir(), 'claude')`: a module
-/// constant, fixed when the command module first loads (CC loads it lazily,
-/// on the first `/copy`), here on first use.
-static COPY_DIR: std::sync::LazyLock<PathBuf> =
-    std::sync::LazyLock::new(|| crate::utils::node_os::tmpdir().join("claude"));
+/// Cometix-specific deviation (10-03, user): `/copy` writes where CC 2.1.285
+/// does. 2.1.88 (`copy.tsx:23`) uses `join(tmpdir(), 'claude')`, on macOS the
+/// per-user `/var/folders/…/T/claude`. 2.1.285's `writeToFile` takes its
+/// shared per-uid temp root, `join(CLAUDE_CODE_TMPDIR || '/tmp', 'claude-' +
+/// (getuid() ?? 0))` (`/tmp/claude-<uid>` on macOS too; the variable trimmed,
+/// as 2.1.285's environment reads are), created 0700 and checked to be the
+/// user's own (`verify_owned_temp_dir`). 2.1.285 checks once per path; this
+/// checks on every call (user, 10-03): the root is sandbox-writable, and a
+/// sandboxed command could replace it with a symlink after a first check.
+/// Its refusal in a diskless session has no 2.1.88 counterpart and is not
+/// ported.
+fn copy_dir() -> std::io::Result<PathBuf> {
+    use crate::utils::process_env::JsTruthy as _;
+    let base = crate::utils::process_env::var("CLAUDE_CODE_TMPDIR")
+        .map(|value| value.trim().to_owned())
+        .truthy()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    let dir = crate::utils::fs_operations::native::join_path(
+        &base,
+        Path::new(&format!(
+            "claude-{}",
+            crate::utils::permissions::filesystem::current_uid()
+        )),
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt as _;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)?;
+        crate::utils::permissions::filesystem::verify_owned_temp_dir(&dir)?;
+    }
+    #[cfg(not(unix))]
+    let _ = std::fs::create_dir_all(&dir);
+    Ok(dir)
+}
 
+/// 2.1.285's `writeToFile` writes through its atomic writer, which refuses a
+/// symlink at the target: the directory is the sandbox-writable per-uid temp
+/// root, where sandboxed commands could plant one. A sibling temp file opened
+/// `O_EXCL | O_NOFOLLOW` is renamed over the target, which replaces a link
+/// planted in between instead of following it; an existing file keeps its
+/// mode. Not ported: its in-place write fallback, taken when the rename fails
+/// with certain errors or the temp file cannot be created (`EACCES`) next to
+/// an existing target.
 async fn write_to_dir(text: &str, filename: &str, directory: &Path) -> std::io::Result<PathBuf> {
-    tokio::fs::create_dir_all(directory).await?;
     let path = directory.join(filename);
-    tokio::fs::write(&path, text.as_bytes()).await?;
+    let mut builder = tokio::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder.create(directory).await?;
+
+    let existing = match tokio::fs::symlink_metadata(&path).await {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(std::io::Error::other(format!(
+                "Refusing to write through symlink: {}. Resolve the symlink and pass the real target path explicitly.",
+                path.display()
+            )));
+        }
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    let mut temp = path.clone().into_os_string();
+    temp.push(format!(
+        ".tmp.{}.{}",
+        std::process::id(),
+        &uuid::Uuid::new_v4().simple().to_string()[..12]
+    ));
+    let temp = PathBuf::from(temp);
+    let written = async {
+        use tokio::io::AsyncWriteExt as _;
+        let mut options = tokio::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        options.custom_flags(libc::O_NOFOLLOW);
+        let mut file = options.open(&temp).await?;
+        file.write_all(text.as_bytes()).await?;
+        // `pHe`: a filesystem that cannot fchmod or fsync is logged, not fatal.
+        let unsupported = |error: &std::io::Error| {
+            #[cfg(unix)]
+            return matches!(
+                error.raw_os_error(),
+                Some(libc::EINVAL | libc::ENOTSUP | libc::EPERM | libc::ENOSYS)
+            );
+            #[cfg(not(unix))]
+            {
+                let _ = error;
+                false
+            }
+        };
+        if let Some(permissions) = existing {
+            match file.set_permissions(permissions).await {
+                Err(error) if unsupported(&error) => crate::utils::debug::log_for_debugging(
+                    &format!("fchmod unsupported on this filesystem: {error}"),
+                ),
+                result => result?,
+            }
+        }
+        match file.sync_all().await {
+            Err(error) if unsupported(&error) => crate::utils::debug::log_for_debugging(&format!(
+                "fsync unsupported on this filesystem: {error}"
+            )),
+            result => result?,
+        }
+        drop(file);
+        tokio::fs::rename(&temp, &path).await
+    }
+    .await;
+    if let Err(error) = written {
+        let _ = tokio::fs::remove_file(&temp).await;
+        return Err(error);
+    }
     Ok(path)
 }
 
-/// Maps to: CC `commands/copy/copy.tsx:78-83` async `writeToFile`.
+/// Maps to: CC `commands/copy/copy.tsx:78-83` async `writeToFile`, into the
+/// 2.1.285 directory ([`copy_dir`]).
 pub async fn write_to_file(text: &str, filename: &str) -> std::io::Result<PathBuf> {
-    write_to_dir(text, filename, &COPY_DIR).await
+    write_to_dir(text, filename, &copy_dir()?).await
 }
 
 /// Maps to: CC `commands/copy/copy.tsx:85-101` async `copyOrWriteToFile`.
@@ -560,6 +664,143 @@ mod tests {
     use crate::types::message::{AssistantMessage, StopReason, SystemMessage};
     use chrono::Utc;
 
+    /// 2.1.285: the per-uid root under `CLAUDE_CODE_TMPDIR`, made 0700.
+    #[cfg(unix)]
+    #[test]
+    fn copy_dir_is_the_per_uid_root_made_private() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!("cometix-copy-dir-{}", uuid::Uuid::new_v4()));
+        let expected = root.join(format!(
+            "claude-{}",
+            crate::utils::permissions::filesystem::current_uid()
+        ));
+        std::fs::create_dir_all(&expected).unwrap();
+        std::fs::set_permissions(&expected, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        assert_eq!(copy_dir().unwrap(), expected);
+        assert_eq!(
+            std::fs::metadata(&expected).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 2.1.285's atomic writer refuses a symlink planted at the target, as a
+    /// sandboxed command could in the sandbox-writable temp root, and leaves
+    /// what it points at alone; a regular file is replaced.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_refuses_a_symlinked_target() {
+        let root =
+            std::env::temp_dir().join(format!("cometix-copy-target-{}", uuid::Uuid::new_v4()));
+        let dir = root.join("dir");
+        std::fs::create_dir_all(&dir).unwrap();
+        let outside = root.join("outside");
+        std::fs::write(&outside, "untouched").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("response.md")).unwrap();
+        let error = write_to_dir("planted", "response.md", &dir)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Refusing to write through symlink"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "untouched");
+
+        std::fs::write(dir.join("copy.sh"), "old").unwrap();
+        let path = write_to_dir("new", "copy.sh", &dir).await.unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "new");
+        let leftovers = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".tmp."))
+            .count();
+        assert_eq!(leftovers, 0);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 2.1.285 refuses a root that is a symlink, which another user could
+    /// plant on a shared `/tmp`.
+    /// Checked on every call (user, 10-03; 2.1.285 checks once per path): a
+    /// loosened mode is fixed again, and a root replaced by a symlink after
+    /// the first call is refused. `CLAUDE_CODE_TMPDIR` is trimmed.
+    #[cfg(unix)]
+    #[test]
+    fn copy_dir_rechecks_the_root_on_every_call() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("cometix-copy-again-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let _tmp = crate::utils::env_utils::EnvVarGuard::set(
+            "CLAUDE_CODE_TMPDIR",
+            format!(" {} ", root.display()),
+        );
+        let dir = copy_dir().unwrap();
+        assert_eq!(dir.parent(), Some(root.as_path()));
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        copy_dir().unwrap();
+        assert_eq!(
+            std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        std::fs::remove_dir(&dir).unwrap();
+        let elsewhere = root.join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        std::os::unix::fs::symlink(&elsewhere, &dir).unwrap();
+        assert!(copy_dir().is_err());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// 2.1.285: the user's own root that cannot be opened is refused as not
+    /// readable.
+    #[cfg(unix)]
+    #[test]
+    fn copy_dir_refuses_an_unreadable_root() {
+        use std::os::unix::fs::PermissionsExt as _;
+        if crate::utils::permissions::filesystem::current_uid() == 0 {
+            return; // root opens it anyway
+        }
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("cometix-copy-unread-{}", uuid::Uuid::new_v4()));
+        let dir = root.join(format!(
+            "claude-{}",
+            crate::utils::permissions::filesystem::current_uid()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let error = copy_dir().unwrap_err();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(error.to_string().contains("is not readable"), "{error}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_dir_refuses_a_symlinked_root() {
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!("cometix-copy-link-{}", uuid::Uuid::new_v4()));
+        let target = root.join("elsewhere");
+        std::fs::create_dir_all(&target).unwrap();
+        std::os::unix::fs::symlink(
+            &target,
+            root.join(format!(
+                "claude-{}",
+                crate::utils::permissions::filesystem::current_uid()
+            )),
+        )
+        .unwrap();
+        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let error = copy_dir().unwrap_err();
+        assert!(error.to_string().contains("not a directory"), "{error}");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     fn assistant(content: Vec<AssistantContent>) -> Message {
         Message::Assistant(AssistantMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -829,6 +1070,11 @@ mod tests {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _ssh = crate::utils::env_utils::EnvVarGuard::set("SSH_CONNECTION", "fixture");
         let _tmux = crate::utils::env_utils::EnvVarGuard::unset("TMUX");
+        // Keep `copy_dir()` off the real per-uid temp root.
+        let _tmp = crate::utils::env_utils::EnvVarGuard::set(
+            "CLAUDE_CODE_TMPDIR",
+            std::env::temp_dir().join(format!("cometix-copy-fail-{}", uuid::Uuid::new_v4())),
+        );
         let output = std::sync::Arc::new(std::sync::Mutex::new(None));
         {
             let mut app = element! {
@@ -857,7 +1103,7 @@ mod tests {
         .expect("unmounted output must reject promptly")
         .unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
-        assert!(!COPY_DIR.join(filename).exists());
+        assert!(!copy_dir().unwrap().join(filename).exists());
     }
 
     /// CC copy.tsx:85-101: copy completes before the reliable temp-file fallback
@@ -875,6 +1121,8 @@ mod tests {
         std::fs::write(&tool, "#!/bin/sh\n/bin/cat >/dev/null\n/bin/sleep 0.25\n").unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _path = crate::utils::env_utils::EnvVarGuard::set("PATH", &directory);
+        // Keep `copy_dir()` off the real per-uid temp root.
+        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &directory);
         let _ssh = crate::utils::env_utils::EnvVarGuard::set("SSH_CONNECTION", "fixture");
         let _tmux = crate::utils::env_utils::EnvVarGuard::set("TMUX", "fixture");
         for drop_observer in [false, true] {
@@ -906,7 +1154,7 @@ mod tests {
             drop(output);
             // Parent output remains mounted while the child observer is
             // dropped, so acknowledged raw precedes the real file effect.
-            let path = COPY_DIR.join(&filename);
+            let path = copy_dir().unwrap().join(&filename);
             if drop_observer {
                 assert_eq!(*result.lock().unwrap(), None);
             } else {

@@ -200,7 +200,18 @@ pub fn exec(
     }
     let provider = get_shell_config()?;
     let id = &uuid::Uuid::new_v4().simple().to_string()[..4];
-    let sandbox_tmp_dir = crate::utils::permissions::filesystem::get_claude_temp_dir();
+    // `Shell.ts:204-207`: `posixJoin(CLAUDE_CODE_TMPDIR || '/tmp',
+    // getClaudeTempDirName())`, not `getClaudeTempDir()`: no symlink
+    // resolution, so on macOS this is `/tmp/claude-<uid>`. Sandboxing runs on
+    // macOS and Linux only, where `node:path.join` is the POSIX one.
+    let sandbox_tmp_dir = crate::utils::fs_operations::native::join_path(
+        &crate::utils::process_env::var_os("CLAUDE_CODE_TMPDIR")
+            .as_deref()
+            .truthy()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/tmp")),
+        Path::new(&crate::utils::permissions::filesystem::get_claude_temp_dir_name()),
+    );
     let built = provider
         .build_exec_command(
             command,
@@ -233,13 +244,24 @@ pub fn exec(
     }
 
     let (program, args, sandbox_cleanup_paths) = if options.should_use_sandbox {
-        std::fs::create_dir_all(&sandbox_tmp_dir).map_err(|error| error.to_string())?;
-        #[cfg(unix)]
+        // `Shell.ts:266-272`: create sandbox temp directory for sandboxed
+        // processes with secure permissions; a failure is logged, not fatal.
+        // CC creates it after wrapping the command; here before, as bwrap
+        // binds only writable paths that exist.
+        if let Err(error) = crate::utils::fs_operations::get_fs_implementation()
+            .mkdir_sync(&sandbox_tmp_dir, Some(0o700))
         {
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(&sandbox_tmp_dir, std::fs::Permissions::from_mode(0o700))
-                .map_err(|error| error.to_string())?;
+            crate::utils::debug::log_for_debugging(&format!(
+                "Failed to create {} directory: {error}",
+                sandbox_tmp_dir.display()
+            ));
         }
+        // Cometix forward-port of 2.1.285 (user, 10-03): its sandbox temp
+        // directory is the same per-uid root `/copy` uses, and is refused
+        // unless it is the user's own; 2.1.88 uses one another user created.
+        #[cfg(unix)]
+        crate::utils::permissions::filesystem::verify_owned_temp_dir(&sandbox_tmp_dir)
+            .map_err(|error| error.to_string())?;
         let settings = crate::utils::settings::get_initial_settings();
         let wrapped = crate::utils::sandbox::sandbox_adapter::wrap_shell_command(
             &provider.shell_path().display().to_string(),

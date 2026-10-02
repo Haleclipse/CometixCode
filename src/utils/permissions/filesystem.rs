@@ -731,26 +731,135 @@ pub fn is_scratchpad_enabled() -> bool {
     feature_enabled(FeatureFlag::Scratchpad)
 }
 
-/// Maps to CC `getClaudeTempDirName()`.
+/// Maps to CC `getClaudeTempDirName()` (`filesystem.ts:307-315`).
 pub fn get_claude_temp_dir_name() -> String {
-    if cfg!(target_os = "windows") {
-        "claude".to_string()
-    } else {
-        format!("claude-{}", current_uid())
+    use crate::utils::platform::{Platform, get_platform};
+    if get_platform() == Platform::Windows {
+        return "claude".to_string();
     }
+    // Use UID to create per-user directories, preventing permission conflicts
+    // when multiple users share the same /tmp directory
+    format!("claude-{}", current_uid())
 }
 
-/// Maps to CC `getClaudeTempDir()`.
+/// Cometix forward-port of CC 2.1.285's check of its per-uid temp root
+/// (user, 10-03), used by `/copy` and the sandbox temp directory. Opens the
+/// directory without following a symlink and requires the user's own uid,
+/// fixing a mode other than 0700. A directory owned by someone else is
+/// accepted, with a warning, when running as root in a container
+/// (`CLAUDE_CODE_CONTAINER_ID`, trimmed as 2.1.285's environment reads are).
+#[cfg(unix)]
+pub(crate) fn verify_owned_temp_dir(dir: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt as _;
+    use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
+    const HINT: &str =
+        "Set CLAUDE_CODE_TMPDIR to a directory you control, or ask an administrator to remove it.";
+    let uid = current_uid();
+    let shown = dir.display();
+    // `e.replace(/[\/]+$/, "") || e`
+    let bytes = dir.as_os_str().as_bytes();
+    let path = match bytes.iter().rposition(|byte| *byte != b'/') {
+        Some(last) => Path::new(std::ffi::OsStr::from_bytes(&bytes[..=last])),
+        None => dir,
+    };
+    let directory = match std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(path)
+    {
+        Ok(directory) => directory,
+        Err(error) => {
+            return Err(match error.raw_os_error() {
+                Some(libc::ELOOP | libc::ENOTDIR) => std::io::Error::other(format!(
+                    "Temp directory {shown} is not a directory (may be an attacker-planted symlink). Refusing to use it. {HINT}"
+                )),
+                Some(libc::EACCES) => match std::fs::symlink_metadata(path)
+                    .ok()
+                    .map(|metadata| metadata.uid())
+                    .filter(|owner| *owner != uid)
+                {
+                    Some(owner) => std::io::Error::other(format!(
+                        "Temp directory {shown} is owned by uid {owner}, expected {uid}. Refusing to use it \u{2014} another user may have pre-created it. {HINT}"
+                    )),
+                    None => std::io::Error::other(format!(
+                        "Temp directory {shown} is not readable (its mode may have been altered, or a path component denies search). Refusing to use it \u{2014} restore its permissions (chmod 0700) or remove it. {HINT}"
+                    )),
+                },
+                _ => error,
+            });
+        }
+    };
+    let metadata = directory.metadata()?;
+    if metadata.uid() != uid {
+        if uid == 0
+            && crate::utils::process_env::var("CLAUDE_CODE_CONTAINER_ID")
+                .map(|value| value.trim().to_owned())
+                .truthy()
+                .is_some()
+        {
+            // `logForDiagnosticsNoPII('warn', 'tempdir_owner_mismatch', …)`;
+            // `diagLogs.ts` is not ported, so this goes to the debug log.
+            crate::utils::debug::log_for_debugging(&format!(
+                "tempdir_owner_mismatch: observed uid {}",
+                metadata.uid()
+            ));
+            return Ok(());
+        }
+        return Err(std::io::Error::other(format!(
+            "Temp directory {shown} is owned by uid {}, expected {uid}. Refusing to use it \u{2014} another user may have pre-created it. {HINT}",
+            metadata.uid()
+        )));
+    }
+    if metadata.mode() & 0o777 != 0o700 {
+        directory.set_permissions(std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
+/// Maps to CC `getClaudeTempDir()` (`filesystem.ts:331-346`), memoized: the
+/// per-user temp directory under `CLAUDE_CODE_TMPDIR || (Windows ? tmpdir() :
+/// '/tmp')` with the base's symlinks resolved (`/tmp` is `/private/tmp` on
+/// macOS), with a trailing separator.
+///
+/// Test builds compute it on every call: under `cargo test` a directory fixed
+/// by the first test would take every later test's writes, into the real
+/// per-user temp directory.
 pub fn get_claude_temp_dir() -> PathBuf {
+    #[cfg(not(test))]
+    {
+        static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+        DIR.get_or_init(claude_temp_dir).clone()
+    }
+    #[cfg(test)]
+    claude_temp_dir()
+}
+
+/// The body of [`get_claude_temp_dir`].
+fn claude_temp_dir() -> PathBuf {
+    use crate::utils::platform::{Platform, get_platform};
     let base_tmp_dir = crate::utils::process_env::var_os("CLAUDE_CODE_TMPDIR")
         .as_deref()
         .truthy()
         .map(PathBuf::from)
-        .unwrap_or_else(default_base_tmp_dir);
+        .unwrap_or_else(|| {
+            if get_platform() == Platform::Windows {
+                crate::utils::node_os::tmpdir()
+            } else {
+                PathBuf::from("/tmp")
+            }
+        });
+    // Resolve symlinks in the base temp directory (e.g., /tmp -> /private/tmp
+    // on macOS) so the path matches resolved paths in permission checks.
     let resolved = crate::utils::fs_operations::get_fs_implementation()
         .realpath_sync(&base_tmp_dir)
         .unwrap_or(base_tmp_dir);
-    resolved.join(get_claude_temp_dir_name())
+    let mut dir = crate::utils::fs_operations::native::join_path(
+        &resolved,
+        Path::new(&get_claude_temp_dir_name()),
+    )
+    .into_os_string();
+    dir.push(std::path::MAIN_SEPARATOR_STR);
+    PathBuf::from(dir)
 }
 
 /// Maps to CC `getBundledSkillsRoot()` (:365-369). The process-random nonce
@@ -765,11 +874,18 @@ pub fn get_bundled_skills_root() -> PathBuf {
     ROOT.clone()
 }
 
-/// Maps to CC `getProjectTempDir()`.
+/// Maps to CC `getProjectTempDir()` (`filesystem.ts:376-378`):
+/// `join(getClaudeTempDir(), sanitizePath(getOriginalCwd())) + sep`.
 pub fn get_project_temp_dir() -> PathBuf {
-    get_claude_temp_dir().join(sanitize_path_for_temp_component(
-        &crate::bootstrap::state::get_original_cwd(),
-    ))
+    let mut dir = crate::utils::fs_operations::native::join_path(
+        &get_claude_temp_dir(),
+        Path::new(&crate::utils::session_storage::sanitize_path(
+            &crate::bootstrap::state::get_original_cwd().to_string_lossy(),
+        )),
+    )
+    .into_os_string();
+    dir.push(std::path::MAIN_SEPARATOR_STR);
+    PathBuf::from(dir)
 }
 
 /// Maps to CC `getScratchpadDir()`.
@@ -846,34 +962,6 @@ pub fn is_project_dir_path(path: impl AsRef<Path>) -> bool {
     path == directory || path.starts_with(directory)
 }
 
-/// CC `filesystem.ts:334`: `getPlatform() === 'windows' ? tmpdir() : '/tmp'`.
-fn default_base_tmp_dir() -> PathBuf {
-    if cfg!(target_os = "windows") {
-        crate::utils::node_os::tmpdir()
-    } else {
-        PathBuf::from("/tmp")
-    }
-}
-
-fn sanitize_path_for_temp_component(path: &Path) -> String {
-    let mut sanitized = path
-        .display()
-        .to_string()
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
-                ch
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>();
-    if sanitized.is_empty() {
-        sanitized.push('-');
-    }
-    sanitized
-}
-
 fn normalize_internal_path(path: impl AsRef<Path>) -> PathBuf {
     path.as_ref().canonicalize().unwrap_or_else(|_| {
         let mut normalized = PathBuf::new();
@@ -890,8 +978,9 @@ fn normalize_internal_path(path: impl AsRef<Path>) -> PathBuf {
     })
 }
 
+/// `process.getuid?.() ?? 0`.
 #[cfg(unix)]
-fn current_uid() -> u32 {
+pub(crate) fn current_uid() -> u32 {
     unsafe extern "C" {
         fn getuid() -> u32;
     }
@@ -900,7 +989,7 @@ fn current_uid() -> u32 {
 }
 
 #[cfg(not(unix))]
-fn current_uid() -> u32 {
+pub(crate) fn current_uid() -> u32 {
     0
 }
 
@@ -1429,6 +1518,31 @@ fn is_session_plan_file_for_session_with_settings(
 mod tests {
     use super::*;
     use crate::types::permissions::PermissionRuleValue;
+
+    /// CC `filesystem.ts:331-346` and `:376-378`: the per-user directory
+    /// under the resolved `CLAUDE_CODE_TMPDIR`, and the project directory
+    /// under it named by `sanitizePath`, each with a trailing separator.
+    #[cfg(unix)]
+    #[test]
+    fn claude_temp_dirs_match_official_shape() {
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("cometix-temp-shape-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let resolved = root.canonicalize().unwrap();
+        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let expected = format!("{}/claude-{}/", resolved.display(), current_uid());
+        assert_eq!(get_claude_temp_dir().to_string_lossy(), expected);
+        let cwd = crate::bootstrap::state::get_original_cwd();
+        assert_eq!(
+            get_project_temp_dir().to_string_lossy(),
+            format!(
+                "{expected}{}/",
+                crate::utils::session_storage::sanitize_path(&cwd.to_string_lossy())
+            )
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     #[cfg(unix)]
