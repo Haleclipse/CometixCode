@@ -214,7 +214,12 @@ fn parse_timeout_seconds(value: &str) -> u64 {
 }
 
 fn platform_default_timeout_seconds() -> u64 {
-    if crate::utils::env::is_wsl() { 60 } else { 20 }
+    use crate::utils::platform::{Platform, get_platform};
+    if get_platform() == Platform::Wsl {
+        60
+    } else {
+        20
+    }
 }
 
 fn default_timeout() -> Duration {

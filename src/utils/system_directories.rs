@@ -12,18 +12,9 @@ pub fn get_system_directories(
     options: Option<SystemDirectoriesOptions>,
 ) -> IndexMap<String, String> {
     let options = options.unwrap_or_default();
-    let platform = options.platform.unwrap_or_else(|| {
-        if cfg!(target_os = "windows") {
-            "windows"
-        } else if cfg!(target_os = "macos") {
-            "macos"
-        } else if cfg!(target_os = "linux") {
-            "linux"
-        } else {
-            "unknown"
-        }
-        .into()
-    });
+    let platform = options
+        .platform
+        .unwrap_or_else(|| crate::utils::platform::get_platform().as_str().into());
     let home = options.homedir.unwrap_or_else(|| {
         crate::utils::node_os::homedir()
             .to_string_lossy()

@@ -302,7 +302,8 @@ pub fn get_agent_definitions_with_overrides_for_audience(
     }
 
     let managed_dir = managed_agent_dir_for_audience(get_env, audience);
-    let user_dir = config_home_from_env(get_env).join("agents");
+    // `markdownConfigLoader.ts:303`.
+    let user_dir = crate::utils::env_utils::get_claude_config_home_dir().join("agents");
     // The variable `homedir()` reads, from the injected environment; unset or
     // empty, `get_project_dirs_up_to_home` calls `homedir()` itself.
     use crate::utils::process_env::JsTruthy as _;
@@ -891,14 +892,6 @@ fn frontmatter_value_truthy(value: &serde_json::Value) -> bool {
     }
 }
 
-/// CC `markdownConfigLoader.ts:303` `getClaudeConfigHomeDir()`, over the
-/// loader's injected environment.
-fn config_home_from_env(get_env: &impl Fn(&str) -> Option<String>) -> PathBuf {
-    crate::utils::env_utils::claude_config_home_dir_with(|key| {
-        get_env(key).map(std::ffi::OsString::from)
-    })
-}
-
 fn managed_agent_dir_for_audience(
     get_env: &impl Fn(&str) -> Option<String>,
     audience: crate::utils::build_profile::BuildAudience,
@@ -1115,9 +1108,9 @@ mod tests {
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
         let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
         let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, &home);
-        let config_home = root.join("config");
+        let _config =
+            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config"));
         let result = get_agent_definitions_with_overrides_from_env(&cwd, &|key| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" | "USERPROFILE" => Some(String::new()),
             _ => None,
         });
@@ -1150,8 +1143,9 @@ mod tests {
             "---\nname: numeric\ndescription: Numeric-string effort\neffort: \"3\"\nmcpServers:\n  - 1\n  - 2\n---\nBody",
         );
 
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
             _ => None,
@@ -1211,8 +1205,9 @@ mod tests {
             "---\nname: broken\n---\nMissing description",
         );
 
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
             _ => None,
@@ -1495,8 +1490,8 @@ mod tests {
             }
         })));
 
+        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             _ => None,
         });
@@ -1556,8 +1551,8 @@ mod tests {
         );
         crate::bootstrap::state::set_inline_plugins(vec![plugin_root.clone()]);
 
+        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             _ => None,
         });
@@ -1741,8 +1736,9 @@ mod tests {
             "---\nname: reviewer\ndescription: Root project description\n---\nRoot",
         );
 
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let env = |key: &str| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             "CLAUDE_CODE_MANAGED_SETTINGS_PATH" => Some(managed_root.display().to_string()),
             _ => None,
@@ -1856,7 +1852,6 @@ mod tests {
         write_snapshot(&root, "projectmem", "2026-02-01T00:00:00Z", "- skipped\n");
 
         let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
             _ => None,
@@ -1922,7 +1917,6 @@ mod tests {
         );
 
         let env = |key: &str| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
             _ => None,
@@ -1981,7 +1975,6 @@ mod tests {
         write_file(&user_memory.join("MEMORY.md"), "- local note\n");
 
         let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
             "HOME" => Some(root.display().to_string()),
             "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
             _ => None,

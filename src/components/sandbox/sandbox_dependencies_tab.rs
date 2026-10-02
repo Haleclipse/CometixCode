@@ -8,16 +8,9 @@ pub struct SandboxDependenciesTabProps {
     pub dep_check: SandboxDependencyCheck,
 }
 
+/// `SandboxDependenciesTab.tsx:11` `getPlatform()`.
 fn platform_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        "unknown"
-    }
+    crate::utils::platform::get_platform().as_str()
 }
 
 pub fn dependency_flags(

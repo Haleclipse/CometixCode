@@ -139,28 +139,10 @@ pub fn get_config_home() -> PathBuf {
     crate::utils::env_utils::get_claude_config_home_dir()
 }
 
-/// Maps to: CC `env.ts:25` `process.env.CLAUDE_CONFIG_DIR || homedir()`, the
-/// root of `.claude.json`: the same environment and home directory as
-/// [`get_config_home`], with `||` dropping an empty value.
-fn get_global_config_file_home() -> PathBuf {
-    use crate::utils::process_env::JsTruthy as _;
-    let env = crate::utils::process_env::snapshot();
-    match env.var_os("CLAUDE_CONFIG_DIR").truthy() {
-        Some(dir) => PathBuf::from(dir),
-        None => crate::utils::node_os::homedir(),
-    }
-}
-
-fn global_config_path_from_dirs(config_home: PathBuf, global_file_home: PathBuf) -> PathBuf {
-    let legacy = config_home.join(".config.json");
-    if legacy.exists() {
-        return legacy;
-    }
-    global_file_home.join(".claude.json")
-}
-
+/// CC `getGlobalClaudeFile` under its old Rust name; the one implementation
+/// is [`crate::utils::env::get_global_claude_file`].
 pub fn get_global_config_path() -> PathBuf {
-    global_config_path_from_dirs(get_config_home(), get_global_config_file_home())
+    crate::utils::env::get_global_claude_file()
 }
 
 pub fn get_config_backup_dir() -> PathBuf {
@@ -1949,35 +1931,6 @@ mod tests {
             crate::memdir::team_mem_paths::get_team_mem_entrypoint()
         );
         assert_ne!(get_memory_path("TeamMem"), get_memory_path("Project"));
-    }
-
-    #[test]
-    fn global_config_path_matches_official_home_file_location_without_legacy_file() {
-        let home = PathBuf::from("/tmp/cometix-home");
-        let config_home = home.join(".claude");
-
-        assert_eq!(
-            global_config_path_from_dirs(config_home, home.clone()),
-            home.join(".claude.json")
-        );
-    }
-
-    #[test]
-    fn global_config_path_keeps_official_legacy_config_home_fallback() {
-        let root = unique_temp_dir("legacy-global-path");
-        let config_home = root.join(".claude");
-        let global_home = root.join("home");
-        fs::create_dir_all(&config_home).expect("create config home");
-        fs::create_dir_all(&global_home).expect("create global home");
-        let legacy = config_home.join(".config.json");
-        fs::write(&legacy, "{}").expect("write legacy config");
-
-        assert_eq!(
-            global_config_path_from_dirs(config_home, global_home),
-            legacy
-        );
-
-        let _ = fs::remove_dir_all(root);
     }
 
     /// CC `utils/managedEnv.ts#applyConfigEnvironmentVariables` feeds

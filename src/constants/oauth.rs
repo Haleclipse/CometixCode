@@ -103,14 +103,16 @@ static STAGING_OAUTH_CONFIG: std::sync::LazyLock<OauthConfig> = std::sync::LazyL
 
 /// Maps to: CC `constants/oauth.ts:156-177` `getLocalOauthConfig`.
 fn get_local_oauth_config(get_env: &impl Fn(&str) -> Option<String>) -> OauthConfig {
+    // `?.replace(/\/$/, '')`: one trailing slash.
+    let strip = |value: String| value.strip_suffix('/').unwrap_or(&value).to_string();
     let api = get_env("CLAUDE_LOCAL_OAUTH_API_BASE")
-        .map(|value| value.trim_end_matches('/').to_string())
+        .map(strip)
         .unwrap_or_else(|| "http://localhost:8000".to_string());
     let apps = get_env("CLAUDE_LOCAL_OAUTH_APPS_BASE")
-        .map(|value| value.trim_end_matches('/').to_string())
+        .map(strip)
         .unwrap_or_else(|| "http://localhost:4000".to_string());
     let console_base = get_env("CLAUDE_LOCAL_OAUTH_CONSOLE_BASE")
-        .map(|value| value.trim_end_matches('/').to_string())
+        .map(strip)
         .unwrap_or_else(|| "http://localhost:3000".to_string());
 
     OauthConfig {
@@ -163,8 +165,13 @@ pub fn get_oauth_config_for_audience(
         PROD_OAUTH_CONFIG.clone()
     };
 
-    if let Some(oauth_base_url) = get_env("CLAUDE_CODE_CUSTOM_OAUTH_URL") {
-        let base = oauth_base_url.trim_end_matches('/').to_string();
+    use crate::utils::process_env::JsTruthy as _;
+    if let Some(oauth_base_url) = get_env("CLAUDE_CODE_CUSTOM_OAUTH_URL").truthy() {
+        // `oauthBaseUrl.replace(/\/$/, '')`: one trailing slash.
+        let base = oauth_base_url
+            .strip_suffix('/')
+            .unwrap_or(&oauth_base_url)
+            .to_string();
         if !ALLOWED_OAUTH_BASE_URLS.contains(&base.as_str()) {
             anyhow::bail!("CLAUDE_CODE_CUSTOM_OAUTH_URL is not an approved endpoint.");
         }
@@ -206,7 +213,8 @@ pub fn file_suffix_for_oauth_config_for_audience(
     get_env: impl Fn(&str) -> Option<String>,
     audience: crate::utils::build_profile::BuildAudience,
 ) -> String {
-    if get_env("CLAUDE_CODE_CUSTOM_OAUTH_URL").is_some() {
+    use crate::utils::process_env::JsTruthy as _;
+    if get_env("CLAUDE_CODE_CUSTOM_OAUTH_URL").truthy().is_some() {
         return "-custom-oauth".to_string();
     }
     if crate::utils::build_profile::audience_has_internal_capability(
@@ -318,6 +326,24 @@ mod tests {
         assert_eq!(config.claude_ai_origin, "https://claude.fedstart.com");
         assert_eq!(config.client_id, "client-override");
         assert_eq!(config.oauth_file_suffix, "-custom-oauth");
+        // `if (oauthBaseUrl)`: an empty value is no override.
+        let config = get_oauth_config_for_audience(
+            env(HashMap::from([("CLAUDE_CODE_CUSTOM_OAUTH_URL", "")])),
+            crate::utils::build_profile::build_audience(),
+        )
+        .unwrap();
+        assert_eq!(config.claude_ai_origin, PROD_OAUTH_CONFIG.claude_ai_origin);
+        // `replace(/\/$/, '')` drops one slash, which leaves this unlisted.
+        assert!(
+            get_oauth_config_for_audience(
+                env(HashMap::from([(
+                    "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+                    "https://claude.fedstart.com//"
+                )])),
+                crate::utils::build_profile::build_audience(),
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -345,6 +371,13 @@ mod tests {
                 crate::utils::build_profile::build_audience(),
             ),
             "-custom-oauth"
+        );
+        assert_eq!(
+            file_suffix_for_oauth_config_for_audience(
+                env(HashMap::from([("CLAUDE_CODE_CUSTOM_OAUTH_URL", "")])),
+                crate::utils::build_profile::build_audience(),
+            ),
+            ""
         );
     }
 }

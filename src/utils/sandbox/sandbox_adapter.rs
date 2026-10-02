@@ -326,17 +326,7 @@ pub fn is_platform_in_enabled_list() -> bool {
         return false;
     }
 
-    let current_platform = if crate::utils::env::is_wsl() {
-        "wsl"
-    } else if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(target_os = "linux") {
-        "linux"
-    } else if cfg!(target_os = "windows") {
-        "windows"
-    } else {
-        std::env::consts::OS
-    };
+    let current_platform = crate::utils::platform::get_platform().as_str();
     enabled_platforms
         .iter()
         .any(|platform| platform.as_str() == Some(current_platform))
@@ -2463,17 +2453,7 @@ mod tests {
         let workspace = root.join("workspace");
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::create_dir_all(&workspace).unwrap();
-        let current_platform = if crate::utils::env::is_wsl() {
-            "wsl"
-        } else if cfg!(target_os = "macos") {
-            "macos"
-        } else if cfg!(target_os = "linux") {
-            "linux"
-        } else if cfg!(target_os = "windows") {
-            "windows"
-        } else {
-            std::env::consts::OS
-        };
+        let current_platform = crate::utils::platform::get_platform().as_str();
         std::fs::write(
             config_home.join("settings.json"),
             serde_json::to_vec(&serde_json::json!({

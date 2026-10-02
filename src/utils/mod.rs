@@ -127,6 +127,7 @@ pub mod peer_address;
 pub mod permissions;
 pub mod plan_mode_v2;
 pub mod plans;
+pub mod platform;
 pub mod plugins;
 pub mod powershell;
 pub mod preflight_checks;

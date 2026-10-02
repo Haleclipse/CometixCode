@@ -7,7 +7,9 @@
 //!   `entrypoints/cli.rs` forces it in the startup window, so settings env
 //!   never reaches them, as in CC;
 //! - call time: `isSSH` (`env.ts:308-314`) reads the environment on every
-//!   call ([`is_ssh_session`]).
+//!   call ([`is_ssh_session`]);
+//! - first call: `getGlobalClaudeFile` (`env.ts:14-26`) is memoized without a
+//!   key ([`get_global_claude_file`]).
 //!
 //! The rest of CC's `env` (package managers, runtimes, WSL, deployment
 //! environment) has no Rust caller yet.
@@ -33,32 +35,41 @@ pub enum Platform {
     Windows,
 }
 
-/// Maps to CC `getPlatform() === 'wsl'` detection used by timeout and path
-/// security policy.
-pub fn is_wsl() -> bool {
-    if process_env::var_os("WSL_DISTRO_NAME").is_some()
-        || process_env::var_os("WSL_INTEROP").is_some()
+/// Maps to: CC `utils/env.ts:14-26` `getGlobalClaudeFile`, memoized without a
+/// key: the first call fixes the path for the process. That is the legacy
+/// `.config.json` under the config home when it exists, else
+/// `.claude<suffix>.json` under `CLAUDE_CONFIG_DIR || homedir()`, the suffix
+/// naming a non-production OAuth config.
+///
+/// Test builds compute it on every call instead: under `cargo test` many tests
+/// share a process, and a path fixed by the first would send every later
+/// test's writes there, the real `~/.claude.json` among them.
+pub fn get_global_claude_file() -> std::path::PathBuf {
+    #[cfg(not(test))]
     {
-        return true;
+        static FILE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+        FILE.get_or_init(global_claude_file).clone()
     }
-    #[cfg(target_os = "linux")]
-    {
-        return match crate::utils::fs_operations::get_fs_implementation().read_file_sync(
-            std::path::Path::new("/proc/version"),
-            crate::utils::fs_operations::BufferEncoding::Utf8,
-        ) {
-            Ok(version) => {
-                let version = version.to_string_lossy().to_lowercase();
-                version.contains("microsoft") || version.contains("wsl")
-            }
-            Err(error) => {
-                crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
-                false
-            }
-        };
+    #[cfg(test)]
+    global_claude_file()
+}
+
+/// The body of [`get_global_claude_file`].
+fn global_claude_file() -> std::path::PathBuf {
+    // Legacy fallback for backwards compatibility
+    let legacy = crate::utils::env_utils::get_claude_config_home_dir().join(".config.json");
+    if crate::utils::fs_operations::get_fs_implementation().exists_sync(&legacy) {
+        return legacy;
     }
-    #[cfg(not(target_os = "linux"))]
-    false
+    let filename = format!(
+        ".claude{}.json",
+        crate::constants::oauth::file_suffix_for_oauth_config()
+    );
+    let env = process_env::snapshot();
+    match env.var_os("CLAUDE_CONFIG_DIR").truthy() {
+        Some(dir) => std::path::PathBuf::from(dir).join(filename),
+        None => crate::utils::node_os::homedir().join(filename),
+    }
 }
 
 #[derive(Debug)]
@@ -249,6 +260,41 @@ fn is_ssh_session_in(env: &EnvSnapshot) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// CC `env.ts:14-26`: `.claude<suffix>.json` under `CLAUDE_CONFIG_DIR`,
+    /// unless the legacy `.config.json` exists under the config home. (The
+    /// memoization is production-only; see [`get_global_claude_file`].)
+    #[test]
+    fn global_claude_file_matches_official_legacy_and_suffix() {
+        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "cometix-global-claude-file-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let config = root.join("config");
+        std::fs::create_dir_all(&config).unwrap();
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _oauth = [
+            EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
+            EnvVarGuard::unset("USE_LOCAL_OAUTH"),
+            EnvVarGuard::unset("USE_STAGING_OAUTH"),
+        ];
+        assert_eq!(global_claude_file(), config.join(".claude.json"));
+        {
+            let _oauth = EnvVarGuard::set(
+                "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+                "https://claude.fedstart.com",
+            );
+            assert_eq!(
+                global_claude_file(),
+                config.join(".claude-custom-oauth.json")
+            );
+        }
+        std::fs::write(config.join(".config.json"), "{}").unwrap();
+        assert_eq!(global_claude_file(), config.join(".config.json"));
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     fn terminal(pairs: &[(&str, &str)]) -> Option<String> {
         detect_terminal(&EnvSnapshot::from_pairs(pairs.iter().copied()))

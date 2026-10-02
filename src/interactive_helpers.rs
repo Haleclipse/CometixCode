@@ -914,10 +914,11 @@ mod setup_screens_snapshot_tests {
         )
         .expect("write agent definition");
 
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let context = status_notice_context_from_readonly_runtime(
             &GlobalConfig::default(),
             &|key| match key {
-                "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
                 "HOME" => Some(root.display().to_string()),
                 _ => None,
             },

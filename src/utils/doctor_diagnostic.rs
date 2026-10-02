@@ -258,7 +258,7 @@ pub fn detect_configuration_issues(installation_type: &InstallationType) -> Vec<
 
 /// Maps to CC `detectLinuxGlobPatternWarnings()`.
 pub fn detect_linux_glob_pattern_warnings() -> Vec<DiagnosticWarning> {
-    if !cfg!(target_os = "linux") {
+    if crate::utils::platform::get_platform() != crate::utils::platform::Platform::Linux {
         return Vec::new();
     }
 

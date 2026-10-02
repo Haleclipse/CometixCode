@@ -452,7 +452,8 @@ fn contains_vulnerable_unc_path(path: &str) -> bool {
 }
 
 fn has_suspicious_windows_path_pattern(path: &str) -> bool {
-    if (cfg!(target_os = "windows") || crate::utils::env::is_wsl())
+    use crate::utils::platform::{Platform, get_platform};
+    if matches!(get_platform(), Platform::Windows | Platform::Wsl)
         && path.get(2..).is_some_and(|tail| tail.contains(':'))
     {
         return true;
@@ -1468,18 +1469,16 @@ mod tests {
         }
     }
 
+    /// CC `filesystem.ts:546`: the NTFS alternate-data-stream check applies
+    /// on Windows and WSL. WSL is what `/proc/version` says, which a test
+    /// cannot set, so this checks the current platform's answer.
     #[test]
-    fn wsl_requires_manual_review_for_ntfs_alternate_data_stream_paths() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let _restore = [
-            crate::utils::env_utils::EnvVarGuard::set("WSL_DISTRO_NAME", "Ubuntu"),
-            crate::utils::env_utils::EnvVarGuard::unset("WSL_INTEROP"),
-        ];
-        assert!(has_suspicious_windows_path_pattern(
-            "/mnt/c/project/file.txt:stream"
-        ));
+    fn ntfs_alternate_data_stream_check_follows_the_platform() {
+        use crate::utils::platform::{Platform, get_platform};
+        assert_eq!(
+            has_suspicious_windows_path_pattern("/mnt/c/project/file.txt:stream"),
+            matches!(get_platform(), Platform::Windows | Platform::Wsl)
+        );
         assert!(!has_suspicious_windows_path_pattern(
             "/mnt/c/project/file.txt"
         ));

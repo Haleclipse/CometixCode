@@ -197,6 +197,9 @@ pub fn truncate_line(text: &str, max_len: usize) -> String {
 /// Maps to: CC `commands/copy/copy.tsx:264-307` `call` up to the
 /// terminal/UI side-effect boundary.
 pub fn call(messages: &[Message], args: &str) -> CopyCall {
+    // Running `/copy` loads `copy.tsx` (`index.ts:12`), which evaluates
+    // `COPY_DIR` whether or not this call writes a file.
+    std::sync::LazyLock::force(&COPY_DIR);
     prepare_call(
         messages,
         args,
@@ -263,10 +266,11 @@ fn prepare_call(messages: &[Message], args: &str, copy_full_response: bool) -> C
     })
 }
 
-/// CC `copy.tsx:23` `join(tmpdir(), 'claude')`.
-fn copy_dir() -> PathBuf {
-    crate::utils::node_os::tmpdir().join("claude")
-}
+/// CC `copy.tsx:23` `const COPY_DIR = join(tmpdir(), 'claude')`: a module
+/// constant, fixed when the command module first loads (CC loads it lazily,
+/// on the first `/copy`), here on first use.
+static COPY_DIR: std::sync::LazyLock<PathBuf> =
+    std::sync::LazyLock::new(|| crate::utils::node_os::tmpdir().join("claude"));
 
 async fn write_to_dir(text: &str, filename: &str, directory: &Path) -> std::io::Result<PathBuf> {
     tokio::fs::create_dir_all(directory).await?;
@@ -277,7 +281,7 @@ async fn write_to_dir(text: &str, filename: &str, directory: &Path) -> std::io::
 
 /// Maps to: CC `commands/copy/copy.tsx:78-83` async `writeToFile`.
 pub async fn write_to_file(text: &str, filename: &str) -> std::io::Result<PathBuf> {
-    write_to_dir(text, filename, &copy_dir()).await
+    write_to_dir(text, filename, &COPY_DIR).await
 }
 
 /// Maps to: CC `commands/copy/copy.tsx:85-101` async `copyOrWriteToFile`.
@@ -853,7 +857,7 @@ mod tests {
         .expect("unmounted output must reject promptly")
         .unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::BrokenPipe);
-        assert!(!copy_dir().join(filename).exists());
+        assert!(!COPY_DIR.join(filename).exists());
     }
 
     /// CC copy.tsx:85-101: copy completes before the reliable temp-file fallback
@@ -902,7 +906,7 @@ mod tests {
             drop(output);
             // Parent output remains mounted while the child observer is
             // dropped, so acknowledged raw precedes the real file effect.
-            let path = copy_dir().join(&filename);
+            let path = COPY_DIR.join(&filename);
             if drop_observer {
                 assert_eq!(*result.lock().unwrap(), None);
             } else {

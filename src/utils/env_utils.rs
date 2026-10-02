@@ -304,39 +304,34 @@ pub fn is_cometix_write_enabled() -> bool {
 
 /// Maps to: CC `utils/envUtils.ts:7-14` `getClaudeConfigHomeDir`:
 /// `(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'))
-/// .normalize('NFC')`. `??` keeps an empty `CLAUDE_CONFIG_DIR`.
-///
-/// Residual: CC memoizes keyed on `CLAUDE_CONFIG_DIR` alone, so with it unset
-/// the first `homedir()` answer is kept even if `HOME` changes later. This
-/// recomputes, following a later `HOME` (environment redesign §12, C5).
+/// .normalize('NFC')`, memoized keyed on `CLAUDE_CONFIG_DIR`. `??` keeps an
+/// empty value. Each value of the variable is computed once, so with it unset
+/// the first `homedir()` answer stays, as lodash `memoize` keeps it under the
+/// `undefined` key.
 pub fn get_claude_config_home_dir() -> PathBuf {
-    get_claude_config_home_dir_from_snapshot(&process_env::snapshot())
-}
-
-/// [`get_claude_config_home_dir`] against a given snapshot, for multi-key
-/// operations that must not mix environment versions.
-pub fn get_claude_config_home_dir_from_snapshot(env: &process_env::EnvSnapshot) -> PathBuf {
-    claude_config_home_dir_with(|key| env.var_os(key).map(std::ffi::OsStr::to_os_string))
-}
-
-/// The one implementation of [`get_claude_config_home_dir`], reading
-/// `CLAUDE_CONFIG_DIR` from any environment source: the carrier, a snapshot,
-/// or a loader's injected `get_env`. `homedir()` is Node's, which reads the
-/// current environment whatever the source (CC reads both at call time).
-pub(crate) fn claude_config_home_dir_with(
-    var_os: impl Fn(&str) -> Option<std::ffi::OsString>,
-) -> PathBuf {
-    let dir = match var_os("CLAUDE_CONFIG_DIR") {
-        Some(dir) => PathBuf::from(dir),
-        None => crate::utils::node_os::homedir().join(".claude"),
-    };
-    match dir.to_str() {
-        Some(dir) => {
-            use unicode_normalization::UnicodeNormalization as _;
-            PathBuf::from(dir.nfc().collect::<String>())
-        }
-        None => dir,
-    }
+    static CACHE: std::sync::LazyLock<
+        std::sync::Mutex<std::collections::HashMap<Option<std::ffi::OsString>, PathBuf>>,
+    > = std::sync::LazyLock::new(Default::default);
+    let key = process_env::var_os("CLAUDE_CONFIG_DIR");
+    let mut cache = CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    cache
+        .entry(key)
+        .or_insert_with_key(|key| {
+            let dir = match key {
+                Some(dir) => PathBuf::from(dir),
+                None => crate::utils::node_os::homedir().join(".claude"),
+            };
+            match dir.to_str() {
+                Some(dir) => {
+                    use unicode_normalization::UnicodeNormalization as _;
+                    PathBuf::from(dir.nfc().collect::<String>())
+                }
+                None => dir,
+            }
+        })
+        .clone()
 }
 
 /// Maps to: CC `utils/envUtils.ts#getTeamsDir`.
@@ -512,30 +507,31 @@ mod tests {
     }
 
     /// CC `envUtils.ts:7-14`: `??` keeps an empty `CLAUDE_CONFIG_DIR`, the
-    /// result is NFC, and otherwise it is under Node's `homedir()`.
+    /// result is NFC, and otherwise it is under `homedir()`. Memoized keyed
+    /// on `CLAUDE_CONFIG_DIR`: with it unset, a later home directory is not
+    /// seen.
     #[test]
-    fn config_home_dir_matches_official_nullish_nfc_and_homedir() {
-        use crate::utils::process_env::EnvSnapshot;
+    fn config_home_dir_matches_official_nullish_nfc_homedir_and_memo() {
         use std::path::PathBuf;
-        let dir = |pairs: &[(&str, &str)]| {
-            super::get_claude_config_home_dir_from_snapshot(&EnvSnapshot::from_pairs(
-                pairs.iter().copied(),
-            ))
-        };
-        assert_eq!(dir(&[("CLAUDE_CONFIG_DIR", "")]), PathBuf::from(""));
-        assert_eq!(
-            dir(&[("CLAUDE_CONFIG_DIR", "/tmp/cafe\u{301}")]),
-            PathBuf::from("/tmp/caf\u{e9}")
-        );
-        // The snapshot supplies `CLAUDE_CONFIG_DIR` only: `homedir()` reads
-        // the current environment, as CC's does at call time.
-        assert_eq!(
-            dir(&[
-                ("HOME", "/snapshot-home"),
-                ("USERPROFILE", "/snapshot-home")
-            ]),
-            crate::utils::node_os::homedir().join(".claude")
-        );
+        let _lock = super::TEST_ENV_LOCK.lock().unwrap();
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let _home = super::EnvVarGuard::set(home_key, "/home/first");
+        {
+            let _dir = super::EnvVarGuard::set("CLAUDE_CONFIG_DIR", "");
+            assert_eq!(super::get_claude_config_home_dir(), PathBuf::from(""));
+        }
+        {
+            let _dir = super::EnvVarGuard::set("CLAUDE_CONFIG_DIR", "/tmp/cafe\u{301}");
+            assert_eq!(
+                super::get_claude_config_home_dir(),
+                PathBuf::from("/tmp/caf\u{e9}")
+            );
+        }
+        let _dir = super::EnvVarGuard::unset("CLAUDE_CONFIG_DIR");
+        let first = PathBuf::from("/home/first").join(".claude");
+        assert_eq!(super::get_claude_config_home_dir(), first);
+        let _later = super::EnvVarGuard::set(home_key, "/home/later");
+        assert_eq!(super::get_claude_config_home_dir(), first);
     }
 
     #[test]

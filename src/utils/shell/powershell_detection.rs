@@ -66,7 +66,8 @@ fn real_path_or_self(path: &str) -> String {
 pub fn find_powershell() -> Option<String> {
     if let Some(pwsh_path) = which("pwsh") {
         let pwsh_path = pwsh_path.display().to_string();
-        if cfg!(target_os = "linux") {
+        // `getPlatform() === 'linux'`: not WSL.
+        if crate::utils::platform::get_platform() == crate::utils::platform::Platform::Linux {
             let resolved = real_path_or_self(&pwsh_path);
             if pwsh_path.starts_with("/snap/") || resolved.starts_with("/snap/") {
                 if let Some(direct) = probe_path("/opt/microsoft/powershell/7/pwsh")
