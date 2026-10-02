@@ -3364,7 +3364,7 @@ fn resume(
             loaded.renderable_messages =
                 Arc::new(crate::utils::messages::normalize_messages(&loaded.messages));
             agent_definitions = Arc::new(
-                crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly(
+                crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
                     &crate::bootstrap::state::get_original_cwd(),
                 ),
             );

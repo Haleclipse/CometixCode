@@ -976,24 +976,13 @@ fn read_file_for_edit(absolute_file_path: &std::path::Path) -> std::io::Result<R
 mod tests {
     use super::*;
     use crate::tool::{ToolCall as _, ToolOutput, ToolUseContext};
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::query_helpers::{ReadFileStateEntry, ReadFileStateSource};
 
     fn update_read_state(context: &ToolUseContext, update: impl FnOnce(&mut ReadFileStateEntry)) {
         let mut entries = context.read_file_state.snapshot();
         update(&mut entries[0]);
         context.read_file_state.replace(entries);
-    }
-
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
     }
 
     struct TestGlobalConfigRestore(Option<crate::utils::config::GlobalConfig>);
@@ -1306,7 +1295,7 @@ mod tests {
     #[cfg(feature = "anthropic_internal")]
     #[test]
     fn validation_blocks_secrets_introduced_into_team_memory() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let input = FileEditInput {
@@ -1378,7 +1367,7 @@ mod tests {
 
     #[test]
     fn settings_edit_validation_uses_official_error_code_ten() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let root = temp_root("settings");
@@ -1407,11 +1396,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn no_write_gate_fails_before_parent_creation() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "0");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let root = temp_root("disabled");
         let path = root.join("missing/disabled.txt");
         let request = request(&path, "", "content\n");
@@ -1438,11 +1427,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn empty_old_string_creates_missing_file_and_replaces_whitespace_only_file() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let root = temp_root("empty-old");
 
         let missing = root.join("nested/new.txt");
@@ -1488,11 +1477,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn execution_preserves_utf16_bom_crlf_and_emits_typed_output() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let root = temp_root("encoding");
         let path = root.join("encoded.txt");
         let original = "alpha\r\nold\r\n";
@@ -1549,11 +1538,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn replace_all_updates_every_match_and_maps_official_result_copy() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let root = temp_root("replace-all");
         let path = root.join("values.txt");
         std::fs::write(&path, "old\nold\n").unwrap();
@@ -1583,16 +1572,16 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn execution_tracks_pre_edit_file_history_and_session_snapshot() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _bootstrap = BootstrapRestore::capture();
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
-        let _checkpointing = EnvRestore::set("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING", "0");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _checkpointing = EnvVarGuard::set("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING", "0");
         let root = temp_root("history");
         let config_dir = root.join("config");
-        let _config_dir = EnvRestore::set("CLAUDE_CONFIG_DIR", &config_dir.display().to_string());
+        let _config_dir = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
         let _config_restore =
             TestGlobalConfigRestore::set(crate::utils::config::GlobalConfig::default());
         let path = root.join("existing.txt");
@@ -1687,12 +1676,12 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn remote_git_diff_gate_reads_switch_table_not_growthbook_cache() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
-        let _remote = EnvRestore::set("CLAUDE_CODE_REMOTE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _remote = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
             "tengu_quartz_lantern".to_string(),
@@ -1757,11 +1746,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn post_discovery_failure_preserves_dynamic_skill_trigger() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "0");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
         let _skills = crate::skills::load_skills_dir::DynamicSkillsTestSnapshot::capture();
         crate::skills::load_skills_dir::clear_dynamic_skills();
         let root = temp_root("dynamic-error");
@@ -1796,11 +1785,11 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn approved_symlink_destination_retarget_fails_closed() {
         use std::os::unix::fs::symlink;
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let root = temp_root("retarget");
         let package = root.join("package");
         std::fs::create_dir_all(&package).unwrap();
@@ -1836,11 +1825,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn explicitly_user_updated_path_is_authoritative_and_re_pinned() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let root = temp_root("user-path-update");
         let original_path = root.join("original.txt");
         let updated_path = root.join("updated.txt");
@@ -1873,11 +1862,11 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn permission_updated_input_marks_semantic_user_modification() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _simple = EnvRestore::set("CLAUDE_CODE_SIMPLE", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let root = temp_root("user-modified");
         let path = root.join("value.txt");
         std::fs::write(&path, "old\n").unwrap();

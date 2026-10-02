@@ -85,9 +85,7 @@ fn resolve_agent_launch(
 ) -> ResolvedAgentLaunch {
     let cwd = bootstrap::state::get_original_cwd();
     let definitions = Arc::new(
-        crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly(
-            &cwd,
-        ),
+        crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(&cwd),
     );
     let setting = cli.agent.as_deref().or(settings.agent.as_deref());
     let main_thread_agent_definition = setting.and_then(|setting| {

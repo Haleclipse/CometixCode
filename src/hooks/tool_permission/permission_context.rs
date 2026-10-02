@@ -258,11 +258,12 @@ mod tests {
         PermissionBehavior, PermissionMode, PermissionRequest, PermissionRuleSource,
         PermissionRuleValue, PermissionUpdateDestination,
     };
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct TestEnvironmentGuard {
         previous_cwd: std::path::PathBuf,
         previous_original_cwd: std::path::PathBuf,
-        previous_write: Option<crate::utils::env_utils::EnvVarGuard>,
+        previous_write: Option<EnvVarGuard>,
         temporary: std::path::PathBuf,
     }
 
@@ -270,10 +271,7 @@ mod tests {
         fn isolated_no_write() -> Self {
             let previous_cwd = std::env::current_dir().unwrap();
             let previous_original_cwd = crate::bootstrap::state::get_original_cwd();
-            let previous_write = Some(crate::utils::env_utils::EnvVarGuard::set(
-                "COMETIX_WRITE_ENABLED",
-                "0",
-            ));
+            let previous_write = Some(EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0"));
             let temporary = std::env::temp_dir().join(format!(
                 "cometix-permission-context-{}",
                 uuid::Uuid::new_v4().simple()
@@ -352,7 +350,7 @@ mod tests {
 
     #[test]
     fn persist_permissions_matches_official_live_projection_after_caught_disk_failure() {
-        let _environment = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _environment = TEST_ENV_LOCK.lock().unwrap();
         let _guard = TestEnvironmentGuard::isolated_no_write();
 
         let store = crate::state::store::AppStore::new(

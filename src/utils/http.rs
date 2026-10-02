@@ -65,32 +65,16 @@ pub fn get_web_fetch_user_agent() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _values: Vec<crate::utils::env_utils::EnvVarGuard>,
-    }
-
-    impl EnvGuard {
-        fn set(updates: &[(&'static str, Option<&str>)]) -> Self {
-            let _values = updates
-                .iter()
-                .map(|(key, value)| match value {
-                    Some(value) => crate::utils::env_utils::EnvVarGuard::set(*key, value),
-                    None => crate::utils::env_utils::EnvVarGuard::unset(*key),
-                })
-                .collect();
-            Self { _values }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn user_agent_matches_official_http_shape() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _guard = EnvGuard::set(&[
-            ("CLAUDE_CODE_ENTRYPOINT", Some("cli")),
-            ("CLAUDE_AGENT_SDK_VERSION", Some("1.2.3")),
-            ("CLAUDE_AGENT_SDK_CLIENT_APP", Some("my-app/1.0")),
-        ]);
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _guard = [
+            EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli"),
+            EnvVarGuard::set("CLAUDE_AGENT_SDK_VERSION", "1.2.3"),
+            EnvVarGuard::set("CLAUDE_AGENT_SDK_CLIENT_APP", "my-app/1.0"),
+        ];
         assert_eq!(
             get_user_agent(),
             format!(
@@ -103,12 +87,12 @@ mod tests {
 
     #[test]
     fn mcp_user_agent_matches_official_optional_suffixes() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _guard = EnvGuard::set(&[
-            ("CLAUDE_CODE_ENTRYPOINT", Some("sdk")),
-            ("CLAUDE_AGENT_SDK_VERSION", Some("1.2.3")),
-            ("CLAUDE_AGENT_SDK_CLIENT_APP", None),
-        ]);
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _guard = [
+            EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "sdk"),
+            EnvVarGuard::set("CLAUDE_AGENT_SDK_VERSION", "1.2.3"),
+            EnvVarGuard::unset("CLAUDE_AGENT_SDK_CLIENT_APP"),
+        ];
         assert_eq!(
             get_mcp_user_agent(),
             format!(

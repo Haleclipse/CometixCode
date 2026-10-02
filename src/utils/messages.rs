@@ -2702,7 +2702,7 @@ fn get_plan_mode_interview_instructions(
     };
     let read_only_tools = get_read_only_tool_names();
     let explore_agent_clause =
-        if crate::tools::agent_tool::built_in_agents::are_explore_plan_agents_enabled_readonly() {
+        if crate::tools::agent_tool::built_in_agents::are_explore_plan_agents_enabled() {
             " You can use the Explore agent type to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler."
         } else {
             ""

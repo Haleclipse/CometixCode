@@ -30,7 +30,7 @@ fn keep_coding_instructions(value: Option<&Value>) -> Option<bool> {
 
 /// Maps to: CC `outputStyles/loadOutputStylesDir.ts#getOutputStyleDirStyles`.
 pub fn get_output_style_dir_styles(cwd: &Path) -> Vec<OutputStyleConfig> {
-    load_markdown_files_for_subdir("output-styles", cwd, None)
+    load_markdown_files_for_subdir("output-styles", cwd)
         .into_iter()
         .filter_map(|file| {
             let file_name = file.file_path.file_name()?.to_string_lossy();
@@ -66,21 +66,11 @@ pub fn clear_output_style_caches() {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &Path) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn output_style_dir_styles_map_frontmatter_like_official_loader() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-output-style-dir-{}", uuid::Uuid::new_v4()));
         let cwd = root.join("repo");
@@ -93,7 +83,7 @@ mod tests {
             "---\nname: Mentor\ndescription: 123\nkeep-coding-instructions: 'false'\nforce-for-plugin: true\n---\n# Mentor prompt\nBody",
         )
         .unwrap();
-        let _config_guard = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&cwd).unwrap();
         let styles = get_output_style_dir_styles(&cwd);

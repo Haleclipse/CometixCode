@@ -351,11 +351,9 @@ async fn indexed_paths() -> Vec<String> {
         "templates",
     ] {
         all_files.extend(
-            crate::utils::markdown_config_loader::load_markdown_files_for_subdir(
-                subdir, &cwd, None,
-            )
-            .into_iter()
-            .map(|file| file.file_path.to_string_lossy().replace('\\', "/")),
+            crate::utils::markdown_config_loader::load_markdown_files_for_subdir(subdir, &cwd)
+                .into_iter()
+                .map(|file| file.file_path.to_string_lossy().replace('\\', "/")),
         );
     }
     // CC `getPathsForSuggestions:543-546` — parent directories are derived

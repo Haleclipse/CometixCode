@@ -339,9 +339,7 @@ pub fn process_resumed_conversation(
         );
         let cwd = crate::bootstrap::state::get_original_cwd();
         agent_definitions = Arc::new(
-            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly(
-                &cwd,
-            ),
+            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(&cwd),
         );
     }
 

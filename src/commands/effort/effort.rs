@@ -428,10 +428,11 @@ pub fn call(args: &str, context: &ToolUseContext) -> EffortCall {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct EnvGuard {
-        config_dir: Option<crate::utils::env_utils::EnvVarGuard>,
-        effort: Option<crate::utils::env_utils::EnvVarGuard>,
+        config_dir: Option<EnvVarGuard>,
+        effort: Option<EnvVarGuard>,
         root: std::path::PathBuf,
     }
 
@@ -441,13 +442,8 @@ mod tests {
                 .join(format!("cometix-effort-command-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
             Self {
-                config_dir: Some(crate::utils::env_utils::EnvVarGuard::set(
-                    "CLAUDE_CONFIG_DIR",
-                    &root,
-                )),
-                effort: Some(crate::utils::env_utils::EnvVarGuard::unset(
-                    "CLAUDE_CODE_EFFORT_LEVEL",
-                )),
+                config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+                effort: Some(EnvVarGuard::unset("CLAUDE_CODE_EFFORT_LEVEL")),
                 root,
             }
         }
@@ -467,7 +463,7 @@ mod tests {
 
     #[test]
     fn show_current_effort_matches_official_env_and_auto_messages() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = EnvGuard::isolated();
 
         assert_eq!(
@@ -492,7 +488,7 @@ mod tests {
 
     #[test]
     fn execute_effort_matches_official_persistence_session_and_unset_paths() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let guard = EnvGuard::isolated();
 
         let low = execute_effort("LOW");
@@ -543,7 +539,7 @@ mod tests {
 
     #[test]
     fn execute_effort_matches_official_conflicting_env_messages() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = EnvGuard::isolated();
         crate::utils::process_env::set("CLAUDE_CODE_EFFORT_LEVEL", "low");
 
@@ -564,7 +560,7 @@ mod tests {
 
     #[test]
     fn call_matches_official_help_current_and_app_state_application() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = EnvGuard::isolated();
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),

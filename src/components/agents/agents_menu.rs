@@ -12,7 +12,7 @@ use crate::components::custom_select::SelectOptionData;
 use crate::components::design_system::dialog::Dialog;
 use crate::tools::agent_tool::load_agents_dir::{
     AgentDefinition, AgentDefinitionSource, get_active_agents_from_list,
-    get_agent_definitions_with_overrides_readonly,
+    get_agent_definitions_with_overrides,
 };
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
@@ -122,9 +122,8 @@ pub fn AgentsMenu<'a>(
         let mut next_changes = changes.read().clone();
         next_changes.push(message);
         changes.set(next_changes);
-        let loaded = get_agent_definitions_with_overrides_readonly(
-            &crate::bootstrap::state::get_original_cwd(),
-        );
+        let loaded =
+            get_agent_definitions_with_overrides(&crate::bootstrap::state::get_original_cwd());
         all_agents.set(loaded.all_agents);
         mode.set(MenuMode::List);
     }

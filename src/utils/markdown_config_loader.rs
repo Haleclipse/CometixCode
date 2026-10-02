@@ -74,15 +74,9 @@ fn normalize_path_for_comparison(path: &Path) -> String {
 }
 
 /// Maps to: CC `utils/markdownConfigLoader.ts#getProjectDirsUpToHome`.
-/// `home_override` is a narrow environment-snapshot injection used by the
-/// source-shaped agent loader; ordinary callers pass `None`.
-pub fn get_project_dirs_up_to_home(
-    subdir: &str,
-    cwd: &Path,
-    home_override: Option<PathBuf>,
-) -> Vec<PathBuf> {
+pub fn get_project_dirs_up_to_home(subdir: &str, cwd: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    let home = home_override.unwrap_or_else(crate::utils::node_os::homedir);
+    let home = crate::utils::node_os::homedir();
     let home = home.canonicalize().unwrap_or(home);
     let git_root = crate::utils::git::find_git_root(cwd);
     let mut current = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
@@ -194,20 +188,11 @@ fn load_markdown_files_from_dir(
 }
 
 /// Maps to: CC `utils/markdownConfigLoader.ts#loadMarkdownFilesForSubdir`.
-/// Injected roots preserve the agent loader's explicit environment snapshot;
-/// ordinary callers pass `None` and all policy remains in this canonical owner.
-pub fn load_markdown_files_for_subdir(
-    subdir: &str,
-    cwd: &Path,
-    injected_roots: Option<(PathBuf, PathBuf, Vec<PathBuf>)>,
-) -> Vec<MarkdownFile> {
-    let (managed_dir, user_dir, mut project_dirs) = injected_roots.unwrap_or_else(|| {
-        (
-            get_managed_file_path().join(".claude").join(subdir),
-            crate::utils::env_utils::get_claude_config_home_dir().join(subdir),
-            get_project_dirs_up_to_home(subdir, cwd, None),
-        )
-    });
+pub fn load_markdown_files_for_subdir(subdir: &str, cwd: &Path) -> Vec<MarkdownFile> {
+    // CC :303-305 order.
+    let user_dir = crate::utils::env_utils::get_claude_config_home_dir().join(subdir);
+    let managed_dir = get_managed_file_path().join(".claude").join(subdir);
+    let mut project_dirs = get_project_dirs_up_to_home(subdir, cwd);
 
     // Worktree sparse-checkout fallback: only consult the main repository when
     // the worktree itself has no `.claude/<subdir>` directory.
@@ -326,6 +311,8 @@ pub fn parse_slash_command_tools_from_frontmatter(
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+
     #[test]
     fn description_fallback_uses_first_non_empty_line_and_truncates() {
         assert_eq!(
@@ -344,18 +331,6 @@ mod tests {
     }
 
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &Path) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
 
     struct AllowedSourcesGuard(Vec<String>);
 
@@ -380,10 +355,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn markdown_discovery_follows_symlinks_and_breaks_directory_cycles() {
+        use crate::utils::env_utils::HOME_VAR;
         use std::os::unix::fs::symlink;
 
         let root = temp_dir("cometix-md-loader-symlink");
-        let managed = root.join("managed");
+        let managed_root = root.join("managed");
+        let managed = managed_root.join(".claude/commands");
         let external = root.join("external");
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&external).unwrap();
@@ -395,11 +372,13 @@ mod tests {
         symlink(&nested, managed.join("nested-link")).unwrap();
         symlink(&managed, nested.join("cycle")).unwrap();
 
-        let files = load_markdown_files_for_subdir(
-            "commands",
-            &root,
-            Some((managed, root.join("missing-user"), Vec::new())),
-        );
+        // Only the managed root has a `commands` dir: the user root is
+        // missing, and the project walk from `root` stops at once at home.
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_root);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("missing-user"));
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let files = load_markdown_files_for_subdir("commands", &root);
         let names = files
             .iter()
             .filter_map(|file| file.file_path.file_name()?.to_str())
@@ -410,7 +389,7 @@ mod tests {
 
     #[test]
     fn sparse_worktree_falls_back_to_main_repository_markdown_directory() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let root = temp_dir("cometix-md-loader-worktree");
@@ -441,8 +420,8 @@ mod tests {
         let managed = root.join("managed");
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::create_dir_all(&managed).unwrap();
-        let _config_guard = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _managed_guard = EnvGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _sources_guard = AllowedSourcesGuard::capture();
         crate::bootstrap::state::set_allowed_setting_sources(vec![
             "userSettings".to_string(),
@@ -450,7 +429,7 @@ mod tests {
             "localSettings".to_string(),
         ]);
 
-        let files = load_markdown_files_for_subdir("agents", &worktree, None);
+        let files = load_markdown_files_for_subdir("agents", &worktree);
 
         assert!(files.iter().any(|file| {
             file.source == MarkdownConfigSource::ProjectSettings
@@ -461,7 +440,7 @@ mod tests {
 
     #[test]
     fn load_markdown_files_for_subdir_preserves_official_source_order() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = temp_dir("cometix-md-loader");
         let config_home = root.join("config");
         let managed = root.join("managed");
@@ -490,11 +469,11 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _managed_guard = EnvGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&project).unwrap();
-        let files = load_markdown_files_for_subdir("output-styles", &project, None);
+        let files = load_markdown_files_for_subdir("output-styles", &project);
         std::env::set_current_dir(old_cwd).unwrap();
         let _ = std::fs::remove_dir_all(root);
 

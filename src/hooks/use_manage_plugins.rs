@@ -89,7 +89,7 @@ async fn initial_plugin_load(store: AppStore, mut notifications: NotificationsWr
                     Arc::new(Vec::new())
                 }
             };
-            let agents = crate::utils::plugins::load_plugin_agents::load_plugin_agents_readonly();
+            let agents = crate::utils::plugins::load_plugin_agents::load_plugin_agents();
             if let Err(error) = crate::utils::plugins::load_plugin_hooks::load_plugin_hooks() {
                 loaded.errors.push(PluginError::GenericError {
                     source: "plugin-hooks".into(),

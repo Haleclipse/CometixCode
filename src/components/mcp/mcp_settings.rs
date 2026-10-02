@@ -392,7 +392,10 @@ pub fn MCPSettings(props: &MCPSettingsProps, mut hooks: Hooks) -> impl Into<AnyE
     let agent_servers = std::env::current_dir()
         .ok()
         .map(|cwd| {
-            let definitions = crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly(&cwd);
+            let definitions =
+                crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
+                    &cwd,
+                );
             crate::services::mcp::utils::extract_agent_mcp_servers(&definitions.all_agents)
         })
         .unwrap_or_default();

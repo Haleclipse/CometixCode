@@ -432,6 +432,7 @@ pub fn call(
 mod tests {
     use super::*;
     use crate::types::message::{AssistantContent, AssistantMessage};
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::{StreamExt, stream};
 
     struct CacheSafeParamsRestore(Option<CacheSafeParams>);
@@ -439,18 +440,6 @@ mod tests {
     impl Drop for CacheSafeParamsRestore {
         fn drop(&mut self) {
             crate::utils::forked_agent::save_cache_safe_params(self.0.take());
-        }
-    }
-
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
         }
     }
 
@@ -485,7 +474,7 @@ mod tests {
 
     #[test]
     fn build_cache_safe_params_matches_official_saved_bytes_and_current_context() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let previous = get_last_cache_safe_params().map(|params| params.as_ref().clone());
         let _restore = CacheSafeParamsRestore(previous);
 
@@ -572,8 +561,8 @@ mod tests {
 
     #[test]
     fn btw_call_carries_the_exact_current_context_snapshot() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _no_write = EnvRestore::set("COMETIX_WRITE_ENABLED", "0");
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _no_write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0");
         let command = Command::local_ui(super::super::NAME, super::super::DESCRIPTION);
         let context = crate::tool::ToolUseContext::default()
             .with_main_loop_model("current-model")

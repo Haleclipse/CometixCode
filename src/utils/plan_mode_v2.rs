@@ -68,22 +68,11 @@ pub fn get_pewter_ledger_variant() -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn plan_counts_match_official_parse_int_prefix_semantics() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         for (input, expected) in [
             ("2x", Some(2)),
             (" +3.5", Some(3)),
@@ -91,17 +80,17 @@ mod tests {
             ("11", None),
             ("-2", None),
         ] {
-            let _env = EnvGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", input);
+            let _env = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", input);
             assert_eq!(env_count("CLAUDE_CODE_PLAN_V2_AGENT_COUNT"), expected);
         }
     }
 
     #[test]
     fn external_interview_gate_and_agent_counts_honor_official_env_precedence() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _interview = EnvGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
-        let _agents = EnvGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", "2");
-        let _explore = EnvGuard::set("CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT", "4");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
+        let _agents = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", "2");
+        let _explore = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT", "4");
         assert!(is_plan_mode_interview_phase_enabled());
         assert_eq!(get_plan_mode_v2_agent_count(), 2);
         assert_eq!(get_plan_mode_v2_explore_agent_count(), 4);

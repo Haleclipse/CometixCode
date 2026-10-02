@@ -284,18 +284,19 @@ pub fn get_prompt_for_command() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use sha2::{Digest, Sha256};
 
     struct EnvGuard {
-        _env: [crate::utils::env_utils::EnvVarGuard; 2],
+        _env: [EnvVarGuard; 2],
     }
 
     impl EnvGuard {
         fn clear() -> Self {
             Self {
                 _env: [
-                    crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_NEW_INIT"),
-                    crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0"),
+                    EnvVarGuard::unset("CLAUDE_CODE_NEW_INIT"),
+                    EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0"),
                 ],
             }
         }
@@ -324,7 +325,7 @@ mod tests {
 
     #[test]
     fn init_description_and_prompt_gate_match_official_runtime_cohort() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = EnvGuard::clear();
         let registry = crate::commands::declared_commands_for_tests();
         let command = crate::commands::find_command("init", &registry).unwrap();
@@ -358,7 +359,7 @@ mod tests {
 
     #[test]
     fn init_prompt_callback_matches_official_prompt_command_transport() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = EnvGuard::clear();
         let registry = crate::commands::declared_commands_for_tests();
         let result = crate::utils::process_user_input::process_slash_command::process_slash_command(
@@ -402,7 +403,7 @@ mod tests {
         use crate::utils::process_user_input::{
             ProcessInputMode, ProcessUserInputParams, process_user_input_base,
         };
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = EnvGuard::clear();
         let agent = "init-command-image-agent";
         crate::bootstrap::state::clear_invoked_skills_for_agent(agent);

@@ -2,7 +2,7 @@
 
 use crate::components::agents::agents_menu::AgentsMenu;
 use crate::components::agents::tool_selector::AgentToolOption;
-use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly;
+use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides;
 use iocraft::prelude::*;
 
 #[derive(Default, Props)]
@@ -17,7 +17,7 @@ pub fn AgentsCommand<'a>(
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let definitions = hooks.use_state(|| {
-        get_agent_definitions_with_overrides_readonly(&crate::bootstrap::state::get_original_cwd())
+        get_agent_definitions_with_overrides(&crate::bootstrap::state::get_original_cwd())
     });
     let mut pending = hooks.use_state(|| None::<String>);
     let done = { pending.read().clone() };

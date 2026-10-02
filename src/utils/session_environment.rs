@@ -147,18 +147,7 @@ pub fn get_session_environment_script() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn environment_scripts_use_official_event_then_index_order() {
@@ -169,14 +158,14 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _cache = CacheGuard;
         let root = std::env::temp_dir().join(format!(
             "cometix-session-env-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _writes = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         invalidate_session_env_cache();
         let dir = get_session_env_dir_path().unwrap();
         std::fs::write(dir.join("filechanged-hook-0.sh"), "export D=4").unwrap();

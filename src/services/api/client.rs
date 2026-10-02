@@ -1231,24 +1231,7 @@ pub(crate) async fn send_bedrock_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-
-        fn remove(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// A transport without proxy or TLS options, for handles built by hand.
     fn direct_client() -> reqwest::Client {
@@ -1317,7 +1300,7 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_api_key_auth_remains_available_without_oauth_credentials() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home = std::env::temp_dir().join(format!(
@@ -1325,12 +1308,12 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
-        let _auth_token = EnvGuard::remove("ANTHROPIC_AUTH_TOKEN");
-        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
+        let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let handle = get_anthropic_client(GetAnthropicClientOptions {
             api_key: Some("sk-ant-test".to_string()),
             ..GetAnthropicClientOptions::default()
@@ -1356,7 +1339,7 @@ mod tests {
     /// environment variable.
     #[tokio::test]
     async fn sdk_defaults_are_computed_from_the_snapshot_like_read_env() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home = std::env::temp_dir().join(format!(
@@ -1364,14 +1347,14 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
-        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
-        let _base_url = EnvGuard::set("ANTHROPIC_BASE_URL", " https://gateway.example/ \n");
-        let _auth_token = EnvGuard::set("ANTHROPIC_AUTH_TOKEN", "\u{feff} tok ");
-        let _timeout = EnvGuard::set("API_TIMEOUT_MS", " 90000ms");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
+        let _base_url = EnvVarGuard::set("ANTHROPIC_BASE_URL", " https://gateway.example/ \n");
+        let _auth_token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "\u{feff} tok ");
+        let _timeout = EnvVarGuard::set("API_TIMEOUT_MS", " 90000ms");
 
         let handle = get_anthropic_client(GetAnthropicClientOptions {
             api_key: Some("sk-ant-test".to_string()),
@@ -1405,7 +1388,7 @@ mod tests {
     /// its own environment read.
     #[tokio::test]
     async fn unset_base_url_is_the_sdk_default_without_an_environment_read() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home = std::env::temp_dir().join(format!(
@@ -1413,12 +1396,12 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
-        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
-        let _base_url = EnvGuard::remove("ANTHROPIC_BASE_URL");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
+        let _base_url = EnvVarGuard::unset("ANTHROPIC_BASE_URL");
 
         let handle = get_anthropic_client(GetAnthropicClientOptions {
             api_key: Some("sk-ant-test".to_string()),
@@ -1665,21 +1648,21 @@ mod tests {
     /// snapshot (`vertex-sdk client.ts:78`, the core's `apiKey` default).
     #[tokio::test]
     async fn vertex_handle_reads_its_sdk_defaults_from_the_snapshot() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home =
             std::env::temp_dir().join(format!("cometix-vertex-defaults-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _guards = [
-            EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home),
-            EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK"),
-            EnvGuard::set("CLAUDE_CODE_USE_VERTEX", "1"),
-            EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY"),
-            EnvGuard::set("CLAUDE_CODE_SKIP_VERTEX_AUTH", "1"),
-            EnvGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", " vertex-project "),
-            EnvGuard::set("ANTHROPIC_VERTEX_BASE_URL", " https://vertex.example/v1 "),
-            EnvGuard::set("ANTHROPIC_API_KEY", " env-key "),
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
+            EnvVarGuard::set("CLAUDE_CODE_USE_VERTEX", "1"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvVarGuard::set("CLAUDE_CODE_SKIP_VERTEX_AUTH", "1"),
+            EnvVarGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", " vertex-project "),
+            EnvVarGuard::set("ANTHROPIC_VERTEX_BASE_URL", " https://vertex.example/v1 "),
+            EnvVarGuard::set("ANTHROPIC_API_KEY", " env-key "),
         ];
         // The OS environment disagrees with the carrier, so a read that went
         // around the snapshot would surface here. The guards restore both.
@@ -1715,7 +1698,7 @@ mod tests {
     #[tokio::test]
     async fn sdk_requests_take_the_proxy_from_fetch_options() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home = std::env::temp_dir().join(format!(
@@ -1726,19 +1709,19 @@ mod tests {
         let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_address = proxy.local_addr().unwrap();
         let _guards = [
-            EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home),
-            EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN"),
-            EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK"),
-            EnvGuard::remove("CLAUDE_CODE_USE_VERTEX"),
-            EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY"),
-            EnvGuard::remove("ANTHROPIC_UNIX_SOCKET"),
-            EnvGuard::set("ANTHROPIC_BASE_URL", "http://api.invalid"),
-            EnvGuard::remove("https_proxy"),
-            EnvGuard::set("HTTPS_PROXY", format!("http://{proxy_address}")),
-            EnvGuard::remove("http_proxy"),
-            EnvGuard::remove("HTTP_PROXY"),
-            EnvGuard::remove("no_proxy"),
-            EnvGuard::remove("NO_PROXY"),
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET"),
+            EnvVarGuard::set("ANTHROPIC_BASE_URL", "http://api.invalid"),
+            EnvVarGuard::unset("https_proxy"),
+            EnvVarGuard::set("HTTPS_PROXY", format!("http://{proxy_address}")),
+            EnvVarGuard::unset("http_proxy"),
+            EnvVarGuard::unset("HTTP_PROXY"),
+            EnvVarGuard::unset("no_proxy"),
+            EnvVarGuard::unset("NO_PROXY"),
         ];
         let server = tokio::spawn(async move {
             let (mut stream, _) = proxy.accept().await.unwrap();
@@ -1789,7 +1772,7 @@ mod tests {
     /// `readEnv` trims the same value to `''`.
     #[tokio::test]
     async fn whitespace_auth_token_is_truthy_for_cc_and_empty_for_the_sdk() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home = std::env::temp_dir().join(format!(
@@ -1797,12 +1780,12 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
-        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
-        let _auth_token = EnvGuard::set("ANTHROPIC_AUTH_TOKEN", "  ");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
+        let _auth_token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "  ");
 
         let handle = get_anthropic_client(GetAnthropicClientOptions {
             api_key: Some("sk-ant-test".to_string()),
@@ -1826,7 +1809,7 @@ mod tests {
     /// in the environment (even an empty one) never reaches the request.
     #[tokio::test]
     async fn subscriber_passes_null_api_key_and_the_oauth_token_like_cc() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home = std::env::temp_dir().join(format!(
@@ -1834,15 +1817,15 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         // Exported but empty: CC still treats the user as a subscriber, and
         // the SDK would keep `''` if it were asked to read the variable.
-        let _api_key = EnvGuard::set("ANTHROPIC_API_KEY", "");
-        let _auth_token = EnvGuard::remove("ANTHROPIC_AUTH_TOKEN");
-        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
+        let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "");
+        let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         std::fs::write(
             config_home.join(".credentials.json"),
             serde_json::json!({
@@ -1888,7 +1871,7 @@ mod tests {
 
     #[tokio::test]
     async fn selected_expired_oauth_propagates_the_closed_side_effect_error() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_home = std::env::temp_dir().join(format!(
@@ -1896,11 +1879,11 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _oauth = EnvGuard::remove("CLAUDE_CODE_OAUTH_TOKEN");
-        let _bedrock = EnvGuard::remove("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvGuard::remove("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvGuard::remove("CLAUDE_CODE_USE_FOUNDRY");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         std::fs::write(
             config_home.join(".credentials.json"),
             serde_json::json!({

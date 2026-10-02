@@ -606,15 +606,16 @@ pub fn clear_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
+        _env: EnvVarGuard,
     }
 
     impl EnvGuard {
         fn writes(value: &str) -> Self {
             Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", value),
+                _env: EnvVarGuard::set("COMETIX_WRITE_ENABLED", value),
             }
         }
     }
@@ -638,7 +639,7 @@ mod tests {
     fn ctrl_b_backgrounds_registered_foreground_task_in_place() {
         use std::process::{Command, Stdio};
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvGuard::writes("1");
         clear_for_test();
         let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
@@ -706,7 +707,7 @@ mod tests {
     fn no_write_mode_refuses_explicit_and_in_place_backgrounding() {
         use std::process::{Command, Stdio};
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvGuard::writes("0");
         clear_for_test();
         let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);

@@ -159,24 +159,7 @@ pub async fn refresh_oauth_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-
-        fn remove(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn tokens() -> ClaudeAiOAuthTokensSnapshot {
         ClaudeAiOAuthTokensSnapshot {
@@ -219,10 +202,10 @@ mod tests {
 
     #[test]
     fn refresh_oauth_token_preserves_canonical_custom_endpoint_validation() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _custom = EnvGuard::set("CLAUDE_CODE_CUSTOM_OAUTH_URL", "https://evil.example");
+        let _custom = EnvVarGuard::set("CLAUDE_CODE_CUSTOM_OAUTH_URL", "https://evil.example");
         let error = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -237,14 +220,14 @@ mod tests {
 
     #[test]
     fn refresh_oauth_preparation_and_gate_closed_behavior_match_contract() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _local = EnvGuard::remove("USE_LOCAL_OAUTH");
-        let _api_base = EnvGuard::remove("CLAUDE_LOCAL_OAUTH_API_BASE");
-        let _staging = EnvGuard::remove("USE_STAGING_OAUTH");
-        let _custom = EnvGuard::remove("CLAUDE_CODE_CUSTOM_OAUTH_URL");
-        let _client_override = EnvGuard::remove("CLAUDE_CODE_OAUTH_CLIENT_ID");
+        let _local = EnvVarGuard::unset("USE_LOCAL_OAUTH");
+        let _api_base = EnvVarGuard::unset("CLAUDE_LOCAL_OAUTH_API_BASE");
+        let _staging = EnvVarGuard::unset("USE_STAGING_OAUTH");
+        let _custom = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
+        let _client_override = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_CLIENT_ID");
 
         let error = tokio::runtime::Builder::new_current_thread()
             .enable_all()

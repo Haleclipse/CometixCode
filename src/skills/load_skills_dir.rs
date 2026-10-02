@@ -466,9 +466,9 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
         }
 
         if project_enabled {
-            for dir in crate::utils::markdown_config_loader::get_project_dirs_up_to_home(
-                "skills", cwd, None,
-            ) {
+            for dir in
+                crate::utils::markdown_config_loader::get_project_dirs_up_to_home("skills", cwd)
+            {
                 skill_dirs.push(SkillDir {
                     path: dir,
                     source: SkillSource::ProjectSettings,
@@ -510,7 +510,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
             }
             if project_enabled {
                 for dir in crate::utils::markdown_config_loader::get_project_dirs_up_to_home(
-                    "commands", cwd, None,
+                    "commands", cwd,
                 ) {
                     legacy_command_dirs.push(SkillDir {
                         path: dir,
@@ -1264,6 +1264,7 @@ fn display_path_for_prompt(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use std::io::Write;
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -1313,24 +1314,6 @@ mod tests {
         }
     }
 
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &Path) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-
-        fn set_text(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
-
     struct SkillDiscoveryStateGuard {
         sources: Vec<String>,
         additional_dirs: Vec<PathBuf>,
@@ -1357,7 +1340,7 @@ mod tests {
 
     #[test]
     fn initial_skill_dirs_apply_source_plugin_only_and_bare_mode_gates() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _state = SkillDiscoveryStateGuard::capture();
@@ -1402,10 +1385,10 @@ mod tests {
         ] {
             write_file(&path, body);
         }
-        let _managed = EnvGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &config);
-        let _simple = EnvGuard::set_text("CLAUDE_CODE_SIMPLE", "0");
-        let _policy_disabled = EnvGuard::set_text("CLAUDE_CODE_DISABLE_POLICY_SKILLS", "0");
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
+        let _policy_disabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_POLICY_SKILLS", "0");
         crate::bootstrap::state::set_allowed_setting_sources(vec!["projectSettings".to_string()]);
         crate::bootstrap::state::set_additional_directories_for_claude_md(vec![additional.clone()]);
 
@@ -1539,7 +1522,7 @@ mod tests {
         // unexpanded patterns matched nothing, so the skill was never activated
         // and never appeared in `get_skill_dir_commands` — silently invisible,
         // no error. The assertion fails (it does not hang).
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _snapshot = DynamicSkillsTestSnapshot::capture();
         clear_dynamic_skills();
         let root = std::env::temp_dir().join(format!(
@@ -1690,7 +1673,7 @@ mod tests {
         // this exercises the real predicate.
         use crate::utils::hooks::session_hooks::clear_all_session_hooks;
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let root = temp_dir("skill-hooks-policy");
@@ -1699,7 +1682,7 @@ mod tests {
             &managed.join("managed-settings.json"),
             r#"{"strictPluginOnlyCustomization":["hooks"]}"#,
         );
-        let _managed_env = EnvGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let _managed_env = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         crate::utils::settings::settings_cache::reset_settings_cache();
 
         let hooks: crate::services::hooks::HooksConfig = serde_json::from_value(
@@ -1800,7 +1783,7 @@ mod tests {
 
     #[test]
     fn dynamic_nested_and_conditional_skills_follow_file_paths() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _snapshot = DynamicSkillsTestSnapshot::capture();
         clear_dynamic_skills();
         let root = std::env::temp_dir().join(format!(
@@ -1870,7 +1853,7 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _dynamic = DynamicSkillsTestSnapshot::capture();
         let _sources =
             AllowedSourcesRestore(crate::bootstrap::state::get_allowed_setting_sources());
@@ -1904,7 +1887,7 @@ mod tests {
 
     #[test]
     fn dynamic_skills_preserve_map_insertion_order() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _snapshot = DynamicSkillsTestSnapshot::capture();
         clear_dynamic_skills();
         let root = std::env::temp_dir().join(format!(
@@ -1954,7 +1937,7 @@ mod tests {
         // hold nothing loadable left every generation-keyed cache holding a
         // list built before the directory existed. The assert fails (equal
         // generations); it does not hang.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _snapshot = DynamicSkillsTestSnapshot::capture();
         let _sources = SkillDiscoveryStateGuard::capture();
         crate::bootstrap::state::set_allowed_setting_sources(vec!["projectSettings".to_string()]);
@@ -2070,7 +2053,7 @@ mod tests {
         // `commands/` tree. Behaviour-preserving on its own; the assert here is
         // that the cached list is what a second call returns and that
         // `clear_skill_caches()` is what releases it.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _state = SkillDiscoveryStateGuard::capture();
         crate::bootstrap::state::set_allowed_setting_sources(vec!["projectSettings".to_string()]);
         clear_skill_caches();

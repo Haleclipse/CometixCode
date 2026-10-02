@@ -19,7 +19,7 @@ use crate::components::trust_dialog::{
 };
 use crate::services::mcp::config::get_mcp_configs_by_scope_readonly;
 use crate::services::mcp::types::ConfigScope;
-use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_from_env;
+use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides;
 use crate::utils::auth::{
     GetAnthropicApiKeyOptions, get_anthropic_api_key_with_source,
     get_api_key_from_config_or_macos_keychain, get_auth_token_source, is_anthropic_auth_enabled,
@@ -147,7 +147,6 @@ fn status_notice_memory_files(files: Vec<ClaudeMdFile>) -> Vec<MemoryFileInfo> {
 
 pub fn status_notice_context_from_readonly_runtime(
     global_config: &GlobalConfig,
-    get_env: &impl Fn(&str) -> Option<String>,
     cwd: &Path,
     memory_files: Vec<ClaudeMdFile>,
     ide_installation_status: Option<&IDEExtensionInstallationStatus>,
@@ -169,7 +168,7 @@ pub fn status_notice_context_from_readonly_runtime(
     StatusNoticeContext {
         cwd: cwd.to_string_lossy().to_string(),
         memory_files: status_notice_memory_files(memory_files),
-        agent_definitions: Some(get_agent_definitions_with_overrides_from_env(cwd, get_env).into()),
+        agent_definitions: Some(get_agent_definitions_with_overrides(cwd).into()),
         auth_token_source,
         api_key_source,
         has_console_api_key: get_api_key_from_config_or_macos_keychain().is_some(),
@@ -220,7 +219,6 @@ pub fn default_status_notice_context(
     let cwd = std::env::current_dir().unwrap_or_default();
     status_notice_context_from_readonly_runtime(
         &load_global_config(),
-        &|key| crate::utils::process_env::var(key),
         &cwd,
         discover_claude_md_files(),
         ide_installation_status,
@@ -737,9 +735,8 @@ mod setup_screens_snapshot_tests {
         // `auth_token_source` and `api_key_source` come from
         // `get_auth_token_source()` / `get_anthropic_api_key_with_source()`,
         // which read the process environment directly — CC does the same
-        // (`utils/auth.ts:125` reads `process.env.ANTHROPIC_AUTH_TOKEN`). The
-        // `get_env` parameter below only feeds the agent-definition overrides,
-        // so these two assertions need the real variable set.
+        // (`utils/auth.ts:125` reads `process.env.ANTHROPIC_AUTH_TOKEN`), so
+        // these two assertions need the variable set in the carrier.
         let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -771,7 +768,6 @@ mod setup_screens_snapshot_tests {
 
         let context = status_notice_context_from_readonly_runtime(
             &global_config,
-            &|key| (key == "ANTHROPIC_AUTH_TOKEN").then(|| "token".to_string()),
             Path::new("/repo"),
             vec![memory_file],
             Some(&ide_status),
@@ -840,8 +836,8 @@ mod setup_screens_snapshot_tests {
     #[test]
     fn status_notice_context_uses_official_api_key_approval_for_conflict_source() {
         // Same two fixtures the sibling test above documents and this one was
-        // missing. `api_key_source` does not read the `global_config` argument
-        // or the `get_env` closure — it goes through
+        // missing. `api_key_source` does not read the `global_config`
+        // argument — it goes through
         // `get_anthropic_api_key_with_source()`, which reads the process
         // environment and `load_global_config()` (auth.rs:534), exactly as CC
         // reads `process.env` in `utils/auth.ts`. Without both, the lookup saw
@@ -857,12 +853,9 @@ mod setup_screens_snapshot_tests {
             primary_api_key: Some("sk-console".to_string()),
             ..Default::default()
         };
-        let env_key = |key: &str| (key == "ANTHROPIC_API_KEY").then(|| "sk-ant-test".to_string());
-
         crate::utils::config::set_test_global_config(Some(global_config.clone()));
         let unapproved = status_notice_context_from_readonly_runtime(
             &global_config,
-            &env_key,
             Path::new("/repo"),
             Vec::new(),
             None,
@@ -878,7 +871,6 @@ mod setup_screens_snapshot_tests {
         crate::utils::config::set_test_global_config(Some(global_config.clone()));
         let approved = status_notice_context_from_readonly_runtime(
             &global_config,
-            &env_key,
             Path::new("/repo"),
             Vec::new(),
             None,
@@ -916,12 +908,18 @@ mod setup_screens_snapshot_tests {
 
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
         let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _home =
+            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, &root);
+        // A host's `CLAUDE_CODE_SIMPLE` (CC `--bare`) would skip custom agents;
+        // unsetting the managed override would read the machine's real managed
+        // root, so point it at a directory that does not exist.
+        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _managed = crate::utils::env_utils::EnvVarGuard::set(
+            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
+            root.join("missing-managed-root"),
+        );
         let context = status_notice_context_from_readonly_runtime(
             &GlobalConfig::default(),
-            &|key| match key {
-                "HOME" => Some(root.display().to_string()),
-                _ => None,
-            },
             &cwd,
             Vec::new(),
             None,

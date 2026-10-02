@@ -180,23 +180,12 @@ fn get_memory_base_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn unset(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn agent_memory_paths_match_official_scopes_and_colon_sanitizing() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _remote_memory = EnvRestore::unset("CLAUDE_CODE_REMOTE_MEMORY_DIR");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _remote_memory = EnvVarGuard::unset("CLAUDE_CODE_REMOTE_MEMORY_DIR");
         let root = std::env::temp_dir().join(format!(
             "cometix-agent-memory-{}",
             uuid::Uuid::new_v4().simple()

@@ -1151,6 +1151,7 @@ impl crate::tool::ToolCall for NotebookEditTool {
 mod tests {
     use super::*;
     use crate::tool::ToolCall;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::query_helpers::ReadFileStateEntry;
 
     fn update_read_state(
@@ -1160,24 +1161,6 @@ mod tests {
         let mut entries = context.read_file_state.snapshot();
         update(&mut entries[0]);
         context.read_file_state.replace(entries);
-    }
-
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-
-        fn unset(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
     }
 
     struct BootstrapRestore {
@@ -1851,8 +1834,8 @@ mod tests {
 
     #[tokio::test]
     async fn no_write_gate_fails_before_history_or_mutation() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "0");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0");
         let path = temp_notebook_path("no-write");
         let original = serde_json::json!({
             "nbformat": 4,
@@ -1890,8 +1873,8 @@ mod tests {
 
     #[tokio::test]
     async fn notebook_edit_call_rechecks_freshness_in_final_write_section() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let path = temp_notebook_path("call-freshness");
         let original = serde_json::json!({
             "nbformat": 4,
@@ -1937,16 +1920,16 @@ mod tests {
 
     #[tokio::test]
     async fn notebook_edit_tracks_history_before_mutation() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _bootstrap = BootstrapRestore::capture();
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
-        let _checkpointing = EnvRestore::unset("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _checkpointing = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING");
         let root = std::env::temp_dir().join(format!(
             "cometix-notebook-history-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let config_dir = root.join("config");
-        let _config = EnvRestore::set("CLAUDE_CONFIG_DIR", &config_dir.display().to_string());
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("history.ipynb");
         let original = serde_json::json!({
@@ -2063,8 +2046,8 @@ mod tests {
     /// A present-but-partial `metadata` still falls back to 'python'.
     #[tokio::test]
     async fn notebook_edit_missing_metadata_fails_like_official_without_writing() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
 
         let run = |body: serde_json::Value| async move {
             let path = temp_notebook_path("metadata");

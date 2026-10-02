@@ -164,7 +164,7 @@ pub fn agent_tool_schema() -> crate::types::tools::Tool {
     // token estimation) — CC's counterparts of those call `tool.prompt(...)`
     // per read (`utils/toolSearch.ts:350`, `utils/analyzeContext.ts:652`), an
     // explicit remaining seam on those two paths only.
-    let agent_definitions = load_agents_dir::get_agent_definitions_with_overrides_readonly(
+    let agent_definitions = load_agents_dir::get_agent_definitions_with_overrides(
         &crate::bootstrap::state::get_original_cwd(),
     );
 

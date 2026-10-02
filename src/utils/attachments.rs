@@ -2579,6 +2579,7 @@ mod tests {
         get_pending_lsp_diagnostic_count, register_pending_lsp_diagnostic,
         reset_all_lsp_diagnostic_state,
     };
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn memory_header_matches_official_fresh_and_stale_text() {
@@ -2656,24 +2657,6 @@ mod tests {
     use crate::services::lsp::types::{
         Diagnostic, DiagnosticFile, DiagnosticPosition, DiagnosticRange,
     };
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-
-        fn remove(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
-    }
 
     struct McpInstructionGuard(&'static str);
 
@@ -3169,7 +3152,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn at_mention_read_discovers_nested_dynamic_skill_directory() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::skills::load_skills_dir::clear_dynamic_skills();
         struct DynamicSkillsRestore;
         impl Drop for DynamicSkillsRestore {
@@ -3216,7 +3199,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn missing_at_mention_still_discovers_nested_dynamic_skill_directory() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::skills::load_skills_dir::clear_dynamic_skills();
         struct DynamicSkillsRestore;
         impl Drop for DynamicSkillsRestore {
@@ -3442,10 +3425,10 @@ mod tests {
 
     #[test]
     fn skill_listing_is_agent_scoped_and_announces_dynamic_deltas() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _node_env = EnvGuard::remove("NODE_ENV");
+        let _node_env = EnvVarGuard::unset("NODE_ENV");
         struct SentSkillNamesRestore(
             std::collections::HashMap<String, std::collections::HashSet<String>>,
         );
@@ -3508,7 +3491,7 @@ mod tests {
 
     #[test]
     fn skill_listing_prefers_live_app_state_mcp_commands_over_snapshot() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         struct SentSkillNamesRestore(
             std::collections::HashMap<String, std::collections::HashSet<String>>,
         );
@@ -3763,7 +3746,7 @@ mod tests {
 
     #[test]
     fn plan_mode_attachments_follow_official_turn_throttle_and_cycle() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let old_exited = crate::bootstrap::state::has_exited_plan_mode_in_session();
@@ -4023,7 +4006,7 @@ mod tests {
 
     #[tokio::test]
     async fn lsp_diagnostic_attachments_require_bash_without_draining_registry() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
         register_pending_lsp_diagnostic("rust", vec![file("/tmp/a.rs", vec![diag("broken")])]);
 
@@ -4047,7 +4030,7 @@ mod tests {
 
     #[tokio::test]
     async fn lsp_diagnostic_attachments_emit_renderable_and_model_messages() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
         register_pending_lsp_diagnostic(
             "rust",
@@ -4101,8 +4084,8 @@ mod tests {
     /// for the turn — this consumer never re-derives it from the agent files.
     #[test]
     fn agent_listing_delta_applies_selected_agent_type_restrictions() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _gate = EnvGuard::set("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES", "true");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _gate = EnvVarGuard::set("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES", "true");
         let mut selected = crate::tools::agent_tool::load_agents_dir::AgentDefinition::new(
             "reviewer",
             "Reviews changes",
@@ -4160,11 +4143,11 @@ mod tests {
 
     #[test]
     fn mcp_instruction_delta_uses_live_initialize_instructions() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _instructions_lock = crate::services::mcp::client::TEST_MCP_INSTRUCTIONS_LOCK
             .lock()
             .unwrap();
-        let _gate = EnvGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "true");
+        let _gate = EnvVarGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "true");
         let _instructions =
             McpInstructionGuard::set("docs", "Use resource templates before tools.");
         let state = crate::state::app_state_store::McpState {
@@ -4200,12 +4183,12 @@ mod tests {
 
     #[test]
     fn mcp_instruction_delta_appends_chrome_tool_search_instructions() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _instructions_lock = crate::services::mcp::client::TEST_MCP_INSTRUCTIONS_LOCK
             .lock()
             .unwrap();
-        let _gate = EnvGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "true");
-        let _tool_search = EnvGuard::set("ENABLE_TOOL_SEARCH", "true");
+        let _gate = EnvVarGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "true");
+        let _tool_search = EnvVarGuard::set("ENABLE_TOOL_SEARCH", "true");
         let _instructions = McpInstructionGuard::set("claude-in-chrome", "Server guidance.");
         let state = crate::state::app_state_store::McpState {
             clients: vec![crate::services::mcp::types::McpServerSnapshot {
@@ -4245,7 +4228,7 @@ mod tests {
 
     #[tokio::test]
     async fn lsp_diagnostic_attachments_skip_agent_source_without_draining_registry() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
         register_pending_lsp_diagnostic("rust", vec![file("/tmp/a.rs", vec![diag("broken")])]);
 

@@ -472,7 +472,7 @@ pub async fn install_plugin_from_marketplace(params: InstallPluginParams) -> Ins
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::HOME_VAR;
+    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     // Test fixture only: resolve the imported marketplace then call the real
     // UI wrapper and inspect canonical registry output, without a second DFS,
@@ -539,14 +539,14 @@ mod tests {
     }
     #[tokio::test]
     async fn raw_location_failure_matches_official_settings_before_materialization() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("plugin-raw-location-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("plugins")).unwrap();
         std::fs::write(root.join("plugins/known_marketplaces.json"), "{}").unwrap();
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _cache = EnvGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", root.join("plugins"));
-        let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = set_config_dir(&root);
+        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", root.join("plugins"));
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         crate::utils::settings::settings_cache::reset_settings_cache();
         let entry = serde_json::json!({"name":"p","source":"./p"});
         for location in [
@@ -590,34 +590,28 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            let env = crate::utils::env_utils::EnvVarGuard::set(key, value);
-            if key == "CLAUDE_CONFIG_DIR" {
-                // Every isolated fixture starts a new process-scope registry;
-                // do not reset it inside install_fixture, after the session
-                // snapshot assertion has deliberately captured the old memo.
-                super::super::installed_plugins_manager::clear_installed_plugins_cache();
-                crate::utils::settings::settings_cache::reset_settings_cache();
-            }
-            Self { _env: env }
-        }
+    /// Points `CLAUDE_CONFIG_DIR` at an isolated root and drops the caches
+    /// derived from the previous one.
+    fn set_config_dir(value: impl AsRef<std::ffi::OsStr>) -> EnvVarGuard {
+        let env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", value);
+        // Every isolated fixture starts a new process-scope registry;
+        // do not reset it inside install_fixture, after the session
+        // snapshot assertion has deliberately captured the old memo.
+        super::super::installed_plugins_manager::clear_installed_plugins_cache();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        env
     }
 
     #[tokio::test]
     async fn canonical_install_matches_official_copies_and_registers_local_official_plugin() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-plugin-hint-install-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set(HOME_VAR, &root);
-        let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = set_config_dir(&root);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
 
         let marketplace = root.join("market");
         let source = marketplace.join("plugins/mail");
@@ -695,15 +689,15 @@ mod tests {
 
     #[tokio::test]
     async fn canonical_install_matches_official_resolves_and_commits_dependency_closure() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-plugin-hint-dependencies-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set(HOME_VAR, &root);
-        let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
-        let _managed = EnvGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", root.join("managed"));
+        let _config = set_config_dir(&root);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", root.join("managed"));
         let marketplace = root.join("market");
         for (name, version) in [("root", "2.0.0"), ("dependency", "1.0.0")] {
             let source = marketplace.join(format!("plugins/{name}/.claude-plugin"));
@@ -764,14 +758,14 @@ mod tests {
 
     #[tokio::test]
     async fn canonical_settings_failure_precedes_materialization_matches_official_order() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-plugin-hint-rollback-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set(HOME_VAR, &root);
-        let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = set_config_dir(&root);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let marketplace = root.join("market");
         std::fs::create_dir_all(marketplace.join("plugins/root/.claude-plugin")).unwrap();
         std::fs::create_dir_all(marketplace.join(".claude-plugin")).unwrap();
@@ -816,14 +810,14 @@ mod tests {
 
     #[tokio::test]
     async fn canonical_install_matches_official_rejects_corrupt_source_manifest() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-plugin-hint-corrupt-manifest-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set(HOME_VAR, &root);
-        let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = set_config_dir(&root);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let marketplace = root.join("market");
         std::fs::create_dir_all(marketplace.join("plugins/root/.claude-plugin")).unwrap();
         std::fs::create_dir_all(marketplace.join(".claude-plugin")).unwrap();
@@ -908,12 +902,12 @@ mod tests {
 
     #[tokio::test]
     async fn canonical_second_member_failure_keeps_prior_effects_matches_official_order() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-plugin-order-{}", uuid::Uuid::new_v4()));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set(HOME_VAR, &root);
-        let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = set_config_dir(&root);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         order_fixture(&root, true);
         let error = install_fixture("root@claude-plugins-official")
             .await
@@ -953,14 +947,14 @@ mod tests {
 
     #[tokio::test]
     async fn canonical_registry_failure_keeps_materialization_matches_official_order() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-plugin-save-order-{}",
             uuid::Uuid::new_v4()
         ));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set(HOME_VAR, &root);
-        let _write = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = set_config_dir(&root);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         order_fixture(&root, false);
         std::fs::create_dir(root.join("plugins/installed_plugins.json")).unwrap();
         assert!(
@@ -995,11 +989,11 @@ mod tests {
 
     #[tokio::test]
     async fn canonical_root_catalog_allowlist_matches_official_no_transitive_trust() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("plugin-root-catalog-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _cache = EnvGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
         crate::utils::settings::settings_cache::set_cached_settings_for_source(
             SettingSource::Policy,
             None,

@@ -315,18 +315,7 @@ pub fn cleanup_task_output(task_id: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn writes(value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct TaskOutputDirGuard(Option<PathBuf>);
 
@@ -352,7 +341,7 @@ mod tests {
 
     #[test]
     fn task_output_path_uses_official_project_session_tasks_shape() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _dir = TaskOutputDirGuard::isolate();
         let path = get_task_output_path("task-abc");
         assert!(path.ends_with(std::path::Path::new("tasks").join("task-abc.output")));
@@ -365,8 +354,8 @@ mod tests {
 
     #[test]
     fn append_and_tail_task_output_matches_official_file_boundary() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvGuard::writes("1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _dir = TaskOutputDirGuard::isolate();
         let task_id = format!("task-{}", uuid::Uuid::new_v4());
         let path = init_task_output(&task_id).unwrap();
@@ -379,8 +368,8 @@ mod tests {
 
     #[test]
     fn tail_reads_do_not_emit_partial_utf8_codepoints() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvGuard::writes("1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _dir = TaskOutputDirGuard::isolate();
         let task_id = format!("task-{}", uuid::Uuid::new_v4());
         let path = init_task_output(&task_id).unwrap();
@@ -394,8 +383,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn append_task_output_refuses_symlink_targets() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvGuard::writes("1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _dir = TaskOutputDirGuard::isolate();
         let task_id = format!("task-{}", uuid::Uuid::new_v4());
         let output_path = get_task_output_path(&task_id);
@@ -414,8 +403,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn registered_agent_symlink_remains_readable_and_appendable() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvGuard::writes("1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _dir = TaskOutputDirGuard::isolate();
         let task_id = format!("agent-{}", uuid::Uuid::new_v4());
         let target_dir = std::env::temp_dir().join(format!(
@@ -438,8 +427,8 @@ mod tests {
 
     #[test]
     fn agent_symlink_initialization_falls_back_to_real_file_while_session_writes_disabled() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = EnvGuard::writes("0");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0");
         let _dir = TaskOutputDirGuard::isolate();
         let task_id = format!("agent-{}", uuid::Uuid::new_v4());
         let path =

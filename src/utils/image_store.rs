@@ -154,18 +154,7 @@ fn percent_encode_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct SessionRestore(String);
 
@@ -185,13 +174,13 @@ mod tests {
 
     #[test]
     fn image_store_cache_path_matches_official_session_directory_shape() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_stored_image_paths();
         let tmp =
             std::env::temp_dir().join(format!("cometix-image-store-{}", uuid::Uuid::new_v4()));
-        let _config_restore = EnvRestore::set("CLAUDE_CONFIG_DIR", &tmp);
+        let _config_restore = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &tmp);
         let _session_restore = SessionRestore::set("session-1");
 
         let path = cache_image_path(&PastedImageContent {
@@ -248,7 +237,7 @@ mod tests {
 
     #[test]
     fn store_image_writes_private_decoded_bytes_when_persistence_is_enabled() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_stored_image_paths();
@@ -256,8 +245,8 @@ mod tests {
             "cometix-image-store-write-{}",
             uuid::Uuid::new_v4()
         ));
-        let _config_restore = EnvRestore::set("CLAUDE_CONFIG_DIR", &tmp);
-        let _write_restore = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
+        let _config_restore = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &tmp);
+        let _write_restore = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _session_restore = SessionRestore::set("session-write");
         let image = PastedImageContent {
             id: 11,
@@ -281,7 +270,7 @@ mod tests {
 
     #[test]
     fn store_image_honors_explicit_no_write_seam() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_stored_image_paths();
@@ -289,8 +278,8 @@ mod tests {
             "cometix-image-store-nowrite-{}",
             uuid::Uuid::new_v4()
         ));
-        let _config_restore = EnvRestore::set("CLAUDE_CONFIG_DIR", &tmp);
-        let _write_restore = EnvRestore::set("COMETIX_WRITE_ENABLED", "0");
+        let _config_restore = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &tmp);
+        let _write_restore = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0");
         let _session_restore = SessionRestore::set("session-nowrite");
         let image = PastedImageContent {
             id: 12,

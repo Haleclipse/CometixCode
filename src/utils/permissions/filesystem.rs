@@ -1518,6 +1518,7 @@ fn is_session_plan_file_for_session_with_settings(
 mod tests {
     use super::*;
     use crate::types::permissions::PermissionRuleValue;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// CC `filesystem.ts:331-346` and `:376-378`: the per-user directory
     /// under the resolved `CLAUDE_CODE_TMPDIR`, and the project directory
@@ -1525,12 +1526,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn claude_temp_dirs_match_official_shape() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-temp-shape-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let resolved = root.canonicalize().unwrap();
-        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
         let expected = format!("{}/claude-{}/", resolved.display(), current_uid());
         assert_eq!(get_claude_temp_dir().to_string_lossy(), expected);
         let cwd = crate::bootstrap::state::get_original_cwd();
@@ -1569,18 +1570,6 @@ mod tests {
             "/repo/var"
         ));
         assert!(!path_in_working_path("/private/tmp-other/child", "/tmp"));
-    }
-
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn set(key: &'static str, value: &Path) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
     }
 
     /// CC `filesystem.ts:546`: the NTFS alternate-data-stream check applies
@@ -1699,7 +1688,7 @@ mod tests {
     #[test]
     fn readable_internal_task_carve_out_uses_requested_path_like_official() {
         use std::os::unix::fs::symlink;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = std::env::temp_dir().join(format!(
@@ -1714,7 +1703,7 @@ mod tests {
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("secret.txt"), "secret").unwrap();
         symlink(&outside, config.join("tasks/escape")).unwrap();
-        let _config = EnvRestore::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
         let escaped = config.join("tasks/escape/secret.txt");
         assert!(matches!(
             check_read_permission_for_tool(
@@ -1899,7 +1888,7 @@ mod tests {
     #[test]
     fn internal_template_job_carve_out_rejects_hijack_and_symlink_escape() {
         use std::os::unix::fs::symlink;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-template-job-permission-{}",
             uuid::Uuid::new_v4().simple()
@@ -1909,8 +1898,8 @@ mod tests {
         let outside = root.join("outside");
         std::fs::create_dir_all(&job).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
-        let _config = EnvRestore::set("CLAUDE_CONFIG_DIR", &config);
-        let _job = EnvRestore::set("CLAUDE_JOB_DIR", &job);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _job = EnvVarGuard::set("CLAUDE_JOB_DIR", &job);
         let context = ToolPermissionContext::default();
         let inside = job.join("result.txt");
         assert!(matches!(
@@ -1927,7 +1916,7 @@ mod tests {
         ));
 
         {
-            let _hijacked_job = EnvRestore::set("CLAUDE_JOB_DIR", &outside);
+            let _hijacked_job = EnvVarGuard::set("CLAUDE_JOB_DIR", &outside);
             let hijacked = outside.join("result.txt");
             assert!(!matches!(
                 check_write_permission_for_tool(
@@ -2092,7 +2081,7 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-permission-root-matrix-{}",
             uuid::Uuid::new_v4().simple()
@@ -2103,7 +2092,7 @@ mod tests {
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::create_dir_all(&original_cwd).unwrap();
         std::fs::create_dir_all(&flag_dir).unwrap();
-        let _config = EnvRestore::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _restore = RootRestore {
             original_cwd: crate::bootstrap::state::get_original_cwd(),
             flag_path: crate::utils::settings::get_flag_settings_path(),
@@ -2189,7 +2178,7 @@ mod tests {
     /// async cwd only determines how the relative path resolves.
     #[test]
     fn read_permission_matches_official_async_cwd_without_implicit_grant() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         struct Restore {
             original: PathBuf,
             root: PathBuf,

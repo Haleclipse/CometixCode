@@ -986,27 +986,10 @@ mod tests {
     use crate::services::mcp::client::McpConnectionDiscovery;
     use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig};
     use crate::state::app_state_store::McpState;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
-
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-
-        fn unset(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
-    }
 
     struct GlobalConfigRestore(Option<crate::utils::config::GlobalConfig>);
 
@@ -1140,7 +1123,7 @@ mod tests {
 
     #[test]
     fn remote_menu_disable_dispatches_to_mcp_connection_service() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-remote-menu-toggle-{}",
             uuid::Uuid::new_v4()
@@ -1148,10 +1131,9 @@ mod tests {
         let project_dir = temp_dir.join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
         let previous_cwd = std::env::current_dir().unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
-        let _session_write =
-            crate::utils::env_utils::EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _session_write = EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         std::env::set_current_dir(&project_dir).unwrap();
 
         let cancels = Arc::new(Mutex::new(0usize));
@@ -1247,18 +1229,18 @@ mod tests {
 
     #[test]
     fn handle_claude_ai_auth_matches_official_url_selection_and_closed_outlet() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _oauth_env = [
-            EnvRestore::unset("USE_LOCAL_OAUTH"),
-            EnvRestore::unset("USE_STAGING_OAUTH"),
-            EnvRestore::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
-            EnvRestore::unset("CLAUDE_CODE_SIMPLE"),
-            EnvRestore::set("ANTHROPIC_UNIX_SOCKET", "/tmp/cometix-test-auth.sock"),
-            EnvRestore::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token"),
+            EnvVarGuard::unset("USE_LOCAL_OAUTH"),
+            EnvVarGuard::unset("USE_STAGING_OAUTH"),
+            EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
+            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+            EnvVarGuard::set("ANTHROPIC_UNIX_SOCKET", "/tmp/cometix-test-auth.sock"),
+            EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token"),
         ];
-        let _entrypoint = EnvRestore::set("CLAUDE_CODE_ENTRYPOINT", "cli test");
+        let _entrypoint = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli test");
         let mut account = crate::utils::config::AccountInfo::default();
         account.organization_uuid = Some("org_123".to_string());
         let _global_config = GlobalConfigRestore::install(crate::utils::config::GlobalConfig {
@@ -1384,9 +1366,9 @@ mod tests {
     #[tokio::test]
     async fn remote_clipboard_matches_official_feedback_and_copy_timeout() {
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = EnvRestore::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvRestore::unset("TMUX");
-        let _oauth = EnvRestore::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
+        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
+        let _tmux = EnvVarGuard::unset("TMUX");
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {
             ContextProvider(value: Context::owned(crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings())) {
@@ -1445,12 +1427,11 @@ mod tests {
         let tool = directory.join("tmux");
         std::fs::write(&tool, "#!/bin/sh\n/bin/cat > \"$CLIPBOARD_FIXTURE_DIR/input\"\n/bin/sleep 0.25\n: > \"$CLIPBOARD_FIXTURE_DIR/finished\"\n").unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let _path = crate::utils::env_utils::EnvVarGuard::set("PATH", &directory);
-        let _directory =
-            crate::utils::env_utils::EnvVarGuard::set("CLIPBOARD_FIXTURE_DIR", &directory);
-        let _ssh = EnvRestore::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvRestore::set("TMUX", "fixture");
-        let _oauth = EnvRestore::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
+        let _path = EnvVarGuard::set("PATH", &directory);
+        let _directory = EnvVarGuard::set("CLIPBOARD_FIXTURE_DIR", &directory);
+        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
+        let _tmux = EnvVarGuard::set("TMUX", "fixture");
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {
             ContextProvider(value: Context::owned(crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings())) {

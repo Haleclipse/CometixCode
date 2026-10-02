@@ -38,7 +38,7 @@ pub async fn refresh_active_plugins(
     let (commands, agents) = tokio::join!(
         super::load_plugin_commands::get_plugin_commands(),
         tokio::task::spawn_blocking(|| {
-            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly(
+            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
                 &crate::bootstrap::state::get_original_cwd(),
             )
         }),

@@ -215,18 +215,7 @@ impl ShellProvider for BashShellProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     #[test]
     fn provider_builds_official_eval_snapshot_and_cwd_trailer_shape() {
@@ -249,14 +238,14 @@ mod tests {
 
     #[test]
     fn successful_snapshot_is_removed_by_provider_cleanup() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-shell-snapshot-cleanup-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _home = EnvGuard::set(crate::utils::env_utils::HOME_VAR, &root);
-        let _writes = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let provider = create_bash_shell_provider(PathBuf::from("/bin/bash"), false);
         let snapshot = provider
             .snapshot_file_path

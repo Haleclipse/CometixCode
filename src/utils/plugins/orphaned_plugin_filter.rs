@@ -129,6 +129,7 @@ pub fn clear_plugin_cache_exclusions() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn orphaned_plugin_exclusion_shape_matches_official_paths() {
@@ -172,15 +173,14 @@ mod tests {
 
     #[test]
     fn orphaned_markers_exclude_version_directories_and_cache_until_cleared() {
-        struct EnvRestore(Option<crate::utils::env_utils::EnvVarGuard>);
-        impl Drop for EnvRestore {
+        struct CacheGuard;
+        impl Drop for CacheGuard {
             fn drop(&mut self) {
-                drop(self.0.take());
                 clear_plugin_cache_exclusions();
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let root = std::env::temp_dir().join(format!(
@@ -195,10 +195,10 @@ mod tests {
         std::fs::write(orphaned.join(ORPHANED_AT_FILENAME), "now").unwrap();
         std::fs::write(orphaned.join("old.txt"), "old").unwrap();
         std::fs::write(active.join("active.txt"), "active").unwrap();
-        let _restore = EnvRestore(Some(crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            &root,
-        )));
+        // Declared before the env guard so the exclusions are cleared after
+        // the cache directory variable has been restored.
+        let _cache = CacheGuard;
+        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
         clear_plugin_cache_exclusions();
 
         assert_eq!(

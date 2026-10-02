@@ -16,7 +16,7 @@
 //! `<cwd>/.claude/agent-memory-snapshots/<agentType>/snapshot.json` exists.
 
 use super::agent_memory::AgentMemoryScope;
-use super::built_in_agents::get_built_in_agents_readonly;
+use super::built_in_agents::get_built_in_agents;
 use crate::services::mcp::types::ScopedMcpServerConfig;
 use crate::types::permissions::PermissionMode;
 use crate::utils::status_notice_helpers::{AgentDefinitionSnapshot, AgentDefinitionsSnapshot};
@@ -272,22 +272,14 @@ const SOURCE_PRIORITY: [AgentDefinitionSource; 6] = [
 ];
 
 /// Maps to CC `getAgentDefinitionsWithOverrides(cwd)`.
-pub fn get_agent_definitions_with_overrides_readonly(cwd: &Path) -> AgentDefinitionsResult {
-    get_agent_definitions_with_overrides_from_env(cwd, &|key| crate::utils::process_env::var(key))
-}
-
-/// Maps to CC `getAgentDefinitionsWithOverrides(cwd)` with explicit env input
-/// for deterministic tests/startup snapshots.
-pub fn get_agent_definitions_with_overrides_for_audience(
-    cwd: &Path,
-    get_env: &impl Fn(&str) -> Option<String>,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> AgentDefinitionsResult {
-    let built_in_agents = get_built_in_agents_readonly(get_env);
+pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResult {
+    let built_in_agents = get_built_in_agents();
 
     // Maps to the official simple-mode branch: skip custom agents and return
     // only built-ins.
-    if crate::utils::env_utils::is_env_truthy(get_env("CLAUDE_CODE_SIMPLE").as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+    ) {
         let mut all_agents = built_in_agents;
         all_agents.extend(cli_flag_agents_from_bootstrap());
         let active_agents = get_active_agents_from_list(&all_agents);
@@ -301,28 +293,14 @@ pub fn get_agent_definitions_with_overrides_for_audience(
         };
     }
 
-    let managed_dir = managed_agent_dir_for_audience(get_env, audience);
-    // `markdownConfigLoader.ts:303`.
-    let user_dir = crate::utils::env_utils::get_claude_config_home_dir().join("agents");
-    // The variable `homedir()` reads, from the injected environment; unset or
-    // empty, `get_project_dirs_up_to_home` calls `homedir()` itself.
-    use crate::utils::process_env::JsTruthy as _;
-    let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-    let project_home = get_env(home_key).truthy().map(PathBuf::from);
-    let project_dirs = crate::utils::markdown_config_loader::get_project_dirs_up_to_home(
-        "agents",
-        cwd,
-        project_home,
-    );
-    let markdown_files = crate::utils::markdown_config_loader::load_markdown_files_for_subdir(
-        "agents",
-        cwd,
-        Some((managed_dir, user_dir, project_dirs)),
-    );
+    // CC :308 `loadMarkdownFilesForSubdir('agents', cwd)`.
+    let markdown_files =
+        crate::utils::markdown_config_loader::load_markdown_files_for_subdir("agents", cwd);
+    let audience = crate::utils::build_profile::build_audience();
     let mut custom_agents = Vec::new();
     let mut failed_files = Vec::new();
     for markdown_file in markdown_files {
-        match parse_agent_from_markdown(&markdown_file, get_env, audience) {
+        match parse_agent_from_markdown(&markdown_file, audience) {
             Some(agent) => custom_agents.push(agent),
             // CC :324 `if (!frontmatter['name']) return null` — JS truthy:
             // a falsy name (absent, "", 0, false) skips silently; only
@@ -344,11 +322,11 @@ pub fn get_agent_definitions_with_overrides_for_audience(
     // Maps to CC `getAgentDefinitionsWithOverrides`: built-ins first,
     // enabled plugin agents next, filesystem custom agents after that. CLI/SDK
     // flag agents are merged last by `main.tsx`.
-    let plugin_agents = crate::utils::plugins::load_plugin_agents::load_plugin_agents_readonly();
+    let plugin_agents = crate::utils::plugins::load_plugin_agents::load_plugin_agents();
     // Maps to: CC `loadAgentsDir.ts:347-355`. CC kicks off `loadPluginAgents()`
     // first, then `Promise.all`s it with `initializeAgentMemorySnapshots` so
     // neither becomes a floating promise if the other throws (CC :344-346).
-    // `load_plugin_agents_readonly` is a plain synchronous fn here, so plugin
+    // `load_plugin_agents` is a plain synchronous fn here, so plugin
     // loading has already finished by this line and the join has nothing left
     // to express — the faithful sequential form is the bare call. CC runs it on
     // `customAgents` only: built-ins, plugin agents, and CLI/SDK flag agents are
@@ -369,7 +347,7 @@ pub fn get_agent_definitions_with_overrides_for_audience(
     // `snapshot.json` read per user-scope agent and change nothing.
     if crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::AgentMemorySnapshot,
-    ) && is_auto_memory_enabled_for_agents(get_env)
+    ) && is_auto_memory_enabled_for_agents()
     {
         initialize_agent_memory_snapshots(&mut custom_agents, cwd);
     }
@@ -399,18 +377,6 @@ pub fn get_agent_definitions_with_overrides_for_audience(
         // only `REPL.tsx:3206-3208` ever sets it.
         allowed_agent_types: None,
     }
-}
-
-/// Maps to CC `getAgentDefinitionsWithOverrides(cwd)` using this build profile.
-pub fn get_agent_definitions_with_overrides_from_env(
-    cwd: &Path,
-    get_env: &impl Fn(&str) -> Option<String>,
-) -> AgentDefinitionsResult {
-    get_agent_definitions_with_overrides_for_audience(
-        cwd,
-        get_env,
-        crate::utils::build_profile::build_audience(),
-    )
 }
 
 /// Maps to CC `getActiveAgentsFromList(allAgents)`.
@@ -665,10 +631,7 @@ pub fn parse_agent_from_json(
     agent.memory = memory;
     // CC :453-458: inject memory tools only when memory is set AND tools were
     // explicitly declared (`tools !== undefined`).
-    if agent.memory.is_some()
-        && agent.tools.is_some()
-        && is_auto_memory_enabled_for_agents(&|key| crate::utils::process_env::var(key))
-    {
+    if agent.memory.is_some() && agent.tools.is_some() && is_auto_memory_enabled_for_agents() {
         inject_agent_memory_tools(&mut agent.tools);
     }
     agent.isolation = isolation;
@@ -706,7 +669,6 @@ fn cli_flag_agents_from_bootstrap() -> Vec<AgentDefinition> {
 /// Maps to: CC `tools/AgentTool/loadAgentsDir.ts#parseAgentFromMarkdown`.
 fn parse_agent_from_markdown(
     markdown_file: &crate::utils::markdown_config_loader::MarkdownFile,
-    get_env: &impl Fn(&str) -> Option<String>,
     audience: crate::utils::build_profile::BuildAudience,
 ) -> Option<AgentDefinition> {
     let frontmatter = &markdown_file.frontmatter;
@@ -834,7 +796,7 @@ fn parse_agent_from_markdown(
         .get("memory")
         .and_then(serde_json::Value::as_str)
         .and_then(parse_agent_memory_scope);
-    if agent.memory.is_some() && is_auto_memory_enabled_for_agents(get_env) {
+    if agent.memory.is_some() && is_auto_memory_enabled_for_agents() {
         inject_agent_memory_tools(&mut agent.tools);
     }
     // CC :687-690: trim is only the emptiness TEST — the ORIGINAL untrimmed
@@ -890,29 +852,6 @@ fn frontmatter_value_truthy(value: &serde_json::Value) -> bool {
         serde_json::Value::String(s) => !s.is_empty(),
         serde_json::Value::Array(_) | serde_json::Value::Object(_) => true,
     }
-}
-
-fn managed_agent_dir_for_audience(
-    get_env: &impl Fn(&str) -> Option<String>,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> PathBuf {
-    if crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::ManagedConfiguration,
-    ) {
-        if let Some(path) = get_env("CLAUDE_CODE_MANAGED_SETTINGS_PATH") {
-            return PathBuf::from(path).join(".claude").join("agents");
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    let root = PathBuf::from("/Library/Application Support/ClaudeCode");
-    #[cfg(target_os = "windows")]
-    let root = PathBuf::from(r"C:\Program Files\ClaudeCode");
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let root = PathBuf::from("/etc/claude-code");
-
-    root.join(".claude").join("agents")
 }
 
 fn parse_model_json_value(value: &serde_json::Value) -> Option<String> {
@@ -1048,9 +987,9 @@ fn parse_agent_memory_scope(value: &str) -> Option<AgentMemoryScope> {
     }
 }
 
-fn is_auto_memory_enabled_for_agents(get_env: &impl Fn(&str) -> Option<String>) -> bool {
+fn is_auto_memory_enabled_for_agents() -> bool {
     let settings = crate::utils::settings::get_initial_settings();
-    crate::memdir::paths::is_auto_memory_enabled_with_env(&settings, get_env)
+    crate::memdir::paths::is_auto_memory_enabled(&settings)
 }
 
 /// Maps to CC `loadAgentsDir.ts` memory-enabled tool injection for
@@ -1073,6 +1012,7 @@ fn inject_agent_memory_tools(tools: &mut Option<Vec<String>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK, TestEnvGuard};
     use std::fs;
     use std::io::Write;
 
@@ -1093,27 +1033,41 @@ mod tests {
         file.write_all(content.as_bytes()).expect("write file");
     }
 
+    /// Pins the loader's environment inputs: user agents come from
+    /// `config_home`, the project walk stops at `home`, a host's
+    /// `CLAUDE_CODE_SIMPLE` (CC `--bare` exports it) is cleared, and the
+    /// managed root points at a directory that does not exist. Unsetting the
+    /// managed override would fall back to the machine's real managed root
+    /// (`/Library/Application Support/ClaudeCode` on macOS), whose agents and
+    /// `managed-settings.json` would then reach the test. The caller holds
+    /// `TEST_ENV_LOCK`.
+    fn pin_loader_env(home: &Path, config_home: &Path) -> [EnvVarGuard; 4] {
+        [
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_home),
+            EnvVarGuard::set(HOME_VAR, home),
+            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+            EnvVarGuard::set(
+                "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
+                config_home.join("missing-managed-root"),
+            ),
+        ]
+    }
+
     /// CC `markdownConfigLoader.ts:238` stops the project walk at
-    /// `homedir()`, which takes an empty home variable as unset: an empty
-    /// injected value leaves the walk to `homedir()`, here the carrier's.
+    /// `homedir()`: an agents directory above the home directory is never
+    /// read.
     #[test]
-    fn empty_injected_home_stops_the_project_walk_at_homedir() {
-        let root = temp_dir("empty-home");
+    fn project_walk_stops_at_homedir() {
+        let root = temp_dir("home-stop");
         let home = root.join("home");
         let cwd = home.join("project");
         let agent = |name: &str| format!("---\nname: {name}\ndescription: d\n---\nBody");
         write_file(&cwd.join(".claude/agents/inside.md"), &agent("inside"));
         write_file(&root.join(".claude/agents/above.md"), &agent("above"));
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _home =
-            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, &home);
-        let _config =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config"));
-        let result = get_agent_definitions_with_overrides_from_env(&cwd, &|key| match key {
-            "HOME" | "USERPROFILE" => Some(String::new()),
-            _ => None,
-        });
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _env = pin_loader_env(&home, &root.join("config"));
+        let result = get_agent_definitions_with_overrides(&cwd);
 
         let names = result
             .active_agents
@@ -1143,13 +1097,10 @@ mod tests {
             "---\nname: numeric\ndescription: Numeric-string effort\neffort: \"3\"\nmcpServers:\n  - 1\n  - 2\n---\nBody",
         );
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "HOME" => Some(root.display().to_string()),
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
-            _ => None,
-        });
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _env = pin_loader_env(&root, &config_home);
+        let _auto_memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let result = get_agent_definitions_with_overrides(&root);
 
         let shouty = result
             .active_agents
@@ -1205,13 +1156,10 @@ mod tests {
             "---\nname: broken\n---\nMissing description",
         );
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "HOME" => Some(root.display().to_string()),
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
-            _ => None,
-        });
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _env = pin_loader_env(&root, &config_home);
+        let _auto_memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let result = get_agent_definitions_with_overrides(&root);
 
         let reviewer = result
             .active_agents
@@ -1314,8 +1262,8 @@ mod tests {
 
     #[test]
     fn parse_agent_from_json_matches_official_schema_and_memory_tool_injection() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _auto_memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
 
         let value = serde_json::json!({
             "description": "Review code",
@@ -1469,12 +1417,11 @@ mod tests {
         assert_eq!(empties_agent.skills, None);
         assert!(empties_agent.mcp_servers.is_none());
         assert!(empties_agent.hooks.is_some());
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
     }
 
     #[test]
     fn cli_flag_agents_merge_after_filesystem_agents_like_official_main() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::bootstrap::state::set_cli_agents_json(None);
         crate::bootstrap::state::set_inline_plugins(Vec::new());
         let root = temp_dir("cli-agents");
@@ -1490,11 +1437,8 @@ mod tests {
             }
         })));
 
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "HOME" => Some(root.display().to_string()),
-            _ => None,
-        });
+        let _env = pin_loader_env(&root, &config_home);
+        let result = get_agent_definitions_with_overrides(&root);
 
         let active = result
             .active_agents
@@ -1523,7 +1467,7 @@ mod tests {
 
     #[test]
     fn inline_plugin_agents_merge_before_filesystem_agents_like_official_loader() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         struct InlinePluginStateGuard;
         impl Drop for InlinePluginStateGuard {
             fn drop(&mut self) {
@@ -1551,11 +1495,8 @@ mod tests {
         );
         crate::bootstrap::state::set_inline_plugins(vec![plugin_root.clone()]);
 
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "HOME" => Some(root.display().to_string()),
-            _ => None,
-        });
+        let _env = pin_loader_env(&root, &config_home);
+        let result = get_agent_definitions_with_overrides(&root);
 
         let active = result
             .active_agents
@@ -1623,7 +1564,6 @@ mod tests {
                     content: "Review carefully".to_string(),
                     source: MarkdownConfigSource::ProjectSettings,
                 },
-                &|_| None,
                 audience,
             )
             .and_then(|agent| agent.isolation)
@@ -1736,18 +1676,11 @@ mod tests {
             "---\nname: reviewer\ndescription: Root project description\n---\nRoot",
         );
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let env = |key: &str| match key {
-            "HOME" => Some(root.display().to_string()),
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH" => Some(managed_root.display().to_string()),
-            _ => None,
-        };
-        let result = get_agent_definitions_with_overrides_for_audience(
-            &cwd,
-            &env,
-            crate::utils::build_profile::BuildAudience::AnthropicInternal,
-        );
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _env = pin_loader_env(&root, &config_home);
+        // `get_managed_file_path` honours the override in every test build.
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_root);
+        let result = get_agent_definitions_with_overrides(&cwd);
         let reviewer = result
             .active_agents
             .iter()
@@ -1756,9 +1689,8 @@ mod tests {
         assert_eq!(reviewer.when_to_use, "Managed description");
         assert_eq!(reviewer.source, AgentDefinitionSource::PolicySettings);
 
-        let simple = get_agent_definitions_with_overrides_from_env(&cwd, &|key| {
-            (key == "CLAUDE_CODE_SIMPLE").then(|| "true".to_string())
-        });
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "true");
+        let simple = get_agent_definitions_with_overrides(&cwd);
         assert!(
             simple
                 .active_agents
@@ -1785,27 +1717,24 @@ mod tests {
         );
     }
 
-    /// Pins `CLAUDE_CONFIG_DIR`/`CLAUDE_CODE_REMOTE_MEMORY_DIR` in the real
-    /// process env, not just in the `get_env` closure: user-scope
-    /// `get_agent_memory_dir` resolves through `env_utils::get_claude_config_home_dir`
-    /// (`agent_memory.rs:41`, `:170-174`), which reads the carrier. Without
-    /// this the snapshot copy would land in whatever config home the run inherited.
+    /// Pins what the snapshot tests load through: the project walk stops at
+    /// `home`, auto memory is forced on, and user-scope `get_agent_memory_dir`
+    /// resolves under `config_home` (`agent_memory.rs:41`, `:170-174`).
+    /// Without the last two the snapshot copy would land in whatever config
+    /// home the run inherited.
     struct SnapshotEnv {
-        _config_dir: crate::utils::env_utils::EnvVarGuard,
-        _remote_memory: crate::utils::env_utils::EnvVarGuard,
-        _lock: crate::utils::env_utils::TestEnvGuard<'static>,
+        _loader: [EnvVarGuard; 4],
+        _remote_memory: EnvVarGuard,
+        _auto_memory: EnvVarGuard,
+        _lock: TestEnvGuard<'static>,
     }
 
-    fn pin_snapshot_env(config_home: &Path) -> SnapshotEnv {
-        let lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    fn pin_snapshot_env(home: &Path, config_home: &Path) -> SnapshotEnv {
+        let lock = TEST_ENV_LOCK.lock().unwrap();
         SnapshotEnv {
-            _config_dir: crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                config_home,
-            ),
-            _remote_memory: crate::utils::env_utils::EnvVarGuard::unset(
-                "CLAUDE_CODE_REMOTE_MEMORY_DIR",
-            ),
+            _loader: pin_loader_env(home, config_home),
+            _remote_memory: EnvVarGuard::unset("CLAUDE_CODE_REMOTE_MEMORY_DIR"),
+            _auto_memory: EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false"),
             _lock: lock,
         }
     }
@@ -1833,7 +1762,7 @@ mod tests {
     fn agent_definitions_load_initializes_user_scope_memory_from_project_snapshot() {
         let root = temp_dir("snapshot-initialize");
         let config_home = root.join("config");
-        let _env = pin_snapshot_env(&config_home);
+        let _env = pin_snapshot_env(&root, &config_home);
 
         write_file(
             &config_home.join("agents/usermem.md"),
@@ -1851,11 +1780,7 @@ mod tests {
         );
         write_snapshot(&root, "projectmem", "2026-02-01T00:00:00Z", "- skipped\n");
 
-        let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "HOME" => Some(root.display().to_string()),
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
-            _ => None,
-        });
+        let result = get_agent_definitions_with_overrides(&root);
 
         // CC :277-281 `initializeFromSnapshot` → copySnapshotToLocal +
         // saveSyncedMeta, into the USER memory dir (`$CLAUDE_CONFIG_DIR/agent-memory`).
@@ -1903,7 +1828,7 @@ mod tests {
     fn repeated_definitions_load_does_not_re_copy_over_edited_agent_memory() {
         let root = temp_dir("snapshot-idempotent");
         let config_home = root.join("config");
-        let _env = pin_snapshot_env(&config_home);
+        let _env = pin_snapshot_env(&root, &config_home);
 
         write_file(
             &config_home.join("agents/usermem.md"),
@@ -1916,14 +1841,8 @@ mod tests {
             "- snapshot note\n",
         );
 
-        let env = |key: &str| match key {
-            "HOME" => Some(root.display().to_string()),
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
-            _ => None,
-        };
-
         let user_memory = config_home.join("agent-memory/usermem");
-        let _ = get_agent_definitions_with_overrides_from_env(&root, &env);
+        let _ = get_agent_definitions_with_overrides(&root);
         assert_eq!(
             fs::read_to_string(user_memory.join("MEMORY.md")).ok(),
             Some("- snapshot note\n".to_string()),
@@ -1933,7 +1852,7 @@ mod tests {
         // The user then edits their own memory. The snapshot on disk is unchanged.
         write_file(&user_memory.join("MEMORY.md"), "- hand-edited note\n");
 
-        let second = get_agent_definitions_with_overrides_from_env(&root, &env);
+        let second = get_agent_definitions_with_overrides(&root);
         assert_eq!(
             fs::read_to_string(user_memory.join("MEMORY.md")).ok(),
             Some("- hand-edited note\n".to_string()),
@@ -1956,7 +1875,7 @@ mod tests {
     fn agent_definitions_load_records_pending_snapshot_update_without_touching_memory() {
         let root = temp_dir("snapshot-prompt-update");
         let config_home = root.join("config");
-        let _env = pin_snapshot_env(&config_home);
+        let _env = pin_snapshot_env(&root, &config_home);
 
         write_file(
             &config_home.join("agents/usermem.md"),
@@ -1974,11 +1893,7 @@ mod tests {
         let user_memory = config_home.join("agent-memory/usermem");
         write_file(&user_memory.join("MEMORY.md"), "- local note\n");
 
-        let result = get_agent_definitions_with_overrides_from_env(&root, &|key| match key {
-            "HOME" => Some(root.display().to_string()),
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY" => Some("false".to_string()),
-            _ => None,
-        });
+        let result = get_agent_definitions_with_overrides(&root);
 
         let expected = Some(PendingSnapshotUpdate {
             snapshot_timestamp: "2026-02-01T00:00:00Z".to_string(),
@@ -2049,7 +1964,6 @@ mod prompt_contract_tests {
             };
             let agent = parse_agent_from_markdown(
                 &markdown,
-                &|_| None,
                 crate::utils::build_profile::BuildAudience::External,
             )
             .unwrap();

@@ -283,35 +283,24 @@ pub async fn truncate_mcp_content_if_needed(content: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn max_tokens_and_size_estimate_match_official_env_and_utf16_rules() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _max = EnvGuard::set("MAX_MCP_OUTPUT_TOKENS", "  +5tail");
+        let _max = EnvVarGuard::set("MAX_MCP_OUTPUT_TOKENS", "  +5tail");
         assert_eq!(get_max_mcp_output_tokens(), 5.0);
         assert_eq!(get_content_size_estimate(&Value::String("😀😀".into())), 1);
     }
 
     #[tokio::test]
     async fn truncate_mcp_content_matches_official_copy() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _max = EnvGuard::set("MAX_MCP_OUTPUT_TOKENS", "5");
+        let _max = EnvVarGuard::set("MAX_MCP_OUTPUT_TOKENS", "5");
         let content = Value::String("abcdefghij".repeat(12));
         let truncated = truncate_mcp_content(&content).await;
         let text = truncated.as_str().expect("truncated string");

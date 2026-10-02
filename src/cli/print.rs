@@ -286,9 +286,7 @@ fn load_headless_resume(
         loaded,
         None,
         std::sync::Arc::new(
-            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly(
-                cwd,
-            ),
+            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(cwd),
         ),
     )?;
     Ok(Some(QueryEngineResumeSeed::new(
@@ -1628,19 +1626,17 @@ async fn initialize_control_response() -> Result<serde_json::Value, tokio::task:
             })
             .collect::<Vec<_>>();
         let agents =
-        crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly(
-            &cwd,
-        )
-        .active_agents
-        .into_iter()
-        .map(|agent| {
-            serde_json::json!({
-                "name": agent.agent_type,
-                "description": agent.when_to_use,
-                "model": agent.model.filter(|model| model != "inherit"),
-            })
-        })
-        .collect::<Vec<_>>();
+            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(&cwd)
+                .active_agents
+                .into_iter()
+                .map(|agent| {
+                    serde_json::json!({
+                        "name": agent.agent_type,
+                        "description": agent.when_to_use,
+                        "model": agent.model.filter(|model| model != "inherit"),
+                    })
+                })
+                .collect::<Vec<_>>();
         let settings = crate::utils::settings::get_initial_settings();
         let available_output_styles =
             crate::constants::output_styles::get_all_output_styles_ordered(&cwd)

@@ -13,7 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// Maps to CC `loadPluginAgents.ts#loadPluginAgents`.
-pub fn load_plugin_agents_readonly() -> Vec<AgentDefinition> {
+pub fn load_plugin_agents() -> Vec<AgentDefinition> {
     let result = super::plugin_loader::load_all_plugins_cache_only_from_sync();
     load_plugin_agents_from_plugins(&result.enabled)
 }
@@ -310,7 +310,7 @@ fn parse_slash_command_tools_from_value(value: Option<&Value>) -> Vec<String> {
 
 fn is_auto_memory_enabled_for_plugin_agents() -> bool {
     let settings = crate::utils::settings::get_initial_settings();
-    crate::memdir::paths::is_auto_memory_enabled_with_env(&settings, &|key| crate::utils::process_env::var(key))
+    crate::memdir::paths::is_auto_memory_enabled(&settings)
 }
 
 fn inject_agent_memory_tools(tools: &mut Option<Vec<String>>) {

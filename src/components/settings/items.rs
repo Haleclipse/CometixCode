@@ -540,6 +540,7 @@ pub fn default_items() -> Vec<SettingItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn notification_channel_display_matches_official_config_values() {
@@ -578,27 +579,15 @@ mod tests {
         assert_eq!(current, 0);
     }
 
-    struct EnvUnsetGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvUnsetGuard {
-        fn unset(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
-    }
-
     #[test]
     fn auto_updates_channel_display_tracks_official_disabled_value() {
         // `auto_updates_are_disabled` consults machine-level env
         // kill-switches; neutralize them so the config/settings inputs
         // under test decide the outcome on every host.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _disable_guard = EnvUnsetGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvUnsetGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvUnsetGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
+        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
         let mut config = GlobalConfig::default();
         let mut settings = SettingsJson::default();
         settings.auto_updates_channel = Some("stable".to_string());

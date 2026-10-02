@@ -1910,20 +1910,8 @@ fn normalize_path_string(path: PathBuf) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::TEST_ENV_LOCK;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use std::path::Path;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set_path(key: &'static str, path: &Path) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, path),
-            }
-        }
-    }
 
     struct CwdGuard {
         old: PathBuf,
@@ -2183,7 +2171,7 @@ mod tests {
             r#"{"sandbox":{"network":{"allowManagedDomainsOnly":true}}}"#,
         )
         .unwrap();
-        let _managed_guard = EnvGuard::set_path("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
+        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
 
         assert!(should_allow_managed_sandbox_domains_only());
         let _ = std::fs::remove_dir_all(&root);
@@ -2197,7 +2185,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&root).unwrap();
-        let _managed_guard = EnvGuard::set_path("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
+        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
 
         assert!(!should_allow_managed_sandbox_domains_only());
         let _ = std::fs::remove_dir_all(&root);
@@ -2284,8 +2272,8 @@ mod tests {
         )
         .unwrap();
         let _cwd_guard = CwdGuard::set(&root);
-        let _managed_guard = EnvGuard::set_path("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config_guard = EnvGuard::set_path("CLAUDE_CONFIG_DIR", &config_home);
+        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
 
         let settings = get_initial_settings();
         let config = convert_to_sandbox_runtime_config(&settings);
@@ -2404,8 +2392,8 @@ mod tests {
         )
         .unwrap();
         let _cwd_guard = CwdGuard::set(&root);
-        let _managed_guard = EnvGuard::set_path("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config_guard = EnvGuard::set_path("CLAUDE_CONFIG_DIR", &config_home);
+        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
 
         let settings = get_initial_settings();
         let config = convert_to_sandbox_runtime_config(&settings);
@@ -2468,8 +2456,8 @@ mod tests {
 
         {
             let _cwd_guard = CwdGuard::set(&workspace);
-            let _config_guard = EnvGuard::set_path("CLAUDE_CONFIG_DIR", &config_home);
-            let _managed_guard = EnvGuard::set_path(
+            let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _managed_guard = EnvVarGuard::set(
                 "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
                 &root.join("missing-managed-settings.json"),
             );
@@ -2610,7 +2598,7 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _reset = ResetStore;
         let store = get_sandbox_violation_store();
         store.reset_for_test();
@@ -2664,7 +2652,7 @@ mod tests {
     /// its process-wide mutex would cascade into unrelated tests.
     #[test]
     fn violation_listener_reenters_app_store_turn_on_same_thread() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let store = get_sandbox_violation_store();

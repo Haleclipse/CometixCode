@@ -11,7 +11,7 @@ use crate::keybindings::keybinding_context::KeybindingRuntime;
 use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::use_keybinding;
 use crate::tools::agent_tool::agent_memory::get_agent_memory_dir;
-use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides_readonly;
+use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides;
 use crate::utils::claudemd::{
     ClaudeMdFile, ClaudeMdKind, ClaudeMdSource, discover_claude_md_files,
 };
@@ -256,7 +256,7 @@ fn append_agent_memory_folder_options(
     if !auto_memory_enabled {
         return;
     }
-    let definitions = get_agent_definitions_with_overrides_readonly(cwd);
+    let definitions = get_agent_definitions_with_overrides(cwd);
     for agent in definitions.active_agents {
         let Some(scope) = agent.memory else {
             continue;

@@ -268,18 +268,7 @@ pub fn get_prefer_tmux_over_iterm2() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-    }
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn temp_config_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -379,11 +368,11 @@ mod tests {
 
     #[test]
     fn it2_setup_config_flags_match_official_global_config_keys() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let dir = temp_config_dir("flags");
-        let _config_guard = EnvGuard::set("CLAUDE_CONFIG_DIR", &dir);
-        let _session_write_guard = EnvGuard::set("SESSION_WRITE_ENABLED", "1");
-        let _write_guard = EnvGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _session_write_guard = EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
+        let _write_guard = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
 
         assert!(!get_prefer_tmux_over_iterm2());
         mark_it2_setup_complete().unwrap();

@@ -752,6 +752,8 @@ impl crate::tool::ToolCall for ConfigTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+
     #[test]
     fn config_tool_schema_matches_official_input_shape() {
         let schema = super::config_tool_schema();
@@ -881,7 +883,7 @@ mod tests {
     /// owner slot must not land in settings.
     #[tokio::test]
     async fn config_set_does_not_persist_a_model_rejected_on_write() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let fixture = super::prompt::tests::ModelSectionFixture::new();
         fixture.write_settings(r#"{"availableModels":["haiku"]}"#);
 
@@ -916,7 +918,7 @@ mod tests {
     async fn config_get_reads_an_unset_setting_back_as_undefined_not_null() {
         use crate::tool::ToolCall;
 
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let fixture = super::prompt::tests::ModelSectionFixture::new();
         fixture.write_settings("{}");
 
@@ -955,7 +957,7 @@ mod tests {
     /// only way `formatOnRead`'s `'default'` branch fires.
     #[tokio::test]
     async fn config_get_reads_a_present_setting_back_as_its_value() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let fixture = super::prompt::tests::ModelSectionFixture::new();
         fixture.write_settings(r#"{"model":"opus"}"#);
 
@@ -984,7 +986,7 @@ mod tests {
     /// keys (`supportedSettings.ts:46/:94/:111`) land in one pass.
     #[tokio::test]
     async fn config_set_projects_the_official_app_state_keys_after_the_write() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let fixture = super::prompt::tests::ModelSectionFixture::new();
         fixture.write_settings("{}");
 
@@ -1040,7 +1042,7 @@ mod tests {
     /// return prev`. A no-op write must not install a new root.
     #[tokio::test]
     async fn config_set_keeps_the_official_unchanged_guard() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let fixture = super::prompt::tests::ModelSectionFixture::new();
         fixture.write_settings("{}");
 
@@ -1068,7 +1070,7 @@ mod tests {
     /// where CC throws; both must leave AppState untouched.
     #[tokio::test]
     async fn config_set_does_not_project_a_write_that_failed() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let fixture = super::prompt::tests::ModelSectionFixture::new();
         fixture.write_settings("{}");
 
@@ -1113,7 +1115,7 @@ mod tests {
     /// guard.
     #[test]
     fn config_write_reserves_the_official_invalid_path_copy_for_the_official_case() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = super::prompt::tests::ModelSectionFixture::new();
         use_real_global_config_file();
 
@@ -1177,20 +1179,6 @@ mod tests {
         );
     }
 
-    /// Restores one env var when the guard drops, so a test that needs real
-    /// disk writes can turn the gate on without leaking it.
-    struct EnvRestore {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvRestore {
-        fn set(name: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(name, value),
-            }
-        }
-    }
-
     /// Points `load_global_config()` at the fixture's temp dir instead of the
     /// in-memory test override, so `saveGlobalConfig` round-trips through a
     /// real file the way CC's does.
@@ -1206,10 +1194,10 @@ mod tests {
     /// config that never set the key must not create or touch the file.
     #[tokio::test]
     async fn config_remote_control_default_skips_the_write_when_the_key_is_absent() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = super::prompt::tests::ModelSectionFixture::new();
         use_real_global_config_file();
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
 
         let path = crate::utils::env::get_global_claude_file();
         assert!(
@@ -1255,10 +1243,10 @@ mod tests {
     /// mechanism cannot express it.
     #[tokio::test]
     async fn config_remote_control_projects_both_bridge_fields() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = super::prompt::tests::ModelSectionFixture::new();
         use_real_global_config_file();
-        let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
 
         let mut initial = crate::state::app_state_store::AppState::default();
         initial.repl_bridge_outbound_only = true;
@@ -1307,7 +1295,7 @@ mod tests {
 
         // `generate_prompt()` below reads the model picker, so pin the process
         // state instead of the developer's own config.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = super::prompt::tests::ModelSectionFixture::new();
 
         let tool = super::ConfigTool;

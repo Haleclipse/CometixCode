@@ -307,6 +307,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn mcp_client_snapshots_from_project_config_builds_readonly_pending_snapshots() {
@@ -359,27 +360,9 @@ mod tests {
         );
     }
 
-    struct EnvGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl EnvGuard {
-        fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
-
-        fn unset(key: &'static str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::unset(key),
-            }
-        }
-    }
-
     #[test]
     fn build_api_provider_properties_matches_official_process_rows() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let cert = std::env::temp_dir().join(format!(
@@ -388,19 +371,19 @@ mod tests {
         ));
         std::fs::write(&cert, "certificate").unwrap();
         let guards = vec![
-            EnvGuard::set("CLAUDE_CODE_USE_BEDROCK", "1"),
-            EnvGuard::unset("CLAUDE_CODE_USE_VERTEX"),
-            EnvGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
-            EnvGuard::set("BEDROCK_BASE_URL", "https://bedrock.example"),
-            EnvGuard::set("AWS_DEFAULT_REGION", "us-west-2"),
-            EnvGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "true"),
-            EnvGuard::set("https_proxy", "http://lowercase-proxy"),
-            EnvGuard::unset("HTTPS_PROXY"),
-            EnvGuard::unset("http_proxy"),
-            EnvGuard::unset("HTTP_PROXY"),
-            EnvGuard::set("NODE_EXTRA_CA_CERTS", "/tmp/ca.pem"),
-            EnvGuard::set("CLAUDE_CODE_CLIENT_CERT", &cert),
-            EnvGuard::unset("CLAUDE_CODE_CLIENT_KEY"),
+            EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvVarGuard::set("BEDROCK_BASE_URL", "https://bedrock.example"),
+            EnvVarGuard::set("AWS_DEFAULT_REGION", "us-west-2"),
+            EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "true"),
+            EnvVarGuard::set("https_proxy", "http://lowercase-proxy"),
+            EnvVarGuard::unset("HTTPS_PROXY"),
+            EnvVarGuard::unset("http_proxy"),
+            EnvVarGuard::unset("HTTP_PROXY"),
+            EnvVarGuard::set("NODE_EXTRA_CA_CERTS", "/tmp/ca.pem"),
+            EnvVarGuard::set("CLAUDE_CODE_CLIENT_CERT", &cert),
+            EnvVarGuard::unset("CLAUDE_CODE_CLIENT_KEY"),
         ];
         // `getMTLSConfig` is memoized.
         crate::utils::mtls::clear_mtls_cache();
@@ -425,7 +408,7 @@ mod tests {
 
     #[test]
     fn build_account_properties_matches_official_sources_without_secret_values() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = std::env::temp_dir().join(format!(
@@ -433,12 +416,12 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let _config_home = EnvGuard::set("CLAUDE_CONFIG_DIR", &dir);
-        let _oauth = EnvGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
-        let _api_key = EnvGuard::unset("ANTHROPIC_API_KEY");
-        let _bedrock = EnvGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
+        let _config_home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
+        let _api_key = EnvVarGuard::unset("ANTHROPIC_API_KEY");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
 
         let mut config = crate::utils::config::GlobalConfig::default();
         config.primary_api_key = Some("sk-ant-secret".to_string());

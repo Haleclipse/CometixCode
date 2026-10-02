@@ -462,7 +462,7 @@ pub(crate) fn clear_task_tool_store_for_test() {
 #[cfg(test)]
 pub(crate) struct TempTaskConfig {
     pub root: std::path::PathBuf,
-    _guards: Vec<TempEnvGuard>,
+    _guards: Vec<crate::utils::env_utils::EnvVarGuard>,
     /// Redirecting `CLAUDE_CONFIG_DIR` also redirects `~/.claude.json`
     /// (`utils/config.rs:119-120`), so the temp root below carries no
     /// `hasTrustDialogAccepted` for any path and the workspace reads as
@@ -479,27 +479,13 @@ pub(crate) struct TempTaskConfig {
 }
 
 #[cfg(test)]
-struct TempEnvGuard {
-    _env: crate::utils::env_utils::EnvVarGuard,
-}
-
-#[cfg(test)]
-impl TempEnvGuard {
-    fn set(key: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
-        Self {
-            _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-        }
-    }
-}
-
-#[cfg(test)]
 impl TempTaskConfig {
     pub fn new(list_id: &str) -> Self {
         let root =
             std::env::temp_dir().join(format!("cometix-tasks-{}", uuid::Uuid::new_v4().simple()));
         let guards = vec![
-            TempEnvGuard::set("CLAUDE_CONFIG_DIR", &root),
-            TempEnvGuard::set("CLAUDE_CODE_TASK_LIST_ID", list_id),
+            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", list_id),
         ];
         let _ = reset_task_list(list_id);
         Self {

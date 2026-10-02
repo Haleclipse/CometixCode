@@ -1970,6 +1970,7 @@ pub fn Messages(props: &MessagesProps) -> impl Into<AnyElement<'static>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::status_notice_definitions::{MAX_MEMORY_CHARACTER_COUNT, MemoryFileInfo};
     use crate::utils::theme;
     use futures::StreamExt;
@@ -2044,18 +2045,6 @@ mod tests {
             ),
         ];
         assert_eq!(drop_text_in_brief_turns(legacy.clone()), legacy);
-    }
-
-    struct TestEnvVarGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
-    }
-
-    impl TestEnvVarGuard {
-        fn set(key: &'static str, value: &str) -> Self {
-            Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(key, value),
-            }
-        }
     }
 
     #[cfg(feature = "anthropic_internal")]
@@ -2419,8 +2408,8 @@ mod tests {
         // Contract D: the row's own AppState subscription gets past the
         // MessagesImpl / MessageRows / MessageRow bailouts, as CC's
         // `useSyncExternalStore` subscriber re-renders past memoized parents.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let store = crate::state::store::AppStore::new(worker_waiting_on("toolu_1"), None);
         // Frame-driven, no timers: take the mount frame, answer the worker
         // request, then take the frame that write produces. The same write
@@ -2518,8 +2507,8 @@ mod tests {
         // the MessagesImpl bailout used to swallow the change; loading, the
         // `message-rows` Memo did. Frame-driven: the same write flips the
         // sibling echo, so a frame always follows.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         for is_loading in [false, true] {
             let store = crate::state::store::AppStore::new(Default::default(), None);
             let (queued, started) = futures::executor::block_on(async {
@@ -2622,8 +2611,8 @@ mod tests {
         // is static, so it sits behind the MessagesImpl bailout (idle), the
         // `message-rows` Memo (loading), its own static key and CachedSubtree;
         // the theme name in those keys is what carries the change through.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         for is_loading in [false, true] {
             let (before, after) = futures::executor::block_on(async {
                 let (keys, events) = async_channel::unbounded();
@@ -2702,8 +2691,8 @@ mod tests {
         // mount (SystemTextMessage.tsx:352-357); a theme preview re-renders it
         // in place, it does not remount it, so a task that has since finished
         // still reads "still running" in that historical row.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let store = crate::state::store::AppStore::new(Default::default(), None);
         store.replace_with(|state| {
             Arc::make_mut(&mut state.tasks).insert(
@@ -2777,8 +2766,8 @@ mod tests {
     fn messages_logo_follows_a_preview_and_its_cancel() {
         // The logo's dim text previews light and returns to dark on cancel,
         // as every themed descendant does under CC's ThemeProvider.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let colors = futures::executor::block_on(async {
             let (keys, events) = async_channel::unbounded();
             let mut probe = element!(ThemeFlipProbe(show_logo: true));
@@ -2813,8 +2802,8 @@ mod tests {
     fn messages_tool_use_reads_pending_worker_request_for_waiting_permission_row() {
         // CC AssistantToolUseMessage.tsx:58-60,122: the row reads
         // `pendingWorkerRequest` from AppState; Messages passes nothing.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let current_theme = *theme::current();
         let messages = Arc::new(vec![tool_use_named_with_input(
             "assistant-tool",
@@ -2854,8 +2843,8 @@ mod tests {
 
     #[test]
     fn messages_classifier_checking_tool_use_renders_official_auxiliary_row() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let current_theme = *theme::current();
         let messages = Arc::new(vec![tool_use_named_with_input(
             "assistant-tool",
@@ -2906,8 +2895,8 @@ mod tests {
         // the lock and forcing a falsy value here, the lone Bash fixture
         // (input: None) becomes collapsible via is_fullscreen_env_enabled()
         // and the "Bash" row assertion fails in parallel runs.
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let current_theme = *theme::current();
         for status in [ToolUseStatus::Running, ToolUseStatus::Queued] {
             let messages = Arc::new(vec![tool_use_named_with_input(
@@ -3191,8 +3180,8 @@ mod tests {
     /// this rendered test catches the former post-collapse cap directly.
     #[test]
     fn transcript_dividers_cap_raw_rows_and_use_configured_shortcut_matches_official() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let input = Arc::new(collapsible_read_transcript(20));
         let render = |show_all_in_transcript: bool| {
             let input = Arc::clone(&input);
@@ -3271,7 +3260,7 @@ mod tests {
         );
 
         let fullscreen_env_only = {
-            let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "1");
+            let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "1");
             render(false).to_string()
         };
         assert!(
@@ -3361,7 +3350,7 @@ mod tests {
         // for ant builds (CLAUDE_CODE_NO_FLICKER's audience default). Pin the
         // env so BOTH audiences exercise the main-screen slice this test is
         // about; the fullscreen skip itself is fullscreen.rs's contract.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_NO_FLICKER", "0");
         let boundary = RenderableMessage {
             uuid: "boundary".to_string(),
@@ -4123,8 +4112,8 @@ mod tests {
 
     #[test]
     fn fullscreen_collapse_surfaces_git_outcomes_without_double_counting_bash() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _env = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "1");
         let input = vec![
             tool_use_named(
                 "bash-commit",
@@ -4437,14 +4426,14 @@ mod tests {
 
     #[test]
     fn collapse_read_search_tracks_managed_memory_operations_separately() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-collapse-session-memory-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let config = root.join("config");
         let config_text = config.display().to_string();
-        let _config = TestEnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_text);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_text);
         let session_file = config.join("session-memory/nested/session.md");
         let session_search_dir = config.join("session-memory/nested");
         let session_file_text = session_file.display().to_string();
@@ -4502,13 +4491,13 @@ mod tests {
 
     #[test]
     fn collapse_read_search_tracks_memory_edit_operations_separately() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-collapse-memory-edit-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let config_text = root.join("config").display().to_string();
-        let _config = TestEnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_text);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_text);
         let session_file = root
             .join("config/session-memory/nested/session.md")
             .display()
@@ -4545,14 +4534,14 @@ mod tests {
     #[cfg(feature = "anthropic_internal")]
     #[test]
     fn collapse_read_search_team_memory_tracking_ignores_growthbook_delivery() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-collapse-team-memory-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let root_text = root.display().to_string();
-        let _override = TestEnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root_text);
-        let _enabled = TestEnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root_text);
+        let _enabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
             "tengu_herring_clock".to_string(),
@@ -4718,8 +4707,8 @@ mod tests {
 
     #[test]
     fn collapse_read_search_keeps_non_search_bash_visible_on_main_screen() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = TestEnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
         let input = vec![
             tool_use_named("bash-run", "toolu_bash_run", "Bash", "npm test"),
             tool_result("result-run", "toolu_bash_run", ToolResultStatus::Success),

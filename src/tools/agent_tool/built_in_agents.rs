@@ -20,43 +20,31 @@ use super::load_agents_dir::AgentDefinition;
 /// (`scripts/build.ts:44`), then the `tengu_amber_stoat` GrowthBook gate
 /// (fallback true). GrowthBook delivery is out of scope for this port
 /// (user ruling): the gate lives as a hardcoded switch-table entry.
-pub fn are_explore_plan_agents_enabled_readonly() -> bool {
+pub fn are_explore_plan_agents_enabled() -> bool {
     crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::BuiltinExplorePlanAgents,
     )
 }
 
-/// Maps to CC `getBuiltInAgents()`.
-pub fn get_built_in_agents_readonly(
-    get_env: &impl Fn(&str) -> Option<String>,
-) -> Vec<AgentDefinition> {
-    get_built_in_agents_from_snapshot(
-        get_env,
-        crate::bootstrap::state::get_is_non_interactive_session(),
-    )
-}
-
-fn get_built_in_agents_from_snapshot(
-    get_env: &impl Fn(&str) -> Option<String>,
-    is_non_interactive_session: bool,
-) -> Vec<AgentDefinition> {
+/// Maps to CC `getBuiltInAgents()` (`builtInAgents.ts:22-72`).
+pub fn get_built_in_agents() -> Vec<AgentDefinition> {
     // Maps to official SDK/non-interactive escape hatch.
     if crate::utils::env_utils::is_env_truthy(
-        get_env("CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS").as_deref(),
-    ) && is_non_interactive_session
+        crate::utils::process_env::var("CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS").as_deref(),
+    ) && crate::bootstrap::state::get_is_non_interactive_session()
     {
         return Vec::new();
     }
 
     let mut agents = vec![general_purpose_agent(), statusline_setup_agent()];
 
-    if are_explore_plan_agents_enabled_readonly() {
+    if are_explore_plan_agents_enabled() {
         agents.extend([explore_agent(), plan_agent()]);
     }
 
     // Maps to official non-SDK entrypoint check.
     if !matches!(
-        get_env("CLAUDE_CODE_ENTRYPOINT").as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref(),
         Some("sdk-ts" | "sdk-py" | "sdk-cli")
     ) {
         agents.push(claude_code_guide_agent());
@@ -79,14 +67,49 @@ pub fn is_verification_agent_enabled_readonly() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bootstrap::state::IsInteractiveGuard;
     use crate::types::permissions::PermissionMode;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+
+    /// Pins every input `getBuiltInAgents()` reads: the two variables, and the
+    /// session's interactivity — `IS_INTERACTIVE` together with its
+    /// `cfg(test)`-only env overrides (`bootstrap/state.rs`), so an ambient
+    /// `CLAUDE_CODE_NON_INTERACTIVE` cannot turn the interactive case headless.
+    /// The caller holds `TEST_ENV_LOCK`.
+    fn pin_inputs(
+        entrypoint: Option<&str>,
+        disable_built_in_agents: Option<&str>,
+        non_interactive: bool,
+    ) -> (Vec<EnvVarGuard>, IsInteractiveGuard) {
+        let pin = |key, value: Option<&str>| match value {
+            Some(value) => EnvVarGuard::set(key, value),
+            None => EnvVarGuard::unset(key),
+        };
+        let env = vec![
+            pin("CLAUDE_CODE_ENTRYPOINT", entrypoint),
+            pin(
+                "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS",
+                disable_built_in_agents,
+            ),
+            EnvVarGuard::unset("CLAUDE_CODE_NON_INTERACTIVE"),
+            EnvVarGuard::unset("COMETIX_NON_INTERACTIVE"),
+            EnvVarGuard::unset("COMETIX_NON_INTERACTIVE_SESSION"),
+        ];
+        let interactive = IsInteractiveGuard::capture();
+        crate::bootstrap::state::set_is_interactive(!non_interactive);
+        (env, interactive)
+    }
 
     #[test]
     fn built_in_agents_match_official_default_and_sdk_entrypoint_gate() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         // CC builtInAgents.ts:45-52: base pair, then Explore/Plan (gate ON in
         // production external builds — build.ts:44 + tengu_amber_stoat
         // fallback true), then guide for non-SDK entrypoints.
-        let default = get_built_in_agents_from_snapshot(&|_| None, false);
+        let default = {
+            let _inputs = pin_inputs(None, None, false);
+            get_built_in_agents()
+        };
         assert_eq!(
             default
                 .iter()
@@ -102,10 +125,10 @@ mod tests {
         );
 
         // The SDK entrypoint drops only the guide (:55-62); Explore/Plan stay.
-        let sdk = get_built_in_agents_from_snapshot(
-            &|key| (key == "CLAUDE_CODE_ENTRYPOINT").then(|| "sdk-ts".to_string()),
-            false,
-        );
+        let sdk = {
+            let _inputs = pin_inputs(Some("sdk-ts"), None, false);
+            get_built_in_agents()
+        };
         assert_eq!(
             sdk.iter()
                 .map(|agent| agent.agent_type.as_str())
@@ -116,22 +139,27 @@ mod tests {
 
     #[test]
     fn built_in_agents_honor_noninteractive_sdk_disable_gate() {
-        let disabled = get_built_in_agents_from_snapshot(
-            &|key| (key == "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS").then(|| "true".to_string()),
-            true,
-        );
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let disabled = {
+            let _inputs = pin_inputs(None, Some("true"), true);
+            get_built_in_agents()
+        };
         assert!(disabled.is_empty());
 
-        let interactive = get_built_in_agents_from_snapshot(
-            &|key| (key == "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS").then(|| "true".to_string()),
-            false,
-        );
+        let interactive = {
+            let _inputs = pin_inputs(None, Some("true"), false);
+            get_built_in_agents()
+        };
         assert!(!interactive.is_empty());
     }
 
     #[test]
     fn built_in_agent_registry_assembles_official_agent_modules() {
-        let agents = get_built_in_agents_from_snapshot(&|_| None, false);
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let agents = {
+            let _inputs = pin_inputs(None, None, false);
+            get_built_in_agents()
+        };
         let statusline = agents
             .iter()
             .find(|agent| agent.agent_type == "statusline-setup")
