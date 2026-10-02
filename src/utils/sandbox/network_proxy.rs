@@ -640,8 +640,9 @@ fn start_linux_bridges(
     shutdown: Arc<AtomicBool>,
 ) -> Result<(PathBuf, PathBuf, Vec<Child>)> {
     let token = uuid::Uuid::new_v4().simple().to_string();
-    let http_socket = std::env::temp_dir().join(format!("cometix-http-{token}.sock"));
-    let socks_socket = std::env::temp_dir().join(format!("cometix-socks-{token}.sock"));
+    // sandbox-runtime `linux-sandbox-utils.js:326-327` `join(tmpdir(), …)`.
+    let http_socket = crate::utils::node_os::tmpdir().join(format!("cometix-http-{token}.sock"));
+    let socks_socket = crate::utils::node_os::tmpdir().join(format!("cometix-socks-{token}.sock"));
     let mut bridges = Vec::new();
     for (socket, port) in [(&http_socket, http_port), (&socks_socket, socks_port)] {
         let child = Command::new("socat")

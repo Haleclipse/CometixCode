@@ -74,13 +74,6 @@ fn run_command(program: &str, args: &[&str], cwd: Option<PathBuf>) -> SetupComma
     }
 }
 
-fn home_dir() -> PathBuf {
-    crate::utils::process_env::var_os("HOME")
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-}
-
 /// Pure decision table for CC `detectPythonPackageManager()`.
 pub fn detect_python_package_manager_from_results(
     uv_code: i32,
@@ -148,9 +141,13 @@ pub fn install_command_for_package_manager(
 /// backend detection.
 pub async fn install_it2(package_manager: PythonPackageManager) -> It2InstallResult {
     let (program, args) = install_command_for_package_manager(package_manager);
-    let mut result = run_command(program, &args, Some(home_dir()));
+    let mut result = run_command(program, &args, Some(crate::utils::node_os::homedir()));
     if package_manager == PythonPackageManager::Pip && result.code != 0 {
-        result = run_command("pip3", &["install", "--user", "it2"], Some(home_dir()));
+        result = run_command(
+            "pip3",
+            &["install", "--user", "it2"],
+            Some(crate::utils::node_os::homedir()),
+        );
     }
 
     if result.code != 0 {

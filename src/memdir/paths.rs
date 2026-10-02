@@ -86,9 +86,8 @@ pub(crate) fn settings_with_trusted_auto_memory_directory(
 pub fn get_auto_mem_path(settings: &SettingsJson) -> PathBuf {
     let cwd = crate::bootstrap::state::get_original_cwd();
     let config_home = crate::utils::config::get_config_home();
-    let home = crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
-        .map(PathBuf::from);
-    get_auto_mem_path_with_env(settings, &cwd, &config_home, home.as_deref(), &|key| {
+    let home = crate::utils::node_os::homedir();
+    get_auto_mem_path_with_env(settings, &cwd, &config_home, Some(&home), &|key| {
         crate::utils::process_env::var(key)
     })
 }

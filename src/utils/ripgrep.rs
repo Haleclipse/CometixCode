@@ -587,17 +587,11 @@ pub fn count_files_rounded_rg(
         }
     }
 
-    let home = crate::utils::process_env::var_os("HOME")
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-        .map(PathBuf::from);
-    if let Some(home) = home {
-        if let (Ok(resolved_dir), Ok(resolved_home)) =
-            (dir_path.canonicalize(), home.canonicalize())
-        {
-            if resolved_dir == resolved_home {
-                store_count_cache(&cache_key, None);
-                return None;
-            }
+    let home = crate::utils::node_os::homedir();
+    if let (Ok(resolved_dir), Ok(resolved_home)) = (dir_path.canonicalize(), home.canonicalize()) {
+        if resolved_dir == resolved_home {
+            store_count_cache(&cache_key, None);
+            return None;
         }
     }
 

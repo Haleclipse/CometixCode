@@ -7,7 +7,7 @@
 //! mutating checks (npm config, package-manager command execution, PID cleanup)
 //! remain deferred to their dedicated service slices.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Maps to CC `InstallationType`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -162,9 +162,7 @@ pub fn get_invoked_binary() -> String {
 /// Maps to CC local `detectMultipleInstallations()` safe filesystem subset.
 pub fn detect_multiple_installations() -> Vec<InstallationRecord> {
     let mut installations = Vec::new();
-    let Some(home) = home_dir() else {
-        return installations;
-    };
+    let home = crate::utils::node_os::homedir();
 
     let local_path = home.join(".claude").join("local");
     if local_path.exists() {
@@ -433,16 +431,14 @@ fn json_type_name(value: &serde_json::Value) -> &'static str {
 }
 
 fn local_installation_exists() -> bool {
-    home_dir()
-        .map(|home| home.join(".claude").join("local").exists())
-        .unwrap_or(false)
+    crate::utils::node_os::homedir()
+        .join(".claude")
+        .join("local")
+        .exists()
 }
 
 fn path_contains_local_bin() -> bool {
-    let Some(home) = home_dir() else {
-        return false;
-    };
-    let local_bin = home.join(".local").join("bin");
+    let local_bin = crate::utils::node_os::homedir().join(".local").join("bin");
     let Some(path) = crate::utils::process_env::var_os("PATH") else {
         return false;
     };
@@ -477,17 +473,12 @@ fn which_in_path(binary: &str) -> Option<String> {
     None
 }
 
-fn home_dir() -> Option<PathBuf> {
-    crate::utils::process_env::var_os("HOME")
-        .map(PathBuf::from)
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE").map(PathBuf::from))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::env_utils::EnvVarGuard;
     use std::fs;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_ID: AtomicU64 = AtomicU64::new(0);

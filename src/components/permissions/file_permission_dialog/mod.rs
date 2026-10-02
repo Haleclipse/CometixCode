@@ -243,11 +243,8 @@ pub fn is_in_claude_folder(file_path: &str) -> bool {
 /// Maps to: CC `FilePermissionDialog/permissionOptions.tsx`
 /// `isInGlobalClaudeFolder`.
 pub fn is_in_global_claude_folder(file_path: &str) -> bool {
-    let Some(home) = home_dir() else {
-        return false;
-    };
     let path = normalize_absolute_path(file_path);
-    let claude_dir = normalize_path(&home.join(".claude"));
+    let claude_dir = normalize_path(&crate::utils::node_os::homedir().join(".claude"));
     is_descendant_of(&path, &claude_dir)
 }
 
@@ -551,12 +548,6 @@ fn get_directory_for_path(file_path: &str) -> String {
         .map(|parent| parent.display().to_string())
         .filter(|parent| !parent.is_empty())
         .unwrap_or_else(|| ".".to_string())
-}
-
-fn home_dir() -> Option<PathBuf> {
-    crate::utils::process_env::var_os("HOME")
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
 }
 
 fn expand_path(file_path: &str) -> PathBuf {

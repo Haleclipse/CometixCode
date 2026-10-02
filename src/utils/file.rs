@@ -415,19 +415,20 @@ pub fn get_display_path(path: &str) -> String {
         }
     }
 
-    if let Some(home) = home_dir() {
-        let home_prefix = format!("{home}{}", std::path::MAIN_SEPARATOR);
-        if absolute.starts_with(&home_prefix) || path.starts_with(&home_prefix) {
-            let source = if absolute.starts_with(&home_prefix) {
-                absolute.as_str()
-            } else {
-                path
-            };
-            return format!("~{}", &source[home.len()..].replace('\\', "/"));
-        }
-        if absolute == home || path == home {
-            return "~".to_string();
-        }
+    let home = crate::utils::node_os::homedir()
+        .to_string_lossy()
+        .into_owned();
+    let home_prefix = format!("{home}{}", std::path::MAIN_SEPARATOR);
+    if absolute.starts_with(&home_prefix) || path.starts_with(&home_prefix) {
+        let source = if absolute.starts_with(&home_prefix) {
+            absolute.as_str()
+        } else {
+            path
+        };
+        return format!("~{}", &source[home.len()..].replace('\\', "/"));
+    }
+    if absolute == home || path == home {
+        return "~".to_string();
     }
     path.to_string()
 }
@@ -438,19 +439,20 @@ fn expand_path_for_display(path: &str, cwd: &std::path::Path) -> String {
     if trimmed.is_empty() {
         return cwd.to_string_lossy().replace('\\', "/");
     }
+    let home = || {
+        crate::utils::node_os::homedir()
+            .to_string_lossy()
+            .into_owned()
+    };
     if trimmed == "~" {
-        return home_dir().unwrap_or_else(|| trimmed.to_string());
+        return home();
     }
     if let Some(rest) = trimmed.strip_prefix("~/") {
-        if let Some(home) = home_dir() {
-            return format!("{home}/{rest}").replace('\\', "/");
-        }
+        return format!("{}/{rest}", home()).replace('\\', "/");
     }
     if cfg!(windows) {
         if let Some(rest) = trimmed.strip_prefix("~\\") {
-            if let Some(home) = home_dir() {
-                return format!("{home}\\{rest}");
-            }
+            return format!("{}\\{rest}", home());
         }
     }
     let candidate = std::path::Path::new(trimmed);
@@ -458,10 +460,6 @@ fn expand_path_for_display(path: &str, cwd: &std::path::Path) -> String {
         return trimmed.replace('\\', "/");
     }
     cwd.join(candidate).to_string_lossy().replace('\\', "/")
-}
-
-fn home_dir() -> Option<String> {
-    crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
 }
 
 #[cfg(test)]
@@ -710,10 +708,12 @@ mod tests {
 
         assert_eq!(get_display_path("src"), "src");
         assert_eq!(get_display_path(&cwd.join("src").to_string_lossy()), "src");
-        if let Some(home) = home_dir() {
-            let under_home = format!("{home}/outside-project/file.rs");
-            assert_eq!(get_display_path(&under_home), "~/outside-project/file.rs");
-        }
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, "/home/someone");
+        assert_eq!(
+            get_display_path("/home/someone/outside-project/file.rs"),
+            "~/outside-project/file.rs"
+        );
 
         let _ = std::fs::remove_dir_all(&cwd);
     }

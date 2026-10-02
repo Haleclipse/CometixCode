@@ -64,18 +64,16 @@ pub fn expand_path(path: &str, base_dir: Option<&Path>) -> Result<PathBuf, Strin
     if trimmed.is_empty() {
         return Ok(normalize_path(&base));
     }
-    let home = crate::utils::process_env::var_os("HOME")
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-        .map(PathBuf::from);
     if trimmed == "~" {
-        return Ok(normalize_path(home.as_deref().unwrap_or(Path::new("~"))));
+        return Ok(normalize_path(&crate::utils::node_os::homedir()));
     }
     if let Some(suffix) = trimmed.strip_prefix("~/") {
-        if let Some(home) = home {
-            return Ok(normalize_path(
-                &crate::utils::fs_operations::native::join_path(&home, Path::new(suffix)),
-            ));
-        }
+        return Ok(normalize_path(
+            &crate::utils::fs_operations::native::join_path(
+                &crate::utils::node_os::homedir(),
+                Path::new(suffix),
+            ),
+        ));
     }
 
     let processed = PathBuf::from(native_path(trimmed));

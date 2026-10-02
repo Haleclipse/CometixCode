@@ -50,9 +50,7 @@ pub fn get_terminal_plist_path() -> PathBuf {
     if tests::is_active() {
         return PathBuf::from("/oracle/Library/Preferences/com.apple.Terminal.plist");
     }
-    std::env::home_dir()
-        .unwrap_or_default()
-        .join("Library/Preferences/com.apple.Terminal.plist")
+    crate::utils::node_os::homedir().join("Library/Preferences/com.apple.Terminal.plist")
 }
 
 /// Maps to: CC `utils/appleTerminalBackup.ts#backupTerminalPreferences:37-71`.

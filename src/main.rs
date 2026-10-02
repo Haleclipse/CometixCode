@@ -850,7 +850,8 @@ fn load_settings_from_flag(settings_value: &str) -> Result<(), String> {
             .take(16)
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
-        let path = std::env::temp_dir().join(format!("claude-settings-{hash}.json"));
+        // CC `tempfile.ts:30` `join(tmpdir(), …)`.
+        let path = crate::utils::node_os::tmpdir().join(format!("claude-settings-{hash}.json"));
         std::fs::write(&path, trimmed)
             .map_err(|error| format!("Error processing --settings: {error}"))?;
         path

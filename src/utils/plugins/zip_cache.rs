@@ -97,7 +97,7 @@ pub fn get_session_plugin_cache_path()
                             .map(|b| format!("{b:02x}"))
                             .collect::<String>();
                         let dir = zip_path!(
-                            std::env::temp_dir(),
+                            crate::utils::node_os::tmpdir(),
                             format!("claude-plugin-session-{suffix}")
                         );
                         crate::utils::fs_operations::get_fs_implementation()

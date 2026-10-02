@@ -214,16 +214,17 @@ pub fn get_paths_for_permission_check(input_path: &Path) -> Vec<PathBuf> {
     let mut path = input_path.to_path_buf();
     let raw = input_path.to_string_lossy();
     if raw == "~" || raw.starts_with("~/") {
-        if let Some(home) = native::home_dir() {
-            path = if raw == "~" {
-                PathBuf::from(home.to_string_lossy().nfc().collect::<String>())
-            } else {
-                native::join_path(
-                    &PathBuf::from(home.to_string_lossy().nfc().collect::<String>()),
-                    Path::new(&raw[2..]),
-                )
-            };
-        }
+        let home = PathBuf::from(
+            crate::utils::node_os::homedir()
+                .to_string_lossy()
+                .nfc()
+                .collect::<String>(),
+        );
+        path = if raw == "~" {
+            home
+        } else {
+            native::join_path(&home, Path::new(&raw[2..]))
+        };
     }
 
     let mut paths = vec![path.clone()];

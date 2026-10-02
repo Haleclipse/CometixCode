@@ -98,7 +98,8 @@ impl ShellProvider for BashShellProvider {
             *current = sandbox_tmp_dir.map(std::path::Path::to_path_buf);
         }
 
-        let native_tmp = std::env::temp_dir();
+        // CC `bashProvider.ts:108` `osTmpdir()`.
+        let native_tmp = crate::utils::node_os::tmpdir();
         let shell_tmp = if cfg!(windows) {
             PathBuf::from(crate::utils::windows_paths::windows_path_to_posix_path(
                 &native_tmp.display().to_string(),

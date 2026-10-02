@@ -118,6 +118,7 @@ pub mod model;
 pub mod model_cost;
 pub mod mtls;
 pub mod native_installer;
+pub mod node_os;
 pub mod notebook;
 pub mod path;
 pub mod pdf;

@@ -71,17 +71,9 @@ pub fn plugin_data_dir_path(plugin_id: &str) -> PathBuf {
 /// Maps to CC `permissions/pathValidation.ts#expandTilde` usage in
 /// `pluginDirectories.ts#getPluginsDirectory` and `getPluginSeedDirs`.
 pub fn expand_tilde_path(path: &str) -> PathBuf {
-    if path == "~" {
-        return crate::utils::process_env::var("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(path));
-    }
-    if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = crate::utils::process_env::var("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
-    }
-    PathBuf::from(path)
+    PathBuf::from(crate::utils::permissions::path_validation::expand_tilde(
+        path,
+    ))
 }
 
 /// Maps to: CC pluginDirectories.ts#getPluginDataDir.

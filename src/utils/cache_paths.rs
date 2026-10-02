@@ -49,10 +49,10 @@ fn get_project_dir(cwd: &str) -> String {
 /// dependency equivalence. macOS layout is also observed in the original cache.
 ///
 /// `const paths = envPaths('claude-cli')` runs at import, before settings env
-/// applies, so `entrypoints/cli.rs` forces this in the startup window. `None`
-/// when there is no home directory.
-pub(crate) static CACHE_ROOT: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    let home = std::env::home_dir()?;
+/// applies, so `entrypoints/cli.rs` forces this in the startup window.
+/// env-paths takes `os.homedir()` once, at its own import.
+pub(crate) static CACHE_ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
+    let home = crate::utils::node_os::homedir();
     #[cfg(target_os = "macos")]
     let root = home
         .join("Library")
@@ -71,13 +71,11 @@ pub(crate) static CACHE_ROOT: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".cache"))
         .join("claude-cli-nodejs");
-    Some(root)
+    root
 });
 
 fn cache_root() -> io::Result<&'static PathBuf> {
-    CACHE_ROOT
-        .as_ref()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory unavailable"))
+    Ok(&CACHE_ROOT)
 }
 
 /// Maps to: CC `utils/cachePaths.ts#CACHE_PATHS:25-38` (object carrier).
@@ -134,9 +132,7 @@ mod tests {
         #[cfg(target_os = "macos")]
         assert_eq!(
             base.parent().unwrap(),
-            std::env::home_dir()
-                .unwrap()
-                .join("Library/Caches/claude-cli-nodejs")
+            crate::utils::node_os::homedir().join("Library/Caches/claude-cli-nodejs")
         );
     }
 }

@@ -263,8 +263,9 @@ fn prepare_call(messages: &[Message], args: &str, copy_full_response: bool) -> C
     })
 }
 
+/// CC `copy.tsx:23` `join(tmpdir(), 'claude')`.
 fn copy_dir() -> PathBuf {
-    std::env::temp_dir().join("claude")
+    crate::utils::node_os::tmpdir().join("claude")
 }
 
 async fn write_to_dir(text: &str, filename: &str, directory: &Path) -> std::io::Result<PathBuf> {

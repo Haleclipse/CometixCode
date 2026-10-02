@@ -25,8 +25,7 @@ pub fn get_system_directories(
         .into()
     });
     let home = options.homedir.unwrap_or_else(|| {
-        std::env::home_dir()
-            .unwrap_or_default()
+        crate::utils::node_os::homedir()
             .to_string_lossy()
             .into_owned()
     });

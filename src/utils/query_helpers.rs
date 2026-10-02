@@ -343,14 +343,12 @@ fn expand_path(path: &str, cwd: &str) -> String {
         return normalize_path_string(PathBuf::from(cwd));
     }
     if trimmed == "~" {
-        if let Some(home) = home_dir() {
-            return home;
-        }
+        return crate::utils::node_os::homedir()
+            .to_string_lossy()
+            .into_owned();
     }
     if let Some(rest) = trimmed.strip_prefix("~/") {
-        if let Some(home) = home_dir() {
-            return normalize_path_string(PathBuf::from(home).join(rest));
-        }
+        return normalize_path_string(crate::utils::node_os::homedir().join(rest));
     }
 
     let candidate = Path::new(trimmed);
@@ -363,10 +361,6 @@ fn expand_path(path: &str, cwd: &str) -> String {
 
 fn normalize_path_string(path: PathBuf) -> String {
     path.components().collect::<PathBuf>().display().to_string()
-}
-
-fn home_dir() -> Option<String> {
-    crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
 }
 
 #[cfg(test)]

@@ -319,15 +319,16 @@ pub fn get_claude_config_home_dir_from_snapshot(env: &process_env::EnvSnapshot) 
     claude_config_home_dir_with(|key| env.var_os(key).map(std::ffi::OsStr::to_os_string))
 }
 
-/// The one implementation of [`get_claude_config_home_dir`], over any
-/// environment source: the carrier, a snapshot, or a loader's injected
-/// `get_env`.
+/// The one implementation of [`get_claude_config_home_dir`], reading
+/// `CLAUDE_CONFIG_DIR` from any environment source: the carrier, a snapshot,
+/// or a loader's injected `get_env`. `homedir()` is Node's, which reads the
+/// current environment whatever the source (CC reads both at call time).
 pub(crate) fn claude_config_home_dir_with(
     var_os: impl Fn(&str) -> Option<std::ffi::OsString>,
 ) -> PathBuf {
     let dir = match var_os("CLAUDE_CONFIG_DIR") {
         Some(dir) => PathBuf::from(dir),
-        None => homedir_with(&var_os).join(".claude"),
+        None => crate::utils::node_os::homedir().join(".claude"),
     };
     match dir.to_str() {
         Some(dir) => {
@@ -336,20 +337,6 @@ pub(crate) fn claude_config_home_dir_with(
         }
         None => dir,
     }
-}
-
-/// Node `os.homedir()` (libuv `uv_os_homedir`): `HOME` (Windows:
-/// `USERPROFILE`) when set, even to an empty string; otherwise the account's
-/// home directory, which `std::env::home_dir` returns once that variable is
-/// unset. That fallback reads the OS environment: after C8 removes the Unix
-/// write-through, a variable deleted only from the carrier would still be
-/// seen there.
-pub(crate) fn homedir_with(var_os: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBuf {
-    let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-    var_os(key)
-        .map(PathBuf::from)
-        .or_else(std::env::home_dir)
-        .unwrap_or_default()
 }
 
 /// Maps to: CC `utils/envUtils.ts#getTeamsDir`.
@@ -525,7 +512,7 @@ mod tests {
     }
 
     /// CC `envUtils.ts:7-14`: `??` keeps an empty `CLAUDE_CONFIG_DIR`, the
-    /// result is NFC, and `homedir()` takes `HOME` (Windows: `USERPROFILE`).
+    /// result is NFC, and otherwise it is under Node's `homedir()`.
     #[test]
     fn config_home_dir_matches_official_nullish_nfc_and_homedir() {
         use crate::utils::process_env::EnvSnapshot;
@@ -540,10 +527,14 @@ mod tests {
             dir(&[("CLAUDE_CONFIG_DIR", "/tmp/cafe\u{301}")]),
             PathBuf::from("/tmp/caf\u{e9}")
         );
-        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        // The snapshot supplies `CLAUDE_CONFIG_DIR` only: `homedir()` reads
+        // the current environment, as CC's does at call time.
         assert_eq!(
-            dir(&[(home_key, "/home/someone")]),
-            PathBuf::from("/home/someone").join(".claude")
+            dir(&[
+                ("HOME", "/snapshot-home"),
+                ("USERPROFILE", "/snapshot-home")
+            ]),
+            crate::utils::node_os::homedir().join(".claude")
         );
     }
 

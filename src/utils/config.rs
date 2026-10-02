@@ -147,9 +147,7 @@ fn get_global_config_file_home() -> PathBuf {
     let env = crate::utils::process_env::snapshot();
     match env.var_os("CLAUDE_CONFIG_DIR").truthy() {
         Some(dir) => PathBuf::from(dir),
-        None => crate::utils::env_utils::homedir_with(|key| {
-            env.var_os(key).map(std::ffi::OsStr::to_os_string)
-        }),
+        None => crate::utils::node_os::homedir(),
     }
 }
 

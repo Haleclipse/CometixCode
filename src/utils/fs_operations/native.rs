@@ -323,9 +323,6 @@ pub(super) async fn read_file_bytes(path: &Path, max_bytes: Option<f64>) -> io::
         .await
         .map_err(io::Error::other)?
 }
-pub(super) fn home_dir() -> Option<PathBuf> {
-    std::env::home_dir()
-}
 // Maps to the native node:path.normalize dependency. Preserve lexical spelling,
 // including one non-root trailing separator; this does not resolve symlinks.
 fn normalize(path: &Path) -> PathBuf {

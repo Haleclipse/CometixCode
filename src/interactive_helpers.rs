@@ -1002,12 +1002,6 @@ pub fn load_claude_md_external_includes_for_setup() -> Vec<ExternalClaudeMdInclu
     get_external_claude_md_includes(&files)
 }
 
-fn home_dir() -> Option<std::path::PathBuf> {
-    crate::utils::process_env::var_os("HOME")
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-        .map(std::path::PathBuf::from)
-}
-
 fn paths_equal(a: &Path, b: &Path) -> bool {
     let canon_a = a.canonicalize().unwrap_or_else(|_| a.to_path_buf());
     let canon_b = b.canonicalize().unwrap_or_else(|_| b.to_path_buf());
@@ -1018,7 +1012,7 @@ fn paths_equal(a: &Path, b: &Path) -> bool {
 pub fn build_trust_dialog_risk_snapshot() -> TrustDialogRiskSnapshot {
     let cwd = std::env::current_dir().unwrap_or_else(|_| Path::new(".").to_path_buf());
     let cwd_display = cwd.display().to_string();
-    let is_home_dir = home_dir().is_some_and(|home| paths_equal(&home, &cwd));
+    let is_home_dir = paths_equal(&crate::utils::node_os::homedir(), &cwd);
 
     let project_settings = get_settings_for_source(SettingSource::Project);
     let local_settings = get_settings_for_source(SettingSource::Local);

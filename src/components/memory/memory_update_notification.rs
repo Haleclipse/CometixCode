@@ -2,7 +2,7 @@
 
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 fn lexical_components(path: &Path) -> Vec<String> {
     path.components()
@@ -64,10 +64,7 @@ pub fn get_relative_memory_path_with_roots(path: &Path, home: &Path, cwd: &Path)
 
 /// Maps to: CC `getRelativeMemoryPath(path)` using process roots.
 pub fn get_relative_memory_path(path: &Path) -> String {
-    let home = crate::utils::process_env::var_os("HOME")
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_default();
+    let home = crate::utils::node_os::homedir();
     let cwd = std::env::current_dir().unwrap_or_default();
     get_relative_memory_path_with_roots(path, &home, &cwd)
 }

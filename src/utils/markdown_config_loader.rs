@@ -73,12 +73,6 @@ fn normalize_path_for_comparison(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-fn home_dir() -> Option<PathBuf> {
-    crate::utils::process_env::var_os("HOME")
-        .map(PathBuf::from)
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE").map(PathBuf::from))
-}
-
 /// Maps to: CC `utils/markdownConfigLoader.ts#getProjectDirsUpToHome`.
 /// `home_override` is a narrow environment-snapshot injection used by the
 /// source-shaped agent loader; ordinary callers pass `None`.
@@ -88,17 +82,14 @@ pub fn get_project_dirs_up_to_home(
     home_override: Option<PathBuf>,
 ) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    let home = home_override
-        .or_else(home_dir)
-        .and_then(|path| path.canonicalize().ok().or(Some(path)));
+    let home = home_override.unwrap_or_else(crate::utils::node_os::homedir);
+    let home = home.canonicalize().unwrap_or(home);
     let git_root = crate::utils::git::find_git_root(cwd);
     let mut current = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
 
     loop {
-        if let Some(home) = &home {
-            if normalize_path_for_comparison(&current) == normalize_path_for_comparison(home) {
-                break;
-            }
+        if normalize_path_for_comparison(&current) == normalize_path_for_comparison(&home) {
+            break;
         }
 
         let candidate = current.join(".claude").join(subdir);

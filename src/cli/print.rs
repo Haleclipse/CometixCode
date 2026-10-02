@@ -1121,10 +1121,8 @@ fn read_state_seed_from_control(
 ) -> Option<crate::utils::query_helpers::ReadFileStateEntry> {
     let raw_path = request.get("path")?.as_str()?;
     let observed_mtime = request.get("mtime")?.as_f64()?.floor() as u128;
-    let mut path = crate::utils::plugins::plugin_directories::expand_tilde_path(raw_path);
-    if path.is_relative() {
-        path = std::env::current_dir().ok()?.join(path);
-    }
+    // CC `print.ts:3025`: `expandPath(message.request.path)`.
+    let path = crate::utils::path::expand_path(raw_path, None).ok()?;
     let path = std::fs::canonicalize(path).ok()?;
     let metadata = std::fs::metadata(&path).ok()?;
     let disk_mtime = metadata

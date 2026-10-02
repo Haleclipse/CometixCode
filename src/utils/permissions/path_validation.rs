@@ -98,9 +98,11 @@ pub fn expand_tilde(path: &str) -> String {
         || path.starts_with("~/")
         || (cfg!(target_os = "windows") && path.starts_with("~\\"))
     {
-        if let Some(home) = home_dir() {
-            return format!("{home}{}", &path[1..]);
-        }
+        return format!(
+            "{}{}",
+            crate::utils::node_os::homedir().display(),
+            &path[1..]
+        );
     }
     path.to_string()
 }
@@ -315,10 +317,9 @@ pub fn is_dangerous_removal_path(resolved_path: &str) -> bool {
         return true;
     }
 
-    if let Some(home) = home_dir() {
-        if normalized_path == collapse_to_forward_slashes(&home) {
-            return true;
-        }
+    let home = crate::utils::node_os::homedir();
+    if normalized_path == collapse_to_forward_slashes(&home.to_string_lossy()) {
+        return true;
     }
 
     if parent_dir_string(&normalized_path).as_deref() == Some("/") {
@@ -471,10 +472,6 @@ fn parent_dir_string(path: &str) -> Option<String> {
         .map(|parent| collapse_to_forward_slashes(&parent.display().to_string()))
 }
 
-fn home_dir() -> Option<String> {
-    crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
@@ -514,8 +511,10 @@ mod tests {
         assert_eq!(get_glob_base_directory("*.txt"), ".");
         assert_eq!(get_glob_base_directory("/tmp/no-glob"), "/tmp/no-glob");
 
-        let home = home_dir().unwrap_or_else(|| "~".to_string());
-        assert_eq!(expand_tilde("~/file"), format!("{home}/file"));
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, "/home/someone");
+        assert_eq!(expand_tilde("~/file"), "/home/someone/file");
         assert_eq!(expand_tilde("~root/file"), "~root/file");
     }
 
@@ -525,9 +524,10 @@ mod tests {
         assert!(is_dangerous_removal_path("/"));
         assert!(is_dangerous_removal_path("/tmp"));
         assert!(is_dangerous_removal_path("C:\\Windows"));
-        if let Some(home) = home_dir() {
-            assert!(is_dangerous_removal_path(&home));
-        }
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, "/home/someone");
+        assert!(is_dangerous_removal_path("/home/someone"));
         assert!(!is_dangerous_removal_path("/tmp/project/file.txt"));
     }
 

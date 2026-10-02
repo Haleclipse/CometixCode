@@ -393,8 +393,7 @@ pub async fn install_bindings_for_vscode_terminal(
             "{warning}\n\n{editor_name} keybindings must be installed on your local machine, not the remote server.\n\nTo install the Shift+Enter keybinding:\n1. Open {editor_name} on your local machine (not connected to remote)\n2. Open the Command Palette (Cmd/Ctrl+Shift+P) → \"Preferences: Open Keyboard Shortcuts (JSON)\"\n3. Add this keybinding (the file must be a JSON array):\n\n{snippet}\n"
         ));
     }
-    let home =
-        std::env::home_dir().ok_or_else(|| anyhow::anyhow!("Home directory is unavailable"))?;
+    let home = crate::utils::node_os::homedir();
     let user_dir = vscode_user_dir_path_for(home, env::get().platform, editor);
     let path = user_dir.join("keybindings.json");
     let result: anyhow::Result<String> = async {
@@ -605,8 +604,7 @@ pub async fn install_bindings_for_alacritty(
     theme: crate::utils::theme::ThemeName,
 ) -> anyhow::Result<String> {
     let theme = crate::utils::theme::get_theme(theme);
-    let home =
-        std::env::home_dir().ok_or_else(|| anyhow::anyhow!("Home directory is unavailable"))?;
+    let home = crate::utils::node_os::homedir();
     let xdg = crate::utils::process_env::var_os("XDG_CONFIG_HOME")
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
@@ -700,8 +698,7 @@ pub async fn install_bindings_for_zed(
     theme: crate::utils::theme::ThemeName,
 ) -> anyhow::Result<String> {
     let theme = crate::utils::theme::get_theme(theme);
-    let home =
-        std::env::home_dir().ok_or_else(|| anyhow::anyhow!("Home directory is unavailable"))?;
+    let home = crate::utils::node_os::homedir();
     let path = zed_keymap_path_for(home);
     let result: anyhow::Result<String> = async {
         tokio::fs::create_dir_all(path.parent().expect("configuration parent")).await?;
@@ -962,10 +959,10 @@ mod tests {
     }
     // Real files below are isolated import fixtures for os.homedir/XDG, not
     // user terminal preferences. nextest gives each test its own process.
-    /// Points HOME, the XDG config root and PATH at a scratch directory. The
-    /// writes go through the carrier, which the installers read (and, on
-    /// Unix, through to the OS environment `std::env::home_dir` reads), under
-    /// the env lock. Fields drop in order: the variables are restored before
+    /// Points the home directory (`HOME`, and `USERPROFILE`/`APPDATA` for
+    /// Windows), the XDG config root and PATH at a scratch directory. The
+    /// writes go through the carrier, which the installers read, under the
+    /// env lock. Fields drop in order: the variables are restored before
     /// the lock is released.
     struct InstallerFixture {
         root: PathBuf,
@@ -981,6 +978,8 @@ mod tests {
             std::fs::create_dir_all(&root).unwrap();
             let vars = vec![
                 EnvVarGuard::set("HOME", &root),
+                EnvVarGuard::set("USERPROFILE", &root),
+                EnvVarGuard::set("APPDATA", root.join("AppData").join("Roaming")),
                 EnvVarGuard::set("XDG_CONFIG_HOME", root.join(".config")),
                 EnvVarGuard::unset("VSCODE_GIT_ASKPASS_MAIN"),
                 EnvVarGuard::set("PATH", "/usr/bin:/bin"),

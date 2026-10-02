@@ -265,7 +265,7 @@ pub fn extract_paths(command: PathCommand, args: &[String]) -> Vec<String> {
     match command {
         PathCommand::Cd => {
             if args.is_empty() {
-                home_dir_string().map_or_else(|| vec!["~".to_string()], |home| vec![home])
+                vec![crate::utils::node_os::homedir().display().to_string()]
             } else {
                 vec![args.join(" ")]
             }
@@ -1243,10 +1243,6 @@ fn passthrough(message: String) -> PermissionResult {
         blocked_path: None,
         pending_classifier_check: None,
     }
-}
-
-fn home_dir_string() -> Option<String> {
-    crate::utils::process_env::var_os("HOME").map(|home| PathBuf::from(home).display().to_string())
 }
 
 #[cfg(test)]

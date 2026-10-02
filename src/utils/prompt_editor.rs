@@ -132,7 +132,9 @@ fn unique_prompt_path() -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    std::env::temp_dir().join(format!("cometix-prompt-{}-{nanos}.md", std::process::id()))
+    // CC `promptEditor.ts:143` `generateTempFilePath()`: `join(tmpdir(), …)`.
+    crate::utils::node_os::tmpdir()
+        .join(format!("cometix-prompt-{}-{nanos}.md", std::process::id()))
 }
 
 fn editor_display_name(program: &str) -> String {

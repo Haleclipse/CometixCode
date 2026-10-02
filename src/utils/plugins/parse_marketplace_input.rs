@@ -55,10 +55,7 @@ pub async fn parse_marketplace_input(input: &str) -> Option<Value> {
         || windows
     {
         let raw = if let Some(rest) = trimmed.strip_prefix('~') {
-            format!(
-                "{}{rest}",
-                crate::utils::process_env::var("HOME").unwrap_or_default()
-            )
+            format!("{}{rest}", crate::utils::node_os::homedir().display())
         } else {
             trimmed.to_owned()
         };

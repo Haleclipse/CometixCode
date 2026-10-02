@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 const SNAPSHOT_CREATION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Maps to CC `utils/bash/ShellSnapshot.ts:181-192` `getConfigFile`.
-fn get_config_file(shell_path: &str, env: &crate::utils::process_env::EnvSnapshot) -> PathBuf {
+fn get_config_file(shell_path: &str) -> PathBuf {
     let file = if shell_path.contains("zsh") {
         ".zshrc"
     } else if shell_path.contains("bash") {
@@ -16,11 +16,7 @@ fn get_config_file(shell_path: &str, env: &crate::utils::process_env::EnvSnapsho
     } else {
         ".profile"
     };
-    env.var_os("HOME")
-        .or_else(|| env.var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(file)
+    crate::utils::node_os::homedir().join(file)
 }
 
 fn create_argv0_shell_function(
@@ -186,7 +182,7 @@ fn get_snapshot_script(
     config_exists: bool,
     env: &crate::utils::process_env::EnvSnapshot,
 ) -> String {
-    let config = get_config_file(shell_path, env);
+    let config = get_config_file(shell_path);
     let is_zsh = config.ends_with(".zshrc");
     let user = if config_exists {
         get_user_snapshot_content(&config)
@@ -262,7 +258,7 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
     } else {
         "sh"
     };
-    let config = get_config_file(bin_shell, &process_env);
+    let config = get_config_file(bin_shell);
     let snapshots_dir =
         crate::utils::env_utils::get_claude_config_home_dir_from_snapshot(&process_env)
             .join("shell-snapshots");

@@ -121,10 +121,7 @@ fn launched_from_home_directory() -> bool {
     let Ok(cwd) = std::env::current_dir() else {
         return false;
     };
-    let Some(home) = crate::utils::process_env::var_os("HOME") else {
-        return false;
-    };
-    cwd == std::path::PathBuf::from(home)
+    cwd == crate::utils::node_os::homedir()
 }
 
 #[cfg(test)]

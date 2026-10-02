@@ -69,10 +69,6 @@ pub enum FilePermissionType {
 pub type FilesystemPermissionType = FilePermissionType;
 pub type PathSafety = PathSafetyForAutoEdit;
 
-fn permission_home_dir() -> Option<String> {
-    crate::utils::process_env::var("HOME").or_else(|| crate::utils::process_env::var("USERPROFILE"))
-}
-
 fn normalize_permission_path_buf(path: impl AsRef<Path>) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.as_ref().components() {
@@ -95,11 +91,12 @@ fn normalize_permission_path(path: &str) -> String {
 
 fn expand_permission_path(path: &str) -> String {
     let expanded = if path == "~" {
-        permission_home_dir().unwrap_or_else(|| path.to_string())
+        crate::utils::node_os::homedir().display().to_string()
     } else if let Some(rest) = path.strip_prefix("~/") {
-        permission_home_dir()
-            .map(|home| PathBuf::from(home).join(rest).display().to_string())
-            .unwrap_or_else(|| path.to_string())
+        crate::utils::node_os::homedir()
+            .join(rest)
+            .display()
+            .to_string()
     } else {
         path.to_string()
     };
@@ -226,7 +223,12 @@ fn pattern_with_root(pattern: &str, source: PermissionRuleSource) -> (String, Op
         if rest.starts_with('/') {
             return (
                 rest.to_string(),
-                permission_home_dir().map(|home| home.nfc().collect::<String>()),
+                Some(
+                    crate::utils::node_os::homedir()
+                        .to_string_lossy()
+                        .nfc()
+                        .collect::<String>(),
+                ),
             );
         }
     }
@@ -843,9 +845,10 @@ pub fn is_project_dir_path(path: impl AsRef<Path>) -> bool {
     path == directory || path.starts_with(directory)
 }
 
+/// CC `filesystem.ts:334`: `getPlatform() === 'windows' ? tmpdir() : '/tmp'`.
 fn default_base_tmp_dir() -> PathBuf {
     if cfg!(target_os = "windows") {
-        std::env::temp_dir()
+        crate::utils::node_os::tmpdir()
     } else {
         PathBuf::from("/tmp")
     }
@@ -963,9 +966,7 @@ pub fn get_claude_skill_scope(file_path: &str) -> Option<(String, String)> {
             "/.claude/skills/",
         ),
         (
-            crate::utils::process_env::var_os("HOME")
-                .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-                .map(PathBuf::from)?
+            crate::utils::node_os::homedir()
                 .join(".claude")
                 .join("skills"),
             "~/.claude/skills/",

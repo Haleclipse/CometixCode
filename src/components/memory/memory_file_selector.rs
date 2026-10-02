@@ -56,12 +56,6 @@ enum MemoryFocus {
     Select,
 }
 
-fn home_dir_path() -> Option<PathBuf> {
-    crate::utils::process_env::var_os("HOME")
-        .or_else(|| crate::utils::process_env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
 fn project_is_in_git_repo(cwd: &Path) -> bool {
     cwd.ancestors().any(|dir| dir.join(".git").exists())
 }
@@ -334,20 +328,20 @@ pub fn MemoryFileSelector<'a>(
     let theme = hooks.use_context::<crate::utils::theme::Theme>();
     let cwd = crate::bootstrap::state::get_original_cwd();
     let config_home = config::get_config_home();
-    let home = home_dir_path();
+    let home = crate::utils::node_os::homedir();
     let settings = hooks
         .try_use_context::<MemoryFileSelectorSettingsOverride>()
         .map(|override_settings| override_settings.0.clone())
         .unwrap_or_else(get_initial_settings);
     let initial_auto_memory =
-        auto_memory_snapshot(&settings, &cwd, &config_home, home.as_deref(), &|key| {
+        auto_memory_snapshot(&settings, &cwd, &config_home, Some(&home), &|key| {
             crate::utils::process_env::var(key)
         });
     let resolved_auto_memory_path = crate::memdir::paths::get_auto_mem_path_with_env(
         &settings,
         &cwd,
         &config_home,
-        home.as_deref(),
+        Some(&home),
         &|key| crate::utils::process_env::var(key),
     );
     let mut auto_memory_on = hooks.use_state({

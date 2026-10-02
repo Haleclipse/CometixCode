@@ -13,12 +13,17 @@ pub struct XdgOptions {
     pub home: Option<String>,
 }
 
+/// Maps to CC `utils/xdg.ts#resolveOptions`:
+/// `options?.homedir ?? process.env.HOME ?? osHomedir()`.
 fn resolve_home(options: Option<&XdgOptions>) -> String {
     options
         .and_then(|options| options.home.clone())
         .or_else(|| crate::utils::process_env::var("HOME"))
-        .or_else(|| crate::utils::process_env::var("USERPROFILE"))
-        .unwrap_or_else(|| ".".to_string())
+        .unwrap_or_else(|| {
+            crate::utils::node_os::homedir()
+                .to_string_lossy()
+                .into_owned()
+        })
 }
 
 /// Maps to CC `utils/xdg.ts#getXDGStateHome`.
