@@ -86,12 +86,12 @@ mod tests {
     use std::process::Command;
 
     fn native_lookup_fresh_process_probe() {
-        let Ok(command) = std::env::var("COMETIX_WHICH_PROBE_COMMAND") else {
+        let Some(command) = crate::utils::process_env::var("COMETIX_WHICH_PROBE_COMMAND") else {
             return;
         };
         crate::utils::process_env::capture_startup();
-        let expected = std::env::var("COMETIX_WHICH_PROBE_RESULT").ok();
-        if let Ok(replacement) = std::env::var("COMETIX_WHICH_PROBE_REPLACE_PATH") {
+        let expected = crate::utils::process_env::var("COMETIX_WHICH_PROBE_RESULT");
+        if let Some(replacement) = crate::utils::process_env::var("COMETIX_WHICH_PROBE_REPLACE_PATH") {
             crate::utils::process_env::set("PATH", replacement);
         }
         let result = which_sync(&command).map(|p| p.to_string_lossy().into_owned());
@@ -104,7 +104,7 @@ mod tests {
 
     #[test]
     fn native_lookup_matches_official_bun_path_order_spelling_and_startup_snapshot() {
-        if std::env::var_os("COMETIX_WHICH_PROBE_COMMAND").is_some() {
+        if crate::utils::process_env::var_os("COMETIX_WHICH_PROBE_COMMAND").is_some() {
             native_lookup_fresh_process_probe();
             return;
         }

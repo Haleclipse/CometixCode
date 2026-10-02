@@ -256,7 +256,7 @@ fn pasted_contents_from_json(value: &serde_json::Value) -> BTreeMap<usize, Paste
 }
 
 fn history_write_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("COMETIX_WRITE_ENABLED").as_deref())
 }
 
 fn append_log_entry(entry: &LogEntry) -> anyhow::Result<()> {

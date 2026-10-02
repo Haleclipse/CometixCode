@@ -227,7 +227,7 @@ impl ProfileSelection {
 
     /// `COMETIX_DEBUG_PROFILES`: the same list, from the environment.
     fn from_env() -> Self {
-        Self::parse(std::env::var("COMETIX_DEBUG_PROFILES").ok().as_deref())
+        Self::parse(crate::utils::process_env::var("COMETIX_DEBUG_PROFILES").as_deref())
     }
 
     fn or(self, other: Self) -> Self {
@@ -336,7 +336,7 @@ pub fn frame_profile_enabled() -> bool {
 /// bench-only per-frame JSONL for offline analysis. The Rust twin uses the
 /// same record shape so one analysis script can consume both sides.
 pub fn frame_timing_log_path() -> Option<std::path::PathBuf> {
-    std::env::var_os("COMETIX_FRAME_TIMING_LOG")
+    crate::utils::process_env::var_os("COMETIX_FRAME_TIMING_LOG")
         .filter(|value| !value.is_empty())
         .map(std::path::PathBuf::from)
 }
@@ -349,8 +349,7 @@ pub fn frame_timing_sample_tick() -> bool {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     static EVERY: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
     let every = *EVERY.get_or_init(|| {
-        std::env::var("COMETIX_FRAME_TIMING_SAMPLE_EVERY")
-            .ok()
+        crate::utils::process_env::var("COMETIX_FRAME_TIMING_SAMPLE_EVERY")
             .and_then(|value| value.parse::<u64>().ok())
             .filter(|&value| value >= 1)
             .unwrap_or(1)

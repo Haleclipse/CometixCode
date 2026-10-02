@@ -79,7 +79,7 @@ pub fn on_change_app_state(new: &AppState, old: &AppState) {
         // Settings persistence respects COMETIX_WRITE_ENABLED like
         // save_global_config.
         if crate::utils::env_utils::is_env_truthy(
-            std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref(),
+            crate::utils::process_env::var("COMETIX_WRITE_ENABLED").as_deref(),
         ) {
             let mut updates = serde_json::Map::new();
             match &new.main_loop_model {

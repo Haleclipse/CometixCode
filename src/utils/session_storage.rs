@@ -143,13 +143,13 @@ impl Project {
         #[cfg(test)]
         {
             !crate::utils::env_utils::is_env_truthy(
-                std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_WRITE_ENABLED").as_deref(),
             )
         }
         #[cfg(not(test))]
         {
             crate::utils::env_utils::is_env_defined_falsy(
-                std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref(),
+                crate::utils::process_env::var("COMETIX_WRITE_ENABLED").as_deref(),
             )
         }
     }

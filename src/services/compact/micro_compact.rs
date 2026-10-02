@@ -121,17 +121,17 @@ pub struct MicrocompactResult {
 pub fn cached_microcompact_config_from_env() -> CachedMicrocompactConfig {
     let mut config = CachedMicrocompactConfig::default();
     config.enabled = crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_CACHED_MICROCOMPACT").ok().as_deref(),
+        crate::utils::process_env::var("COMETIX_CACHED_MICROCOMPACT").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CODE_CACHED_MICROCOMPACT")
             .as_deref(),
     );
-    if let Ok(value) = std::env::var("COMETIX_CACHED_MC_TRIGGER_THRESHOLD") {
+    if let Some(value) = crate::utils::process_env::var("COMETIX_CACHED_MC_TRIGGER_THRESHOLD") {
         if let Ok(parsed) = value.parse::<usize>() {
             config.trigger_threshold = parsed.max(1);
         }
     }
-    if let Ok(value) = std::env::var("COMETIX_CACHED_MC_KEEP_RECENT") {
+    if let Some(value) = crate::utils::process_env::var("COMETIX_CACHED_MC_KEEP_RECENT") {
         if let Ok(parsed) = value.parse::<usize>() {
             config.keep_recent = parsed.max(1);
         }

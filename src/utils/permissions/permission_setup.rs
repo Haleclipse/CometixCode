@@ -513,8 +513,7 @@ pub fn is_transcript_classifier_feature_enabled() -> bool {
     crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::TranscriptClassifier,
     ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_TRANSCRIPT_CLASSIFIER")
-            .ok()
+        crate::utils::process_env::var("COMETIX_TRANSCRIPT_CLASSIFIER")
             .as_deref(),
     )
 }

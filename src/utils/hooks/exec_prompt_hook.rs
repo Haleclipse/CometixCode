@@ -58,7 +58,7 @@ pub type PromptHookExecutor = Arc<
 >;
 
 fn small_fast_model() -> String {
-    std::env::var("COMETIX_SMALL_FAST_MODEL").unwrap_or_else(|_| "claude-3-5-haiku-latest".into())
+    crate::utils::process_env::var("COMETIX_SMALL_FAST_MODEL").unwrap_or_else(|| "claude-3-5-haiku-latest".into())
 }
 
 fn assistant_text_content(message: &AssistantMessage) -> String {

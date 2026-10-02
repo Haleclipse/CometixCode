@@ -24,7 +24,7 @@ pub struct ContextCollapseOverflowRecovery {
 /// Maps to: CC `services/contextCollapse/index.ts` `isContextCollapseEnabled()`.
 pub fn is_context_collapse_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_CONTEXT_COLLAPSE").ok().as_deref(),
+        crate::utils::process_env::var("COMETIX_CONTEXT_COLLAPSE").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CODE_CONTEXT_COLLAPSE")
             .as_deref(),

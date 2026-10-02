@@ -220,7 +220,7 @@ static ORIGINAL_CWD: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
     // CLAUDE_CONFIG_DIR.
 
     #[cfg(test)]
-    if let Ok(pinned) = std::env::var("COMETIX_TEST_PROJECT_DIR") {
+    if let Some(pinned) = crate::utils::process_env::var("COMETIX_TEST_PROJECT_DIR") {
         if !pinned.is_empty() {
             let pinned = PathBuf::from(pinned);
             return RwLock::new(PathBuf::from(
@@ -712,15 +712,10 @@ pub fn get_is_non_interactive_session() -> bool {
 /// input, as in CC.
 #[cfg(test)]
 fn non_interactive_env_override() -> bool {
-    crate::utils::env_utils::is_env_truthy(
-        std::env::var("CLAUDE_CODE_NON_INTERACTIVE").ok().as_deref(),
-    ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_NON_INTERACTIVE").ok().as_deref(),
-    ) || crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_NON_INTERACTIVE_SESSION")
-            .ok()
-            .as_deref(),
-    )
+    // The tests write these through the carrier, so the seam reads it too.
+    ["CLAUDE_CODE_NON_INTERACTIVE", "COMETIX_NON_INTERACTIVE", "COMETIX_NON_INTERACTIVE_SESSION"]
+        .into_iter()
+        .any(|key| crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref()))
 }
 
 #[cfg(not(test))]

@@ -52,7 +52,7 @@ fn maybe_skip_disk_io_in_tests() -> bool {
     #[cfg(test)]
     {
         !crate::utils::env_utils::is_env_truthy(
-            std::env::var("COMETIX_TEST_TEAM_FILE_IO").ok().as_deref(),
+            crate::utils::process_env::var("COMETIX_TEST_TEAM_FILE_IO").as_deref(),
         )
     }
     #[cfg(not(test))]

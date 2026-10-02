@@ -1746,7 +1746,7 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
 
     // Slot-reservation cap: drop default to 8k for all models
     let is_cap_enabled = crate::utils::env_utils::is_env_truthy(
-        std::env::var("COMETIX_MAX_TOKENS_CAP").ok().as_deref(),
+        crate::utils::process_env::var("COMETIX_MAX_TOKENS_CAP").as_deref(),
     );
     let default_tokens = if is_cap_enabled {
         max_output.default.min(CAPPED_DEFAULT_MAX_TOKENS)

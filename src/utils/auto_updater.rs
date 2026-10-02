@@ -91,8 +91,7 @@ impl ReleaseChannel {
 /// Gate for real npm/GCS/native download. Always off until facilities exist;
 /// opt-in env reserved for future wiring (stubs still return empty).
 pub fn auto_updater_network_enabled() -> bool {
-    std::env::var("COMETIX_AUTO_UPDATER_NETWORK")
-        .ok()
+    crate::utils::process_env::var("COMETIX_AUTO_UPDATER_NETWORK")
         .is_some_and(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
 }
 
@@ -107,8 +106,7 @@ pub(crate) fn is_test_or_dev_env() -> bool {
     cfg!(test)
         || crate::utils::process_env::var("NODE_ENV")
             .is_some_and(|v| matches!(v.as_str(), "test" | "development"))
-        || std::env::var("COMETIX_ENV")
-            .ok()
+        || crate::utils::process_env::var("COMETIX_ENV")
             .is_some_and(|v| matches!(v.as_str(), "test" | "development"))
 }
 

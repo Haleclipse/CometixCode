@@ -289,17 +289,16 @@ pub fn get_vertex_region_for_model(model: Option<&str>) -> String {
 /// Repository-wide mutation gate, independent of transcript persistence.
 /// Production writes unless explicitly disabled; tests must explicitly opt in.
 ///
-/// Rust-only; it moves to its callers with the other `COMETIX_*` reads in C5.
-/// Until then it reads the OS environment, which `use_log_messages.rs`'s
-/// tests write directly (environment redesign §11).
+/// Rust-only, and so not part of CC's `envUtils.ts`; moving it out of this
+/// file is a later cleanup (environment redesign §12).
 pub fn is_cometix_write_enabled() -> bool {
     #[cfg(test)]
     {
-        is_env_truthy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+        is_env_truthy(crate::utils::process_env::var("COMETIX_WRITE_ENABLED").as_deref())
     }
     #[cfg(not(test))]
     {
-        !is_env_defined_falsy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+        !is_env_defined_falsy(crate::utils::process_env::var("COMETIX_WRITE_ENABLED").as_deref())
     }
 }
 

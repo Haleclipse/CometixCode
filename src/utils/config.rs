@@ -1789,7 +1789,7 @@ pub fn record_first_start_time() {
 }
 
 pub fn is_config_write_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(std::env::var("COMETIX_WRITE_ENABLED").ok().as_deref())
+    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("COMETIX_WRITE_ENABLED").as_deref())
 }
 
 fn is_write_enabled() -> bool {

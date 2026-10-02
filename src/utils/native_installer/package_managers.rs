@@ -64,9 +64,9 @@ impl PackageManager {
 /// Detection seam (see module docs): reads `COMETIX_PACKAGE_MANAGER` instead
 /// of running CC's spawn-based detector chain.
 pub async fn get_package_manager() -> PackageManager {
-    match std::env::var("COMETIX_PACKAGE_MANAGER") {
-        Ok(value) => PackageManager::from_value(&value),
-        Err(_) => PackageManager::Unknown,
+    match crate::utils::process_env::var("COMETIX_PACKAGE_MANAGER") {
+        Some(value) => PackageManager::from_value(&value),
+        None => PackageManager::Unknown,
     }
 }
 

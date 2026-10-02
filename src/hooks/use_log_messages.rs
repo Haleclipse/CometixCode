@@ -224,10 +224,7 @@ mod tests {
         use crate::utils::session_storage as storage;
         use futures::StreamExt;
         let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let previous_write = std::env::var_os("COMETIX_WRITE_ENABLED");
-        unsafe {
-            std::env::set_var("COMETIX_WRITE_ENABLED", "1");
-        }
+        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let fixture = std::env::current_dir()
             .unwrap()
             .join("target")
@@ -370,11 +367,5 @@ mod tests {
         crate::bootstrap::state::switch_session(previous_id, previous_dir);
         storage::clear_session_metadata();
         std::fs::remove_dir_all(fixture).unwrap();
-        unsafe {
-            match previous_write {
-                Some(value) => std::env::set_var("COMETIX_WRITE_ENABLED", value),
-                None => std::env::remove_var("COMETIX_WRITE_ENABLED"),
-            }
-        }
     }
 }
