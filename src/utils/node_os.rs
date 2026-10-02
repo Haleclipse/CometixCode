@@ -5,9 +5,10 @@
 //! Neither is its Rust standard library counterpart. Both read `process.env`,
 //! which here is the carrier, while the standard library reads the OS
 //! environment. `std::env::home_dir()` also skips an empty `HOME`, which Node
-//! returns. `std::env::temp_dir()` ignores `TMP` and `TEMP`, returns an empty
-//! `TMPDIR` as is, keeps a trailing slash, and on macOS falls back to the
-//! per-user `/var/folders/…/T/` instead of `/tmp`.
+//! returns, and gives `None` where Node throws. `std::env::temp_dir()` ignores
+//! `TMP` and `TEMP`, returns an empty `TMPDIR` as is, keeps a trailing slash,
+//! and on macOS falls back to the per-user `/var/folders/…/T/` instead of
+//! `/tmp`.
 
 use std::path::PathBuf;
 
@@ -21,20 +22,38 @@ use crate::utils::process_env::{self, EnvSnapshot, JsTruthy};
 /// The account lookup is the standard library's, reached because a variable
 /// missing from the carrier is missing from the OS environment too: the
 /// carrier starts from it, and CC never removes `HOME` or `USERPROFILE`.
-/// Residuals: the standard library looks up the real user (`getuid`), libuv
-/// the effective one (`geteuid`). Node throws where the lookup fails, and on
-/// Windows for a `USERPROFILE` shorter than three characters; this returns an
-/// empty path and the variable as is.
+/// Residuals of that lookup: the standard library asks for the real user
+/// (`getuid`), libuv for the effective one (`geteuid`); it makes one
+/// `getpwuid_r` call, where libuv grows the buffer on `ERANGE` and retries on
+/// `EINTR`, so a large passwd entry fails here and not in Node.
+///
+/// # Panics
+///
+/// With Node's message, where Node throws `uv_os_homedir returned ENOENT`:
+/// the variable is unset and the account lookup fails, or on Windows
+/// `USERPROFILE` is shorter than three bytes. Nothing catches it on the
+/// path where CC first calls `os.homedir()` (env-paths, at import), so CC
+/// fails at startup; the startup window forces `cache_paths::CACHE_ROOT`, so
+/// for the startup environment this fails there too, before any UI. Not
+/// ported: Node's `ENOBUFS` for a value longer than its buffer, and the errno
+/// it reports for other lookup errors.
 pub fn homedir() -> PathBuf {
-    homedir_in(&process_env::snapshot())
+    homedir_in(&process_env::snapshot()).unwrap_or_else(|| {
+        panic!("A system error occurred: uv_os_homedir returned ENOENT (no such file or directory)")
+    })
 }
 
-fn homedir_in(env: &EnvSnapshot) -> PathBuf {
-    let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-    env.var_os(key)
+fn homedir_in(env: &EnvSnapshot) -> Option<PathBuf> {
+    if cfg!(windows) {
+        return match env.var_os("USERPROFILE") {
+            Some(dir) if dir.len() < 3 => None,
+            Some(dir) => Some(PathBuf::from(dir)),
+            None => std::env::home_dir(),
+        };
+    }
+    env.var_os("HOME")
         .map(PathBuf::from)
         .or_else(std::env::home_dir)
-        .unwrap_or_default()
 }
 
 /// Maps to: Node `lib/os.js` `tmpdir()`. Reads the current environment, as
@@ -96,12 +115,12 @@ mod tests {
             |pairs: &[(&str, &str)]| homedir_in(&EnvSnapshot::from_pairs(pairs.iter().copied()));
         assert_eq!(
             home(&[("HOME", "/home/someone"), ("USERPROFILE", "/elsewhere")]),
-            PathBuf::from("/home/someone")
+            Some(PathBuf::from("/home/someone"))
         );
-        assert_eq!(home(&[("HOME", "")]), PathBuf::new());
+        assert_eq!(home(&[("HOME", "")]), Some(PathBuf::new()));
         assert_ne!(
             home(&[("USERPROFILE", "/elsewhere")]),
-            PathBuf::from("/elsewhere")
+            Some(PathBuf::from("/elsewhere"))
         );
     }
 
