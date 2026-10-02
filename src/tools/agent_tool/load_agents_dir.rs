@@ -303,9 +303,11 @@ pub fn get_agent_definitions_with_overrides_for_audience(
 
     let managed_dir = managed_agent_dir_for_audience(get_env, audience);
     let user_dir = config_home_from_env(get_env).join("agents");
-    let project_home = get_env("HOME")
-        .or_else(|| get_env("USERPROFILE"))
-        .map(PathBuf::from);
+    // The variable `homedir()` reads, from the injected environment; unset or
+    // empty, `get_project_dirs_up_to_home` calls `homedir()` itself.
+    use crate::utils::process_env::JsTruthy as _;
+    let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    let project_home = get_env(home_key).truthy().map(PathBuf::from);
     let project_dirs = crate::utils::markdown_config_loader::get_project_dirs_up_to_home(
         "agents",
         cwd,
@@ -1096,6 +1098,38 @@ mod tests {
         }
         let mut file = fs::File::create(path).expect("create file");
         file.write_all(content.as_bytes()).expect("write file");
+    }
+
+    /// CC `markdownConfigLoader.ts:238` stops the project walk at
+    /// `homedir()`, which takes an empty home variable as unset: an empty
+    /// injected value leaves the walk to `homedir()`, here the carrier's.
+    #[test]
+    fn empty_injected_home_stops_the_project_walk_at_homedir() {
+        let root = temp_dir("empty-home");
+        let home = root.join("home");
+        let cwd = home.join("project");
+        let agent = |name: &str| format!("---\nname: {name}\ndescription: d\n---\nBody");
+        write_file(&cwd.join(".claude/agents/inside.md"), &agent("inside"));
+        write_file(&root.join(".claude/agents/above.md"), &agent("above"));
+
+        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let home_key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+        let _home = crate::utils::env_utils::EnvVarGuard::set(home_key, &home);
+        let config_home = root.join("config");
+        let result = get_agent_definitions_with_overrides_from_env(&cwd, &|key| match key {
+            "CLAUDE_CONFIG_DIR" => Some(config_home.display().to_string()),
+            "HOME" | "USERPROFILE" => Some(String::new()),
+            _ => None,
+        });
+
+        let names = result
+            .active_agents
+            .iter()
+            .map(|agent| agent.agent_type.as_str())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"inside"), "{names:?}");
+        assert!(!names.contains(&"above"), "{names:?}");
+        let _ = fs::remove_dir_all(root);
     }
 
     /// CC `loadAgentsDir.ts:624-626` markdown effort is the LENIENT

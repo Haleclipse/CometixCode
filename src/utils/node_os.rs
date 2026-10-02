@@ -4,39 +4,35 @@
 //!
 //! Neither is its Rust standard library counterpart. Both read `process.env`,
 //! which here is the carrier, while the standard library reads the OS
-//! environment. `std::env::home_dir()` also skips an empty `HOME`, which Node
-//! returns, and gives `None` where Node throws. `std::env::temp_dir()` ignores
-//! `TMP` and `TEMP`, returns an empty `TMPDIR` as is, keeps a trailing slash,
-//! and on macOS falls back to the per-user `/var/folders/…/T/` instead of
-//! `/tmp`.
+//! environment. `std::env::home_dir()` also gives `None` where Node throws,
+//! and on Unix looks up the real user (`getuid`) with a single call.
+//! `std::env::temp_dir()` ignores `TMP` and `TEMP`, returns an empty `TMPDIR`
+//! as is, keeps a trailing slash, and on macOS falls back to the per-user
+//! `/var/folders/…/T/` instead of `/tmp`.
 
 use std::path::PathBuf;
 
 use crate::utils::process_env::{self, EnvSnapshot, JsTruthy};
 
-/// Maps to: Node `lib/os.js` `homedir()`, libuv `uv_os_homedir`: `HOME`
-/// (Windows: `USERPROFILE`) whenever it is set, an empty string included;
-/// otherwise the account's home directory. Reads the current environment, as
-/// libuv's `getenv` sees `process.env` writes.
-///
-/// The account lookup is the standard library's, reached because a variable
-/// missing from the carrier is missing from the OS environment too: the
-/// carrier starts from it, and CC never removes `HOME` or `USERPROFILE`.
-/// Residuals of that lookup: the standard library asks for the real user
-/// (`getuid`), libuv for the effective one (`geteuid`); it makes one
-/// `getpwuid_r` call, where libuv grows the buffer on `ERANGE` and retries on
-/// `EINTR`, so a large passwd entry fails here and not in Node.
+/// Maps to: `os.homedir()` as CC's native build runs it on Unix (Bun,
+/// `src/runtime/node/node_os.rs`), and as Node and Bun both run it on Windows
+/// (libuv `uv_os_homedir`): `HOME` (Windows: `USERPROFILE`) when set, else the
+/// account's home directory. On Unix an empty `HOME` counts as unset, as in
+/// Bun, where Node returns it, and a value of any length is returned, where
+/// Node's buffer throws `ENOBUFS`. The environment is the current one, as
+/// Node's `getenv` sees `process.env` writes; Bun reads `HOME` as the process
+/// started.
 ///
 /// # Panics
 ///
-/// With Node's message, where Node throws `uv_os_homedir returned ENOENT`:
-/// the variable is unset and the account lookup fails, or on Windows
-/// `USERPROFILE` is shorter than three bytes. Nothing catches it on the
-/// path where CC first calls `os.homedir()` (env-paths, at import), so CC
-/// fails at startup; the startup window forces `cache_paths::CACHE_ROOT`, so
-/// for the startup environment this fails there too, before any UI. Not
-/// ported: Node's `ENOBUFS` for a value longer than its buffer, and the errno
-/// it reports for other lookup errors.
+/// With Node's message, where Node and Bun throw `uv_os_homedir returned
+/// ENOENT`: the variable is unset (Unix: or empty) and the account lookup
+/// fails, or on Windows `USERPROFILE` is shorter than three bytes. Nothing
+/// catches it on the path where CC first calls `os.homedir()` (env-paths, at
+/// import), so CC fails at startup; the startup window forces
+/// `cache_paths::CACHE_ROOT`, so for the startup environment this fails there
+/// too, before any UI. Not ported: the errno both report for other lookup
+/// errors, and Node's `ENOBUFS` on Windows.
 pub fn homedir() -> PathBuf {
     homedir_in(&process_env::snapshot()).unwrap_or_else(|| {
         panic!("A system error occurred: uv_os_homedir returned ENOENT (no such file or directory)")
@@ -45,15 +41,82 @@ pub fn homedir() -> PathBuf {
 
 fn homedir_in(env: &EnvSnapshot) -> Option<PathBuf> {
     if cfg!(windows) {
+        // libuv's, which Bun calls on Windows too: a `USERPROFILE` shorter
+        // than three bytes is an error, not a reason to fall back.
         return match env.var_os("USERPROFILE") {
             Some(dir) if dir.len() < 3 => None,
             Some(dir) => Some(PathBuf::from(dir)),
-            None => std::env::home_dir(),
+            None => account_home_dir(),
         };
     }
     env.var_os("HOME")
+        .truthy()
         .map(PathBuf::from)
-        .or_else(std::env::home_dir)
+        .or_else(account_home_dir)
+}
+
+/// The effective user's home directory, as libuv's `uv__getpwuid_r` looks it
+/// up: `getpwuid_r(geteuid())` from a 2000-byte buffer, doubled on `ERANGE`
+/// and retried on `EINTR`. Bun does the same from 4096 bytes. A null
+/// `pw_dir`, which Bun returns as an empty string, counts as a failed lookup
+/// here, so it never becomes a relative home directory.
+#[cfg(unix)]
+fn account_home_dir() -> Option<PathBuf> {
+    account_home_dir_from(2000)
+}
+
+/// [`account_home_dir`] from a given buffer size, which tests set small to
+/// take the `ERANGE` path.
+#[cfg(unix)]
+fn account_home_dir_from(initial_size: usize) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt as _;
+    let mut size = initial_size.max(1);
+    loop {
+        let mut passwd = std::mem::MaybeUninit::<libc::passwd>::uninit();
+        let mut result = std::ptr::null_mut();
+        let mut buffer = vec![0 as libc::c_char; size];
+        let status = loop {
+            // SAFETY: `passwd` and `buffer` remain alive for the call, and
+            // `result` is read only after it returns.
+            let status = unsafe {
+                libc::getpwuid_r(
+                    libc::geteuid(),
+                    passwd.as_mut_ptr(),
+                    buffer.as_mut_ptr(),
+                    buffer.len(),
+                    &mut result,
+                )
+            };
+            if status != libc::EINTR {
+                break status;
+            }
+        };
+        if status == libc::ERANGE {
+            size *= 2;
+            continue;
+        }
+        if status != 0 || result.is_null() {
+            return None;
+        }
+        // SAFETY: a successful lookup points `result` at `passwd`, whose
+        // `pw_dir`, when not null, is a NUL-terminated string in `buffer`.
+        let dir = unsafe { (*result).pw_dir };
+        if dir.is_null() {
+            return None;
+        }
+        // SAFETY: as above.
+        let dir = unsafe { std::ffi::CStr::from_ptr(dir) };
+        return Some(PathBuf::from(std::ffi::OsStr::from_bytes(dir.to_bytes())));
+    }
+}
+
+/// libuv's Windows lookup is `GetUserProfileDirectoryW` for the process
+/// token, which the standard library's fallback calls. It reads the OS
+/// `USERPROFILE` first, which is absent here: the carrier starts from the OS
+/// environment, lacks it, and CC never removes it.
+#[cfg(windows)]
+fn account_home_dir() -> Option<PathBuf> {
+    std::env::home_dir()
 }
 
 /// Maps to: Node `lib/os.js` `tmpdir()`. Reads the current environment, as
@@ -87,12 +150,13 @@ fn tmpdir_in(env: &EnvSnapshot) -> PathBuf {
     let Some(dir) = var("TMPDIR").or_else(|| var("TMP")).or_else(|| var("TEMP")) else {
         return PathBuf::from("/tmp");
     };
-    let bytes = dir.as_encoded_bytes();
-    if bytes.len() > 1 && bytes.ends_with(b"/") {
-        // SAFETY: dropping a trailing ASCII byte keeps the encoding valid.
-        return PathBuf::from(unsafe {
-            std::ffi::OsStr::from_encoded_bytes_unchecked(&bytes[..bytes.len() - 1])
-        });
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt as _;
+        let bytes = dir.as_bytes();
+        if bytes.len() > 1 && bytes.ends_with(b"/") {
+            return PathBuf::from(std::ffi::OsStr::from_bytes(&bytes[..bytes.len() - 1]));
+        }
     }
     PathBuf::from(dir)
 }
@@ -107,21 +171,25 @@ mod tests {
         tmpdir_in(&EnvSnapshot::from_pairs(pairs.iter().copied()))
     }
 
-    /// Node v24 on macOS: `HOME` whenever set, an empty one included, and
-    /// never `USERPROFILE`.
+    /// Bun on macOS: `HOME` when set and non-empty, never `USERPROFILE`;
+    /// otherwise the effective user's passwd entry.
     #[test]
-    fn homedir_takes_home_even_when_empty() {
+    fn homedir_takes_a_non_empty_home_else_the_account() {
         let home =
             |pairs: &[(&str, &str)]| homedir_in(&EnvSnapshot::from_pairs(pairs.iter().copied()));
         assert_eq!(
             home(&[("HOME", "/home/someone"), ("USERPROFILE", "/elsewhere")]),
             Some(PathBuf::from("/home/someone"))
         );
-        assert_eq!(home(&[("HOME", "")]), Some(PathBuf::new()));
-        assert_ne!(
-            home(&[("USERPROFILE", "/elsewhere")]),
-            Some(PathBuf::from("/elsewhere"))
-        );
+        assert_eq!(home(&[("HOME", "")]), account_home_dir());
+        assert_eq!(home(&[("USERPROFILE", "/elsewhere")]), account_home_dir());
+    }
+
+    /// libuv's `ERANGE` loop: a buffer too small for the entry doubles until
+    /// it fits, and the answer is the one a large first buffer gets.
+    #[test]
+    fn account_lookup_grows_a_small_buffer() {
+        assert_eq!(account_home_dir_from(1), account_home_dir_from(1 << 16));
     }
 
     /// Node v24 on macOS: TMPDIR, then TMP, then TEMP, each only when
