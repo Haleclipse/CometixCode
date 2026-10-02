@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(config.iterm2_it2_setup_complete, Some(true));
         assert_eq!(config.prefer_tmux_over_iterm2, Some(true));
 
-        let raw = std::fs::read_to_string(crate::utils::config::get_global_config_path()).unwrap();
+        let raw = std::fs::read_to_string(crate::utils::env::get_global_claude_file()).unwrap();
         assert!(raw.contains("iterm2It2SetupComplete"));
         assert!(raw.contains("preferTmuxOverIterm2"));
     }

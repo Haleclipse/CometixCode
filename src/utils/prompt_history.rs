@@ -75,7 +75,7 @@ struct LogEntry {
 }
 
 pub fn history_file_path() -> PathBuf {
-    config::get_config_home().join("history.jsonl")
+    crate::utils::env_utils::get_claude_config_home_dir().join("history.jsonl")
 }
 
 /// Maps to: `addToHistory(command)`.

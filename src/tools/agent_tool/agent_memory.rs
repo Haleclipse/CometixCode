@@ -174,7 +174,7 @@ fn get_memory_base_dir() -> PathBuf {
     crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
         .truthy()
         .map(PathBuf::from)
-        .unwrap_or_else(crate::utils::config::get_config_home)
+        .unwrap_or_else(crate::utils::env_utils::get_claude_config_home_dir)
 }
 
 #[cfg(test)]

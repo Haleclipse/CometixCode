@@ -4,7 +4,6 @@ use crate::components::messages::user_tool_result_message::utils::{
     ToolRenderLine, ToolRenderSegment, ToolRenderTone,
 };
 use crate::types::message::{ReadResultKind, ToolResultStatus};
-use crate::utils::config;
 use crate::utils::file::get_display_path;
 use crate::utils::format::format_file_size;
 use std::path::{Path, PathBuf};
@@ -144,7 +143,7 @@ fn javascript_truthy(value: &serde_json::Value) -> bool {
 
 /// Maps to: CC `tools/FileReadTool/UI.tsx#userFacingName`.
 pub fn user_facing_name(input: Option<&serde_json::Value>) -> String {
-    user_facing_name_for_config_home(input, config::get_config_home())
+    user_facing_name_for_config_home(input, crate::utils::env_utils::get_claude_config_home_dir())
 }
 
 /// Maps to: CC `tools/FileReadTool/UI.tsx#getToolUseSummary` (:177-188).

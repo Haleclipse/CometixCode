@@ -19,7 +19,7 @@ use crate::utils::format::format_relative_time_ago_millis;
 use crate::utils::settings::{
     SettingSource, SettingsJson, get_initial_settings, update_settings_for_source,
 };
-use crate::utils::{browser::open_path, config, file::get_display_path};
+use crate::utils::{browser::open_path, file::get_display_path};
 use iocraft::prelude::*;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -327,7 +327,7 @@ pub fn MemoryFileSelector<'a>(
 ) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<crate::utils::theme::Theme>();
     let cwd = crate::bootstrap::state::get_original_cwd();
-    let config_home = config::get_config_home();
+    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
     let home = crate::utils::node_os::homedir();
     let settings = hooks
         .try_use_context::<MemoryFileSelectorSettingsOverride>()
@@ -839,7 +839,7 @@ mod tests {
         assert!(text.contains("Auto-dream: on"), "canvas=\n{text}");
         let options = memory_select_options(
             &crate::bootstrap::state::get_original_cwd(),
-            &config::get_config_home(),
+            &crate::utils::env_utils::get_claude_config_home_dir(),
             &discover_claude_md_files(),
             Some(Path::new("/tmp/cometix-auto-memory")),
         );
@@ -870,7 +870,7 @@ mod tests {
         assert!(text.contains("User memory"), "canvas=\n{text}");
         let options = memory_select_options(
             &crate::bootstrap::state::get_original_cwd(),
-            &config::get_config_home(),
+            &crate::utils::env_utils::get_claude_config_home_dir(),
             &discover_claude_md_files(),
             None,
         );

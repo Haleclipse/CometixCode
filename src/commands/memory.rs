@@ -39,7 +39,7 @@ pub fn MemoryCommandPanel<'a>(
     hooks.use_future(async move {
         while let Ok(memory_path) = editor_receiver.recv().await {
             let result = async {
-                let config_home = crate::utils::config::get_config_home();
+                let config_home = crate::utils::env_utils::get_claude_config_home_dir();
                 if memory_path.starts_with(&config_home) {
                     std::fs::create_dir_all(&config_home).map_err(|error| error.to_string())?;
                 }

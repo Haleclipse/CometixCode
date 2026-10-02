@@ -132,21 +132,8 @@ pub fn is_project_config_key(key: &str) -> bool {
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
-/// CC `getClaudeConfigHomeDir` under its old Rust name; the one
-/// implementation is [`crate::utils::env_utils::get_claude_config_home_dir`].
-/// The 46 callers move to that name in a later cleanup.
-pub fn get_config_home() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir()
-}
-
-/// CC `getGlobalClaudeFile` under its old Rust name; the one implementation
-/// is [`crate::utils::env::get_global_claude_file`].
-pub fn get_global_config_path() -> PathBuf {
-    crate::utils::env::get_global_claude_file()
-}
-
 pub fn get_config_backup_dir() -> PathBuf {
-    get_config_home().join("backups")
+    crate::utils::env_utils::get_claude_config_home_dir().join("backups")
 }
 
 pub fn normalize_project_path(path: &str) -> String {
@@ -163,7 +150,7 @@ fn get_project_path_for_config() -> PathBuf {
 /// Maps to CC `utils/config.ts#getMemoryPath`.
 pub fn get_memory_path(memory_type: &str) -> PathBuf {
     match memory_type {
-        "User" | "user" => get_config_home().join("CLAUDE.md"),
+        "User" | "user" => crate::utils::env_utils::get_claude_config_home_dir().join("CLAUDE.md"),
         "Local" | "local" => crate::bootstrap::state::get_original_cwd().join("CLAUDE.local.md"),
         "Managed" | "managed" => {
             crate::utils::settings::managed_path::get_managed_file_path().join("CLAUDE.md")
@@ -188,7 +175,7 @@ pub fn get_managed_claude_rules_dir() -> PathBuf {
 }
 
 pub fn get_user_claude_rules_dir() -> PathBuf {
-    get_config_home().join("rules")
+    crate::utils::env_utils::get_claude_config_home_dir().join("rules")
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1330,7 +1317,7 @@ fn start_global_config_freshness_watcher() {
         return;
     }
 
-    let path = get_global_config_path();
+    let path = crate::utils::env::get_global_claude_file();
     let _ = thread::Builder::new()
         .name("cometix-global-config-freshness".to_string())
         .spawn(move || {
@@ -1572,7 +1559,7 @@ pub fn load_global_config() -> GlobalConfig {
             return config;
         }
     }
-    let path = get_global_config_path();
+    let path = crate::utils::env::get_global_claude_file();
 
     // Claude Code keeps the normal read path as a pure memory hit after the
     // startup load. A background freshness watcher refreshes external writes.
@@ -1612,7 +1599,7 @@ pub fn load_global_config() -> GlobalConfig {
 }
 
 pub fn enable_configs() -> anyhow::Result<()> {
-    let path = get_global_config_path();
+    let path = crate::utils::env::get_global_claude_file();
     if path.exists() {
         let config = read_global_config_value(&path).and_then(load_global_config_from_value)?;
         write_through_global_config_cache(&path, config);
@@ -1642,7 +1629,7 @@ pub fn save_global_config(updater: impl FnOnce(&mut GlobalConfig)) -> anyhow::Re
         return Ok(());
     }
 
-    let path = get_global_config_path();
+    let path = crate::utils::env::get_global_claude_file();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1752,7 +1739,7 @@ fn pin_created_user_id(user_id: &str) {
         return;
     }
     config.user_id = Some(user_id.to_string());
-    write_through_global_config_cache(&get_global_config_path(), config);
+    write_through_global_config_cache(&crate::utils::env::get_global_claude_file(), config);
 }
 
 pub fn record_first_start_time() {
@@ -1844,7 +1831,7 @@ pub fn get_remote_control_at_startup() -> bool {
 
 pub fn find_most_recent_backup() -> Option<PathBuf> {
     let backup_dir = get_config_backup_dir();
-    let global_config_file_name = get_global_config_path()
+    let global_config_file_name = crate::utils::env::get_global_claude_file()
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(".claude.json")
@@ -2291,7 +2278,7 @@ mod tests {
             "bad":{"type":"http","url":"u","oauth":null},
             "nullArgs":{"command":"g","args":null,"env":null,"type":null}
         });
-        let file = get_global_config_path();
+        let file = crate::utils::env::get_global_claude_file();
         let project_key = normalize_project_path(&get_project_path_for_config().to_string_lossy());
         let initial = serde_json::json!({"mcpServers":raw,"projects":{project_key.clone():{"mcpServers":raw}}});
         fs::write(&file, initial.to_string()).unwrap();

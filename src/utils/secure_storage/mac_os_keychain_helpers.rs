@@ -14,7 +14,7 @@ pub(crate) const CREDENTIALS_SERVICE_SUFFIX: &str = "-credentials";
 pub(crate) fn get_mac_os_keychain_storage_service_name(
     service_suffix: &str,
 ) -> anyhow::Result<String> {
-    let config_dir = crate::utils::config::get_config_home();
+    let config_dir = crate::utils::env_utils::get_claude_config_home_dir();
     let dir_hash = if crate::utils::process_env::var_os("CLAUDE_CONFIG_DIR")
         .as_deref()
         .truthy()

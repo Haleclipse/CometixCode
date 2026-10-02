@@ -288,7 +288,7 @@ mod tests {
         );
         mark_terminal_setup_complete().unwrap();
         let config: Value = serde_json::from_slice(
-            &std::fs::read(super::super::config::get_global_config_path()).unwrap(),
+            &std::fs::read(crate::utils::env::get_global_claude_file()).unwrap(),
         )
         .unwrap();
         // CC utils/appleTerminalBackup.ts:7-20 clears only the progress flag;

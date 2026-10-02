@@ -83,7 +83,7 @@ pub fn get_skills_path(source: SkillsPathSource, dir: &str) -> PathBuf {
                 .join(dir)
         }
         SkillsPathSource::Setting(SettingSource::User) => {
-            crate::utils::config::get_config_home().join(dir)
+            crate::utils::env_utils::get_claude_config_home_dir().join(dir)
         }
         SkillsPathSource::Setting(SettingSource::Project) => {
             PathBuf::from(format!(".claude/{dir}"))
@@ -456,7 +456,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
         }
 
         if user_enabled {
-            let user = crate::utils::config::get_config_home().join("skills");
+            let user = crate::utils::env_utils::get_claude_config_home_dir().join("skills");
             if user.is_dir() {
                 skill_dirs.push(SkillDir {
                     path: user,
@@ -499,7 +499,8 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
                 });
             }
             if user_enabled {
-                let user_commands = crate::utils::config::get_config_home().join("commands");
+                let user_commands =
+                    crate::utils::env_utils::get_claude_config_home_dir().join("commands");
                 if user_commands.is_dir() {
                     legacy_command_dirs.push(SkillDir {
                         path: user_commands,

@@ -93,7 +93,7 @@ pub fn get_stats_cache_path() -> PathBuf {
     {
         return path;
     }
-    crate::utils::config::get_config_home().join(STATS_CACHE_FILENAME)
+    crate::utils::env_utils::get_claude_config_home_dir().join(STATS_CACHE_FILENAME)
 }
 
 pub fn with_stats_cache_lock<T>(callback: impl FnOnce() -> T) -> T {

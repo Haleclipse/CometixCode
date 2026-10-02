@@ -163,7 +163,7 @@ pub fn is_keybinding_customization_enabled() -> bool {
 
 /// Maps to: CC `getKeybindingsPath()`.
 pub fn get_keybindings_path() -> PathBuf {
-    crate::utils::config::get_config_home().join("keybindings.json")
+    crate::utils::env_utils::get_claude_config_home_dir().join("keybindings.json")
 }
 
 fn parse_error(

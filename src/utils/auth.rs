@@ -1516,7 +1516,7 @@ mod tests {
         crate::utils::config::set_test_global_config(Some(GlobalConfig::default()));
         // This case asserts the NOT-a-subscriber outcome, so it has to own that
         // premise: `is_claude_ai_subscriber` falls back to `.credentials.json`
-        // under `get_config_home()`, and the test harness seeds a logged-in
+        // under `get_claude_config_home_dir()`, and the test harness seeds a logged-in
         // identity there. Point the config home at an empty scratch dir for the
         // duration instead of relying on the developer being logged out.
         let scratch_home = std::env::temp_dir().join(format!(

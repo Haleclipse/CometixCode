@@ -67,7 +67,6 @@
 //! CC's synchronous rename/materialize/cleanup helpers are serialized by that
 //! same owner before writing inline.
 
-use crate::utils::config;
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -719,7 +718,7 @@ pub fn get_projects_dir() -> PathBuf {
         }
     }
 
-    config::get_config_home().join("projects")
+    crate::utils::env_utils::get_claude_config_home_dir().join("projects")
 }
 
 /// Maps to: CC `sessionStoragePortable.ts` `sanitizePath(name)`.

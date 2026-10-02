@@ -69,7 +69,7 @@ pub fn AgentDetail<'a>(
     }
 
     let cwd = crate::bootstrap::state::get_original_cwd();
-    let config_home = crate::utils::config::get_config_home();
+    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
     let path = get_actual_relative_agent_file_path(&agent, &cwd, &config_home);
     let available = props
         .available_tool_names

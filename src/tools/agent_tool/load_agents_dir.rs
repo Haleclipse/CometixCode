@@ -1787,8 +1787,8 @@ mod tests {
 
     /// Pins `CLAUDE_CONFIG_DIR`/`CLAUDE_CODE_REMOTE_MEMORY_DIR` in the real
     /// process env, not just in the `get_env` closure: user-scope
-    /// `get_agent_memory_dir` resolves through `utils::config::get_config_home`
-    /// (`agent_memory.rs:41`, `:170-174`), which reads `std::env` directly. Without
+    /// `get_agent_memory_dir` resolves through `env_utils::get_claude_config_home_dir`
+    /// (`agent_memory.rs:41`, `:170-174`), which reads the carrier. Without
     /// this the snapshot copy would land in whatever config home the run inherited.
     struct SnapshotEnv {
         _config_dir: crate::utils::env_utils::EnvVarGuard,

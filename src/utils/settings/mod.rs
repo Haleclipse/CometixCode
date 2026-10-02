@@ -43,8 +43,6 @@ use managed_path::{get_managed_file_path, get_managed_settings_drop_in_dir};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::utils::config;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ManagedFileSettingsPresence {
     pub has_base: bool,
@@ -58,7 +56,7 @@ pub struct ManagedFileSettingsPresence {
 /// Maps to: CC `utils/settings/settings.ts#getSettingsRootPathForSource`.
 pub(crate) fn get_settings_root_path_for_source(source: SettingSource) -> PathBuf {
     match source {
-        SettingSource::User => config::get_config_home(),
+        SettingSource::User => crate::utils::env_utils::get_claude_config_home_dir(),
         SettingSource::Project | SettingSource::Local | SettingSource::Policy => {
             crate::bootstrap::state::get_original_cwd()
         }

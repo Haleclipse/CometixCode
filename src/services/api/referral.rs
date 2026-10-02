@@ -170,7 +170,7 @@ pub fn guest_passes_snapshot_from_readonly_config(
 ///
 /// It used to take a `get_env` the body never read: `is_claude_ai_subscriber`
 /// and `get_subscription_type` resolve from process state (ultimately
-/// `.credentials.json` under `get_config_home()`), exactly as at the source.
+/// `.credentials.json` under `get_claude_config_home_dir()`), exactly as at the source.
 /// The parameter made callers look like they could steer the result, which is
 /// how a test came to assert the no-subscription outcome while silently
 /// depending on whichever account the developer was logged into. Removed rather
@@ -258,7 +258,7 @@ mod tests {
 
         // Asserting the NO-subscription outcome means owning that premise: the
         // subscription lookup falls back to `.credentials.json` under
-        // `get_config_home()`, where the harness seeds a logged-in identity.
+        // `get_claude_config_home_dir()`, where the harness seeds a logged-in identity.
         // The sibling test below does the same thing in reverse (it writes a
         // max-subscriber file); this one needs the directory empty.
         let dir = std::env::temp_dir().join(format!(

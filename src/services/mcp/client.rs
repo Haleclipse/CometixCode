@@ -2083,7 +2083,7 @@ mod runtime {
 
     fn mcp_auth_cache_path() -> PathBuf {
         // Maps to: CC `getMcpAuthCachePath()`.
-        crate::utils::config::get_config_home().join("mcp-needs-auth-cache.json")
+        crate::utils::env_utils::get_claude_config_home_dir().join("mcp-needs-auth-cache.json")
     }
 
     fn remote_transport_uses_auth_cache(transport: Transport) -> bool {

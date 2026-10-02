@@ -1211,7 +1211,7 @@ mod tests {
         use_real_global_config_file();
         let _writes = EnvRestore::set("COMETIX_WRITE_ENABLED", "1");
 
-        let path = crate::utils::config::get_global_config_path();
+        let path = crate::utils::env::get_global_claude_file();
         assert!(
             !path.exists(),
             "fixture starts without a global config file"

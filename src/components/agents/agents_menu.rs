@@ -91,7 +91,7 @@ pub fn AgentsMenu<'a>(
         match delete_agent_from_file(
             &agent,
             &crate::bootstrap::state::get_original_cwd(),
-            &crate::utils::config::get_config_home(),
+            &crate::utils::env_utils::get_claude_config_home_dir(),
         ) {
             Ok(()) => {
                 let next = all_agents

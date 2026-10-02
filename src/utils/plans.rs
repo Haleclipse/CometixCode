@@ -130,7 +130,7 @@ pub fn get_plans_directory_with_settings(settings: &SettingsJson) -> PathBuf {
         )));
     }
 
-    ensure_plans_directory(crate::utils::config::get_config_home().join("plans"))
+    ensure_plans_directory(crate::utils::env_utils::get_claude_config_home_dir().join("plans"))
 }
 
 /// Maps to: CC `plans.ts:103-108` — `getPlansDirectory` itself owns the
@@ -571,7 +571,7 @@ mod tests {
         settings.plans_directory = Some("../outside".to_string());
         assert_eq!(
             get_plans_directory_with_settings(&settings),
-            crate::utils::config::get_config_home().join("plans")
+            crate::utils::env_utils::get_claude_config_home_dir().join("plans")
         );
     }
     #[test]

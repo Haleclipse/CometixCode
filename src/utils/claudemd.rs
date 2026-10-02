@@ -196,7 +196,7 @@ pub fn discover_claude_md_files_with_external_policy(
     let mut files = Vec::new();
     let mut processed = HashSet::new();
     let cwd = std::env::current_dir().unwrap_or_default();
-    let config_home = config::get_config_home();
+    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
     let global_config = config::load_global_config();
     let project_key = config::normalize_project_path(&cwd.to_string_lossy());
     let include_project_external = force_include_external

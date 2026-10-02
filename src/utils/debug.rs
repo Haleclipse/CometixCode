@@ -73,7 +73,7 @@ pub fn get_debug_log_path() -> PathBuf {
         return PathBuf::from(dir)
             .join(format!("{}.log", crate::bootstrap::state::get_session_id()));
     }
-    crate::utils::config::get_config_home()
+    crate::utils::env_utils::get_claude_config_home_dir()
         .join("debug")
         .join(format!("{}.log", crate::bootstrap::state::get_session_id()))
 }

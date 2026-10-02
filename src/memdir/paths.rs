@@ -85,7 +85,7 @@ pub(crate) fn settings_with_trusted_auto_memory_directory(
 /// Maps to CC `memdir/paths.ts` `getAutoMemPath()`.
 pub fn get_auto_mem_path(settings: &SettingsJson) -> PathBuf {
     let cwd = crate::bootstrap::state::get_original_cwd();
-    let config_home = crate::utils::config::get_config_home();
+    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
     let home = crate::utils::node_os::homedir();
     get_auto_mem_path_with_env(settings, &cwd, &config_home, Some(&home), &|key| {
         crate::utils::process_env::var(key)
@@ -133,9 +133,10 @@ pub fn get_auto_mem_path_with_env(
 
 /// Maps to CC `memdir/paths.ts` `getMemoryBaseDir()`.
 pub fn get_memory_base_dir() -> PathBuf {
-    memory_base_dir(&crate::utils::config::get_config_home(), &|key| {
-        crate::utils::process_env::var(key)
-    })
+    memory_base_dir(
+        &crate::utils::env_utils::get_claude_config_home_dir(),
+        &|key| crate::utils::process_env::var(key),
+    )
 }
 
 fn memory_base_dir(config_home: &Path, get_env: &impl Fn(&str) -> Option<String>) -> PathBuf {

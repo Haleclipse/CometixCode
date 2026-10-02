@@ -94,7 +94,7 @@ pub fn AgentEditor<'a>(
             "open" => match get_actual_agent_file_path(
                 &agent,
                 &crate::bootstrap::state::get_original_cwd(),
-                &crate::utils::config::get_config_home(),
+                &crate::utils::env_utils::get_claude_config_home_dir(),
             ) {
                 Ok(path) => {
                     let _ = editor_channel.0.try_send(path);
@@ -129,7 +129,7 @@ pub fn AgentEditor<'a>(
             agent.memory,
             agent.effort.as_ref(),
             &crate::bootstrap::state::get_original_cwd(),
-            &crate::utils::config::get_config_home(),
+            &crate::utils::env_utils::get_claude_config_home_dir(),
         );
         mode.set(EditMode::Menu);
         match result {

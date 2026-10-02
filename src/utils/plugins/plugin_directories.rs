@@ -30,7 +30,7 @@ pub fn get_plugins_directory() -> PathBuf {
     if let Some(path) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR").truthy() {
         return expand_tilde_path(&path);
     }
-    crate::utils::config::get_config_home().join(get_plugins_directory_name())
+    crate::utils::env_utils::get_claude_config_home_dir().join(get_plugins_directory_name())
 }
 
 /// Maps to CC `pluginDirectories.ts#getPluginSeedDirs`.
@@ -167,7 +167,7 @@ mod tests {
         crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", "");
         assert_eq!(
             get_plugins_directory(),
-            crate::utils::config::get_config_home().join(PLUGINS_DIR)
+            crate::utils::env_utils::get_claude_config_home_dir().join(PLUGINS_DIR)
         );
 
         crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_CACHE_DIR");

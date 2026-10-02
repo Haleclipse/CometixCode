@@ -204,7 +204,7 @@ pub fn load_markdown_files_for_subdir(
     let (managed_dir, user_dir, mut project_dirs) = injected_roots.unwrap_or_else(|| {
         (
             get_managed_file_path().join(".claude").join(subdir),
-            crate::utils::config::get_config_home().join(subdir),
+            crate::utils::env_utils::get_claude_config_home_dir().join(subdir),
             get_project_dirs_up_to_home(subdir, cwd, None),
         )
     });

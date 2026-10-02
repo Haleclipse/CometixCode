@@ -7,7 +7,7 @@ pub(crate) struct PlainTextStorage;
 
 /// Maps to: CC `utils/secureStorage/plainTextStorage.ts:10-14` `getStoragePath`.
 fn get_storage_path() -> (PathBuf, PathBuf) {
-    let storage_dir = crate::utils::config::get_config_home();
+    let storage_dir = crate::utils::env_utils::get_claude_config_home_dir();
     let storage_path = storage_dir.join(".credentials.json");
     (storage_dir, storage_path)
 }
