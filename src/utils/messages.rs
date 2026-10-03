@@ -271,7 +271,7 @@ const MEMORY_CORRECTION_HINT: &str = "\n\nNote: The user's next message may cont
 /// carries CC's own fallback (`false`). Cometix does not implement GrowthBook
 /// delivery; see `utils/feature_flags.rs`.
 pub fn with_memory_correction_hint(message: &str) -> String {
-    if crate::memdir::paths::is_auto_memory_enabled(&crate::utils::settings::get_initial_settings())
+    if crate::memdir::paths::is_auto_memory_enabled()
         && crate::utils::feature_flags::feature_enabled(
             crate::utils::feature_flags::FeatureFlag::MemoryCorrectionHint,
         )

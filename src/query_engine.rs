@@ -1433,7 +1433,7 @@ fn resolve_system_prompt(
     let memory_mechanics_prompt = if custom.is_some()
         && crate::memdir::paths::has_auto_mem_path_override()
     {
-        crate::memdir::memdir::load_memory_prompt(&crate::utils::settings::get_initial_settings())
+        crate::memdir::memdir::load_memory_prompt()
     } else {
         None
     };

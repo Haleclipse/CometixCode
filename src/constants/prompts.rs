@@ -114,7 +114,7 @@ pub fn get_system_prompt_with_settings(
         system_prompt_section("session_guidance", || {
             get_session_specific_guidance_section(&enabled_tools, &skill_tool_commands)
         }),
-        system_prompt_section("memory", || get_memory_prompt_section(settings)),
+        system_prompt_section("memory", get_memory_prompt_section),
         system_prompt_section("ant_model_override", get_ant_model_override_section),
         // Maps to CC `prompts.ts:499-501` `computeSimpleEnvInfo(model,
         // additionalWorkingDirectories)`.
@@ -456,10 +456,8 @@ fn get_agent_tool_section() -> String {
 }
 
 /// Maps to CC `constants/prompts.ts` dynamic `systemPromptSection('memory', ...)`.
-fn get_memory_prompt_section(
-    settings: &crate::utils::settings::types::SettingsJson,
-) -> Option<String> {
-    crate::memdir::memdir::load_memory_prompt(settings)
+fn get_memory_prompt_section() -> Option<String> {
+    crate::memdir::memdir::load_memory_prompt()
 }
 
 /// Maps to CC `constants/prompts.ts` `getAntModelOverrideSection()`.

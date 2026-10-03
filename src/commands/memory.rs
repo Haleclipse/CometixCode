@@ -129,24 +129,23 @@ pub fn MemoryCommandPanel<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::memory::memory_file_selector::MemoryFileSelectorSettingsOverride;
+    use crate::utils::env_utils::TEST_ENV_LOCK;
     use crate::utils::settings::SettingsJson;
     use crate::utils::theme;
 
-    fn settings_override() -> MemoryFileSelectorSettingsOverride {
-        MemoryFileSelectorSettingsOverride(SettingsJson {
-            auto_memory_enabled: Some(false),
-            ..SettingsJson::default()
-        })
-    }
-
     #[test]
     fn memory_command_matches_official_dialog_selector_and_docs_boundaries() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        crate::memdir::paths::seed_settings(
+            SettingsJson {
+                auto_memory_enabled: Some(false),
+                ..SettingsJson::default()
+            },
+            None,
+        );
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
-                ContextProvider(value: Context::owned(settings_override())) {
-                    MemoryCommandPanel
-                }
+                MemoryCommandPanel
             }
         }
         .render(Some(100))

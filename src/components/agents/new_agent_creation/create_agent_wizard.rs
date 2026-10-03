@@ -23,12 +23,7 @@ pub fn CreateAgentWizard<'a>(
     props: &mut CreateAgentWizardProps<'a>,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
-    let auto_memory =
-        hooks.use_const(|| {
-            crate::memdir::paths::is_auto_memory_enabled(
-                &crate::utils::settings::get_initial_settings(),
-            )
-        });
+    let auto_memory = hooks.use_const(crate::memdir::paths::is_auto_memory_enabled);
     let completion_channel = hooks.use_const(|| Arc::new(async_channel::unbounded::<String>()));
     let receiver = completion_channel.1.clone();
     let mut pending_complete = hooks.use_state(|| None::<String>);

@@ -85,17 +85,12 @@ fn sanitize_path_key(key: &str) -> Result<&str, PathTraversalError> {
     Ok(key)
 }
 
-fn merged_settings() -> crate::utils::settings::types::SettingsJson {
-    crate::utils::settings::get_initial_settings()
-}
-
 /// Maps to CC `isTeamMemoryEnabled()`.
 ///
 /// Cometix resolves the `tengu_herring_clock` cohort from the source-controlled
 /// switch table instead of GrowthBook.
 pub fn is_team_memory_enabled() -> bool {
-    let settings = merged_settings();
-    if !crate::memdir::paths::is_auto_memory_enabled(&settings) {
+    if !crate::memdir::paths::is_auto_memory_enabled() {
         return false;
     }
     crate::utils::feature_flags::feature_enabled(
@@ -105,7 +100,7 @@ pub fn is_team_memory_enabled() -> bool {
 
 /// Maps to CC `getTeamMemPath()`.
 pub fn get_team_mem_path() -> PathBuf {
-    let path = crate::memdir::paths::get_auto_mem_path_from_trusted_sources().join("team");
+    let path = crate::memdir::paths::get_auto_mem_path().join("team");
     PathBuf::from(path.to_string_lossy().nfc().collect::<String>())
 }
 

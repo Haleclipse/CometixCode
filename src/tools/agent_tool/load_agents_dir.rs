@@ -161,8 +161,7 @@ impl AgentDefinition {
         let mut prompt = self.system_prompt.clone()?;
         if self.source != AgentDefinitionSource::BuiltIn {
             if let Some(memory) = self.memory {
-                let settings = crate::utils::settings::get_initial_settings();
-                if crate::memdir::paths::is_auto_memory_enabled(&settings) {
+                if crate::memdir::paths::is_auto_memory_enabled() {
                     prompt.push_str("\n\n");
                     prompt.push_str(&super::agent_memory::load_agent_memory_prompt(
                         &self.agent_type,
@@ -347,7 +346,7 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
     // `snapshot.json` read per user-scope agent and change nothing.
     if crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::AgentMemorySnapshot,
-    ) && is_auto_memory_enabled_for_agents()
+    ) && crate::memdir::paths::is_auto_memory_enabled()
     {
         initialize_agent_memory_snapshots(&mut custom_agents, cwd);
     }
@@ -631,7 +630,10 @@ pub fn parse_agent_from_json(
     agent.memory = memory;
     // CC :453-458: inject memory tools only when memory is set AND tools were
     // explicitly declared (`tools !== undefined`).
-    if agent.memory.is_some() && agent.tools.is_some() && is_auto_memory_enabled_for_agents() {
+    if agent.memory.is_some()
+        && agent.tools.is_some()
+        && crate::memdir::paths::is_auto_memory_enabled()
+    {
         inject_agent_memory_tools(&mut agent.tools);
     }
     agent.isolation = isolation;
@@ -796,7 +798,7 @@ fn parse_agent_from_markdown(
         .get("memory")
         .and_then(serde_json::Value::as_str)
         .and_then(parse_agent_memory_scope);
-    if agent.memory.is_some() && is_auto_memory_enabled_for_agents() {
+    if agent.memory.is_some() && crate::memdir::paths::is_auto_memory_enabled() {
         inject_agent_memory_tools(&mut agent.tools);
     }
     // CC :687-690: trim is only the emptiness TEST — the ORIGINAL untrimmed
@@ -985,11 +987,6 @@ fn parse_agent_memory_scope(value: &str) -> Option<AgentMemoryScope> {
         "local" => Some(AgentMemoryScope::Local),
         _ => None,
     }
-}
-
-fn is_auto_memory_enabled_for_agents() -> bool {
-    let settings = crate::utils::settings::get_initial_settings();
-    crate::memdir::paths::is_auto_memory_enabled(&settings)
 }
 
 /// Maps to CC `loadAgentsDir.ts` memory-enabled tool injection for

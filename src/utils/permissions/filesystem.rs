@@ -624,7 +624,7 @@ pub(crate) fn check_editable_internal_path(
         });
     }
     if !crate::memdir::paths::has_auto_mem_path_override()
-        && crate::memdir::paths::is_auto_mem_path_from_trusted_sources(&normalized)
+        && crate::memdir::paths::is_auto_mem_path(&normalized)
     {
         return Some(PermissionDecisionReason::Other {
             reason: "auto memory files are allowed for writing".to_string(),
@@ -698,7 +698,7 @@ pub(crate) fn check_readable_internal_path(
             reason: "Agent memory files are allowed for reading".to_string(),
         });
     }
-    if crate::memdir::paths::is_auto_mem_path_from_trusted_sources(&normalized) {
+    if crate::memdir::paths::is_auto_mem_path(&normalized) {
         return Some(PermissionDecisionReason::Other {
             reason: "auto memory files are allowed for reading".to_string(),
         });

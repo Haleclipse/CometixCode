@@ -16,9 +16,7 @@ use crate::utils::claudemd::{
     ClaudeMdFile, ClaudeMdKind, ClaudeMdSource, discover_claude_md_files,
 };
 use crate::utils::format::format_relative_time_ago_millis;
-use crate::utils::settings::{
-    SettingSource, SettingsJson, get_initial_settings, update_settings_for_source,
-};
+use crate::utils::settings::{SettingSource, get_initial_settings, update_settings_for_source};
 use crate::utils::{browser::open_path, file::get_display_path};
 use iocraft::prelude::*;
 use std::collections::HashSet;
@@ -30,11 +28,6 @@ const VISIBLE_MEMORY_OPTION_COUNT: usize = 5;
 pub const OPEN_FOLDER_PREFIX: &str = "__open_folder__";
 
 static LAST_SELECTED_PATH: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
-
-/// Deterministic settings seam for component tests. Production reads merged
-/// settings on each render, matching the official subscription after writes.
-#[derive(Clone, Debug, Default)]
-pub struct MemoryFileSelectorSettingsOverride(pub SettingsJson);
 
 /// Live AppState task projection for the official dream-running status.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -75,26 +68,16 @@ struct AutoMemorySnapshot {
     path: Option<PathBuf>,
 }
 
-fn auto_memory_snapshot(
-    settings: &SettingsJson,
-    cwd: &Path,
-    config_home: &Path,
-    home: Option<&Path>,
-    get_env: &impl Fn(&str) -> Option<String>,
-) -> AutoMemorySnapshot {
-    let enabled = crate::memdir::paths::is_auto_memory_enabled_with_env(settings, get_env);
+/// The initial toggle values of CC `MemoryFileSelector.tsx:206-212`
+/// (`useState(isAutoMemoryEnabled)` and the dream toggle). The folder row of
+/// `:166-170`, which CC reads on every render, is `resolved_auto_memory_path`
+/// gated on the live toggle in the component.
+fn auto_memory_snapshot() -> AutoMemorySnapshot {
+    let enabled = crate::memdir::paths::is_auto_memory_enabled();
     AutoMemorySnapshot {
         enabled,
-        dream_enabled: enabled && settings.auto_dream_enabled.unwrap_or(false),
-        path: enabled.then(|| {
-            crate::memdir::paths::get_auto_mem_path_with_env(
-                settings,
-                cwd,
-                config_home,
-                home,
-                get_env,
-            )
-        }),
+        dream_enabled: enabled && get_initial_settings().auto_dream_enabled.unwrap_or(false),
+        path: enabled.then(crate::memdir::paths::get_auto_mem_path),
     }
 }
 
@@ -328,22 +311,8 @@ pub fn MemoryFileSelector<'a>(
     let theme = hooks.use_context::<crate::utils::theme::Theme>();
     let cwd = crate::bootstrap::state::get_original_cwd();
     let config_home = crate::utils::env_utils::get_claude_config_home_dir();
-    let home = crate::utils::node_os::homedir();
-    let settings = hooks
-        .try_use_context::<MemoryFileSelectorSettingsOverride>()
-        .map(|override_settings| override_settings.0.clone())
-        .unwrap_or_else(get_initial_settings);
-    let initial_auto_memory =
-        auto_memory_snapshot(&settings, &cwd, &config_home, Some(&home), &|key| {
-            crate::utils::process_env::var(key)
-        });
-    let resolved_auto_memory_path = crate::memdir::paths::get_auto_mem_path_with_env(
-        &settings,
-        &cwd,
-        &config_home,
-        Some(&home),
-        &|key| crate::utils::process_env::var(key),
-    );
+    let initial_auto_memory = auto_memory_snapshot();
+    let resolved_auto_memory_path = crate::memdir::paths::get_auto_mem_path();
     let mut auto_memory_on = hooks.use_state({
         let enabled = initial_auto_memory.enabled;
         move || enabled
@@ -589,6 +558,8 @@ pub fn MemoryFileSelector<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::settings::SettingsJson;
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};
@@ -618,21 +589,22 @@ mod tests {
     fn render_memory_canvas_after(events: Vec<TerminalEvent>) -> (Canvas, usize) {
         let mut settings = SettingsJson::default();
         settings.auto_memory_enabled = Some(false);
-        render_memory_canvas_after_with_settings(events, settings)
+        render_memory_canvas_after_with_settings(events, settings, None)
     }
 
-    fn settings_override(settings: SettingsJson) -> MemoryFileSelectorSettingsOverride {
-        MemoryFileSelectorSettingsOverride(settings)
-    }
-
+    /// Renders with `settings` as `getInitialSettings()` and `user` as the
+    /// user source's settings (where `getAutoMemPath` finds a trusted
+    /// `autoMemoryDirectory`).
     fn render_memory_canvas_after_with_settings(
         events: Vec<TerminalEvent>,
         settings: SettingsJson,
+        user: Option<SettingsJson>,
     ) -> (Canvas, usize) {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        crate::memdir::paths::seed_settings(settings, user);
         let close_count = Arc::new(Mutex::new(0usize));
         let close_for_handler = Arc::clone(&close_count);
         let current_theme = *theme::current();
-        let settings_override = settings_override(settings);
 
         let canvases = futures::executor::block_on(async move {
             let mut app = element! {
@@ -640,13 +612,11 @@ mod tests {
                     crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
                 )) {
                     ContextProvider(value: Context::owned(current_theme)) {
-                        ContextProvider(value: Context::owned(settings_override)) {
-                            MemoryFileSelector(
-                                on_cancel: move |_| {
-                                    *close_for_handler.lock().expect("close mutex") += 1;
-                                },
-                            )
-                        }
+                        MemoryFileSelector(
+                            on_cancel: move |_| {
+                                *close_for_handler.lock().expect("close mutex") += 1;
+                            },
+                        )
                     }
                 }
             };
@@ -761,66 +731,58 @@ mod tests {
 
     #[test]
     fn auto_memory_snapshot_matches_official_readonly_env_and_settings_gates() {
-        let cwd = PathBuf::from("/tmp/project");
-        let config_home = PathBuf::from("/tmp/cometix-claude-config");
-        let home = PathBuf::from("/tmp");
-        let mut settings = SettingsJson {
-            auto_memory_enabled: Some(false),
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _env = [
+            "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+            "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
+            "CLAUDE_CODE_SIMPLE",
+            "CLAUDE_CODE_REMOTE",
+            "CLAUDE_CODE_REMOTE_MEMORY_DIR",
+        ]
+        .map(EnvVarGuard::unset);
+        let _home = EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, "/tmp");
+        let user = Some(SettingsJson {
             auto_memory_directory: Some("~/memory-dir".to_string()),
+            ..Default::default()
+        });
+        let with_auto_memory = |enabled: bool| SettingsJson {
+            auto_memory_enabled: Some(enabled),
             auto_dream_enabled: Some(true),
             ..Default::default()
         };
-        let no_env = |_: &str| None::<String>;
 
-        let disabled = auto_memory_snapshot(&settings, &cwd, &config_home, Some(&home), &no_env);
+        crate::memdir::paths::seed_settings(with_auto_memory(false), user.clone());
+        let disabled = auto_memory_snapshot();
         assert_eq!(disabled.enabled, false);
         assert_eq!(disabled.dream_enabled, false);
         assert_eq!(disabled.path, None);
 
-        settings.auto_memory_enabled = Some(true);
-        let enabled = auto_memory_snapshot(&settings, &cwd, &config_home, Some(&home), &no_env);
+        crate::memdir::paths::seed_settings(with_auto_memory(true), user.clone());
+        let enabled = auto_memory_snapshot();
         assert_eq!(enabled.enabled, true);
         assert_eq!(enabled.dream_enabled, true);
         assert_eq!(enabled.path, Some(PathBuf::from("/tmp/memory-dir")));
+        {
+            let _env = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "true");
+            assert!(!auto_memory_snapshot().enabled);
+        }
 
-        let disabled_by_env =
-            |key: &str| (key == "CLAUDE_CODE_DISABLE_AUTO_MEMORY").then(|| "true".to_string());
-        assert!(
-            !auto_memory_snapshot(&settings, &cwd, &config_home, Some(&home), &disabled_by_env,)
-                .enabled
-        );
+        crate::memdir::paths::seed_settings(with_auto_memory(false), user.clone());
+        {
+            let _env = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+            assert!(auto_memory_snapshot().enabled);
+        }
 
-        settings.auto_memory_enabled = Some(false);
-        let forced_on_by_env =
-            |key: &str| (key == "CLAUDE_CODE_DISABLE_AUTO_MEMORY").then(|| "false".to_string());
-        assert!(
-            auto_memory_snapshot(
-                &settings,
-                &cwd,
-                &config_home,
-                Some(&home),
-                &forced_on_by_env,
-            )
-            .enabled
-        );
-
-        let bare_mode = |key: &str| (key == "CLAUDE_CODE_SIMPLE").then(|| "1".to_string());
-        assert!(
-            !auto_memory_snapshot(&settings, &cwd, &config_home, Some(&home), &bare_mode).enabled
-        );
-
-        let remote_without_memory =
-            |key: &str| (key == "CLAUDE_CODE_REMOTE").then(|| "1".to_string());
-        assert!(
-            !auto_memory_snapshot(
-                &settings,
-                &cwd,
-                &config_home,
-                Some(&home),
-                &remote_without_memory,
-            )
-            .enabled
-        );
+        // With settings on, only the environment gates can turn it off.
+        crate::memdir::paths::seed_settings(with_auto_memory(true), user);
+        {
+            let _env = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+            assert!(!auto_memory_snapshot().enabled);
+        }
+        {
+            let _env = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
+            assert!(!auto_memory_snapshot().enabled);
+        }
     }
 
     #[test]
@@ -828,10 +790,14 @@ mod tests {
         let settings = SettingsJson {
             auto_memory_enabled: Some(true),
             auto_dream_enabled: Some(true),
+            ..Default::default()
+        };
+        let user = SettingsJson {
             auto_memory_directory: Some("/tmp/cometix-auto-memory".to_string()),
             ..Default::default()
         };
-        let (canvas, close_count) = render_memory_canvas_after_with_settings(Vec::new(), settings);
+        let (canvas, close_count) =
+            render_memory_canvas_after_with_settings(Vec::new(), settings, Some(user));
         let text = canvas_lines(&canvas).join("\n");
 
         assert_eq!(close_count, 0);

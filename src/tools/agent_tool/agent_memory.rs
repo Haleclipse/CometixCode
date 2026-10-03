@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::memdir::paths::get_memory_base_dir;
 use crate::utils::process_env::JsTruthy;
 
 /// Maps to CC `agentMemory.ts#AgentMemoryScope`.
@@ -168,13 +169,6 @@ fn get_local_agent_memory_dir(dir_name: &str, cwd: &Path) -> PathBuf {
     cwd.join(".claude")
         .join("agent-memory-local")
         .join(dir_name)
-}
-
-fn get_memory_base_dir() -> PathBuf {
-    crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
-        .truthy()
-        .map(PathBuf::from)
-        .unwrap_or_else(crate::utils::env_utils::get_claude_config_home_dir)
 }
 
 #[cfg(test)]

@@ -299,10 +299,9 @@ pub fn discover_claude_md_files_with_external_policy(
             }
         }
 
-        let settings = crate::utils::settings::get_initial_settings();
-        if crate::memdir::paths::is_auto_memory_enabled(&settings) {
+        if crate::memdir::paths::is_auto_memory_enabled() {
             process_memory_file_with_kind(
-                &crate::memdir::paths::get_auto_mem_entrypoint_from_trusted_sources(),
+                &crate::memdir::paths::get_auto_mem_entrypoint(),
                 ClaudeMdSource::UserGlobal,
                 ClaudeMdKind::AutoMem,
                 true,

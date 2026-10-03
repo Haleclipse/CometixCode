@@ -155,9 +155,7 @@ pub fn get_memory_path(memory_type: &str) -> PathBuf {
         "Managed" | "managed" => {
             crate::utils::settings::managed_path::get_managed_file_path().join("CLAUDE.md")
         }
-        "AutoMem" | "autoMem" | "automem" => {
-            crate::memdir::paths::get_auto_mem_entrypoint_from_trusted_sources()
-        }
+        "AutoMem" | "autoMem" | "automem" => crate::memdir::paths::get_auto_mem_entrypoint(),
         "Project" | "project" => crate::bootstrap::state::get_original_cwd().join("CLAUDE.md"),
         // `TeamMem` only joins `MemoryType` under CC's `feature('TEAMMEM')`
         // (`utils/memory/types.ts:9`); the provider itself is unconditional.

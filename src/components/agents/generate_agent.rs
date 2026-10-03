@@ -280,9 +280,7 @@ where
 pub fn production_agent_generator_runtime() -> AgentGeneratorRuntime {
     AgentGeneratorRuntime::new_abortable(|prompt, _cancellation| {
         Box::pin(async move {
-            let auto_memory_enabled = crate::memdir::paths::is_auto_memory_enabled(
-                &crate::utils::settings::get_initial_settings(),
-            );
+            let auto_memory_enabled = crate::memdir::paths::is_auto_memory_enabled();
             generate_agent_with_backend(
                 &prompt,
                 &[],
