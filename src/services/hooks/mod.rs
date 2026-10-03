@@ -523,7 +523,6 @@ pub struct HookContext {
     pub session_id: String,
     pub transcript_path: String,
     pub cwd: String,
-    pub project_dir: String,
     pub permission_mode: Option<String>,
     pub agent_id: Option<String>,
     pub agent_type: Option<String>,
@@ -550,9 +549,9 @@ pub struct HookContext {
 /// `workspace` object (`components/StatusLine.tsx:118-122`), and
 /// `claude_code_version` belongs to the SDK `system.init` message
 /// (`utils/messages/systemInit.ts:74`, `coreSchemas.ts:1464`) — neither is a
-/// hook input field. `HookContext.project_dir` still feeds `CLAUDE_PROJECT_DIR`
-/// on the env rail ([`build_hook_env_vars`]), which is where CC puts it
-/// (`utils/hooks.ts` `execCommandHook` env).
+/// hook input field. CC puts the project dir on the env rail instead, as
+/// `CLAUDE_PROJECT_DIR`, which `exec::exec_command_hook` sets for every hook
+/// (`utils/hooks.ts:816,882-885`).
 ///
 /// Deviation (carrier): CC's `sessionId ?? getSessionId()` (`:315`),
 /// `getTranscriptPathForSession(resolvedSessionId)` (`:322`) and `getCwd()`
@@ -650,30 +649,6 @@ pub fn create_base_hook_input_object(
     object
 }
 
-/// Build CC-standard environment variables for hook subprocesses.
-/// Maps to: CC hooks.ts:881-926 environment setup.
-///
-/// These env vars are injected into every hook subprocess so scripts
-/// can discover session context without parsing stdin JSON.
-pub fn build_hook_env_vars(ctx: &HookContext) -> Vec<(String, String)> {
-    let mut vars = vec![
-        ("CLAUDE_PROJECT_DIR".to_string(), ctx.project_dir.clone()),
-        ("CLAUDE_SESSION_ID".to_string(), ctx.session_id.clone()),
-        ("CLAUDE_CWD".to_string(), ctx.cwd.clone()),
-        (
-            "CLAUDE_TRANSCRIPT_PATH".to_string(),
-            ctx.transcript_path.clone(),
-        ),
-    ];
-    if let Some(ref agent_id) = ctx.agent_id {
-        vars.push(("CLAUDE_AGENT_ID".to_string(), agent_id.clone()));
-    }
-    if let Some(ref agent_type) = ctx.agent_type {
-        vars.push(("CLAUDE_AGENT_TYPE".to_string(), agent_type.clone()));
-    }
-    vars
-}
-
 /// Classify a hook execution result by exit code.
 /// Maps to: CC hooks.ts:2196-2220 exit-code-2 blocking semantics.
 ///
@@ -721,9 +696,9 @@ pub(crate) mod test_support {
     /// Records what a hook actually received on stdin.
     ///
     /// The hook command is `cat > "$COMETIX_TEST_HOOK_INPUT_CAPTURE"`, and the
-    /// destination rides the same `base_env` channel `build_hook_env_vars`
-    /// uses, so the capture goes through the real spawn path rather than
-    /// re-deriving the payload in the test.
+    /// destination rides the callers' `base_env` channel into
+    /// `exec_command_hook`, so the capture goes through the real spawn path
+    /// rather than re-deriving the payload in the test.
     #[cfg(not(windows))]
     pub(crate) struct HookInputCapture {
         path: std::path::PathBuf,
@@ -1995,7 +1970,6 @@ mod tests {
             session_id: "session-1".to_string(),
             transcript_path: "/tmp/session-1.jsonl".to_string(),
             cwd: "/repo".to_string(),
-            project_dir: "/repo".to_string(),
             permission_mode: Some("default".to_string()),
             agent_id: Some("agent-1".to_string()),
             agent_type: Some("reviewer".to_string()),

@@ -313,9 +313,11 @@ pub fn codesign_ripgrep_if_necessary() {
     }
     let builtin_path = config.command;
 
-    let probe = Command::new("codesign")
-        .args(["-vv", "-d", &builtin_path])
-        .output();
+    // CC `execFileNoThrow` inherits process.env (execa default); the carrier
+    // is its counterpart. Same for the sign and xattr spawns below.
+    let mut probe_command = Command::new("codesign");
+    crate::utils::subprocess_env::apply_process_env_std(&mut probe_command);
+    let probe = probe_command.args(["-vv", "-d", &builtin_path]).output();
     let Ok(probe) = probe else {
         return;
     };
@@ -325,7 +327,9 @@ pub fn codesign_ripgrep_if_necessary() {
         return;
     }
 
-    let sign = Command::new("codesign")
+    let mut sign_command = Command::new("codesign");
+    crate::utils::subprocess_env::apply_process_env_std(&mut sign_command);
+    let sign = sign_command
         .args([
             "--sign",
             "-",
@@ -344,7 +348,9 @@ pub fn codesign_ripgrep_if_necessary() {
         }
     }
 
-    let quarantine = Command::new("xattr")
+    let mut quarantine_command = Command::new("xattr");
+    crate::utils::subprocess_env::apply_process_env_std(&mut quarantine_command);
+    let quarantine = quarantine_command
         .args(["-d", "com.apple.quarantine", &builtin_path])
         .output();
     if let Ok(quarantine) = quarantine {
@@ -362,7 +368,10 @@ fn run_ripgrep_first_use_probe(config: &RipgrepConfig) -> bool {
     let command = resolve_spawn_command(config);
     let mut args = config.args.clone();
     args.push("--version".to_string());
-    let mut child = match Command::new(&command)
+    let mut rg_command = Command::new(&command);
+    // CC `execFileNoThrow` / `Bun.spawn` inherit process.env; the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut rg_command);
+    let mut child = match rg_command
         .args(&args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -457,7 +466,10 @@ where
     full_args.extend(args.iter().cloned());
     full_args.push(target.display().to_string());
 
-    let mut child = Command::new(&command)
+    let mut rg_command = Command::new(&command);
+    // CC `ripGrepStream` spawn() inherits process.env; the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut rg_command);
+    let mut child = rg_command
         .args(&full_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -534,7 +546,10 @@ fn rip_grep_file_count(
     full_args.extend(args.iter().cloned());
     full_args.push(target.display().to_string());
 
-    let mut child = Command::new(&command)
+    let mut rg_command = Command::new(&command);
+    // CC `ripGrepFileCount` spawn() inherits process.env; the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut rg_command);
+    let mut child = rg_command
         .args(&full_args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -685,7 +700,10 @@ fn rip_grep_inner_with_config(
     full_args.extend(args.iter().cloned());
     full_args.push(target.display().to_string());
 
-    let mut child = match Command::new(&command)
+    let mut rg_command = Command::new(&command);
+    // CC `ripGrepRaw` execFile()/spawn() inherit process.env; the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut rg_command);
+    let mut child = match rg_command
         .args(&full_args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

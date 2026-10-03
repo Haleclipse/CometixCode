@@ -41,8 +41,12 @@ impl ExternalEditorRuntime {
         // loop blocks until it returns, then reacquires raw mode and repaints.
         let mut app = self.app;
         let program_for_err = program.clone();
-        let receiver =
-            app.suspend_terminal(move || std::process::Command::new(&program).args(&args).status());
+        let receiver = app.suspend_terminal(move || {
+            let mut command = std::process::Command::new(&program);
+            // CC `promptEditor.ts` execSync_DEPRECATED inherits process.env; the carrier is its counterpart.
+            crate::utils::subprocess_env::apply_process_env_std(&mut command);
+            command.args(&args).status()
+        });
 
         let status = match receiver.await {
             Ok(Ok(Ok(status))) => status,

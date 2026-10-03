@@ -553,7 +553,10 @@ fn terminate_process_tree(child: &mut Child) {
     }
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("taskkill")
+        let mut command = std::process::Command::new("taskkill");
+        // tree-kill `exec('taskkill ...')` inherits process.env; the carrier is its counterpart.
+        crate::utils::subprocess_env::apply_process_env_std(&mut command);
+        let _ = command
             .args(["/PID", &child.id().to_string(), "/T", "/F"])
             .status();
     }

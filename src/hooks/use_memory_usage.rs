@@ -76,7 +76,10 @@ pub fn process_rss_bytes() -> u64 {
         if let Some(bytes) = macos_task_resident_size_bytes() {
             return bytes;
         }
-        if let Ok(output) = std::process::Command::new("ps")
+        let mut command = std::process::Command::new("ps");
+        // Rust-only fallback; every child takes the carrier (process.env) as its base.
+        crate::utils::subprocess_env::apply_process_env_std(&mut command);
+        if let Ok(output) = command
             .args(["-o", "rss=", "-p"])
             .arg(std::process::id().to_string())
             .output()

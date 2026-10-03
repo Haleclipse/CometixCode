@@ -3696,10 +3696,9 @@ fn post_tool_hook_event(status: Option<ToolResultStatus>, aborted: bool) -> Post
 /// triple every tool-event hook builder is called with — CC `hooks.ts:3419`,
 /// `:3461`, `:3510`, `:3546`, `:4175`, resolved against `:301-328`.
 ///
-/// This is the SINGLE constructor for the tool family's hook context, so the
-/// JSON payload rail (`create_base_hook_input_object`) and the env rail
-/// ([`crate::services::hooks::build_hook_env_vars`]) cannot disagree: both are
-/// derived from the value this function returns for one `ToolUseContext`.
+/// This is the SINGLE constructor for the tool family's hook context, so every
+/// tool-event builder's JSON payload (`create_base_hook_input_object`) derives
+/// from the same value for one `ToolUseContext`.
 ///
 /// Field by field, at the tool-hook call site specifically:
 /// - `session_id`: CC passes `sessionId = undefined` (`:3419` et al), so
@@ -3725,31 +3724,18 @@ fn post_tool_hook_event(status: Option<ToolResultStatus>, aborted: bool) -> Post
 ///   `create_base_hook_input_object`.
 ///
 /// `session_id` and `transcript_path` used to be left at `Default::default()`
-/// here. The JSON rail hid that (its `is_empty()` fallbacks re-derive both),
-/// but `build_hook_env_vars` copies the struct fields verbatim, so every tool
-/// hook subprocess received `CLAUDE_SESSION_ID=""` and
-/// `CLAUDE_TRANSCRIPT_PATH=""`.
-///
-/// Deviation (env rail): CC's `execCommandHook` sets only `CLAUDE_PROJECT_DIR`
-/// (+ plugin/skill vars) on top of `subprocessEnv()` (`hooks.ts:881-926`); the
-/// `CLAUDE_SESSION_ID` / `CLAUDE_CWD` / `CLAUDE_TRANSCRIPT_PATH` /
-/// `CLAUDE_AGENT_ID` / `CLAUDE_AGENT_TYPE` keys are this port's own additions
-/// in `build_hook_env_vars` and are shared by every hook family. Removing them
-/// is a `services/hooks` decision, not a tool-execution one; what this function
-/// owes them is correct values.
-///
-/// `project_dir` stays the effective cwd: CC uses `getProjectRoot()`
-/// (`hooks.ts:816` — "the stable project root (not the worktree path)") and
-/// this port has no process-level project-root state to read.
+/// here; the JSON rail hid that (its `is_empty()` fallbacks re-derive both).
+/// The env rail is CC's `{ ...subprocessEnv(), CLAUDE_PROJECT_DIR }`
+/// (`hooks.ts:882-885`), which `exec_command_hook` sets itself; the
+/// session/agent variables this port used to add there were removed on
+/// 2026-10-03 (env C7).
 pub(crate) fn tool_hook_context(context: &ToolUseContext) -> crate::services::hooks::HookContext {
-    let cwd = context.effective_cwd().display().to_string();
     crate::services::hooks::HookContext {
         session_id: crate::bootstrap::state::get_session_id(),
         transcript_path: crate::utils::session_storage::get_transcript_path(None)
             .display()
             .to_string(),
-        cwd: cwd.clone(),
-        project_dir: cwd,
+        cwd: context.effective_cwd().display().to_string(),
         permission_mode: Some(
             crate::utils::permissions::permission_mode::to_external_permission_mode(
                 context.tool_permission_context.mode,
@@ -3767,8 +3753,8 @@ pub(crate) fn tool_hook_context(context: &ToolUseContext) -> crate::services::ho
 /// spread — is NOT returned here. It is [`tool_hook_context`], a pure function
 /// of the same `ToolUseContext` that every `*_with_config` hop already carries,
 /// so both rails are the same value by construction and no call site can hand
-/// the two halves a mismatched pair. `base_env` below is built from exactly
-/// that function's output.
+/// the two halves a mismatched pair. The tool family adds nothing to the hook
+/// env (`exec_command_hook` sets `CLAUDE_PROJECT_DIR`), so `base_env` is empty.
 fn load_tool_hooks_config_and_env(
     context: &ToolUseContext,
 ) -> Option<(RegisteredHooks, Vec<(String, String)>)> {
@@ -3796,8 +3782,7 @@ fn load_tool_hooks_config_and_env(
     if config.is_empty() {
         return None;
     }
-    let base_env = crate::services::hooks::build_hook_env_vars(&tool_hook_context(context));
-    Some((config, base_env))
+    Some((config, Vec::new()))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -4217,10 +4202,9 @@ mod tests {
         crate::utils::hooks::session_hooks::clear_session_hooks(&session_id);
         let (config, base_env) = loaded.expect("session hook must surface through the loader");
         assert!(!config.is_empty());
-        assert!(
-            base_env.iter().any(|(key, _)| key == "CLAUDE_PROJECT_DIR"),
-            "hook env must carry the project dir: {base_env:?}"
-        );
+        // `exec_command_hook` sets `CLAUDE_PROJECT_DIR` for every caller
+        // (CC `hooks.ts:816,882-885`); the tool family adds nothing.
+        assert!(base_env.is_empty(), "{base_env:?}");
     }
 
     /// Maps to: CC `utils/hooks.ts:301-328#createBaseHookInput`, resolved for
@@ -4229,21 +4213,25 @@ mod tests {
     /// (`:3419`, `:3461`, `:3510`, `:3546`, `:4175`).
     ///
     /// BOTH rails are asserted from ONE hook run, because they are two
-    /// projections of the same `HookContext` and only the JSON one had
-    /// fallbacks: `create_base_hook_input_object` re-derives an empty
-    /// `session_id`/`transcript_path`, `build_hook_env_vars` copies the fields
-    /// verbatim. With `..Default::default()` at the loader (the old shape) the
-    /// JSON half of this test PASSED and the env half read `""` for both keys —
-    /// a hook script doing `$CLAUDE_SESSION_ID` got the empty string. Old-shape
-    /// failure is an assertion failure on the env lines, not a hang.
+    /// projections of the same `HookContext`. The JSON rail carries the session,
+    /// transcript, cwd and agent fields; the env rail is CC's
+    /// `{ ...subprocessEnv(), CLAUDE_PROJECT_DIR }` (`hooks.ts:882-885`) and
+    /// carries none of them.
     ///
     /// `agent_id` / `agent_type` / `permission_mode` (CC `:324-326`) are the
     /// A2 half: PreToolUse could carry none of them before, so a hook could not
     /// tell a subagent's tool call from the main thread's.
     #[cfg(unix)]
     #[tokio::test]
-    async fn tool_hook_input_and_env_rails_both_carry_the_official_base_fields() {
+    async fn tool_hook_input_carries_the_official_base_fields_and_env_only_the_project_dir() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
+        // A host value would be inherited through `subprocessEnv()`, as in CC.
+        let _absent = [
+            "CLAUDE_SESSION_ID",
+            "CLAUDE_TRANSCRIPT_PATH",
+            "CLAUDE_AGENT_ID",
+        ]
+        .map(EnvVarGuard::unset);
         let _settings = IsolatedProjectSettings::pin();
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
@@ -4276,7 +4264,7 @@ mod tests {
             "Bash",
             crate::services::hooks::HookCommand {
                 command: format!(
-                    "cat > '{}'; printf '%s\\n%s\\n%s\\n' \"$CLAUDE_SESSION_ID\" \"$CLAUDE_TRANSCRIPT_PATH\" \"$CLAUDE_AGENT_ID\" > '{}'",
+                    "cat > '{}'; printf '%s\\n%s\\n%s\\n%s\\n' \"${{CLAUDE_SESSION_ID-<unset>}}\" \"${{CLAUDE_TRANSCRIPT_PATH-<unset>}}\" \"${{CLAUDE_AGENT_ID-<unset>}}\" \"$CLAUDE_PROJECT_DIR\" > '{}'",
                     input_capture.display(),
                     env_capture.display()
                 ),
@@ -4305,17 +4293,13 @@ mod tests {
         let env = std::fs::read_to_string(&env_capture).expect("the hook recorded its env");
         let _ = std::fs::remove_file(&input_capture);
         let _ = std::fs::remove_file(&env_capture);
-        let mut env_lines = env.lines();
-        let env_session_id = env_lines.next().unwrap_or_default();
-        let env_transcript_path = env_lines.next().unwrap_or_default();
-        let env_agent_id = env_lines.next().unwrap_or_default();
+        let env_lines = env.lines().collect::<Vec<_>>();
 
         // CC passes `sessionId = undefined`, so `sessionId ?? getSessionId()`
         // (`:315`) is the MAIN session — never `toolUseContext.agentId`, which
         // is the gate key above and reaches the payload as `agent_id`.
         assert!(!session_id.is_empty(), "precondition: a live session id");
         assert_eq!(payload["session_id"], serde_json::json!(session_id));
-        assert_eq!(env_session_id, session_id, "CLAUDE_SESSION_ID env rail");
 
         // `getTranscriptPathForSession(resolvedSessionId)` (`:322`).
         let transcript_path = crate::utils::session_storage::get_transcript_path(None)
@@ -4326,22 +4310,26 @@ mod tests {
             payload["transcript_path"],
             serde_json::json!(transcript_path)
         );
-        assert_eq!(
-            env_transcript_path, transcript_path,
-            "CLAUDE_TRANSCRIPT_PATH env rail"
-        );
 
         // `getCwd()` (`:323`).
-        assert_eq!(
-            payload["cwd"],
-            serde_json::json!(context.effective_cwd().display().to_string())
-        );
+        let cwd = context.effective_cwd().display().to_string();
+        assert_eq!(payload["cwd"], serde_json::json!(cwd));
 
         // The A2 triple CC reads off `toolUseContext` + `permissionMode`.
         assert_eq!(payload["agent_id"], "agent_rails");
-        assert_eq!(env_agent_id, "agent_rails", "CLAUDE_AGENT_ID env rail");
         assert_eq!(payload["agent_type"], "code-reviewer");
         assert_eq!(payload["permission_mode"], "acceptEdits");
+
+        // The env rail: `CLAUDE_PROJECT_DIR` only, from the project root that
+        // `exec_command_hook` reads (the original cwd stands in for it).
+        let project_dir = crate::bootstrap::state::get_original_cwd()
+            .display()
+            .to_string();
+        assert_eq!(
+            env_lines,
+            ["<unset>", "<unset>", "<unset>", project_dir.as_str()],
+            "hook env rail"
+        );
     }
 
     /// Maps to: CC `services/tools/toolExecution.ts:1206` (the `try` that wraps

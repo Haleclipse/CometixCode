@@ -142,12 +142,23 @@ pub async fn exec_command_hook(
             shell.kill_on_drop(true).args(["/C", command.as_str()]);
             shell
         };
+        // CC spawns with `shell: true`, which is `/bin/sh` off Windows
+        // (`hooks.ts:975-977`).
         #[cfg(not(windows))]
         let mut shell = {
-            let mut shell = tokio::process::Command::new("sh");
+            let mut shell = tokio::process::Command::new("/bin/sh");
             shell.kill_on_drop(true).args(["-c", command.as_str()]);
             shell
         };
+        // CC hooks.ts:813-816,882-885: `{ ...subprocessEnv(), CLAUDE_PROJECT_DIR:
+        // getProjectRoot() }`, set here for every caller; the caller's and the
+        // plugin variables in `env_vars` go over it. The original cwd stands in
+        // for the project root this port does not have.
+        crate::utils::subprocess_env::apply_subprocess_env(&mut shell);
+        shell.env(
+            "CLAUDE_PROJECT_DIR",
+            crate::bootstrap::state::get_original_cwd(),
+        );
         let mut child = match shell
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

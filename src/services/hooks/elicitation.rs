@@ -224,7 +224,6 @@ mod tests {
             session_id: "session-1".to_string(),
             transcript_path: "/tmp/transcript.jsonl".to_string(),
             cwd: "/repo".to_string(),
-            project_dir: "/repo".to_string(),
             permission_mode: Some("default".to_string()),
             ..Default::default()
         }

@@ -838,6 +838,8 @@ async fn filter_git_ignored_location_uris(locations: Vec<&Value>, cwd: &str) -> 
     let mut ignored_paths = BTreeSet::<String>::new();
     for batch in unique_paths.chunks(50) {
         let mut command = tokio::process::Command::new("git");
+        // CC inherits process.env (execFileNoThrowWithCwd); the carrier is its counterpart.
+        crate::utils::subprocess_env::apply_process_env(&mut command);
         command.arg("check-ignore").args(batch).current_dir(cwd);
         if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), command.output()).await
         {

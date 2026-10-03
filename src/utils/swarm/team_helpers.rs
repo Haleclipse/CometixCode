@@ -518,7 +518,10 @@ fn destroy_worktree(worktree_path: &str) {
         });
 
     if let Some(main_repo_path) = main_repo_path {
-        if std::process::Command::new("git")
+        let mut command = std::process::Command::new(crate::utils::git::git_exe());
+        // CC `execFileNoThrowWithCwd` inherits process.env (execa default); the carrier is its counterpart.
+        crate::utils::subprocess_env::apply_process_env_std(&mut command);
+        if command
             .args(["worktree", "remove", "--force", worktree_path])
             .current_dir(&main_repo_path)
             .output()

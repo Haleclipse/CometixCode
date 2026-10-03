@@ -173,8 +173,8 @@ mod tests {
     }
 
     /// Run the hooks with a command that dumps its stdin to `$CAPTURE`, and
-    /// return the parsed hook input. `base_env` is the same channel
-    /// `build_hook_env_vars` uses, so the capture path rides the real plumbing.
+    /// return the parsed hook input. `base_env` is the callers' env channel
+    /// into `exec_command_hook`, so the capture path rides the real plumbing.
     async fn captured_hook_input(
         request: &crate::types::permissions::PermissionRequest,
     ) -> serde_json::Value {

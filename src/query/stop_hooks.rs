@@ -167,23 +167,7 @@ pub async fn handle_stop_hooks(params: StopHookParams) -> StopHookResult {
         return StopHookResult::default();
     }
 
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|path| path.display().to_string())
-        .unwrap_or_default();
-    let hook_context = crate::services::hooks::HookContext {
-        cwd: cwd.clone(),
-        project_dir: cwd,
-        permission_mode: Some(
-            crate::utils::permissions::permission_mode::to_external_permission_mode(
-                params.tool_use_context.tool_permission_context.mode,
-            )
-            .to_string(),
-        ),
-        ..Default::default()
-    };
-    let base_env = crate::services::hooks::build_hook_env_vars(&hook_context);
-    handle_stop_hooks_with_config(params, &config, base_env).await
+    handle_stop_hooks_with_config(params, &config, Vec::new()).await
 }
 
 /// Tests keep `handle_stop_hooks(...)` side-effect free so unit tests never run

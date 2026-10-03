@@ -827,13 +827,9 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
         ),
     };
 
-    let subagent_start_results = execute_subagent_start_hooks_from_settings(
-        &agent_id,
-        &input.agent_definition.agent_type,
-        &permission_context,
-        &run_cwd,
-    )
-    .await;
+    let subagent_start_results =
+        execute_subagent_start_hooks_from_settings(&agent_id, &input.agent_definition.agent_type)
+            .await;
     // Maps to: CC `runAgent.ts:530-555` — collect every hook's
     // additionalContexts and, when any exist, push the
     // `createAttachmentMessage` equivalent: a `hook_additional_context`
@@ -1266,9 +1262,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     execute_subagent_stop_hooks_from_settings(
         &agent_id,
         &input.agent_definition.agent_type,
-        &permission_context,
         last_assistant_text_from_messages(&agent_messages).as_deref(),
-        &run_cwd,
     )
     .await;
 
@@ -1527,16 +1521,15 @@ fn register_agent_frontmatter_hooks_for_run(
 async fn execute_subagent_start_hooks_from_settings(
     agent_id: &str,
     agent_type: &str,
-    permission_context: &crate::tool::ToolPermissionContext,
-    cwd: &std::path::Path,
 ) -> Vec<crate::services::hooks::HookResult> {
-    let Some((config, base_env)) =
-        subagent_hook_config_and_env(agent_id, agent_type, permission_context, cwd)
-    else {
+    let Some(config) = subagent_hook_config(agent_id) else {
         return Vec::new();
     };
     crate::services::hooks::teammate::execute_subagent_start_hooks(
-        &config, agent_id, agent_type, base_env,
+        &config,
+        agent_id,
+        agent_type,
+        Vec::new(),
     )
     .await
 }
@@ -1548,13 +1541,9 @@ async fn execute_subagent_start_hooks_from_settings(
 async fn execute_subagent_stop_hooks_from_settings(
     agent_id: &str,
     agent_type: &str,
-    permission_context: &crate::tool::ToolPermissionContext,
     last_assistant_message: Option<&str>,
-    cwd: &std::path::Path,
 ) -> Vec<crate::services::hooks::HookResult> {
-    let Some((config, base_env)) =
-        subagent_hook_config_and_env(agent_id, agent_type, permission_context, cwd)
-    else {
+    let Some(config) = subagent_hook_config(agent_id) else {
         return Vec::new();
     };
     let transcript_path = crate::utils::session_storage::get_agent_transcript_path(agent_id)
@@ -1566,48 +1555,18 @@ async fn execute_subagent_stop_hooks_from_settings(
         agent_type,
         &transcript_path,
         last_assistant_message,
-        base_env,
+        Vec::new(),
     )
     .await
 }
 
-fn subagent_hook_config_and_env(
-    agent_id: &str,
-    agent_type: &str,
-    permission_context: &crate::tool::ToolPermissionContext,
-    cwd: &std::path::Path,
-) -> Option<(
-    crate::services::hooks::RegisteredHooks,
-    Vec<(String, String)>,
-)> {
+fn subagent_hook_config(agent_id: &str) -> Option<crate::services::hooks::RegisteredHooks> {
     let loaded_hooks = crate::services::hooks::load_hooks_config();
     let mut config = loaded_hooks.config;
     if !loaded_hooks.allow_managed_hooks_only {
         crate::utils::hooks::session_hooks::merge_session_hooks_into_config(&mut config, agent_id);
     }
-    if config.is_empty() {
-        return None;
-    }
-    let cwd = cwd.display().to_string();
-    let transcript_path = crate::utils::session_storage::get_agent_transcript_path(agent_id)
-        .display()
-        .to_string();
-    let hook_context = crate::services::hooks::HookContext {
-        session_id: crate::bootstrap::state::get_session_id(),
-        transcript_path,
-        cwd: cwd.clone(),
-        project_dir: cwd,
-        permission_mode: Some(
-            crate::utils::permissions::permission_mode::to_external_permission_mode(
-                permission_context.mode,
-            )
-            .to_string(),
-        ),
-        agent_id: Some(agent_id.to_string()),
-        agent_type: Some(agent_type.to_string()),
-    };
-    let base_env = crate::services::hooks::build_hook_env_vars(&hook_context);
-    Some((config, base_env))
+    (!config.is_empty()).then_some(config)
 }
 
 fn last_assistant_text_from_messages(messages: &[Message]) -> Option<String> {

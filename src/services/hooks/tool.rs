@@ -24,8 +24,7 @@ const TOOL_HOOK_TIMEOUT_MS: u64 = 30_000;
 ///
 /// `hook_context` is this port's carrier for CC's `(permissionMode,
 /// toolUseContext)` pair; `services/tools/tool_execution.rs#tool_hook_context`
-/// is the constructor that fills it, and the same value is what
-/// `build_hook_env_vars` flattens into `base_env`. It used to be
+/// is the constructor that fills it. It used to be
 /// `HookContext::default()` here, which meant PreToolUse / PostToolUse /
 /// PostToolUseFailure / PermissionDenied / PermissionRequest could carry
 /// NEITHER `agent_id`/`agent_type` (so a hook script could not tell a subagent's

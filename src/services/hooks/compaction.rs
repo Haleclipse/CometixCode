@@ -3,7 +3,7 @@
 
 use super::exec::exec_command_hook;
 use super::matching::{MatchedHook, get_matching_hooks};
-use super::{HookContext, HookEvent, RegisteredHooks, build_hook_env_vars, create_base_hook_input};
+use super::{HookContext, HookEvent, RegisteredHooks, create_base_hook_input};
 use std::time::Duration;
 
 const TOOL_HOOK_TIMEOUT_MS: u64 = 30_000;
@@ -91,7 +91,7 @@ pub async fn execute_pre_compact_hooks(
         );
     }
     let input_str = hook_input.to_string();
-    let base_env = build_hook_env_vars(hook_context);
+    let base_env = Vec::new();
 
     let mut successful_outputs = Vec::new();
     let mut display_messages = Vec::new();
@@ -154,7 +154,7 @@ pub async fn execute_post_compact_hooks(
         object.insert("compact_summary".to_string(), serde_json::json!(summary));
     }
     let input_str = hook_input.to_string();
-    let base_env = build_hook_env_vars(hook_context);
+    let base_env = Vec::new();
     let mut display_messages = Vec::new();
 
     for (command, result) in

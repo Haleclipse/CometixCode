@@ -25,7 +25,10 @@ static PANE_CREATION_LOCK: LazyLock<tokio::sync::Mutex<()>> =
     LazyLock::new(|| tokio::sync::Mutex::new(()));
 
 fn run_it2(args: &[String]) -> It2CommandResult {
-    let output = Command::new(IT2_COMMAND).args(args).output();
+    let mut command = Command::new(IT2_COMMAND);
+    // CC `execFileNoThrow` inherits process.env (execa default); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    let output = command.args(args).output();
     match output {
         Ok(output) => It2CommandResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),

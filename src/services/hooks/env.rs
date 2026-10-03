@@ -13,7 +13,7 @@ use super::exec::exec_command_hook;
 use super::load_hooks_config;
 use super::matching::get_matching_hooks;
 use super::parsing::{ParsedHookOutput, parse_hook_output, process_hook_json_output};
-use super::{HookContext, HookEvent, RegisteredHooks, build_hook_env_vars, create_base_hook_input};
+use super::{HookContext, HookEvent, RegisteredHooks, create_base_hook_input};
 use serde_json::{Map, Value};
 use std::path::Path;
 use std::time::Duration;
@@ -204,7 +204,6 @@ pub async fn execute_hooks_outside_repl_with_config(
                         env.push(("CLAUDE_ENV_FILE".to_string(), path.display().to_string()));
                     }
                 }
-                env.push(("CLAUDE_HOOK_INDEX".to_string(), hook_index.to_string()));
                 let exec_result = exec_command_hook(
                     &command.command,
                     &json_input,
@@ -390,8 +389,7 @@ fn default_env_hook_context() -> HookContext {
         .display()
         .to_string();
     HookContext {
-        cwd: cwd.clone(),
-        project_dir: cwd,
+        cwd,
         ..Default::default()
     }
 }
@@ -405,7 +403,7 @@ pub async fn execute_cwd_changed_hooks(old_cwd: &str, new_cwd: &str) -> EnvHookE
         old_cwd,
         new_cwd,
         create_base_hook_input(&context),
-        build_hook_env_vars(&context),
+        Vec::new(),
         TOOL_HOOK_EXECUTION_TIMEOUT_MS,
     )
     .await
@@ -420,7 +418,7 @@ pub async fn execute_file_changed_hooks(file_path: &str, event: &str) -> EnvHook
         file_path,
         event,
         create_base_hook_input(&context),
-        build_hook_env_vars(&context),
+        Vec::new(),
         TOOL_HOOK_EXECUTION_TIMEOUT_MS,
     )
     .await
@@ -449,7 +447,7 @@ pub async fn execute_config_change_hooks(
         source,
         file_path,
         create_base_hook_input(&context),
-        build_hook_env_vars(&context),
+        Vec::new(),
         TOOL_HOOK_EXECUTION_TIMEOUT_MS,
     )
     .await

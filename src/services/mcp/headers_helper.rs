@@ -43,15 +43,20 @@ pub async fn get_mcp_headers_from_helper(
         command.args(["/C", helper]);
         command
     } else {
-        let mut command = Command::new("sh");
+        // CC execa `shell: true` (headersHelper.ts:62): `/bin/sh` off Windows.
+        let mut command = Command::new("/bin/sh");
         command.args(["-c", helper]);
         command
     };
-    command.envs(std::env::vars());
+    // CC headersHelper.ts:66-70: `{ ...process.env, CLAUDE_CODE_MCP_SERVER_NAME,
+    // CLAUDE_CODE_MCP_SERVER_URL: config.url }` — process.env, not
+    // subprocessEnv(); an undefined url drops the inherited key.
+    crate::utils::subprocess_env::apply_process_env(&mut command);
     command.env("CLAUDE_CODE_MCP_SERVER_NAME", server_name);
-    if let Some(url) = config.url.as_deref() {
-        command.env("CLAUDE_CODE_MCP_SERVER_URL", url);
-    }
+    match config.url.as_deref() {
+        Some(url) => command.env("CLAUDE_CODE_MCP_SERVER_URL", url),
+        None => command.env_remove("CLAUDE_CODE_MCP_SERVER_URL"),
+    };
 
     let output = match tokio::time::timeout(Duration::from_secs(10), command.output()).await {
         Ok(Ok(output)) => output,

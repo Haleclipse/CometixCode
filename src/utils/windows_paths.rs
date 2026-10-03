@@ -91,7 +91,11 @@ pub fn find_git_bash_path() -> Result<PathBuf, String> {
         }
     }
 
-    if let Ok(output) = std::process::Command::new("where.exe").arg("git").output() {
+    let mut where_exe = std::process::Command::new("where.exe");
+    // CC `execSync_DEPRECATED('where.exe ...')` inherits process.env; the carrier
+    // is its counterpart (where.exe searches the carrier PATH).
+    crate::utils::subprocess_env::apply_process_env_std(&mut where_exe);
+    if let Ok(output) = where_exe.arg("git").output() {
         let cwd = std::env::current_dir().ok();
         for candidate in String::from_utf8_lossy(&output.stdout)
             .lines()

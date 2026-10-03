@@ -262,19 +262,20 @@ fn execute_api_key_helper_command(
         return Ok(None);
     }
     record_auth_io(AuthIoOperation::ApiKeyHelperSubprocess);
-    let mut child = if cfg!(target_os = "windows") {
-        std::process::Command::new("cmd")
-            .args(["/C", command])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?
+    // CC execa `shell: true` (auth.ts:558-559): `/bin/sh` off Windows.
+    let (shell, shell_flag) = if cfg!(target_os = "windows") {
+        ("cmd", "/C")
     } else {
-        std::process::Command::new("sh")
-            .args(["-c", command])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?
+        ("/bin/sh", "-c")
     };
+    let mut helper = std::process::Command::new(shell);
+    // CC inherits process.env (execa default env); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut helper);
+    let mut child = helper
+        .args([shell_flag, command])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
     let started = Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
@@ -497,7 +498,10 @@ pub fn get_api_key_from_config_or_macos_keychain() -> Option<AnthropicApiKeyWith
                 #[cfg(not(test))]
                 let value = {
                     record_auth_io(AuthIoOperation::KeychainSubprocess);
-                    std::process::Command::new("security")
+                    let mut security = std::process::Command::new("security");
+                    // CC passes `env: process.env` (execSyncWithDefaults_DEPRECATED); the carrier is its counterpart.
+                    crate::utils::subprocess_env::apply_process_env_std(&mut security);
+                    security
                         .args([
                             "find-generic-password",
                             "-a",

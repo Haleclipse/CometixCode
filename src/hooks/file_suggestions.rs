@@ -164,7 +164,10 @@ async fn get_files_using_git(cwd: &Path, respect_gitignore: bool) -> Option<Vec<
     if respect_gitignore {
         args.push("--exclude-standard".to_string());
     }
-    let output = tokio::process::Command::new("git")
+    let mut command = tokio::process::Command::new(crate::utils::git::git_exe());
+    // CC inherits process.env (execFileNoThrowWithCwd); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env(&mut command);
+    let output = command
         .args(args)
         // CC `execFileNoThrowWithCwd(..., { cwd: repoRoot })` — rows must be
         // repo-root relative before `normalizeGitPaths` rebases them onto cwd.
@@ -479,14 +482,10 @@ pub async fn generate_file_suggestions(query: &str, show_on_empty: bool) -> Vec<
         let session_id = crate::bootstrap::state::get_session_id();
         let transcript_path =
             crate::utils::session_storage::get_transcript_path_for_session(&session_id);
-        let project_dir = crate::utils::git::find_git_root(&cwd)
-            .or_else(|| crate::bootstrap::state::get_session_project_dir())
-            .unwrap_or_else(|| cwd.clone());
         let context = crate::services::hooks::HookContext {
             session_id,
             transcript_path: transcript_path.display().to_string(),
             cwd: cwd.display().to_string(),
-            project_dir: project_dir.display().to_string(),
             ..Default::default()
         };
         let mut payload = match crate::services::hooks::create_base_hook_input(&context) {
@@ -495,7 +494,6 @@ pub async fn generate_file_suggestions(query: &str, show_on_empty: bool) -> Vec<
         };
         payload.insert("query".to_string(), serde_json::json!(query));
         let input_json = serde_json::Value::Object(payload).to_string();
-        let env = crate::services::hooks::build_hook_env_vars(&context);
         if let Some(paths) =
             crate::services::hooks::file_suggestion::execute_file_suggestion_command(
                 &settings
@@ -504,7 +502,7 @@ pub async fn generate_file_suggestions(query: &str, show_on_empty: bool) -> Vec<
                     .expect("checked above")
                     .command,
                 &input_json,
-                env,
+                Vec::new(),
             )
             .await
         {

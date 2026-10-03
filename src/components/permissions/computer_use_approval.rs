@@ -281,7 +281,10 @@ fn open_computer_use_tcc_settings_no_throw(option: TccOption) {
     let Some(url) = computer_use_tcc_open_url(option) else {
         return;
     };
-    let _ = Command::new("open").arg(url).spawn();
+    let mut command = Command::new("open");
+    // CC inherits process.env (execFileNoThrow); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    let _ = command.arg(url).spawn();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

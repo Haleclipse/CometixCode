@@ -59,12 +59,12 @@ static SHORTSTAT_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 async fn git_output(cwd: &Path, args: &[&str]) -> Option<(i32, String)> {
-    let mut command = tokio::process::Command::new("git");
+    let mut command = tokio::process::Command::new(crate::utils::git::git_exe());
+    // CC gitDiff.ts runs git through execFileNoThrow: process.env, nothing added.
+    crate::utils::subprocess_env::apply_process_env(&mut command);
     command
         .args(args)
         .current_dir(cwd)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_ASKPASS", "")
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(true);
@@ -425,17 +425,14 @@ impl ToolUseDiff {
 }
 
 async fn run_single_file_git(root: &Path, args: &[&str]) -> Option<(bool, String)> {
-    let output = tokio::time::timeout(
-        Duration::from_millis(3_000),
-        tokio::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .env("GIT_TERMINAL_PROMPT", "0")
-            .output(),
-    )
-    .await
-    .ok()?
-    .ok()?;
+    let mut command = tokio::process::Command::new(crate::utils::git::git_exe());
+    // CC gitDiff.ts runs git through execFileNoThrow: process.env, nothing added.
+    crate::utils::subprocess_env::apply_process_env(&mut command);
+    command.args(args).current_dir(root);
+    let output = tokio::time::timeout(Duration::from_millis(3_000), command.output())
+        .await
+        .ok()?
+        .ok()?;
     Some((
         output.status.success(),
         String::from_utf8_lossy(&output.stdout).into_owned(),

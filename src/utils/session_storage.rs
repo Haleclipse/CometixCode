@@ -3509,9 +3509,10 @@ pub fn resolve_session_file_path(
             }
         }
 
-        // Maps to portable `getWorktreePathsPortable(canonical)` fallback.
-        for worktree_path in crate::utils::get_worktree_paths::get_worktree_paths(&canonical) {
-            let worktree_path = worktree_path.nfc().collect::<String>();
+        // Worktree fallback — sessions may live under a different worktree root.
+        for worktree_path in
+            crate::utils::get_worktree_paths_portable::get_worktree_paths_portable(&canonical)
+        {
             if worktree_path == canonical {
                 continue;
             }
@@ -9099,41 +9100,67 @@ mod tests {
     #[test]
     fn search_custom_titles_matches_official_all_pages_worktrees_and_limits() {
         use std::os::unix::fs::PermissionsExt;
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!("cometix-title-search-{}", Uuid::new_v4()));
-        struct Cleanup(PathBuf);
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                let _ = fs::remove_dir_all(&self.0);
-            }
-        }
-        let _cleanup = Cleanup(root.clone());
-        let _projects = set_test_projects_dir_override(root.join("projects"));
+        // getWorktreePaths runs gitExe(), whose Bun.which lookup reads the startup
+        // PATH (utils/git.ts:212-216), so the fake git must be on PATH when the
+        // process starts: the parent writes it and re-runs this test as a child.
+        const PROBE: &str = "COMETIX_TITLE_SEARCH_ROOT";
         let cwd = crate::bootstrap::state::get_original_cwd()
             .to_string_lossy()
             .into_owned();
+        let Some(root) = crate::utils::process_env::var(PROBE) else {
+            let root =
+                std::env::temp_dir().join(format!("cometix-title-search-{}", Uuid::new_v4()));
+            struct Cleanup(PathBuf);
+            impl Drop for Cleanup {
+                fn drop(&mut self) {
+                    let _ = fs::remove_dir_all(&self.0);
+                }
+            }
+            let _cleanup = Cleanup(root.clone());
+            let sibling = root.join("sibling").to_string_lossy().into_owned();
+            let bin = root.join("bin");
+            fs::create_dir_all(&bin).unwrap();
+            let git = bin.join("git");
+            fs::write(
+                &git,
+                format!("#!/bin/sh\nprintf '%s\\n' 'worktree {cwd}' '' 'worktree {sibling}' ''\n"),
+            )
+            .unwrap();
+            fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "utils::session_storage::tests::search_custom_titles_matches_official_all_pages_worktrees_and_limits",
+                    "--nocapture",
+                ])
+                .env(PROBE, &root)
+                .env(
+                    "PATH",
+                    format!(
+                        "{}:{}",
+                        bin.display(),
+                        crate::utils::process_env::var("PATH").unwrap_or_default()
+                    ),
+                )
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "{stdout} {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        };
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let root = PathBuf::from(root);
+        let _projects = set_test_projects_dir_override(root.join("projects"));
         let sibling = root.join("sibling").to_string_lossy().into_owned();
         let current_dir = get_project_dir(&cwd);
         let sibling_dir = get_project_dir(&sibling);
-        let bin = root.join("bin");
-        for dir in [&current_dir, &sibling_dir, &bin] {
+        for dir in [&current_dir, &sibling_dir] {
             fs::create_dir_all(dir).unwrap();
         }
-        let git = bin.join("git");
-        fs::write(
-            &git,
-            format!("#!/bin/sh\nprintf '%s\\n' 'worktree {cwd}' '' 'worktree {sibling}' ''\n"),
-        )
-        .unwrap();
-        fs::set_permissions(&git, fs::Permissions::from_mode(0o755)).unwrap();
-        let _path = EnvVarGuard::set(
-            "PATH",
-            format!(
-                "{}:{}",
-                bin.display(),
-                crate::utils::process_env::var("PATH").unwrap_or_default()
-            ),
-        );
         let write = |dir: &Path, id: &str, title: &str, time: u64, extra: Value| {
             let path = dir.join(format!("{id}.jsonl"));
             let mut entry = json!({"type":"user", "sessionId":id, "message":{"content":"hello"}});

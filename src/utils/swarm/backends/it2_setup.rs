@@ -56,6 +56,8 @@ pub struct SetupCommandResult {
 
 fn run_command(program: &str, args: &[&str], cwd: Option<PathBuf>) -> SetupCommandResult {
     let mut command = Command::new(program);
+    // CC `execFileNoThrow[WithCwd]` inherits process.env (execa default); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
     command.args(args);
     if let Some(cwd) = cwd {
         command.current_dir(cwd);

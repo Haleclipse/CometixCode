@@ -620,11 +620,7 @@ where
                 error: error_text.clone(),
                 error_details: Some(error_text.clone()),
             };
-            schedule_stop_failure_hooks_for_api_error(
-                system_error.clone(),
-                params.tool_use_context.tool_permission_context.clone(),
-                None,
-            );
+            schedule_stop_failure_hooks_for_api_error(system_error.clone(), None);
             let _ = event_tx.send(QueryEvent::ApiError(system_error)).await;
             let _ = send_assistant_api_error_message(&event_tx, &params.turn_id, &error_text).await;
             let mut terminal = transitions::Terminal::new("model_error");
@@ -2342,7 +2338,6 @@ where
 
                     schedule_stop_failure_hooks_for_api_error(
                         error.clone(),
-                        permission_context.clone(),
                         last_assistant_message.map(str::to_string),
                     );
                     let terminal_reason = terminal_reason_for_system_api_error(&error);
@@ -2700,7 +2695,6 @@ where
                 }
                 schedule_stop_failure_hooks_for_api_error(
                     error.clone(),
-                    permission_context.clone(),
                     last_assistant_text(&assistant_messages),
                 );
                 let _ = event_tx.send(QueryEvent::ApiError(error.clone())).await;
@@ -2792,7 +2786,6 @@ where
                 if let Some(error) = withheld_api_error.clone() {
                     schedule_stop_failure_hooks_for_api_error(
                         error.clone(),
-                        permission_context.clone(),
                         last_assistant_text(&assistant_messages),
                     );
                     let _ = event_tx.send(QueryEvent::ApiError(error.clone())).await;
@@ -5047,31 +5040,25 @@ fn terminal_reason_for_system_api_error(
 
 fn schedule_stop_failure_hooks_for_api_error(
     error: crate::types::message::SystemApiErrorMessage,
-    permission_context: ToolPermissionContext,
     last_assistant_message: Option<String>,
 ) {
     // Maps to CC `query.ts` `void executeStopFailureHooks(...)`: fire-and-forget.
     #[cfg(not(test))]
     {
         tokio::spawn(async move {
-            execute_stop_failure_hooks_for_api_error(
-                &error,
-                &permission_context,
-                last_assistant_message.as_deref(),
-            )
-            .await;
+            execute_stop_failure_hooks_for_api_error(&error, last_assistant_message.as_deref())
+                .await;
         });
     }
     #[cfg(test)]
     {
-        let _ = (error, permission_context, last_assistant_message);
+        let _ = (error, last_assistant_message);
     }
 }
 
 #[cfg(not(test))]
 async fn execute_stop_failure_hooks_for_api_error(
     error: &crate::types::message::SystemApiErrorMessage,
-    permission_context: &ToolPermissionContext,
     last_assistant_message: Option<&str>,
 ) {
     // CC `executeStopFailureHooks` passes `getAppState: toolUseContext?.getAppState`
@@ -5087,22 +5074,6 @@ async fn execute_stop_failure_hooks_for_api_error(
     if config.is_empty() {
         return;
     }
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|path| path.display().to_string())
-        .unwrap_or_default();
-    let hook_context = crate::services::hooks::HookContext {
-        cwd: cwd.clone(),
-        project_dir: cwd,
-        permission_mode: Some(
-            crate::utils::permissions::permission_mode::to_external_permission_mode(
-                permission_context.mode,
-            )
-            .to_string(),
-        ),
-        ..Default::default()
-    };
-    let base_env = crate::services::hooks::build_hook_env_vars(&hook_context);
     let error_match = if error.error.trim().is_empty() {
         "unknown"
     } else {
@@ -5113,7 +5084,7 @@ async fn execute_stop_failure_hooks_for_api_error(
         error_match,
         error.error_details.as_deref().or(Some(&error.api_error)),
         last_assistant_message,
-        base_env,
+        Vec::new(),
     )
     .await;
 }

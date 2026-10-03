@@ -288,8 +288,7 @@ pub async fn on_cwd_changed_for_hooks(old_cwd: &str, new_cwd: &str) -> EnvHookEx
         .display()
         .to_string();
     let context = crate::services::hooks::HookContext {
-        cwd: cwd.clone(),
-        project_dir: cwd,
+        cwd,
         ..Default::default()
     };
     on_cwd_changed_for_hooks_with_config(
@@ -297,7 +296,7 @@ pub async fn on_cwd_changed_for_hooks(old_cwd: &str, new_cwd: &str) -> EnvHookEx
         new_cwd,
         &config,
         crate::services::hooks::create_base_hook_input(&context),
-        crate::services::hooks::build_hook_env_vars(&context),
+        Vec::new(),
     )
     .await
 }

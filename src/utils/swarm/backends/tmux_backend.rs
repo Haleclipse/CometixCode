@@ -57,7 +57,10 @@ pub fn tmux_color_name(color: AgentColorName) -> &'static str {
 }
 
 fn run_tmux(args: &[String]) -> TmuxCommandResult {
-    let output = Command::new(TMUX_COMMAND).args(args).output();
+    let mut command = Command::new(TMUX_COMMAND);
+    // CC `execFileNoThrow` inherits process.env (execa default); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    let output = command.args(args).output();
     match output {
         Ok(output) => TmuxCommandResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),

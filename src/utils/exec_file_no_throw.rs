@@ -128,7 +128,7 @@ pub(crate) fn exec_file_no_throw_with_cwd(
             stdin: ExecFileStdin::Inherit,
             ..Default::default()
         },
-        None,
+        &crate::utils::process_env::snapshot(),
     ) {
         Ok(process) => process.finish(preserve_output_on_error),
         Err(_) => ExecFileOutput::failed(),
@@ -238,7 +238,7 @@ pub(crate) fn exec_file_no_throw_with_cwd_options(
     let inherited_env = crate::utils::process_env::snapshot();
     let started = match resolve_error {
         Some(error) => Err(error),
-        None => StartedProcess::spawn_options(program, args, &options, Some(&inherited_env)),
+        None => StartedProcess::spawn_options(program, args, &options, &inherited_env),
     };
     let spawn_error = started.as_ref().err().map(|error| {
         let mut output = ExecFileOutput::failed();
@@ -328,7 +328,7 @@ impl StartedProcess {
         program: &str,
         args: &[&str],
         options: &ExecFileWithCwdOptions<'_>,
-        inherited_env: Option<&crate::utils::process_env::EnvSnapshot>,
+        inherited_env: &crate::utils::process_env::EnvSnapshot,
     ) -> std::io::Result<Self> {
         let mut command = Command::new(program);
         command
@@ -352,11 +352,7 @@ impl StartedProcess {
         // CC passes env to Execa with extendEnv's true default. Snapshot the
         // established runtime process.env carrier before spawn, then overlay
         // own properties (including explicit undefined removals).
-        // Old synchronous consumers still inherit the OS environment. Their
-        // migration to the process.env carrier is not part of this adapter.
-        if let Some(inherited_env) = inherited_env {
-            command.env_clear().envs(inherited_env.iter());
-        }
+        command.env_clear().envs(inherited_env.iter());
         for (key, value) in options.env {
             match value {
                 Some(value) => {

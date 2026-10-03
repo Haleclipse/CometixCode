@@ -46,6 +46,8 @@ pub async fn open_browser(url: &str) -> anyhow::Result<bool> {
         command.arg(url);
         command
     };
+    // CC inherits process.env (execFileNoThrow); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -74,6 +76,8 @@ pub fn open_path(path: &Path) -> std::io::Result<()> {
         command.arg(path);
         command
     };
+    // CC inherits process.env (execFileNoThrow); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())

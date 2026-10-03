@@ -544,7 +544,7 @@ async fn create_post_compact_attachments(
 fn compact_hook_context(
     context: &crate::tool::ToolUseContext,
 ) -> crate::services::hooks::HookContext {
-    let project_dir = crate::bootstrap::state::get_original_cwd();
+    let original_cwd = crate::bootstrap::state::get_original_cwd();
     let permission_mode = context
         .get_app_state()
         .map(|state| state.tool_permission_context.mode)
@@ -559,10 +559,9 @@ fn compact_hook_context(
         cwd: context
             .cwd_override
             .clone()
-            .unwrap_or_else(|| project_dir.clone())
+            .unwrap_or(original_cwd)
             .display()
             .to_string(),
-        project_dir: project_dir.display().to_string(),
         permission_mode: Some(
             crate::utils::permissions::permission_mode::permission_mode_internal_name(
                 permission_mode,

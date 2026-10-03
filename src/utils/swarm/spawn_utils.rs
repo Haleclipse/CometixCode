@@ -175,9 +175,13 @@ pub fn build_inherited_env_vars_from_map(env: &BTreeMap<String, String>) -> Stri
     env_vars.join(" ")
 }
 
-/// Maps to: CC `buildInheritedEnvVars()`.
+/// Maps to: CC `buildInheritedEnvVars()`, which reads `process.env` — here the
+/// environment carrier, so settings-applied variables reach the teammate.
 pub fn build_inherited_env_vars() -> String {
-    let env = std::env::vars().collect::<BTreeMap<_, _>>();
+    let env = crate::utils::process_env::snapshot()
+        .iter()
+        .filter_map(|(key, value)| Some((key.to_str()?.to_string(), value.to_str()?.to_string())))
+        .collect::<BTreeMap<_, _>>();
     build_inherited_env_vars_from_map(&env)
 }
 

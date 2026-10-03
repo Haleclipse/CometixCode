@@ -40,7 +40,10 @@ pub fn get_leader_pane_id() -> Option<String> {
 
 /// Maps to: CC `isTmuxAvailable()`.
 pub async fn is_tmux_available() -> bool {
-    Command::new(TMUX_COMMAND)
+    let mut command = Command::new(TMUX_COMMAND);
+    // CC `execFileNoThrow` inherits process.env (execa default); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    command
         .arg("-V")
         .output()
         .map(|output| output.status.success())
@@ -72,7 +75,10 @@ pub const IT2_COMMAND: &str = "it2";
 
 /// Maps to: CC `isIt2CliAvailable()`.
 pub async fn is_it2_cli_available() -> bool {
-    Command::new(IT2_COMMAND)
+    let mut command = Command::new(IT2_COMMAND);
+    // CC `execFileNoThrow` inherits process.env (execa default); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    command
         .args(["session", "list"])
         .output()
         .map(|output| output.status.success())

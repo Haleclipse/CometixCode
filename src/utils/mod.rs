@@ -80,6 +80,7 @@ pub mod fs_operations;
 pub mod fullscreen;
 pub mod fuse;
 pub mod get_worktree_paths;
+pub mod get_worktree_paths_portable;
 pub mod git;
 pub mod git_diff;
 pub mod git_settings;

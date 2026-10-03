@@ -234,7 +234,10 @@ fn run_snapshot_command(
             }
             #[cfg(windows)]
             {
-                let _ = std::process::Command::new("taskkill")
+                let mut taskkill = std::process::Command::new("taskkill");
+                // Rust-only tree kill; every child takes the carrier (process.env) as its base.
+                crate::utils::subprocess_env::apply_process_env_std(&mut taskkill);
+                let _ = taskkill
                     .args(["/PID", &child.id().to_string(), "/T", "/F"])
                     .status();
             }

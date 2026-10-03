@@ -12,7 +12,10 @@ use std::process::Command;
 
 /// Maps to: CC `utils/getWorktreePaths.ts#getWorktreePaths`.
 pub fn get_worktree_paths(cwd: &str) -> Vec<String> {
-    let Ok(output) = Command::new("git")
+    let mut command = Command::new(crate::utils::git::git_exe());
+    // CC inherits process.env (execFileNoThrowWithCwd); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    let Ok(output) = command
         .args(["worktree", "list", "--porcelain"])
         .current_dir(cwd)
         .output()

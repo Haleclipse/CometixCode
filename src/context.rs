@@ -272,7 +272,10 @@ fn get_git_status() -> Option<String> {
 }
 
 fn run_git<const N: usize>(args: [&str; N]) -> Option<String> {
-    let output = std::process::Command::new("git").args(args).output().ok()?;
+    let mut command = std::process::Command::new(crate::utils::git::git_exe());
+    // CC inherits process.env (execFileNoThrow); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    let output = command.args(args).output().ok()?;
     if !output.status.success() {
         return None;
     }

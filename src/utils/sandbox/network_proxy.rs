@@ -645,7 +645,10 @@ fn start_linux_bridges(
     let socks_socket = crate::utils::node_os::tmpdir().join(format!("cometix-socks-{token}.sock"));
     let mut bridges = Vec::new();
     for (socket, port) in [(&http_socket, http_port), (&socks_socket, socks_port)] {
-        let child = Command::new("socat")
+        let mut command = Command::new("socat");
+        // sandbox-runtime `spawn('socat', ...)` inherits process.env; the carrier is its counterpart.
+        crate::utils::subprocess_env::apply_process_env_std(&mut command);
+        let child = command
             .arg(format!("UNIX-LISTEN:{},fork,reuseaddr", socket.display()))
             .arg(format!(
                 "TCP:localhost:{port},keepalive,keepidle=10,keepintvl=5,keepcnt=3"

@@ -34,7 +34,10 @@ impl SecureStorageBackend for MacOsKeychainStorage {
             crate::utils::auth::record_auth_io(
                 crate::utils::auth::AuthIoOperation::KeychainSubprocess,
             );
-            let output = std::process::Command::new("security")
+            let mut security = std::process::Command::new("security");
+            // CC `execSyncWithDefaults_DEPRECATED` passes `env: process.env`; the carrier is its counterpart.
+            crate::utils::subprocess_env::apply_process_env_std(&mut security);
+            let output = security
                 .args([
                     "find-generic-password",
                     "-a",
@@ -100,7 +103,10 @@ impl SecureStorageBackend for MacOsKeychainStorage {
 
         #[cfg(all(target_os = "macos", not(test)))]
         let updated = if command.len() <= SECURITY_STDIN_LINE_LIMIT {
-            let mut child = match std::process::Command::new("security")
+            let mut security = std::process::Command::new("security");
+            // CC `execaSync('security', ...)` inherits process.env; the carrier is its counterpart.
+            crate::utils::subprocess_env::apply_process_env_std(&mut security);
+            let mut child = match security
                 .arg("-i")
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::null())
@@ -118,7 +124,10 @@ impl SecureStorageBackend for MacOsKeychainStorage {
             }
             child.wait().map(|status| status.success()).unwrap_or(false)
         } else {
-            std::process::Command::new("security")
+            let mut security = std::process::Command::new("security");
+            // CC `execaSync('security', ...)` inherits process.env; the carrier is its counterpart.
+            crate::utils::subprocess_env::apply_process_env_std(&mut security);
+            security
                 .args([
                     "add-generic-password",
                     "-U",
@@ -166,19 +175,24 @@ impl SecureStorageBackend for MacOsKeychainStorage {
         super::mac_os_keychain_helpers::clear_keychain_cache();
 
         #[cfg(all(target_os = "macos", not(test)))]
-        let deleted = std::process::Command::new("security")
-            .args([
-                "delete-generic-password",
-                "-a",
-                &username,
-                "-s",
-                &service_name,
-            ])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false);
+        let deleted = {
+            let mut security = std::process::Command::new("security");
+            // CC `execSyncWithDefaults_DEPRECATED` passes `env: process.env`; the carrier is its counterpart.
+            crate::utils::subprocess_env::apply_process_env_std(&mut security);
+            security
+                .args([
+                    "delete-generic-password",
+                    "-a",
+                    &username,
+                    "-s",
+                    &service_name,
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        };
         #[cfg(any(not(target_os = "macos"), test))]
         let deleted = false;
 

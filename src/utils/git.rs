@@ -161,7 +161,11 @@ fn normalize_unicode(path: PathBuf) -> PathBuf {
 /// freezes the TUI for the whole git round-trip.
 pub fn get_branch() -> String {
     let cwd = crate::bootstrap::state::get_original_cwd();
-    Command::new("git")
+    let mut command = Command::new(git_exe());
+    // CC reads .git/HEAD without a spawn; while this one spawns, it takes the
+    // carrier (process.env) as its base.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    command
         .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .current_dir(cwd)
         .output()

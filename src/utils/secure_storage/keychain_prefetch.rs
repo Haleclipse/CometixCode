@@ -163,7 +163,10 @@ fn spawn_security(service_name: &str) -> SpawnResult {
     use std::process::{Command, Stdio};
     use std::time::Instant;
 
-    let mut child = match Command::new("security")
+    let mut security = Command::new("security");
+    // CC `execFile('security', ...)` inherits process.env; the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut security);
+    let mut child = match security
         .args([
             "find-generic-password",
             "-a",

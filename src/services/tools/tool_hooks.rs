@@ -717,7 +717,6 @@ mod tests {
             session_id: "session-triple".to_string(),
             transcript_path: "/tmp/session-triple.jsonl".to_string(),
             cwd: "/tmp/triple".to_string(),
-            project_dir: "/tmp/triple".to_string(),
             permission_mode: Some("acceptEdits".to_string()),
             agent_id: Some("agent-triple".to_string()),
             agent_type: Some("code-reviewer".to_string()),

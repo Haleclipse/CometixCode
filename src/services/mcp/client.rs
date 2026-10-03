@@ -1279,13 +1279,11 @@ mod runtime {
             .display()
             .to_string();
         let hook_context = crate::services::hooks::HookContext {
-            cwd: cwd.clone(),
-            project_dir: cwd,
+            cwd,
             permission_mode: loaded_hooks.merged_settings.default_permission_mode,
             ..Default::default()
         };
-        let base_env = crate::services::hooks::build_hook_env_vars(&hook_context);
-        Some((config, hook_context, base_env))
+        Some((config, hook_context, Vec::new()))
     }
 
     async fn run_elicitation_hooks_for_request(
@@ -2146,6 +2144,8 @@ mod runtime {
             .ok_or_else(|| anyhow::anyhow!("stdio MCP server is missing command"))?;
         let mut cmd = Command::new(command);
         cmd.args(&config.args);
+        // CC client.ts:953-956: `{ ...subprocessEnv(), ...serverRef.env }`.
+        crate::utils::subprocess_env::apply_subprocess_env(&mut cmd);
         cmd.envs(&config.env);
         cmd.stderr(Stdio::piped());
         Ok(cmd)

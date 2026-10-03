@@ -41,7 +41,10 @@ fn probe_tmux_control_mode_sync(get_env: &impl Fn(&str) -> Option<String>) -> bo
         return false;
     }
 
-    let Ok(output) = Command::new("tmux")
+    let mut command = Command::new("tmux");
+    // CC inherits process.env (spawnSync without env); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    let Ok(output) = command
         .args(["display-message", "-p", "#{client_control_mode}"])
         .output()
     else {

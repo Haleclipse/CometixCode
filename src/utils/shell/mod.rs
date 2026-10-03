@@ -47,7 +47,10 @@ fn is_executable(shell_path: &Path) -> bool {
     if shell_path.is_file() {
         return true;
     }
-    std::process::Command::new(shell_path)
+    let mut command = std::process::Command::new(shell_path);
+    // CC `Shell.ts` execFileSync inherits process.env; the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    command
         .arg("--version")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
@@ -427,6 +430,20 @@ pub fn run_command_streaming(
         .stderr(std::process::Stdio::piped());
     if let Some(cwd) = cwd {
         process.current_dir(cwd);
+    }
+    // The PowerShell branch of CC `Shell.ts:317-328`'s env. `SHELL: undefined`
+    // removes the key (Node skips undefined values). `envOverrides` would come
+    // from `powershellProvider.getEnvironmentOverrides`, which is not ported.
+    crate::utils::subprocess_env::apply_subprocess_env_std(&mut process);
+    process
+        .env_remove("SHELL")
+        .env("GIT_EDITOR", "true")
+        .env("CLAUDECODE", "1");
+    if crate::utils::build_profile::build_audience().is_internal() {
+        process.env(
+            "CLAUDE_CODE_SESSION_ID",
+            crate::bootstrap::state::get_session_id(),
+        );
     }
     #[cfg(unix)]
     {

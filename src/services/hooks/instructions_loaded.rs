@@ -60,7 +60,7 @@ pub async fn execute_instructions_loaded_hooks_with_config(
         hook_input,
         Some(input.load_reason),
         INSTRUCTIONS_LOADED_TIMEOUT_MS,
-        super::build_hook_env_vars(&context),
+        Vec::new(),
     )
     .await;
 }
@@ -92,8 +92,7 @@ pub fn dispatch_instructions_loaded_hooks(input: InstructionsLoadedInput) {
     let context = HookContext {
         session_id: crate::utils::process_env::var("CLAUDE_SESSION_ID").unwrap_or_default(),
         transcript_path: crate::utils::process_env::var("CLAUDE_TRANSCRIPT_PATH").unwrap_or_default(),
-        cwd: cwd.clone(),
-        project_dir: cwd,
+        cwd,
         ..HookContext::default()
     };
     let config = loaded.config;

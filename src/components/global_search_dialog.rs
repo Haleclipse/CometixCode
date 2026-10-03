@@ -23,7 +23,10 @@ fn run_project_search(root: &Path, query: &str) -> (Vec<GlobalSearchMatch>, bool
     if query.trim().is_empty() {
         return (Vec::new(), false);
     }
-    let output = std::process::Command::new("rg")
+    let mut command = std::process::Command::new("rg");
+    // CC inherits process.env (ripgrep.ts spawn without env); the carrier is its counterpart.
+    crate::utils::subprocess_env::apply_process_env_std(&mut command);
+    let output = command
         .current_dir(root)
         .args([
             "--line-number",
