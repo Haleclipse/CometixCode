@@ -1429,6 +1429,7 @@ fn process_slash_command_inner(
 mod tests {
     use super::*;
     use crate::commands::declared_commands_for_tests;
+    use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
 
     fn get_commands() -> &'static [Command] {
         static COMMANDS: std::sync::LazyLock<Vec<Command>> =
@@ -2399,11 +2400,11 @@ mod tests {
     fn rename_receipts_match_official_system_display_without_caveat() {
         // CC rename/rename.ts:27-30,82 and processSlashCommand.tsx:783-798,
         // 675-681: normal onDone paths are two local_command System rows.
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("rename-receipt-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(&root);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _project = PinnedProjectDir::at(&root);
         struct RestoreSession(String, Option<std::path::PathBuf>, std::path::PathBuf);
         impl Drop for RestoreSession {
             fn drop(&mut self) {
@@ -2589,7 +2590,6 @@ mod tests {
     fn system_display_matches_official_fullscreen_dismissal_filter() {
         // CC processSlashCommand.tsx:769-798: only system modal-dismissal
         // rows are omitted; default user output and other system output stay.
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         for fullscreen in ["0", "1"] {
             let _env = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", fullscreen);

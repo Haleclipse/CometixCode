@@ -83,10 +83,11 @@ fn parse_url_host(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn get_api_provider_matches_official_env_precedence() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -108,7 +109,7 @@ mod tests {
 
     #[test]
     fn first_party_base_url_matches_official_host_allowlist() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ANTHROPIC_BASE_URL");
         assert!(is_first_party_anthropic_base_url());
 

@@ -48,6 +48,7 @@ Use TaskGet with a specific task ID to view full details including description a
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     /// Maps to: CC `TaskListTool/prompt.ts:5-49` — the teammate line and the
     /// "## Teammate Workflow" section only exist under agent swarms.
@@ -59,7 +60,7 @@ mod tests {
     /// unconditionally, which failed under `--features anthropic_internal`.
     #[test]
     fn task_list_prompt_matches_official_swarms_branches() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
 
         crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
         let no_opt_in = get_prompt();

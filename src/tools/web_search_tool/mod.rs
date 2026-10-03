@@ -768,6 +768,7 @@ impl crate::tool::ToolCall for WebSearchTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn web_search_tool_schema_matches_official_input_shape() {
@@ -792,7 +793,7 @@ mod tests {
 
     #[test]
     fn web_search_is_enabled_matches_official_provider_and_model_gate() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -819,7 +820,7 @@ mod tests {
 
     #[test]
     fn web_search_model_profile_matches_official_haiku_experiment_shape() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ANTHROPIC_MODEL");
         crate::utils::process_env::set("ANTHROPIC_SMALL_FAST_MODEL", "claude-haiku-test");
         crate::utils::process_env::set("MAX_THINKING_TOKENS", "2048");

@@ -390,6 +390,7 @@ fn ExportDialogSelect<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::EnvVarGuard;
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -414,8 +415,8 @@ mod tests {
         runtime: KeybindingRuntime,
     ) -> (Vec<String>, Vec<serde_json::Value>) {
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = crate::utils::env_utils::EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = crate::utils::env_utils::EnvVarGuard::unset("TMUX");
+        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
+        let _tmux = EnvVarGuard::unset("TMUX");
         let trace = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
         let writes = trace.clone();
         let write_error = write_error.map(str::to_owned);
@@ -791,12 +792,11 @@ mod tests {
         let tool = directory.join("tmux");
         std::fs::write(&tool, "#!/bin/sh\n/bin/cat > \"$CLIPBOARD_FIXTURE_DIR/input\"\n/bin/sleep 0.25\n: > \"$CLIPBOARD_FIXTURE_DIR/finished\"\n").unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let _path = crate::utils::env_utils::EnvVarGuard::set("PATH", &directory);
-        let _fixture =
-            crate::utils::env_utils::EnvVarGuard::set("CLIPBOARD_FIXTURE_DIR", &directory);
+        let _path = EnvVarGuard::set("PATH", &directory);
+        let _fixture = EnvVarGuard::set("CLIPBOARD_FIXTURE_DIR", &directory);
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = crate::utils::env_utils::EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = crate::utils::env_utils::EnvVarGuard::set("TMUX", "fixture");
+        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
+        let _tmux = EnvVarGuard::set("TMUX", "fixture");
         let done = Arc::new(Mutex::new(Vec::new()));
         let done_for_app = done.clone();
         let frames = futures::executor::block_on(async {

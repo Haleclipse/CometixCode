@@ -45,6 +45,7 @@ pub fn check_sonnet_1m_access() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn with_cached_reason(reason: CachedExtraUsageDisabledReason) {
         crate::utils::config::set_test_global_config(Some(crate::utils::config::GlobalConfig {
@@ -97,7 +98,7 @@ mod tests {
     /// the gate for everyone, and non-subscribers pass without an entitlement.
     #[test]
     fn access_checks_honor_the_official_opt_out_and_non_subscriber_pass() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1");
         assert!(!check_opus_1m_access());
         assert!(!check_sonnet_1m_access());

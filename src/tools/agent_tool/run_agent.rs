@@ -2017,7 +2017,7 @@ mod tests {
     use crate::types::message::{
         AssistantContent, AssistantMessage, StopReason, ToolResult, ToolUseBlock, UserMessage,
     };
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::io::Write;
 
     fn tool(name: &str) -> Tool {
@@ -4476,7 +4476,7 @@ mod input_contract_tests {
 
     use super::super::load_agents_dir::AgentDefinitionSource;
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::collections::BTreeMap;
 
     /// CC `runAgent.ts:913-932` preserves successful strings (including empty);

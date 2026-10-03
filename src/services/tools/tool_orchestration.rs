@@ -421,6 +421,7 @@ mod tests {
     use crate::types::message::{AssistantContent, StopReason};
     use crate::types::message::{RenderableMessage, RenderableMessageKind, ToolUseStatus};
     use crate::types::permissions::PermissionRuleValue;
+    use crate::utils::test_env::PinnedProjectDir;
     use std::collections::HashMap;
 
     fn typed_bash_block() -> ToolUseBlock {
@@ -622,7 +623,7 @@ mod tests {
     #[test]
     fn typed_run_tools_defers_permission_and_completion_until_after_hooks() {
         // The relative `src/main.rs` inputs resolve against the project dir.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let read = ToolUseBlock {
             id: crate::types::ids::ToolUseId("toolu_read_concurrent".to_string()),
             name: "Read".to_string(),

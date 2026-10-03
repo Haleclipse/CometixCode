@@ -1605,6 +1605,7 @@ pub(crate) fn check_read_only_constraints(command: &str, cwd: &std::path::Path) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn check_read_only_constraints_allows_plain_read_only_commands() {
@@ -1854,7 +1855,7 @@ mod tests {
 
     #[test]
     fn sandboxed_git_outside_original_cwd_is_not_auto_allowed() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let config = std::env::temp_dir().join(format!(
             "cometix-readonly-sandbox-settings-{}",
             uuid::Uuid::new_v4().simple()
@@ -1870,7 +1871,7 @@ mod tests {
             r#"{"sandbox":{"enabled":true}}"#,
         )
         .unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
         // The sandbox gate reads merged settings, which are cached
         // process-wide (`settings_cache.rs:10-12`); without the reset an
         // earlier test's snapshot hides the `sandbox.enabled` written above.

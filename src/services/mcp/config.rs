@@ -1299,6 +1299,7 @@ pub fn set_mcp_server_enabled(name: &str, enabled: bool) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::utils::config::McpServerConfig;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// Moves the project root to a scratch directory for one test.
     ///
@@ -1364,7 +1365,7 @@ mod tests {
 
     #[test]
     fn async_local_discovery_waits_at_source_extra_targets_and_has_no_sdk_policy_exemption() {
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_runtime::initialize_test_process_runtime();
         // Production effects are polled on the published Tokio runtime. This
         // fixture must enter it before driving the async filesystem path.
@@ -1376,12 +1377,9 @@ mod tests {
         let config = root.join("config");
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
-        let _managed = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-            &managed,
-        );
-        let _simple = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let _project = ProjectRootGuard::pin(&root);
         std::fs::write(
             managed.join("managed-settings.json"),
@@ -1773,7 +1771,7 @@ mod tests {
 
     #[test]
     fn get_all_mcp_configs_preserves_manual_servers_without_claude_ai_business_wiring() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-mcp-get-all-no-claudeai-{}",
             uuid::Uuid::new_v4()
@@ -1784,12 +1782,9 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&managed_dir).unwrap();
         std::fs::create_dir_all(&project_dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        let _managed = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-            &managed_dir,
-        );
-        let _simple = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let _project_root = ProjectRootGuard::pin(&project_dir);
         crate::utils::config::clear_global_config_cache_for_testing();
 
@@ -1823,7 +1818,7 @@ mod tests {
 
     #[test]
     fn disabled_plugin_mcp_servers_do_not_suppress_enabled_duplicates_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-mcp-disabled-plugin-dedup-{}",
             uuid::Uuid::new_v4()
@@ -1833,11 +1828,8 @@ mod tests {
         let managed_dir = temp_dir.join("managed");
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&managed_dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        let _managed = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-            &managed_dir,
-        );
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
         crate::utils::config::clear_global_config_cache_for_testing();
 
         let plugin_servers = indexmap::IndexMap::from([
@@ -2091,7 +2083,7 @@ mod tests {
 
     #[test]
     fn get_mcp_configs_by_scope_projects_user_local_and_mcpjson_sources() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir =
             std::env::temp_dir().join(format!("cometix-mcp-scope-{}", uuid::Uuid::new_v4()));
         let project_dir = temp_dir.join("project").join("child");
@@ -2143,7 +2135,7 @@ mod tests {
 
     #[test]
     fn all_configured_mcp_servers_filters_project_mcpjson_by_official_approval_status() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-mcp-project-approval-{}",
             uuid::Uuid::new_v4()
@@ -2163,9 +2155,8 @@ mod tests {
         )
         .unwrap();
 
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        let _non_interactive =
-            crate::utils::env_utils::EnvVarGuard::unset("COMETIX_NON_INTERACTIVE_SESSION");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _non_interactive = EnvVarGuard::unset("COMETIX_NON_INTERACTIVE_SESSION");
         let previous_interactive = crate::bootstrap::state::get_is_interactive();
         crate::bootstrap::state::set_is_interactive(true);
         let _project_root = ProjectRootGuard::pin(&project_dir);
@@ -2193,7 +2184,7 @@ mod tests {
 
     #[test]
     fn parse_mcp_config_reports_missing_env_warning_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("COMETIX_MCP_PARSE_MISSING");
         let parsed = parse_mcp_config_value_readonly(
             &serde_json::json!({
@@ -2250,13 +2241,13 @@ mod tests {
 
     #[test]
     fn get_mcp_config_by_name_reads_user_snapshot_like_official_lookup() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-mcp-config-by-name-{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
         std::fs::write(
             temp_dir.join(".claude.json"),
             serde_json::json!({
@@ -2282,7 +2273,7 @@ mod tests {
 
     #[test]
     fn get_mcp_config_by_name_matches_official_source_precedence() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-mcp-config-by-name-precedence-{}",
             uuid::Uuid::new_v4()
@@ -2293,11 +2284,8 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&managed_dir).unwrap();
         std::fs::create_dir_all(&project_dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        let _managed = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-            &managed_dir,
-        );
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
         let _project_root = ProjectRootGuard::pin(&project_dir);
 
         let project_path_for_key = project_dir
@@ -2394,15 +2382,14 @@ mod tests {
 
     #[test]
     fn set_mcp_server_enabled_persists_disabled_membership_like_official_toggle() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir =
             std::env::temp_dir().join(format!("cometix-mcp-set-enabled-{}", uuid::Uuid::new_v4()));
         let project_dir = temp_dir.join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
-        let _session_write =
-            crate::utils::env_utils::EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _session_write = EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _project_root = ProjectRootGuard::pin(&project_dir);
 
         set_mcp_server_enabled("docs", false).unwrap();
@@ -2595,11 +2582,8 @@ mod tests {
             r#"{"duplicate":{"command":"echo","args":["same"]}}"#,
         )
         .unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
-        let _managed = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-            &managed,
-        );
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _project = ProjectRootGuard::pin(&root);
         let _inline = InlinePluginsGuard(crate::bootstrap::state::get_inline_plugins());
         crate::bootstrap::state::set_inline_plugins(vec![plugin]);

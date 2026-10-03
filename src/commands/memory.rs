@@ -129,8 +129,8 @@ pub fn MemoryCommandPanel<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::TEST_ENV_LOCK;
     use crate::utils::settings::SettingsJson;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
 
     #[test]

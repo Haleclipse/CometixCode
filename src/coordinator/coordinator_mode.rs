@@ -428,15 +428,14 @@ You:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn with_coordinator_env<T>(enabled: bool, f: impl FnOnce() -> T) -> T {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env = if enabled {
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1")
+            EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1")
         } else {
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE")
+            EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE")
         };
         f()
     }

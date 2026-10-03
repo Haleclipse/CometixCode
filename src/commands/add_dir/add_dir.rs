@@ -251,6 +251,7 @@ pub fn AddDirCommand<'a>(
 mod tests {
     use super::*;
     use crate::state::app_state_store::AppState;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[tokio::test]
     async fn call_matches_official_empty_input_and_help_branch() {
@@ -271,7 +272,7 @@ mod tests {
 
     #[test]
     fn handle_add_directory_matches_official_latest_context_and_bootstrap_order() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let prior_dirs = get_additional_directories_for_claude_md();
         set_additional_directories_for_claude_md(vec![PathBuf::from("/first")]);
         let store = AppStore::new(AppState::default(), None);
@@ -296,7 +297,7 @@ mod tests {
     }
     #[test]
     fn handle_add_directory_matches_official_failed_remember_keeps_session_update() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let prior_dirs = get_additional_directories_for_claude_md();
         let previous = crate::bootstrap::state::is_session_persistence_disabled();
         crate::bootstrap::state::set_session_persistence_disabled(true);
@@ -326,8 +327,7 @@ mod tests {
     }
     #[test]
     fn handle_add_directory_matches_official_remember_writes_local_only() {
-        use crate::utils::env_utils::EnvVarGuard;
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("cc-add-dir-save-{}", uuid::Uuid::new_v4()));
         let workdir = root.join("workspace");
         std::fs::create_dir_all(&workdir).unwrap();

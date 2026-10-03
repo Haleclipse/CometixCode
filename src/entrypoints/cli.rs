@@ -110,13 +110,13 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// The import-time constants keep the startup window's environment: a
     /// later write, as settings env makes, does not reach them.
     #[test]
     fn import_time_constants_ignore_later_environment_writes() {
-        use crate::utils::env_utils::EnvVarGuard;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _startup = [
             EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"),
             EnvVarGuard::unset("TMUX"),

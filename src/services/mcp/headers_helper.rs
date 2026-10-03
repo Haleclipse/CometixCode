@@ -136,6 +136,7 @@ fn value_type_name(value: &Value) -> &'static str {
 mod tests {
     use super::*;
     use crate::services::mcp::types::{ConfigScope, Transport};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn config(scope: ConfigScope, helper: Option<String>) -> ScopedMcpServerConfig {
         ScopedMcpServerConfig {
@@ -182,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn get_mcp_server_headers_merges_dynamic_over_static_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let helper = "printf '{\"X-Dynamic\":\"dynamic\",\"X-Override\":\"dynamic\"}'";
         let headers =
             get_mcp_server_headers("docs", &config(ConfigScope::User, Some(helper.to_string())))
@@ -200,17 +201,15 @@ mod tests {
 
     #[tokio::test]
     async fn get_mcp_headers_from_helper_blocks_untrusted_project_scope_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-mcp-headers-helper-{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp_dir.join("config"));
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp_dir.join("config"));
         let previous_original_cwd = crate::bootstrap::state::get_original_cwd();
-        let _non_interactive =
-            crate::utils::env_utils::EnvVarGuard::unset("COMETIX_NON_INTERACTIVE_SESSION");
+        let _non_interactive = EnvVarGuard::unset("COMETIX_NON_INTERACTIVE_SESSION");
         crate::bootstrap::state::set_original_cwd(temp_dir.join("workspace"));
         crate::utils::config::reset_trust_dialog_accepted_cache_for_testing();
 

@@ -624,8 +624,8 @@ fn collect_errors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
     use crate::utils::settings::constants::get_setting_source_display_name_capitalized;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvLock};
     use std::fs;
 
     #[test]
@@ -812,8 +812,8 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    fn env_lock() -> &'static crate::utils::env_utils::TestEnvLock {
-        &crate::utils::env_utils::TEST_ENV_LOCK
+    fn env_lock() -> &'static TestEnvLock {
+        &TEST_ENV_LOCK
     }
 
     struct AllowedSourcesRestore(Vec<String>);

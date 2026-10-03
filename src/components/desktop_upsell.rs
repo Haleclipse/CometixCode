@@ -275,6 +275,7 @@ pub fn DesktopUpsellStartup<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};
@@ -351,7 +352,7 @@ mod tests {
 
     #[test]
     fn desktop_upsell_config_ignores_growthbook_delivery() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
             "tengu_desktop_upsell".to_string(),
@@ -362,7 +363,7 @@ mod tests {
             serde_json::json!({"enable_startup_dialog": true, "enable_shortcut_tip": true}),
         )]));
         crate::utils::config::set_test_global_config(Some(config));
-        let _overrides = crate::utils::env_utils::EnvVarGuard::set(
+        let _overrides = EnvVarGuard::set(
             "CLAUDE_INTERNAL_FC_OVERRIDES",
             r#"{"tengu_desktop_upsell":{"enableStartupDialog":true}}"#,
         );

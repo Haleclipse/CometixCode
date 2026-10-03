@@ -13,6 +13,8 @@ use crate::services::compact::time_based_mc_config::{
 };
 use crate::tool::ToolUseContext;
 use crate::types::message::{AssistantContent, Message, UserContent};
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 use std::collections::HashSet;
 use std::sync::{LazyLock, Mutex};
 
@@ -99,8 +101,7 @@ static CACHED_MC_STATE: LazyLock<Mutex<CachedMicrocompactState>> =
     LazyLock::new(|| Mutex::new(CachedMicrocompactState::default()));
 
 #[cfg(test)]
-pub static TEST_CACHED_MC_LOCK: LazyLock<crate::utils::env_utils::TestStateLock> =
-    LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub static TEST_CACHED_MC_LOCK: LazyLock<TestStateLock> = LazyLock::new(TestStateLock::new);
 
 #[derive(Debug, Clone, Default)]
 pub struct MicrocompactResult {

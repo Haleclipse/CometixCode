@@ -639,6 +639,7 @@ pub fn aggregate_claude_code_stats_for_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn write_lines(path: &Path, lines: &[Value]) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -652,7 +653,7 @@ mod tests {
 
     #[test]
     fn stats_aggregation_counts_main_sessions_and_subagent_tokens_like_official() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("cometix-stats-{}", uuid::Uuid::new_v4()));
         let _override = crate::utils::session_storage::set_test_projects_dir_override(&root);
         let _cache =
@@ -694,7 +695,7 @@ mod tests {
 
     #[test]
     fn stats_aggregation_skips_synthetic_and_malformed_timestamp_sessions() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("cometix-stats-{}", uuid::Uuid::new_v4()));
         let _override = crate::utils::session_storage::set_test_projects_dir_override(&root);
         let _cache =

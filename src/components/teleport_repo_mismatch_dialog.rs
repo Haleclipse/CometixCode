@@ -171,7 +171,7 @@ pub fn TeleportRepoMismatchDialog<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};

@@ -560,6 +560,7 @@ mod tests {
     use crate::services::mcp::types::{
         McpClientSnapshot, McpPromptSnapshot, McpServerSnapshot, McpToolSnapshot, ServerResource,
     };
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -699,7 +700,7 @@ mod tests {
 
     #[test]
     fn mcp_settings_builds_server_infos_from_config_and_runtime_without_clients() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir =
             std::env::temp_dir().join(format!("cometix-mcp-settings-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();

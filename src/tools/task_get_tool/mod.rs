@@ -206,6 +206,8 @@ impl crate::tool::ToolCall for TaskGetTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn task_get_schema_matches_official_input_shape() {
         let schema = super::task_get_tool_schema();
@@ -222,7 +224,7 @@ mod tests {
         use crate::tool::ToolCall;
 
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("tool-list");
         {
             let mut tasks = crate::utils::tasks::TASK_TOOL_STORE.lock().unwrap();

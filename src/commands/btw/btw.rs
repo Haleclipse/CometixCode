@@ -432,7 +432,7 @@ pub fn call(
 mod tests {
     use super::*;
     use crate::types::message::{AssistantContent, AssistantMessage};
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::{StreamExt, stream};
 
     struct CacheSafeParamsRestore(Option<CacheSafeParams>);

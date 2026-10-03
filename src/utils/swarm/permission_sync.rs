@@ -7,6 +7,8 @@
 //! the official request/response shapes and function boundaries in memory until
 //! full team-file persistence is enabled.
 
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -470,8 +472,8 @@ pub fn send_permission_response_via_mailbox(
 }
 
 #[cfg(test)]
-pub static TEST_PERMISSION_SYNC_LOCK: std::sync::LazyLock<crate::utils::env_utils::TestStateLock> =
-    std::sync::LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub static TEST_PERMISSION_SYNC_LOCK: std::sync::LazyLock<TestStateLock> =
+    std::sync::LazyLock::new(TestStateLock::new);
 
 #[cfg(test)]
 pub fn clear_permission_sync_for_test() {
@@ -481,6 +483,7 @@ pub fn clear_permission_sync_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// `get_leader_name` reads the team file from disk (CC
     /// `permissionSync.ts:657` `readTeamFileAsync`), so a memory-only seed is a
@@ -488,18 +491,14 @@ mod tests {
     /// `COMETIX_TEST_TEAM_FILE_IO` is on. Pin a scratch config root and enable
     /// the team-file and mailbox disk paths; the returned guards must outlive
     /// the test body.
-    fn seed_team() -> (
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-    ) {
+    fn seed_team() -> (EnvVarGuard, EnvVarGuard, EnvVarGuard) {
         let root = std::env::temp_dir().join(format!(
             "cometix-permission-sync-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let config_guard = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let io_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
-        let write_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
+        let write_guard = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         let record = crate::utils::swarm::team_helpers::create_team_record(
             "alpha".to_string(),
@@ -518,7 +517,7 @@ mod tests {
         let _team_state_lock = crate::utils::swarm::team_helpers::TEST_TEAM_HELPERS_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         clear_permission_sync_for_test();
         let _team_guards = seed_team();
         let request = create_permission_request(CreatePermissionRequestParams {
@@ -567,7 +566,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         clear_permission_sync_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
         let _team_guards = seed_team();
@@ -605,7 +604,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         clear_permission_sync_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
         let _team_guards = seed_team();
@@ -700,7 +699,7 @@ mod tests {
         let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         clear_permission_sync_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
         let _team_guards = seed_team();

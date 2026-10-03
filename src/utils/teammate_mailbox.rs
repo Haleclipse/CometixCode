@@ -7,6 +7,8 @@
 //! now mirrors that file lifecycle for pane-backed teammates while retaining an
 //! in-memory cache for the current in-process runner.
 
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -818,8 +820,8 @@ pub fn mark_messages_as_read_by_predicate(
 }
 
 #[cfg(test)]
-pub static TEST_TEAMMATE_MAILBOX_LOCK: std::sync::LazyLock<crate::utils::env_utils::TestStateLock> =
-    std::sync::LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub static TEST_TEAMMATE_MAILBOX_LOCK: std::sync::LazyLock<TestStateLock> =
+    std::sync::LazyLock::new(TestStateLock::new);
 
 #[cfg(test)]
 pub fn clear_mailboxes_for_test() {
@@ -829,7 +831,7 @@ pub fn clear_mailboxes_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn unique_config_dir(prefix: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -866,7 +868,7 @@ mod tests {
     #[test]
     fn file_backed_mailbox_matches_official_inbox_lifecycle() {
         let _lock = TEST_TEAMMATE_MAILBOX_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         clear_mailboxes_for_test();
         let root = unique_config_dir("mailbox");
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
@@ -1005,7 +1007,7 @@ mod tests {
     #[test]
     fn mailbox_write_failure_is_returned_and_does_not_commit_in_memory_success() {
         let _lock = TEST_TEAMMATE_MAILBOX_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         clear_mailboxes_for_test();
         let root = unique_config_dir("mailbox-invalid-root");
         std::fs::write(&root, "not a directory").unwrap();

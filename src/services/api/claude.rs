@@ -4903,14 +4903,14 @@ fn single_shot_query_options(
 mod tests {
     #[test]
     fn api_stream_and_fallback_normalize_plan_before_typed_messages_like_official() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = crate::utils::plans::test_plan_state_lock();
         let dir =
             std::env::temp_dir().join(format!("cometix-normalize-plan-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(&dir);
-        let _local = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _project = PinnedProjectDir::at(&dir);
+        let _local = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
         let tools = vec![crate::tools::exit_plan_mode_tool::exit_plan_mode_tool_schema()];
         let plan_path = crate::utils::plans::get_plan_file_path(Some("agent-fixture"));
         std::fs::write(&plan_path, "").unwrap();
@@ -5050,6 +5050,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
 
     fn wire_test_user_message(text: &str) -> Message {
         Message::User(UserMessage {
@@ -5436,7 +5437,7 @@ mod tests {
 
     #[test]
     fn sdk_request_adapter_overlays_private_cached_mc_blocks_without_widening_sdk_types() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -5610,7 +5611,7 @@ mod tests {
 
     #[test]
     fn cached_mc_body_blocks_are_first_party_repl_only_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -5635,7 +5636,7 @@ mod tests {
 
     #[test]
     fn production_thinking_config_matches_official_env_and_settings_precedence() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
         crate::utils::process_env::remove("CLAUDE_CODE_THINKING");
         crate::utils::process_env::remove("COMETIX_THINKING");
@@ -5805,7 +5806,7 @@ mod tests {
 
     #[test]
     fn sdk_request_adapter_preserves_global_system_prompt_cache_scope() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
         crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
         let messages = vec![Message::User(UserMessage {
@@ -5859,7 +5860,7 @@ mod tests {
 
     #[test]
     fn sdk_params_skip_global_system_prompt_cache_when_mcp_tool_cache_marker_is_needed() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
         crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
         let messages = vec![Message::User(UserMessage {
@@ -6540,7 +6541,7 @@ mod tests {
 
     #[test]
     fn sdk_params_preserve_advisor_blocks_when_advisor_beta_is_sent() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ANTHROPIC_BETAS");
         let messages = vec![Message::Assistant(AssistantMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -6590,7 +6591,7 @@ mod tests {
     /// this shape. Flip this assertion when #25 lands.
     #[test]
     fn sdk_params_flatten_redacted_advisor_to_an_empty_block_pending_25() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ANTHROPIC_BETAS");
         let messages = vec![Message::Assistant(AssistantMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -6863,7 +6864,7 @@ mod tests {
     #[test]
     fn sdk_request_options_attach_beta_header_extra_body_output_config_and_context_management_like_official()
      {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -6976,7 +6977,7 @@ mod tests {
 
     #[test]
     fn explicit_output_format_body_header_order_and_empty_base_edge_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let env_keys = [
@@ -7158,7 +7159,7 @@ mod tests {
 
     #[test]
     fn rollout_header_tool_independence_and_custom_duplicates_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -7346,7 +7347,7 @@ mod tests {
 
     #[test]
     fn source_local_beta_guards_preserve_intentional_duplicates_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -7433,7 +7434,7 @@ mod tests {
 
     #[test]
     fn sdk_request_options_add_tool_search_beta_when_deferred_loading_is_sent() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
@@ -7483,7 +7484,7 @@ mod tests {
 
     #[test]
     fn sdk_params_keep_tool_search_available_while_mcp_servers_pending_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
@@ -7573,7 +7574,7 @@ mod tests {
 
     #[test]
     fn sdk_request_options_put_bedrock_only_betas_in_extra_body_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
@@ -7734,7 +7735,7 @@ mod tests {
 
     #[test]
     fn sdk_params_mark_deferred_tools_for_tool_search_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![
@@ -7824,7 +7825,7 @@ mod tests {
 
     #[test]
     fn sdk_params_with_tool_search_omit_undiscovered_deferred_tools_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![Message::User(UserMessage {
@@ -7878,7 +7879,7 @@ mod tests {
 
     #[test]
     fn sdk_params_do_not_mark_deferred_tools_when_tool_search_request_gate_is_off() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![Message::User(UserMessage {
@@ -8109,7 +8110,7 @@ mod tests {
 
     #[test]
     fn get_extra_body_params_empty_when_no_env() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // Temporarily ensure env var is not set
         crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_BODY");
         let result = get_extra_body_params(None);
@@ -8118,7 +8119,7 @@ mod tests {
 
     #[test]
     fn get_extra_body_params_with_beta_headers() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_BODY");
         let headers = vec!["beta-1".to_string(), "beta-2".to_string()];
         let result = get_extra_body_params(Some(&headers));
@@ -8129,7 +8130,7 @@ mod tests {
 
     #[test]
     fn get_extra_body_params_deduplicates_beta_headers() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set(
             "CLAUDE_CODE_EXTRA_BODY",
             r#"{"anthropic_beta":["existing-beta"]}"#,
@@ -8146,14 +8147,14 @@ mod tests {
 
     #[test]
     fn prompt_caching_enabled_by_default() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("DISABLE_PROMPT_CACHING");
         assert!(get_prompt_caching_enabled("claude-sonnet-4-20250514"));
     }
 
     #[test]
     fn prompt_caching_disabled_globally() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("DISABLE_PROMPT_CACHING", "1");
         assert!(!get_prompt_caching_enabled("claude-sonnet-4-20250514"));
         crate::utils::process_env::remove("DISABLE_PROMPT_CACHING");
@@ -8163,7 +8164,7 @@ mod tests {
 
     #[test]
     fn cache_control_default_is_ephemeral() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -8176,7 +8177,7 @@ mod tests {
 
     #[test]
     fn cache_control_global_scope() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("ENABLE_PROMPT_CACHING_1H_BEDROCK");
         let cc = get_cache_control(Some(CacheScope::Global), None);
@@ -8293,7 +8294,7 @@ mod tests {
 
     #[test]
     fn cache_control_sets_1h_ttl_for_bedrock_official_env_opt_in() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -8322,7 +8323,7 @@ mod tests {
 
     #[test]
     fn cache_control_1h_allowlist_ignores_growthbook_delivery() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-prompt-cache-1h-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).expect("create temp config dir");
@@ -8396,7 +8397,7 @@ mod tests {
 
     #[test]
     fn cache_control_1h_allowlist_reads_settings_not_growthbook() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::settings::settings_cache::reset_settings_cache();
         struct ResetCache;
         impl Drop for ResetCache {
@@ -8480,7 +8481,7 @@ mod tests {
 
     #[test]
     fn configure_task_budget_params_basic() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let mut output_config = serde_json::Map::new();
         let mut betas = Vec::new();
         let budget = TaskBudget {
@@ -8623,7 +8624,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn non_streaming_oauth_refusal_precedes_request_plan_construction() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let config_dir = std::env::temp_dir().join(format!(
@@ -8645,13 +8646,13 @@ mod tests {
         )
         .unwrap();
         let _guards = [
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN"),
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir),
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "0"),
+            EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN"),
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir),
+            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "0"),
         ];
         crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
         crate::utils::config::set_test_global_config(Some(
@@ -8948,7 +8949,7 @@ mod tests {
 
     #[test]
     fn get_max_output_tokens_default_for_sonnet() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_MAX_OUTPUT_TOKENS");
         crate::utils::process_env::remove("COMETIX_MAX_TOKENS_CAP");
         let result = get_max_output_tokens_for_model("claude-sonnet-4-20250514");
@@ -8957,7 +8958,7 @@ mod tests {
 
     #[test]
     fn get_max_output_tokens_env_override() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "32000suffix");
         crate::utils::process_env::remove("COMETIX_MAX_TOKENS_CAP");
         let result = get_max_output_tokens_for_model("claude-sonnet-4-20250514");
@@ -8973,7 +8974,7 @@ mod tests {
 
     #[test]
     fn nonstreaming_timeout_default() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("API_TIMEOUT_MS");
         crate::utils::process_env::remove("CLAUDE_CODE_REMOTE");
         assert_eq!(get_nonstreaming_fallback_timeout_ms(), 300_000);
@@ -8981,7 +8982,7 @@ mod tests {
 
     #[test]
     fn nonstreaming_timeout_remote() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("API_TIMEOUT_MS");
         crate::utils::process_env::set("CLAUDE_CODE_REMOTE", "1");
         assert_eq!(get_nonstreaming_fallback_timeout_ms(), 120_000);
@@ -8990,7 +8991,7 @@ mod tests {
 
     #[test]
     fn nonstreaming_timeout_override() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("API_TIMEOUT_MS", "60000");
         assert_eq!(get_nonstreaming_fallback_timeout_ms(), 60_000);
         crate::utils::process_env::remove("API_TIMEOUT_MS");
@@ -9028,7 +9029,7 @@ mod tests {
 
     #[test]
     fn build_system_prompt_blocks_splits_global_static_and_uncached_dynamic_boundary() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
         crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
         let prompt = vec![
@@ -9056,13 +9057,12 @@ mod tests {
 
     #[test]
     fn build_system_prompt_blocks_places_attribution_and_prefix_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // `shouldUseGlobalCacheScope()` = firstParty && !DISABLE_EXPERIMENTAL_BETAS.
-        let _bedrock = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
-        let _disable =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
+        let _disable = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         let header = "x-anthropic-billing-header: cc_version=0.0.0.abc; cc_entrypoint=cli;";
         let prefix = crate::constants::system::get_cli_sysprompt_prefix(false, false);
         let prompt = vec![
@@ -9117,10 +9117,7 @@ mod tests {
 
         // Default mode (`utils/api.ts:411-433`): same shape, boundary text kept
         // inside the joined rest because nothing strips it here in CC either.
-        let _disable_betas = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
-            "1",
-        );
+        let _disable_betas = EnvVarGuard::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
         let blocks = build_system_prompt_blocks(&prompt, true, false, None);
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0].text, header);
@@ -9138,7 +9135,7 @@ mod tests {
 
     #[test]
     fn build_system_prompt_blocks_skips_global_boundary_when_tool_cache_owns_system_prompt() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
         crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
         let prompt = vec![
@@ -9273,7 +9270,7 @@ mod tests {
 
     #[test]
     fn get_api_metadata_returns_valid_json_user_id() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_METADATA");
         let meta = get_api_metadata();
         let parsed: serde_json::Value =
@@ -9283,7 +9280,7 @@ mod tests {
 
     #[test]
     fn get_api_metadata_device_id_matches_official_persisted_user_id() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_METADATA");
         let mut config = crate::utils::config::GlobalConfig::default();
         config.user_id = Some("0123456789abcdef0123456789abcdef".to_string());
@@ -9309,7 +9306,7 @@ mod tests {
 
     #[test]
     fn get_api_metadata_mints_one_device_id_and_reuses_it() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_METADATA");
         let previous = crate::utils::config::replace_test_global_config(Some(
             crate::utils::config::GlobalConfig::default(),
@@ -9329,7 +9326,7 @@ mod tests {
 
     #[test]
     fn stream_idle_timeout_defaults_to_90s_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_STREAM_IDLE_TIMEOUT_MS");
         assert_eq!(stream_idle_timeout_ms(), 90_000);
         crate::utils::process_env::set("CLAUDE_STREAM_IDLE_TIMEOUT_MS", "45000");
@@ -9343,7 +9340,7 @@ mod tests {
 
     #[test]
     fn stream_watchdog_gated_by_claude_enable_stream_watchdog() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_ENABLE_STREAM_WATCHDOG");
         assert!(!stream_watchdog_enabled());
         crate::utils::process_env::set("CLAUDE_ENABLE_STREAM_WATCHDOG", "1");
@@ -9389,7 +9386,7 @@ mod tests {
     #[test]
     fn init_request_matches_official_expanded_prompt_and_reminder_seams() {
         use crate::types::message::{AttachmentMessage, UserContent};
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = crate::utils::config::replace_test_global_config(Some(Default::default()));
@@ -9435,6 +9432,7 @@ mod tests {
 mod raw_image_tests {
     use super::*;
     use crate::types::message::{ToolResultContentBlock, UserContent};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn raw_image_api_projection_matches_official_url_cache_control_and_no_mutation() {
@@ -9487,12 +9485,12 @@ mod raw_image_tests {
     #[test]
     fn extra_body_and_metadata_match_official_json_owner_bom_and_cache() {
         // CC services/api/claude.ts:272–297,503–519, utils/json.ts:31–58.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _body = crate::utils::env_utils::EnvVarGuard::set(
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _body = EnvVarGuard::set(
             "CLAUDE_CODE_EXTRA_BODY",
             "\u{feff}{\"custom_json_owner\":true}",
         );
-        let _metadata = crate::utils::env_utils::EnvVarGuard::set(
+        let _metadata = EnvVarGuard::set(
             "CLAUDE_CODE_EXTRA_METADATA",
             "\u{feff}{\"json_owner_metadata\":123}",
         );

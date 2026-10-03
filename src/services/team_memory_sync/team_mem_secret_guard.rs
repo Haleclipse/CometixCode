@@ -32,6 +32,8 @@ pub fn check_team_mem_secrets(_file_path: &Path, _content: &str) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "anthropic_internal")]
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn ordinary_project_files_are_not_scanned() {
@@ -47,7 +49,7 @@ mod tests {
     #[cfg(feature = "anthropic_internal")]
     #[test]
     fn internal_team_memory_write_is_blocked_with_official_copy() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let path = crate::memdir::team_mem_paths::get_team_mem_path().join("shared.md");
         let content = format!("safe\nghp_{}", "a".repeat(36));
         let error = check_team_mem_secrets(&path, &content).unwrap_err();

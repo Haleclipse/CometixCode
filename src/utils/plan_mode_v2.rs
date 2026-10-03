@@ -68,7 +68,7 @@ pub fn get_pewter_ledger_variant() -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn plan_counts_match_official_parse_int_prefix_semantics() {

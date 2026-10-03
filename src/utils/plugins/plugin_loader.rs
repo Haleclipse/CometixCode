@@ -2161,11 +2161,11 @@ mod tests {
     use super::super::load_plugin_agents::load_plugin_agents_from_plugins;
     use super::*;
     use crate::types::plugin::PluginComponent;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::plugins::schemas::PluginManifest;
     use crate::utils::settings::{
         constants::SettingSource, settings_cache, validation::SettingsWithErrors,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::fs;
     fn temp_dir(label: &str) -> PathBuf {
         let root =

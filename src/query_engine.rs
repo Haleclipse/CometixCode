@@ -1645,6 +1645,7 @@ fn user_content_value(content: &crate::types::message::UserContent) -> serde_jso
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, IsolatedProjectSettings, TEST_ENV_LOCK};
 
     fn mcp_tool(server: &str, name: &str) -> crate::types::tools::Tool {
         crate::types::tools::Tool {
@@ -1660,7 +1661,7 @@ mod tests {
 
     #[test]
     fn build_all_tools_sorts_headless_pool_like_print_ts_build_all_tools() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         // CC main.tsx:2755 `getTools(toolPermissionContext)` — insertion order
         // (Agent, TaskOutput, Bash, ...), which is what the headless pool used
         // to ship verbatim.
@@ -1746,8 +1747,8 @@ mod tests {
 
     #[test]
     fn custom_prompt_memory_order_matches_official_query_engine_assembly() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _project = crate::utils::env_utils::IsolatedProjectSettings::pin();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _project = IsolatedProjectSettings::pin();
         let root =
             std::env::temp_dir().join(format!("cometix-query-memory-{}", uuid::Uuid::new_v4()));
         struct Cleanup(std::path::PathBuf);
@@ -1757,12 +1758,11 @@ mod tests {
             }
         }
         let _cleanup = Cleanup(root.clone());
-        let _memory = crate::utils::env_utils::EnvVarGuard::set(
+        let _memory = EnvVarGuard::set(
             "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
             root.to_string_lossy().as_ref(),
         );
-        let _enabled =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let _enabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
         let config = CliConfig {
             system_prompt: Some("CUSTOM".into()),
             append_system_prompt: Some("APPEND".into()),
@@ -2070,8 +2070,8 @@ mod tests {
     /// A now-invalid CLI path must not re-enter validation on the next submit.
     #[tokio::test]
     async fn continued_query_matches_official_startup_directory_lifetime() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _settings = crate::utils::env_utils::IsolatedProjectSettings::pin();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _settings = IsolatedProjectSettings::pin();
         let mut initial = crate::state::app_state_store::AppState::default();
         let permission = crate::utils::permissions::permission_update::apply_permission_update(
             &crate::tool::ToolPermissionContext::default(),
@@ -2131,8 +2131,7 @@ mod tests {
     /// `opus[1m]` used to reach the API as the literal `opus`.
     #[test]
     fn initial_main_loop_model_resolves_aliases_like_query_engine() {
-        use crate::utils::env_utils::EnvVarGuard;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _model = EnvVarGuard::unset("ANTHROPIC_MODEL");

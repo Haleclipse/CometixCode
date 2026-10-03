@@ -1066,6 +1066,7 @@ fn ErrorsTabContent(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     #[derive(Default, Props)]
     struct WorkerStateProbeProps {
         handle: std::sync::Arc<std::sync::Mutex<Option<PluginUiState<usize>>>>,
@@ -1097,11 +1098,11 @@ mod tests {
             time::Duration,
         };
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         let home =
             std::env::temp_dir().join(format!("cometix-plugin-burst-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &home);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &home);
         for (paste, query) in [
             (false, "frontend"),
             (true, "frontend"),

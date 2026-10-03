@@ -280,6 +280,7 @@ pub fn track_git_operations(command: &str, exit_code: i32, stdout: Option<&str>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn parses_normal_and_root_commit_ids() {
@@ -296,13 +297,13 @@ mod tests {
 
     #[test]
     fn successful_gh_pr_create_links_active_session_metadata() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-git-pr-session-link-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let _projects = crate::utils::session_storage::set_test_projects_dir_override(&root);
-        let _writes = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
 
         track_git_operations(
             "gh pr create --title test",

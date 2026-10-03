@@ -145,6 +145,7 @@ pub fn get_word_segmenter() -> &'static Segmenter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::EnvVarGuard;
 
     /// Segmentation must not vary with the process locale.
     ///
@@ -156,7 +157,7 @@ mod tests {
     #[test]
     fn word_segmentation_is_independent_of_the_process_locale() {
         let baseline = describe(get_word_segmenter().segment("hello:world 你好世界"));
-        let _guard = crate::utils::env_utils::EnvVarGuard::set("LC_ALL", "ja_JP.UTF-8");
+        let _guard = EnvVarGuard::set("LC_ALL", "ja_JP.UTF-8");
         assert_eq!(
             describe(get_word_segmenter().segment("hello:world 你好世界")),
             baseline

@@ -141,7 +141,7 @@ fn get_three_p_fallback_suggestion(model: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[tokio::test]
     async fn aliases_and_empty_models_match_official_local_validation_paths() {

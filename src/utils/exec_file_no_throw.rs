@@ -685,6 +685,7 @@ fn captured_output(
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn workdir() -> std::path::PathBuf {
         let path =
@@ -697,9 +698,8 @@ mod tests {
     /// executor, inherits cwd, and returns DCS only after load-buffer succeeds.
     #[test]
     fn clipboard_backend_matches_official_eager_tmux_and_failure_fallback() {
-        use crate::utils::env_utils::EnvVarGuard;
         use std::os::unix::fs::PermissionsExt;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let dir = workdir();
         let executable = dir.join("tmux");
         std::fs::write(&executable, "#!/bin/sh\n/bin/cat > \"$CLIP_EXEC_FIXTURE/input\"\nprintf '%s\\n' \"$@\" > \"$CLIP_EXEC_FIXTURE/args\"\n/bin/pwd > \"$CLIP_EXEC_FIXTURE/cwd\"\n[ -f \"$CLIP_EXEC_FIXTURE/success\" ]\n").unwrap();
@@ -997,8 +997,7 @@ mod tests {
     /// overrides and undefined removal, with final env captured before await.
     #[test]
     fn options_matches_official_env_inheritance_override_deletion_and_cwd() {
-        use crate::utils::env_utils::EnvVarGuard;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _inherit = EnvVarGuard::set("EXEC_PARITY_INHERIT", "inherited");
         let _override = EnvVarGuard::set("EXEC_PARITY_OVERRIDE", "parent");
         let _remove = EnvVarGuard::set("EXEC_PARITY_REMOVE", "delete-me");

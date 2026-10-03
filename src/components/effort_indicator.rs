@@ -35,6 +35,7 @@ pub fn get_effort_notification_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn effort_level_to_symbol_matches_official_symbols_and_fallback() {
@@ -48,7 +49,7 @@ mod tests {
 
     #[test]
     fn effort_notification_text_respects_model_support_gate() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT");
         crate::utils::process_env::remove("CLAUDE_CODE_EFFORT_LEVEL");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
@@ -92,7 +93,7 @@ mod tests {
 
     #[test]
     fn effort_notification_text_honors_env_override_like_displayed_effort() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_EFFORT_LEVEL", "low");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");

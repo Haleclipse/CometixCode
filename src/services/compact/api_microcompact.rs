@@ -122,10 +122,11 @@ pub fn get_api_context_management(
 #[cfg(all(test, feature = "anthropic_internal"))]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn get_api_context_management_tool_clearing_matches_official_env_shape() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("USE_API_CLEAR_TOOL_RESULTS", "1");
         crate::utils::process_env::set("USE_API_CLEAR_TOOL_USES", "1");
         crate::utils::process_env::set("API_MAX_INPUT_TOKENS", "100");

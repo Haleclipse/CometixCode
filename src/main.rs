@@ -1909,6 +1909,7 @@ pub fn run(config: crate::cli::CliConfig) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::{StreamExt, stream};
     use std::fs;
     use std::time::Duration;
@@ -1930,7 +1931,7 @@ mod tests {
     struct MainProcessStateGuard {
         previous_cwd: std::path::PathBuf,
         previous_original_cwd: std::path::PathBuf,
-        previous_env: Vec<crate::utils::env_utils::EnvVarGuard>,
+        previous_env: Vec<EnvVarGuard>,
         root: std::path::PathBuf,
     }
 
@@ -1941,7 +1942,7 @@ mod tests {
                 previous_original_cwd: crate::bootstrap::state::get_original_cwd(),
                 previous_env: env_keys
                     .iter()
-                    .map(|key| crate::utils::env_utils::EnvVarGuard::preserve(key))
+                    .map(|key| EnvVarGuard::preserve(key))
                     .collect(),
                 root: root.to_path_buf(),
             };
@@ -2008,7 +2009,7 @@ mod tests {
             }
         }
 
-        let _lock = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = LiveFlagStateRestore::capture();
         apply_live_startup_flags(&argv(&["--setting-sources", "user,local"])).unwrap();
         assert_eq!(
@@ -2131,7 +2132,7 @@ mod tests {
     fn main_completes_setup_before_direct_resume_session_start_hooks() {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _env_guard = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let cwd = std::env::temp_dir().join(format!(
             "cometix-main-resume-order-{}",
             uuid::Uuid::new_v4()
@@ -2304,7 +2305,7 @@ mod tests {
 
     #[test]
     fn direct_uuid_resume_failure_renders_exit_with_error_and_requests_exit_one() {
-        let _env_guard = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-main-fatal-resume-{}",
             uuid::Uuid::new_v4()
@@ -2381,7 +2382,7 @@ mod tests {
 
     #[test]
     fn non_unique_cli_resume_value_opens_filtered_picker_after_setup() {
-        let _env_guard = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-main-resume-search-{}",
             uuid::Uuid::new_v4()
@@ -2513,7 +2514,7 @@ mod tests {
         let _backend_lock = utils::swarm::backends::registry::TEST_BACKEND_REGISTRY_LOCK
             .lock()
             .unwrap();
-        let _env_lock = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
         utils::teammate::clear_dynamic_team_context();
         utils::swarm::backends::teammate_mode_snapshot::reset_teammate_mode_snapshot_for_test();
@@ -2565,7 +2566,7 @@ mod tests {
 
     #[test]
     fn configure_teammate_from_cli_requires_identity_triplet_like_official() {
-        let _env_lock = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
         let error = configure_teammate_from_cli(&argv(&[
             "--agent-id",
@@ -2583,7 +2584,7 @@ mod tests {
     fn headless_initial_app_state_leaves_the_launch_override_alone() {
         // CC `main.tsx:3701-3731` builds the headless store without touching
         // the override `:3065` set; a control request may have moved it.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let original = crate::bootstrap::state::get_main_loop_model_override();
@@ -2642,10 +2643,9 @@ mod tests {
 
     #[test]
     fn initial_state_without_explicit_override_preserves_environment_model_precedence() {
-        let _env_guard = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_override = crate::bootstrap::state::get_main_loop_model_override();
-        let _model =
-            crate::utils::env_utils::EnvVarGuard::set("ANTHROPIC_MODEL", "claude-opus-4-6");
+        let _model = EnvVarGuard::set("ANTHROPIC_MODEL", "claude-opus-4-6");
         let settings = SettingsJson {
             model: Some("claude-haiku-4-5-20251001".to_string()),
             ..SettingsJson::default()
@@ -2684,7 +2684,7 @@ mod tests {
     /// captured as unset.
     #[test]
     fn startup_captures_the_launch_model_setting_like_official() {
-        let _env_guard = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_override = crate::bootstrap::state::get_main_loop_model_override();
         let previous_initial = crate::bootstrap::state::get_initial_main_loop_model();
         let root = std::env::temp_dir().join(format!(
@@ -2693,8 +2693,8 @@ mod tests {
         ));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("settings.json"), "{}").unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _model = crate::utils::env_utils::EnvVarGuard::unset("ANTHROPIC_MODEL");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _model = EnvVarGuard::unset("ANTHROPIC_MODEL");
         utils::settings::settings_cache::reset_settings_cache();
 
         let agents = ResolvedAgentLaunch {
@@ -2870,7 +2870,7 @@ mod tests {
 
     #[test]
     fn build_interactive_launch_matches_official_default_thinking_setting() {
-        let _lock = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
         let cli = crate::cli::CliConfig::default();
 
@@ -2890,7 +2890,7 @@ mod tests {
 
     #[test]
     fn build_interactive_launch_matches_official_thinking_cli_precedence() {
-        let _lock = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
         let settings = SettingsJson::default();
         let cli = crate::cli::parse_cli_config(&argv(&["--max-thinking-tokens", "8000"]));
@@ -2917,7 +2917,7 @@ mod tests {
 
     #[test]
     fn build_interactive_launch_matches_official_env_budget_precedence() {
-        let _lock = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("MAX_THINKING_TOKENS", "4096tokens");
         let settings = SettingsJson::default();
         let cli = crate::cli::parse_cli_config(&argv(&["--max-thinking-tokens", "8000"]));
@@ -3009,7 +3009,7 @@ mod tests {
     /// the four legs exist to produce.
     #[test]
     fn apply_is_interactive_writes_the_official_state_slot() {
-        let _lock = utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = crate::bootstrap::state::IsInteractiveGuard::capture();
 
         apply_is_interactive(&cli_args(&["-p", "hello"]), true);

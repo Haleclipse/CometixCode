@@ -1851,6 +1851,7 @@ pub async fn toggle_mcp_server_once(
 mod tests {
     use super::*;
     use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig, Transport};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn mounted_mcp_discovery_effects_follow_identity_auth_and_clear_session_dependencies() {
@@ -1860,7 +1861,7 @@ mod tests {
         use futures::{StreamExt, stream};
         use iocraft::prelude::*;
         use std::sync::{Arc, Mutex as StdMutex};
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_runtime::initialize_test_process_runtime();
         struct SessionRestore(String);
         impl Drop for SessionRestore {
@@ -2521,11 +2522,11 @@ mod tests {
     }
 
     fn with_isolated_config(test: impl FnOnce(&std::path::Path)) {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir =
             std::env::temp_dir().join(format!("cometix-mcp-manage-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
         test(&temp_dir);
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -3408,9 +3409,8 @@ mod tests {
             let project_dir = temp_dir.join("project");
             std::fs::create_dir_all(&project_dir).unwrap();
             let _cwd_guard = ProjectCwdGuard::enter(&project_dir);
-            let _session_write =
-                crate::utils::env_utils::EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
-            let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+            let _session_write = EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
+            let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
 
             let config = stdio_config("docs-mcp");
             let mut server = McpConnectionDiscovery::pending_with_config("docs", &config).server;

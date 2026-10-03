@@ -1168,7 +1168,7 @@ pub fn is_pro_subscriber() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct CurrentDirGuard {
         previous: std::path::PathBuf,

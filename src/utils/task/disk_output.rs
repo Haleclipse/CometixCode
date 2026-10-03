@@ -315,7 +315,7 @@ pub fn cleanup_task_output(task_id: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct TaskOutputDirGuard(Option<PathBuf>);
 

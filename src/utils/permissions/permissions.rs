@@ -2824,6 +2824,7 @@ pub fn sync_permission_rules_from_disk(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn permission_decision_allow_once_has_no_rule_update() {
@@ -3553,7 +3554,7 @@ mod tests {
     /// branch this test is about.
     #[test]
     fn auto_mode_denies_the_tool_when_the_classifier_is_unavailable() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "unavailable");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -3622,7 +3623,7 @@ mod tests {
     /// before `checkPermissions` runs at all.
     #[test]
     fn tool_wide_ask_rule_is_ask_in_default_but_classifier_in_auto() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "allow");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -3697,7 +3698,7 @@ mod tests {
     /// non-allowlisted control proves the force switch is live in this fixture.
     #[test]
     fn auto_mode_allowlisted_tool_matches_official_classifier_skip() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -3802,7 +3803,7 @@ mod tests {
     /// classified outside CWD)", which is exactly the pair asserted here.
     #[test]
     fn auto_mode_accept_edits_fast_path_matches_official_classifier_skip() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -3890,7 +3891,7 @@ mod tests {
     /// (`PermissionRuleExplanation.tsx:37-42`).
     #[test]
     fn auto_mode_classifier_block_matches_official_decision_reason() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -3993,7 +3994,7 @@ mod tests {
     /// reason when prompts are unavailable (`:576-586`).
     #[test]
     fn auto_mode_powershell_matches_official_explicit_permission_guard() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "allow");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -4215,7 +4216,7 @@ mod tests {
     async fn headless_hook_allow_projects_updated_permissions_into_live_app_state() {
         // The guard clears the hooks-config snapshot on BOTH edges, so the
         // capture has to come after the lock and needs no manual teardown.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         capture_permission_request_hook(
             r#"printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedPermissions":[{"type":"setMode","mode":"acceptEdits","destination":"session"}]}}}'"#,
         );
@@ -4277,7 +4278,7 @@ mod tests {
     async fn headless_hook_deny_with_interrupt_aborts_and_keeps_the_hook_message() {
         // The guard clears the hooks-config snapshot on BOTH edges, so the
         // capture has to come after the lock and needs no manual teardown.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         capture_permission_request_hook(
             r#"printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"blocked by policy","interrupt":true}}}'"#,
         );
@@ -4326,7 +4327,7 @@ mod tests {
     async fn headless_hook_deny_without_interrupt_leaves_the_controller_alone() {
         // The guard clears the hooks-config snapshot on BOTH edges, so the
         // capture has to come after the lock and needs no manual teardown.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         capture_permission_request_hook(
             r#"printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}'"#,
         );
@@ -4376,7 +4377,7 @@ mod tests {
     async fn headless_top_level_approve_is_not_a_permission_request_decision() {
         // The guard clears the hooks-config snapshot on BOTH edges, so the
         // capture has to come after the lock and needs no manual teardown.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         capture_permission_request_hook(r#"printf '%s\n' '{"decision":"approve"}'"#);
 
         let context = ToolPermissionContext {
@@ -4428,7 +4429,7 @@ mod tests {
 
         // The guard clears the hooks-config snapshot on BOTH edges, so the
         // capture has to come after the lock and needs no manual teardown.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         capture_no_settings_hooks();
         session_hooks::clear_all_session_hooks();
         // Registered under the AGENT id: CC's session id for a subagent's own
@@ -4485,7 +4486,7 @@ mod tests {
 
         // The guard clears the hooks-config snapshot on BOTH edges, so the
         // capture has to come after the lock and needs no manual teardown.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         capture_no_settings_hooks();
         session_hooks::clear_all_session_hooks();
         session_hooks::add_session_hook(
@@ -4530,16 +4531,13 @@ mod tests {
     /// answers `check_has_trust_dialog_accepted()` — which is what lets these
     /// tests tell the managed arm of `should_skip_hook_execution` apart from
     /// its trust arm.
-    fn managed_policy_root(
-        contents: &str,
-    ) -> (std::path::PathBuf, crate::utils::env_utils::EnvVarGuard) {
+    fn managed_policy_root(contents: &str) -> (std::path::PathBuf, EnvVarGuard) {
         let root =
             std::env::temp_dir().join(format!("cometix-headless-policy-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).expect("create managed root");
         std::fs::write(root.join("managed-settings.json"), contents)
             .expect("write policy settings");
-        let guard =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
+        let guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
         // A direct disk write bypasses production invalidation, so the test
         // states the invariant itself (same note as `settings/mod.rs` tests).
         crate::utils::settings::settings_cache::reset_settings_cache();
@@ -4572,7 +4570,7 @@ mod tests {
         use crate::services::hooks::HookEvent;
         use crate::utils::hooks::session_hooks;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let (managed_root, _managed_guard) = managed_policy_root(r#"{"disableAllHooks": true}"#);
         capture_no_settings_hooks();
         session_hooks::clear_all_session_hooks();
@@ -4658,7 +4656,7 @@ mod tests {
         use crate::services::hooks::HookEvent;
         use crate::utils::hooks::session_hooks;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let (managed_root, _managed_guard) =
             managed_policy_root(r#"{"allowManagedHooksOnly": true}"#);
         capture_no_settings_hooks();
@@ -4731,7 +4729,7 @@ mod tests {
         use crate::services::hooks::HookEvent;
         use crate::utils::hooks::session_hooks;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         capture_no_settings_hooks();
         session_hooks::clear_all_session_hooks();
         session_hooks::add_session_hook(
@@ -4821,7 +4819,7 @@ mod tests {
     /// no other branch in this function can produce.
     #[test]
     fn auto_mode_content_ask_rule_matches_official_classifier_fallthrough() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -4891,7 +4889,7 @@ mod tests {
     /// producer chain `check_path_safety_for_auto_edit → filesystem.rs:1279-1288`.
     #[test]
     fn auto_mode_safety_check_matches_official_classifier_approvable_split() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -5342,7 +5340,7 @@ mod tests {
             "an empty projection is what let Auto mode skip the classifier"
         );
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         crate::utils::process_env::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
@@ -6423,16 +6421,13 @@ mod tests {
     /// The flag table already defaults it on (`utils/feature_flags.rs:306-312`);
     /// the env pin keeps these tests independent of that default.
     struct TranscriptClassifierGuard {
-        _env: crate::utils::env_utils::EnvVarGuard,
+        _env: EnvVarGuard,
     }
 
     impl TranscriptClassifierGuard {
         fn on() -> Self {
             Self {
-                _env: crate::utils::env_utils::EnvVarGuard::set(
-                    "COMETIX_TRANSCRIPT_CLASSIFIER",
-                    "1",
-                ),
+                _env: EnvVarGuard::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1"),
             }
         }
     }
@@ -6453,7 +6448,7 @@ mod tests {
     fn auto_mode_tool_allow_matches_official_denial_streak_reset() {
         use crate::utils::permissions::denial_tracking::DenialTrackingState;
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _classifier = TranscriptClassifierGuard::on();
 
         // TodoWrite's own `check_permissions` returns Allow unconditionally
@@ -6542,7 +6537,7 @@ mod tests {
     fn auto_mode_rule_allow_matches_official_denial_streak_reset() {
         use crate::utils::permissions::denial_tracking::DenialTrackingState;
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _classifier = TranscriptClassifierGuard::on();
 
         // Same unapproved-domain WebFetch input the classifier test above uses;
@@ -6733,7 +6728,7 @@ mod tests {
     fn auto_mode_allow_reset_matches_official_local_denial_tracking_precedence() {
         use crate::utils::permissions::denial_tracking::DenialTrackingState;
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _classifier = TranscriptClassifierGuard::on();
 
         let input = serde_json::json!({

@@ -354,7 +354,7 @@ pub fn apply_config_environment_variables() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn provider_managed_matches_set_and_prefix_case_insensitively() {
@@ -373,7 +373,7 @@ mod tests {
     /// Node `process.env` assignment normalization.
     #[test]
     fn settings_application_matches_official_object_assign_then_normalize_order() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _numeric = EnvVarGuard::unset("1");
         reset_ccd_spawn_env_keys_for_tests();
         let env = IndexMap::from([
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn ssh_tunnel_filter_gates_on_socket_presence() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
         let env: IndexMap<String, String> = [
             ("ANTHROPIC_API_KEY", "from-settings"),
@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn host_managed_filter_strips_provider_vars_only_when_truthy() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
         let env: IndexMap<String, String> =
             [("ANTHROPIC_MODEL", "custom"), ("MAX_THINKING_TOKENS", "1")]
@@ -445,7 +445,7 @@ mod tests {
 
     #[test]
     fn ccd_spawn_keys_latch_once_and_shield_spawn_env() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
         let _no_socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
         let _no_host = EnvVarGuard::unset("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST");
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn ccd_capture_is_null_outside_claude_desktop() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
         let _entry = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli");
 

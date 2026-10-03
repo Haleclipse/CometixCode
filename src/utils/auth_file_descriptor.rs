@@ -124,16 +124,15 @@ pub fn get_api_key_from_file_descriptor() -> Option<String> {
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::os::fd::AsRawFd;
 
     #[test]
     fn oauth_token_prefers_and_caches_the_file_descriptor_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _fd = crate::utils::env_utils::EnvVarGuard::preserve(
-            "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
-        );
+        let _fd = EnvVarGuard::preserve("CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR");
         let path = std::env::temp_dir().join(format!(
             "cometix-auth-fd-{}-{}",
             std::process::id(),
@@ -163,11 +162,11 @@ mod tests {
 
     #[test]
     fn empty_fd_is_cached_null_without_falling_back_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let env_key = "COMETIX_TEST_EMPTY_AUTH_FD";
-        let _fd = crate::utils::env_utils::EnvVarGuard::preserve(env_key);
+        let _fd = EnvVarGuard::preserve(env_key);
         let root =
             std::env::temp_dir().join(format!("cometix-empty-auth-fd-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();

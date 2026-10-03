@@ -116,11 +116,12 @@ pub fn dispatch_instructions_loaded_hooks(input: InstructionsLoadedInput) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[cfg(unix)]
     #[tokio::test]
     async fn instructions_loaded_input_carries_nested_provenance() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         struct TrustRestore(bool);

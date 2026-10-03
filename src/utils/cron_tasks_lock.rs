@@ -156,11 +156,12 @@ fn process_is_running(pid: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn lock_is_exclusive_and_raii_releasable() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let root = std::env::temp_dir().join(format!(
             "cometix-cron-lock-{}",
             uuid::Uuid::new_v4().simple()

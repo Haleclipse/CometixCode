@@ -3426,7 +3426,7 @@ mod tests {
     use super::*;
     use crate::context::notifications::{Notification, NotificationPriority, NotificationsState};
     use crate::utils::cursor::Cursor;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::collections::BTreeMap;
@@ -3873,7 +3873,7 @@ mod tests {
 
     #[test]
     fn fast_icon_renders_once_in_top_right_border_only_when_fast_mode_is_on() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_FAST_MODE");
 
         let off = element! { PromptFastIconHarness(enabled: false) }.render(Some(80));
@@ -4485,7 +4485,7 @@ mod tests {
     fn prompt_input_history_suppression_matches_official_navigation_and_reactivation() {
         // CC PromptInput.tsx:1245-1286,1508 and useTypeahead.tsx:684-688:
         // history suppresses the suggestion state, not just the dropdown.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let _skip = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
         prompt_history::add_to_history("/help");
@@ -5429,7 +5429,7 @@ mod tests {
     #[test]
     fn prompt_input_queues_external_editor_hint_when_wrapped() {
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _editor_guard = EnvVarGuard::set("EDITOR", "code --wait");
         let _visual_guard = EnvVarGuard::unset("VISUAL");
         let long_input = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";

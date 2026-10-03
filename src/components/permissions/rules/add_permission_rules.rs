@@ -264,6 +264,7 @@ pub fn AddPermissionRules<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn add_permission_rules_options_match_official_destinations() {
@@ -318,7 +319,6 @@ mod tests {
     async fn add_permission_rules_matches_official_persist_set_detect_notify_order_and_single_sync_action()
      {
         use crate::types::permissions::PermissionRuleSource;
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         use futures::StreamExt;
         use std::time::Duration;
         let _guard = TEST_ENV_LOCK.lock().unwrap();

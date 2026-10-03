@@ -1518,7 +1518,7 @@ fn is_session_plan_file_for_session_with_settings(
 mod tests {
     use super::*;
     use crate::types::permissions::PermissionRuleValue;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
 
     /// CC `filesystem.ts:331-346` and `:376-378`: the per-user directory
     /// under the resolved `CLAUDE_CODE_TMPDIR`, and the project directory
@@ -1973,7 +1973,7 @@ mod tests {
     #[test]
     fn matcher_uses_ignore_negation_double_star_and_source_precedence() {
         // Matcher roots resolve against the project dir.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let cwd = crate::bootstrap::state::get_original_cwd();
         let mut context = ToolPermissionContext::default();
         context.always_deny_rules.insert(

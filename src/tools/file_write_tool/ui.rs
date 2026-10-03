@@ -655,10 +655,11 @@ pub(crate) fn output_to_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn plan_write_uses_updated_plan_name_and_hides_redundant_path() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let path = crate::utils::plans::get_plans_directory().join("plan.md");
         let input = serde_json::json!({"file_path": path, "content": "plan"});
         assert_eq!(user_facing_name(Some(&input)), "Updated plan");
@@ -694,7 +695,7 @@ mod tests {
                 crate::bootstrap::state::set_original_cwd(&self.0);
             }
         }
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = CwdRestore(crate::bootstrap::state::get_original_cwd());
         let root = std::env::temp_dir().join(format!(
             "cometix-write-ui-cwd-{}",
@@ -736,7 +737,7 @@ mod tests {
                 crate::bootstrap::state::set_original_cwd(&self.0);
             }
         }
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = CwdRestore(crate::bootstrap::state::get_original_cwd());
         let base = std::env::temp_dir().join(format!(
             "cometix-write-ui-rel-{}",
@@ -766,7 +767,7 @@ mod tests {
     /// locks the function's parameter contract, not a reachable screen state.
     #[test]
     fn create_result_transcript_mode_still_truncates_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let content = (0..12)
             .map(|i| format!("l{i}"))
             .collect::<Vec<_>>()

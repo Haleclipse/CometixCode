@@ -73,6 +73,7 @@ pub async fn get_package_manager() -> PackageManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn package_manager_from_value_matches_official_union() {
@@ -97,11 +98,10 @@ mod tests {
     /// source — `get_package_manager` resolves the value the PM child commits.
     #[tokio::test]
     async fn get_package_manager_resolves_env_seam_and_defaults_unknown() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _package_manager =
-            crate::utils::env_utils::EnvVarGuard::unset("COMETIX_PACKAGE_MANAGER");
+        let _package_manager = EnvVarGuard::unset("COMETIX_PACKAGE_MANAGER");
 
         assert_eq!(get_package_manager().await, PackageManager::Unknown);
 

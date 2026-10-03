@@ -66,11 +66,11 @@ fn get_extra_certs_path_from_config() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn user_settings_path_applies_only_when_the_environment_has_none() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = std::env::temp_dir().join(format!("cometix-ca-config-{}", uuid::Uuid::new_v4()));

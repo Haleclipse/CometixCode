@@ -533,6 +533,7 @@ fn bump_resumed_worktree_mtime(worktree_path: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn resume_agent_without_transcript_reports_official_error_boundary() {
@@ -756,7 +757,7 @@ mod tests {
     /// MCP-client plumbing did not exist anywhere on this path.
     #[test]
     fn recover_fork_parent_system_prompt_recomputes_with_the_four_arg_plumbing() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
         crate::utils::process_env::remove("CLAUDE_CODE_COORDINATOR_MODE");
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");

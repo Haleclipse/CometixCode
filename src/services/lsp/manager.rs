@@ -358,6 +358,7 @@ mod tests {
     use super::*;
     use crate::services::lsp::config::AllLspServers;
     use crate::services::lsp::server_manager::create_lsp_server_manager_with_config_loader;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     /// Guard so a test can hold the manager singleton across `.await` points
     /// without the env lock's poison semantics leaking into other assertions.
@@ -367,7 +368,7 @@ mod tests {
 
     #[test]
     fn initialization_status_starts_not_started() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_lsp_manager_for_testing();
         assert_eq!(
             get_initialization_status(),
@@ -377,7 +378,7 @@ mod tests {
 
     #[test]
     fn initialize_creates_empty_manager_from_safe_plugin_loader_boundary() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
         reset_lsp_manager_for_testing();
         initialize_lsp_server_manager();
@@ -391,7 +392,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn file_sync_wrappers_are_noops_without_matching_server_like_official_manager() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
         reset_lsp_manager_for_testing();
         initialize_lsp_server_manager();
@@ -408,7 +409,7 @@ mod tests {
 
     #[test]
     fn bare_mode_skips_initialization_like_official() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_lsp_manager_for_testing();
         crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "1");
         initialize_lsp_server_manager();

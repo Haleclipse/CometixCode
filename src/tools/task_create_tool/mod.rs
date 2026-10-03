@@ -305,6 +305,8 @@ impl crate::tool::ToolCall for TaskCreateTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn task_create_schema_matches_official_input_shape() {
         let schema = super::task_create_tool_schema();
@@ -321,7 +323,7 @@ mod tests {
         use crate::tool::ToolCall;
 
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("create-list");
 
         let args =
@@ -408,7 +410,7 @@ mod tests {
         use crate::utils::hooks::session_hooks;
 
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
 
         session_hooks::clear_all_session_hooks();
@@ -475,7 +477,7 @@ mod tests {
         use crate::tool::ToolCall;
 
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("create-expand");
 
         let store = crate::state::store::AppStore::new(

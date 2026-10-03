@@ -1343,24 +1343,19 @@ pub async fn spawn_teammate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// Seeds the team in memory AND on disk — the spawn read-modify-write
     /// chain now goes through `read_team_file` (CC readTeamFileAsync), so the
     /// returned guards must stay alive for the test body.
-    fn reset_team(
-        name: &str,
-    ) -> (
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-    ) {
+    fn reset_team(name: &str) -> (EnvVarGuard, EnvVarGuard, EnvVarGuard) {
         let root = std::env::temp_dir().join(format!(
             "cometix-spawn-multi-agent-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let config_guard = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let io_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
-        let write_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
+        let write_guard = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         crate::utils::swarm::teammate_layout_manager::clear_teammate_colors();
         let record = crate::utils::swarm::team_helpers::create_team_record(
@@ -1506,8 +1501,8 @@ mod tests {
     /// `--model` replacement at `:423-434`.
     #[test]
     fn pane_spawn_command_matches_official_shape_and_replaces_inherited_model() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _command_guard = crate::utils::env_utils::EnvVarGuard::set(
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _command_guard = EnvVarGuard::set(
             crate::utils::swarm::constants::TEAMMATE_COMMAND_ENV_VAR,
             "/bin/claude code",
         );
@@ -1727,7 +1722,7 @@ mod tests {
             .lock()
             .unwrap();
         crate::tasks::in_process_teammate_task::clear_in_process_teammate_tasks_for_test();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _guards = reset_team("alpha");
 
         let store = crate::state::store::AppStore::new(

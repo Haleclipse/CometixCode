@@ -432,6 +432,7 @@ pub fn get_path(key: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::super::prompt::tests::ModelSectionFixture;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     /// Maps to: CC `supportedSettings.ts:105` — `v === null ? 'default' : v`.
     /// `undefined` is not `null`, so the unset case passes through.
@@ -481,7 +482,7 @@ mod tests {
     /// coercion observable without the live probe.
     #[tokio::test]
     async fn model_slot_coerces_string_v_and_reaches_validate_model() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let fixture = ModelSectionFixture::new();
         fixture.write_settings(r#"{"availableModels":["haiku"]}"#);
 

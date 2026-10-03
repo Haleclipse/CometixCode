@@ -69,7 +69,7 @@ mod tests {
     use super::*;
     use crate::bootstrap::state::IsInteractiveGuard;
     use crate::types::permissions::PermissionMode;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// Pins every input `getBuiltInAgents()` reads: the two variables, and the
     /// session's interactivity — `IS_INTERACTIVE` together with its

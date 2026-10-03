@@ -250,6 +250,8 @@ impl crate::tool::ToolCall for TeamDeleteTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+
     #[test]
     fn team_delete_tool_schema_matches_official_empty_input_shape() {
         let schema = super::team_delete_tool_schema();
@@ -295,7 +297,7 @@ mod tests {
             .lock()
             .unwrap();
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         crate::bootstrap::state::clear_session_created_teams();
         crate::utils::tasks::clear_leader_team_name();
@@ -303,8 +305,8 @@ mod tests {
             "cometix-team-delete-disk-auth-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config_guard = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _io_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
 
         let mut record = crate::utils::swarm::team_helpers::create_team_record(
             "alpha".to_string(),

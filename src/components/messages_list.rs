@@ -1970,8 +1970,8 @@ pub fn Messages(props: &MessagesProps) -> impl Into<AnyElement<'static>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::status_notice_definitions::{MAX_MEMORY_CHARACTER_COUNT, MemoryFileInfo};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::StreamExt;
 

@@ -587,6 +587,7 @@ fn is_descendant_of(path: &Path, parent: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::types::permissions::PermissionBehavior;
+    use crate::utils::test_env::PinnedProjectDir;
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};
@@ -616,7 +617,7 @@ mod tests {
     #[test]
     fn file_permission_options_match_official_read_write_and_claude_folder_labels() {
         // Fixtures are real in-repo paths; the project dir must agree.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let cwd = std::env::current_dir().unwrap();
         let inside = cwd.join("src/main.rs");
         let options =
@@ -692,7 +693,7 @@ mod tests {
     #[test]
     fn file_permission_suggestions_match_official_session_updates() {
         // Fixtures are real in-repo paths; the project dir must agree.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let cwd_file = std::env::current_dir().unwrap().join("src/main.rs");
         let updates = generate_file_permission_suggestions(
             &cwd_file.display().to_string(),
@@ -758,7 +759,7 @@ mod tests {
     #[test]
     fn file_permission_dialog_renders_official_shell_and_footer() {
         // Fixtures are real in-repo paths; the project dir must agree.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let path = std::env::current_dir().unwrap().join("src/main.rs");
         let text = render_dialog(path.display().to_string(), FileOperationType::Write);
         assert!(text.contains("Edit file"), "canvas=\n{text}");

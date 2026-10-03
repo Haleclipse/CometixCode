@@ -282,6 +282,8 @@ impl crate::tool::ToolCall for ListMcpResourcesTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn mcp_resource_tool_schemas_match_official_names_and_inputs() {
         let list = super::list_mcp_resources_tool_schema();
@@ -408,7 +410,7 @@ mod tests {
     #[cfg(feature = "mcp_runtime")]
     #[test]
     fn list_mcp_resources_tool_serves_lru_cached_resources_like_official() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let script_path = std::env::temp_dir().join(format!(
             "cometix-list-mcp-resources-live-{}.mjs",
             uuid::Uuid::new_v4()

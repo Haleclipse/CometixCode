@@ -147,7 +147,7 @@ pub fn get_session_environment_script() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn environment_scripts_use_official_event_then_index_order() {

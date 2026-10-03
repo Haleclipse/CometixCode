@@ -320,7 +320,7 @@ pub fn _reset_error_log_for_testing() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
 
     fn clean_env() -> Vec<EnvVarGuard> {

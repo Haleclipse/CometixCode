@@ -312,16 +312,14 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// CC `utils/bash/ShellSnapshot.ts:269-340` captures the current
     /// `process.env.PATH` in the generated snapshot script.
     #[test]
     fn shell_integrations_match_official_snapshot_shape_and_path_capture() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _path = crate::utils::env_utils::EnvVarGuard::set(
-            "PATH",
-            "/cometix/carrier-only-snapshot-path",
-        );
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _path = EnvVarGuard::set("PATH", "/cometix/carrier-only-snapshot-path");
         let env = crate::utils::process_env::snapshot();
         let (kind, snippet) = create_ripgrep_shell_integration();
         assert!(matches!(kind.as_str(), "alias" | "function"));

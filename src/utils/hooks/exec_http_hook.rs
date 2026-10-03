@@ -347,6 +347,7 @@ pub async fn exec_http_hook(hook: &HttpHook, json_input: &str) -> ExecHttpHookRe
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
@@ -441,8 +442,7 @@ mod tests {
 
     /// No env-var proxy. The system-proxy fallback reads `NO_PROXY` too, so
     /// this keeps a host's system proxy out of the loopback request.
-    fn without_env_proxy() -> Vec<crate::utils::env_utils::EnvVarGuard> {
-        use crate::utils::env_utils::EnvVarGuard;
+    fn without_env_proxy() -> Vec<EnvVarGuard> {
         let mut guards: Vec<_> = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"]
             .into_iter()
             .map(EnvVarGuard::unset)
@@ -454,7 +454,7 @@ mod tests {
 
     #[tokio::test]
     async fn posts_json_to_loopback_and_returns_text_response() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = without_env_proxy();
@@ -503,7 +503,7 @@ mod tests {
 
     #[tokio::test]
     async fn ssrf_guard_blocks_metadata_ip_before_request() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = without_env_proxy();
@@ -524,8 +524,7 @@ mod tests {
     /// check back.
     #[tokio::test]
     async fn env_proxy_carries_the_hook_and_skips_the_ssrf_guard() {
-        use crate::utils::env_utils::EnvVarGuard;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = without_env_proxy();

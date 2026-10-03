@@ -2039,6 +2039,7 @@ pub async fn set_marketplace_auto_update(name: &str, auto_update: bool) -> anyho
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     tokio::task_local! {
         // Native I/O fixture seam only: provide the two byte strings read from
@@ -2052,7 +2053,7 @@ mod tests {
             "cometix-hint-marketplace-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _env = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         let marketplace = root.join("market");
         std::fs::create_dir_all(marketplace.join(".claude-plugin")).unwrap();
         std::fs::create_dir_all(root.join("plugins")).unwrap();
@@ -2084,7 +2085,6 @@ mod tests {
     }
     #[tokio::test]
     async fn marketplace_config_reader_matches_official_bun_schema_and_failure_branches() {
-        use crate::utils::env_utils::EnvVarGuard;
         use crate::utils::errors::ConfigParseError;
         let root =
             std::env::temp_dir().join(format!("marketplace-reader-{}", uuid::Uuid::new_v4()));
@@ -2164,7 +2164,6 @@ mod tests {
 
     #[tokio::test]
     async fn marketplace_config_reader_matches_official_fresh_paths_and_io_failure() {
-        use crate::utils::env_utils::EnvVarGuard;
         let first =
             std::env::temp_dir().join(format!("marketplace-reader-first-{}", uuid::Uuid::new_v4()));
         let second = std::env::temp_dir().join(format!(
@@ -2193,7 +2192,6 @@ mod tests {
     }
     #[tokio::test]
     async fn marketplace_config_path_matches_official_lexical_join_without_realpath() {
-        use crate::utils::env_utils::EnvVarGuard;
         let root = std::env::temp_dir().join(format!("marketplace-path-{}", uuid::Uuid::new_v4()));
         let cache = root.join("cache");
         std::fs::create_dir_all(&cache).unwrap();
@@ -2230,7 +2228,6 @@ mod tests {
 
     #[tokio::test]
     async fn marketplace_cache_only_matches_official_schema_raw_config_and_seed_boundaries() {
-        use crate::utils::env_utils::EnvVarGuard;
         use serde_json::json;
         let root = std::env::temp_dir().join(format!("marketplace-cache-{}", uuid::Uuid::new_v4()));
         let primary = root.join("primary");
@@ -2396,7 +2393,6 @@ mod tests {
 
     #[tokio::test]
     async fn marketplace_cache_lookup_matches_official_two_reads_and_unchecked_return() {
-        use crate::utils::env_utils::EnvVarGuard;
         use serde_json::json;
         let root = std::env::temp_dir().join(format!("marketplace-race-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
@@ -2446,7 +2442,7 @@ mod tests {
 
     #[test]
     fn git_timeout_matches_source_parse_int_prefix_and_number_domain() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         for (raw, expected) in [
             ("", 120000.0),
             ("0", 120000.0),
@@ -2458,22 +2454,19 @@ mod tests {
             ("\u{85}50", 120000.0),
             ("9007199254740993", 9007199254740992.0),
         ] {
-            let _env =
-                crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", raw);
+            let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", raw);
             assert_eq!(get_plugin_git_timeout_ms(), expected, "{raw:?}");
         }
         let large = "9".repeat(400);
-        let _env =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", &large);
+        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", &large);
         assert_eq!(get_plugin_git_timeout_ms(), f64::INFINITY);
     }
 
     #[test]
     fn git_pull_error_precedence_preserves_returned_fields() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         use crate::utils::exec_file_no_throw::ExecFileOutput;
-        let _env =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", "1499");
+        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", "1499");
         for (code, stderr, error, prefix) in [
             (
                 0,
@@ -2601,7 +2594,7 @@ mod tests {
 
     #[tokio::test]
     async fn missing_local_marketplace_git_cache_fails_and_cleans_without_network() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-market-git-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
@@ -2641,7 +2634,7 @@ mod tests {
         use crate::utils::exec_file_no_throw::{
             ExecFileStdin, ExecFileWithCwdOptions, exec_file_no_throw_with_cwd_options,
         };
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-market-transitions-{}",
             uuid::Uuid::new_v4()
@@ -2658,11 +2651,10 @@ mod tests {
             "[user]\nname = Fixture\nemail = fixture@example.invalid\n[commit]\ngpgsign = false\n",
         )
         .unwrap();
-        let _global = crate::utils::env_utils::EnvVarGuard::set("GIT_CONFIG_GLOBAL", &config);
-        let _system = crate::utils::env_utils::EnvVarGuard::set("GIT_CONFIG_NOSYSTEM", "1");
-        let _timeout =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", "10000");
-        let _hooks = crate::utils::env_utils::EnvVarGuard::unset("GIT_TEMPLATE_DIR");
+        let _global = EnvVarGuard::set("GIT_CONFIG_GLOBAL", &config);
+        let _system = EnvVarGuard::set("GIT_CONFIG_NOSYSTEM", "1");
+        let _timeout = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", "10000");
+        let _hooks = EnvVarGuard::unset("GIT_TEMPLATE_DIR");
         // Test-only fixture setup feeds the same existing runner, no new process loop.
         for args in [
             vec!["init", "-b", "main"],
@@ -2682,7 +2674,7 @@ mod tests {
             assert_eq!(result.code, 0, "{}", result.stderr);
         }
         let source_url = url::Url::from_directory_path(&source).unwrap().to_string();
-        let _protocol = crate::utils::env_utils::EnvVarGuard::set("GIT_ALLOW_PROTOCOL", "file");
+        let _protocol = EnvVarGuard::set("GIT_ALLOW_PROTOCOL", "file");
         // A self-source submodule pins the pre-submodule commit, so recursion
         // remains finite and every fetch stays on local disk.
         let added = exec_file_no_throw_with_cwd_options(
@@ -2785,9 +2777,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn marketplace_service_local_settings_memo_and_mutations_match_original() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("market-service-{}", uuid::Uuid::new_v4()));
-        let _env = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         let name = format!("fixture-{}", uuid::Uuid::new_v4().simple());
         let source = serde_json::json!({"source":"settings","name":name,"plugins":[]});
         let added = add_marketplace_source(&source, None).await.unwrap();

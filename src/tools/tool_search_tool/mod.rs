@@ -524,6 +524,8 @@ impl crate::tool::ToolCall for ToolSearchTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn tool_search_schema_matches_official_input_shape() {
         let schema = super::tool_search_tool_schema();
@@ -548,7 +550,7 @@ mod tests {
 
     #[test]
     fn tool_search_request_gate_requires_model_support_and_tool_availability() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         let tools = vec![
@@ -572,7 +574,7 @@ mod tests {
 
     #[test]
     fn tool_search_optimistic_gate_respects_beta_kill_switch() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         assert!(super::prompt::is_tool_search_enabled_optimistic());

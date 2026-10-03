@@ -73,7 +73,7 @@ pub async fn find_available_port() -> anyhow::Result<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn redirect_uri_and_callback_env_match_official_oauth_port_helpers() {

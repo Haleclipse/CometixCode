@@ -490,7 +490,7 @@ mod tests {
     }
 
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, PinnedProjectDir, TEST_ENV_LOCK};
 
     fn ctx() -> ToolPermissionContext {
         ToolPermissionContext::default()
@@ -593,7 +593,7 @@ mod tests {
     #[test]
     fn accept_edits_allows_safe_working_directory_writes_but_not_claude_config() {
         // "Working directory" is judged against the project dir.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let cwd = std::env::current_dir().unwrap();
         let mut context = ToolPermissionContext {
             mode: PermissionMode::AcceptEdits,

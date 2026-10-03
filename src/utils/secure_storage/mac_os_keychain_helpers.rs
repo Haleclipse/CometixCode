@@ -135,7 +135,7 @@ pub(crate) fn prime_keychain_cache_from_prefetch(stdout: Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[cfg(target_os = "macos")]
     #[test]

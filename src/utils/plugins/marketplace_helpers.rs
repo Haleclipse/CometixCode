@@ -499,6 +499,7 @@ pub async fn detect_empty_marketplace_reason(
 mod tests {
     use super::*;
     use crate::utils::settings::{SettingsJson, settings_cache};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
 
     #[test]
@@ -646,7 +647,7 @@ mod tests {
 
     #[test]
     fn managed_policy_matches_official_absence_empty_precedence_and_order() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let source = json!({"source":"github","repo":"o/r","ref":"main"});
         // CC marketplaceHelpers.ts:159-177,327-337,461-505; Bun proof 36–41.
         for (settings, allowed, blocked) in [
@@ -707,7 +708,6 @@ mod tests {
 
     #[test]
     fn invalid_policy_regex_matches_official_log_error_messages_and_short_circuit() {
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env: Vec<_> = [
             "CLAUDE_CODE_USE_BEDROCK",
@@ -796,7 +796,7 @@ mod tests {
     fn discover_helpers_matches_official_bun_failure_source_and_id_oracle() {
         // CC :16-65,119-153,183-185,550-592. Original Bun 1.3.14,
         // research/proof/plugin-discover-empty-0914/oracle.json (41 vectors).
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let oracle: Value = serde_json::from_str(r###"{
   "details": [
     {"input":[],"includeReasons":false,"result":""},

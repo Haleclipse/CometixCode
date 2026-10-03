@@ -113,6 +113,7 @@ pub fn is_setting_source_enabled(source: SettingSource) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     struct AllowedSourcesRestore(Vec<String>);
 
@@ -130,7 +131,7 @@ mod tests {
 
     #[test]
     fn setting_source_selection_gates_editable_sources_but_not_policy_or_flag() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = AllowedSourcesRestore::capture();
 
         crate::bootstrap::state::set_allowed_setting_sources(vec![

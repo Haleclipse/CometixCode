@@ -744,7 +744,7 @@ impl crate::tool::ToolCall for PowerShellTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn sample_output(stdout: &str, stderr: &str, interrupted: bool) -> PowerShellOutput {
         PowerShellOutput {
@@ -1058,7 +1058,7 @@ mod tests {
     fn powershell_tool_visibility_matches_official_windows_build_gate() {
         use crate::utils::build_profile::BuildAudience;
 
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         assert!(!is_powershell_tool_enabled_for_platform(
             "macos",
             BuildAudience::AnthropicInternal,
@@ -1115,7 +1115,7 @@ mod tests {
     /// needs its own test — nextest gives it its own process.
     #[test]
     fn powershell_tool_schema_omits_background_when_gate_is_off() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _enabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "true");
         let schema = powershell_tool_schema();
         assert!(

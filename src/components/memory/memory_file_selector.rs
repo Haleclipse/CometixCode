@@ -558,8 +558,8 @@ pub fn MemoryFileSelector<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::settings::SettingsJson;
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};
@@ -740,7 +740,7 @@ mod tests {
             "CLAUDE_CODE_REMOTE_MEMORY_DIR",
         ]
         .map(EnvVarGuard::unset);
-        let _home = EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, "/tmp");
+        let _home = EnvVarGuard::set(HOME_VAR, "/tmp");
         let user = Some(SettingsJson {
             auto_memory_directory: Some("~/memory-dir".to_string()),
             ..Default::default()

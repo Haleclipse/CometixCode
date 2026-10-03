@@ -48,6 +48,7 @@ pub fn clear_git_availability_cache() {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     // Test-only dependency fixture: exercise the real cache API without requiring
     // a particular host PATH or executing any git binary.
@@ -59,7 +60,7 @@ pub(super) mod tests {
     #[test]
     fn git_availability_matches_official_shared_pending_mark_and_clear() {
         // CC :42-69; real Bun git-oracle.json captures both pending races.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         clear_git_availability_cache();
         let (send_old, receive_old) = futures::channel::oneshot::channel::<bool>();
         *GIT_AVAILABILITY_CACHE.lock().unwrap() =
@@ -99,7 +100,7 @@ pub(super) mod tests {
     #[test]
     fn command_availability_matches_official_lookup_without_execution() {
         // CC :21-27 delegates to which; a discoverable executable is never run.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         struct RemoveDirectory(std::path::PathBuf);
         impl Drop for RemoveDirectory {
             fn drop(&mut self) {

@@ -636,6 +636,7 @@ fn is_message_log_entry(entry: &serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
     use serde_json::json;
     use std::fs;
     use std::time::SystemTime;
@@ -849,7 +850,7 @@ mod tests {
 
     #[test]
     fn resume_load_preserves_official_restore_metadata_payloads() {
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         struct RestoreProject(String, Option<PathBuf>, PathBuf);
         impl Drop for RestoreProject {
             fn drop(&mut self) {
@@ -1191,7 +1192,6 @@ mod tests {
     fn resume_direct_lookup_and_empty_list_match_official_entrypoints() {
         // commands/resume/resume.tsx:252-293 vs conversationRecovery.ts:520;
         // sessionStorage.ts:3830 resolves UUIDs against the ACTIVE project dir.
-        use crate::utils::env_utils::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("resume-lookup-{}", Uuid::new_v4()));
         let original = root.join("original");
@@ -1266,7 +1266,6 @@ mod tests {
     fn resume_preserves_original_plan_messages_before_deserialization_matches_official() {
         // conversationRecovery.ts:540–556 recovers from log.messages before
         // deserializeMessages filters unresolved ExitPlanMode tool_use blocks.
-        use crate::utils::env_utils::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("resume-plan-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();

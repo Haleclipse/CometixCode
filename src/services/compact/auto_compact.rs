@@ -292,6 +292,7 @@ pub async fn auto_compact_if_needed(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn clear_context_collapse_env() {
         crate::utils::process_env::remove("COMETIX_CONTEXT_COLLAPSE");
@@ -301,7 +302,7 @@ mod tests {
 
     #[test]
     fn auto_compact_threshold_helpers_match_official_buffers_and_env_overrides() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
         crate::utils::process_env::remove("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE");
         crate::utils::process_env::remove("CLAUDE_CODE_MAX_OUTPUT_TOKENS");
@@ -328,7 +329,7 @@ mod tests {
 
     #[test]
     fn token_warning_state_respects_auto_compact_config_and_blocking_override() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("DISABLE_COMPACT");
         crate::utils::process_env::remove("DISABLE_AUTO_COMPACT");
         crate::utils::process_env::remove("CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE");
@@ -362,7 +363,7 @@ mod tests {
 
     #[test]
     fn should_auto_compact_uses_estimated_tokens_and_official_recursion_guards() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("DISABLE_COMPACT");
         crate::utils::process_env::remove("DISABLE_AUTO_COMPACT");
         clear_context_collapse_env();
@@ -419,7 +420,7 @@ mod tests {
 
     #[tokio::test]
     async fn auto_compact_if_needed_records_failed_attempt_when_threshold_would_compact() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("DISABLE_COMPACT");
         crate::utils::process_env::remove("DISABLE_AUTO_COMPACT");
         clear_context_collapse_env();
@@ -473,7 +474,7 @@ mod tests {
 
     #[tokio::test]
     async fn auto_compact_if_needed_does_not_fake_success_when_summary_is_aborted() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("DISABLE_COMPACT");
         crate::utils::process_env::remove("DISABLE_AUTO_COMPACT");
         clear_context_collapse_env();

@@ -532,6 +532,8 @@ impl crate::tool::ToolCall for LspTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
+
     #[test]
     fn lsp_tool_schema_matches_official_input_shape() {
         let schema = super::lsp_tool_schema();
@@ -638,7 +640,7 @@ mod tests {
     async fn lsp_tool_call_returns_official_output_schema_and_model_copy() {
         use crate::tool::ToolCall;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::services::lsp::manager::reset_lsp_manager_for_testing();
         let args = serde_json::json!({
             "operation": "hover",
@@ -696,7 +698,7 @@ mod tests {
     async fn lsp_tool_uses_initialized_empty_manager_for_no_server_result() {
         use crate::tool::ToolCall;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
         crate::services::lsp::manager::reset_lsp_manager_for_testing();
         crate::services::lsp::manager::initialize_lsp_server_manager();
@@ -758,10 +760,9 @@ mod tests {
     #[test]
     fn expand_lsp_file_path_expands_home_notation() {
         // `~` expands to `homedir()`: pin it to a literal.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let home = "/home/someone";
-        let _home =
-            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, home);
+        let _home = EnvVarGuard::set(HOME_VAR, home);
         assert_eq!(
             super::expand_lsp_file_path("~/project/main.rs", std::path::Path::new("/unused")),
             std::path::Path::new(&home)

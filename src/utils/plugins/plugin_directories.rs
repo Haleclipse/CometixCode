@@ -146,19 +146,19 @@ pub async fn delete_plugin_data_dir(plugin_id: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     #[test]
     fn plugin_directories_respect_cache_override_cowork_and_seed_precedence() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _restore = [
-            crate::utils::env_utils::EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_CACHE_DIR"),
-            crate::utils::env_utils::EnvVarGuard::preserve("CLAUDE_CODE_USE_COWORK_PLUGINS"),
-            crate::utils::env_utils::EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_SEED_DIR"),
+            EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_CACHE_DIR"),
+            EnvVarGuard::preserve("CLAUDE_CODE_USE_COWORK_PLUGINS"),
+            EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_SEED_DIR"),
         ];
         // `expandTilde` takes `homedir()`: pin it to a literal.
         let home = "/home/someone";
-        let _home =
-            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, home);
+        let _home = EnvVarGuard::set(HOME_VAR, home);
         crate::utils::process_env::remove("CLAUDE_CODE_USE_COWORK_PLUGINS");
         crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_SEED_DIR");
         crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", "~/custom-plugins");
@@ -192,9 +192,8 @@ mod tests {
 
     #[test]
     fn plugin_data_dir_path_sanitizes_plugin_id_without_creating_directory() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _restore =
-            crate::utils::env_utils::EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_CACHE_DIR");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _restore = EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_CACHE_DIR");
         let root = std::env::temp_dir().join(format!(
             "cometix-plugin-data-{}",
             uuid::Uuid::new_v4().simple()

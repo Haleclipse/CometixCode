@@ -122,6 +122,7 @@ pub fn set_agent_color(agent_type: impl Into<String>, color: Option<AgentColorNa
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn get_set_agent_color_matches_official_semantics() {
@@ -146,7 +147,7 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = AgentColorMapRestore::capture();
         set_agent_color("reviewer-test", Some(AgentColorName::Blue));
         assert_eq!(

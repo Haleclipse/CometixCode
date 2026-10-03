@@ -555,6 +555,7 @@ pub fn shell_timeout_ms(input: &serde_json::Value) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[cfg(unix)]
     #[test]
@@ -575,7 +576,7 @@ mod tests {
 
     #[test]
     fn shell_override_and_provider_command_execute_with_raw_file_output() {
-        struct ShellRestore(Option<crate::utils::env_utils::EnvVarGuard>);
+        struct ShellRestore(Option<EnvVarGuard>);
         impl Drop for ShellRestore {
             fn drop(&mut self) {
                 drop(self.0.take());
@@ -583,11 +584,8 @@ mod tests {
             }
         }
 
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _restore = ShellRestore(Some(crate::utils::env_utils::EnvVarGuard::set(
-            "COMETIX_WRITE_ENABLED",
-            "1",
-        )));
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let _restore = ShellRestore(Some(EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1")));
         reset_shell_config_for_test();
         let command = exec(
             "printf partial; printf err >&2",
@@ -629,28 +627,25 @@ mod tests {
                 let _ = std::fs::remove_dir_all(&self.0);
             }
         }
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-shell-stdin-{}",
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("input.txt"), "provided").unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _prefix = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SHELL_PREFIX");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _prefix = EnvVarGuard::unset("CLAUDE_CODE_SHELL_PREFIX");
         let _restore = Restore(root.clone());
         reset_shell_config_for_test();
         for shell in ["/bin/bash", "/bin/zsh"] {
             if !Path::new(shell).is_file() {
                 continue;
             }
-            let _shell = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_SHELL", shell);
+            let _shell = EnvVarGuard::set("CLAUDE_CODE_SHELL", shell);
             reset_shell_config_for_test();
             for write_enabled in ["1", "0"] {
-                let _writes = crate::utils::env_utils::EnvVarGuard::set(
-                    "COMETIX_WRITE_ENABLED",
-                    write_enabled,
-                );
+                let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", write_enabled);
                 for (input, expected) in [
                     ("printf before && /bin/cat && printf after", "beforeafter"),
                     ("printf before; /bin/cat; printf after", "beforeafter"),

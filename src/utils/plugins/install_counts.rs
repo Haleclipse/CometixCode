@@ -392,6 +392,7 @@ pub fn format_install_count<'a>(count: impl Into<InstallCountInput<'a>>) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     #[test]
     fn format_install_count_dynamic_json_matches_official_bun() {
         let oracle:serde_json::Value=serde_json::from_str(include_str!("../../../tests/fixtures/oracles/plugin-ui-complete-0914/counts-oracle.json")).unwrap();
@@ -527,9 +528,9 @@ mod tests {
 
     #[tokio::test]
     async fn install_counts_cache_matches_official_ttl_validation_and_raw_numbers() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set(
+        let _env = EnvVarGuard::set(
             "CLAUDE_CODE_PLUGIN_CACHE_DIR",
             temp.path().to_str().unwrap(),
         );
@@ -589,9 +590,9 @@ mod tests {
 
     #[tokio::test]
     async fn install_counts_fetch_matches_official_save_before_map_and_cache_hit() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set(
+        let _env = EnvVarGuard::set(
             "CLAUDE_CODE_PLUGIN_CACHE_DIR",
             temp.path().to_str().unwrap(),
         );
@@ -646,9 +647,9 @@ mod tests {
 
     #[tokio::test]
     async fn install_counts_fetch_matches_official_write_failure_and_invalid_response() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set(
+        let _env = EnvVarGuard::set(
             "CLAUDE_CODE_PLUGIN_CACHE_DIR",
             temp.path().to_str().unwrap(),
         );
@@ -682,14 +683,11 @@ mod tests {
 
     #[tokio::test]
     async fn install_counts_matches_official_mkdir_eexist_then_open_enotdir() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
         let file = temp.path().join("ordinary-plugins-file");
         std::fs::write(&file, "unchanged").unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            file.to_str().unwrap(),
-        );
+        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", file.to_str().unwrap());
         let _logging = [
             "CLAUDE_CODE_USE_BEDROCK",
             "CLAUDE_CODE_USE_VERTEX",
@@ -697,7 +695,7 @@ mod tests {
             "DISABLE_ERROR_REPORTING",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
         ]
-        .map(crate::utils::env_utils::EnvVarGuard::unset);
+        .map(EnvVarGuard::unset);
         let _reset = BoundaryReset;
         let server = serve(vec![(
             200,
@@ -721,9 +719,9 @@ mod tests {
 
     #[tokio::test]
     async fn install_counts_concurrent_misses_match_official_independent_fetches() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set(
+        let _env = EnvVarGuard::set(
             "CLAUDE_CODE_PLUGIN_CACHE_DIR",
             temp.path().to_str().unwrap(),
         );

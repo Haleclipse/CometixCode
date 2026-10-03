@@ -384,9 +384,11 @@ impl crate::tool::ToolCall for ReadMcpResourceTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn read_mcp_resource_binary_blob_persists_like_official_tool() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = crate::bootstrap::state::get_original_cwd();
         let previous_session_id = crate::bootstrap::state::get_session_id();
         let root = std::env::temp_dir().join(format!(

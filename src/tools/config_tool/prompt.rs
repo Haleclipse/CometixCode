@@ -99,14 +99,15 @@ fn generate_model_section() -> String {
 #[cfg(test)]
 pub(super) mod tests {
     use super::super::supported_settings;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// Pins the process state `getModelOptions()` reads so the section below is
     /// the PAYG first-party list rather than whatever the developer's own
     /// credentials and settings produce.
     pub(in crate::tools::config_tool) struct ModelSectionFixture {
         root: std::path::PathBuf,
-        config_dir: Option<crate::utils::env_utils::EnvVarGuard>,
-        cleared_env: Vec<crate::utils::env_utils::EnvVarGuard>,
+        config_dir: Option<EnvVarGuard>,
+        cleared_env: Vec<EnvVarGuard>,
     }
 
     impl ModelSectionFixture {
@@ -117,10 +118,7 @@ pub(super) mod tests {
             ));
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(root.join("settings.json"), "{}").unwrap();
-            let config_dir = Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            ));
+            let config_dir = Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root));
 
             let cleared_env = [
                 "ANTHROPIC_MODEL",
@@ -134,7 +132,7 @@ pub(super) mod tests {
                 "CLAUDE_CODE_DISABLE_1M_CONTEXT",
             ]
             .into_iter()
-            .map(crate::utils::env_utils::EnvVarGuard::unset)
+            .map(EnvVarGuard::unset)
             .collect();
 
             crate::utils::settings::settings_cache::reset_settings_cache();
@@ -176,7 +174,7 @@ pub(super) mod tests {
     /// ant branch (`modelOptions.ts:272-288`) regardless of credentials.
     #[test]
     fn model_prompt_and_options_render_the_official_picker_list() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = ModelSectionFixture::new();
 
         let (expected_section, expected_values): (&str, &[&str]) = if cfg!(

@@ -45,9 +45,11 @@ pub(crate) fn time_based_microcompact_config_from_env() -> TimeBasedMicrocompact
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn time_based_microcompact_reads_hardcoded_switch_and_local_env_not_growthbook_cache() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("COMETIX_TIME_BASED_MICROCOMPACT");
         crate::utils::process_env::remove("CLAUDE_CODE_TIME_BASED_MICROCOMPACT");
         let default_config = super::time_based_microcompact_config_from_env();

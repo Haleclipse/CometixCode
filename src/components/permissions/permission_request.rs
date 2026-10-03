@@ -582,6 +582,7 @@ mod tests {
     use crate::components::prompt_input::PromptInput;
     use crate::types::message::{RenderableMessage, RenderableMessageKind, ToolUseStatus};
     use crate::types::permissions::{PermissionMode, PermissionRuleValue};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::StreamExt;
     use std::sync::Mutex;
@@ -1399,7 +1400,7 @@ mod tests {
     #[test]
     fn permission_request_projects_explicit_unsandboxed_bash_metadata() {
         struct ConfigGuard {
-            config_dir: Option<crate::utils::env_utils::EnvVarGuard>,
+            config_dir: Option<EnvVarGuard>,
             previous_original_cwd: std::path::PathBuf,
             root: std::path::PathBuf,
         }
@@ -1412,7 +1413,7 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-bash-permission-sandbox-{}",
             uuid::Uuid::new_v4().simple()
@@ -1424,10 +1425,7 @@ mod tests {
         )
         .unwrap();
         let _config = ConfigGuard {
-            config_dir: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
+            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             previous_original_cwd: crate::bootstrap::state::get_original_cwd(),
             root: root.clone(),
         };

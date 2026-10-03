@@ -1953,6 +1953,7 @@ impl crate::tool::ToolCall for FileReadTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::sync::atomic::Ordering;
 
     async fn invoke_text_read_listener_path(
@@ -2450,7 +2451,7 @@ mod tests {
 
     #[tokio::test]
     async fn preaborted_read_retains_reached_dynamic_skill_insertion_only() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = std::env::temp_dir().join(format!(
@@ -2962,7 +2963,7 @@ trailer<< /Size 4 /Root 1 0 R >>\nstartxref\n190\n%%EOF\n";
 
     #[cfg(unix)]
     struct PdfFifoRestore {
-        path: Option<crate::utils::env_utils::EnvVarGuard>,
+        path: Option<EnvVarGuard>,
         read_task: Option<tokio::task::AbortHandle>,
         prefix_marker: Option<std::path::PathBuf>,
         producer_cancel: Option<std::path::PathBuf>,
@@ -3061,7 +3062,7 @@ trailer<< /Size 4 /Root 1 0 R >>\nstartxref\n190\n%%EOF\n";
         use std::io::Write as _;
         use std::os::unix::ffi::OsStrExt as _;
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!(
             "cometix-read-pdf-cleanup-{}",
             uuid::Uuid::new_v4().simple()
@@ -3269,9 +3270,9 @@ trailer<< /Size 4 /Root 1 0 R >>\nstartxref\n190\n%%EOF\n";
         use std::io::Write as _;
         use std::os::unix::fs::PermissionsExt as _;
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let mut restore = PdfFifoRestore {
-            path: Some(crate::utils::env_utils::EnvVarGuard::preserve("PATH")),
+            path: Some(EnvVarGuard::preserve("PATH")),
             read_task: None,
             prefix_marker: None,
             producer_cancel: None,
@@ -3540,7 +3541,7 @@ PY\n\
 
     #[tokio::test]
     async fn cached_read_dedup_killswitch_config_cannot_disable_dedup() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         struct ConfigRestore(Option<crate::utils::config::GlobalConfig>);
         impl Drop for ConfigRestore {
             fn drop(&mut self) {
@@ -3559,7 +3560,7 @@ PY\n\
             "DISABLE_TELEMETRY",
         ]
         .into_iter()
-        .map(crate::utils::env_utils::EnvVarGuard::unset)
+        .map(EnvVarGuard::unset)
         .collect::<Vec<_>>();
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
@@ -3606,7 +3607,7 @@ PY\n\
 
     #[tokio::test]
     async fn dedup_returns_file_unchanged_when_mtime_matches() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         struct ConfigRestore(Option<crate::utils::config::GlobalConfig>);
         impl Drop for ConfigRestore {
             fn drop(&mut self) {

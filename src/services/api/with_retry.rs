@@ -1277,6 +1277,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     // -- BASE_DELAY_MS --
 
@@ -1402,7 +1403,7 @@ mod tests {
 
     #[test]
     fn default_max_retries_fallback() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // When env var is not set (which it shouldn't be in tests), default is 10
         crate::utils::process_env::remove("CLAUDE_CODE_MAX_RETRIES");
         assert_eq!(get_default_max_retries(), 10);
@@ -1561,7 +1562,7 @@ mod tests {
     #[cfg(feature = "anthropic_internal")]
     #[tokio::test]
     async fn internal_mock_429_short_circuits_network_and_normal_retry() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::services::mock_rate_limits::reset_for_test();
         crate::services::claude_ai_limits::reset_for_test();
         crate::services::mock_rate_limits::set_mock_rate_limit_scenario(

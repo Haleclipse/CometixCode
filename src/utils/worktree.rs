@@ -758,6 +758,7 @@ pub fn worktree_exit_clean_result_message() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn session(tmux: bool) -> WorktreeSession {
         WorktreeSession {
@@ -852,17 +853,14 @@ mod tests {
     /// createWorktreeForSession populated (:772-775).
     #[test]
     fn keep_and_cleanup_clear_the_persisted_worktree_session_slot() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // Without COMETIX_WRITE_ENABLED the config saves are DRY_RUN no-ops
         // and every `is_none()` below passes vacuously.
-        let _write_enabled =
-            crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _write_enabled = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let config_dir = temp_root("worktree-session-slot-config");
         std::fs::create_dir_all(&config_dir).unwrap();
-        let _config_dir = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CONFIG_DIR",
-            config_dir.to_string_lossy().as_ref(),
-        );
+        let _config_dir =
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
 
         // keep/cleanup now mirror CC's try/catch: a failing chdir aborts the
         // teardown, so the session must point at a real directory.
@@ -941,15 +939,12 @@ mod tests {
     /// subset).
     #[tokio::test(flavor = "current_thread")]
     async fn create_worktree_for_session_persists_the_whole_session_object() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write_enabled =
-            crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _write_enabled = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let config_dir = temp_root("worktree-create-slot-config");
         std::fs::create_dir_all(&config_dir).unwrap();
-        let _config_dir = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CONFIG_DIR",
-            config_dir.to_string_lossy().as_ref(),
-        );
+        let _config_dir =
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
         // The scratch root above also relocates `~/.claude.json`
         // (`utils/config.rs:119-120`), leaving the workspace UNTRUSTED — and CC
         // runs no hooks at all in that state (`utils/hooks.ts:1994-1999`,
@@ -992,7 +987,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn create_agent_worktree_git_path_detects_changes_and_removes_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_flag_settings = crate::bootstrap::state::get_flag_settings_inline();
         crate::bootstrap::state::set_flag_settings_inline(None);
         if !git_available() {
@@ -1046,7 +1041,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn create_agent_worktree_prefers_worktree_create_hook_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_flag_settings = crate::bootstrap::state::get_flag_settings_inline();
         let root = temp_root("agent-worktree-hook");
         std::fs::create_dir_all(&root).unwrap();

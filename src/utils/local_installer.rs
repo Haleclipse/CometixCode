@@ -34,20 +34,21 @@ pub fn local_installation_exists() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// Maps to: CC `localInstaller.ts:144-151` — the probe is an independent
     /// filesystem check of the local npm bin shim, not an installation-type
     /// derivation (slice-3b fix for the `hasLocalInstall` source).
     #[test]
     fn local_installation_exists_probes_node_modules_bin_claude() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = std::env::temp_dir().join(format!(
             "cometix-local-installer-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
 
         assert!(
             !local_installation_exists(),

@@ -229,6 +229,7 @@ pub fn is_auto_managed_memory_pattern(pattern: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 
     const ENV_KEYS: [&str; 4] = [
         "CLAUDE_CONFIG_DIR",
@@ -238,19 +239,19 @@ mod tests {
     ];
 
     struct DetectionTestEnv {
-        _lock: crate::utils::env_utils::TestEnvGuard<'static>,
-        previous_env: Vec<crate::utils::env_utils::EnvVarGuard>,
+        _lock: TestEnvGuard<'static>,
+        previous_env: Vec<EnvVarGuard>,
         previous_cwd: PathBuf,
     }
 
     impl DetectionTestEnv {
         fn new(root: &Path) -> Self {
-            let lock = crate::utils::env_utils::TEST_ENV_LOCK
+            let lock = TEST_ENV_LOCK
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
             let previous_env = ENV_KEYS
                 .into_iter()
-                .map(crate::utils::env_utils::EnvVarGuard::preserve)
+                .map(EnvVarGuard::preserve)
                 .collect::<Vec<_>>();
             for key in ENV_KEYS {
                 crate::utils::process_env::remove(key);

@@ -4819,6 +4819,7 @@ mod message_merge_tests {
     use super::*;
     use crate::types::message::{Message, ToolResult, ToolResultContentBlock as Block};
     use crate::utils::messages::create_user_message;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use serde_json::json;
 
     fn result(content: &str) -> ToolResult {
@@ -4889,7 +4890,7 @@ mod message_merge_tests {
 
     #[test]
     fn tool_result_merge_matches_official_legacy_and_universal_gate() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = crate::utils::config::replace_test_global_config(Some(Default::default()));
@@ -5049,6 +5050,7 @@ mod api_normalization_tests {
     use super::*;
     use crate::types::message::{AttachmentMessage, ToolResult};
     use crate::utils::messages::{create_assistant_message, create_user_message};
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use serde_json::json;
 
     fn user(id: &str, text: &str) -> Message {
@@ -5126,7 +5128,7 @@ mod api_normalization_tests {
 
     #[test]
     fn init_api_input_matches_official_attachment_then_metadata_and_prompt() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = crate::utils::config::replace_test_global_config(Some(Default::default()));
@@ -5163,7 +5165,7 @@ mod api_normalization_tests {
 
     #[test]
     fn attachment_merge_matches_official_tool_result_fold() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = crate::utils::config::replace_test_global_config(Some(Default::default()));
@@ -5195,7 +5197,7 @@ mod api_normalization_tests {
 
     #[test]
     fn attachment_products_match_official_standalone_push_and_gated_merge() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = crate::utils::config::replace_test_global_config(Some(Default::default()));
@@ -5694,6 +5696,7 @@ mod attachment_tests {
 #[cfg(test)]
 mod plan_instruction_tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use sha2::{Digest, Sha256};
 
     fn reminder_text(messages: &[UserMessage]) -> &str {
@@ -5718,11 +5721,8 @@ mod plan_instruction_tests {
 
     #[test]
     fn plan_subagent_takes_precedence_over_sparse_and_interview_workflows() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _interview = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE",
-            "true",
-        );
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
         let messages = get_plan_mode_instructions("sparse", true, "/plans/change.md", true);
         assert_source_digest(
             &messages,
@@ -5733,11 +5733,8 @@ mod plan_instruction_tests {
 
     #[test]
     fn plan_sparse_reminder_honors_interview_gate_without_full_workflow() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _interview = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE",
-            "true",
-        );
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
         let messages = get_plan_mode_instructions("sparse", false, "/plans/change.md", false);
         assert_eq!(
             reminder_text(&messages),
@@ -5747,14 +5744,10 @@ mod plan_instruction_tests {
 
     #[test]
     fn plan_interview_template_matches_source_embedded_tool_names() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _embedded = crate::utils::env_utils::EnvVarGuard::set("EMBEDDED_SEARCH_TOOLS", "1");
-        let _entrypoint =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli");
-        let _interview = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE",
-            "true",
-        );
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _embedded = EnvVarGuard::set("EMBEDDED_SEARCH_TOOLS", "1");
+        let _entrypoint = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli");
+        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
         assert_eq!(get_read_only_tool_names(), "Read, `find`, `grep`");
         let messages = get_plan_mode_instructions("full", false, "/plans/change.md", false);
         assert_source_digest(
@@ -5766,15 +5759,9 @@ mod plan_instruction_tests {
     #[cfg(not(feature = "anthropic_internal"))]
     #[test]
     fn plan_five_phase_templates_match_source_agent_count_and_newline_branches() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _interview = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE",
-            "false",
-        );
-        let _explore = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT",
-            "4",
-        );
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "false");
+        let _explore = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT", "4");
         assert_eq!(get_plan_phase4_section(), PLAN_PHASE4_CONTROL);
         for (count, digest) in [
             (
@@ -5786,8 +5773,7 @@ mod plan_instruction_tests {
                 "6899e99f026bfefe82cb57a93fc30d0302c6d319481a6d4eb754a854a1749683",
             ),
         ] {
-            let _count =
-                crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", count);
+            let _count = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", count);
             let messages = get_plan_mode_instructions("full", false, "/plans/change.md", false);
             assert_source_digest(&messages, digest);
         }

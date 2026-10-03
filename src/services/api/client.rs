@@ -1231,7 +1231,7 @@ pub(crate) async fn send_bedrock_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// A transport without proxy or TLS options, for handles built by hand.
     fn direct_client() -> reqwest::Client {

@@ -40,10 +40,11 @@ pub fn expand_env_vars_in_string(value: &str) -> (String, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn expand_env_vars_handles_values_defaults_and_missing_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_MCP_ENV_PRESENT", "value");
         crate::utils::process_env::remove("COMETIX_MCP_ENV_MISSING");
         let (expanded, missing) = expand_env_vars_in_string(

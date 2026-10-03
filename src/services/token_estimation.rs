@@ -409,7 +409,7 @@ pub async fn count_messages_tokens_with_api(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::io::{Read as _, Write as _};
 
     /// Maps to: CC `tokenEstimation.ts:430-434` — advisor blocks hit the
@@ -515,7 +515,7 @@ mod tests {
 
     #[tokio::test]
     async fn bedrock_count_tokens_uses_runtime_count_tokens_request() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let (endpoint, server) = spawn_json_server(r#"{"inputTokens":23}"#);
         let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
         let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
@@ -549,7 +549,7 @@ mod tests {
 
     #[tokio::test]
     async fn vertex_count_tokens_uses_raw_predict_route() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let (endpoint, server) = spawn_json_server(r#"{"input_tokens":19}"#);
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvVarGuard::set("CLAUDE_CODE_USE_VERTEX", "1");
@@ -574,7 +574,7 @@ mod tests {
 
     #[tokio::test]
     async fn foundry_count_tokens_uses_configured_anthropic_client() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let (endpoint, server) = spawn_json_server(r#"{"input_tokens":17}"#);
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");

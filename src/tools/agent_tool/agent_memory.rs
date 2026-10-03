@@ -174,7 +174,7 @@ fn get_local_agent_memory_dir(dir_name: &str, cwd: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn agent_memory_paths_match_official_scopes_and_colon_sanitizing() {

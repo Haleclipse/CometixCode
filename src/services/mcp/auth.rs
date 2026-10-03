@@ -2546,6 +2546,7 @@ pub(crate) use runtime::oauth_http_client;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn get_server_key_matches_official_hash_input_shape() {
@@ -2565,9 +2566,8 @@ mod tests {
     #[cfg(feature = "mcp_runtime")]
     #[tokio::test]
     async fn oauth_discovery_goes_through_the_fetch_proxy() {
-        use crate::utils::env_utils::EnvVarGuard;
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::tls_provider::install_crypto_provider();
@@ -2877,11 +2877,11 @@ mod tests {
 
     #[cfg(feature = "mcp_runtime")]
     fn with_temp_config_home<T>(body: impl FnOnce(std::path::PathBuf) -> T) -> T {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir =
             std::env::temp_dir().join(format!("cometix-mcp-oauth-auth-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
         let result = body(temp_dir.clone());
         let _ = std::fs::remove_dir_all(temp_dir);
         result
@@ -2948,7 +2948,7 @@ mod tests {
     #[test]
     fn perform_mcp_oauth_flow_xaa_disabled_fails_without_standard_oauth_fallback() {
         with_temp_config_home(|_| {
-            let _xaa = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_ENABLE_XAA");
+            let _xaa = EnvVarGuard::unset("CLAUDE_CODE_ENABLE_XAA");
             let error = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()

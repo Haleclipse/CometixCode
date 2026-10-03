@@ -124,6 +124,7 @@ mod tests {
 
     use super::*;
     use crate::types::permissions::{AdditionalWorkingDirectory, PermissionRuleSource};
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use std::path::PathBuf;
 
     struct Workspace {
@@ -154,7 +155,7 @@ mod tests {
 
     #[tokio::test]
     async fn validation_matches_official_result_variants_and_stat_before_containment() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let workspace = Workspace::new();
         let context = ToolPermissionContext::default();
         let directory = workspace.path("additional");
@@ -211,7 +212,7 @@ mod tests {
 
     #[tokio::test]
     async fn validation_matches_official_normalization_and_literal_whitespace() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let workspace = Workspace::new();
         let context = ToolPermissionContext::default();
         let directory = workspace.path("caf\u{e9}");
@@ -261,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn validation_matches_official_first_containing_directory_in_insertion_order() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let workspace = Workspace::new();
         let mut context = ToolPermissionContext::default();
         let parent = workspace.path("parent");
@@ -291,7 +292,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn validation_matches_official_symlink_spelling_and_fatal_eloop() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let workspace = Workspace::new();
         let context = ToolPermissionContext::default();
         let link = workspace.path("link");
@@ -318,7 +319,7 @@ mod tests {
     #[tokio::test]
     async fn validation_matches_official_inaccessible_path_is_silent_not_found() {
         use std::os::unix::fs::PermissionsExt;
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let workspace = Workspace::new();
         let private = workspace.root.join("private");
         std::fs::create_dir_all(private.join("child")).unwrap();

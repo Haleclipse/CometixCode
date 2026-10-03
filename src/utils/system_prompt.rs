@@ -239,14 +239,12 @@ impl CliSystemPromptOverrides {
 mod tests {
     use super::*;
     use crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// Clear coordinator env so default/custom priority tests are deterministic.
     fn without_coordinator_env<T>(f: impl FnOnce() -> T) -> T {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _coordinator =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE");
+        let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _coordinator = EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE");
         f()
     }
 
@@ -334,11 +332,8 @@ mod tests {
         if !feature_enabled(FeatureFlag::CoordinatorMode) {
             return;
         }
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let _coordinator =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1");
+        let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _coordinator = EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1");
         let prompt = build_effective_system_prompt(args_custom_default_append(
             Some("CUSTOM"),
             vec!["DEFAULT".into()],

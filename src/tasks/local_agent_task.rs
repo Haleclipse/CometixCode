@@ -25,6 +25,8 @@ use crate::tools::agent_tool::agent_tool_utils::CompletedAgentRun;
 use crate::tools::agent_tool::load_agents_dir::AgentDefinition;
 use crate::types::message::{AssistantContent, Message};
 use crate::utils::task::disk_output;
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 use std::collections::HashMap;
 use std::sync::{
     Arc, LazyLock, Mutex,
@@ -219,8 +221,7 @@ static BACKGROUND_SIGNAL_RESOLVERS: LazyLock<
 > = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(test)]
-pub static TEST_LOCAL_AGENT_TASK_LOCK: LazyLock<crate::utils::env_utils::TestStateLock> =
-    LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub static TEST_LOCAL_AGENT_TASK_LOCK: LazyLock<TestStateLock> = LazyLock::new(TestStateLock::new);
 
 fn now_ms() -> u64 {
     chrono::Utc::now().timestamp_millis().max(0) as u64
@@ -1050,6 +1051,7 @@ mod tests {
     use super::*;
     use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
     use crate::types::message::{AssistantMessage, StopReason, TokenUsage, ToolUseBlock};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn store_with_active_speculation()
     -> (crate::state::store::AppStore, crate::tool::AbortController) {
@@ -1237,7 +1239,7 @@ mod tests {
 
     #[test]
     fn first_agent_notification_aborts_speculation_but_preserves_suggestion() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _task_lock = TEST_LOCAL_AGENT_TASK_LOCK.lock().unwrap();
         let _queue_lock = crate::utils::message_queue_manager::TEST_QUEUE_LOCK
             .lock()
@@ -1488,7 +1490,7 @@ mod tests {
 
     #[test]
     fn bulk_kill_aborts_all_running_agents_and_marks_aggregate_notified() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _task_lock = TEST_LOCAL_AGENT_TASK_LOCK.lock().unwrap();
         clear_local_agent_tasks_for_test();
         crate::utils::task::disk_output::reset_task_output_dir_for_test();

@@ -209,6 +209,7 @@ fn formatted_minor_units(amount_minor_units: i64) -> String {
 mod tests {
     use super::*;
     use crate::utils::config::{AccountInfo, GlobalConfig};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn config_with_cache(entry: serde_json::Value) -> GlobalConfig {
         GlobalConfig {
@@ -248,7 +249,7 @@ mod tests {
 
     #[test]
     fn cached_passes_eligibility_requires_official_precheck_and_reports_cache_state() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let config = config_with_cache(serde_json::json!({
             "eligible": true,
             "timestamp": 1_000,
@@ -266,7 +267,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
 
         let without_subscription = check_cached_passes_eligibility(&config, 2_000);
 
@@ -276,7 +277,7 @@ mod tests {
 
     #[test]
     fn cached_passes_eligibility_reads_fresh_max_subscriber_cache() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let config = config_with_cache(serde_json::json!({
             "eligible": true,
             "timestamp": 1_000,
@@ -304,7 +305,7 @@ mod tests {
         // the test was green purely because the harness seeds a max-subscriber
         // identity at the real config home — it would have passed with an empty
         // `dir` too, and failed the moment the harness stopped seeding.
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
 
         let eligibility = check_cached_passes_eligibility(&config, 2_000);
 

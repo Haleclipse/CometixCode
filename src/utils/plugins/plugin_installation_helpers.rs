@@ -472,7 +472,7 @@ pub async fn install_plugin_from_marketplace(params: InstallPluginParams) -> Ins
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     // Test fixture only: resolve the imported marketplace then call the real
     // UI wrapper and inspect canonical registry output, without a second DFS,

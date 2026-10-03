@@ -662,6 +662,7 @@ pub fn CopyPicker(props: &mut CopyPickerProps, mut hooks: Hooks) -> impl Into<An
 mod tests {
     use super::*;
     use crate::types::message::{AssistantMessage, StopReason, SystemMessage};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use chrono::Utc;
 
     /// 2.1.285: the per-uid root under `CLAUDE_CODE_TMPDIR`, made 0700.
@@ -669,7 +670,7 @@ mod tests {
     #[test]
     fn copy_dir_is_the_per_uid_root_made_private() {
         use std::os::unix::fs::PermissionsExt as _;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("cometix-copy-dir-{}", uuid::Uuid::new_v4()));
         let expected = root.join(format!(
             "claude-{}",
@@ -677,7 +678,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&expected).unwrap();
         std::fs::set_permissions(&expected, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
         assert_eq!(copy_dir().unwrap(), expected);
         assert_eq!(
             std::fs::metadata(&expected).unwrap().permissions().mode() & 0o777,
@@ -731,14 +732,11 @@ mod tests {
     #[test]
     fn copy_dir_rechecks_the_root_on_every_call() {
         use std::os::unix::fs::PermissionsExt as _;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-copy-again-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _tmp = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_TMPDIR",
-            format!(" {} ", root.display()),
-        );
+        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", format!(" {} ", root.display()));
         let dir = copy_dir().unwrap();
         assert_eq!(dir.parent(), Some(root.as_path()));
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -764,7 +762,7 @@ mod tests {
         if crate::utils::permissions::filesystem::current_uid() == 0 {
             return; // root opens it anyway
         }
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-copy-unread-{}", uuid::Uuid::new_v4()));
         let dir = root.join(format!(
@@ -773,7 +771,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000)).unwrap();
-        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
         let error = copy_dir().unwrap_err();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(error.to_string().contains("is not readable"), "{error}");
@@ -783,7 +781,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn copy_dir_refuses_a_symlinked_root() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("cometix-copy-link-{}", uuid::Uuid::new_v4()));
         let target = root.join("elsewhere");
         std::fs::create_dir_all(&target).unwrap();
@@ -795,7 +793,7 @@ mod tests {
             )),
         )
         .unwrap();
-        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
         let error = copy_dir().unwrap_err();
         assert!(error.to_string().contains("not a directory"), "{error}");
         let _ = std::fs::remove_dir_all(root);
@@ -1068,10 +1066,10 @@ mod tests {
     async fn copy_clipboard_write_failure_prevents_fallback_and_success() {
         use futures::StreamExt;
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = crate::utils::env_utils::EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = crate::utils::env_utils::EnvVarGuard::unset("TMUX");
+        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
+        let _tmux = EnvVarGuard::unset("TMUX");
         // Keep `copy_dir()` off the real per-uid temp root.
-        let _tmp = crate::utils::env_utils::EnvVarGuard::set(
+        let _tmp = EnvVarGuard::set(
             "CLAUDE_CODE_TMPDIR",
             std::env::temp_dir().join(format!("cometix-copy-fail-{}", uuid::Uuid::new_v4())),
         );
@@ -1120,11 +1118,11 @@ mod tests {
         let tool = directory.join("tmux");
         std::fs::write(&tool, "#!/bin/sh\n/bin/cat >/dev/null\n/bin/sleep 0.25\n").unwrap();
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let _path = crate::utils::env_utils::EnvVarGuard::set("PATH", &directory);
+        let _path = EnvVarGuard::set("PATH", &directory);
         // Keep `copy_dir()` off the real per-uid temp root.
-        let _tmp = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &directory);
-        let _ssh = crate::utils::env_utils::EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = crate::utils::env_utils::EnvVarGuard::set("TMUX", "fixture");
+        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &directory);
+        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
+        let _tmux = EnvVarGuard::set("TMUX", "fixture");
         for drop_observer in [false, true] {
             let filename = format!("copy-fixture-{}.txt", uuid::Uuid::new_v4());
             let result = std::sync::Arc::new(std::sync::Mutex::new(None));

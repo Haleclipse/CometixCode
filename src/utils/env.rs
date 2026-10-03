@@ -260,13 +260,13 @@ fn is_ssh_session_in(env: &EnvSnapshot) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// CC `env.ts:14-26`: `.claude<suffix>.json` under `CLAUDE_CONFIG_DIR`,
     /// unless the legacy `.config.json` exists under the config home. (The
     /// memoization is production-only; see [`get_global_claude_file`].)
     #[test]
     fn global_claude_file_matches_official_legacy_and_suffix() {
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-global-claude-file-{}",

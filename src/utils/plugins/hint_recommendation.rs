@@ -153,6 +153,7 @@ pub fn reset_hint_recommendation_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::EnvVarGuard;
 
     #[test]
     fn feature_gate_reads_switch_table_and_ignores_growthbook_delivery() {
@@ -192,7 +193,6 @@ mod tests {
     #[tokio::test]
     async fn async_hint_resolution_matches_official_cached_entry_projection() {
         use crate::utils::claude_code_hints::ClaudeCodeHint;
-        use crate::utils::env_utils::EnvVarGuard;
         use serde_json::json;
         let root = std::env::temp_dir().join(format!("hint-resolution-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();

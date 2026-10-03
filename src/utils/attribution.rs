@@ -65,10 +65,11 @@ pub fn get_attribution_texts() -> AttributionTexts {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn default_attribution_texts_match_official_shape() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let texts = get_attribution_texts();
         // Either the settings suppress attribution entirely, or the defaults
         // must carry the official Co-Authored-By / Generated-with shapes.

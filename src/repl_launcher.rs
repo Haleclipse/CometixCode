@@ -36,6 +36,7 @@ pub fn launch_repl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use futures::{StreamExt, stream};
     use std::fs;
     use std::time::Duration;
@@ -45,7 +46,7 @@ mod tests {
         events: Vec<TerminalEvent>,
         max_frames: usize,
     ) -> String {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = std::env::current_dir().unwrap();
         let isolated_cwd =
             std::env::temp_dir().join(format!("cometix-repl-launcher-{}", uuid::Uuid::new_v4()));

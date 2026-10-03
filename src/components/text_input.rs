@@ -143,6 +143,7 @@ pub fn TextInput<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
 
     #[test]
@@ -321,7 +322,6 @@ mod tests {
 
     #[test]
     fn text_input_escape_matches_official_notification_order_history_and_parent_unmount() {
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         use futures::StreamExt;
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -493,7 +493,7 @@ mod tests {
         // text-input-offset-peer-oracle.json. Lone source surrogate results are
         // projected through Rust String's documented U+FFFD boundary.
         use futures::StreamExt;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         for (key, expected) in [
             (KeyCode::Left, "éX🙂"),
             (KeyCode::Right, "é🙂X"),
@@ -607,9 +607,8 @@ mod tests {
         // CC BaseTextInput: useInput(isActive: focus) versus renderPlaceholder.
         // Omission accepts editing; only explicit true inverts placeholder E.
         use futures::StreamExt;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _accessibility =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_ACCESSIBILITY", "0");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _accessibility = EnvVarGuard::set("CLAUDE_CODE_ACCESSIBILITY", "0");
         crate::utils::process_runtime::initialize_test_process_runtime();
         assert_eq!(TextInputProps::default().focus, None);
         for focus in [None, Some(true), Some(false)] {

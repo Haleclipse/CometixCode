@@ -260,6 +260,7 @@ fn track_delivered_diagnostics(state: &mut LspDiagnosticRegistryState, files: &[
 mod tests {
     use super::*;
     use crate::services::lsp::types::{DiagnosticPosition, DiagnosticRange};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn diag(message: &str, severity: &str, line: u32) -> Diagnostic {
         Diagnostic {
@@ -283,7 +284,7 @@ mod tests {
 
     #[test]
     fn lsp_registry_deduplicates_within_batch_and_across_turns() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
         let duplicate = diag("same", "Warning", 1);
         register_pending_lsp_diagnostic(
@@ -313,7 +314,7 @@ mod tests {
 
     #[test]
     fn lsp_registry_sorts_by_severity_and_caps_volume_like_official() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
         let mut diagnostics = Vec::new();
         for i in 0..15 {
@@ -338,7 +339,7 @@ mod tests {
     /// the `serverName` join — varied per run, and both reach the model.
     #[test]
     fn registration_order_decides_the_total_cap_and_server_name_join() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
 
         for server in ["alpha", "zeta", "mid"] {
@@ -385,7 +386,7 @@ mod tests {
     /// turn, and its diagnostics were then re-delivered to the model.
     #[test]
     fn delivered_dedup_evicts_least_recently_used_like_the_official_lru() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
 
         let hot = "file:///hot.rs";
@@ -437,7 +438,7 @@ mod tests {
 
     #[test]
     fn clear_all_only_clears_pending_not_delivered_dedup() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
         register_pending_lsp_diagnostic(
             "server",

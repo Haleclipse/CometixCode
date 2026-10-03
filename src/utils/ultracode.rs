@@ -608,7 +608,7 @@ mod tests {
         model_supports_effort, model_supports_max_effort, model_supports_xhigh_effort,
         resolve_applied_effort,
     };
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn parse_extended_effort_level_accepts_med_alias_and_xhigh() {
@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn capability_catalog_matches_official_provider_aliases_and_46_xhigh_exclusion() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let _vertex = EnvVarGuard::set("CLAUDE_CODE_USE_VERTEX", "1");
@@ -715,7 +715,7 @@ mod tests {
 
     #[test]
     fn org_cap_matches_official_picker_geometry_resolution_and_provider_gate() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = EnvVarGuard::unset("CLAUDE_CODE_EFFORT_LEVEL");
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
@@ -747,7 +747,7 @@ mod tests {
 
     #[test]
     fn launch_pin_matches_official_precedence_and_picker_default() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = EnvVarGuard::unset("CLAUDE_CODE_EFFORT_LEVEL");
         let _config = ConfigGuard::new(serde_json::json!({}));
         assert_eq!(
@@ -788,7 +788,7 @@ mod tests {
 
     #[test]
     fn cache_break_gate_matches_official_tokens_effective_change_and_launch_pin() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = EnvVarGuard::unset("CLAUDE_CODE_EFFORT_LEVEL");
         let _config = ConfigGuard::new(serde_json::json!({}));
         crate::cost_tracker::reset_cost_state_for_tests();

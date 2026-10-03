@@ -18,6 +18,7 @@
 //! and [`no_oracle_entry_is_silently_dropped`] keeps the two lists exhaustive so
 //! a tool cannot fall out of the net unnoticed.
 
+use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 use serde_json::Value;
 
 const ORACLE: &str = include_str!("cc_input_schemas.json");
@@ -279,20 +280,20 @@ const AWAITING_AN_ORACLE_ENTRY: &[(&str, &[&str])] = &[];
 /// Fields drop in declaration order, so the variables go back before the lock
 /// is released.
 struct OracleEnvironment {
-    _variables: [crate::utils::env_utils::EnvVarGuard; 3],
-    _lock: crate::utils::env_utils::TestEnvGuard<'static>,
+    _variables: [EnvVarGuard; 3],
+    _lock: TestEnvGuard<'static>,
 }
 
 impl OracleEnvironment {
     fn pin() -> Self {
-        let lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Self {
             _variables: [
-                crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"),
-                crate::utils::env_utils::EnvVarGuard::unset("BASH_MAX_TIMEOUT_MS"),
-                crate::utils::env_utils::EnvVarGuard::unset("BASH_DEFAULT_TIMEOUT_MS"),
+                EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"),
+                EnvVarGuard::unset("BASH_MAX_TIMEOUT_MS"),
+                EnvVarGuard::unset("BASH_DEFAULT_TIMEOUT_MS"),
             ],
             _lock: lock,
         }

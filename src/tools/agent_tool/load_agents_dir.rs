@@ -1009,7 +1009,7 @@ fn inject_agent_memory_tools(tools: &mut Option<Vec<String>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK, TestEnvGuard};
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK, TestEnvGuard};
     use std::fs;
     use std::io::Write;
 

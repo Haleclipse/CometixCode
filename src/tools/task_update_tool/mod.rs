@@ -614,6 +614,8 @@ impl crate::tool::ToolCall for TaskUpdateTool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn task_update_schema_matches_official_input_shape() {
         let schema = super::task_update_tool_schema();
@@ -638,7 +640,7 @@ mod tests {
         use crate::tool::ToolCall;
 
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("tool-list");
         {
             let mut tasks = crate::utils::tasks::TASK_TOOL_STORE.lock().unwrap();
@@ -737,7 +739,7 @@ mod tests {
     #[tokio::test]
     async fn blocking_task_completed_hook_reports_official_feedback() {
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("update-blocked");
         seed_task("pending");
 
@@ -769,7 +771,7 @@ mod tests {
         use crate::utils::hooks::session_hooks;
 
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _temp = crate::utils::tasks::TempTaskConfig::new("update-session-hook");
         seed_task("pending");
@@ -820,7 +822,7 @@ mod tests {
     #[tokio::test]
     async fn task_completed_hooks_skip_when_the_task_is_already_completed() {
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("update-noop");
         seed_task("completed");
 
@@ -839,7 +841,7 @@ mod tests {
     #[tokio::test]
     async fn task_completed_hooks_skip_for_other_status_transitions() {
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("update-other");
         seed_task("pending");
 
@@ -859,7 +861,7 @@ mod tests {
     #[tokio::test]
     async fn swarms_auto_owner_and_mailbox_notification_match_official() {
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("update-swarm");
         crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
         crate::utils::teammate::set_dynamic_team_context(Some(
@@ -897,7 +899,7 @@ mod tests {
     #[tokio::test]
     async fn add_blocks_skips_already_present_links_like_official() {
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _temp = crate::utils::tasks::TempTaskConfig::new("update-blocks");
         {
             let mut tasks = crate::utils::tasks::TASK_TOOL_STORE.lock().unwrap();

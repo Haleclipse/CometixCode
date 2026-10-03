@@ -1106,6 +1106,7 @@ mod tests {
     use crate::utils::permissions::permissions::{
         has_in_memory_allow_rule, has_in_memory_ask_rule, has_in_memory_deny_rule,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn parse_tool_list_from_cli_preserves_parenthesized_rule_content() {
@@ -1125,7 +1126,7 @@ mod tests {
 
     #[test]
     fn parse_base_tools_from_cli_matches_official_preset_custom_and_empty_inputs() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
 
@@ -1155,7 +1156,7 @@ mod tests {
     #[tokio::test]
     async fn initialize_tool_permission_context_base_tools_matches_official_normalization_source_order_and_precedence()
      {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let loaded_rules = vec![PermissionRule {
@@ -1212,7 +1213,7 @@ mod tests {
     #[tokio::test]
     async fn initialize_tool_permission_context_empty_and_default_base_tools_match_official_boundaries()
      {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let baseline =
@@ -1309,7 +1310,7 @@ mod tests {
     #[tokio::test]
     async fn initialize_tool_permission_context_defers_auto_transition_until_rules_are_complete() {
         crate::utils::permissions::auto_mode_state::reset_for_testing();
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         let settings = SettingsJson {
             permissions: Some(crate::utils::settings::types::PermissionsSettings {
@@ -1347,7 +1348,7 @@ mod tests {
     #[test]
     fn initial_permission_mode_from_cli_auto_sets_active_when_gate_open() {
         crate::utils::permissions::auto_mode_state::reset_for_testing();
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         if is_auto_mode_gate_enabled() {
             let (mode, _) = initial_permission_mode_from_cli(Some("auto"), false);
@@ -1360,7 +1361,7 @@ mod tests {
 
     #[test]
     fn is_default_permission_mode_auto_reads_settings() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
         let settings = SettingsJson {
             permissions: Some(crate::utils::settings::types::PermissionsSettings {
@@ -1440,13 +1441,13 @@ mod tests {
 
     #[test]
     fn transition_plan_auto_mode_matches_official_settings_reload_activation_and_restrip() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _provider_vars = [
             "CLAUDE_CODE_USE_BEDROCK",
             "CLAUDE_CODE_USE_VERTEX",
             "CLAUDE_CODE_USE_FOUNDRY",
         ]
-        .map(crate::utils::env_utils::EnvVarGuard::unset);
+        .map(EnvVarGuard::unset);
         let root = std::env::temp_dir().join(format!(
             "cometix-plan-auto-reload-{}",
             uuid::Uuid::new_v4().simple()
@@ -1457,7 +1458,7 @@ mod tests {
             r#"{"skipAutoPermissionPrompt":true,"useAutoModeDuringPlan":true}"#,
         )
         .unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         crate::bootstrap::state::set_main_loop_model_override(Some(Some(
             "claude-sonnet-4-6".to_string(),
         )));
@@ -1629,8 +1630,8 @@ mod directory_tests {
     //! Maps to CC `utils/permissions/permissionSetup.ts:912-931,993-1033`.
 
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::settings::types::PermissionsSettings;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::path::{Path, PathBuf};
 
     struct DirectoryFixture {
@@ -1865,8 +1866,8 @@ mod directory_tests {
 #[cfg(test)]
 mod gate_tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::settings::{settings_cache, validation::SettingsWithErrors};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn settings(value: serde_json::Value) {
         settings_cache::set_session_settings_cache(SettingsWithErrors {

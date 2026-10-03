@@ -985,6 +985,7 @@ pub fn read_jsonl_file(file_path: impl AsRef<Path>) -> io::Result<Vec<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
 
     struct FixtureDirectory(std::path::PathBuf);
@@ -1108,7 +1109,6 @@ mod tests {
     #[test]
     fn safe_parse_json_matches_official_cached_failure_log_flag_order() {
         // CC utils/json.ts:13–26,31–42: failures are cached by json alone.
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env: Vec<_> = [
             "CLAUDE_CODE_USE_BEDROCK",
@@ -1286,7 +1286,6 @@ mod tests {
         // jsonc-parser scanner.js + main.js#applyEdits: an unterminated block
         // comment ending in CRLF can put an enclosing array end past EOF.
         // CC utils/json.ts:273–276 logs the resulting exception and replaces.
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env: Vec<_> = [
             "CLAUDE_CODE_USE_BEDROCK",

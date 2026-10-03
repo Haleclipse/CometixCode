@@ -106,6 +106,7 @@ mod tests {
     use super::*;
     use crate::utils::permissions::auto_mode_state;
     use crate::utils::permissions::permission_setup::transition_into_auto_mode;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn next_permission_mode_default_cycle_without_auto_available() {
@@ -208,7 +209,7 @@ mod tests {
 
     #[test]
     fn next_permission_mode_matches_official_audience_and_default_priority() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let internal = crate::utils::build_profile::build_audience().is_internal();
         let mut context = ToolPermissionContext::default();
         for auto_available in [Some(false), Some(true), None] {

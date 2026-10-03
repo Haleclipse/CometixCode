@@ -90,6 +90,7 @@ pub fn SessionBackgroundHint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -167,10 +168,9 @@ mod tests {
 
     #[test]
     fn session_background_matches_official_child_input_and_later_owner() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
-        let _disabled =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _disabled = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
         // No configuration write is needed to prove this input path.
         let mut config = crate::utils::config::load_global_config();
         config.has_used_background_task = Some(true);
@@ -338,9 +338,9 @@ mod tests {
         use crate::tasks::local_agent_task as agents;
         use crate::tasks::local_shell_task::{background_all, has_foreground_tasks};
         use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _agent_lock = agents::TEST_LOCAL_AGENT_TASK_LOCK.lock().unwrap();
-        let _writes = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
             None,

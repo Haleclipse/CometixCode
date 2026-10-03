@@ -303,7 +303,7 @@ pub fn clear_proxy_cache() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     const PROXY_VARS: [&str; 6] = [
@@ -324,7 +324,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn proxy_url_prefers_lowercase_and_skips_empty_values() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();
@@ -422,7 +422,7 @@ mod tests {
     /// direct.
     #[tokio::test]
     async fn fetch_client_routes_through_the_proxy_unless_no_proxy_matches() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();
@@ -495,7 +495,7 @@ mod tests {
     /// CC `disableKeepAlive`: once set, each request opens its own connection.
     #[tokio::test]
     async fn disabled_keep_alive_stops_pooling() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();
@@ -514,7 +514,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn unix_socket_carries_only_the_anthropic_api_client() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();

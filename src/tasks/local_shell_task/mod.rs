@@ -606,7 +606,7 @@ pub fn clear_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct EnvGuard {
         _env: EnvVarGuard,

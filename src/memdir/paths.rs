@@ -220,7 +220,7 @@ pub(crate) fn seed_settings(initial: SettingsJson, user: Option<SettingsJson>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{
+    use crate::utils::test_env::{
         EnvVarGuard, HOME_VAR, PinnedProjectDir, TEST_ENV_LOCK, TestEnvGuard,
     };
 

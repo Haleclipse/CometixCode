@@ -1256,6 +1256,7 @@ mod tests {
     use super::*;
     use crate::tool::ToolPermissionContext;
     use crate::types::message::{AssistantContent, StopReason};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn assistant_with_block(block: ToolUseBlock) -> AssistantMessage {
         AssistantMessage {
@@ -1485,7 +1486,7 @@ mod tests {
 
     #[test]
     fn concurrent_reads_merge_state_nested_and_dynamic_skill_effects() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         crate::skills::load_skills_dir::clear_dynamic_skills();
@@ -1663,7 +1664,7 @@ mod tests {
         // assertion below stayed `true`.
         use std::io::Write;
 
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-streaming-skill-modifier-{}",
             uuid::Uuid::new_v4()
@@ -1828,6 +1829,7 @@ pub(crate) mod streaming_hook_decision_tests {
     };
     use crate::types::message::{AssistantContent, UserContent};
     use crate::types::permissions::{PermissionRuleSource, PermissionRuleValue};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
     use std::sync::Arc;
 
@@ -1845,9 +1847,9 @@ pub(crate) mod streaming_hook_decision_tests {
         pub(crate) root: std::path::PathBuf,
         pub(crate) target: std::path::PathBuf,
         original_cwd: std::path::PathBuf,
-        _config: crate::utils::env_utils::EnvVarGuard,
-        _writes: crate::utils::env_utils::EnvVarGuard,
-        _simple: crate::utils::env_utils::EnvVarGuard,
+        _config: EnvVarGuard,
+        _writes: EnvVarGuard,
+        _simple: EnvVarGuard,
         _managed: crate::services::hooks::test_support::ManagedSettingsGuard,
         _registered: RegisteredHooksGuard,
     }
@@ -1869,12 +1871,9 @@ pub(crate) mod streaming_hook_decision_tests {
             )
             .unwrap();
             Self {
-                _config: crate::utils::env_utils::EnvVarGuard::set(
-                    "CLAUDE_CONFIG_DIR",
-                    root.join("config"),
-                ),
-                _writes: crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", writes),
-                _simple: crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+                _config: EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config")),
+                _writes: EnvVarGuard::set("COMETIX_WRITE_ENABLED", writes),
+                _simple: EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
                 _managed: crate::services::hooks::test_support::ManagedSettingsGuard::install(
                     Some(r#"{"allowManagedHooksOnly":true}"#),
                 ),
@@ -1993,7 +1992,7 @@ pub(crate) mod streaming_hook_decision_tests {
     /// persistPermissions ignores ordinary disk errors but publishes the grant.
     #[tokio::test]
     async fn streaming_permission_request_hook_resolution_and_persistence_matches_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
         for (decide, writes, ordinary_io_failure) in [
             (true, "1", false),
@@ -2127,9 +2126,9 @@ pub(crate) mod streaming_hook_decision_tests {
 
     #[tokio::test]
     async fn streaming_permission_request_hook_deny_model_result_matches_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(Some(
             r#"{"allowManagedHooksOnly":true}"#,
         ));
@@ -2213,9 +2212,9 @@ pub(crate) mod streaming_hook_decision_tests {
     /// behavior; toolHooks.ts:535-556 replaces the whole decision on each yield.
     #[tokio::test]
     async fn streaming_pre_tool_hook_aggregated_deny_model_result_matches_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(Some(
             r#"{"allowManagedHooksOnly":true}"#,
         ));
@@ -2346,9 +2345,9 @@ pub(crate) mod streaming_hook_decision_tests {
     }
     #[tokio::test]
     async fn streaming_hook_ask_final_callback_deny_matches_official_no_second_prompt() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(Some(
             r#"{"allowManagedHooksOnly":true}"#,
         ));

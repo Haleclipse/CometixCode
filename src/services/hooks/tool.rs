@@ -341,6 +341,7 @@ pub(super) async fn execute_hooks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn mismatched_post_tool_event_specific_output_is_ignored() {
@@ -400,7 +401,7 @@ mod tests {
     async fn managed_disable_all_hooks_policy_stops_every_event_at_the_shared_executor() {
         use crate::services::hooks::test_support::{ManagedSettingsGuard, SessionTrustGuard};
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         // The same executor now also carries CC's trust gate (`hooks.ts:1994`),
         // so the "allowed" half has to state trust rather than inherit it from
         // the developer's `.claude.json`.
@@ -497,7 +498,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn absent_is_interrupt_sends_no_key_at_all() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
 

@@ -390,6 +390,7 @@ pub fn clear_betas_caches() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn auto_mode_model_gate_matches_official_provider_audience_and_allowlist_order() {
@@ -477,13 +478,13 @@ mod tests {
 
     #[test]
     fn public_auto_mode_gate_ignores_cached_config_and_matches_provider_rules() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let provider_vars = [
             "CLAUDE_CODE_USE_BEDROCK",
             "CLAUDE_CODE_USE_VERTEX",
             "CLAUDE_CODE_USE_FOUNDRY",
         ];
-        let _providers = provider_vars.map(crate::utils::env_utils::EnvVarGuard::unset);
+        let _providers = provider_vars.map(EnvVarGuard::unset);
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
             "tengu_auto_mode_config".to_string(),
@@ -512,7 +513,7 @@ mod tests {
 
     #[test]
     fn get_model_betas_matches_official_first_party_agentic_headers() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
@@ -532,7 +533,7 @@ mod tests {
 
     #[test]
     fn model_supports_structured_outputs_matches_current_official_allowlist_shape() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         assert!(model_supports_structured_outputs("claude-sonnet-4-6"));
@@ -546,7 +547,7 @@ mod tests {
 
     #[test]
     fn bedrock_model_betas_are_split_between_header_and_extra_body_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -572,7 +573,7 @@ mod tests {
 
     #[test]
     fn model_and_bedrock_split_memos_preserve_raw_key_chronology_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -611,7 +612,7 @@ mod tests {
 
     #[test]
     fn structured_outputs_model_provider_matrix_matches_official_canonical_policy() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _providers = [
@@ -619,7 +620,7 @@ mod tests {
             "CLAUDE_CODE_USE_VERTEX",
             "CLAUDE_CODE_USE_FOUNDRY",
         ]
-        .map(crate::utils::env_utils::EnvVarGuard::unset);
+        .map(EnvVarGuard::unset);
         let supported_models = [
             "claude-sonnet-4-6",
             "claude-sonnet-4-5-20250929",
@@ -651,7 +652,7 @@ mod tests {
             r#"{"modelOverrides":{"claude-sonnet-4-6":"provider-deployment-id"}}"#,
         )
         .unwrap();
-        let config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
         // `CLAUDE_CONFIG_DIR` selects the User settings file, so it is an INPUT
         // to the merged-settings cache that `get_settings_with_errors`
         // memoizes. CC reads it once during startup and never changes it, so
@@ -687,7 +688,7 @@ mod tests {
 
     #[test]
     fn beta_header_raw_model_memo_and_clear_lifecycle_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -768,7 +769,7 @@ mod tests {
     #[cfg(feature = "anthropic_internal")]
     #[test]
     fn foundry_config_override_no_longer_reaches_strict_tools_gate() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -803,7 +804,7 @@ mod tests {
 
     #[test]
     fn anthropic_betas_duplicates_and_raw_alias_memo_keys_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [

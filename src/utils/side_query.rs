@@ -374,13 +374,14 @@ pub fn user_text_message(text: impl Into<String>) -> MessageParam {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// A real side_query -> canonical client -> SDK HTTP fixture. Only the
     /// endpoint/auth environment is substituted; retries and aborts use the SDK.
     struct HttpFixture {
         root: std::path::PathBuf,
         original_cwd: std::path::PathBuf,
-        _env: Vec<crate::utils::env_utils::EnvVarGuard>,
+        _env: Vec<EnvVarGuard>,
         requests: tokio::sync::mpsc::UnboundedReceiver<(u32, serde_json::Value)>,
         server: tokio::task::JoinHandle<()>,
     }
@@ -388,7 +389,6 @@ mod tests {
     impl HttpFixture {
         /// None holds the HTTP response open until the caller aborts.
         async fn new(statuses: Vec<Option<u16>>) -> Self {
-            use crate::utils::env_utils::EnvVarGuard;
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             crate::utils::tls_provider::install_crypto_provider();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -492,7 +492,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn side_query_matches_official_client_retry_budget_on_http_wire() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         for (max_retries, failures) in [(None, 2usize), (Some(1), 1), (Some(0), 0)] {
             let statuses = if max_retries == Some(0) {
                 vec![Some(500)]
@@ -544,7 +544,7 @@ mod tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn side_query_matches_official_live_abort_error_identity() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let mut fixture = HttpFixture::new(vec![None]).await;
         let (handle, signal) = anthropic_sdk::AbortSignal::pair();
         let query = side_query(SideQueryOptions {

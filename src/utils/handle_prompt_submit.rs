@@ -483,6 +483,7 @@ impl<D: QueryDeps> HandlePromptSubmit<D> {
 mod tests {
     use super::*;
     use crate::types::message::{RenderableMessageKind, UserContent};
+    use crate::utils::test_env::{IsolatedProjectSettings, TEST_ENV_LOCK};
 
     #[test]
     fn active_prompt_and_bash_inputs_queue_after_immediate_ui_is_checked() {
@@ -553,8 +554,8 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn local_command_continuation_matches_official_hooks_and_full_context() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _settings = crate::utils::env_utils::IsolatedProjectSettings::pin();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _settings = IsolatedProjectSettings::pin();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
         let input_path =
             std::env::temp_dir().join(format!("permission-retry-hook-{}.json", Uuid::new_v4()));
@@ -654,8 +655,8 @@ mod tests {
         // Unpinned, this reads THIS repository's `.claude/settings.json` and
         // leaves its hooks in the process-global snapshot for the rest of the
         // run — and would spawn them.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _settings = crate::utils::env_utils::IsolatedProjectSettings::pin();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _settings = IsolatedProjectSettings::pin();
         let handler = HandlePromptSubmit::new(
             TestQueryDeps,
             std::sync::Arc::new(crate::commands::declared_commands_for_tests()),

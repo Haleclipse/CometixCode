@@ -1327,7 +1327,7 @@ fn process_memory_file_with_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct CurrentDirGuard(PathBuf);
 
@@ -1476,7 +1476,7 @@ mod tests {
 
     #[test]
     fn nested_instructions_follow_project_and_local_setting_source_gates() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _sources = AllowedSettingSourcesGuard::capture();
@@ -1517,7 +1517,7 @@ mod tests {
 
     #[test]
     fn managed_rules_remain_enabled_while_user_rules_follow_source_gate() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _sources = AllowedSettingSourcesGuard::capture();
@@ -1562,7 +1562,7 @@ mod tests {
 
     #[test]
     fn managed_external_includes_follow_the_shared_approval_gate() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _sources = AllowedSettingSourcesGuard::capture();
@@ -1614,7 +1614,7 @@ mod tests {
 
     #[test]
     fn nested_worktree_skips_parent_project_instructions() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _sources = AllowedSettingSourcesGuard::capture();
@@ -1676,7 +1676,7 @@ mod tests {
 
     #[test]
     fn additional_directories_are_loaded_only_when_official_env_gate_is_enabled() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _unset = EnvVarGuard::unset("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
@@ -1700,7 +1700,7 @@ mod tests {
 
     #[test]
     fn bare_add_dir_discovery_reads_project_dot_claude_and_rules_without_default_walk() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _enabled = EnvVarGuard::set("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
@@ -1743,7 +1743,7 @@ mod tests {
 
     #[test]
     fn get_external_claude_md_includes_skips_user_and_in_cwd_paths() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         struct OriginalCwdRestore(PathBuf);

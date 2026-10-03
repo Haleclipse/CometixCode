@@ -120,7 +120,7 @@ pub(crate) fn apply_subprocess_env_std_snapshot(
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn scrub_list_matches_official_subprocess_sensitive_keys() {
@@ -147,7 +147,7 @@ mod tests {
     /// `process.env` when secret scrubbing is disabled.
     #[test]
     fn base_env_matches_official_current_process_env_inheritance() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _dynamic = EnvVarGuard::set("COMETIX_SUBPROCESS_ENV_TEST_DYNAMIC", "fresh");
         let _scrub_off = EnvVarGuard::unset("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB");
 
@@ -164,7 +164,7 @@ mod tests {
     /// then deletes each sensitive key and its `INPUT_` counterpart.
     #[test]
     fn scrub_matches_official_secret_and_deleted_key_filtering() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _scrub = EnvVarGuard::set("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "1");
         let _secret = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-test");
         let _input = EnvVarGuard::set("INPUT_ANTHROPIC_API_KEY", "sk-test");
@@ -200,7 +200,7 @@ mod tests {
     /// so caller values win over the scrubbed base.
     #[test]
     fn explicit_overrides_after_scrub_match_official_spread_precedence() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _scrub = EnvVarGuard::set("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "true");
 
         let mut command = std::process::Command::new("true");

@@ -481,6 +481,7 @@ pub fn stop_hook_result_from_hook_results(
 mod tests {
     use super::*;
     use crate::services::hooks::{HooksConfig, test_support::registered_config};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn stop_hook_result_from_hook_results_keeps_nonblocking_messages_out_of_continuation() {
@@ -774,7 +775,7 @@ mod tests {
         use crate::services::hooks::{HookCommand, HookEvent};
         use crate::utils::hooks::session_hooks;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let hook = |command: &str| HookCommand {
             command: command.to_string(),

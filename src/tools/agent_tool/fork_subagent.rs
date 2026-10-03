@@ -55,6 +55,8 @@ use crate::types::message::{
     AssistantContent, AssistantMessage, Message, ToolResult, UserContent, UserMessage,
 };
 use crate::types::permissions::PermissionMode;
+#[cfg(test)]
+use crate::utils::test_env::EnvVarGuard;
 
 /// Maps to CC `forkSubagent.ts#FORK_SUBAGENT_TYPE`.
 pub const FORK_SUBAGENT_TYPE: &str = "fork";
@@ -84,8 +86,7 @@ pub fn is_fork_subagent_enabled() -> bool {
 /// [`fork_veto_environment`] is the inverse, for the branches CC still takes
 /// when a session cannot host a fork.
 #[cfg(test)]
-pub(crate) fn fork_gate_environment() -> [crate::utils::env_utils::EnvVarGuard; 4] {
-    use crate::utils::env_utils::EnvVarGuard;
+pub(crate) fn fork_gate_environment() -> [EnvVarGuard; 4] {
     [
         EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE"),
         EnvVarGuard::unset("CLAUDE_CODE_NON_INTERACTIVE"),
@@ -99,8 +100,8 @@ pub(crate) fn fork_gate_environment() -> [crate::utils::env_utils::EnvVarGuard; 
 /// feature. CC runs that branch for every headless session, so it is live
 /// code on both sides, not a compatibility shim.
 #[cfg(test)]
-pub(crate) fn fork_veto_environment() -> crate::utils::env_utils::EnvVarGuard {
-    crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_NON_INTERACTIVE", "1")
+pub(crate) fn fork_veto_environment() -> EnvVarGuard {
+    EnvVarGuard::set("CLAUDE_CODE_NON_INTERACTIVE", "1")
 }
 
 /// Maps to CC `forkSubagent.ts#FORK_AGENT`.
@@ -252,6 +253,7 @@ pub fn build_worktree_notice(parent_cwd: &str, worktree_cwd: &str) -> String {
 mod tests {
     use super::*;
     use crate::types::message::{AssistantContent, ToolUseBlock};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// CC `forkSubagent.ts:60-71` — the synthetic fork agent runs in `bubble`
     /// so its permission prompts reach the parent terminal.
@@ -381,7 +383,7 @@ mod tests {
     /// CC withholds it from.
     #[test]
     fn fork_gate_follows_the_build_feature_and_both_runtime_vetoes() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _fork_gate = fork_gate_environment();
@@ -395,8 +397,7 @@ mod tests {
         assert!(is_fork_subagent_enabled());
 
         {
-            let _coordinator_on =
-                crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1");
+            let _coordinator_on = EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1");
             assert!(
                 !is_fork_subagent_enabled(),
                 "forkSubagent.ts:34 — coordinator mode owns orchestration"

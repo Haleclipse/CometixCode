@@ -1151,8 +1151,8 @@ impl crate::tool::ToolCall for NotebookEditTool {
 mod tests {
     use super::*;
     use crate::tool::ToolCall;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::query_helpers::ReadFileStateEntry;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn update_read_state(
         context: &crate::tool::ToolUseContext,

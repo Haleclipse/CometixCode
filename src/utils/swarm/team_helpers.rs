@@ -7,6 +7,8 @@
 //! Cometix keeps the same file shape for pane-backed teammates while retaining
 //! the in-memory leader cache used by the current in-process runner.
 
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
@@ -667,9 +669,8 @@ pub(crate) fn current_team_name() -> Option<String> {
 }
 
 #[cfg(test)]
-pub(crate) static TEST_TEAM_HELPERS_LOCK: std::sync::LazyLock<
-    crate::utils::env_utils::TestStateLock,
-> = std::sync::LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub(crate) static TEST_TEAM_HELPERS_LOCK: std::sync::LazyLock<TestStateLock> =
+    std::sync::LazyLock::new(TestStateLock::new);
 
 #[cfg(test)]
 pub(crate) fn clear_team_tool_state_for_test() {
@@ -679,7 +680,7 @@ pub(crate) fn clear_team_tool_state_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn unique_config_dir(prefix: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
@@ -712,7 +713,7 @@ mod tests {
     #[test]
     fn unique_teammate_name_checks_existing_members_case_insensitively() {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let (root, _config_guard, _io_guard) = team_disk_guards("unique-name");
         let mut record = super::create_team_record(
             "alpha".to_string(),
@@ -775,7 +776,7 @@ mod tests {
     #[test]
     fn team_file_persistence_uses_official_config_json_shape() {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_config_dir("team-file");
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
@@ -829,7 +830,7 @@ mod tests {
     #[test]
     fn hidden_member_mode_and_active_mutations_persist_to_record() {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let (root, _config_guard, _io_guard) = team_disk_guards("mutations");
         let mut record = super::create_team_record(
             "alpha".to_string(),
@@ -893,7 +894,7 @@ mod tests {
     #[test]
     fn mutators_preserve_on_disk_changes_made_after_the_in_memory_snapshot() {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let (root, _config_guard, _io_guard) = team_disk_guards("clobber");
 
         // Leader writes the team file and caches it in TEAM_TOOL_STATE.
@@ -971,7 +972,7 @@ mod tests {
     fn cleanup_team_directories_removes_team_tasks_and_member_worktrees() {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_config_dir("cleanup");
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
@@ -1024,7 +1025,7 @@ mod tests {
     fn session_team_cleanup_tracks_registered_teams_like_official_state() {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_config_dir("session-cleanup");
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");

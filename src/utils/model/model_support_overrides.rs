@@ -95,7 +95,7 @@ pub fn get_3p_model_capability_override(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn first_party_returns_none_even_when_pinned() {

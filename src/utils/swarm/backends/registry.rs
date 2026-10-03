@@ -7,6 +7,8 @@ use super::detection;
 use super::pane_backend_executor::{PaneBackendExecutor, create_pane_backend_executor};
 use super::teammate_mode_snapshot::{TeammateMode, get_teammate_mode_from_snapshot};
 use super::types::{BackendDetectionResult, PaneBackendType};
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 
 #[derive(Default)]
 struct BackendRegistryState {
@@ -24,8 +26,8 @@ static BACKEND_REGISTRY: LazyLock<Mutex<BackendRegistryState>> =
     LazyLock::new(|| Mutex::new(BackendRegistryState::default()));
 
 #[cfg(test)]
-pub(crate) static TEST_BACKEND_REGISTRY_LOCK: LazyLock<crate::utils::env_utils::TestStateLock> =
-    LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub(crate) static TEST_BACKEND_REGISTRY_LOCK: LazyLock<TestStateLock> =
+    LazyLock::new(TestStateLock::new);
 
 /// Maps to: CC `markInProcessFallback()`.
 pub fn mark_in_process_fallback() {

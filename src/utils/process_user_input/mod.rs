@@ -268,6 +268,7 @@ pub fn process_user_input_base(params: ProcessUserInputParams) -> ProcessUserInp
 mod tests {
     use super::*;
     use crate::types::message::{RenderableMessageKind, SystemMessage};
+    use crate::utils::test_env::{IsolatedProjectSettings, TEST_ENV_LOCK};
 
     fn queried_result() -> ProcessUserInputBaseResult {
         ProcessUserInputBaseResult {
@@ -451,14 +452,12 @@ mod tests {
         assert_eq!(outer.local_action, base.local_action);
     }
 
-    use crate::utils::env_utils::IsolatedProjectSettings;
-
     /// With no `UserPromptSubmit` hook configured, CC's generator returns before
     /// yielding anything (`hooks.ts:3837`), so the outer layer is a pass-through.
     /// The Rust executor short-circuits on an empty match set the same way.
     #[tokio::test(flavor = "current_thread")]
     async fn outer_layer_is_a_pass_through_when_no_hook_is_configured() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _settings = IsolatedProjectSettings::pin();
 
         let base = process_user_input_base(params("hello"));
@@ -492,7 +491,7 @@ mod tests {
     /// for this turn's agent must therefore run.
     #[tokio::test(flavor = "current_thread")]
     async fn session_scoped_hooks_reach_the_prompt_submit_loop_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _settings = IsolatedProjectSettings::pin();
 
         let session = "process-user-input-session";

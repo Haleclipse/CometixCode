@@ -283,7 +283,7 @@ pub async fn truncate_mcp_content_if_needed(content: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn max_tokens_and_size_estimate_match_official_env_and_utf16_rules() {

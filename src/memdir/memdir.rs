@@ -502,6 +502,7 @@ fn display_memory_dir(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::path::PathBuf;
 
     #[test]
@@ -644,7 +645,6 @@ mod tests {
 
     #[test]
     fn load_memory_prompt_respects_auto_memory_disable_gate() {
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         use crate::utils::settings::settings_cache;
         use crate::utils::settings::types::SettingsJson;
 

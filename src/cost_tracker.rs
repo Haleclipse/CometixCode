@@ -236,10 +236,11 @@ pub fn reset_cost_state_for_tests() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn restore_cost_state_for_session_matches_saved_project_session_only() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = crate::bootstrap::state::get_original_cwd();
         let root =
             std::env::temp_dir().join(format!("cometix-cost-restore-{}", uuid::Uuid::new_v4()));

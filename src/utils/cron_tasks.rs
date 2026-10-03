@@ -341,6 +341,7 @@ pub fn reset_cron_tasks_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn add_and_list_session_task() {
@@ -365,10 +366,10 @@ mod tests {
 
     #[test]
     fn durable_tasks_round_trip_through_project_file() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         struct Restore {
             cwd: std::path::PathBuf,
-            write: Option<crate::utils::env_utils::EnvVarGuard>,
+            write: Option<EnvVarGuard>,
             root: std::path::PathBuf,
         }
         impl Drop for Restore {
@@ -385,10 +386,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let restore = Restore {
             cwd: std::env::current_dir().unwrap(),
-            write: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "COMETIX_WRITE_ENABLED",
-                "1",
-            )),
+            write: Some(EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1")),
             root: root.clone(),
         };
         std::env::set_current_dir(&root).unwrap();

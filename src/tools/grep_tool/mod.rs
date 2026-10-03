@@ -1054,6 +1054,7 @@ impl crate::tool::ToolCall for GrepTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
 
     #[test]
     fn grep_tool_schema_matches_official_input_shape() {
@@ -1332,7 +1333,7 @@ mod tests {
         use crate::tool::ToolCall as _;
         use crate::utils::permissions::permission_result::PermissionResult;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-grep-permission-root-{}",
             uuid::Uuid::new_v4().simple()
@@ -1344,7 +1345,7 @@ mod tests {
         std::fs::create_dir_all(root.join("blocked")).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
         // CC filesystem.ts:667-674 authorizes original cwd; the symlink target stays outside.
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(&root);
+        let _project = PinnedProjectDir::at(&root);
         let mut context = crate::tool::ToolUseContext {
             cwd_override: Some(root.clone()),
             ..crate::tool::ToolUseContext::default()
@@ -1716,10 +1717,10 @@ mod tests {
 
     #[test]
     fn grep_excludes_orphaned_plugin_versions_with_session_frozen_cache() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        struct PluginStateGuard(Option<crate::utils::env_utils::EnvVarGuard>);
+        struct PluginStateGuard(Option<EnvVarGuard>);
         impl Drop for PluginStateGuard {
             fn drop(&mut self) {
                 drop(self.0.take());
@@ -1737,7 +1738,7 @@ mod tests {
         std::fs::write(orphaned.join(".orphaned_at"), "now").unwrap();
         std::fs::write(orphaned.join("old.txt"), "needle old\n").unwrap();
         std::fs::write(current.join("new.txt"), "needle new\n").unwrap();
-        let _guard = PluginStateGuard(Some(crate::utils::env_utils::EnvVarGuard::set(
+        let _guard = PluginStateGuard(Some(EnvVarGuard::set(
             "CLAUDE_CODE_PLUGIN_CACHE_DIR",
             &plugins,
         )));

@@ -260,6 +260,7 @@ pub fn ChannelsNotice(props: &ChannelsNoticeProps, hooks: Hooks) -> impl Into<An
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
 
     fn render(snapshot: ChannelsNoticeSnapshot) -> String {
@@ -357,14 +358,11 @@ mod tests {
             }
         }
 
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         // The auth facts come from process state (`utils/auth.rs:701`), so the
         // logged-in identity is this test's to establish rather than whatever
         // credential file the ambient config home happens to hold.
-        let _oauth = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_OAUTH_TOKEN",
-            "sk-ant-oat01-channels-notice",
-        );
+        let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-channels-notice");
 
         let _channels = BootstrapChannelsGuard;
         crate::bootstrap::state::set_allowed_channels(vec![

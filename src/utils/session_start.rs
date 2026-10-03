@@ -169,6 +169,7 @@ mod tests {
     use super::*;
     use crate::services::hooks::{HookOutcome, HookResult};
     use crate::types::message::{RenderableMessageKind, SystemMessage};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn process_session_start_hook_results_collects_messages_and_context() {
@@ -222,7 +223,7 @@ mod tests {
     fn session_start_loads_inline_plugin_hooks_before_resume_execution() {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-plugin-session-start-{}",
             uuid::Uuid::new_v4()
@@ -255,8 +256,8 @@ mod tests {
         .unwrap();
 
         let _env = [
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config")),
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config")),
+            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
         ];
         let previous_inline = crate::bootstrap::state::get_inline_plugins();
         let previous_registered_hooks = crate::bootstrap::state::get_registered_hooks();

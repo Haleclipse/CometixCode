@@ -128,6 +128,7 @@ pub fn clear_fast_mode_cooldown() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn model_support_matches_current_opus_4_6_contract() {
@@ -171,7 +172,7 @@ mod tests {
     #[test]
     fn fast_mode_model_appends_1m_suffix_per_merge_gate() {
         // CC fastMode.ts:145-147 — `'opus' + (isOpus1mMergeEnabled() ? '[1m]' : '')`.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // Deterministic non-1m branch: the disable env forces the merge gate
         // false regardless of the on-disk global config.
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1");

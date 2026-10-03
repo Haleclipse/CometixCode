@@ -124,10 +124,11 @@ fn capitalize_ascii(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn get_agent_model_matches_official_inherit_and_priority_order() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
         crate::utils::process_env::remove("ANTHROPIC_MODEL");
 
@@ -162,7 +163,7 @@ mod tests {
 
     #[test]
     fn get_agent_model_preserves_parent_exact_model_for_matching_bare_aliases() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
 
         assert_eq!(
@@ -194,7 +195,7 @@ mod tests {
     /// NOT fall through to the parent model.
     #[test]
     fn get_agent_model_keeps_officials_three_distinct_guards() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
         crate::utils::process_env::remove("ANTHROPIC_MODEL");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
@@ -236,7 +237,7 @@ mod tests {
 
     #[test]
     fn get_agent_model_honors_official_subagent_env_override() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_SUBAGENT_MODEL", "haiku");
         assert!(
             get_agent_model(
@@ -252,7 +253,7 @@ mod tests {
 
     #[test]
     fn get_agent_model_inherits_bedrock_region_for_aliases() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
         crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
         crate::utils::process_env::set(

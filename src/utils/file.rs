@@ -486,6 +486,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     #[cfg(unix)]
     #[test]
@@ -554,7 +555,7 @@ mod tests {
     #[test]
     fn exclusive_temp_and_no_follow_fallback_reject_precreated_symlinks() {
         use std::os::unix::fs::symlink;
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-file-atomic-hostile-links-{}",
             uuid::Uuid::new_v4().simple()
@@ -582,7 +583,7 @@ mod tests {
 
     #[test]
     fn atomic_replace_failure_falls_back_to_flushed_direct_write() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-file-atomic-fallback-{}",
             uuid::Uuid::new_v4().simple()
@@ -648,7 +649,7 @@ mod tests {
 
     #[test]
     fn failed_atomic_and_direct_write_cleans_temporary_file() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-file-atomic-cleanup-{}",
             uuid::Uuid::new_v4().simple()
@@ -700,7 +701,7 @@ mod tests {
                 crate::bootstrap::state::set_original_cwd(&self.0);
             }
         }
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = OriginalCwdRestore(crate::bootstrap::state::get_original_cwd());
         let cwd = std::env::temp_dir().join("cometix-display-path-cwd");
         let _ = std::fs::create_dir_all(cwd.join("src"));
@@ -708,10 +709,7 @@ mod tests {
 
         assert_eq!(get_display_path("src"), "src");
         assert_eq!(get_display_path(&cwd.join("src").to_string_lossy()), "src");
-        let _home = crate::utils::env_utils::EnvVarGuard::set(
-            crate::utils::env_utils::HOME_VAR,
-            "/home/someone",
-        );
+        let _home = EnvVarGuard::set(HOME_VAR, "/home/someone");
         assert_eq!(
             get_display_path("/home/someone/outside-project/file.rs"),
             "~/outside-project/file.rs"

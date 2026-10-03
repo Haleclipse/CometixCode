@@ -290,6 +290,7 @@ fn normalize_assistant_message_for_sdk(message: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{IsolatedProjectSettings, TEST_ENV_LOCK};
 
     #[test]
     fn sdk_history_envelopes_match_official_field_selection() {
@@ -503,8 +504,8 @@ mod tests {
 
     #[test]
     fn sdk_exit_plan_input_matches_official_file_injection_without_mutating_internal() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _project = crate::utils::env_utils::IsolatedProjectSettings::pin();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _project = IsolatedProjectSettings::pin();
         let previous_session = crate::bootstrap::state::get_session_id();
         let session = uuid::Uuid::new_v4().to_string();
         crate::bootstrap::state::set_session_id(&session);

@@ -39,7 +39,7 @@ pub fn use_main_loop_model_from_app_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::TEST_ENV_LOCK;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn use_main_loop_model_resolves_opus_alias_via_default_opus_env() {

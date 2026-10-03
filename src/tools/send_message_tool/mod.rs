@@ -1147,9 +1147,10 @@ impl crate::tool::ToolCall for SendMessageTool {
 
 #[cfg(test)]
 mod tests {
-    static SEND_MESSAGE_TEAM_MAILBOX_TEST_LOCK: std::sync::LazyLock<
-        crate::utils::env_utils::TestStateLock,
-    > = std::sync::LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestStateLock};
+
+    static SEND_MESSAGE_TEAM_MAILBOX_TEST_LOCK: std::sync::LazyLock<TestStateLock> =
+        std::sync::LazyLock::new(TestStateLock::new);
 
     #[test]
     fn send_message_queues_plain_text_for_running_local_agent_like_official() {
@@ -1354,21 +1355,15 @@ mod tests {
     /// shutdown-approval read the team file like CC `readTeamFileAsync`, so
     /// the returned guards (CLAUDE_CONFIG_DIR + COMETIX_TEST_TEAM_FILE_IO)
     /// must stay alive for the test body.
-    fn seed_team_for_send_message(
-        team_name: &str,
-    ) -> (
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-    ) {
+    fn seed_team_for_send_message(team_name: &str) -> (EnvVarGuard, EnvVarGuard, EnvVarGuard) {
         let root = std::env::temp_dir().join(format!(
             "cometix-send-message-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let config_guard = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let io_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
+        let config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
         // The mailbox write path also checks the session write gate.
-        let write_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let write_guard = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
         let mut record = crate::utils::swarm::team_helpers::create_team_record(
@@ -1431,7 +1426,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _guards = seed_team_for_send_message("alpha");
         let output = super::send_message_output(&serde_json::json!({
             "to": "reviewer",
@@ -1465,7 +1460,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _guards = seed_team_for_send_message("alpha");
         let output = super::send_message_output(&serde_json::json!({
             "to": "*",
@@ -1502,7 +1497,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _guards = seed_team_for_send_message("alpha");
         let output = super::send_message_output(&serde_json::json!({
             "to": "reviewer",
@@ -1529,7 +1524,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _guards = seed_team_for_send_message("alpha");
         let output = super::send_message_output(&serde_json::json!({
             "to": "reviewer",
@@ -1557,7 +1552,7 @@ mod tests {
         let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _guards = seed_team_for_send_message("alpha");
         crate::utils::teammate::clear_dynamic_team_context();
         crate::utils::teammate::set_dynamic_team_context(Some(
@@ -1607,7 +1602,7 @@ mod tests {
         let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _guards = seed_team_for_send_message("alpha");
         let mut record =
             crate::utils::swarm::team_helpers::memory_first_team_record("alpha").unwrap();

@@ -476,7 +476,7 @@ fn which_in_path(binary: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -493,7 +493,7 @@ mod tests {
 
     #[test]
     fn installation_type_detection_matches_official_path_categories() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _node_env = EnvVarGuard::set("NODE_ENV", "development");
         assert_eq!(
             get_current_installation_type(),
@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn managed_strict_plugin_only_warning_matches_official_forward_compat_copy() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = temp_dir("managed");
         let config_home = temp_dir("config");
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
@@ -552,7 +552,7 @@ mod tests {
 
     #[test]
     fn doctor_diagnostic_preserves_official_top_level_shape() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _node_env = EnvVarGuard::unset("NODE_ENV");
         let diagnostic = get_doctor_diagnostic();
         assert!(!diagnostic.version.is_empty());

@@ -696,6 +696,8 @@ pub fn classify_exit_code(result: &CommandExecResult) -> HookOutcome {
 /// Shared test scaffolding for the hook subsystem.
 #[cfg(test)]
 pub(crate) mod test_support {
+    use crate::utils::test_env::EnvVarGuard;
+
     /// Fold a settings-shaped `HooksConfig` fixture into the execution-facing
     /// `RegisteredHooks` table, the same `from_config_entry` merge the loading
     /// chain performs before hooks reach `get_matching_hooks`.
@@ -794,7 +796,7 @@ pub(crate) mod test_support {
     /// `CLAUDE_CODE_MANAGED_SETTINGS_PATH` itself. Requires `TEST_ENV_LOCK`.
     pub(crate) struct ManagedSettingsGuard {
         root: std::path::PathBuf,
-        env: Option<crate::utils::env_utils::EnvVarGuard>,
+        env: Option<EnvVarGuard>,
     }
 
     impl ManagedSettingsGuard {
@@ -810,10 +812,7 @@ pub(crate) mod test_support {
                 std::fs::write(root.join("managed-settings.json"), contents)
                     .expect("write managed settings");
             }
-            let env = crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-                &root,
-            );
+            let env = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
             // A direct disk write bypasses production invalidation, so the test
             // states the invariant itself (same note as `settings/mod.rs` tests).
             crate::utils::settings::settings_cache::reset_settings_cache();
@@ -890,7 +889,7 @@ pub(crate) mod test_support {
         previous_cwd: std::path::PathBuf,
         previous_interactive: bool,
         scratch: std::path::PathBuf,
-        _non_interactive_env: Vec<crate::utils::env_utils::EnvVarGuard>,
+        _non_interactive_env: Vec<EnvVarGuard>,
     }
 
     impl WorkspaceTrustDeniedGuard {
@@ -911,7 +910,7 @@ pub(crate) mod test_support {
                     "COMETIX_NON_INTERACTIVE_SESSION",
                 ]
                 .into_iter()
-                .map(crate::utils::env_utils::EnvVarGuard::unset)
+                .map(EnvVarGuard::unset)
                 .collect(),
             };
             crate::bootstrap::state::set_is_interactive(true);
@@ -941,6 +940,7 @@ pub(crate) mod test_support {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     /// Every function that can reach `exec_command_hook`, grouped by the
     /// executor loop it goes through. The list is closed: `rg -l
@@ -1263,7 +1263,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn managed_disable_all_hooks_policy_stops_every_executor_family() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
 
         // Baseline: an EMPTY managed root, so the developer's real policy file
@@ -1313,7 +1313,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn untrusted_workspace_stops_every_executor_family_without_filtering() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = test_support::ManagedSettingsGuard::install(None);
 
         let trusted = {
@@ -1346,7 +1346,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn trust_gate_is_evaluated_once_per_call_not_once_per_hook() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = test_support::ManagedSettingsGuard::install(None);
 
         let config: HooksConfig = serde_json::from_value(serde_json::json!({
@@ -1395,7 +1395,7 @@ mod tests {
     /// harness default on purpose.
     #[test]
     fn the_test_harness_workspace_is_trusted_so_hook_tests_are_not_silently_vacuous() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         // Read the real harness state, not a latched answer from earlier in this
         // process (`utils/config.rs:1784-1795` caches `true` forever).
         crate::utils::config::reset_trust_dialog_accepted_cache_for_testing();
@@ -1418,7 +1418,7 @@ mod tests {
     /// `shouldAllowManagedHooksOnly()`.
     #[test]
     fn session_hooks_join_the_settings_and_registered_channels_for_the_given_id() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = test_support::ManagedSettingsGuard::install(None);
         session_hooks::clear_all_session_hooks();
         session_hooks::add_session_hook(
@@ -1461,7 +1461,7 @@ mod tests {
     /// the policy").
     #[test]
     fn allow_managed_hooks_only_policy_drops_the_session_arm() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed =
             test_support::ManagedSettingsGuard::install(Some(r#"{"allowManagedHooksOnly": true}"#));
         session_hooks::clear_all_session_hooks();
@@ -1557,7 +1557,7 @@ mod tests {
     async fn emitted_hook_input_key_sets_match_the_official_schemas() {
         use crate::types::permissions::PermissionMode;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         // No policy: the tool-event executor now consults the managed gate, and
         // the developer's real managed root must not decide this test.
         let _managed = test_support::ManagedSettingsGuard::install(None);
@@ -1962,7 +1962,7 @@ mod tests {
     #[cfg(not(windows))]
     #[tokio::test]
     async fn absent_optionals_send_no_key_rather_than_null() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _managed = test_support::ManagedSettingsGuard::install(None);
         let _trust = test_support::SessionTrustGuard::accepted();
 
@@ -2043,6 +2043,7 @@ mod tests {
 mod foundation_tests {
     //! Source regressions for the shared permission/hook foundation.
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::{Value, json};
     use std::sync::Arc;
     use std::time::Duration;
@@ -2152,9 +2153,9 @@ mod foundation_tests {
 
     #[tokio::test]
     async fn hooks_match_official_parallel_completion_and_sticky_permission_precedence() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let (sender, receiver) = async_channel::bounded::<()>(1);
         let waiting = RegisteredHook::Callback(HookCallback {
             callback: Arc::new(move |_, _| {
@@ -2217,9 +2218,9 @@ mod foundation_tests {
 
     #[tokio::test]
     async fn permission_request_matches_official_first_nested_decision_and_winner_payload() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let config = config(
             HookEvent::PermissionRequest,
             vec![
@@ -2264,9 +2265,9 @@ mod foundation_tests {
 
     #[tokio::test]
     async fn pre_tool_input_only_completion_matches_official_independent_yield() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let config = config(
             HookEvent::PreToolUse,
             vec![
@@ -2317,9 +2318,9 @@ mod foundation_tests {
 
     #[tokio::test]
     async fn bare_mode_matches_official_gate_before_any_tool_hook_executes() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let config = config(
             HookEvent::PreToolUse,
             vec![RegisteredHook::Callback(HookCallback {
@@ -2345,7 +2346,7 @@ mod foundation_tests {
     fn base_hook_transcript_path_matches_official_resolved_session_id() {
         // hooks.ts:317-324 + sessionStorage.ts:207-228: current honors active
         // project dir, other IDs use originalCwd, explicit native override wins.
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         struct Restore(String, Option<std::path::PathBuf>);
         impl Drop for Restore {
             fn drop(&mut self) {

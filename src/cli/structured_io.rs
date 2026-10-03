@@ -1006,15 +1006,16 @@ fn normalized_sdk_permission_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// CC `cli/structuredIO.ts:348-360` enumerates the variables object and
     /// performs its assignments in that official own-key order.
     #[test]
     fn environment_updates_match_official_structured_io_process_env_order() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let keys = ["COMETIX_STRUCTURED_ENV_B", "COMETIX_STRUCTURED_ENV_A"];
-        let _guards = keys.map(crate::utils::env_utils::EnvVarGuard::unset);
-        let _numeric = crate::utils::env_utils::EnvVarGuard::unset("1");
+        let _guards = keys.map(EnvVarGuard::unset);
+        let _numeric = EnvVarGuard::unset("1");
         let variables = indexmap::IndexMap::from([
             (keys[0].to_string(), "second".to_string()),
             (keys[1].to_string(), "first".to_string()),

@@ -134,7 +134,7 @@ pub fn clear_ca_certs_cache() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn fixture(name: &str) -> String {
         format!("{}/tests/fixtures/tls/{name}", env!("CARGO_MANIFEST_DIR"))
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn extra_certificates_come_from_node_extra_ca_certs_and_are_memoized() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _options = EnvVarGuard::unset("NODE_OPTIONS");
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn unreadable_or_certificate_free_files_leave_the_store_alone() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _missing = EnvVarGuard::set("NODE_EXTRA_CA_CERTS", fixture("missing.pem"));

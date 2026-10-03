@@ -1294,6 +1294,7 @@ mod tests {
     use super::*;
     use crate::types::ids::ToolUseId;
     use crate::types::message::{AssistantMessage, ToolUseBlock, UserMessage};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use chrono::Utc;
 
     #[test]
@@ -1452,7 +1453,6 @@ mod tests {
         assert!(get_auto_mode_classifier_error_dump_path().contains("auto-mode-classifier-errors"));
     }
 
-    use crate::utils::env_utils::EnvVarGuard;
     use std::cell::RefCell;
     use std::collections::VecDeque;
 
@@ -1549,7 +1549,7 @@ mod tests {
 
     #[tokio::test]
     async fn classifier_schema_and_cached_request_match_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = ConfigGuard::new(json!({"model":"classifier-model"}));
         crate::bootstrap::state::set_cached_claude_md_content(Some("User instruction".into()));
         for (input, expected_block) in [
@@ -1634,7 +1634,7 @@ mod tests {
 
     #[tokio::test]
     async fn xml_modes_and_second_stage_failure_match_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config =
             ConfigGuard::new(json!({"model":"classifier-model","twoStageClassifier":true}));
         let cases = [
@@ -1799,7 +1799,7 @@ mod tests {
 
     #[test]
     fn model_jsonl_and_internal_env_precedence_match_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = ConfigGuard::new(json!({"model":"configured-model","jsonlTranscript":true}));
         assert_eq!(get_classifier_model(), "configured-model");
         let _env = EnvVarGuard::set("CLAUDE_CODE_AUTO_MODE_MODEL", "internal-env-model");
@@ -1834,7 +1834,7 @@ mod tests {
 
     #[tokio::test]
     async fn prompt_too_long_and_abort_match_official_without_synthetic_limits() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = ConfigGuard::new(json!({"model":"classifier-model"}));
         SCRIPT
             .scope(
@@ -1918,7 +1918,7 @@ mod tests {
 
     #[test]
     fn internal_template_and_always_on_thinking_match_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = ConfigGuard::new(json!({}));
         let internal = has_internal_capability(InternalCapability::Permissions);
         assert_eq!(is_using_external_permissions(), !internal);
@@ -1948,7 +1948,7 @@ mod tests {
 
     #[tokio::test]
     async fn sdk_error_context_keeps_original_message_in_dump() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = ConfigGuard::new(json!({"model":"classifier-model"}));
         let error = anyhow::Error::new(anthropic_sdk::ApiError::BadRequest {
             status: 400,
@@ -1985,7 +1985,7 @@ mod tests {
 
     #[tokio::test]
     async fn stage_two_prompt_overflow_survives_block_projection_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config =
             ConfigGuard::new(json!({"model":"classifier-model","twoStageClassifier":true}));
         SCRIPT
@@ -2026,7 +2026,7 @@ mod tests {
 
     #[test]
     fn force_env_is_test_only_on_sync_path() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = EnvVarGuard::set("COMETIX_AUTO_CLASSIFIER_FORCE", "allow");
         let result = classify_yolo_action_sync_with_signal(
             &[],

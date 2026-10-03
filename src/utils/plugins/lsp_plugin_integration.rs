@@ -397,6 +397,7 @@ mod tests {
     use super::*;
     use crate::types::plugin::get_plugin_error_message;
     use crate::utils::plugins::plugin_loader::create_plugin_from_path_for_test as create_plugin_from_path;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::io::Write;
 
     fn temp_dir(label: &str) -> PathBuf {
@@ -418,7 +419,7 @@ mod tests {
 
     #[test]
     fn lsp_cache_reads_and_extract_assignments_match_official_shared_slots() {
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_runtime::initialize_test_process_runtime();
         let root = temp_dir("shared-slot");
         write_file(
@@ -781,12 +782,12 @@ mod tests {
 
     #[test]
     fn plugin_lsp_user_config_env_and_workspace_are_resolved() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = temp_dir("user-config");
         let config_home = temp_dir("user-config-settings");
         let _env = [
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home),
-            crate::utils::env_utils::EnvVarGuard::set("COMETIX_LSP_TOKEN", "env-token"),
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvVarGuard::set("COMETIX_LSP_TOKEN", "env-token"),
         ];
         let plugin_name = format!("toolbox-{}", uuid::Uuid::new_v4().simple());
         let plugin_source = format!("{plugin_name}@inline");
@@ -919,7 +920,7 @@ mod tests {
 
     #[test]
     fn plugin_lsp_missing_general_env_vars_do_not_disable_server_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("COMETIX_LSP_MISSING_ENV");
         let root = temp_dir("missing-env");
         write_file(

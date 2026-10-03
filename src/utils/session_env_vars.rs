@@ -45,6 +45,7 @@ pub fn clear_session_env_vars() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn session_env_var_mutations_match_official_map_contract() {
@@ -57,7 +58,7 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = Restore(get_session_env_vars());
         clear_session_env_vars();
         set_session_env_var("B", "two");

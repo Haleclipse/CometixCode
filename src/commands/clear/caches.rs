@@ -79,11 +79,12 @@ mod tests {
         clear_pending_callbacks_for_test, has_permission_callback, has_sandbox_permission_callback,
         register_permission_callback, register_sandbox_permission_callback,
     };
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use std::sync::Arc;
 
     #[test]
     fn clear_session_caches_clears_pending_callbacks_when_no_preserved() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _lock = crate::hooks::use_swarm_permission_poller::TEST_PENDING_CALLBACKS_LOCK
@@ -113,7 +114,7 @@ mod tests {
 
     #[test]
     fn clear_session_caches_preserves_callbacks_when_agents_preserved() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _lock = crate::hooks::use_swarm_permission_poller::TEST_PENDING_CALLBACKS_LOCK
@@ -136,7 +137,7 @@ mod tests {
 
     #[test]
     fn clear_session_caches_resets_dynamic_and_conditional_skills() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _skills = crate::skills::load_skills_dir::DynamicSkillsTestSnapshot::capture();

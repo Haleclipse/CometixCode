@@ -27,10 +27,11 @@ pub fn get_workload() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn process_workload_round_trips() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let previous = get_workload();
         set_process_workload(Some("cron".to_string()));
         assert_eq!(get_workload().as_deref(), Some("cron"));

@@ -1283,6 +1283,7 @@ fn finalize_compaction_result(
 mod tests {
     use super::*;
     use crate::types::message::{AssistantMessage, UserMessage};
+    use crate::utils::test_env::{EnvVarGuard, IsolatedProjectSettings, TEST_ENV_LOCK};
 
     #[test]
     fn strip_media_matches_official_meta_for_simple_and_raw_images() {
@@ -1954,9 +1955,8 @@ mod tests {
     #[allow(clippy::await_holding_lock)]
     async fn partial_compact_matches_official_model_wire_and_preserved_history() {
         use crate::types::message::PartialCompactDirection;
-        use crate::utils::env_utils::{EnvVarGuard, IsolatedProjectSettings};
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::tls_provider::install_crypto_provider();
         let _project = IsolatedProjectSettings::pin();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

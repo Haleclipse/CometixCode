@@ -631,11 +631,12 @@ pub fn extract_todos_from_transcript(messages: &[Value]) -> Vec<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
 
     #[test]
     fn restore_worktree_for_resume_and_exit_restored_worktree_match_official_cwd_flow() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = std::env::current_dir().unwrap();
         let previous_original_cwd = crate::bootstrap::state::get_original_cwd();
         let previous_worktree = crate::utils::worktree::get_current_worktree_session();
@@ -680,7 +681,7 @@ mod tests {
 
     #[test]
     fn restore_worktree_for_resume_keeps_fresh_startup_worktree_precedence() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = std::env::current_dir().unwrap();
         let previous_original_cwd = crate::bootstrap::state::get_original_cwd();
         let previous_worktree = crate::utils::worktree::get_current_worktree_session();
@@ -721,7 +722,7 @@ mod tests {
 
     #[test]
     fn restore_worktree_for_resume_marks_missing_directory_as_exited() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = std::env::current_dir().unwrap();
         let previous_original_cwd = crate::bootstrap::state::get_original_cwd();
         let previous_worktree = crate::utils::worktree::get_current_worktree_session();
@@ -930,8 +931,8 @@ mod tests {
 
     #[test]
     fn process_resumed_conversation_switches_and_adopts_the_selected_transcript() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let previous_session_id = crate::bootstrap::state::get_session_id();
         let previous_project_dir = crate::bootstrap::state::get_session_project_dir();
         let root = std::env::temp_dir().join(format!(
@@ -995,7 +996,7 @@ mod tests {
 
     #[test]
     fn processed_resume_restores_agent_object_and_model_before_mount() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_override = crate::bootstrap::state::get_main_loop_model_override();
         crate::bootstrap::state::set_main_loop_model_override(None);
 

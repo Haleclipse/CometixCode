@@ -148,7 +148,7 @@ fn parse_no_proxy(value: &str) -> Vec<NoProxyEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn agent(no_proxy: &str) -> EnvHttpProxyAgent {
         EnvHttpProxyAgent::new(
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn unset_no_proxy_is_read_from_the_environment_on_each_request() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env: Vec<_> = ["no_proxy", "NO_PROXY", "https_proxy", "HTTPS_PROXY"]

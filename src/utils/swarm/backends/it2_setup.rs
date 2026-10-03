@@ -268,7 +268,7 @@ pub fn get_prefer_tmux_over_iterm2() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn temp_config_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(

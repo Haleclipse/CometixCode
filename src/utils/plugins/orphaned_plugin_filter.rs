@@ -129,7 +129,7 @@ pub fn clear_plugin_cache_exclusions() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn orphaned_plugin_exclusion_shape_matches_official_paths() {

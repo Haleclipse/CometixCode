@@ -19,13 +19,14 @@ mod tests {
     use super::*;
     use crate::utils::settings::settings_cache::set_cached_settings_for_source;
     use crate::utils::settings::types::SettingsJson;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use serde_json::json;
 
     #[test]
     fn plugin_policy_strict_false_matches_official_bun_oracle() {
         // CC pluginPolicy.ts:17-20: only the exact boolean false blocks;
         // absent settings/key, null, zero, string and array do not.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         set_cached_settings_for_source(SettingSource::Policy, None);
         assert!(!is_plugin_blocked_by_policy("p@m"));
         set_cached_settings_for_source(SettingSource::Policy, Some(SettingsJson::default()));
@@ -58,7 +59,7 @@ mod tests {
     fn plugin_policy_reads_only_managed_source_and_observes_new_settings() {
         // CC pluginPolicy.ts:18 reads policySettings on each invocation;
         // editable/flag values cannot substitute for that source.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         for source in [
             SettingSource::User,
             SettingSource::Project,

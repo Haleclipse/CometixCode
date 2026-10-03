@@ -785,6 +785,7 @@ pub async fn install_bindings_for_zed(
 mod tests {
     use super::*;
     use crate::utils::config::GlobalConfig;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 
     #[test]
     fn terminal_setup_native_terminal_matches_official_on_done_output() {
@@ -966,13 +967,12 @@ mod tests {
     /// the lock is released.
     struct InstallerFixture {
         root: PathBuf,
-        _vars: Vec<crate::utils::env_utils::EnvVarGuard>,
-        _lock: crate::utils::env_utils::TestEnvGuard<'static>,
+        _vars: Vec<EnvVarGuard>,
+        _lock: TestEnvGuard<'static>,
     }
     impl InstallerFixture {
         fn new() -> Self {
-            use crate::utils::env_utils::EnvVarGuard;
-            let lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+            let lock = TEST_ENV_LOCK.lock().unwrap();
             let root = std::env::temp_dir()
                 .join(format!("cometix-terminal-setup-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
@@ -1274,7 +1274,7 @@ mod tests {
     #[tokio::test]
     async fn terminal_setup_remote_installer_matches_official_no_file_effects() {
         let fixture = InstallerFixture::new();
-        let _askpass = crate::utils::env_utils::EnvVarGuard::set(
+        let _askpass = EnvVarGuard::set(
             "VSCODE_GIT_ASKPASS_MAIN",
             "/remote/.cursor-server/askpass.sh",
         );

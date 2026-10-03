@@ -214,6 +214,7 @@ fn resolve_external_editor_command() -> Option<(String, Vec<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn editor_display_name_uses_executable_basename() {
@@ -256,7 +257,7 @@ mod tests {
         use iocraft::prelude::*;
         use std::os::unix::fs::PermissionsExt;
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let script = std::env::temp_dir().join(format!(
             "cometix-fake-editor-{}-{}",
             std::process::id(),
@@ -270,7 +271,7 @@ mod tests {
         let mut permissions = std::fs::metadata(&script).unwrap().permissions();
         permissions.set_mode(0o700);
         std::fs::set_permissions(&script, permissions).unwrap();
-        let _visual = crate::utils::env_utils::EnvVarGuard::set("VISUAL", &script);
+        let _visual = EnvVarGuard::set("VISUAL", &script);
 
         let canvases = futures::executor::block_on(
             element!(PromptEditorHarness)

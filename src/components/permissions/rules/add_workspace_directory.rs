@@ -481,6 +481,7 @@ pub fn AddWorkspaceDirectory<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
 
     #[derive(Default, Props)]
@@ -589,7 +590,7 @@ mod tests {
     async fn submission_lifetime_case(cancel_child: bool) {
         use futures::StreamExt;
         use std::time::Duration;
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cc-submit-lifetime-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
@@ -769,7 +770,7 @@ mod tests {
     async fn add_workspace_directory_matches_official_suggestion_keys_and_selected_path_submit() {
         use futures::StreamExt;
         use std::time::Duration;
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("cc-add-dir-input-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("target-a")).unwrap();
         std::fs::create_dir_all(root.join("target-b")).unwrap();

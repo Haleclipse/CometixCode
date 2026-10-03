@@ -536,6 +536,7 @@ mod tests {
     use super::*;
     use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
     use crate::types::message::StopReason;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn tool(name: &str) -> Tool {
         Tool {
@@ -638,7 +639,7 @@ mod tests {
 
     #[tokio::test]
     async fn filter_allows_in_process_teammate_task_tools_when_async() {
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
         let teammate_context = crate::utils::teammate_context::create_teammate_context(
             crate::utils::teammate_context::CreateTeammateContextConfig {
@@ -798,9 +799,8 @@ mod tests {
     /// the same env the sync permission bridge honors.
     #[tokio::test]
     async fn classify_handoff_returns_the_security_warning_when_the_classifier_blocks() {
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _force =
-            crate::utils::env_utils::EnvVarGuard::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let _force = EnvVarGuard::set("COMETIX_AUTO_CLASSIFIER_FORCE", "block");
         let context = ToolPermissionContext {
             mode: PermissionMode::Auto,
             ..ToolPermissionContext::default()
@@ -822,8 +822,8 @@ mod tests {
     /// `unavailable` instead of issuing a live side-query.
     #[tokio::test]
     async fn classify_handoff_reaching_the_classifier_in_tests_degrades_to_unavailable() {
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _force = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_AUTO_CLASSIFIER_FORCE");
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let _force = EnvVarGuard::unset("COMETIX_AUTO_CLASSIFIER_FORCE");
         let context = ToolPermissionContext {
             mode: PermissionMode::Auto,
             ..ToolPermissionContext::default()

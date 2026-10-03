@@ -1,6 +1,7 @@
 //! Filesystem boundary regressions using independently scripted activeFs reads.
 use super::*;
 use crate::utils::fs_operations::*;
+use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 use futures::future::BoxFuture;
 use std::{
     collections::VecDeque,
@@ -242,16 +243,16 @@ impl Drop for TestRoot {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-fn environment() -> (TestRoot, crate::utils::env_utils::EnvVarGuard) {
+fn environment() -> (TestRoot, EnvVarGuard) {
     let root = TestRoot(std::env::temp_dir().join(format!("fs-consumer-{}", uuid::Uuid::new_v4())));
     std::fs::create_dir_all(root.path()).unwrap();
-    let guard = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.path());
+    let guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.path());
     (root, guard)
 }
 
 #[test]
 fn settings_mkdir_failure_matches_official_no_read() {
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (_root, _env) = environment();
     let fs = Arc::new(RecordingFs {
         fail_mkdir: true,
@@ -264,7 +265,7 @@ fn settings_mkdir_failure_matches_official_no_read() {
 
 #[test]
 fn settings_validated_read_matches_official_cached_json_and_write_mark() {
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (root, _env) = environment();
     let path = root.path().join("settings.json");
     std::fs::write(
@@ -306,7 +307,7 @@ fn settings_validated_read_matches_official_cached_json_and_write_mark() {
 
 #[test]
 fn settings_validation_fallback_matches_official_raw_read_and_syntax_guard() {
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (root, _env) = environment();
     let path = root.path().join("settings.json");
     std::fs::write(&path, "{}").unwrap();
@@ -345,7 +346,7 @@ fn settings_validation_fallback_matches_official_raw_read_and_syntax_guard() {
 
 #[tokio::test]
 async fn marketplace_initial_read_matches_official_capture_before_poll() {
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (_root, _env) = environment();
     let first = Arc::new(RecordingFs::with_reads(&["{}"]));
     let _reset = ResetFs::install(first.clone());
@@ -359,7 +360,7 @@ async fn marketplace_initial_read_matches_official_capture_before_poll() {
 
 #[tokio::test]
 async fn marketplace_finalization_matches_official_captured_rm_and_rename() {
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (_root, _env) = environment();
     let first = Arc::new(RecordingFs::default());
     let _reset = ResetFs::install(first.clone());
@@ -379,7 +380,7 @@ async fn marketplace_finalization_matches_official_captured_rm_and_rename() {
 
 #[test]
 fn settings_invalid_json_matches_official_schema_null_diagnostic() {
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (root, _env) = environment();
     let path = root.path().join("settings.json");
     std::fs::write(&path, "{").unwrap();
@@ -400,7 +401,7 @@ async fn marketplace_active_fs_error_matches_official_message_and_errno_identity
     use crate::utils::plugins::marketplace_manager::{
         load_known_marketplaces_config, read_cached_marketplace,
     };
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (root, _env) = environment();
     let fs = Arc::new(RecordingFs {
         read_error: Some(("EACCES", "remote catalog unavailable")),
@@ -425,7 +426,7 @@ async fn marketplace_active_fs_error_matches_official_message_and_errno_identity
 
 #[tokio::test]
 async fn marketplace_git_cleanup_matches_official_active_fs_error_message() {
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (root, _env) = environment();
     let cache = root.path().join("absent-cache");
     let fs = Arc::new(RecordingFs {
@@ -463,7 +464,7 @@ fn plaintext_update_keeps_authorized_oauth_gate_before_fs_effects() {
     if crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
         return;
     }
-    let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+    let _lock = TEST_ENV_LOCK.lock().unwrap();
     let (root, _env) = environment();
     let fs = Arc::new(RecordingFs {
         mkdir_error: Some("EEXIST"),

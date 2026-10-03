@@ -513,10 +513,10 @@ mod tests {
 #[cfg(test)]
 mod persistence_tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::settings::{
         SettingSource, get_settings_for_source, settings_cache::reset_settings_cache,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
     use std::path::PathBuf;
 

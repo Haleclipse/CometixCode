@@ -986,7 +986,7 @@ mod tests {
     use crate::services::mcp::client::McpConnectionDiscovery;
     use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig};
     use crate::state::app_state_store::McpState;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;

@@ -10,6 +10,8 @@ use std::sync::MutexGuard;
 use std::sync::{LazyLock, RwLock};
 
 use crate::utils::settings::types::SettingsJson;
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 
 const MAX_SLUG_RETRIES: usize = 10;
 
@@ -22,8 +24,7 @@ static PLAN_SLUG_CACHE: LazyLock<RwLock<HashMap<String, String>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
 #[cfg(test)]
-static PLAN_TEST_LOCK: LazyLock<crate::utils::env_utils::TestStateLock> =
-    LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+static PLAN_TEST_LOCK: LazyLock<TestStateLock> = LazyLock::new(TestStateLock::new);
 
 #[cfg(test)]
 pub(crate) fn test_plan_state_lock() -> MutexGuard<'static, ()> {
@@ -426,6 +427,7 @@ mod tests {
         }
     }
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
 
     #[test]
     fn get_slug_from_log_matches_official_first_truthy_slug() {
@@ -443,11 +445,11 @@ mod tests {
 
     #[test]
     fn copy_plan_for_fork_matches_official_eager_slug_and_independent_file() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(temp.path());
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _project = PinnedProjectDir::at(temp.path());
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -491,11 +493,11 @@ mod tests {
 
     #[test]
     fn copy_plan_for_fork_matches_official_missing_slug_and_copy_failures() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(temp.path());
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _project = PinnedProjectDir::at(temp.path());
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -576,12 +578,12 @@ mod tests {
     }
     #[test]
     fn copy_plan_for_resume_matches_official_local_remote_and_eager_slug() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(temp.path());
-        let _local = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _project = PinnedProjectDir::at(temp.path());
+        let _local = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -607,8 +609,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"");
         std::fs::remove_file(&path).unwrap();
         {
-            let _remote =
-                crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "byoc");
+            let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "byoc");
             let mut snapshot_messages = messages.clone();
             snapshot_messages.push(serde_json::json!({"type":"system","subtype":"file_snapshot","snapshotFiles":[{"key":"plan","path":"old/location","content":"snapshot wins"}]}));
             assert!(runtime.block_on(copy_plan_for_resume(&snapshot_messages, Some(&target))));
@@ -633,11 +634,11 @@ mod tests {
 
     #[test]
     fn plans_directory_matches_official_memo_and_explicit_invalidation() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(temp.path());
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _project = PinnedProjectDir::at(temp.path());
         let path = get_plans_directory();
         std::fs::remove_dir(&path).unwrap();
         assert_eq!(get_plans_directory(), path);
@@ -843,18 +844,15 @@ mod tests {
     }
     #[test]
     fn remote_file_snapshot_matches_official_wire_and_incremental_persistence() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         // Session storage's test profile defaults to read-only. Enable the
         // actual writer so this exercises CC plans.ts:392-393 recordTranscript.
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let temp = PlanFixtureDirectory::new();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
-        let _project = crate::utils::env_utils::PinnedProjectDir::at(temp.path());
-        let _remote = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_ENVIRONMENT_KIND",
-            "anthropic_cloud",
-        );
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _project = PinnedProjectDir::at(temp.path());
+        let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "anthropic_cloud");
         let old_id = crate::bootstrap::state::get_session_id();
         let old_dir = crate::bootstrap::state::get_session_project_dir();
         let id = uuid::Uuid::new_v4().to_string();

@@ -516,6 +516,7 @@ pub fn GroupedToolUseContent(
 mod tests {
     use super::*;
     use crate::components::messages_list::MessageLookups;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::sync::Arc;
 
     fn canvas_lines(canvas: &Canvas) -> Vec<String> {
@@ -1373,12 +1374,11 @@ mod tests {
     /// absence.
     #[test]
     fn grouped_agent_run_in_background_input_marks_members_async() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _fork_vetoed = crate::tools::agent_tool::fork_subagent::fork_veto_environment();
-        let _background =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
         let mut first = agent_input("Run lint");
         first["run_in_background"] = serde_json::json!(true);
         let mut second = agent_input("Run tests");

@@ -148,9 +148,10 @@ pub fn render_plan_display(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct PlanEnvRestore {
-        config_dir: Option<crate::utils::env_utils::EnvVarGuard>,
+        config_dir: Option<EnvVarGuard>,
         session_id: String,
         temp_dir: PathBuf,
     }
@@ -202,15 +203,12 @@ mod tests {
 
     #[test]
     fn plan_inspection_reads_current_plan_and_routes_open_argument() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = crate::utils::plans::test_plan_state_lock();
         let temp_dir =
             std::env::temp_dir().join(format!("cometix-plan-command-{}", uuid::Uuid::new_v4()));
         let restore = PlanEnvRestore {
-            config_dir: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &temp_dir,
-            )),
+            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir)),
             session_id: crate::bootstrap::state::get_session_id(),
             temp_dir: temp_dir.clone(),
         };

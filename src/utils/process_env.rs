@@ -591,7 +591,7 @@ fn array_index(key: &OsStr) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::time::Duration;
 
     fn strings(snapshot: &EnvSnapshot, selected: &[&str]) -> Vec<(String, String)> {
@@ -630,7 +630,7 @@ mod tests {
     /// process-lifetime `process.env` object used by CC.
     #[test]
     fn startup_capture_is_idempotent_and_frozen_matches_official_process_lifetime() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         capture_startup();
         let key = "COMETIX_PROCESS_ENV_STARTUP_FREEZE";
         let _guard = EnvVarGuard::preserve(key);
@@ -654,7 +654,7 @@ mod tests {
     /// ordered `process.env`; Node v24 oracle details are in process-env-carrier.md §1.2.
     #[test]
     fn own_key_order_replacement_delete_readd_and_empty_values_match_official_node() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let keys = [
             "4294967294",
             "2",
@@ -741,7 +741,7 @@ mod tests {
     /// loop before another event-loop turn can observe the resulting object.
     #[test]
     fn aborted_and_unwound_updates_match_official_synchronous_visibility() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let key = "COMETIX_PROCESS_ENV_ABORT";
         let _guard = EnvVarGuard::unset(key);
         let before = snapshot();
@@ -769,7 +769,7 @@ mod tests {
     /// process-env-carrier.md §1.2.
     #[test]
     fn normalization_matches_official_node_process_env_assignment() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let key = "COMETIX_PROCESS_ENV_NORMALIZE";
         let _guard = EnvVarGuard::unset(key);
         let before = snapshot();
@@ -798,7 +798,7 @@ mod tests {
     /// before the event loop can process another observer.
     #[test]
     fn staged_snapshots_match_official_complete_turn_visibility() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let first_key = "COMETIX_PROCESS_ENV_ATOMIC_A";
         let second_key = "COMETIX_PROCESS_ENV_ATOMIC_B";
         let _first = EnvVarGuard::unset(first_key);
@@ -858,7 +858,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn unix_identity_and_commit_match_official_process_env_behavior() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let lower = "cometix_process_env_case";
         let upper = "COMETIX_PROCESS_ENV_CASE";
         let _lower = EnvVarGuard::unset(lower);
@@ -912,7 +912,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn windows_carrier_operations_leave_real_environment_unchanged() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let key = "COMETIX_PROCESS_ENV_WINDOWS_OS_UNCHANGED";
         let real_before = std::env::vars_os().collect::<Vec<_>>();
         let raw_value_before = std::env::var_os(key);

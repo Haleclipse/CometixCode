@@ -218,7 +218,7 @@ pub fn configure_global_mtls() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn fixture(name: &str) -> String {
         format!("{}/tests/fixtures/tls/{name}", env!("CARGO_MANIFEST_DIR"))
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn config_holds_what_was_read_and_is_none_when_nothing_was() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _cert = EnvVarGuard::set("CLAUDE_CODE_CLIENT_CERT", fixture("client.pem"));
@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn agent_carries_the_identity_only_for_a_plain_complete_pair() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::tls_provider::install_crypto_provider();
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn agent_exists_for_ca_certificates_alone() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ca = EnvVarGuard::set("NODE_EXTRA_CA_CERTS", fixture("ca.pem"));

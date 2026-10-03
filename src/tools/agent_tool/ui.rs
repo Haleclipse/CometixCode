@@ -2084,6 +2084,7 @@ mod collapsed_progress_tests {
     use crate::types::message::{
         AssistantContent, AssistantMessage, RenderableMessage, RenderableMessageKind, TokenUsage,
     };
+    use crate::utils::test_env::EnvVarGuard;
 
     /// One `agent_progress` payload the way the producer emits it: a
     /// normalized single-block message (AgentTool.tsx:1483-1506).
@@ -2173,8 +2174,8 @@ mod collapsed_progress_tests {
     ) -> (Vec<String>, String) {
         // Tests of emitted style spans require a color-capable terminal;
         // standalone nextest processes otherwise expose a non-TTY pipe.
-        let _force = crate::utils::env_utils::EnvVarGuard::set("FORCE_COLOR", "3");
-        let _term = crate::utils::env_utils::EnvVarGuard::set("TERM", "dumb");
+        let _force = EnvVarGuard::set("FORCE_COLOR", "3");
+        let _term = EnvVarGuard::set("TERM", "dumb");
         let canvas = element! {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
                 AgentToolUseProgressMessage(
@@ -2866,6 +2867,7 @@ mod grouped_agent_stat_tests {
     use crate::types::message::{
         AssistantContent, AssistantMessage, RenderableMessage, RenderableMessageKind, TokenUsage,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn agent_progress(message: RenderableMessage) -> Progress {
         Progress::AgentProgress {
@@ -3121,7 +3123,7 @@ mod grouped_agent_stat_tests {
     /// spawn through the async path anyway, and `async_launched` reports it.
     #[test]
     fn is_async_folds_the_input_flag_and_both_launch_statuses() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _fork_gate = super::super::fork_subagent::fork_gate_environment();
         let base = serde_json::json!({"description": "Run lint", "prompt": "go"});
         assert!(!stat(base.clone(), None).is_async);
@@ -3152,10 +3154,9 @@ mod grouped_agent_stat_tests {
     /// gives each test.
     #[test]
     fn a_vetoed_fork_gate_lets_the_input_flag_report_async() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _fork_vetoed = super::super::fork_subagent::fork_veto_environment();
-        let _background =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
         let base = serde_json::json!({"description": "Run lint", "prompt": "go"});
 
         let mut backgrounded = base.clone();

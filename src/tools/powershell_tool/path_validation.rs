@@ -1791,6 +1791,7 @@ mod tests {
     use super::*;
     use crate::types::permissions::{PermissionRuleSource, PermissionRuleValue};
     use crate::utils::powershell::parser::CommandNameType;
+    use crate::utils::test_env::PinnedProjectDir;
 
     fn command(
         name: &str,
@@ -1852,7 +1853,7 @@ mod tests {
     #[test]
     fn writes_inside_the_working_directory_pass_in_accept_edits() {
         // "Inside the working directory" is judged against the project dir.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let context = ToolPermissionContext {
             mode: PermissionMode::AcceptEdits,
             ..ToolPermissionContext::default()

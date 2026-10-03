@@ -681,6 +681,7 @@ pub fn EffortPicker<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
 
     #[test]
@@ -698,7 +699,7 @@ mod tests {
 
     #[test]
     fn initial_focus_follows_named_effort_then_displayed_default() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_EFFORT_LEVEL");
         let geometry = get_slider_geometry("claude-opus-4-7");
         assert_eq!(

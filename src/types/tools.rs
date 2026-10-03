@@ -203,6 +203,7 @@ pub fn find_tool_by_name<'a>(tools: &'a [Tool], name: &str) -> Option<&'a Tool> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn aliased_tool() -> Tool {
         Tool {
@@ -256,7 +257,7 @@ mod tests {
     /// reach it and read the eager `description` field instead.
     #[test]
     fn tool_prompt_dispatches_registry_built_ins_to_the_lazy_member() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::process_env::remove("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");

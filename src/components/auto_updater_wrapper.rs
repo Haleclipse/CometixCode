@@ -215,6 +215,7 @@ pub fn auto_update_hint_row_count_from_app(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
 
     #[test]
@@ -240,10 +241,10 @@ mod tests {
     /// no updater child is ever selected.
     #[test]
     fn installer_probe_skipped_when_auto_updates_disabled_matches_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _disabled = crate::utils::env_utils::EnvVarGuard::set("DISABLE_AUTOUPDATER", "1");
+        let _disabled = EnvVarGuard::set("DISABLE_AUTOUPDATER", "1");
         let probed = probe_installation_type();
         assert!(probed.is_none(), "disabled updater must skip detection");
         assert_eq!(select_auto_updater_renderer(None, None), None);

@@ -540,7 +540,7 @@ pub fn default_items() -> Vec<SettingItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn notification_channel_display_matches_official_config_values() {

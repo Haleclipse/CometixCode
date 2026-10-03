@@ -706,6 +706,7 @@ pub fn reset_network_proxy_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn canonicalization_blocks_inet_aton_and_wildcard_ip_bypasses() {
@@ -726,7 +727,7 @@ mod tests {
 
     #[test]
     fn regular_http_proxy_rewrites_absolute_uri_and_relays_one_response() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_network_proxy_for_test();
         super::super::sandbox_adapter::clear_sandbox_ask_callback_for_test();
         let origin = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -770,7 +771,7 @@ mod tests {
 
     #[test]
     fn http_connect_proxy_allows_only_configured_host() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_network_proxy_for_test();
         super::super::sandbox_adapter::clear_sandbox_ask_callback_for_test();
         let echo = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();

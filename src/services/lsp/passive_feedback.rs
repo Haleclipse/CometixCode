@@ -241,6 +241,7 @@ mod tests {
     use crate::services::lsp::diagnostic_registry::{
         check_for_lsp_diagnostics, reset_all_lsp_diagnostic_state,
     };
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn params(
         uri: &str,
@@ -305,7 +306,7 @@ mod tests {
 
     #[test]
     fn notification_registration_adds_non_empty_diagnostics_to_registry() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_all_lsp_diagnostic_state();
         register_lsp_diagnostic_notification(
             "rust",

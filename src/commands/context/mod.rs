@@ -38,6 +38,7 @@ impl ContextCommandRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     struct InteractiveRestore(bool);
 
@@ -49,7 +50,7 @@ mod tests {
 
     #[test]
     fn context_index_selects_interactive_and_noninteractive_descriptors_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let previous = crate::bootstrap::state::get_is_interactive();
         let _restore = InteractiveRestore(previous);
         let cwd = std::env::current_dir().unwrap();

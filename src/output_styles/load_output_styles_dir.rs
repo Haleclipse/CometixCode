@@ -66,7 +66,7 @@ pub fn clear_output_style_caches() {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn output_style_dir_styles_map_frontmatter_like_official_loader() {

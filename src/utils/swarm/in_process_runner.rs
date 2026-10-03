@@ -1482,6 +1482,7 @@ pub async fn run_in_process_teammate(config: InProcessRunnerConfig) -> anyhow::R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn identity(name: &str) -> TeammateIdentity {
         TeammateIdentity {
@@ -1517,18 +1518,14 @@ mod tests {
     /// therefore a no-op fixture; pin a scratch config root and enable the
     /// team-file and mailbox disk paths. The returned guards must outlive the
     /// test body.
-    fn seed_team_for_permission_tests() -> (
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-        crate::utils::env_utils::EnvVarGuard,
-    ) {
+    fn seed_team_for_permission_tests() -> (EnvVarGuard, EnvVarGuard, EnvVarGuard) {
         let root = std::env::temp_dir().join(format!(
             "cometix-in-process-runner-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let config_guard = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let io_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
-        let write_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
+        let write_guard = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         let record = crate::utils::swarm::team_helpers::create_team_record(
             "alpha".to_string(),
@@ -1694,7 +1691,7 @@ mod tests {
 
     #[tokio::test]
     async fn teammate_history_compaction_does_not_fake_success_when_summary_aborts() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _task_lock = crate::tasks::in_process_teammate_task::TEST_IN_PROCESS_TEAMMATE_TASK_LOCK
             .lock()
             .unwrap();
@@ -2412,7 +2409,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::swarm::permission_sync::clear_permission_sync_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
         let _team_guards = seed_team_for_permission_tests();
@@ -2470,7 +2467,7 @@ mod tests {
         let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
             .lock()
             .unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::swarm::permission_sync::clear_permission_sync_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
         let _team_guards = seed_team_for_permission_tests();
@@ -2631,7 +2628,7 @@ mod tests {
             .unwrap();
         crate::tasks::in_process_teammate_task::clear_in_process_teammate_tasks_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // Official waitForNextPromptOrShutdown receives the leader's
         // parentSessionId as taskListId; seed that exact list.
         let _temp = crate::utils::tasks::TempTaskConfig::new("session-parent");

@@ -808,6 +808,7 @@ pub fn analyze_context_usage(input: AnalyzeContextUsageInput<'_>) -> ContextData
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn rough_context_estimation_uses_javascript_utf16_length() {
@@ -902,7 +903,7 @@ mod tests {
     /// as pure schema overhead.
     #[test]
     fn tool_definition_tokens_read_the_lazy_prompt_with_the_live_permission_context() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::process_env::remove("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");

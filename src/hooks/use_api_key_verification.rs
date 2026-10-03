@@ -126,6 +126,7 @@ pub fn use_api_key_verification(hooks: &mut Hooks<'_, '_>) -> ApiKeyVerification
 mod tests {
     use super::*;
     use crate::utils::config::GlobalConfig;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
     use futures::StreamExt;
     use std::path::PathBuf;
 
@@ -153,8 +154,8 @@ mod tests {
     ];
 
     struct CanonicalAuthStateGuard {
-        _lock: crate::utils::env_utils::TestEnvGuard<'static>,
-        previous_env: Vec<crate::utils::env_utils::EnvVarGuard>,
+        _lock: TestEnvGuard<'static>,
+        previous_env: Vec<EnvVarGuard>,
         previous_config: Option<GlobalConfig>,
         previous_interactive: bool,
         previous_cwd: PathBuf,
@@ -167,12 +168,12 @@ mod tests {
 
     impl CanonicalAuthStateGuard {
         fn new(config: GlobalConfig) -> Self {
-            let lock = crate::utils::env_utils::TEST_ENV_LOCK
+            let lock = TEST_ENV_LOCK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let previous_env = AUTH_ENV_KEYS
                 .iter()
-                .map(|key| crate::utils::env_utils::EnvVarGuard::unset(*key))
+                .map(|key| EnvVarGuard::unset(*key))
                 .collect::<Vec<_>>();
             let previous_cwd = std::env::current_dir().expect("current cwd");
             let previous_original_cwd = crate::bootstrap::state::get_original_cwd();

@@ -307,7 +307,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn mcp_client_snapshots_from_project_config_builds_readonly_pending_snapshots() {

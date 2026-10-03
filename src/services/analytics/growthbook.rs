@@ -193,6 +193,7 @@ pub fn reset_growth_book() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use std::collections::HashMap;
 
     fn reset_test_state() {
@@ -227,7 +228,7 @@ mod tests {
 
     #[test]
     fn statsig_migration_cache_precedence_matches_official_growthbook_then_statsig() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_test_state();
@@ -272,7 +273,7 @@ mod tests {
 
     #[test]
     fn statsig_migration_analytics_disable_precedes_disk_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_test_state();
@@ -301,7 +302,7 @@ mod tests {
     #[cfg(feature = "anthropic_internal")]
     #[test]
     fn statsig_migration_overrides_and_env_reset_lifecycle_match_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_test_state();
@@ -336,7 +337,7 @@ mod tests {
     #[tokio::test]
     async fn security_gate_matches_official_statsig_first_and_dynamic_no_client_default() {
         // growthbook.ts:851-894 vs :672-693: security fallback is not cached dynamic config.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_test_state();
         crate::utils::config::set_test_global_config(Some(cached_config(
             Some(Value::Bool(true)),

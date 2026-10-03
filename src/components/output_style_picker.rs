@@ -177,6 +177,7 @@ pub(crate) fn OutputStylePicker<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
@@ -337,7 +338,7 @@ mod tests {
 
     #[test]
     fn output_style_options_for_cwd_include_custom_markdown_styles() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-output-style-picker-{}",
             uuid::Uuid::new_v4()
@@ -352,7 +353,7 @@ mod tests {
             "---\nname: Mentor\ndescription: Project mentor\n---\nPrompt",
         )
         .unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let options = output_style_options_for_cwd(&cwd);
         let _ = std::fs::remove_dir_all(root);
 

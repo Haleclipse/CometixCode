@@ -1197,6 +1197,7 @@ pub fn PermissionRuleList<'a>(
 mod tests {
     use super::*;
     use crate::types::permissions::PermissionRuleValue;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use std::collections::HashMap;
 
@@ -1356,12 +1357,11 @@ mod tests {
 
     #[tokio::test]
     async fn workspace_add_remove_lifecycle_matches_official_callbacks_and_exit() {
-        let _diagnostic =
-            crate::utils::env_utils::EnvVarGuard::set("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC", "1");
+        let _diagnostic = EnvVarGuard::set("COMETIX_PERMISSION_CANCEL_DIAGNOSTIC", "1");
         chalk::set_stdout_level(3);
         use futures::StreamExt;
         use std::time::Duration;
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cc-permissions-workspace-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();

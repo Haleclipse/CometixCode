@@ -143,7 +143,7 @@ pub fn reset_for_testing() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct InteractiveGuard(bool);
 
@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn canonical_fullscreen_gates_match_official_process_state() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _state = FullscreenStateGuard::reset();
         let _no_flicker = EnvVarGuard::unset("CLAUDE_CODE_NO_FLICKER");
         let _disable_mouse = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_MOUSE");

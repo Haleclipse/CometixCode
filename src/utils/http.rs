@@ -65,7 +65,7 @@ pub fn get_web_fetch_user_agent() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn user_agent_matches_official_http_shape() {

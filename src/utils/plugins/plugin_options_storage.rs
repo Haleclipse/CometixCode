@@ -348,6 +348,7 @@ fn normalize_plugin_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn option_string_matches_official_number_and_array_coercion() {
@@ -412,7 +413,7 @@ mod tests {
 
     #[test]
     fn plugin_variable_substitution_matches_bun_lazy_data_directory_and_errors() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("plugin-vars-{}", uuid::Uuid::new_v4()));
         let previous = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR");
         struct Restore(Option<String>, std::path::PathBuf);

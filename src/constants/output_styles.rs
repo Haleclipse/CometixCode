@@ -217,6 +217,7 @@ Share one insight connecting their code to broader patterns or system effects. A
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn built_in_output_style_config_matches_official_names() {
@@ -253,7 +254,7 @@ mod tests {
 
     #[test]
     fn custom_output_style_config_is_loaded_from_official_directory() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-output-style-config-{}",
             uuid::Uuid::new_v4()
@@ -268,7 +269,7 @@ mod tests {
             "---\nname: custom\ndescription: Custom style\nkeep-coding-instructions: false\n---\nPrompt body",
         )
         .unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&cwd).unwrap();
         let settings = SettingsJson {

@@ -561,7 +561,7 @@ pub fn update_installation_path_on_disk(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
 
     fn oracle() -> Value {

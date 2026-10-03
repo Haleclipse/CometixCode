@@ -771,6 +771,7 @@ pub(crate) fn ModelPicker<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
 
     fn render_picker(props: ModelPickerProps) -> String {
@@ -796,7 +797,7 @@ mod tests {
 
     #[test]
     fn model_picker_options_and_effort_cycle_match_official_shape() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
@@ -863,7 +864,7 @@ mod tests {
 
     #[test]
     fn model_picker_renders_unsupported_effort_for_haiku_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");

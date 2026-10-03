@@ -752,7 +752,7 @@ impl crate::tool::ToolCall for ConfigTool {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn config_tool_schema_matches_official_input_shape() {

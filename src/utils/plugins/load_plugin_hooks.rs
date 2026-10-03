@@ -307,6 +307,7 @@ mod tests {
     use super::*;
     use crate::types::plugin::LoadedPlugin;
     use crate::utils::plugins::schemas::PluginManifest;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
     use std::path::PathBuf;
 
@@ -338,7 +339,6 @@ mod tests {
     fn full_swap_and_concurrent_prune_match_official_atomic_hook_registration() {
         use crate::bootstrap::state::{get_registered_hooks, register_hook_callbacks};
         use crate::schemas::hooks::{HookCallback, RegisteredHook, RegisteredHookMatcher};
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         use std::sync::{Arc, mpsc};
         use std::time::Duration;
 

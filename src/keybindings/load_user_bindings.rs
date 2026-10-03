@@ -359,10 +359,11 @@ mod tests {
     use crate::keybindings::parser::parse_keystroke;
     use crate::keybindings::resolver::resolve_key_with_chord_state;
     use crate::keybindings::types::ChordResolveResult;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::collections::HashSet;
 
     struct RestoreConfigDir {
-        value: Option<crate::utils::env_utils::EnvVarGuard>,
+        value: Option<EnvVarGuard>,
         root: PathBuf,
     }
 
@@ -377,16 +378,13 @@ mod tests {
 
     #[test]
     fn user_bindings_append_after_defaults_and_override_last_wins() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-keybindings-loader-{}",
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreConfigDir {
-            value: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
+            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -417,16 +415,13 @@ mod tests {
 
     #[test]
     fn initial_sync_parse_failure_is_silent_but_watcher_reload_reports_it() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-keybindings-parse-warning-{}",
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreConfigDir {
-            value: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
+            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -446,16 +441,13 @@ mod tests {
 
     #[test]
     fn loader_caches_official_validation_warnings_for_doctor() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-keybindings-warnings-{}",
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreConfigDir {
-            value: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
+            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -479,16 +471,13 @@ mod tests {
 
     #[test]
     fn watcher_reloads_after_stable_write_without_retained_frame_io() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-keybindings-watcher-{}",
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreConfigDir {
-            value: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
+            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();

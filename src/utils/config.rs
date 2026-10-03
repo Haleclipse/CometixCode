@@ -1903,6 +1903,7 @@ pub fn check_has_trust_dialog_accepted() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::fs;
 
     fn unique_temp_dir(name: &str) -> PathBuf {
@@ -2214,7 +2215,6 @@ mod tests {
 
     #[test]
     fn get_or_create_user_id_is_stable_across_calls_without_a_preseeded_id() {
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let previous = replace_test_global_config(Some(GlobalConfig::default()));
         let first = get_or_create_user_id();
@@ -2230,7 +2230,6 @@ mod tests {
 
     #[test]
     fn get_or_create_user_id_persists_user_id_to_global_config_like_official() {
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_temp_dir("user-id-persist");
         fs::create_dir_all(&root).unwrap();
@@ -2264,7 +2263,6 @@ mod tests {
     fn mcp_raw_snapshot_survives_disk_cache_save_and_live_replacement() {
         use crate::services::mcp::config::get_mcp_configs_by_scope_readonly;
         use crate::services::mcp::types::ConfigScope;
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_temp_dir("mcp-raw-snapshot");
         fs::create_dir_all(&root).unwrap();

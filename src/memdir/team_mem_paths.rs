@@ -287,7 +287,7 @@ pub fn is_team_mem_file(file_path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn team_memory_prefix_requires_a_path_component_boundary_and_uses_override() {

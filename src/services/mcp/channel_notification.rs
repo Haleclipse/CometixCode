@@ -405,10 +405,10 @@ pub fn enqueue_channel_message_notification(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
     use crate::utils::message_queue_manager::{
         TEST_QUEUE_LOCK, clear_command_queue, get_command_queue,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct AllowedChannelsGuard(Vec<ChannelEntry>);
 
@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn channel_gate_context_reads_cached_ledger_policy_oauth_and_session_channels() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _channels_guard =
             AllowedChannelsGuard::set(vec![ChannelEntry::server("planner", true)]);
         // The OAuth check resolves from process state (`utils/auth.rs:701`), so

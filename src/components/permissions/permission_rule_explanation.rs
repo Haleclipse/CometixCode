@@ -243,6 +243,7 @@ mod tests {
     use crate::types::permissions::{
         PermissionBehavior, PermissionRule, PermissionRuleSource, PermissionRuleValue,
     };
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
 
     fn ask_rule(source: PermissionRuleSource, content: &str) -> PermissionDecisionReason {
@@ -391,7 +392,7 @@ mod tests {
     /// (`permissions.ts:1050-1057`).
     #[test]
     fn permission_rule_explanation_matches_official_classifier_arm_in_error_color() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
 
         let reason = PermissionDecisionReason::Classifier {

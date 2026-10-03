@@ -1042,6 +1042,7 @@ mod tests {
         PermissionDecisionReason, PermissionMode, PermissionRequest, PermissionRuleSource,
         PermissionRuleValue,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::collections::HashMap;
 
     fn queued_bash() -> ToolUsePermissionRequest {
@@ -1406,8 +1407,8 @@ mod tests {
 
     #[test]
     fn lsp_tool_uses_read_permission_rules_for_file_path() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _lsp = crate::utils::env_utils::EnvVarGuard::set("ENABLE_LSP_TOOL", "1");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _lsp = EnvVarGuard::set("ENABLE_LSP_TOOL", "1");
         let mut queue = Vec::new();
         let tool_use = ToolUsePermissionRequest {
             tool_use_id: "toolu_lsp".to_string(),

@@ -188,6 +188,8 @@ pub mod teammate_mailbox;
 pub mod teleport;
 pub mod terminal;
 pub mod terminal_notification;
+#[cfg(test)]
+pub mod test_env;
 pub mod theme;
 pub mod thinking;
 pub mod timeouts;

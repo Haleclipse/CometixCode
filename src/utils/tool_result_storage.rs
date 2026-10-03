@@ -696,6 +696,7 @@ fn replace_tool_result_contents(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn tool_result_message(id: &str, content: String) -> crate::types::message::Message {
         crate::types::message::Message::User(crate::types::message::UserMessage {
@@ -1050,7 +1051,7 @@ mod tests {
 
     #[test]
     fn content_replacement_gate_reads_switch_table_and_ignores_growthbook_delivery() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-content-replacement-gate-{}",
             uuid::Uuid::new_v4()
@@ -1082,7 +1083,7 @@ mod tests {
 
     #[test]
     fn per_message_budget_limit_ignores_invalid_values_and_growthbook_delivery() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         assert_eq!(
             per_message_budget_limit_from_feature_value(Some(&serde_json::json!(1234))),
             1234

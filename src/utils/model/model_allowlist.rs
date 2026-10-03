@@ -137,10 +137,11 @@ pub fn is_model_allowed(model: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct SettingsFixture {
         root: std::path::PathBuf,
-        config_dir: Option<crate::utils::env_utils::EnvVarGuard>,
+        config_dir: Option<EnvVarGuard>,
     }
 
     impl SettingsFixture {
@@ -155,10 +156,7 @@ mod tests {
                 None => serde_json::json!({}),
             };
             std::fs::write(root.join("settings.json"), settings.to_string()).unwrap();
-            let config_dir = Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            ));
+            let config_dir = Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root));
             crate::utils::settings::settings_cache::reset_settings_cache();
             Self { root, config_dir }
         }
@@ -176,7 +174,7 @@ mod tests {
     /// empty blocks all.
     #[test]
     fn absent_allowlist_allows_everything_and_empty_allowlist_blocks_everything() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         {
             let _fixture = SettingsFixture::new(None);
             assert!(is_model_allowed("opus"));
@@ -193,7 +191,7 @@ mod tests {
     /// alias is a wildcard over that family.
     #[test]
     fn family_alias_acts_as_a_wildcard_over_its_family() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = SettingsFixture::new(Some(&["opus"]));
         assert!(is_model_allowed("opus"));
         assert!(is_model_allowed("claude-opus-4-6"));
@@ -206,7 +204,7 @@ mod tests {
     /// narrowing rule, plus the `opusplan`-does-not-narrow-`opus` boundary.
     #[test]
     fn specific_entries_narrow_their_family_alias() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         {
             let _fixture = SettingsFixture::new(Some(&["opus", "opus-4-5"]));
             assert!(is_model_allowed("claude-opus-4-5-20251101"));
@@ -226,7 +224,7 @@ mod tests {
     /// match at segment boundaries only, with or without the `claude-` prefix.
     #[test]
     fn version_prefixes_match_at_segment_boundaries_only() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = SettingsFixture::new(Some(&["claude-opus-4-5", "sonnet-4-6"]));
         assert!(is_model_allowed("claude-opus-4-5-20251101"));
         assert!(is_model_allowed("claude-opus-4-5"));
@@ -240,7 +238,7 @@ mod tests {
     /// (`:111-112`).
     #[test]
     fn alias_resolution_is_bidirectional_and_case_insensitive() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-4-6");
         {
             // Allowlist holds the full ID; the user asks with the alias.

@@ -208,6 +208,7 @@ fn ApproveApiKeySelect<'a>(
 mod tests {
     use super::*;
     use crate::keybindings::keybinding_context::KeybindingRuntime;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
@@ -278,8 +279,8 @@ mod tests {
     }
 
     fn drive_with(batches: Vec<Vec<KeyCode>>, unbind_select_escape: bool) -> (Vec<bool>, String) {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _no_write = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _no_write = EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
         let results: Results = Arc::new(Mutex::new(Vec::new()));
         let echo = results.clone();
         let mut batches = batches;

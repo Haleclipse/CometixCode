@@ -198,6 +198,7 @@ pub fn get_binary_blob_saved_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn mcp_output_storage_format_description_matches_official_copy() {
@@ -258,7 +259,7 @@ mod tests {
 
     #[test]
     fn persist_binary_content_writes_raw_bytes_to_tool_results_dir() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = crate::bootstrap::state::get_original_cwd();
         let previous_session_id = crate::bootstrap::state::get_session_id();
         let root = std::env::temp_dir().join(format!(

@@ -976,8 +976,8 @@ fn read_file_for_edit(absolute_file_path: &std::path::Path) -> std::io::Result<R
 mod tests {
     use super::*;
     use crate::tool::{ToolCall as _, ToolOutput, ToolUseContext};
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::query_helpers::{ReadFileStateEntry, ReadFileStateSource};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn update_read_state(context: &ToolUseContext, update: impl FnOnce(&mut ReadFileStateEntry)) {
         let mut entries = context.read_file_state.snapshot();

@@ -300,6 +300,7 @@ mod input_schema_parity_test;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn parse_tool_preset_matches_official_default_only_and_case_folding() {
@@ -311,7 +312,7 @@ mod tests {
 
     #[test]
     fn default_tool_preset_matches_official_enabled_base_tool_order() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let expected = filter_tools_by_is_enabled(get_all_base_tools())
@@ -397,7 +398,7 @@ mod tests {
     /// tool and could burn a turn getting refused.
     #[test]
     fn assemble_tool_pool_deny_filters_mcp_tools_before_the_model_sees_them() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let mcp_tools = vec![
@@ -453,7 +454,7 @@ mod tests {
     /// ahead of most built-ins and splits the prefix.
     #[test]
     fn assemble_tool_pool_sorts_each_partition_and_keeps_built_ins_a_contiguous_prefix() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let mcp_tools = vec![
@@ -504,7 +505,7 @@ mod tests {
     /// not displace the real one.
     #[test]
     fn assemble_tool_pool_lets_the_built_in_win_a_name_collision_like_uniq_by() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let impostor = Tool {
@@ -541,12 +542,12 @@ mod tests {
 
     #[test]
     fn embedded_search_gate_removes_glob_and_grep_like_official_registry() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _restore = [
-            crate::utils::env_utils::EnvVarGuard::unset("EMBEDDED_SEARCH_TOOLS"),
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_ENTRYPOINT"),
+            EnvVarGuard::unset("EMBEDDED_SEARCH_TOOLS"),
+            EnvVarGuard::unset("CLAUDE_CODE_ENTRYPOINT"),
         ];
         let ordinary = get_all_base_tools()
             .into_iter()
@@ -607,7 +608,7 @@ mod tests {
 
     #[test]
     fn web_search_tool_is_always_registered_and_enabled_only_when_gate_allows() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
@@ -666,7 +667,7 @@ mod tests {
 
     #[test]
     fn brief_tool_is_always_registered_and_enabled_only_when_override_is_set() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _opt_in = BriefOptInGuard::capture();
         crate::utils::process_env::remove("CLAUDE_CODE_BRIEF");
         crate::bootstrap::state::set_user_msg_opt_in(false);
@@ -693,7 +694,7 @@ mod tests {
 
     #[test]
     fn lsp_tool_is_available_only_when_official_override_is_set() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ENABLE_LSP_TOOL");
         let without = get_all_base_tools()
             .into_iter()
@@ -712,7 +713,7 @@ mod tests {
 
     #[test]
     fn task_v2_tools_are_available_in_interactive_sessions_and_env_override() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_TASKS");
         crate::utils::process_env::remove("COMETIX_NON_INTERACTIVE_SESSION");
         let interactive = get_all_base_tools()
@@ -781,7 +782,7 @@ mod tests {
 
     #[test]
     fn tool_search_tool_is_available_unless_explicit_beta_or_env_disable() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         let with_default = get_all_base_tools()
@@ -815,7 +816,7 @@ mod tests {
 
     #[test]
     fn cron_tools_are_available_only_when_hardcoded_cron_switch_is_enabled() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_CRON");
         let enabled = get_all_base_tools()
             .into_iter()
@@ -841,7 +842,7 @@ mod tests {
 
     #[test]
     fn agent_swarm_tools_keep_send_message_registered_and_gate_active_tools() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
         let without = get_all_base_tools()
             .into_iter()
@@ -895,7 +896,7 @@ mod tests {
 
     #[test]
     fn get_tools_honors_official_simple_mode_subset() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "true");
         let tools = get_tools(&crate::tool::ToolPermissionContext::default());
         crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
@@ -959,7 +960,7 @@ mod tests {
     #[test]
     fn tool_call_prompt_matches_eager_wire_description_for_every_registered_tool() {
         use crate::tool::ToolCall as _;
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let default_context = crate::tool::ToolPermissionContext::default();
@@ -1032,7 +1033,7 @@ mod tests {
 
     #[test]
     fn get_tools_runs_official_is_enabled_filter_without_dropping_default_question_tool() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_channels = crate::bootstrap::state::get_allowed_channels();
         crate::bootstrap::state::set_allowed_channels(vec![
             crate::bootstrap::state::ChannelEntry::server("telegram", false),

@@ -536,6 +536,7 @@ mod tests {
     use super::*;
     use crate::types::message::{AssistantContent, AssistantMessage, StopReason};
     use crate::utils::settings::types::StatusLineSettings;
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
     use chrono::Utc;
 
@@ -601,7 +602,7 @@ mod tests {
 
     #[test]
     fn build_status_line_command_input_resolves_model_and_null_usage_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "grok-4.5");
 
         let settings = SettingsJson {

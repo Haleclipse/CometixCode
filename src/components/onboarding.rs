@@ -643,6 +643,7 @@ fn render_oauth_step() -> AnyElement<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::{StreamExt, stream};
     use std::sync::{Arc, Mutex};
@@ -908,8 +909,8 @@ mod tests {
             })
         };
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _no_write = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _no_write = EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
         let approved = run(vec![vec![KeyCode::Up], vec![KeyCode::Enter]]);
         assert!(approved.contains("Security notes:"), "{approved}");
         let rejected = run(vec![vec![KeyCode::Enter]]);
@@ -1165,8 +1166,7 @@ mod tests {
     // cancellation advance without calling the installer. Real keybinding
     // contexts and the production file installer are required in this fixture.
     fn run_terminal_onboarding(keys: Vec<KeyCode>, fail_write: bool) -> (usize, bool) {
-        use crate::utils::env_utils::EnvVarGuard;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("terminal-onboarding-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();

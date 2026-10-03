@@ -5816,7 +5816,7 @@ pub fn scan_pre_boundary_metadata(path: &Path, end_offset: u64) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::{Value, json};
     use std::fs;
     use uuid::Uuid;

@@ -2626,6 +2626,7 @@ mod mcp_server_status_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn split_stream_json(input: &str) -> Vec<String> {
         let mut reader = std::io::Cursor::new(input.as_bytes().to_vec());
@@ -2871,9 +2872,8 @@ mod tests {
     /// `activeUserSpecifiedModel` to the resolved model, only on a switch.
     #[tokio::test]
     async fn model_controls_move_the_main_loop_model_like_cc() {
-        use crate::utils::env_utils::EnvVarGuard;
         use crate::utils::model::model::get_main_loop_model;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _model = EnvVarGuard::unset("ANTHROPIC_MODEL");
@@ -3158,6 +3158,7 @@ mod tests {
 #[cfg(test)]
 mod sdk_mapper_tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn stream_compact_history_matches_official_sdk_mapper_injection() {
@@ -3201,7 +3202,7 @@ mod sdk_mapper_tests {
     #[test]
     fn sdk_rate_limit_listener_matches_official_status_recovery_dedup_and_cleanup() {
         use crate::services::claude_ai_limits as limits;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         limits::reset_for_test();
         let values = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let captured = values.clone();

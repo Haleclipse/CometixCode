@@ -358,6 +358,7 @@ mod tests {
     use crate::services::mcp::client::McpConnectionDiscovery;
     use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig, Transport};
     use crate::state::app_state_store::McpState;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -449,7 +450,7 @@ mod tests {
 
     #[test]
     fn stdio_menu_toggle_dispatches_to_mcp_connection_service() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-stdio-menu-toggle-{}",
             uuid::Uuid::new_v4()
@@ -457,10 +458,9 @@ mod tests {
         let project_dir = temp_dir.join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
         let previous_cwd = std::env::current_dir().unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
-        let _session_write =
-            crate::utils::env_utils::EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _session_write = EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         std::env::set_current_dir(&project_dir).unwrap();
 
         let cancels = Arc::new(Mutex::new(0usize));

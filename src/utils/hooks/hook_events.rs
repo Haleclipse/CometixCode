@@ -303,10 +303,10 @@ pub fn hook_event_name_from_enum(event: HookEvent) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TestStateLock;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    static TEST_LOCK: LazyLock<crate::utils::env_utils::TestStateLock> =
-        LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+    static TEST_LOCK: LazyLock<TestStateLock> = LazyLock::new(TestStateLock::new);
 
     fn collect_handler(into: Arc<Mutex<Vec<HookExecutionEvent>>>) -> HookEventHandler {
         Arc::new(move |event| into.lock().expect("events mutex").push(event))

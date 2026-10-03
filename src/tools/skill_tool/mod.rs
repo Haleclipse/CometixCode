@@ -868,6 +868,7 @@ impl crate::tool::ToolCall for SkillTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn context_with_general_purpose_agent() -> crate::tool::ToolUseContext {
         let agent = crate::tools::agent_tool::load_agents_dir::AgentDefinition::new(
@@ -906,8 +907,8 @@ mod tests {
     fn skill_execution_matches_official_builtin_prompt_pipeline() {
         use crate::tool::ToolCall;
         use crate::types::message::{Message, UserContent};
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _writes = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0");
         let mut context = crate::tool::ToolUseContext::default();
         context.agent_id = Some(format!("skill-builtin-{}", uuid::Uuid::new_v4()));
         let args = serde_json::json!({"skill": "/init"});
@@ -1005,7 +1006,7 @@ mod tests {
         use crate::tool::ToolCall;
         use std::io::Write;
 
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-skill-tool-call-{}", uuid::Uuid::new_v4()));
         let skill_file = root
@@ -1086,7 +1087,7 @@ mod tests {
         use crate::tool::ToolCall;
         use std::io::Write;
 
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-skill-tool-shell-{}", uuid::Uuid::new_v4()));
         let skill_file = root
@@ -1354,9 +1355,8 @@ mod tests {
         // (`utils/model/model.ts:508-536`): a skill declaring `model: opus` on
         // an `opus[1m]` session must not silently drop the window to 200K.
         // `haiku` has no 1M variant, so it still downgrades.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _context =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_DISABLE_1M_CONTEXT");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _context = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_1M_CONTEXT");
 
         let mut context = crate::tool::ToolUseContext::default();
         context.main_loop_model = Some("opus[1m]".to_string());
@@ -1406,7 +1406,7 @@ mod tests {
         use crate::tool::ToolCall;
         use std::io::Write;
 
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-skill-tool-modifier-{}",
             uuid::Uuid::new_v4()
@@ -1533,7 +1533,7 @@ mod tests {
     fn prepare_forked_skill_resolves_general_purpose_and_prompt() {
         use std::io::Write;
 
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-skill-tool-fork-{}", uuid::Uuid::new_v4()));
         let skill_file = root
@@ -1591,7 +1591,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-skill-tool-fork-{}", uuid::Uuid::new_v4()));
         let skill_file = root

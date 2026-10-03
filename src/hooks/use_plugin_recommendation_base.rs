@@ -103,10 +103,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn graceful_shutdown_drain_joins_recommendation_install_workers() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         drain_install_plugin_and_notify_workers();
         ensure_install_cleanup_registered();
         let completed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));

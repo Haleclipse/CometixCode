@@ -76,7 +76,7 @@ pub fn get_initial_advisor_setting() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn advisor_model_predicates_match_official_launch_allowlist() {

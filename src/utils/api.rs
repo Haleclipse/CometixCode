@@ -493,6 +493,7 @@ pub fn normalize_tool_input_for_api(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn normalize_tool_input_for_api_matches_official_bun_exit_plan_oracle() {
@@ -545,7 +546,7 @@ mod tests {
 
     #[test]
     fn append_system_context_and_prepend_user_context_match_official_shape() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("NODE_ENV");
         let mut context = BTreeMap::new();
         context.insert("cwd".to_string(), "/tmp/project".to_string());
@@ -590,7 +591,7 @@ mod tests {
 
     #[test]
     fn tool_to_api_schema_projects_tool_metadata_like_official_helper() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         let tool = Tool {
             name: "Example".to_string(),
@@ -676,9 +677,8 @@ mod tests {
     #[test]
     #[test]
     fn tool_to_api_schema_strips_swarm_fields_when_agent_swarms_are_off() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _teams =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _teams = EnvVarGuard::unset("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
         let tool = crate::tools::agent_tool::agent_tool_schema();
         let raw_props = tool
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn tool_to_api_schema_marks_deferred_tools_like_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         let tool = crate::tools::web_fetch_tool::web_fetch_tool_schema();
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
@@ -731,7 +731,7 @@ mod tests {
 
     #[test]
     fn tool_to_api_schema_strips_experimental_fields_when_betas_disabled() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
         let mut tool = crate::tools::web_fetch_tool::web_fetch_tool_schema();
         tool.strict = Some(true);
@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn tool_base_cache_and_live_kill_switch_chronology_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -844,7 +844,7 @@ mod tests {
 
     #[test]
     fn independent_schema_and_beta_cache_chronology_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -960,7 +960,7 @@ mod tests {
 
     #[test]
     fn kill_switch_live_strip_and_independent_memo_lifecycle_match_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
@@ -1058,7 +1058,7 @@ mod tests {
 
     #[test]
     fn tool_schema_cache_keys_and_per_request_overlays_matches_official() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");

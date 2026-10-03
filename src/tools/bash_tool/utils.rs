@@ -260,7 +260,7 @@ fn split_at_utf16_units(value: &str, max_units: usize) -> (&str, &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::TEST_ENV_LOCK;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn strip_empty_lines_preserves_internal_whitespace() {
@@ -370,7 +370,7 @@ mod tests {
     #[test]
     fn format_output_truncates_with_official_suffix() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _env = crate::utils::env_utils::EnvVarGuard::set("BASH_MAX_OUTPUT_LENGTH", "5");
+        let _env = EnvVarGuard::set("BASH_MAX_OUTPUT_LENGTH", "5");
         let formatted = format_output("12345\n678\n9");
         assert_eq!(formatted.total_lines, 3);
         assert_eq!(

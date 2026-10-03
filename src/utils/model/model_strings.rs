@@ -113,10 +113,11 @@ pub fn resolve_overridden_model(model_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn resolve_overridden_model_matches_official_first_object_entry_for_duplicate_values() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-model-overrides-{}",
             uuid::Uuid::new_v4().simple()
@@ -127,7 +128,7 @@ mod tests {
             r#"{"modelOverrides":{"claude-first":"provider-id","claude-second":"provider-id"}}"#,
         )
         .unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
 
         assert_eq!(resolve_overridden_model("provider-id"), "claude-first");
 
@@ -162,7 +163,7 @@ mod tests {
     /// canonical first-party ID and replace the provider value in place.
     #[test]
     fn model_overrides_replace_the_provider_value_for_their_canonical_key() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-model-strings-{}",
             uuid::Uuid::new_v4().simple()
@@ -173,7 +174,7 @@ mod tests {
             r#"{"modelOverrides":{"claude-opus-4-6":"arn:aws:bedrock:us-east-1::opus","claude-not-a-model":"ignored"}}"#,
         )
         .unwrap();
-        let config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         crate::utils::settings::settings_cache::reset_settings_cache();
 
         let strings = get_model_strings();

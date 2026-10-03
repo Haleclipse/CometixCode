@@ -47,6 +47,7 @@ pub fn call() -> anyhow::Result<VimModeChange> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn editor_mode_toggle_matches_official_normal_vim_cycle() {
@@ -71,8 +72,8 @@ mod tests {
     #[test]
     fn vim_call_persists_official_editor_mode_cycle() {
         struct RestoreEnv {
-            config_dir: Option<crate::utils::env_utils::EnvVarGuard>,
-            write_enabled: Option<crate::utils::env_utils::EnvVarGuard>,
+            config_dir: Option<EnvVarGuard>,
+            write_enabled: Option<EnvVarGuard>,
             root: std::path::PathBuf,
         }
         impl Drop for RestoreEnv {
@@ -84,20 +85,14 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-vim-command-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join(".claude.json"), r#"{"editorMode":"normal"}"#).unwrap();
         let _restore = RestoreEnv {
-            config_dir: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
-            write_enabled: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "COMETIX_WRITE_ENABLED",
-                "1",
-            )),
+            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            write_enabled: Some(EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1")),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();

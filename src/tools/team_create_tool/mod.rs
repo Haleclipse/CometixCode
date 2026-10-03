@@ -358,7 +358,7 @@ impl crate::tool::ToolCall for TeamCreateTool {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn unique_config_dir(prefix: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -391,7 +391,7 @@ mod tests {
             .lock()
             .unwrap();
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         crate::bootstrap::state::clear_session_created_teams();
         crate::utils::tasks::clear_leader_team_name();
@@ -439,7 +439,7 @@ mod tests {
             .lock()
             .unwrap();
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         crate::bootstrap::state::clear_session_created_teams();
         crate::utils::tasks::clear_leader_team_name();
@@ -523,7 +523,7 @@ mod tests {
             .lock()
             .unwrap();
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         crate::bootstrap::state::clear_session_created_teams();
         crate::utils::tasks::clear_leader_team_name();

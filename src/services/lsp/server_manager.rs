@@ -445,6 +445,7 @@ fn percent_encode_path(path: &str) -> String {
 mod tests {
     use super::*;
     use crate::services::lsp::types::{LspServerConfig, ScopedLspServerConfig};
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use std::collections::BTreeMap;
     use std::fs;
     use std::io::Write;
@@ -629,7 +630,7 @@ mod tests {
             return;
         }
 
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::services::lsp::diagnostic_registry::reset_all_lsp_diagnostic_state();
 
         let script = write_fake_diagnostic_lsp_server();

@@ -311,7 +311,7 @@ pub fn parse_slash_command_tools_from_frontmatter(
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn description_fallback_uses_first_non_empty_line_and_truncates() {
@@ -355,7 +355,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn markdown_discovery_follows_symlinks_and_breaks_directory_cycles() {
-        use crate::utils::env_utils::HOME_VAR;
+        use crate::utils::test_env::HOME_VAR;
         use std::os::unix::fs::symlink;
 
         let root = temp_dir("cometix-md-loader-symlink");

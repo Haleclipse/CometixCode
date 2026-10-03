@@ -79,11 +79,13 @@ pub use crate::services::mock_rate_limits::should_process_mock_limits;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "anthropic_internal")]
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[cfg(feature = "anthropic_internal")]
     #[test]
     fn opus_mock_only_rejects_opus_model_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::services::mock_rate_limits::reset_for_test();
         crate::services::mock_rate_limits::set_mock_rate_limit_scenario(
             crate::services::mock_rate_limits::MockScenario::OpusLimit,

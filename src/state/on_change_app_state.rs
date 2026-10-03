@@ -180,6 +180,7 @@ mod tests {
     use crate::tool::ToolPermissionContext;
     use crate::types::permissions::PermissionMode;
     use crate::utils::session_state::SessionExternalMetadata;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn apply(metadata: &SessionExternalMetadata) -> AppState {
         let mut state = AppState::default();
@@ -284,8 +285,8 @@ mod tests {
 
     #[test]
     fn model_changes_update_runtime_override_matches_official_even_when_writes_are_disabled() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
         let previous_override = crate::bootstrap::state::get_main_loop_model_override();
 
         let store = AppStore::new(AppState::default(), Some(default_on_change()));
@@ -325,8 +326,7 @@ mod tests {
     /// Ctrl+T) does not re-apply; a reload, whose env is a new reference, does.
     #[test]
     fn settings_env_reapplies_only_for_a_new_env_reference() {
-        use crate::utils::env_utils::EnvVarGuard;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = std::env::temp_dir().join(format!(

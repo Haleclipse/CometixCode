@@ -159,7 +159,7 @@ pub async fn refresh_oauth_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn tokens() -> ClaudeAiOAuthTokensSnapshot {
         ClaudeAiOAuthTokensSnapshot {

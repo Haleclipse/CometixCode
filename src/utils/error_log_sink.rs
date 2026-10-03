@@ -254,8 +254,8 @@ pub(crate) fn _clear_log_writers_for_testing() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
     use crate::utils::log::{self, AxiosErrorContext};
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     struct TempDir(PathBuf);
     impl TempDir {

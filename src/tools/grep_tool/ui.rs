@@ -359,6 +359,7 @@ pub(crate) fn output_to_value(output: &Output) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn use_message_and_summary_match_official_copy_and_limits() {
@@ -527,7 +528,7 @@ mod tests {
 
     #[test]
     fn display_path_test_restores_bootstrap_state_with_raii() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         struct OriginalCwdGuard(std::path::PathBuf);

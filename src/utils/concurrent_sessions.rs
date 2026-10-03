@@ -39,11 +39,12 @@ pub fn update_session_name(name: Option<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn update_session_name_matches_official_best_effort_pid_patch() {
         struct RestoreConfigDir {
-            previous: Option<crate::utils::env_utils::EnvVarGuard>,
+            previous: Option<EnvVarGuard>,
             root: std::path::PathBuf,
         }
         impl Drop for RestoreConfigDir {
@@ -53,7 +54,7 @@ mod tests {
             }
         }
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-concurrent-session-{}",
             uuid::Uuid::new_v4()
@@ -67,10 +68,7 @@ mod tests {
         )
         .unwrap();
         let _restore = RestoreConfigDir {
-            previous: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
+            previous: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             root: root.clone(),
         };
 

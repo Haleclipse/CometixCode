@@ -1,6 +1,8 @@
 //! Process bootstrap state.
 //! Maps to CC `bootstrap/state.ts`.
 
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{LazyLock, RwLock};
@@ -280,8 +282,7 @@ static SYSTEM_PROMPT_SECTION_CACHE: LazyLock<RwLock<HashMap<String, Option<Strin
 static INVOKED_SKILLS: LazyLock<RwLock<Vec<(String, InvokedSkillInfo)>>> =
     LazyLock::new(|| RwLock::new(Vec::new()));
 #[cfg(test)]
-pub static TEST_INVOKED_SKILLS_LOCK: LazyLock<crate::utils::env_utils::TestStateLock> =
-    LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub static TEST_INVOKED_SKILLS_LOCK: LazyLock<TestStateLock> = LazyLock::new(TestStateLock::new);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvokedSkillInfo {
@@ -726,7 +727,7 @@ fn non_interactive_env_override() -> bool {
 /// Restore [`IS_INTERACTIVE`] on drop, so a test that drives the startup
 /// computation cannot leak the headless flag into whatever runs next.
 ///
-/// Same bargain as `env_utils::EnvVarGuard`: the caller holds `TEST_ENV_LOCK`
+/// Same bargain as `test_env::EnvVarGuard`: the caller holds `TEST_ENV_LOCK`
 /// to serialise the mutation, this undoes it even through a panic.
 #[cfg(test)]
 pub struct IsInteractiveGuard {
@@ -1073,6 +1074,8 @@ pub fn is_session_persistence_disabled() -> bool {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::TEST_ENV_LOCK;
+
     #[test]
     fn channel_state_matches_official_getters_and_setters() {
         super::set_allowed_channels(vec![
@@ -1092,7 +1095,7 @@ mod tests {
 
     #[test]
     fn session_persistence_disabled_matches_official_state_getter_and_setter() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         super::set_session_persistence_disabled(true);
         assert!(super::is_session_persistence_disabled());
         super::set_session_persistence_disabled(false);
@@ -1103,7 +1106,7 @@ mod tests {
     fn switch_session_and_regenerate_keep_project_directory_atomic() {
         // Session id/project dir are process-global; racing another test that
         // reads or regenerates them (e.g. clear_conversation) flakes both.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_id = super::get_session_id();
         let previous_dir = super::get_session_project_dir();
         super::switch_session(
@@ -1124,7 +1127,7 @@ mod tests {
 
     #[test]
     fn non_interactive_session_mirrors_official_inverse_interactive_state_and_env_override() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_NON_INTERACTIVE");
         crate::utils::process_env::remove("COMETIX_NON_INTERACTIVE");
         crate::utils::process_env::remove("COMETIX_NON_INTERACTIVE_SESSION");

@@ -343,6 +343,7 @@ pub fn glob(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn extract_glob_base_directory_matches_official_matrix() {
@@ -600,11 +601,11 @@ mod tests {
 
     #[test]
     fn glob_hidden_and_no_ignore_environment_switches_default_true() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let keys = ["CLAUDE_CODE_GLOB_NO_IGNORE", "CLAUDE_CODE_GLOB_HIDDEN"];
-        let _restore = keys.map(crate::utils::env_utils::EnvVarGuard::preserve);
+        let _restore = keys.map(EnvVarGuard::preserve);
         let root = std::env::temp_dir().join(format!(
             "cometix-utils-glob-env-{}",
             uuid::Uuid::new_v4().simple()

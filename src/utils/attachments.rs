@@ -2579,7 +2579,7 @@ mod tests {
         get_pending_lsp_diagnostic_count, register_pending_lsp_diagnostic,
         reset_all_lsp_diagnostic_state,
     };
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
 
     #[test]
     fn memory_header_matches_official_fresh_and_stale_text() {
@@ -3236,7 +3236,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn nested_live_iteration_accepts_insertion_during_source_await() {
         // At-mention reads resolve against the project dir.
-        let _project_dir = crate::utils::env_utils::PinnedProjectDir::at_manifest_root();
+        let _project_dir = PinnedProjectDir::at_manifest_root();
         let cwd = std::env::current_dir().unwrap();
         let root = cwd.join(format!(
             ".cometix-nested-race-{}",

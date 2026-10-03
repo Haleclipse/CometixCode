@@ -213,6 +213,7 @@ pub fn apply_mcpjson_reject_all_to_local_settings(
 mod tests {
     use super::*;
     use crate::services::mcp::types::{ConfigScope, Transport};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn project_config(command: &str) -> ScopedMcpServerConfig {
         ScopedMcpServerConfig {
@@ -305,7 +306,7 @@ mod tests {
 
     #[test]
     fn local_settings_write_preserves_unrelated_fields_like_update_settings_for_source() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir = std::env::temp_dir().join(format!(
             "cometix-mcp-approval-write-{}",
             uuid::Uuid::new_v4()

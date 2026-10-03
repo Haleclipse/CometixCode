@@ -265,6 +265,7 @@ fn extract_attr(text: &str, attr: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn render_user_text(content: &str, is_transcript_mode: bool) -> String {
         element! {
@@ -328,7 +329,7 @@ mod tests {
     /// boilerplate back.
     #[test]
     fn fork_boilerplate_collapse_ignores_the_runtime_vetoes() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _headless = crate::tools::agent_tool::fork_subagent::fork_veto_environment();
         assert!(
             !crate::tools::agent_tool::fork_subagent::is_fork_subagent_enabled(),

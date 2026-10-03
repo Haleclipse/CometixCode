@@ -382,6 +382,7 @@ mod tests {
         PermissionBehavior, PermissionPromptChoice, PermissionRuleValue,
         PermissionUpdateDestination,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn decision() -> PromptDecision {
         PromptDecision {
@@ -494,7 +495,7 @@ mod tests {
         let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
             .lock()
             .unwrap();
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::swarm::permission_sync::clear_permission_sync_for_test();
         crate::utils::teammate_mailbox::clear_mailboxes_for_test();
         let _callback_lock = crate::hooks::use_swarm_permission_poller::TEST_PENDING_CALLBACKS_LOCK
@@ -520,10 +521,9 @@ mod tests {
             "cometix-swarm-worker-handler-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config_guard =
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &scratch_root);
-        let _io_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
-        let _write_guard = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &scratch_root);
+        let _io_guard = EnvVarGuard::set("COMETIX_TEST_TEAM_FILE_IO", "1");
+        let _write_guard = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();
         let record = crate::utils::swarm::team_helpers::create_team_record(
             "alpha".into(),

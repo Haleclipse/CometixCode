@@ -104,10 +104,11 @@ pub fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct RestoreEnv {
-        config_dir: Option<crate::utils::env_utils::EnvVarGuard>,
-        write_enabled: Option<crate::utils::env_utils::EnvVarGuard>,
+        config_dir: Option<EnvVarGuard>,
+        write_enabled: Option<EnvVarGuard>,
         root: PathBuf,
     }
 
@@ -123,20 +124,14 @@ mod tests {
 
     #[test]
     fn keybindings_prepare_uses_exclusive_create_and_preserves_existing_file() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-keybindings-command-{}",
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreEnv {
-            config_dir: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
-            write_enabled: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "COMETIX_WRITE_ENABLED",
-                "1",
-            )),
+            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            write_enabled: Some(EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1")),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -176,20 +171,14 @@ mod tests {
 
     #[test]
     fn keybindings_prepare_respects_explicit_no_write_mode() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-keybindings-no-write-{}",
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreEnv {
-            config_dir: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
-            write_enabled: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "COMETIX_WRITE_ENABLED",
-                "0",
-            )),
+            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            write_enabled: Some(EnvVarGuard::set("COMETIX_WRITE_ENABLED", "0")),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -287,20 +276,14 @@ mod tests {
             }
         }
 
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-keybindings-live-reload-{}",
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreEnv {
-            config_dir: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "CLAUDE_CONFIG_DIR",
-                &root,
-            )),
-            write_enabled: Some(crate::utils::env_utils::EnvVarGuard::set(
-                "COMETIX_WRITE_ENABLED",
-                "1",
-            )),
+            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            write_enabled: Some(EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1")),
             root: root.clone(),
         };
         let script = std::env::temp_dir().join(format!(
@@ -324,7 +307,7 @@ JSON
         let mut permissions = std::fs::metadata(&script).unwrap().permissions();
         permissions.set_mode(0o700);
         std::fs::set_permissions(&script, permissions).unwrap();
-        let _visual = crate::utils::env_utils::EnvVarGuard::set("VISUAL", &script);
+        let _visual = EnvVarGuard::set("VISUAL", &script);
 
         let runtime =
             crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings();

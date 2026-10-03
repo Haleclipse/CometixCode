@@ -32,7 +32,7 @@ pub fn is_voice_mode_enabled() -> bool {
 mod tests {
     use super::*;
     use crate::utils::config::GlobalConfig;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 
     struct GlobalConfigGuard(Option<GlobalConfig>);
 
@@ -57,12 +57,12 @@ mod tests {
     struct VoiceProcessStateFixture {
         _env: Vec<EnvVarGuard>,
         _config: GlobalConfigGuard,
-        _env_lock: crate::utils::env_utils::TestEnvGuard<'static>,
+        _env_lock: TestEnvGuard<'static>,
     }
 
     impl VoiceProcessStateFixture {
         fn with_oauth_token() -> Self {
-            let env_lock = crate::utils::env_utils::TEST_ENV_LOCK
+            let env_lock = TEST_ENV_LOCK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let env = vec![

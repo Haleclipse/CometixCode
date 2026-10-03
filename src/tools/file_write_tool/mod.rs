@@ -809,8 +809,8 @@ impl ToolCall for FileWriteTool {
 mod tests {
     use super::*;
     use crate::types::permissions::{PermissionMode, PermissionRequest, PermissionRuleValue};
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::query_helpers::{ReadFileStateEntry, ReadFileStateSource};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct TestGlobalConfigRestore;
 

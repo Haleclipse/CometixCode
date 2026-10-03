@@ -298,6 +298,7 @@ mod tests {
     use crate::utils::session_storage::{
         TestProjectsDirOverrideGuard, set_test_projects_dir_override,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct BranchFixture {
         root: PathBuf,
@@ -423,7 +424,7 @@ mod tests {
 
     #[test]
     fn create_fork_matches_bun_raw_metadata_distinct_parents_and_replacements() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let fixture = BranchFixture::new();
         let original_id = get_session_id();
         let entries = vec![
@@ -503,7 +504,7 @@ mod tests {
 
     #[test]
     fn create_fork_reads_buffer_bom_skips_bad_lines_and_does_not_add_empty_replacements() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = BranchFixture::new();
         fs::write(
             get_transcript_path(None),
@@ -529,7 +530,7 @@ mod tests {
 
     #[test]
     fn create_fork_preserves_source_error_messages() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = BranchFixture::new();
         assert_eq!(create_fork(None).unwrap_err(), "No conversation to branch");
         fs::write(get_transcript_path(None), "").unwrap();
@@ -549,9 +550,8 @@ mod tests {
 
     #[test]
     fn call_prepares_fork_saves_explicit_title_and_only_carries_source_log_metadata() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write_enabled =
-            crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _write_enabled = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let fixture = BranchFixture::new();
         let original_id = get_session_id();
         let user = json!({"type":"user","uuid":"u","parentUuid":"old-parent","sessionId":original_id,
@@ -617,7 +617,7 @@ mod tests {
 
     #[test]
     fn call_returns_creation_error_for_command_on_done_without_switching() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = BranchFixture::new();
         let original_id = get_session_id();
         assert_eq!(
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn get_unique_fork_name_matches_bun_collision_case_regex_and_number_gaps() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let fixture = BranchFixture::new();
         assert_eq!(get_unique_fork_name("new"), "new (Branch)");
         for title in [
@@ -657,8 +657,8 @@ mod tests {
         // create -> save title -> event -> resume -> done. Creation errors
         // emit no event; resume errors do not undo the prior creation event.
         // This native call prepares resume without switching the session.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let fixture = BranchFixture::new();
         let original_id = get_session_id();
         let before = crate::services::analytics::queued_events_for_test().len();

@@ -96,6 +96,7 @@ mod tests {
     use crate::utils::session_storage::{
         clear_session_metadata, get_current_session_metadata, restore_session_metadata,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct SessionFixture {
         root: std::path::PathBuf,
@@ -197,10 +198,9 @@ mod tests {
     #[test]
     fn color_persistence_and_reset_matches_official_state_and_cold_restore() {
         // CC color.ts:45-63,75-92: disk first, same name, default sentinel.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
-        let _history =
-            crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
         let fixture = SessionFixture::new();
         let store = AppStore::new(AppState::default(), None);
         let context = ToolUseContext::default().with_app_store(store.clone());
@@ -278,8 +278,8 @@ mod tests {
     #[test]
     fn color_write_error_matches_official_no_success_or_state_mutation() {
         // CC color.ts:51/79 await has no catch; setAppState is after that await.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let fixture = SessionFixture::new();
         let path = fixture.root.join("color-session.jsonl");
         std::fs::create_dir_all(path).unwrap();

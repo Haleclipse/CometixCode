@@ -593,6 +593,7 @@ pub fn AttachmentMessage(
 mod tests {
     use super::super::user_prompt_message::UserPromptMessage;
     use super::*;
+    use crate::utils::test_env::EnvVarGuard;
 
     #[test]
     fn skill_listing_does_not_add_margin_after_slash_command() {
@@ -673,8 +674,8 @@ mod tests {
     fn render_ansi(attachment: Attachment, verbose: bool) -> (String, String) {
         // This fixture asserts enabled ANSI spans, so provide the source
         // terminal capability explicitly instead of inheriting a test pipe.
-        let _force = crate::utils::env_utils::EnvVarGuard::set("FORCE_COLOR", "3");
-        let _term = crate::utils::env_utils::EnvVarGuard::set("TERM", "dumb");
+        let _force = EnvVarGuard::set("FORCE_COLOR", "3");
+        let _term = EnvVarGuard::set("TERM", "dumb");
         let canvas = element! {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
                 AttachmentMessage(

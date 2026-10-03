@@ -265,6 +265,7 @@ fn OverridesSelect(
 mod tests {
     use super::*;
     use crate::keybindings::keybinding_context::KeybindingRuntime;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
@@ -380,8 +381,8 @@ mod tests {
         // and reports its message, which CC's never-rejecting
         // setSandboxSettings leaves in place whether or not the write lands;
         // Esc cancels with a skip. Writes stay off in this test.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _no_write = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _no_write = EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
         let (last, results) = drive(false, vec![KeyCode::Enter, KeyCode::Esc, KeyCode::F(12)]);
         assert!(last.contains("Configure Overrides:"), "{last}");
         assert_eq!(

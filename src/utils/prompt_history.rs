@@ -293,10 +293,10 @@ fn current_project_root() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::EnvVarGuard;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvLock};
 
-    fn env_lock() -> &'static crate::utils::env_utils::TestEnvLock {
-        &crate::utils::env_utils::TEST_ENV_LOCK
+    fn env_lock() -> &'static TestEnvLock {
+        &TEST_ENV_LOCK
     }
 
     fn temp_history_home() -> std::path::PathBuf {

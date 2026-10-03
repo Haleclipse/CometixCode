@@ -924,7 +924,7 @@ async fn load_plugin_catalog(skill_mode: bool) -> Result<Arc<Vec<Command>>, Arc<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct Fixture(PathBuf);
     impl Fixture {

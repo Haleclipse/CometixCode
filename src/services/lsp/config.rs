@@ -51,10 +51,11 @@ pub fn get_all_lsp_servers() -> AllLspServers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn get_all_lsp_servers_reads_enabled_inline_plugin_lsp_configs() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-lsp-config-plugin-{}",
             uuid::Uuid::new_v4()
@@ -63,7 +64,7 @@ mod tests {
             std::env::temp_dir().join(format!("cometix-lsp-config-home-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join(".claude-plugin")).expect("plugin dir");
         std::fs::create_dir_all(&config_home).expect("config home");
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let previous_inline = crate::bootstrap::state::get_inline_plugins();
         crate::bootstrap::state::set_inline_plugins(vec![root.clone()]);
         std::fs::write(

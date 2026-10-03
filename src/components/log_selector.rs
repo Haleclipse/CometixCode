@@ -1864,6 +1864,7 @@ pub fn LogSelector<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::{StreamExt, stream};
     use serde_json::json;
     use std::path::PathBuf;
@@ -2377,8 +2378,8 @@ mod tests {
 
     #[test]
     fn rename_submit_persists_selected_full_path_and_notifies_parent() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _write = crate::utils::env_utils::EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::set("COMETIX_WRITE_ENABLED", "1");
         let path = std::env::temp_dir().join(format!(
             "cometix-log-selector-rename-{}.jsonl",
             uuid::Uuid::new_v4()
@@ -2923,7 +2924,7 @@ mod tests {
         // complete hook are executed in consumer-search-peer-oracle.json.
         // Alt+Backspace on empty remains in search; a paste inserts the entire
         // chunk; Ctrl+C without onCancel is swallowed without clearing query.
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         // The list footer is intentionally a single NoWrap line. At 100
         // columns the real branch hint clips the final "Type to search" text;
         // use enough terminal width to observe the entire source footer while

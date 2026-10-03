@@ -454,6 +454,7 @@ pub fn ThemePicker<'a>(
 mod tests {
     use super::*;
     use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
 
@@ -675,14 +676,16 @@ mod tests {
         // CC ThemePicker.tsx:61-83: the ThemePicker context outranks Global's
         // ctrl+t (`app:toggleTodos`), and the toggle writes user settings and
         // AppState, which the footer then reads.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let dir = std::env::temp_dir().join(format!(
             "cometix-theme-picker-{}",
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
-        let _syntax = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _syntax = EnvVarGuard::unset("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
         let mut ctrl_t = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('t'));
         ctrl_t.modifiers = KeyModifiers::CONTROL;
         let frames = drive(vec![vec![TerminalEvent::Key(ctrl_t)]]);

@@ -37,6 +37,7 @@ pub fn is_team_memory_write_or_edit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct GlobalConfigGuard(Option<crate::utils::config::GlobalConfig>);
 
@@ -48,14 +49,14 @@ mod tests {
 
     #[test]
     fn team_memory_predicates_ignore_growthbook_delivery() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "cometix-team-memory-ops-{}",
             uuid::Uuid::new_v4().simple()
         ));
         let _memory_env = [
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root),
-            crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false"),
+            EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root),
+            EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false"),
         ];
 
         let mut config = crate::utils::config::GlobalConfig::default();

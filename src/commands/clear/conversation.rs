@@ -274,6 +274,7 @@ mod tests {
     };
     use crate::state::app_state_store::TaskStateOther;
     use crate::utils::session_restore::RestoredStandaloneAgentContext;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn collect_preserved_agent_ids_keeps_teammates_and_local_agents() {
@@ -328,7 +329,7 @@ mod tests {
     fn clear_conversation_kills_foreground_tasks() {
         // clear_conversation regenerates the process-global session id;
         // serialise sibling tests so their id assertions don't race.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let store = AppStore::new(AppState::default(), None);
         store.replace_with(|state| {
             let tasks = Arc::make_mut(&mut state.tasks);
@@ -490,7 +491,7 @@ mod tests {
         // Outermost: session id is process-global state; see TEST_ENV_LOCK's
         // contract. Keeps parallel session-mutating tests (bootstrap::state)
         // from clobbering the id between clear_conversation and the asserts.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _lock = TEST_PENDING_CALLBACKS_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
@@ -553,7 +554,7 @@ mod tests {
     fn clear_conversation_resets_attribution_and_repersists_worktree_session() {
         // clear_conversation regenerates the process-global session id;
         // serialise sibling tests so their id assertions don't race.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::worktree::restore_worktree_session(Some(
             crate::utils::worktree::WorktreeSession {
                 original_cwd: "/repo".into(),

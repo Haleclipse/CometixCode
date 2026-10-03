@@ -9,12 +9,13 @@ pub fn get_environment_kind() -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+
     #[test]
     fn environment_kind_matches_official_exact_remote_values() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         for value in ["", "local", "BYOC", " byoc", "byoc", "anthropic_cloud"] {
-            let _env =
-                crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", value);
+            let _env = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", value);
             assert_eq!(
                 super::get_environment_kind().as_deref(),
                 match value {

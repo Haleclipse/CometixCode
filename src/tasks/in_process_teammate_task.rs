@@ -13,6 +13,8 @@ use crate::tool::AbortController;
 use crate::tools::agent_tool::load_agents_dir::AgentDefinition;
 use crate::types::message::{AssistantContent, Message, UserContent, UserMessage};
 use crate::types::permissions::PermissionMode;
+#[cfg(test)]
+use crate::utils::test_env::TestStateLock;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -92,8 +94,8 @@ static IN_PROCESS_TEAMMATE_TASKS: LazyLock<
 > = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(test)]
-pub static TEST_IN_PROCESS_TEAMMATE_TASK_LOCK: LazyLock<crate::utils::env_utils::TestStateLock> =
-    LazyLock::new(crate::utils::env_utils::TestStateLock::new);
+pub static TEST_IN_PROCESS_TEAMMATE_TASK_LOCK: LazyLock<TestStateLock> =
+    LazyLock::new(TestStateLock::new);
 
 fn now_ms() -> u64 {
     chrono::Utc::now().timestamp_millis().max(0) as u64

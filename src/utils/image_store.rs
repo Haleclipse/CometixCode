@@ -154,7 +154,7 @@ fn percent_encode_path(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct SessionRestore(String);
 

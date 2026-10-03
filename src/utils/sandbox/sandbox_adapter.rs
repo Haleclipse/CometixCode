@@ -1910,7 +1910,7 @@ fn normalize_path_string(path: PathBuf) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::path::Path;
 
     struct CwdGuard {

@@ -172,6 +172,7 @@ pub fn get_model_pricing_string(model: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     /// Maps to: CC `utils/modelCost.ts:204-219`. The `$3`/`$0.80` split is what
     /// the model picker and ConfigTool prompt render, so pin the exact copy.
@@ -189,7 +190,7 @@ mod tests {
     /// the caller asks for it *and* the feature gate is on.
     #[test]
     fn opus_46_cost_tier_follows_the_official_fast_mode_gate() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_FAST_MODE");
         assert_eq!(get_opus_46_cost_tier(true), COST_TIER_30_150);
         assert_eq!(get_opus_46_cost_tier(false), COST_TIER_5_25);
@@ -203,7 +204,7 @@ mod tests {
     /// canonical name, so full IDs and provider-prefixed IDs both resolve.
     #[test]
     fn model_cost_table_covers_every_official_config() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         assert_eq!(model_costs().len(), 11);
         assert_eq!(
             get_model_pricing_string("claude-opus-4-1-20250805").as_deref(),

@@ -215,7 +215,7 @@ impl ShellProvider for BashShellProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
 
     #[test]
     fn provider_builds_official_eval_snapshot_and_cwd_trailer_shape() {

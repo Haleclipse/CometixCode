@@ -443,6 +443,7 @@ mod tests {
         CANCEL_MESSAGE, NO_RESPONSE_REQUESTED, PLAN_REJECTION_PREFIX, REJECT_MESSAGE,
         REJECT_MESSAGE_WITH_REASON_PREFIX,
     };
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::json;
 
     /// A2.3 extractor: rows carry the real message; the old assertions on the
@@ -750,8 +751,8 @@ mod tests {
 
     #[test]
     fn load_conversation_for_resume_runs_only_session_start_resume_hooks() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let marker_path = std::env::temp_dir().join(format!(
             "cometix-startup-resume-hooks-{}",
             uuid::Uuid::new_v4()

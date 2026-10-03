@@ -105,6 +105,7 @@ pub fn get_default_file_reading_limits() -> FileReadingLimits {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn default_limits_match_official_positive_caps() {
@@ -116,10 +117,8 @@ mod tests {
 
     #[test]
     fn env_parser_matches_official_javascript_parse_int_prefix_semantics() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _max = crate::utils::env_utils::EnvVarGuard::preserve(
-            "CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS",
-        );
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _max = EnvVarGuard::preserve("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS");
         let parse = |value: &str| {
             crate::utils::process_env::set("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS", value);
             get_env_max_tokens()

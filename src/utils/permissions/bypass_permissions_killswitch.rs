@@ -151,7 +151,7 @@ pub fn use_kick_off_check_and_disable_auto_mode_if_needed(hooks: &mut Hooks) {
 mod tests {
     use super::*;
     use crate::types::permissions::PermissionMode;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[tokio::test]
     async fn bypass_gate_matches_official_run_once_and_fresh_store_transform() {

@@ -1158,6 +1158,8 @@ pub fn get_error_message_if_refusal(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "anthropic_internal")]
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use std::collections::HashMap;
 
     #[test]
@@ -1487,7 +1489,7 @@ mod tests {
     #[cfg(feature = "anthropic_internal")]
     #[test]
     fn unified_mock_429_uses_centralized_rate_limit_message() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         crate::services::mock_rate_limits::reset_for_test();
         crate::services::mock_rate_limits::set_mock_rate_limit_scenario(
             crate::services::mock_rate_limits::MockScenario::WeeklyLimitReached,

@@ -292,7 +292,7 @@ impl<W: Write> Write for RecordingStdout<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::Value;
 
     struct Fixture {

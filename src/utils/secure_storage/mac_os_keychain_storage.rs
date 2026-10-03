@@ -189,10 +189,11 @@ impl SecureStorageBackend for MacOsKeychainStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn keychain_read_serves_stale_cache_when_refresh_fails_like_official() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let sentinel = serde_json::json!({"claudeAiOauth": {"accessToken": "stale"}});
@@ -224,7 +225,7 @@ mod tests {
 
     #[test]
     fn keychain_update_and_delete_are_default_closed_before_cache_mutation() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let sentinel = serde_json::json!({"sentinel": true});

@@ -578,6 +578,7 @@ fn SetupScreensHost<'a>(
 mod setup_screens_snapshot_tests {
     use super::*;
     use crate::utils::config::CustomApiKeyResponses;
+    use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
     use std::fs;
     use std::path::Path;
 
@@ -585,10 +586,10 @@ mod setup_screens_snapshot_tests {
     fn api_key_needing_approval_keeps_the_key_as_set() {
         // CC Onboarding.tsx:132-138: `normalizeApiKeyForConfig` of the raw
         // value, as auth later matches it; only an empty value is absent.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _homespace = crate::utils::env_utils::EnvVarGuard::unset("COO_RUNNING_ON_HOMESPACE");
+        let _homespace = EnvVarGuard::unset("COO_RUNNING_ON_HOMESPACE");
         let config = GlobalConfig::default();
         let with_key = |value: &'static str| {
             move |key: &str| (key == "ANTHROPIC_API_KEY").then(|| value.to_string())
@@ -737,10 +738,10 @@ mod setup_screens_snapshot_tests {
         // which read the process environment directly — CC does the same
         // (`utils/auth.ts:125` reads `process.env.ANTHROPIC_AUTH_TOKEN`), so
         // these two assertions need the variable set in the carrier.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _token = crate::utils::env_utils::EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "token");
+        let _token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "token");
 
         let mut global_config = GlobalConfig::default();
         global_config.primary_api_key = Some("sk-console".to_string());
@@ -785,23 +786,17 @@ mod setup_screens_snapshot_tests {
 
     #[test]
     fn auth_token_and_api_key_guards_restore_distinct_sentinels() {
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _restore_token = crate::utils::env_utils::EnvVarGuard::preserve("ANTHROPIC_AUTH_TOKEN");
-        let _restore_api_key = crate::utils::env_utils::EnvVarGuard::preserve("ANTHROPIC_API_KEY");
+        let _restore_token = EnvVarGuard::preserve("ANTHROPIC_AUTH_TOKEN");
+        let _restore_api_key = EnvVarGuard::preserve("ANTHROPIC_API_KEY");
         crate::utils::process_env::set("ANTHROPIC_AUTH_TOKEN", "token-sentinel");
         crate::utils::process_env::set("ANTHROPIC_API_KEY", "api-key-sentinel");
 
         {
-            let _token = crate::utils::env_utils::EnvVarGuard::set(
-                "ANTHROPIC_AUTH_TOKEN",
-                "token-under-test",
-            );
-            let _api_key = crate::utils::env_utils::EnvVarGuard::set(
-                "ANTHROPIC_API_KEY",
-                "api-key-under-test",
-            );
+            let _token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "token-under-test");
+            let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "api-key-under-test");
         }
 
         assert_eq!(
@@ -843,11 +838,10 @@ mod setup_screens_snapshot_tests {
         // reads `process.env` in `utils/auth.ts`. Without both, the lookup saw
         // the scratch home's empty config and no ANTHROPIC_API_KEY, so the
         // source was "none" and this looked like an approval-logic bug.
-        let _env_guard = crate::utils::env_utils::TEST_ENV_LOCK
+        let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _api_key =
-            crate::utils::env_utils::EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test");
+        let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test");
 
         let mut global_config = GlobalConfig {
             primary_api_key: Some("sk-console".to_string()),
@@ -906,15 +900,14 @@ mod setup_screens_snapshot_tests {
         )
         .expect("write agent definition");
 
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let _home =
-            crate::utils::env_utils::EnvVarGuard::set(crate::utils::env_utils::HOME_VAR, &root);
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _home = EnvVarGuard::set(HOME_VAR, &root);
         // A host's `CLAUDE_CODE_SIMPLE` (CC `--bare`) would skip custom agents;
         // unsetting the managed override would read the machine's real managed
         // root, so point it at a directory that does not exist.
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
-        let _managed = crate::utils::env_utils::EnvVarGuard::set(
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _managed = EnvVarGuard::set(
             "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
             root.join("missing-managed-root"),
         );
@@ -1118,6 +1111,7 @@ pub fn resolve_setup_screen_gate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn setup_screen_gate_order_matches_official_show_setup_screens() {
@@ -1184,10 +1178,9 @@ mod tests {
     /// Renders the setup phase with no step to show. Returns whether `on_done`
     /// fired and what a non-safe settings env variable held afterwards.
     fn render_setup_with_settings_env(demo: bool) -> (bool, Option<String>) {
-        use crate::utils::env_utils::EnvVarGuard;
         use futures::StreamExt as _;
         use std::sync::atomic::AtomicBool;
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK
+        let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = std::env::temp_dir().join(format!(

@@ -66,6 +66,7 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
 mod tests {
     use super::*;
     use crate::cli::parse::parse_cli_config;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn argv(args: &[&str]) -> Vec<String> {
         std::iter::once("cometix".to_string())
@@ -93,8 +94,8 @@ mod tests {
 
     #[test]
     fn dispatch_bare_sets_env_and_continues() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _simple = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let c = parse_cli_config(&argv(&["--bare"]));
         assert_eq!(dispatch(&c), None);
         assert!(crate::utils::env_utils::is_env_truthy(

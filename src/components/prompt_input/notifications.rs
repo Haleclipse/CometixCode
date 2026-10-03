@@ -579,6 +579,7 @@ mod tests {
     use super::*;
     use crate::context::notifications::{Notification, NotificationPriority, NotificationsState};
     use crate::utils::auto_updater::{AutoUpdaterResult, InstallStatus};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
     use std::path::PathBuf;
 
     const NOTIFICATIONS_RUNTIME_ENV_KEYS: &[&str] = &[
@@ -599,8 +600,8 @@ mod tests {
     ];
 
     struct NotificationsRuntimeFixture {
-        _lock: crate::utils::env_utils::TestEnvGuard<'static>,
-        previous_env: Vec<crate::utils::env_utils::EnvVarGuard>,
+        _lock: TestEnvGuard<'static>,
+        previous_env: Vec<EnvVarGuard>,
         previous_config: Option<crate::utils::config::GlobalConfig>,
         previous_cwd: PathBuf,
         previous_original_cwd: PathBuf,
@@ -612,12 +613,12 @@ mod tests {
 
     impl NotificationsRuntimeFixture {
         fn new(subscription_type: Option<&str>, remote: bool) -> Self {
-            let lock = crate::utils::env_utils::TEST_ENV_LOCK
+            let lock = TEST_ENV_LOCK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let previous_env = NOTIFICATIONS_RUNTIME_ENV_KEYS
                 .iter()
-                .map(|key| crate::utils::env_utils::EnvVarGuard::unset(*key))
+                .map(|key| EnvVarGuard::unset(*key))
                 .collect::<Vec<_>>();
             let previous_cwd = std::env::current_dir().expect("current cwd");
             let previous_original_cwd = crate::bootstrap::state::get_original_cwd();

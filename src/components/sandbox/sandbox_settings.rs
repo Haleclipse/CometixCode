@@ -411,6 +411,7 @@ fn SandboxModeTab(props: &SandboxModeTabProps, mut hooks: Hooks) -> impl Into<An
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use crate::utils::theme;
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
@@ -563,8 +564,8 @@ mod tests {
         // first option; ↓ moves it and Enter selects, reporting the mode's
         // message (:83-88) whether or not the write lands, as CC's
         // setSandboxSettings never rejects. Writes stay off in this test.
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _no_write = crate::utils::env_utils::EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _no_write = EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
         let (frames, results) = drive(vec![
             KeyCode::Enter,
             KeyCode::Down,

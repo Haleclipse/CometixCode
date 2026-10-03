@@ -96,6 +96,7 @@ pub fn get_attribution_header(fingerprint: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn cli_sysprompt_prefix_interactive_is_default() {
@@ -107,8 +108,8 @@ mod tests {
 
     #[test]
     fn cli_sysprompt_prefix_print_mode_matches_official_agent_sdk_variants() {
-        let _env = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _vertex = crate::utils::env_utils::EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
         // CC `getCLISyspromptPrefix({ isNonInteractive: true })` — `-p` / SDK.
         assert_eq!(
             get_cli_sysprompt_prefix(true, false),
@@ -132,7 +133,7 @@ mod tests {
 
     #[test]
     fn attribution_header_includes_fingerprint_when_enabled() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("CLAUDE_CODE_ATTRIBUTION_HEADER", "1");
         let header = get_attribution_header("abc");
         assert!(header.contains("cc_version="), "header={header:?}");
@@ -142,7 +143,7 @@ mod tests {
 
     #[test]
     fn attribution_header_defaults_to_disabled_when_env_unset() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_ATTRIBUTION_HEADER");
         assert!(get_attribution_header("abc").is_empty());
     }

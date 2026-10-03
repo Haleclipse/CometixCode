@@ -177,6 +177,7 @@ async fn stat(path: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use serde_json::{Value, json};
     use std::cell::RefCell;
     use std::collections::VecDeque;
@@ -274,7 +275,6 @@ mod tests {
 
     #[test]
     fn apple_terminal_backup_markers_match_official_persisted_config() {
-        use crate::utils::env_utils::{EnvVarGuard, TEST_ENV_LOCK};
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("cometix-terminal-backup-{}", uuid::Uuid::new_v4()));

@@ -752,6 +752,7 @@ async fn perform_plugin_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     #[tokio::test]
     async fn update_raw_location_type_error_matches_official_bun_stat() {
         for location in [
@@ -779,15 +780,12 @@ mod tests {
 
     #[tokio::test]
     async fn install_not_found_messages_match_official_identifier_locations() {
-        let _lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("plugin-op-missing-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("plugins")).unwrap();
         std::fs::write(root.join("plugins/known_marketplaces.json"), "{}").unwrap();
-        let _config = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _cache = crate::utils::env_utils::EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            root.join("plugins"),
-        );
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", root.join("plugins"));
         for (id, expected) in [
             (
                 "missing",

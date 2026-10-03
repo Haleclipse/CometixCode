@@ -233,6 +233,7 @@ pub fn production_thinking_config_from_env_and_config(
 mod tests {
     use super::*;
     use crate::utils::settings::types::SettingsJson;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     #[test]
     fn ultrathink_matching_uses_fresh_case_insensitive_word_boundaries() {
@@ -255,8 +256,7 @@ mod tests {
         );
     }
 
-    fn clear_provider_and_pin_env() -> Vec<crate::utils::env_utils::EnvVarGuard> {
-        use crate::utils::env_utils::EnvVarGuard;
+    fn clear_provider_and_pin_env() -> Vec<EnvVarGuard> {
         vec![
             EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
             EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn model_supports_thinking_matches_official_first_party_rule() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _env = clear_provider_and_pin_env();
         // 1P: everything that is not claude-3-, including Haiku 4.5 and
         // gateway-custom names.
@@ -281,9 +281,9 @@ mod tests {
 
     #[test]
     fn model_supports_thinking_matches_official_bedrock_rule_and_override() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _env = clear_provider_and_pin_env();
-        let _bedrock = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
+        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
         // 3P: only Opus 4+ / Sonnet 4+.
         assert!(model_supports_thinking(
             "us.anthropic.claude-sonnet-4-20250514-v1:0"
@@ -293,11 +293,8 @@ mod tests {
         ));
         assert!(!model_supports_thinking("custom-gateway-model"));
         // Pinned capability override wins in both directions.
-        let _pinned = crate::utils::env_utils::EnvVarGuard::set(
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-            "custom-gateway-model",
-        );
-        let _caps = crate::utils::env_utils::EnvVarGuard::set(
+        let _pinned = EnvVarGuard::set("ANTHROPIC_DEFAULT_HAIKU_MODEL", "custom-gateway-model");
+        let _caps = EnvVarGuard::set(
             "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
             "thinking",
         );
@@ -306,7 +303,7 @@ mod tests {
 
     #[test]
     fn model_supports_adaptive_thinking_matches_official_defaults() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _env = clear_provider_and_pin_env();
         assert!(model_supports_adaptive_thinking("claude-opus-4-6"));
         assert!(model_supports_adaptive_thinking("claude-sonnet-4-6"));
@@ -317,13 +314,13 @@ mod tests {
         // Unknown strings default to true on 1P ...
         assert!(model_supports_adaptive_thinking("deepseek-v4-flash"));
         // ... and false on Bedrock/Vertex.
-        let _bedrock = crate::utils::env_utils::EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
+        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
         assert!(!model_supports_adaptive_thinking("deepseek-v4-flash"));
     }
 
     #[test]
     fn should_enable_thinking_by_default_matches_official() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
 
         assert!(should_enable_thinking_by_default(&SettingsJson::default()));
@@ -351,7 +348,7 @@ mod tests {
 
     #[test]
     fn production_thinking_config_from_settings_matches_main_without_thinking_flag() {
-        let _guard = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
         crate::utils::process_env::remove("CLAUDE_CODE_THINKING");
         crate::utils::process_env::remove("COMETIX_THINKING");

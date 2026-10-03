@@ -409,6 +409,7 @@ fn build_pane_spawn_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn config() -> TeammateSpawnConfig {
         TeammateSpawnConfig {
@@ -448,8 +449,8 @@ mod tests {
 
     #[test]
     fn pane_spawn_command_matches_official_cd_env_binary_args_flags_shape() {
-        let _env_lock = crate::utils::env_utils::TEST_ENV_LOCK.lock().unwrap();
-        let _teammate = crate::utils::env_utils::EnvVarGuard::set(
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _teammate = EnvVarGuard::set(
             crate::utils::swarm::constants::TEAMMATE_COMMAND_ENV_VAR,
             "/bin/claude code",
         );
