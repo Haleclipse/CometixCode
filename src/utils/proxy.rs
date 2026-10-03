@@ -500,7 +500,8 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();
         let _socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
-        // Keeps a host's system proxy, which reads `NO_PROXY` too, out of it.
+        // reqwest's system proxy matcher reads the OS `NO_PROXY`, which
+        // `just test` pins to loopback; this carrier value no longer reaches it.
         let _no_proxy = EnvVarGuard::set("NO_PROXY", "127.0.0.1");
         reset_keep_alive_for_testing();
         assert_eq!(connections_for(2).await, 1);

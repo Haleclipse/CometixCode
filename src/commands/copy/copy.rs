@@ -662,7 +662,9 @@ pub fn CopyPicker(props: &mut CopyPickerProps, mut hooks: Hooks) -> impl Into<An
 mod tests {
     use super::*;
     use crate::types::message::{AssistantMessage, StopReason, SystemMessage};
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{
+        CLIPBOARD_OFF_SYSTEM, EnvVarGuard, TEST_ENV_LOCK, in_child_process,
+    };
     use chrono::Utc;
 
     /// 2.1.285: the per-uid root under `CLAUDE_CODE_TMPDIR`, made 0700.
@@ -1065,9 +1067,15 @@ mod tests {
     #[tokio::test]
     async fn copy_clipboard_write_failure_prevents_fallback_and_success() {
         use futures::StreamExt;
+        // iocraft reads the session's terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "copy_clipboard_write_failure_prevents_fallback_and_success",
+            CLIPBOARD_OFF_SYSTEM,
+        ) {
+            return;
+        }
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::unset("TMUX");
         // Keep `copy_dir()` off the real per-uid temp root.
         let _tmp = EnvVarGuard::set(
             "CLAUDE_CODE_TMPDIR",
@@ -1105,12 +1113,23 @@ mod tests {
     }
 
     /// CC copy.tsx:85-101: copy completes before the reliable temp-file fallback
-    /// and feedback. SSH and a fake tmux avoid the real system clipboard.
+    /// and feedback. SSH and a fake tmux avoid the real system clipboard; iocraft
+    /// reads the session's terminal from the OS environment, hence the child.
     #[cfg(unix)]
     #[tokio::test]
     async fn copy_clipboard_matches_official_file_fallback_and_feedback() {
         use futures::StreamExt;
         use std::os::unix::fs::PermissionsExt;
+        if !in_child_process(
+            module_path!(),
+            "copy_clipboard_matches_official_file_fallback_and_feedback",
+            &[
+                ("SSH_CONNECTION", Some("fixture")),
+                ("TMUX", Some("fixture")),
+            ],
+        ) {
+            return;
+        }
         crate::utils::process_runtime::initialize_test_process_runtime();
         let directory =
             std::env::temp_dir().join(format!("cometix-copy-clipboard-{}", uuid::Uuid::new_v4()));
@@ -1121,8 +1140,6 @@ mod tests {
         let _path = EnvVarGuard::set("PATH", &directory);
         // Keep `copy_dir()` off the real per-uid temp root.
         let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &directory);
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::set("TMUX", "fixture");
         for drop_observer in [false, true] {
             let filename = format!("copy-fixture-{}.txt", uuid::Uuid::new_v4());
             let result = std::sync::Arc::new(std::sync::Mutex::new(None));

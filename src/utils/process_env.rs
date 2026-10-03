@@ -2,9 +2,11 @@
 //!
 //! CC mutates Node's ordered `process.env` object after startup. Rust's
 //! process environment is neither an ordered object nor a safe concurrent
-//! mutation surface, so this boundary exposes immutable snapshots to migrated
-//! readers and the migration-time subprocess adapter. It owns representation
-//! and lifecycle only; business policy remains in source-shaped callers.
+//! mutation surface, so this boundary exposes immutable snapshots to readers
+//! and to the subprocess adapter (`utils/subprocess_env.rs`), and writes the
+//! real environment only once, in the startup window
+//! ([`publish_startup_environment`]). It owns representation and lifecycle
+//! only; business policy remains in source-shaped callers.
 //!
 //! Rust-only, policy-free representation/lifecycle adapter for Node
 //! `process.env`; domain writes remain in their source-shaped CC owners.
@@ -12,6 +14,7 @@
 
 use std::cell::Cell;
 use std::ffi::{OsStr, OsString};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, RwLock, RwLockWriteGuard};
 
 #[derive(Clone, Debug)]
@@ -201,6 +204,7 @@ struct ProcessEnv {
 }
 
 impl ProcessEnv {
+    #[allow(clippy::disallowed_methods)] // Capturing the inherited environment.
     fn capture() -> Self {
         Self::capture_from(std::env::vars_os())
     }
@@ -322,12 +326,7 @@ pub(crate) fn begin_update() -> EnvUpdate<'static> {
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let staged = Arc::clone(&guard);
-    EnvUpdate {
-        guard,
-        staged,
-        #[cfg(unix)]
-        os_operations: Vec::new(),
-    }
+    EnvUpdate { guard, staged }
 }
 
 /// One-key `process.env[key] = value` convenience for source-owned writers.
@@ -361,27 +360,15 @@ pub(crate) fn restore_entry(saved: EnvEntryRestore) {
             let position = table
                 .entries
                 .partition_point(|candidate| candidate.insertion_ordinal < entry.insertion_ordinal);
-            table.entries.insert(position, entry.clone());
-            #[cfg(unix)]
-            update
-                .os_operations
-                .push(OsOperation::Set(entry.key, entry.value));
+            table.entries.insert(position, entry);
         }
         None => {
             if let Some(current) = current {
                 Arc::make_mut(&mut update.staged).entries.remove(current);
-                #[cfg(unix)]
-                update.os_operations.push(OsOperation::Remove(saved.key));
             }
         }
     }
     update.commit();
-}
-
-#[cfg(unix)]
-enum OsOperation {
-    Set(OsString, OsString),
-    Remove(OsString),
 }
 
 /// A staged environment update. Only [`EnvUpdate::commit`] publishes it;
@@ -389,8 +376,6 @@ enum OsOperation {
 pub(crate) struct EnvUpdate<'a> {
     guard: RwLockWriteGuard<'a, Arc<EnvTable>>,
     staged: Arc<EnvTable>,
-    #[cfg(unix)]
-    os_operations: Vec<OsOperation>,
 }
 
 impl EnvUpdate<'_> {
@@ -404,9 +389,7 @@ impl EnvUpdate<'_> {
         let Some((key, value)) = normalize_assignment(key.as_ref(), value.as_ref()) else {
             return;
         };
-        Arc::make_mut(&mut self.staged).insert(key.clone(), value.clone());
-        #[cfg(unix)]
-        self.os_operations.push(OsOperation::Set(key, value));
+        Arc::make_mut(&mut self.staged).insert(key, value);
     }
 
     pub(crate) fn remove(&mut self, key: impl AsRef<OsStr>) {
@@ -417,8 +400,6 @@ impl EnvUpdate<'_> {
             return;
         }
         Arc::make_mut(&mut self.staged).remove(&key);
-        #[cfg(unix)]
-        self.os_operations.push(OsOperation::Remove(key));
     }
 
     pub(crate) fn apply<I, K, V>(&mut self, variables: I)
@@ -432,26 +413,62 @@ impl EnvUpdate<'_> {
         }
     }
 
-    /// Publishes the complete staged version exactly once. Until production
-    /// raw readers are migrated, Unix mirrors the already-normalized operations
-    /// into the real environment at this boundary only.
-    #[allow(clippy::disallowed_methods)] // Transitional carrier-owned Unix write-through.
+    /// Publishes the complete staged version exactly once. The real OS
+    /// environment is not touched; see [`publish_startup_environment`].
     pub(crate) fn commit(mut self) -> EnvSnapshot {
-        #[cfg(unix)]
-        for operation in &self.os_operations {
-            // SAFETY: normalization removes NUL/`=` cases that make std's API
-            // panic, but this transitional write-through remains unsound with
-            // concurrent raw OS readers/writers and is not atomic with carrier
-            // publication. The final integration child removes the bridge.
-            unsafe {
-                match operation {
-                    OsOperation::Set(key, value) => std::env::set_var(key, value),
-                    OsOperation::Remove(key) => std::env::remove_var(key),
-                }
-            }
-        }
         *self.guard = Arc::clone(&self.staged);
         EnvSnapshot(Arc::clone(&self.staged))
+    }
+}
+
+static STARTUP_PUBLISHED: AtomicBool = AtomicBool::new(false);
+
+/// Copies the carrier's current version into the real OS environment, once,
+/// in the startup window: after the launcher has applied the settings env it
+/// applies before the tokio runtime (phase 1 interactively, the full apply in
+/// print mode), and before that runtime exists. Node's `process.env` setter
+/// writes the real environment on every assignment; Rust cannot do that
+/// soundly once other threads run, so later carrier writes never reach it.
+/// What reads the OS environment after this point sees the settings env as of
+/// the call: dependencies that look it up themselves (iocraft's terminal and
+/// clipboard detection, reqwest's system proxy matcher, GoogleAuth,
+/// `sys-locale`, the `TZ` lookup) and spawns that keep the inherited
+/// environment.
+#[allow(clippy::disallowed_methods)] // The carrier's one real-environment write.
+pub(crate) fn publish_startup_environment() {
+    assert!(
+        !STARTUP_PUBLISHED.swap(true, Ordering::Relaxed),
+        "the startup environment is published once"
+    );
+    let current = snapshot();
+    let os = std::env::vars_os().collect::<Vec<_>>();
+    let os_value = |key: &OsStr| {
+        os.iter()
+            .find(|(candidate, _)| keys_equal(candidate, key))
+            .map(|(_, value)| value.as_os_str())
+    };
+    // SAFETY: the launchers call this before the tokio runtime exists. The
+    // other threads that can be alive here never call libc's getenv: the
+    // keychain prefetch, which has signalled completion and is exiting; the
+    // global config freshness watcher, started by the first config load and
+    // asleep for its first 5 s, which only stats, reads and parses the
+    // config file; and, in print mode for internal builds with an early
+    // error, the error log sink's buffered writer, which only appends to its
+    // file. Anything added to those threads must keep away from getenv (no
+    // `node_os::homedir`, local time or DNS).
+    unsafe {
+        for (key, _) in &os {
+            // Keys the carrier never took in (empty, or containing `=`, like
+            // Windows' per-drive `=C:`) are left alone; removing them panics.
+            if normalize_key(key).is_some() && current.var_os(key).is_none() {
+                std::env::remove_var(key);
+            }
+        }
+        for (key, value) in current.iter() {
+            if os_value(key) != Some(value) {
+                std::env::set_var(key, value);
+            }
+        }
     }
 }
 
@@ -591,7 +608,7 @@ fn array_index(key: &OsStr) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, in_child_process};
     use std::time::Duration;
 
     fn strings(snapshot: &EnvSnapshot, selected: &[&str]) -> Vec<(String, String)> {
@@ -641,9 +658,8 @@ mod tests {
 
         capture_startup();
         let recaptured = snapshot();
-        // On Unix the transitional write-through makes raw values unsuitable
-        // as a recapture oracle. Pointer identity proves capture_startup neither
-        // rebuilt nor republished the carrier.
+        // Pointer identity proves capture_startup neither rebuilt nor
+        // republished the carrier.
         assert!(assigned.same_version(&recaptured));
         assert_eq!(recaptured.var(key), Some("runtime-value"));
         assert!(initial.same_version(&startup_snapshot()));
@@ -790,8 +806,6 @@ mod tests {
             Some("kept")
         );
         assert_eq!(committed.var_os("ALSO=IGNORED"), None);
-        #[cfg(unix)]
-        assert_eq!(std::env::var(key).as_deref(), Ok("kept"));
     }
 
     /// CC `cli/structuredIO.ts:352-360` applies and logs one synchronous update
@@ -854,7 +868,7 @@ mod tests {
     }
 
     /// CC uses Node's platform `process.env` key identity; on Unix names are
-    /// byte-exact. Write-through remains only for this migration phase.
+    /// byte-exact.
     #[cfg(unix)]
     #[test]
     fn unix_identity_and_commit_match_official_process_env_behavior() {
@@ -869,8 +883,6 @@ mod tests {
         update.commit();
         assert_eq!(var(lower).as_deref(), Some("lower"));
         assert_eq!(var(upper).as_deref(), Some("upper"));
-        assert_eq!(std::env::var(lower).as_deref(), Ok("lower"));
-        assert_eq!(std::env::var(upper).as_deref(), Ok("upper"));
     }
 
     /// CC uses Node's Windows `process.env` identity: ordinal ignore-case with
@@ -906,14 +918,43 @@ mod tests {
         assert!(!keys_equal(&first, &second));
     }
 
-    /// The Windows carrier is the L1 owner for ordinary CC `process.env`
-    /// assignments (`cli/structuredIO.ts:348-360`); only the later bootstrap
-    /// hardening owner may mutate the real Windows environment.
-    #[cfg(windows)]
+    /// The startup publication makes the real environment equal to the
+    /// carrier once; writes after it stay in the carrier. Runs in a child so
+    /// the real environment of the test process is never touched.
     #[test]
-    fn windows_carrier_operations_leave_real_environment_unchanged() {
+    fn startup_publication_copies_the_carrier_once() {
+        if !in_child_process(
+            module_path!(),
+            "startup_publication_copies_the_carrier_once",
+            &[
+                ("COMETIX_PUBLISH_STALE", Some("os")),
+                ("COMETIX_PUBLISH_CHANGED", Some("os")),
+                ("COMETIX_PUBLISH_KEPT", Some("same")),
+            ],
+        ) {
+            return;
+        }
+        remove("COMETIX_PUBLISH_STALE");
+        set("COMETIX_PUBLISH_CHANGED", "carrier");
+        set("COMETIX_PUBLISH_NEW", "carrier");
+        publish_startup_environment();
+        let os = |key: &str| std::env::var(key).ok();
+        assert_eq!(os("COMETIX_PUBLISH_STALE"), None);
+        assert_eq!(os("COMETIX_PUBLISH_CHANGED").as_deref(), Some("carrier"));
+        assert_eq!(os("COMETIX_PUBLISH_NEW").as_deref(), Some("carrier"));
+        assert_eq!(os("COMETIX_PUBLISH_KEPT").as_deref(), Some("same"));
+        set("COMETIX_PUBLISH_LATER", "carrier");
+        assert_eq!(os("COMETIX_PUBLISH_LATER"), None);
+        assert!(std::panic::catch_unwind(publish_startup_environment).is_err());
+    }
+
+    /// The carrier is the L1 owner for ordinary CC `process.env` assignments
+    /// (`cli/structuredIO.ts:348-360`); the real environment changes only at
+    /// the startup publication and the Windows bootstrap hardening write.
+    #[test]
+    fn carrier_operations_leave_real_environment_unchanged() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let key = "COMETIX_PROCESS_ENV_WINDOWS_OS_UNCHANGED";
+        let key = "COMETIX_PROCESS_ENV_OS_UNCHANGED";
         let real_before = std::env::vars_os().collect::<Vec<_>>();
         let raw_value_before = std::env::var_os(key);
         let _carrier = EnvVarGuard::unset(key);

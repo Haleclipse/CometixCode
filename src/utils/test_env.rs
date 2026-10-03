@@ -1,5 +1,6 @@
 //! Test infrastructure for process-wide state: the environment lock, the
-//! environment-variable guard, and the pins for the project directory.
+//! environment-variable guard, the pins for the project directory, and the
+//! child-process re-run for code that reads the real OS environment.
 //!
 //! Rust-only, with no CC counterpart: this crate's unit tests share
 //! process-global state (the `process_env` carrier, the settings caches, the
@@ -65,9 +66,9 @@ pub const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
 /// The other half of `TEST_ENV_LOCK`'s bargain: the lock serialises the
 /// mutations, this undoes them.
 ///
-/// Writes go through the `process_env` carrier. Its temporary Unix bridge lets
-/// migrated tests continue to exercise nearby raw readers until their owner
-/// tasks move them; it is not a production environment-policy guarantee. The
+/// Writes go through the `process_env` carrier and never reach the real OS
+/// environment; code that reads the OS environment itself (iocraft) needs
+/// [`in_child_process`] instead. The
 /// full previous entry (stable insertion ordinal + spelling + value) is captured
 /// so restore reproduces the exact prior state — including a non-canonical
 /// Windows spelling and first-to-last aggregate drops of distinct-key guards —
@@ -108,6 +109,47 @@ impl Drop for EnvVarGuard {
             crate::utils::process_env::restore_entry(previous);
         }
     }
+}
+
+/// For [`in_child_process`]: an SSH session outside tmux, where iocraft's
+/// clipboard sends OSC 52 only and never runs the system clipboard tool.
+pub const CLIPBOARD_OFF_SYSTEM: &[(&str, Option<&str>)] =
+    &[("SSH_CONNECTION", Some("fixture")), ("TMUX", None)];
+
+/// Runs the calling test again in a child process whose real environment has
+/// `vars` set (`Some`) or removed (`None`), for code that reads the OS
+/// environment rather than the carrier: iocraft's terminal and clipboard
+/// detection reads it directly, and the carrier never writes it after startup.
+/// Call it first, as
+/// `if !in_child_process(module_path!(), "test_name", &[...]) { return; }`:
+/// it returns `true` in the child, which then runs the body, and in the parent
+/// asserts that the child ran exactly that test and passed.
+pub fn in_child_process(module: &str, test: &str, vars: &[(&str, Option<&str>)]) -> bool {
+    const CHILD: &str = "COMETIX_TEST_CHILD";
+    // libtest names a test by its path without the crate.
+    let module = module.split_once("::").map_or("", |(_, rest)| rest);
+    let name = format!("{module}::{test}");
+    if crate::utils::process_env::var(CHILD).as_deref() == Some(name.as_str()) {
+        return true;
+    }
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+    child
+        .args(["--exact", &name, "--nocapture"])
+        .env(CHILD, &name);
+    for &(key, value) in vars {
+        match value {
+            Some(value) => child.env(key, value),
+            None => child.env_remove(key),
+        };
+    }
+    let output = child.output().unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("1 passed"),
+        "{name}: {stdout} {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    false
 }
 
 /// The same poison-free contract for the other process-global test locks.

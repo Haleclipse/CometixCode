@@ -43,7 +43,7 @@ const DEFAULT_API_TIMEOUT_MS: u64 = 600_000;
 /// Stands in for the SDK's `readEnv(key)`: `process.env[key]?.trim()`, with
 /// `''` kept. CC leaves these options to the SDK; Cometix computes them from
 /// `env` and passes them explicitly, because the SDK reads the OS
-/// environment, which the carrier does not write through on Windows.
+/// environment, which carrier writes after startup never reach.
 fn read_env(env: &EnvSnapshot, key: &str) -> Option<String> {
     // Node decodes a non-UTF-8 value lossily; `String.prototype.trim`
     // (White_Space plus U+FEFF, minus U+0085) is not `str::trim`.
@@ -1647,6 +1647,7 @@ mod tests {
     /// The Vertex endpoint and key are `readEnv` values taken from the
     /// snapshot (`vertex-sdk client.ts:78`, the core's `apiKey` default).
     #[tokio::test]
+    #[allow(clippy::disallowed_methods)] // Deliberately desyncs the OS from the carrier.
     async fn vertex_handle_reads_its_sdk_defaults_from_the_snapshot() {
         let _env_lock = TEST_ENV_LOCK
             .lock()
@@ -1665,12 +1666,37 @@ mod tests {
             EnvVarGuard::set("ANTHROPIC_API_KEY", " env-key "),
         ];
         // The OS environment disagrees with the carrier, so a read that went
-        // around the snapshot would surface here. The guards restore both.
-        #[cfg(unix)]
-        unsafe {
-            std::env::set_var("ANTHROPIC_VERTEX_PROJECT_ID", "os-project");
-            std::env::set_var("ANTHROPIC_VERTEX_BASE_URL", "https://os.example/v1");
-            std::env::set_var("ANTHROPIC_API_KEY", "os-key");
+        // around the snapshot would surface here. The guards restore only the
+        // carrier; `OsRestore` puts the OS values back to the startup capture,
+        // which is what the OS holds in a test process, even on a panic.
+        //
+        // SAFETY (both blocks): writing the real environment races any thread
+        // that calls libc's getenv. nextest, the project's test gate, runs
+        // this test alone in its process; a threaded harness could still race
+        // an unrelated test.
+        const KEYS: [&str; 3] = [
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "ANTHROPIC_VERTEX_BASE_URL",
+            "ANTHROPIC_API_KEY",
+        ];
+        struct OsRestore;
+        impl Drop for OsRestore {
+            fn drop(&mut self) {
+                let startup = crate::utils::process_env::startup_snapshot();
+                for key in KEYS {
+                    unsafe {
+                        match startup.var_os(key) {
+                            Some(value) => std::env::set_var(key, value),
+                            None => std::env::remove_var(key),
+                        }
+                    }
+                }
+            }
+        }
+        let _os_restore = OsRestore;
+        let os_values = ["os-project", "https://os.example/v1", "os-key"];
+        for (key, value) in KEYS.into_iter().zip(os_values) {
+            unsafe { std::env::set_var(key, value) };
         }
         let handle = get_anthropic_client(GetAnthropicClientOptions::default())
             .await

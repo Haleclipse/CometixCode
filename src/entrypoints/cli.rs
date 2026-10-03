@@ -6,27 +6,39 @@
 
 use crate::cli::{dispatch, parse_cli_config};
 use crate::constants::product::VERSION;
+use crate::utils::process_env::JsTruthy;
 
-/// Maps to: CC `entrypoints/cli.tsx` top-level env side effects.
-#[allow(clippy::disallowed_methods)] // Windows harden below is a sanctioned real-env write.
+/// Maps to: CC `entrypoints/cli.tsx:1-16` top-level env side effects, and
+/// `main.tsx:876-879` at the start of `main()`.
 fn apply_cli_bootstrap_env() {
-    // CC sets `process.env.NoDefaultCurrentDirectoryInExePath = "1"` first
-    // thing at every entrypoint: it hardens Windows executable resolution
+    // `cli.tsx:3-5`: corepack's auto-pinning adds yarnpkg to package.json
+    // files; the commands Claude runs inherit this.
+    crate::utils::process_env::set("COREPACK_ENABLE_AUTO_PIN", "0");
+    // `cli.tsx:7-16`: a larger heap for child Node processes in CCR containers.
+    if crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref() == Some("true") {
+        // Node reads the value lossily decoded, as `process.env` holds it.
+        let existing = crate::utils::process_env::var_os("NODE_OPTIONS")
+            .map(|value| value.to_string_lossy().into_owned());
+        let node_options = match existing.truthy() {
+            Some(existing) => format!("{existing} --max-old-space-size=8192"),
+            None => "--max-old-space-size=8192".to_owned(),
+        };
+        crate::utils::process_env::set("NODE_OPTIONS", node_options);
+    }
+
+    // CC sets `process.env.NoDefaultCurrentDirectoryInExePath = "1"` before
+    // any command runs: it hardens Windows executable resolution
     // (CreateProcess stops searching the CWD) and is inherited by children on
     // every platform. The real-OS write is what the current Windows process's
     // own spawns honor; Rust documents `set_var` as always sound on Windows.
     // The carrier write covers child inheritance on all platforms.
     #[cfg(windows)]
+    #[allow(clippy::disallowed_methods)] // The sanctioned Windows harden write.
     // SAFETY: `std::env::set_var` is documented as safe to call on Windows.
     unsafe {
         std::env::set_var("NoDefaultCurrentDirectoryInExePath", "1");
     }
     crate::utils::process_env::set("NoDefaultCurrentDirectoryInExePath", "1");
-
-    // COREPACK_ENABLE_AUTO_PIN — Node-only; no-op on Rust binary.
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref()) {
-        let _ = std::env::var("NODE_OPTIONS");
-    }
 }
 
 /// Maps to: CC's module evaluation when `cli.tsx` imports `main.js`. The
@@ -145,6 +157,38 @@ mod tests {
         // Ghostty's set would put `*` here.
         assert_eq!(crate::components::spinner::utils::spinner_frame(5), spinner);
         assert_ne!(spinner, "*");
+    }
+
+    /// `cli.tsx:5,9-16`: the corepack pin is always off; only a literal
+    /// `CLAUDE_CODE_REMOTE=true` grows the children's Node heap, appended to
+    /// a non-empty `NODE_OPTIONS`.
+    #[test]
+    fn bootstrap_env_matches_official_corepack_and_remote_heap_writes() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _guards = [
+            EnvVarGuard::unset("COREPACK_ENABLE_AUTO_PIN"),
+            EnvVarGuard::preserve("NoDefaultCurrentDirectoryInExePath"),
+            EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1"),
+            EnvVarGuard::set("NODE_OPTIONS", "--trace-warnings"),
+        ];
+        let var = crate::utils::process_env::var;
+        apply_cli_bootstrap_env();
+        assert_eq!(var("COREPACK_ENABLE_AUTO_PIN").as_deref(), Some("0"));
+        assert_eq!(var("NoDefaultCurrentDirectoryInExePath").as_deref(), Some("1"));
+        assert_eq!(var("NODE_OPTIONS").as_deref(), Some("--trace-warnings"));
+
+        crate::utils::process_env::set("CLAUDE_CODE_REMOTE", "true");
+        apply_cli_bootstrap_env();
+        assert_eq!(
+            var("NODE_OPTIONS").as_deref(),
+            Some("--trace-warnings --max-old-space-size=8192")
+        );
+        crate::utils::process_env::set("NODE_OPTIONS", "");
+        apply_cli_bootstrap_env();
+        assert_eq!(
+            var("NODE_OPTIONS").as_deref(),
+            Some("--max-old-space-size=8192")
+        );
     }
 
     #[test]

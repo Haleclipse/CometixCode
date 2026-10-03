@@ -1761,7 +1761,7 @@ mod tests {
     use super::*;
     use crate::constants::figures::BLACK_CIRCLE;
     use crate::types::message::RenderableMessage;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{TEST_ENV_LOCK, in_child_process};
 
     /// One `agent_progress` payload exactly as the producer emits it: a
     /// normalized single-block message (`AgentTool.tsx:1483-1506`).
@@ -2008,9 +2008,16 @@ mod tests {
     /// wrapping Text flow while only the path carries OSC-8 metadata.
     #[test]
     fn notebook_header_wraps_as_one_linked_text_flow_like_official() {
+        // CC Link.tsx only attaches OSC-8 metadata on supported terminals;
+        // iocraft reads the terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "notebook_header_wraps_as_one_linked_text_flow_like_official",
+            &[("TERM_PROGRAM", Some("kitty"))],
+        ) {
+            return;
+        }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        // CC Link.tsx only attaches OSC-8 metadata on supported terminals.
-        let _terminal = EnvVarGuard::set("TERM_PROGRAM", "kitty");
         let cwd = crate::bootstrap::state::get_original_cwd();
         let notebook_path = cwd.join("nb_dir/demo.ipynb").display().to_string();
         let canvas = render_tool_header_canvas(
@@ -2040,9 +2047,16 @@ mod tests {
     /// `FileWriteTool/UI.tsx:120-136`, and `NotebookEditTool/UI.tsx:26-54`.
     #[test]
     fn scoped_file_headers_keep_exact_copy_and_path_only_links_like_official() {
+        // CC Link.tsx only attaches OSC-8 metadata on supported terminals;
+        // iocraft reads the terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "scoped_file_headers_keep_exact_copy_and_path_only_links_like_official",
+            &[("TERM_PROGRAM", Some("kitty"))],
+        ) {
+            return;
+        }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        // CC Link.tsx only attaches OSC-8 metadata on supported terminals.
-        let _terminal = EnvVarGuard::set("TERM_PROGRAM", "kitty");
         let cwd = crate::bootstrap::state::get_original_cwd();
 
         let read_path = cwd.join("manual.pdf").display().to_string();

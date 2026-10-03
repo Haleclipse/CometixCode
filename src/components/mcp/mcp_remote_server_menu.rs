@@ -986,7 +986,9 @@ mod tests {
     use crate::services::mcp::client::McpConnectionDiscovery;
     use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig};
     use crate::state::app_state_store::McpState;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{
+        CLIPBOARD_OFF_SYSTEM, EnvVarGuard, TEST_ENV_LOCK, in_child_process,
+    };
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -1365,9 +1367,15 @@ mod tests {
     /// canonical SSH OSC clipboard path runs, without native clipboard writes.
     #[tokio::test]
     async fn remote_clipboard_matches_official_feedback_and_copy_timeout() {
+        // iocraft reads the session's terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "remote_clipboard_matches_official_feedback_and_copy_timeout",
+            CLIPBOARD_OFF_SYSTEM,
+        ) {
+            return;
+        }
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::unset("TMUX");
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {
@@ -1420,6 +1428,17 @@ mod tests {
     #[tokio::test]
     async fn remote_clipboard_matches_official_parent_unmount_guard() {
         use std::os::unix::fs::PermissionsExt;
+        // iocraft reads the session's terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "remote_clipboard_matches_official_parent_unmount_guard",
+            &[
+                ("SSH_CONNECTION", Some("fixture")),
+                ("TMUX", Some("fixture")),
+            ],
+        ) {
+            return;
+        }
         crate::utils::process_runtime::initialize_test_process_runtime();
         let directory =
             std::env::temp_dir().join(format!("cometix-mcp-clipboard-{}", uuid::Uuid::new_v4()));
@@ -1429,8 +1448,6 @@ mod tests {
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _path = EnvVarGuard::set("PATH", &directory);
         let _directory = EnvVarGuard::set("CLIPBOARD_FIXTURE_DIR", &directory);
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::set("TMUX", "fixture");
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {

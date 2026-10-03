@@ -113,8 +113,10 @@ fn account_home_dir_from(initial_size: usize) -> Option<PathBuf> {
 /// libuv's Windows lookup is `GetUserProfileDirectoryW` for the process
 /// token, which the standard library's fallback calls. It reads the OS
 /// `USERPROFILE` first, which is absent here: the carrier starts from the OS
-/// environment, lacks it, and CC never removes it.
+/// environment, lacks it, and CC never removes it, so the startup publication
+/// leaves the OS without it too.
 #[cfg(windows)]
+#[allow(clippy::disallowed_methods)] // The account lookup behind libuv's fallback.
 fn account_home_dir() -> Option<PathBuf> {
     std::env::home_dir()
 }

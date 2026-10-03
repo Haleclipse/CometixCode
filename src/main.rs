@@ -1514,6 +1514,9 @@ pub fn run(config: crate::cli::CliConfig) {
     // Maps to CC `entrypoints/init.ts:79`, before any TLS connection, then
     // `:136-150`: load the mTLS configuration and the proxy agents.
     utils::ca_certs_config::apply_extra_ca_certs_from_config();
+    // Node writes every `process.env` assignment to the real environment; the
+    // carrier does it this once, before the runtime and the background workers.
+    utils::process_env::publish_startup_environment();
     utils::mtls::configure_global_mtls();
     utils::proxy::configure_global_agents();
     // CC `tools.ts:150-155` requires PowerShellTool lazily, at the first

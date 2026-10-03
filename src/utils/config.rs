@@ -1316,6 +1316,10 @@ fn start_global_config_freshness_watcher() {
     }
 
     let path = crate::utils::env::get_global_claude_file();
+    // The launchers' first config load starts this thread before
+    // `process_env::publish_startup_environment` writes the real environment,
+    // so it must never reach libc's getenv (no `node_os::homedir`, local time
+    // or DNS here).
     let _ = thread::Builder::new()
         .name("cometix-global-config-freshness".to_string())
         .spawn(move || {

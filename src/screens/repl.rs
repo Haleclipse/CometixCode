@@ -10268,7 +10268,8 @@ mod tests {
     }
     use super::*;
     use crate::utils::test_env::{
-        EnvVarGuard, IsolatedProjectSettings, PinnedProjectDir, TEST_ENV_LOCK, TestEnvLock,
+        CLIPBOARD_OFF_SYSTEM, EnvVarGuard, IsolatedProjectSettings, PinnedProjectDir,
+        TEST_ENV_LOCK, TestEnvLock, in_child_process,
     };
     use crate::utils::{conversation, conversation_recovery, theme};
     use futures::{Stream, StreamExt, stream};
@@ -18090,10 +18091,16 @@ mod tests {
 
     #[test]
     fn resume_cross_project_selection_appends_official_on_done_output_without_restoring() {
+        // iocraft reads the session's terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "resume_cross_project_selection_appends_official_on_done_output_without_restoring",
+            CLIPBOARD_OFF_SYSTEM,
+        ) {
+            return;
+        }
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::unset("TMUX");
         let config_home =
             std::env::temp_dir().join(format!("cometix-repl-resume-cross-{}", Uuid::new_v4()));
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
@@ -18308,6 +18315,17 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn resume_pending_clipboard_matches_official_restore_first_settlement() {
+        // iocraft reads the session's terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "resume_pending_clipboard_matches_official_restore_first_settlement",
+            &[
+                ("SSH_CONNECTION", Some("fixture")),
+                ("TMUX", Some("fixture")),
+            ],
+        ) {
+            return;
+        }
         let _guard = env_lock().lock().unwrap();
         let _project = PinnedProjectDir::at_manifest_root();
         crate::utils::process_runtime::initialize_test_process_runtime();
@@ -18320,8 +18338,6 @@ mod tests {
                 directory.join("projects"),
             );
             let _write = EnvVarGuard::unset("COMETIX_WRITE_ENABLED");
-            let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-            let _tmux = EnvVarGuard::set("TMUX", "fixture");
             let clipboard_input = Arc::new(std::sync::Mutex::new(None));
             let clipboard_finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
             let (release_clipboard, clipboard_completion) = futures::channel::oneshot::channel();

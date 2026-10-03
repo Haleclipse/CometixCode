@@ -440,8 +440,9 @@ mod tests {
         );
     }
 
-    /// No env-var proxy. The system-proxy fallback reads `NO_PROXY` too, so
-    /// this keeps a host's system proxy out of the loopback request.
+    /// No env-var proxy. The system-proxy fallback reads the OS `NO_PROXY`,
+    /// which `just test` pins to loopback; the carrier value set here no
+    /// longer reaches it.
     fn without_env_proxy() -> Vec<EnvVarGuard> {
         let mut guards: Vec<_> = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY"]
             .into_iter()

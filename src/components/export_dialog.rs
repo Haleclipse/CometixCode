@@ -390,7 +390,7 @@ fn ExportDialogSelect<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::EnvVarGuard;
+    use crate::utils::test_env::{CLIPBOARD_OFF_SYSTEM, EnvVarGuard, in_child_process};
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -407,6 +407,8 @@ mod tests {
 
     // Imported write effect is the only fixture replacement. Navigation,
     // focus, keybinding, TextInput, Dialog, output queue and viewport are real.
+    // A caller that reaches "Copy to clipboard" runs in a child with SSH and
+    // no tmux (`CLIPBOARD_OFF_SYSTEM`), or iocraft writes the real clipboard.
     fn run_dialog(
         events: Vec<TerminalEvent>,
         width: u16,
@@ -415,8 +417,6 @@ mod tests {
         runtime: KeybindingRuntime,
     ) -> (Vec<String>, Vec<serde_json::Value>) {
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::unset("TMUX");
         let trace = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
         let writes = trace.clone();
         let write_error = write_error.map(str::to_owned);
@@ -557,6 +557,13 @@ mod tests {
 
     #[test]
     fn export_back_matches_official_filename_cursor_and_select_remount() {
+        if !in_child_process(
+            module_path!(),
+            "export_back_matches_official_filename_cursor_and_select_remount",
+            CLIPBOARD_OFF_SYSTEM,
+        ) {
+            return;
+        }
         // CC :39-42/147-167 — back retains parent filename/cursor, remounts Select.
         let (frames, trace) = run_dialog(
             vec![
@@ -687,6 +694,13 @@ mod tests {
 
     #[test]
     fn export_tab_and_exit_pending_match_official_select_and_dialog() {
+        if !in_child_process(
+            module_path!(),
+            "export_tab_and_exit_pending_match_official_select_and_dialog",
+            CLIPBOARD_OFF_SYSTEM,
+        ) {
+            return;
+        }
         // CC Select has no onInputModeToggle here: Tab must not advance.
         let (_, trace) = run_dialog(
             vec![key(KeyCode::Tab), key(KeyCode::Enter)],
@@ -785,6 +799,17 @@ mod tests {
     #[test]
     fn export_clipboard_matches_official_parent_unmount_after_feedback() {
         use std::os::unix::fs::PermissionsExt;
+        // iocraft reads the session's terminal from the OS environment.
+        if !in_child_process(
+            module_path!(),
+            "export_clipboard_matches_official_parent_unmount_after_feedback",
+            &[
+                ("SSH_CONNECTION", Some("fixture")),
+                ("TMUX", Some("fixture")),
+            ],
+        ) {
+            return;
+        }
         // The actual tmux subprocess blocks until after Esc unmounts the panel.
         let directory =
             std::env::temp_dir().join(format!("cometix-export-clipboard-{}", uuid::Uuid::new_v4()));
@@ -795,8 +820,6 @@ mod tests {
         let _path = EnvVarGuard::set("PATH", &directory);
         let _fixture = EnvVarGuard::set("CLIPBOARD_FIXTURE_DIR", &directory);
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::set("TMUX", "fixture");
         let done = Arc::new(Mutex::new(Vec::new()));
         let done_for_app = done.clone();
         let frames = futures::executor::block_on(async {

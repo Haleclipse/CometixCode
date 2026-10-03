@@ -1,10 +1,17 @@
-# Writers must go through the process-env carrier (PORTING.md "Global
-# process.env carrier"): raw set_var/remove_var desyncs the carrier's owned
-# environment and is UB on Unix when any other thread may call getenv.
-# The only allowed sites are the carrier's own transitional real-env
-# write-through (utils/process_env.rs) and the Windows CreateProcess harden
-# write at the entrypoint (entrypoints/cli.rs), both annotated with
-# `#[allow(clippy::disallowed_methods)]`.
+# CC's process.env is the environment carrier (PORTING.md "Global
+# process.env carrier"): readers and writers go through
+# crate::utils::process_env, never the OS environment. Raw set_var/remove_var
+# desyncs the carrier and is UB on Unix when any other thread may call
+# getenv; a raw read misses every variable the settings applied after
+# startup. home_dir/temp_dir read the OS environment too; CC's os.homedir()
+# and os.tmpdir() are utils/node_os.rs.
+#
+# The allowed sites carry `#[allow(clippy::disallowed_methods)]`: the
+# carrier's startup capture and its one startup publication
+# (utils/process_env.rs), the Windows CreateProcess harden write at the
+# entrypoint (entrypoints/cli.rs), and node_os's Windows fallback. `just
+# env-clippy` checks production code; `just env-reads-remaining` counts test
+# code too.
 [[disallowed-methods]]
 path = "std::env::set_var"
 reason = "write through crate::utils::process_env instead (set/begin_update); see PORTING.md 'Global process.env carrier'"
@@ -12,3 +19,27 @@ reason = "write through crate::utils::process_env instead (set/begin_update); se
 [[disallowed-methods]]
 path = "std::env::remove_var"
 reason = "write through crate::utils::process_env instead (remove/begin_update); see PORTING.md 'Global process.env carrier'"
+
+[[disallowed-methods]]
+path = "std::env::var"
+reason = "read crate::utils::process_env::var instead; see PORTING.md 'Global process.env carrier'"
+
+[[disallowed-methods]]
+path = "std::env::var_os"
+reason = "read crate::utils::process_env::var_os instead; see PORTING.md 'Global process.env carrier'"
+
+[[disallowed-methods]]
+path = "std::env::vars"
+reason = "read crate::utils::process_env::snapshot instead; see PORTING.md 'Global process.env carrier'"
+
+[[disallowed-methods]]
+path = "std::env::vars_os"
+reason = "read crate::utils::process_env::snapshot instead; see PORTING.md 'Global process.env carrier'"
+
+[[disallowed-methods]]
+path = "std::env::home_dir"
+reason = "CC's os.homedir() is crate::utils::node_os::homedir; see PORTING.md 'Node os built-ins'"
+
+[[disallowed-methods]]
+path = "std::env::temp_dir"
+reason = "CC's os.tmpdir() is crate::utils::node_os::tmpdir; see PORTING.md 'Node os built-ins'"

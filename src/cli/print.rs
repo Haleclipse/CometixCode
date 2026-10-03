@@ -124,6 +124,10 @@ pub fn run(config: &CliConfig) -> i32 {
     // here. Maps to: CC `main.tsx:3657-3660` (and the equivalent
     // non-interactive apply at `main.tsx:2866-2879`).
     crate::utils::managed_env::apply_config_environment_variables();
+    // Node writes every `process.env` assignment to the real environment; the
+    // carrier does it this once, before the runtime. Print mode has applied
+    // the full settings env by now, so the publication includes it.
+    crate::utils::process_env::publish_startup_environment();
     // Maps to CC `main.tsx:3052-3071`, before `runHeadless`: the launch model
     // override, in place before any control request can read or move it. The
     // result is `runHeadless`'s `userSpecifiedModel` (`:3928,3952`).

@@ -681,7 +681,7 @@ fn captured_output(
 #[cfg(all(test, unix))]
 mod tests {
     use super::*;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, in_child_process};
 
     fn workdir() -> std::path::PathBuf {
         let path =
@@ -695,6 +695,19 @@ mod tests {
     #[test]
     fn clipboard_backend_matches_official_eager_tmux_and_failure_fallback() {
         use std::os::unix::fs::PermissionsExt;
+        // iocraft's clipboard reads the session's terminal from the OS environment.
+        let terminal = [
+            ("SSH_CONNECTION", Some("fixture")),
+            ("TMUX", Some("fixture")),
+            ("LC_TERMINAL", Some("iTerm2")),
+        ];
+        if !in_child_process(
+            module_path!(),
+            "clipboard_backend_matches_official_eager_tmux_and_failure_fallback",
+            &terminal,
+        ) {
+            return;
+        }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let dir = workdir();
         let executable = dir.join("tmux");
@@ -702,9 +715,6 @@ mod tests {
         std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _path = EnvVarGuard::set("PATH", &dir);
         let _fixture = EnvVarGuard::set("CLIP_EXEC_FIXTURE", &dir);
-        let _ssh = EnvVarGuard::set("SSH_CONNECTION", "fixture");
-        let _tmux = EnvVarGuard::set("TMUX", "fixture");
-        let _iterm = EnvVarGuard::set("LC_TERMINAL", "iTerm2");
         let clipboard = iocraft::Clipboard::new(std::sync::Arc::new(ExecFileClipboardBackend));
         let future = clipboard.set_clipboard("中文\n🌈");
         let deadline = Instant::now() + Duration::from_secs(4);
