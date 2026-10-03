@@ -58,7 +58,7 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk"
 version = "0.74.0"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#39fd413f8add2e093187fc1ecebec62a3d6a89cf"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#d8defc5f902c683e26ca7922ea049bd64868e7f5"
 dependencies = [
  "async-trait",
  "bytes",
@@ -78,9 +78,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "anthropic-sdk-foundry"
+version = "0.2.3"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#d8defc5f902c683e26ca7922ea049bd64868e7f5"
+dependencies = [
+ "anthropic-sdk",
+ "chrono",
+ "futures",
+ "getrandom 0.3.4",
+ "reqwest",
+ "ryu-js",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "anthropic-sdk-vertex"
 version = "0.14.3"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#39fd413f8add2e093187fc1ecebec62a3d6a89cf"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#d8defc5f902c683e26ca7922ea049bd64868e7f5"
 dependencies = [
  "anthropic-sdk",
  "base64 0.22.1",
@@ -397,6 +414,7 @@ name = "cometix-code"
 version = "0.2.0"
 dependencies = [
  "anthropic-sdk",
+ "anthropic-sdk-foundry",
  "anthropic-sdk-vertex",
  "anyhow",
  "async-channel",

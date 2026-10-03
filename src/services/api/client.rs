@@ -678,47 +678,68 @@ impl AnthropicClientHandle {
                 resource,
                 api_key,
             } => {
-                // The TS `AnthropicFoundry` CC builds (`client.ts:191-219`)
-                // overrides `authHeaders`: the SDK itself sends only the
-                // Foundry key or the Azure token, never reading
-                // `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`. (An Authorization
-                // that CC's `configureApiKeyHeaders` put in `defaultHeaders`
-                // still goes out; `default_headers` carries it here too.) On
-                // the core client that is an explicit `Null` for whatever is
-                // not the Foundry key.
-                // The endpoint and credential checks belong to `AnthropicFoundry`
-                // (`foundry-sdk client.ts:69-93`) and arrive with that crate
-                // (environment redesign C2c). Until then the endpoint keeps its
-                // truthiness (`if (!baseURL)`, `if (!resource)`): an empty base
-                // URL must not fall through to the SDK's default and send the
-                // Foundry key to api.anthropic.com.
-                let base_url = base_url
-                    .clone()
-                    .filter(|url| !url.is_empty())
-                    .or_else(|| {
-                        resource
-                            .as_ref()
-                            .filter(|resource| !resource.is_empty())
-                            .map(|resource| {
-                                format!("https://{resource}.services.ai.azure.com/anthropic/")
-                            })
-                    });
-                let Some(base_url) = base_url else {
-                    return Err(ClientError::MissingConfig(
-                        "ANTHROPIC_FOUNDRY_BASE_URL or ANTHROPIC_FOUNDRY_RESOURCE".to_string(),
-                    ));
+                // CC `new AnthropicFoundry({ ...ARGS, azureADTokenProvider? })`
+                // (`client.ts:191-219`). The endpoint and key are the
+                // `readEnv` values `AnthropicFoundry` reads for itself
+                // (`foundry-sdk client.ts:58-60`), and its checks (both
+                // endpoints set, neither, a key beside a token provider, no
+                // credential) run in `create_client_with_core_options`. It
+                // overrides `authHeaders`, so only the Foundry key or the
+                // Azure token is sent, never `ANTHROPIC_API_KEY`/
+                // `ANTHROPIC_AUTH_TOKEN`; an Authorization that CC's
+                // `configureApiKeyHeaders` put in `defaultHeaders` still goes
+                // out, and `default_headers` carries it here too.
+                let token_provider: Option<Box<dyn anthropic_sdk_foundry::TokenProvider>> =
+                    match auth {
+                        FoundryAuth::ApiKey => None,
+                        FoundryAuth::SkipAuth => Some(Box::new(SkipFoundryAuth)),
+                        FoundryAuth::AzureAd => {
+                            use anthropic_sdk_foundry::azure_identity;
+                            // The npm package reads `process.env` and sends
+                            // through its own pipeline; here the credential
+                            // reads the carrier, and its requests go through
+                            // CC's transport (environment redesign C2c-2).
+                            let env = azure_identity::Environment::new(
+                                crate::utils::process_env::snapshot()
+                                    .iter()
+                                    .map(|(key, value)| (key.to_owned(), value.to_owned())),
+                            );
+                            let http_client = crate::utils::proxy::create_axios_instance()
+                                .and_then(|builder| Ok(builder.build()?))
+                                .map_err(|error| ClientError::Sdk(error.to_string()))?;
+                            let credential = azure_identity::DefaultAzureCredential::new(
+                                azure_identity::DefaultAzureCredentialOptions {
+                                    env,
+                                    http_client: Some(http_client),
+                                },
+                            )
+                            .map_err(|error| ClientError::Sdk(error.to_string()))?;
+                            Some(Box::new(AzureAdTokenProvider(
+                                azure_identity::get_bearer_token_provider(
+                                    std::sync::Arc::new(credential),
+                                    "https://cognitiveservices.azure.com/.default",
+                                ),
+                            )))
+                        }
+                    };
+                let config = anthropic_sdk_foundry::FoundryConfig {
+                    resource: resource.clone().unwrap_or_default(),
+                    api_key: api_key.clone(),
+                    token_provider,
+                    base_url: base_url.clone(),
                 };
-                let (api_key, auth_token) = match auth {
-                    FoundryAuth::ApiKey => (Nullable::from_resolved(api_key.clone()), Nullable::Null),
-                    FoundryAuth::AzureAd => {
-                        return Err(ClientError::Sdk(
-                            "Foundry DefaultAzureCredential requires the provider SDK adapter"
-                                .to_string(),
-                        ));
-                    }
-                    FoundryAuth::SkipAuth => (Nullable::Null, Nullable::Null),
-                };
-                self.build_direct_client(api_key, auth_token, Some(base_url))
+                // `ARGS` carries no `apiKey`; the Foundry client sets the key
+                // and the token itself.
+                let core_options = self.core_client_options(Nullable::Unset, Nullable::Unset, None);
+                anthropic_sdk_foundry::create_client_with_core_options(config, core_options)
+                    .map(ClientBuildOutput::Anthropic)
+                    .map_err(|error| {
+                        // `ClientError::Sdk` adds the SDK's own prefix.
+                        ClientError::Sdk(match error {
+                            anthropic_sdk::ApiError::Sdk(message) => message,
+                            error => error.to_string(),
+                        })
+                    })
             }
             ProviderConfig::Vertex {
                 region,
@@ -807,6 +828,38 @@ impl AnthropicClientHandle {
         anthropic_sdk::Anthropic::new(self.core_client_options(api_key, auth_token, base_url))
             .map(ClientBuildOutput::Anthropic)
             .map_err(|error| ClientError::Sdk(error.to_string()))
+    }
+}
+
+/// CC's skip-auth token provider for Foundry (`client.ts:197-199`),
+/// `() => Promise.resolve('')`. `AnthropicFoundry` rejects the empty token on
+/// every request (`foundry-sdk client.ts:117-121`), so in CC
+/// `CLAUDE_CODE_SKIP_FOUNDRY_AUTH` without a key fails each request with
+/// "Expected azureADTokenProvider function argument to return a string but it
+/// returned ", and so it does here.
+struct SkipFoundryAuth;
+
+impl anthropic_sdk_foundry::TokenProvider for SkipFoundryAuth {
+    fn get_token(
+        &self,
+    ) -> futures::future::BoxFuture<'_, Result<String, anthropic_sdk_foundry::TokenProviderError>>
+    {
+        Box::pin(async { Ok(String::new()) })
+    }
+}
+
+/// CC's `getBearerTokenProvider(new DefaultAzureCredential(), scope)`
+/// (`client.ts:203-210`) as the Foundry client's token provider. The
+/// credential's errors are not `ApiError`s, so the SDK prefixes them with
+/// `Failed to get token from azureADTokenProvider: `, as TS does.
+struct AzureAdTokenProvider(anthropic_sdk_foundry::azure_identity::BearerTokenProvider);
+
+impl anthropic_sdk_foundry::TokenProvider for AzureAdTokenProvider {
+    fn get_token(
+        &self,
+    ) -> futures::future::BoxFuture<'_, Result<String, anthropic_sdk_foundry::TokenProviderError>>
+    {
+        Box::pin(async move { self.0.get_token().await.map_err(Into::into) })
     }
 }
 
@@ -1716,6 +1769,191 @@ mod tests {
         assert_eq!(base_url.as_deref(), Some("https://vertex.example/v1"));
         assert_eq!(api_key.as_deref(), Some("env-key"));
         let _ = std::fs::remove_dir_all(config_home);
+    }
+
+    fn foundry_handle(
+        auth: FoundryAuth,
+        base_url: Option<String>,
+        resource: Option<&str>,
+        api_key: Option<&str>,
+    ) -> AnthropicClientHandle {
+        AnthropicClientHandle {
+            provider: ProviderConfig::Foundry {
+                auth,
+                base_url,
+                resource: resource.map(str::to_owned),
+                api_key: api_key.map(str::to_owned),
+            },
+            default_headers: HashMap::from([("x-app".to_string(), Some("cli".to_string()))]),
+            max_retries: 0,
+            timeout_ms: 5_000,
+            fetch: ResolvedFetch {
+                inject_client_request_id: false,
+                source: Some("test".to_string()),
+            },
+            fetch_options: direct_client(),
+            log_level: anthropic_sdk::LogLevel::Warn,
+        }
+    }
+
+    /// CC `new AnthropicFoundry({ ...ARGS })` with `ANTHROPIC_FOUNDRY_API_KEY`:
+    /// only the Foundry key is sent (`foundry-sdk client.ts:103-131`), next
+    /// to `ARGS`'s headers.
+    #[tokio::test]
+    async fn foundry_key_mode_sends_only_the_foundry_key_through_args() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before headers");
+                request.extend_from_slice(&buffer[..count]);
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                      content-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request).to_ascii_lowercase()
+        });
+        let client = foundry_handle(
+            FoundryAuth::ApiKey,
+            Some(format!("http://{address}/anthropic/")),
+            None,
+            Some("foundry-key"),
+        )
+        .build()
+        .unwrap();
+        let _ = client.as_client().models().retrieve("model", None).await;
+        let request = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            request.starts_with("get /anthropic/v1/models/model"),
+            "{request}"
+        );
+        assert!(
+            request.contains("\r\nx-api-key: foundry-key\r\n"),
+            "{request}"
+        );
+        assert!(request.contains("\r\nx-app: cli\r\n"), "{request}");
+        assert!(!request.contains("\r\nauthorization:"), "{request}");
+    }
+
+    /// `AnthropicFoundry`'s endpoint checks (`foundry-sdk client.ts:69-93`)
+    /// surface with the one prefix `ClientError` adds. An empty base URL is
+    /// unset, so the resource decides and the key never goes to
+    /// api.anthropic.com.
+    #[test]
+    fn foundry_endpoint_checks_come_from_the_sdk() {
+        let both = foundry_handle(
+            FoundryAuth::ApiKey,
+            Some("https://proxy.example/".to_string()),
+            Some("res"),
+            Some("key"),
+        );
+        let Err(error) = both.build() else {
+            panic!("a base URL and a resource together are rejected");
+        };
+        assert_eq!(
+            error.to_string(),
+            "SDK error: baseURL and resource are mutually exclusive"
+        );
+        let Err(error) = foundry_handle(FoundryAuth::ApiKey, None, None, Some("key")).build()
+        else {
+            panic!("an endpoint is required");
+        };
+        assert_eq!(
+            error.to_string(),
+            "SDK error: Must provide one of the `baseURL` or `resource` arguments, or the `ANTHROPIC_FOUNDRY_RESOURCE` environment variable"
+        );
+        let empty = foundry_handle(
+            FoundryAuth::ApiKey,
+            Some(String::new()),
+            Some("res"),
+            Some("key"),
+        );
+        assert_eq!(
+            empty.build().unwrap().as_client().base_url(),
+            "https://res.services.ai.azure.com/anthropic/"
+        );
+    }
+
+    /// CC's skip-auth provider resolves to `''`, which `AnthropicFoundry`
+    /// rejects before sending (`client.ts:197-199`, `foundry-sdk
+    /// client.ts:117-121`): the request fails, as in CC.
+    #[tokio::test]
+    async fn foundry_skip_auth_fails_every_request_like_cc() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = foundry_handle(
+            FoundryAuth::SkipAuth,
+            Some(format!("http://{address}/anthropic/")),
+            None,
+            None,
+        )
+        .build()
+        .unwrap();
+        let error = client
+            .as_client()
+            .models()
+            .retrieve("model", None)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, anthropic_sdk::ApiError::Sdk(message) if message
+                == "Expected azureADTokenProvider function argument to return a string but it returned "),
+            "{error}"
+        );
+    }
+
+    /// CC `getBearerTokenProvider(new DefaultAzureCredential(), scope)`
+    /// (`client.ts:203-210`) behind `AnthropicFoundry`: a chain that yields no
+    /// token fails the request with the SDK's prefix in front of the chain's
+    /// aggregate error. `AZURE_TOKEN_CREDENTIALS` keeps the chain to the Azure
+    /// CLI, which is not on `PATH`, so nothing reaches the network.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn foundry_azure_ad_failure_matches_official_prefixed_chain_error() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let empty = std::env::temp_dir().join(format!("cometix-no-az-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&empty).unwrap();
+        let _guards = [
+            EnvVarGuard::set("AZURE_TOKEN_CREDENTIALS", "AzureCliCredential"),
+            EnvVarGuard::set("PATH", &empty),
+        ];
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = foundry_handle(
+            FoundryAuth::AzureAd,
+            Some(format!("http://{address}/anthropic/")),
+            None,
+            None,
+        )
+        .build()
+        .unwrap();
+        let error = client
+            .as_client()
+            .models()
+            .retrieve("model", None)
+            .await
+            .unwrap_err();
+        let _ = std::fs::remove_dir_all(&empty);
+        assert!(
+            matches!(&error, anthropic_sdk::ApiError::Sdk(message) if message
+                == "Failed to get token from azureADTokenProvider: ChainedTokenCredential authentication failed.\n\
+                    CredentialUnavailableError: Azure CLI could not be found. Please visit https://aka.ms/azure-cli for installation instructions and then, once installed, authenticate to your Azure account using 'az login'."),
+            "{error}"
+        );
     }
 
     /// CC `ARGS.fetchOptions`: the SDK sends through the environment's proxy.
