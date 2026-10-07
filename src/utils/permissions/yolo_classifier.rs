@@ -408,6 +408,42 @@ fn build_tool_lookup(tools: &[Tool]) -> HashMap<&str, &Tool> {
     }
     map
 }
+
+/// Maps to: CC `tool.toAutoClassifierInput(input)` (`yoloClassifier.ts:400`),
+/// for the tool a lookup resolved. `permissions.rs#projected_classifier_input`
+/// asks the same question one frame earlier, so both go through here.
+///
+/// An MCP tool takes the projection `fetchToolsForClient` installs on it,
+/// `mcpToolInputToAutoClassifierInput(input, tool.name)`, and is recognised by
+/// its MCP identity, never by its name. The static ToolCall registry holds MCP
+/// as one entry named "mcp": a `mcp__*` name misses it, and an unprefixed SDK
+/// tool (`CLAUDE_AGENT_SDK_MCP_NO_PREFIX`) can share a built-in's name and would
+/// run that built-in's projection — `Bash` over input with no `command` yields
+/// '', which allows the action without a classifier request.
+///
+/// Any other name the registry cannot resolve keeps its raw input. The result
+/// is '' only when a projection says the action has no classifier-relevant
+/// input.
+pub(crate) fn auto_classifier_input(
+    tool_name: &str,
+    mcp_info: Option<&crate::types::tools::McpToolInfo>,
+    input: &Value,
+) -> Value {
+    if let Some(mcp_info) = mcp_info {
+        let empty = serde_json::Map::new();
+        return Value::String(
+            crate::services::mcp::client::mcp_tool_input_to_auto_classifier_input(
+                input.as_object().unwrap_or(&empty),
+                &mcp_info.tool_name,
+            ),
+        );
+    }
+    match crate::services::tools::tool_execution::find_tool_call(tool_name) {
+        Some(tool) => Value::String(tool.to_auto_classifier_input(input)),
+        None => input.clone(),
+    }
+}
+
 /// Maps to: CC `yoloClassifier.ts:384-424` `toCompactBlock`.
 fn to_compact_block(
     block: &TranscriptBlock,
@@ -427,16 +463,7 @@ fn to_compact_block(
             // Partial dependency: ToolCall currently returns String, not the
             // source unknown|undefined/throw projection. No heuristic may infer
             // raw input from ''. Follow up at Tool's canonical trait boundary.
-            //
-            // A name the registry cannot resolve (dynamic `mcp__*`) has no
-            // projection to run, so it keeps its raw input — the rule
-            // `permissions.rs#projected_classifier_input` already applies one
-            // frame earlier. Defaulting the miss to '' allowed every such
-            // action in auto mode without a classifier request.
-            let encoded = match crate::services::tools::tool_execution::find_tool_call(&tool.name) {
-                Some(tool) => Value::String(tool.to_auto_classifier_input(&input)),
-                None => input,
-            };
+            let encoded = auto_classifier_input(&tool.name, tool.mcp_info.as_ref(), &input);
             if encoded.as_str() == Some("") {
                 return String::new();
             }
@@ -2163,9 +2190,10 @@ mod tests {
     /// Regression: a dynamic `mcp__*` tool resolves in the caller's lookup but
     /// not in the static ToolCall registry. `to_compact_block` used to turn
     /// that registry miss into '', so every MCP call in auto mode was allowed
-    /// without a classifier request, even with the full ToolUseContext.
+    /// without a classifier request, even with the full ToolUseContext. It is
+    /// now projected as CC's `fetchToolsForClient` projects it.
     #[tokio::test]
-    async fn mcp_tool_in_auto_mode_is_classified_with_its_raw_input() {
+    async fn mcp_tool_in_auto_mode_is_classified_with_its_mcp_projection() {
         use crate::utils::permissions::permissions::{
             HasPermissionsToUseToolParams, HasPermissionsToUseToolResult,
             has_permissions_to_use_tool_async_with_context,
@@ -2193,6 +2221,8 @@ mod tests {
         )
         .with_tools(vec![Tool {
             name: tool_name.to_string(),
+            is_mcp: true,
+            mcp_info: Some(mcp_info.clone()),
             ..Default::default()
         }]);
 
@@ -2216,9 +2246,73 @@ mod tests {
 
         assert_eq!(requests.len(), 1, "the classifier must be consulted");
         assert!(
+            requests[0].contains("mcp__github__delete_repository owner=acme repo=production"),
+            "the classifier must see the MCP projection:\n{}",
             requests[0]
-                .contains(r#"mcp__github__delete_repository {"owner":"acme","repo":"production"}"#),
-            "the classifier must see the raw MCP input:\n{}",
+        );
+        assert!(
+            matches!(result, HasPermissionsToUseToolResult::Deny(_)),
+            "the classifier's block must hold, got {result:?}"
+        );
+    }
+
+    /// Regression: an SDK MCP tool registered unprefixed
+    /// (`CLAUDE_AGENT_SDK_MCP_NO_PREFIX`) can share a built-in's name. Resolved
+    /// by name it ran the built-in's projection — `Bash` over input with no
+    /// `command` projects to '' — and was allowed without a classifier request.
+    /// Checked as `recheck_permission` checks it, with no ToolUseContext, so the
+    /// MCP identity has to travel on the action's own lookup entry.
+    #[tokio::test]
+    async fn unprefixed_mcp_tool_sharing_a_builtin_name_is_classified_as_mcp() {
+        use crate::utils::permissions::permissions::{
+            HasPermissionsToUseToolParams, HasPermissionsToUseToolResult,
+            has_permissions_to_use_tool_async,
+        };
+
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _config = ConfigGuard::new(json!({"model":"classifier-model"}));
+        let _gate = EnvVarGuard::set("COMETIX_TRANSCRIPT_CLASSIFIER", "1");
+        let _live = EnvVarGuard::set("COMETIX_AUTO_CLASSIFIER_LIVE", "1");
+        let _force = EnvVarGuard::unset("COMETIX_AUTO_CLASSIFIER_FORCE");
+        crate::utils::permissions::auto_mode_state::reset_for_testing();
+
+        let input = json!({ "query": "DROP TABLE users" });
+        let mcp_info = crate::types::tools::McpToolInfo {
+            server_name: "sdk-db".to_string(),
+            tool_name: "Bash".to_string(),
+        };
+        let auto_context = ToolPermissionContext {
+            mode: crate::types::permissions::PermissionMode::Auto,
+            ..ToolPermissionContext::default()
+        };
+        let store = crate::state::store::AppStore::new(
+            crate::state::app_state_store::AppState {
+                tool_permission_context: std::sync::Arc::new(auto_context.clone()),
+                ..Default::default()
+            },
+            None,
+        );
+
+        let (result, requests) = check_against_blocking_classifier(
+            has_permissions_to_use_tool_async(HasPermissionsToUseToolParams {
+                tool_use_id: "toolu_sdk_mcp",
+                tool_name: "Bash",
+                mcp_info: Some(&mcp_info),
+                input_summary: "DROP TABLE users",
+                input: &input,
+                context: &auto_context,
+                messages: &[],
+                app_store: Some(&store),
+                local_denial_tracking: None,
+                abort_signal: None,
+            }),
+        )
+        .await;
+
+        assert_eq!(requests.len(), 1, "the classifier must be consulted");
+        assert!(
+            requests[0].contains("Bash query=DROP TABLE users"),
+            "the classifier must see the MCP projection:\n{}",
             requests[0]
         );
         assert!(

@@ -1778,27 +1778,30 @@ fn should_try_auto_mode_classifier(context: &ToolPermissionContext) -> bool {
             && crate::utils::permissions::auto_mode_state::is_auto_mode_active())
 }
 
-/// Project the current action through the active Tool's
-/// `toAutoClassifierInput`. Maps to CC `yoloClassifier.ts#toCompactBlock`.
-/// `None` is the Tool-default empty projection and means no security-relevant
-/// classifier action; an unknown dynamic tool retains its raw input.
 /// CC's `tools` argument to `classifyYoloAction`, which every CC caller holds on
 /// hand (`yoloClassifier.ts:1015`) and turns into a lookup keyed by name and
 /// alias (`buildToolLookup:364-372`).
 ///
 /// Rust's permission entry takes `Option<&ToolUseContext>` because some callers
-/// have no context at all — `recheck_permission`, direct tests. Transcript
-/// tool_use blocks only resolve against the tools the caller holds, so with no
-/// context they are dropped, as in CC's `buildToolLookup([])`.
+/// have no context at all — `recheck_permission`, direct tests. They hold no
+/// tools, which is CC's `buildToolLookup([])`.
 ///
-/// The ACTION's own tool is always held: the caller is asking to run it. An
+/// The ACTION's own tool is always added: the caller is asking to run it. An
 /// unresolved action compacts to '', which `classifyYoloAction` reads as "no
 /// classifier-relevant input" and ALLOWS without a request. That made every
 /// context-less auto-mode check fail open — a queued Bash ask re-evaluated by
 /// `recheck_permission` after Shift+Tab into Auto was approved unclassified.
+/// The added tool carries the action's MCP identity, which selects its
+/// projection (`yolo_classifier.rs#auto_classifier_input`).
+///
+/// One lookup serves the action and the transcript, so a context-less check
+/// keeps the transcript's tool_use blocks of the action's own tool and drops
+/// the rest. `recheck_permission`, the only such production caller, passes no
+/// messages.
 fn classifier_tools<'a>(
     tool_use_context: Option<&'a crate::tool::ToolUseContext>,
     tool_name: &str,
+    mcp_info: Option<&crate::types::tools::McpToolInfo>,
 ) -> std::borrow::Cow<'a, [crate::types::tools::Tool]> {
     let held = tool_use_context.map_or(&[][..], |context| context.tools.as_slice());
     if held
@@ -1810,20 +1813,28 @@ fn classifier_tools<'a>(
     let mut tools = held.to_vec();
     tools.push(crate::types::tools::Tool {
         name: tool_name.to_string(),
+        is_mcp: mcp_info.is_some(),
+        mcp_info: mcp_info.cloned(),
         ..Default::default()
     });
     std::borrow::Cow::Owned(tools)
 }
 
+/// Project the current action through the active Tool's
+/// `toAutoClassifierInput`. Maps to CC `yoloClassifier.ts#toCompactBlock`.
+/// `None` is the Tool-default empty projection and means no security-relevant
+/// classifier action. The projection is `yolo_classifier.rs#auto_classifier_input`,
+/// the one `to_compact` runs, so an MCP tool is projected by its MCP identity and
+/// an unknown dynamic tool retains its raw input.
 fn projected_classifier_input(
     tool_name: &str,
+    mcp_info: Option<&crate::types::tools::McpToolInfo>,
     input: &serde_json::Value,
 ) -> Option<serde_json::Value> {
-    let Some(tool) = crate::services::tools::tool_execution::find_tool_call(tool_name) else {
-        return Some(input.clone());
-    };
-    let projected = tool.to_auto_classifier_input(input);
-    (!projected.is_empty()).then(|| serde_json::Value::String(projected))
+    let projected = crate::utils::permissions::yolo_classifier::auto_classifier_input(
+        tool_name, mcp_info, input,
+    );
+    (projected.as_str() != Some("")).then_some(projected)
 }
 
 /// Maps to: CC `permissions.ts:555-686` — everything the auto-mode branch does
@@ -2068,7 +2079,7 @@ fn apply_auto_mode_classifier_to_ask(
     // without a request. CC evaluates that INSIDE the classifier, after
     // compaction; this is the same question asked one frame earlier, which is
     // why only its emptiness is consulted here and never its value.
-    if projected_classifier_input(params.tool_name, params.input).is_none() {
+    if projected_classifier_input(params.tool_name, params.mcp_info, params.input).is_none() {
         return resolve_auto_mode_classifier_decision(
             params,
             request,
@@ -2085,7 +2096,7 @@ fn apply_auto_mode_classifier_to_ask(
         // RAW input, as in the async path: the per-tool projection belongs to
         // `to_compact` and must run exactly once.
         params.input,
-        &classifier_tools(tool_use_context, params.tool_name),
+        &classifier_tools(tool_use_context, params.tool_name, params.mcp_info),
         params.context,
         params.abort_signal.clone(),
     );
@@ -2122,7 +2133,7 @@ async fn apply_auto_mode_classifier_to_ask_async(
     // without a request. CC evaluates that INSIDE the classifier, after
     // compaction; this is the same question asked one frame earlier, which is
     // why only its emptiness is consulted here and never its value.
-    if projected_classifier_input(params.tool_name, params.input).is_none() {
+    if projected_classifier_input(params.tool_name, params.mcp_info, params.input).is_none() {
         return resolve_auto_mode_classifier_decision(
             params,
             request,
@@ -2146,7 +2157,7 @@ async fn apply_auto_mode_classifier_to_ask_async(
     let result = classify_yolo_action(
         params.messages,
         &action,
-        &classifier_tools(tool_use_context, params.tool_name),
+        &classifier_tools(tool_use_context, params.tool_name, params.mcp_info),
         params.context,
         params.abort_signal.clone(),
     )
@@ -5351,7 +5362,7 @@ mod tests {
         );
 
         assert_eq!(
-            projected_classifier_input("WebFetch", &unapproved_input),
+            projected_classifier_input("WebFetch", None, &unapproved_input),
             Some(serde_json::json!(
                 "https://example.com/docs/page: summarize"
             )),
