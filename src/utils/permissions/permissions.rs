@@ -1787,14 +1787,32 @@ fn should_try_auto_mode_classifier(context: &ToolPermissionContext) -> bool {
 /// alias (`buildToolLookup:364-372`).
 ///
 /// Rust's permission entry takes `Option<&ToolUseContext>` because some callers
-/// have no context at all — skill shell checks, direct tests. `None` yields an
-/// empty lookup, which is exactly CC's `buildToolLookup([])`: every tool_use
-/// block in the transcript is dropped. That is the conservative reading, and it
-/// never invents tools the caller does not actually hold.
-fn classifier_tool_lookup(
-    tool_use_context: Option<&crate::tool::ToolUseContext>,
-) -> &[crate::types::tools::Tool] {
-    tool_use_context.map_or(&[], |context| context.tools.as_slice())
+/// have no context at all — `recheck_permission`, direct tests. Transcript
+/// tool_use blocks only resolve against the tools the caller holds, so with no
+/// context they are dropped, as in CC's `buildToolLookup([])`.
+///
+/// The ACTION's own tool is always held: the caller is asking to run it. An
+/// unresolved action compacts to '', which `classifyYoloAction` reads as "no
+/// classifier-relevant input" and ALLOWS without a request. That made every
+/// context-less auto-mode check fail open — a queued Bash ask re-evaluated by
+/// `recheck_permission` after Shift+Tab into Auto was approved unclassified.
+fn classifier_tools<'a>(
+    tool_use_context: Option<&'a crate::tool::ToolUseContext>,
+    tool_name: &str,
+) -> std::borrow::Cow<'a, [crate::types::tools::Tool]> {
+    let held = tool_use_context.map_or(&[][..], |context| context.tools.as_slice());
+    if held
+        .iter()
+        .any(|tool| tool.name == tool_name || tool.aliases.iter().any(|alias| alias == tool_name))
+    {
+        return std::borrow::Cow::Borrowed(held);
+    }
+    let mut tools = held.to_vec();
+    tools.push(crate::types::tools::Tool {
+        name: tool_name.to_string(),
+        ..Default::default()
+    });
+    std::borrow::Cow::Owned(tools)
 }
 
 fn projected_classifier_input(
@@ -2067,7 +2085,7 @@ fn apply_auto_mode_classifier_to_ask(
         // RAW input, as in the async path: the per-tool projection belongs to
         // `to_compact` and must run exactly once.
         params.input,
-        classifier_tool_lookup(tool_use_context),
+        &classifier_tools(tool_use_context, params.tool_name),
         params.context,
         params.abort_signal.clone(),
     );
@@ -2128,7 +2146,7 @@ async fn apply_auto_mode_classifier_to_ask_async(
     let result = classify_yolo_action(
         params.messages,
         &action,
-        classifier_tool_lookup(tool_use_context),
+        &classifier_tools(tool_use_context, params.tool_name),
         params.context,
         params.abort_signal.clone(),
     )
