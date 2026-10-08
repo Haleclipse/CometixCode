@@ -1,6 +1,9 @@
 //! Bedrock model ID helpers.
 //! Maps to CC `utils/model/bedrock.ts` region-prefix helpers.
 
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+
 use crate::utils::process_env::JsTruthy;
 
 /// Maps to CC `utils/model/bedrock.ts#BEDROCK_REGION_PREFIXES`.
@@ -22,41 +25,69 @@ pub fn extract_model_id_from_arn(model_id: &str) -> String {
         .unwrap_or_else(|| model_id.to_string())
 }
 
-/// Maps to: CC `utils/model/bedrock.ts#getInferenceProfileBackingModel`.
+/// `getInferenceProfileBackingModel`'s lodash `memoize` cache, keyed by the
+/// profile ID.
+static INFERENCE_PROFILE_BACKING_MODELS: LazyLock<Mutex<HashMap<String, Option<String>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Maps to: CC `utils/model/bedrock.ts:141-176`
+/// `getInferenceProfileBackingModel`, memoized: each profile is looked up
+/// once for the life of the process, and a failure (CC's caught `null`)
+/// is kept too. lodash keeps the promise, so concurrent first calls share
+/// one lookup; this keeps the result, so they each look up once.
+///
+/// The region is `createBedrockClient`'s, `getAWSRegion()`
+/// (`utils/model/bedrock.ts:50-56`), never the small-fast-model override the
+/// API client may use.
 pub async fn get_inference_profile_backing_model(
     profile_id: &str,
-    region: &str,
     auth: &crate::services::api::client::BedrockAuth,
 ) -> Option<String> {
-    let endpoint = crate::utils::process_env::var("ANTHROPIC_BEDROCK_BASE_URL")
-        .truthy()
-        .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK").truthy())
-        .unwrap_or_else(|| format!("https://bedrock.{region}.amazonaws.com"));
-    let response = crate::services::api::client::send_bedrock_request(
-        reqwest::Method::GET,
-        &endpoint,
-        &format!(
-            "/inference-profiles/{}",
-            crate::services::api::client::aws_uri_encode(profile_id)
-        ),
-        Vec::new(),
-        region,
-        "bedrock",
-        auth,
-    )
-    .await?;
-    let model_arn = response
-        .get("models")?
-        .as_array()?
-        .first()?
-        .get("modelArn")?
-        .as_str()?;
-    Some(
-        model_arn
-            .rsplit_once('/')
-            .map_or(model_arn, |(_, model)| model)
-            .to_string(),
-    )
+    if let Some(cached) = INFERENCE_PROFILE_BACKING_MODELS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(profile_id)
+    {
+        return cached.clone();
+    }
+    // The function `memoize` wraps.
+    let model = async {
+        let region = crate::utils::env_utils::get_aws_region();
+        let endpoint = crate::utils::process_env::var("ANTHROPIC_BEDROCK_BASE_URL")
+            .truthy()
+            .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK").truthy())
+            .unwrap_or_else(|| format!("https://bedrock.{region}.amazonaws.com"));
+        let response = crate::services::api::client::send_bedrock_request(
+            reqwest::Method::GET,
+            &endpoint,
+            &format!(
+                "/inference-profiles/{}",
+                crate::services::api::client::aws_uri_encode(profile_id)
+            ),
+            Vec::new(),
+            &region,
+            auth,
+        )
+        .await?;
+        let model_arn = response
+            .get("models")?
+            .as_array()?
+            .first()?
+            .get("modelArn")?
+            .as_str()?;
+        Some(
+            model_arn
+                .rsplit_once('/')
+                .map_or(model_arn, |(_, model)| model)
+                .to_string(),
+        )
+    }
+    .await;
+    INFERENCE_PROFILE_BACKING_MODELS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(profile_id.to_owned(), model.clone());
+    model
 }
 
 /// Maps to CC `utils/model/bedrock.ts#getBedrockRegionPrefix`.

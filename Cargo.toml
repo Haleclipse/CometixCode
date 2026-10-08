@@ -59,6 +59,10 @@ anthropic-sdk-vertex = { git = "https://github.com/Haleclipse/anthropic-sdk-rs" 
 # CC's `@anthropic-ai/foundry-sdk`, with the crate's port of CC's
 # `@azure/identity` dependency (`DefaultAzureCredential`).
 anthropic-sdk-foundry = { git = "https://github.com/Haleclipse/anthropic-sdk-rs", features = ["azure-identity"] }
+# CC's `@anthropic-ai/bedrock-sdk`, with the crate's port of its default
+# credential chain (`@aws-sdk/credential-providers`' `fromNodeProviderChain`),
+# which Cometix runs on the carrier and its own transport.
+anthropic-sdk-bedrock = { git = "https://github.com/Haleclipse/anthropic-sdk-rs" }
 
 # Async runtime: tokio for API/network/process I/O. iocraft's render loop is
 # runtime-agnostic (futures traits only); tokio drives it from main().

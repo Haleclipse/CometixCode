@@ -3533,9 +3533,10 @@ pub async fn query_model_with_streaming(
     Ok(rx)
 }
 
-type SdkMessageStream = anthropic_sdk::core::streaming::SseStream<
-    anthropic_sdk::resources::beta::messages::BetaMessageStreamEvent,
->;
+/// The provider dispatch's boxed event stream
+/// ([`crate::services::api::client::BetaMessageEventStream`]): SSE for the
+/// core, Vertex and Foundry, Smithy EventStream for Bedrock.
+type SdkMessageStream = crate::services::api::client::BetaMessageEventStream;
 
 async fn open_sdk_message_stream_with_retry(
     messages: &[Message],

@@ -49,6 +49,10 @@ fn has_thinking_blocks(
 }
 
 /// Maps to: CC `services/tokenEstimation.ts#countTokensWithBedrock`.
+///
+/// The region is `createBedrockRuntimeClient`'s, `getAWSRegion()`
+/// (`utils/model/bedrock.ts:96-100`), not the handle's, which carries the
+/// small-fast-model override when `model` is that model.
 async fn count_tokens_with_bedrock(
     handle: &crate::services::api::client::AnthropicClientHandle,
     model: &str,
@@ -57,15 +61,15 @@ async fn count_tokens_with_bedrock(
     betas: &[String],
     contains_thinking: bool,
 ) -> Option<usize> {
-    let crate::services::api::client::ProviderConfig::Bedrock { region, auth } = &handle.provider
+    let crate::services::api::client::ProviderConfig::Bedrock { auth, .. } = &handle.provider
     else {
         return None;
     };
+    let region = crate::utils::env_utils::get_aws_region();
     let model_id = if crate::utils::model::bedrock::is_foundation_model(model) {
         model.to_string()
     } else {
-        crate::utils::model::bedrock::get_inference_profile_backing_model(model, region, auth)
-            .await?
+        crate::utils::model::bedrock::get_inference_profile_backing_model(model, auth).await?
     };
     let mut invoke_body = serde_json::json!({
         "anthropic_version": "bedrock-2023-05-31",
@@ -106,8 +110,7 @@ async fn count_tokens_with_bedrock(
             crate::services::api::client::aws_uri_encode(&model_id)
         ),
         request_body,
-        region,
-        "bedrock",
+        &region,
         auth,
     )
     .await?;
@@ -455,50 +458,60 @@ mod tests {
         );
     }
 
+    /// Reads one HTTP/1.1 request, head and body.
+    fn read_request(stream: &mut std::net::TcpStream) -> String {
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let mut request = Vec::new();
+        let mut expected_length = None;
+        loop {
+            let mut chunk = [0u8; 4096];
+            let count = stream.read(&mut chunk).unwrap();
+            if count == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..count]);
+            if expected_length.is_none() {
+                if let Some(header_end) =
+                    request.windows(4).position(|window| window == b"\r\n\r\n")
+                {
+                    let headers = String::from_utf8_lossy(&request[..header_end]);
+                    let content_length = headers
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse::<usize>().ok())
+                                .flatten()
+                        })
+                        .unwrap_or_default();
+                    expected_length = Some(header_end + 4 + content_length);
+                }
+            }
+            if expected_length.is_some_and(|length| request.len() >= length) {
+                break;
+            }
+        }
+        String::from_utf8(request).unwrap()
+    }
+
+    fn write_json_response(stream: &mut std::net::TcpStream, body: &str) {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream.write_all(response.as_bytes()).unwrap();
+    }
+
     fn spawn_json_server(response_body: &'static str) -> (String, std::thread::JoinHandle<String>) {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let worker = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-                .unwrap();
-            let mut request = Vec::new();
-            let mut expected_length = None;
-            loop {
-                let mut chunk = [0u8; 4096];
-                let count = stream.read(&mut chunk).unwrap();
-                if count == 0 {
-                    break;
-                }
-                request.extend_from_slice(&chunk[..count]);
-                if expected_length.is_none() {
-                    if let Some(header_end) =
-                        request.windows(4).position(|window| window == b"\r\n\r\n")
-                    {
-                        let headers = String::from_utf8_lossy(&request[..header_end]);
-                        let content_length = headers
-                            .lines()
-                            .find_map(|line| {
-                                let (name, value) = line.split_once(':')?;
-                                name.eq_ignore_ascii_case("content-length")
-                                    .then(|| value.trim().parse::<usize>().ok())
-                                    .flatten()
-                            })
-                            .unwrap_or_default();
-                        expected_length = Some(header_end + 4 + content_length);
-                    }
-                }
-                if expected_length.is_some_and(|length| request.len() >= length) {
-                    break;
-                }
-            }
-            let response = format!(
-                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{response_body}",
-                response_body.len()
-            );
-            stream.write_all(response.as_bytes()).unwrap();
-            String::from_utf8(request).unwrap()
+            let request = read_request(&mut stream);
+            write_json_response(&mut stream, response_body);
+            request
         });
         (format!("http://{address}"), worker)
     }
@@ -545,6 +558,103 @@ mod tests {
         .unwrap();
         assert_eq!(invoke["anthropic_version"], "bedrock-2023-05-31");
         assert_eq!(invoke["messages"][0]["content"], "hello");
+    }
+
+    /// CC's side clients take `getAWSRegion()` (`utils/model/bedrock.ts:50-56,
+    /// 96-100`): the inference-profile lookup and the count are signed for
+    /// `AWS_REGION` even when the handle, built for the small fast model,
+    /// carries `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION`. The lookup is
+    /// memoized (`:141`), so a second count sends only the count.
+    #[tokio::test]
+    async fn bedrock_side_calls_sign_for_the_aws_region_not_the_small_fast_override() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for _ in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request = read_request(&mut stream);
+                let body = if request.starts_with("GET /inference-profiles/") {
+                    r#"{"models":[{"modelArn":"arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-test"}]}"#
+                } else {
+                    r#"{"inputTokens":3}"#
+                };
+                write_json_response(&mut stream, body);
+                requests.push(request);
+            }
+            requests
+        });
+        let _guards = [
+            EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvVarGuard::unset("CLAUDE_CODE_SKIP_BEDROCK_AUTH"),
+            EnvVarGuard::unset("AWS_BEARER_TOKEN_BEDROCK"),
+            EnvVarGuard::unset("AWS_PROFILE"),
+            EnvVarGuard::unset("AWS_SESSION_TOKEN"),
+            EnvVarGuard::set("AWS_ACCESS_KEY_ID", "AKIDTEST"),
+            EnvVarGuard::set("AWS_SECRET_ACCESS_KEY", "secret"),
+            EnvVarGuard::set("AWS_REGION", "us-west-2"),
+            EnvVarGuard::unset("AWS_DEFAULT_REGION"),
+            EnvVarGuard::set("ANTHROPIC_SMALL_FAST_MODEL", "us.anthropic.claude-test"),
+            EnvVarGuard::set("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION", "eu-west-3"),
+            EnvVarGuard::set("ANTHROPIC_BEDROCK_BASE_URL", &endpoint),
+        ];
+        let handle = crate::services::api::client::get_anthropic_client(
+            crate::services::api::client::GetAnthropicClientOptions {
+                model: Some("us.anthropic.claude-test".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // The handle does carry the override, so the region below is not it.
+        let crate::services::api::client::ProviderConfig::Bedrock { region, .. } = &handle.provider
+        else {
+            panic!("Bedrock expected: {:?}", handle.provider);
+        };
+        assert_eq!(region, "eu-west-3");
+
+        let messages = [anthropic_sdk::resources::beta::messages::BetaMessageParam {
+            role: "user".to_string(),
+            content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
+                "hello".to_string(),
+            ),
+        }];
+        for _ in 0..2 {
+            let count = count_tokens_with_bedrock(
+                &handle,
+                "us.anthropic.claude-test",
+                &messages,
+                &[],
+                &[],
+                false,
+            )
+            .await;
+            assert_eq!(count, Some(3));
+        }
+        let requests = server.join().unwrap();
+        assert!(
+            requests[0].starts_with("GET /inference-profiles/us.anthropic.claude-test "),
+            "{}",
+            requests[0]
+        );
+        for request in &requests[1..] {
+            assert!(
+                request.starts_with("POST /model/anthropic.claude-test/count-tokens "),
+                "{request}"
+            );
+        }
+        for request in &requests {
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("credential=akidtest/")
+                    && request.contains("/us-west-2/bedrock/aws4_request"),
+                "{request}"
+            );
+        }
     }
 
     #[tokio::test]

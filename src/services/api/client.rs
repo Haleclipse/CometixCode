@@ -14,7 +14,6 @@ use crate::utils::auth::{is_claude_ai_subscriber, refresh_and_get_aws_credential
 use crate::utils::env_utils::{get_aws_region, get_vertex_region_for_model};
 use crate::utils::model::model::get_small_fast_model;
 use anthropic_sdk::Nullable;
-use sha2::{Digest as _, Sha256};
 use crate::utils::process_env::{self, EnvSnapshot, JsTruthy};
 use std::collections::HashMap;
 
@@ -370,6 +369,14 @@ pub async fn get_anthropic_client(
                 provider: ProviderConfig::Bedrock {
                     region: aws_region,
                     auth: bedrock_auth,
+                    // `AnthropicBedrock`'s `baseURL =
+                    // readEnv('ANTHROPIC_BEDROCK_BASE_URL') ?? https://bedrock-runtime.<region>.amazonaws.com`
+                    // (`bedrock-sdk/src/client.ts:102`); `None` here is the
+                    // SDK's own regional default.
+                    base_url: read_env(&env, "ANTHROPIC_BEDROCK_BASE_URL"),
+                    // The core's defaults, which CC leaves to the SDK.
+                    api_key: read_env(&env, "ANTHROPIC_API_KEY"),
+                    auth_token: read_env(&env, "ANTHROPIC_AUTH_TOKEN"),
                 },
                 default_headers,
                 max_retries,
@@ -461,10 +468,11 @@ pub async fn get_anthropic_client(
                     project_id,
                     auth: vertex_auth,
                     // `AnthropicVertex`'s own `readEnv` (`vertex-sdk
-                    // client.ts:78`) and the core's `apiKey` default, which
-                    // CC leaves to the SDK.
+                    // client.ts:78`) and the core's `apiKey` and `authToken`
+                    // defaults, which CC leaves to the SDK.
                     base_url: read_env(&env, "ANTHROPIC_VERTEX_BASE_URL"),
                     api_key: read_env(&env, "ANTHROPIC_API_KEY"),
+                    auth_token: read_env(&env, "ANTHROPIC_AUTH_TOKEN"),
                 },
                 default_headers,
                 max_retries,
@@ -601,7 +609,18 @@ pub enum ProviderConfig {
         base_url: Option<String>,
     },
     /// AWS Bedrock provider.
-    Bedrock { region: String, auth: BedrockAuth },
+    Bedrock {
+        region: String,
+        auth: BedrockAuth,
+        /// `ANTHROPIC_BEDROCK_BASE_URL`, trimmed, `''` kept (`??` semantics);
+        /// `None` lets the provider SDK use its regional default.
+        base_url: Option<String>,
+        /// The core's `apiKey` and `authToken` defaults, `readEnv` of
+        /// `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN`: `ARGS` carries
+        /// neither, and `AnthropicBedrock` passes them on to the core.
+        api_key: Option<String>,
+        auth_token: Option<String>,
+    },
     /// Azure Foundry provider. The endpoint and key are the `readEnv` values
     /// `AnthropicFoundry` reads for itself (`foundry-sdk client.ts:58-60`).
     Foundry {
@@ -610,8 +629,8 @@ pub enum ProviderConfig {
         resource: Option<String>,
         api_key: Option<String>,
     },
-    /// GCP Vertex AI provider. The project, endpoint and key are the `readEnv`
-    /// values `AnthropicVertex` and the core read for themselves
+    /// GCP Vertex AI provider. The project, endpoint, key and token are the
+    /// `readEnv` values `AnthropicVertex` and the core read for themselves
     /// (`vertex-sdk client.ts:78-80`); an empty project is none.
     Vertex {
         region: String,
@@ -619,6 +638,7 @@ pub enum ProviderConfig {
         auth: VertexAuth,
         base_url: Option<String>,
         api_key: Option<String>,
+        auth_token: Option<String>,
     },
 }
 
@@ -653,9 +673,9 @@ impl AnthropicClientHandle {
     ///
     /// Every client takes the options CC hands the SDK, with each option CC
     /// leaves to `readEnv` already resolved (see [`ProviderConfig::Direct`]).
-    /// Direct and Foundry are the core client, Vertex its provider client;
-    /// Bedrock still needs its provider SDK (environment redesign C2c). See
-    /// [`ClientBuildOutput`] for CC's `as unknown as Anthropic`.
+    /// Direct and Foundry are the core client, Vertex and Bedrock their
+    /// provider clients. See [`ClientBuildOutput`] for CC's
+    /// `as unknown as Anthropic`.
     ///
     /// Maps to: CC services/api/client.ts:141-316
     ///
@@ -669,9 +689,78 @@ impl AnthropicClientHandle {
                 auth_token,
                 base_url,
             } => self.build_direct_client(api_key.clone(), auth_token.clone(), base_url.clone()),
-            ProviderConfig::Bedrock { .. } => Err(ClientError::Sdk(
-                "Bedrock provider SDK is not wired in Cometix Phase 1; use Direct API".to_string(),
-            )),
+            ProviderConfig::Bedrock {
+                region,
+                auth,
+                base_url,
+                api_key,
+                auth_token,
+            } => {
+                // CC `new AnthropicBedrock({ ...ARGS, awsRegion, skipAuth?,
+                // awsAccessKey?, ... })` (`client.ts:153-190`).
+                type CredentialProvider =
+                    Option<std::sync::Arc<dyn anthropic_sdk_bedrock::AwsCredentialProvider>>;
+                let (access_key, secret_key, session_token, skip_auth, credential_provider): (
+                    Option<String>,
+                    Option<String>,
+                    Option<String>,
+                    bool,
+                    CredentialProvider,
+                ) = match auth {
+                    // `:172-178`: a bearer token sets `skipAuth` and sends
+                    // `Authorization: Bearer …` from `defaultHeaders`.
+                    BedrockAuth::BearerToken { .. } => (None, None, None, true, None),
+                    BedrockAuth::SkipAuth => (None, None, None, true, None),
+                    BedrockAuth::Credentials(credentials) => (
+                        Some(credentials.access_key_id.clone()),
+                        Some(credentials.secret_access_key.clone()),
+                        credentials.session_token.clone(),
+                        false,
+                        None,
+                    ),
+                    // No `awsCredentialExport` credentials: the default chain
+                    // resolves them at first use, as CC leaves it (`:179-188`
+                    // with a null refresh result). Passed in, rather than the
+                    // SDK's own, so it reads the carrier, not the process.
+                    BedrockAuth::DefaultChain => (
+                        None,
+                        None,
+                        None,
+                        false,
+                        Some(std::sync::Arc::new(default_aws_chain()?)),
+                    ),
+                };
+                let config = anthropic_sdk_bedrock::BedrockConfig {
+                    aws_region: region.clone(),
+                    aws_access_key: access_key,
+                    aws_secret_key: secret_key,
+                    aws_session_token: session_token,
+                    base_url: base_url.clone(),
+                    credential_provider,
+                    skip_auth,
+                };
+                // `ARGS` carries no `apiKey` or `authToken`: the core
+                // defaults, read from the snapshot.
+                let mut core_options = self.core_client_options(
+                    Nullable::from_resolved(api_key.clone()),
+                    Nullable::from_resolved(auth_token.clone()),
+                    None,
+                );
+                if let BedrockAuth::BearerToken { extra_headers } = auth {
+                    core_options.default_headers = Some(extra_headers.clone());
+                }
+                // The wrapper, not the core client: Bedrock rewrites the
+                // message paths and signs in its own `messages`/`beta()`
+                // resources (the signing middleware only signs).
+                anthropic_sdk_bedrock::AnthropicBedrock::new_with_core_options(config, core_options)
+                    .map(ClientBuildOutput::Bedrock)
+                    .map_err(|error| {
+                        ClientError::Sdk(match error {
+                            anthropic_sdk::ApiError::Sdk(message) => message,
+                            error => error.to_string(),
+                        })
+                    })
+            }
             ProviderConfig::Foundry {
                 auth,
                 base_url,
@@ -747,6 +836,7 @@ impl AnthropicClientHandle {
                 auth,
                 base_url,
                 api_key,
+                auth_token,
             } => {
                 // CC `new AnthropicVertex({ ...ARGS, region, googleAuth })`
                 // (`client.ts:290-297`).
@@ -763,12 +853,14 @@ impl AnthropicClientHandle {
                     token_provider,
                     base_url: base_url.clone(),
                 };
-                // `ARGS` carries no `apiKey`: the core default
-                // `readEnv('ANTHROPIC_API_KEY') ?? null`, read from the
-                // snapshot. The Vertex client sets the token and base URL.
+                // `ARGS` carries no `apiKey` or `authToken`: the core
+                // defaults `readEnv('ANTHROPIC_API_KEY') ?? null` and
+                // `readEnv('ANTHROPIC_AUTH_TOKEN') ?? null`, read from the
+                // snapshot. The Vertex client sets the Google token and base
+                // URL.
                 let core_options = self.core_client_options(
                     Nullable::from_resolved(api_key.clone()),
-                    Nullable::Unset,
+                    Nullable::from_resolved(auth_token.clone()),
                     None,
                 );
                 anthropic_sdk_vertex::AnthropicVertex::new_with_core_options(&config, core_options)
@@ -829,6 +921,43 @@ impl AnthropicClientHandle {
             .map(ClientBuildOutput::Anthropic)
             .map_err(|error| ClientError::Sdk(error.to_string()))
     }
+}
+
+/// CC's default AWS credential chain for Bedrock: the TS SDK resolves the
+/// credentials it is not given with `@aws-sdk/credential-providers`'
+/// `fromNodeProviderChain` (`bedrock-sdk core/auth.ts:19-31`), which the
+/// provider SDK ports. It reads the carrier, as the npm chain reads
+/// `process.env`, so a project's `AWS_*` settings applied after trust reach it
+/// (`credential_process` runs with exactly that environment).
+///
+/// Its network sources, container credentials and instance metadata, send as
+/// npm's do through Node's `http` module: directly, whatever the proxy
+/// settings say, and with npm's one-second connection timeout. CC configures
+/// no agent for them, so of its transport they keep only the TLS options
+/// every connection gets, here those of
+/// [`crate::utils::proxy::create_axios_instance`] with its proxy cleared.
+fn default_aws_chain()
+-> Result<anthropic_sdk_bedrock::credential_providers::NodeProviderChain, ClientError> {
+    use anthropic_sdk_bedrock::credential_providers::{
+        Environment, NodeProviderChainOptions, from_node_provider_chain,
+    };
+    let http_client = crate::utils::proxy::create_axios_instance()
+        .and_then(|builder| {
+            Ok(builder
+                .no_proxy()
+                .connect_timeout(std::time::Duration::from_secs(1))
+                .build()?)
+        })
+        .map_err(|error| ClientError::Sdk(error.to_string()))?;
+    Ok(from_node_provider_chain(NodeProviderChainOptions {
+        env: Environment::new(
+            crate::utils::process_env::snapshot()
+                .iter()
+                .map(|(key, value)| (key.to_owned(), value.to_owned())),
+        ),
+        http_client: Some(http_client),
+        profile: None,
+    }))
 }
 
 /// CC's skip-auth token provider for Foundry (`client.ts:197-199`),
@@ -894,6 +1023,43 @@ impl anthropic_sdk_vertex::TokenProvider for SkipVertexAuth {
 pub enum ClientBuildOutput {
     Anthropic(anthropic_sdk::Anthropic),
     Vertex(anthropic_sdk_vertex::AnthropicVertex),
+    Bedrock(anthropic_sdk_bedrock::AnthropicBedrock),
+}
+
+/// The event stream [`ClientBetaMessages::create_stream_with_response_and_options`]
+/// returns. CC's client exposes one `Stream` class per provider; the core,
+/// Vertex and Foundry parse SSE, Bedrock parses Smithy EventStream frames, so
+/// the dispatch boxes both into the one type their callers read
+/// (`Result<BetaMessageStreamEvent, ApiError>` per item).
+pub type BetaMessageEventStream = std::pin::Pin<
+    Box<
+        dyn futures::Stream<
+                Item = Result<
+                    anthropic_sdk::resources::beta::messages::BetaMessageStreamEvent,
+                    anthropic_sdk::ApiError,
+                >,
+            > + Send,
+    >,
+>;
+
+/// Rebuilds an [`anthropic_sdk::ApiResponse`] around a boxed stream.
+fn boxed_stream_response<S>(
+    response: anthropic_sdk::ApiResponse<S>,
+) -> anthropic_sdk::ApiResponse<BetaMessageEventStream>
+where
+    S: futures::Stream<
+            Item = Result<
+                anthropic_sdk::resources::beta::messages::BetaMessageStreamEvent,
+                anthropic_sdk::ApiError,
+            >,
+        > + Send
+        + 'static,
+{
+    anthropic_sdk::ApiResponse {
+        data: Box::pin(response.data),
+        response: response.response,
+        request_id: response.request_id,
+    }
 }
 
 impl ClientBuildOutput {
@@ -908,6 +1074,7 @@ impl ClientBuildOutput {
         match self {
             Self::Anthropic(client) => client,
             Self::Vertex(client) => client.as_client(),
+            Self::Bedrock(client) => client.as_client(),
         }
     }
 }
@@ -948,6 +1115,13 @@ impl ClientBetaMessages<'_> {
                     .create_with_options(params, options)
                     .await
             }
+            ClientBuildOutput::Bedrock(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_with_options(params, options)
+                    .await
+            }
         }
     }
 
@@ -974,6 +1148,13 @@ impl ClientBetaMessages<'_> {
                     .create_with_response_and_options(params, options)
                     .await
             }
+            ClientBuildOutput::Bedrock(client) => {
+                client
+                    .beta()
+                    .messages()
+                    .create_with_response_and_options(params, options)
+                    .await
+            }
         }
     }
 
@@ -981,29 +1162,26 @@ impl ClientBetaMessages<'_> {
         &self,
         params: &anthropic_sdk::resources::beta::messages::BetaMessageCreateParams,
         options: Option<&anthropic_sdk::RequestOptions>,
-    ) -> Result<
-        anthropic_sdk::ApiResponse<
-            anthropic_sdk::core::streaming::SseStream<
-                anthropic_sdk::resources::beta::messages::BetaMessageStreamEvent,
-            >,
-        >,
-        anthropic_sdk::ApiError,
-    > {
+    ) -> Result<anthropic_sdk::ApiResponse<BetaMessageEventStream>, anthropic_sdk::ApiError> {
         match self.0 {
-            ClientBuildOutput::Anthropic(client) => {
-                client
-                    .beta()
-                    .messages()
-                    .create_stream_with_response_and_options(params, options)
-                    .await
-            }
-            ClientBuildOutput::Vertex(client) => {
-                client
-                    .beta()
-                    .messages()
-                    .create_stream_with_response_and_options(params, options)
-                    .await
-            }
+            ClientBuildOutput::Anthropic(client) => client
+                .beta()
+                .messages()
+                .create_stream_with_response_and_options(params, options)
+                .await
+                .map(boxed_stream_response),
+            ClientBuildOutput::Vertex(client) => client
+                .beta()
+                .messages()
+                .create_stream_with_response_and_options(params, options)
+                .await
+                .map(boxed_stream_response),
+            ClientBuildOutput::Bedrock(client) => client
+                .beta()
+                .messages()
+                .create_stream_with_response_and_options(params, options)
+                .await
+                .map(boxed_stream_response),
         }
     }
 
@@ -1021,6 +1199,13 @@ impl ClientBetaMessages<'_> {
             ClientBuildOutput::Vertex(client) => {
                 client.beta().messages().count_tokens(params).await
             }
+            // TS `bedrock-sdk/src/client.ts:244` deletes `countTokens` from
+            // `messages`, so through CC's cast it is not a function; here it
+            // is this error. Cometix estimates Bedrock tokens through
+            // `bedrock-runtime` instead (`token_estimation.rs`).
+            ClientBuildOutput::Bedrock(_) => Err(anthropic_sdk::ApiError::Sdk(
+                "countTokens is not supported by the Bedrock provider".to_owned(),
+            )),
         }
     }
 }
@@ -1108,44 +1293,6 @@ impl anthropic_sdk::SdkLogger for StderrLogger {
     }
 }
 
-fn hex_lower(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut output = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        output.push(HEX[(byte >> 4) as usize] as char);
-        output.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    output
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex_lower(&Sha256::digest(bytes))
-}
-
-fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
-    const BLOCK_SIZE: usize = 64;
-    let mut normalized = [0u8; BLOCK_SIZE];
-    if key.len() > BLOCK_SIZE {
-        normalized[..32].copy_from_slice(&Sha256::digest(key));
-    } else {
-        normalized[..key.len()].copy_from_slice(key);
-    }
-    let mut inner_key = [0u8; BLOCK_SIZE];
-    let mut outer_key = [0u8; BLOCK_SIZE];
-    for index in 0..BLOCK_SIZE {
-        inner_key[index] = normalized[index] ^ 0x36;
-        outer_key[index] = normalized[index] ^ 0x5c;
-    }
-    let mut inner = Sha256::new();
-    inner.update(inner_key);
-    inner.update(data);
-    let inner_digest = inner.finalize();
-    let mut outer = Sha256::new();
-    outer.update(outer_key);
-    outer.update(inner_digest);
-    outer.finalize().into()
-}
-
 pub(crate) fn aws_uri_encode(value: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut output = String::with_capacity(value.len());
@@ -1161,80 +1308,28 @@ pub(crate) fn aws_uri_encode(value: &str) -> String {
     output
 }
 
-fn aws_sigv4_headers(
-    method: &str,
-    url: &reqwest::Url,
-    body: &[u8],
-    region: &str,
-    service: &str,
-    credentials: &AwsCredentials,
-) -> Vec<(String, String)> {
-    let now = chrono::Utc::now();
-    let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-    let short_date = now.format("%Y%m%d").to_string();
-    let host = match url.port() {
-        Some(port) => format!("{}:{port}", url.host_str().unwrap_or_default()),
-        None => url.host_str().unwrap_or_default().to_string(),
-    };
-    let payload_hash = sha256_hex(body);
-    let mut canonical_headers = vec![
-        ("content-type", "application/json".to_string()),
-        ("host", host),
-        ("x-amz-content-sha256", payload_hash.clone()),
-        ("x-amz-date", amz_date.clone()),
-    ];
-    if let Some(session_token) = credentials.session_token.as_ref() {
-        canonical_headers.push(("x-amz-security-token", session_token.clone()));
-    }
-    canonical_headers.sort_by_key(|(name, _)| *name);
-    let signed_headers = canonical_headers
-        .iter()
-        .map(|(name, _)| *name)
-        .collect::<Vec<_>>()
-        .join(";");
-    let canonical_header_text = canonical_headers
-        .iter()
-        .map(|(name, value)| format!("{name}:{}\n", value.trim()))
-        .collect::<String>();
-    let canonical_request = format!(
-        "{method}\n{}\n{}\n{canonical_header_text}\n{signed_headers}\n{payload_hash}",
-        url.path(),
-        url.query().unwrap_or_default()
-    );
-    let credential_scope = format!("{short_date}/{region}/{service}/aws4_request");
-    let string_to_sign = format!(
-        "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{}",
-        sha256_hex(canonical_request.as_bytes())
-    );
-    let date_key = hmac_sha256(
-        format!("AWS4{}", credentials.secret_access_key).as_bytes(),
-        short_date.as_bytes(),
-    );
-    let region_key = hmac_sha256(&date_key, region.as_bytes());
-    let service_key = hmac_sha256(&region_key, service.as_bytes());
-    let signing_key = hmac_sha256(&service_key, b"aws4_request");
-    let signature = hex_lower(&hmac_sha256(&signing_key, string_to_sign.as_bytes()));
-    let authorization = format!(
-        "AWS4-HMAC-SHA256 Credential={}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}",
-        credentials.access_key_id
-    );
-    let mut headers = canonical_headers
-        .into_iter()
-        .filter(|(name, _)| *name != "host")
-        .map(|(name, value)| (name.to_string(), value))
-        .collect::<Vec<_>>();
-    headers.push(("authorization".to_string(), authorization));
-    headers
-}
-
-/// Rust provider-SDK wire adapter used by CC's Bedrock owners.
+/// Rust provider-SDK wire adapter used by CC's Bedrock owners, which send
+/// these calls with AWS SDK clients (`utils/model/bedrock.ts:50-138`).
+///
+/// The transport is CC's plain-`fetch` one, [`get_proxy_fetch_options`]
+/// without the API's Unix socket. CC builds the AWS clients with
+/// `getAWSClientProxyConfig()` (`utils/proxy.ts:394-418`), which always uses
+/// the proxy and ignores `NO_PROXY`, and without one under skip-auth; this
+/// follows the fetch proxy rules instead (Cometix-specific deviation).
+///
+/// Requests are signed with the provider SDK's SigV4, whose canonical request
+/// follows `@smithy/signature-v4`, the signer the AWS SDK clients use too.
+/// It signs the host, date, payload hash and session token, where the AWS SDK
+/// clients sign every header; both are valid signatures. The signing name is
+/// `bedrock` for both endpoints CC calls.
+///
+/// [`get_proxy_fetch_options`]: crate::utils::proxy::get_proxy_fetch_options
 pub(crate) async fn send_bedrock_request(
     method: reqwest::Method,
     endpoint: &str,
     path: &str,
     body: Vec<u8>,
     region: &str,
-    service: &str,
     auth: &BedrockAuth,
 ) -> Option<serde_json::Value> {
     let url = reqwest::Url::parse(&format!(
@@ -1243,31 +1338,77 @@ pub(crate) async fn send_bedrock_request(
         path.trim_start_matches('/')
     ))
     .ok()?;
-    let client = reqwest::Client::new();
+    let client = match crate::utils::proxy::get_proxy_fetch_options(false)
+        .and_then(|builder| Ok(builder.build()?))
+    {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "Bedrock provider request transport failed");
+            return None;
+        }
+    };
     let mut request = client
         .request(method.clone(), url.clone())
         .header("content-type", "application/json");
     if !body.is_empty() {
         request = request.body(body.clone());
     }
-    match auth {
+    let credentials = match auth {
         // The `Authorization` `get_anthropic_client` built from its snapshot.
         BedrockAuth::BearerToken { extra_headers } => {
             let authorization = extra_headers.get("Authorization").cloned().flatten()?;
             request = request.header(reqwest::header::AUTHORIZATION, authorization);
+            None
         }
-        BedrockAuth::Credentials(credentials) => {
-            for (name, value) in
-                aws_sigv4_headers(method.as_str(), &url, &body, region, service, credentials)
-            {
-                request = request.header(name, value);
+        BedrockAuth::Credentials(credentials) => Some(credentials.clone()),
+        // CC builds a new AWS client for each of these calls, so each resolves
+        // the default chain afresh (`utils/model/bedrock.ts:50-93`).
+        BedrockAuth::DefaultChain => {
+            use anthropic_sdk_bedrock::AwsCredentialProvider as _;
+            let resolved = match default_aws_chain() {
+                Ok(chain) => chain.get_credentials().await,
+                Err(error) => Err(anthropic_sdk::ApiError::Sdk(error.to_string())),
+            };
+            match resolved {
+                Ok(resolved) => Some(AwsCredentials {
+                    access_key_id: resolved.access_key_id,
+                    secret_access_key: resolved.secret_access_key,
+                    session_token: resolved.session_token,
+                }),
+                Err(error) => {
+                    tracing::warn!(%error, "Bedrock default credential chain failed");
+                    return None;
+                }
             }
         }
-        BedrockAuth::DefaultChain => {
-            tracing::warn!("Bedrock default credential chain requires the provider SDK adapter");
-            return None;
+        BedrockAuth::SkipAuth => None,
+    };
+    if let Some(credentials) = credentials {
+        let signing = anthropic_sdk_bedrock::BedrockConfig {
+            aws_region: region.to_owned(),
+            aws_access_key: Some(credentials.access_key_id),
+            aws_secret_key: Some(credentials.secret_access_key),
+            aws_session_token: credentials.session_token,
+            base_url: None,
+            credential_provider: None,
+            skip_auth: false,
+        };
+        let headers = match anthropic_sdk_bedrock::get_auth_headers(
+            method.as_str(),
+            url.as_str(),
+            &body,
+            &signing,
+        ) {
+            Ok(headers) => headers,
+            Err(error) => {
+                tracing::warn!(%error, "Bedrock provider request signing failed");
+                return None;
+            }
+        };
+        // The client sends the host from the URL, as the SDK's own requests.
+        for (name, value) in headers.into_iter().filter(|(name, _)| name != "host") {
+            request = request.header(name, value);
         }
-        BedrockAuth::SkipAuth => {}
     }
     let response = request.send().await.ok()?;
     if !response.status().is_success() {
@@ -1619,6 +1760,7 @@ mod tests {
                 auth: VertexAuth::SkipAuth,
                 base_url: Some(format!("http://{address}/v1")),
                 api_key: Some("snapshot-key".to_string()),
+                auth_token: None,
             },
             default_headers: HashMap::from([("x-app".to_string(), Some("cli".to_string()))]),
             max_retries: 0,
@@ -1697,8 +1839,9 @@ mod tests {
         }
     }
 
-    /// The Vertex endpoint and key are `readEnv` values taken from the
-    /// snapshot (`vertex-sdk client.ts:78`, the core's `apiKey` default).
+    /// The Vertex endpoint, key and token are `readEnv` values taken from the
+    /// snapshot (`vertex-sdk client.ts:78`, the core's `apiKey` and
+    /// `authToken` defaults).
     #[tokio::test]
     #[allow(clippy::disallowed_methods)] // Deliberately desyncs the OS from the carrier.
     async fn vertex_handle_reads_its_sdk_defaults_from_the_snapshot() {
@@ -1717,6 +1860,7 @@ mod tests {
             EnvVarGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", " vertex-project "),
             EnvVarGuard::set("ANTHROPIC_VERTEX_BASE_URL", " https://vertex.example/v1 "),
             EnvVarGuard::set("ANTHROPIC_API_KEY", " env-key "),
+            EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", " env-token "),
         ];
         // The OS environment disagrees with the carrier, so a read that went
         // around the snapshot would surface here. The guards restore only the
@@ -1727,10 +1871,11 @@ mod tests {
         // that calls libc's getenv. nextest, the project's test gate, runs
         // this test alone in its process; a threaded harness could still race
         // an unrelated test.
-        const KEYS: [&str; 3] = [
+        const KEYS: [&str; 4] = [
             "ANTHROPIC_VERTEX_PROJECT_ID",
             "ANTHROPIC_VERTEX_BASE_URL",
             "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
         ];
         struct OsRestore;
         impl Drop for OsRestore {
@@ -1747,7 +1892,7 @@ mod tests {
             }
         }
         let _os_restore = OsRestore;
-        let os_values = ["os-project", "https://os.example/v1", "os-key"];
+        let os_values = ["os-project", "https://os.example/v1", "os-key", "os-token"];
         for (key, value) in KEYS.into_iter().zip(os_values) {
             unsafe { std::env::set_var(key, value) };
         }
@@ -1759,6 +1904,7 @@ mod tests {
             auth,
             base_url,
             api_key,
+            auth_token,
             ..
         } = &handle.provider
         else {
@@ -1768,6 +1914,7 @@ mod tests {
         assert!(matches!(auth, VertexAuth::SkipAuth));
         assert_eq!(base_url.as_deref(), Some("https://vertex.example/v1"));
         assert_eq!(api_key.as_deref(), Some("env-key"));
+        assert_eq!(auth_token.as_deref(), Some("env-token"));
         let _ = std::fs::remove_dir_all(config_home);
     }
 
@@ -1954,6 +2101,483 @@ mod tests {
                     CredentialUnavailableError: Azure CLI could not be found. Please visit https://aka.ms/azure-cli for installation instructions and then, once installed, authenticate to your Azure account using 'az login'."),
             "{error}"
         );
+    }
+
+    fn bedrock_handle(auth: BedrockAuth, base_url: Option<String>) -> AnthropicClientHandle {
+        AnthropicClientHandle {
+            provider: ProviderConfig::Bedrock {
+                // `AWS_REGION`/`AWS_DEFAULT_REGION`/`us-east-1` is detection's
+                // business; only the SDK call uses the value.
+                region: "us-east-1".to_string(),
+                auth,
+                base_url,
+                api_key: None,
+                auth_token: None,
+            },
+            default_headers: HashMap::from([("x-app".to_string(), Some("cli".to_string()))]),
+            max_retries: 0,
+            timeout_ms: 5_000,
+            fetch: ResolvedFetch {
+                inject_client_request_id: false,
+                source: Some("test".to_string()),
+            },
+            fetch_options: direct_client(),
+            log_level: anthropic_sdk::LogLevel::Warn,
+        }
+    }
+
+    /// CC `client.ts:153-190` detection: the region from the snapshot (the
+    /// small-fast-model override unset), `ANTHROPIC_BEDROCK_BASE_URL` with
+    /// `readEnv` trimming, `CLAUDE_CODE_SKIP_BEDROCK_AUTH`, and the core's
+    /// key and token defaults.
+    #[tokio::test]
+    async fn bedrock_handle_reads_region_base_url_and_auth_from_the_snapshot() {
+        let _env_lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guards = [
+            EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvVarGuard::set("AWS_REGION", "eu-west-1"),
+            EnvVarGuard::unset("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION"),
+            EnvVarGuard::set("ANTHROPIC_BEDROCK_BASE_URL", " http://127.0.0.1:1/x "),
+            EnvVarGuard::unset("AWS_BEARER_TOKEN_BEDROCK"),
+            EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "1"),
+            EnvVarGuard::set("ANTHROPIC_API_KEY", " env-key "),
+            EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", ""),
+        ];
+        let handle = get_anthropic_client(GetAnthropicClientOptions::default())
+            .await
+            .unwrap();
+        let ProviderConfig::Bedrock {
+            region,
+            auth,
+            base_url,
+            api_key,
+            auth_token,
+        } = &handle.provider
+        else {
+            panic!("Bedrock expected: {:?}", handle.provider);
+        };
+        assert_eq!(region, "eu-west-1");
+        assert!(matches!(auth, BedrockAuth::SkipAuth));
+        assert_eq!(base_url.as_deref(), Some("http://127.0.0.1:1/x"));
+        assert_eq!(api_key.as_deref(), Some("env-key"));
+        // `readEnv` keeps `''`, and `?? null` keeps it too.
+        assert_eq!(auth_token.as_deref(), Some(""));
+    }
+
+    /// CC `client.ts:163-166,172-178`: a skip-auth client sends unsigned
+    /// requests to `ANTHROPIC_BEDROCK_BASE_URL`, at the rewritten
+    /// `/model/{model}/invoke` path the provider installs, with the core's
+    /// key default as the handle read it (a `null` token sends none).
+    #[tokio::test]
+    async fn bedrock_skip_auth_sends_unsigned_requests_to_the_base_url() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before headers");
+                request.extend_from_slice(&buffer[..count]);
+            }
+            let head_end = request
+                .windows(4)
+                .position(|bytes| bytes == b"\r\n\r\n")
+                .unwrap()
+                + 4;
+            let head = String::from_utf8_lossy(&request[..head_end]).to_ascii_lowercase();
+            let length = head
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+            while request.len() < head_end + length {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before its body");
+                request.extend_from_slice(&buffer[..count]);
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                      content-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request).to_ascii_lowercase()
+        });
+        let client = AnthropicClientHandle {
+            provider: ProviderConfig::Bedrock {
+                region: "us-east-1".to_string(),
+                auth: BedrockAuth::SkipAuth,
+                base_url: Some(format!("http://{address}")),
+                api_key: Some("snapshot-key".to_string()),
+                auth_token: None,
+            },
+            ..bedrock_handle(BedrockAuth::SkipAuth, None)
+        }
+        .build()
+        .unwrap();
+        let params = anthropic_sdk::resources::beta::messages::BetaMessageCreateParams {
+            model: "claude-test".to_string(),
+            max_tokens: 16,
+            messages: vec![anthropic_sdk::resources::beta::messages::BetaMessageParam {
+                role: "user".to_string(),
+                content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
+                    "hi".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+        let _ = client
+            .beta()
+            .messages()
+            .create_with_options(&params, None)
+            .await;
+        let request = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            request.starts_with("post /model/claude-test/invoke"),
+            "{request}"
+        );
+        assert!(request.contains("\r\nx-app: cli\r\n"), "{request}");
+        assert!(
+            request.contains("\r\nx-api-key: snapshot-key\r\n"),
+            "{request}"
+        );
+        assert!(!request.contains("\r\nauthorization:"), "{request}");
+    }
+
+    /// CC `:179-188` with a credential-export result: explicit keys sign with
+    /// SigV4, session token included.
+    #[tokio::test]
+    async fn bedrock_explicit_credentials_sign_the_request() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0, "HTTP request ended before headers");
+                request.extend_from_slice(&buffer[..count]);
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                      content-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request).to_ascii_lowercase()
+        });
+        let client = bedrock_handle(
+            BedrockAuth::Credentials(crate::utils::auth::AwsCredentials {
+                access_key_id: "AKIDEXAMPLE".to_string(),
+                secret_access_key: "secret".to_string(),
+                session_token: Some("session".to_string()),
+            }),
+            Some(format!("http://{address}")),
+        )
+        .build()
+        .unwrap();
+        let params = anthropic_sdk::resources::beta::messages::BetaMessageCreateParams {
+            model: "claude-test".to_string(),
+            max_tokens: 16,
+            messages: vec![anthropic_sdk::resources::beta::messages::BetaMessageParam {
+                role: "user".to_string(),
+                content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
+                    "hi".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+        let _ = client
+            .beta()
+            .messages()
+            .create_with_options(&params, None)
+            .await;
+        let request = tokio::time::timeout(std::time::Duration::from_secs(10), server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            request.contains(&format!(
+                "\r\nauthorization: aws4-hmac-sha256 credential=akidexample/"
+            )),
+            "{request}"
+        );
+        assert!(request.contains("\r\nx-amz-date: "), "{request}");
+        assert!(
+            request.contains("\r\nx-amz-security-token: session\r\n"),
+            "{request}"
+        );
+    }
+
+    /// CC `:179-188` with a null export result: the default chain resolves at
+    /// first use. Constructing the client must touch no network.
+    #[test]
+    fn bedrock_default_chain_client_builds_without_credentials() {
+        let client = bedrock_handle(
+            BedrockAuth::DefaultChain,
+            Some("http://127.0.0.1:1".to_string()),
+        )
+        .build();
+        assert!(client.is_ok(), "{:?}", client.err());
+    }
+
+    /// A transport that stamps each request, so a test sees which client sent it.
+    fn marked_client() -> reqwest::Client {
+        crate::utils::tls_provider::install_crypto_provider();
+        reqwest::Client::builder()
+            .no_proxy()
+            .default_headers(reqwest::header::HeaderMap::from_iter([(
+                reqwest::header::HeaderName::from_static("x-test-transport"),
+                reqwest::header::HeaderValue::from_static("handle"),
+            )]))
+            .build()
+            .unwrap()
+    }
+
+    /// Reads one HTTP/1.1 request: its head, lowercased, and its body.
+    async fn read_http_request(stream: &mut tokio::net::TcpStream) -> (String, Vec<u8>) {
+        use tokio::io::AsyncReadExt;
+        let mut request = Vec::new();
+        let head_end = loop {
+            if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                break end + 4;
+            }
+            let mut buffer = [0; 4096];
+            let count = stream.read(&mut buffer).await.unwrap();
+            assert_ne!(count, 0, "HTTP request ended before headers");
+            request.extend_from_slice(&buffer[..count]);
+        };
+        let head = String::from_utf8_lossy(&request[..head_end]).to_ascii_lowercase();
+        let length = head
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length: "))
+            .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+        while request.len() < head_end + length {
+            let mut buffer = [0; 4096];
+            let count = stream.read(&mut buffer).await.unwrap();
+            assert_ne!(count, 0, "HTTP request ended before its body");
+            request.extend_from_slice(&buffer[..count]);
+        }
+        (head, request[head_end..].to_vec())
+    }
+
+    /// A stand-in for the instance metadata service and the Bedrock
+    /// endpoints, recording each request head. It answers a request sent to
+    /// it (origin form) and one sent to it as a proxy (absolute form) alike.
+    fn spawn_aws_stand_in(
+        listener: tokio::net::TcpListener,
+    ) -> (
+        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        use tokio::io::AsyncWriteExt;
+        let heads = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let recorded = heads.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let (head, _) = read_http_request(&mut stream).await;
+                let line = head.lines().next().unwrap_or_default().to_owned();
+                recorded.lock().unwrap().push(head);
+                let mut parts = line.split(' ');
+                let method = parts.next().unwrap_or_default();
+                let target = parts.next().unwrap_or_default();
+                // An absolute-form target, without its scheme and authority.
+                let path = match target.strip_prefix("http://") {
+                    Some(rest) => rest.find('/').map_or("/", |index| &rest[index..]),
+                    None => target,
+                };
+                let (extra, body) = match (method, path) {
+                    ("put", "/latest/api/token") => (
+                        "x-aws-ec2-metadata-token-ttl-seconds: 21600\r\n",
+                        "token".to_owned(),
+                    ),
+                    ("get", "/latest/meta-data/iam/security-credentials/") => {
+                        ("", "test-role".to_owned())
+                    }
+                    ("get", "/latest/meta-data/iam/security-credentials/test-role") => (
+                        "",
+                        r#"{"Code":"Success","LastUpdated":"2026-10-08T00:00:00Z","Type":"AWS-HMAC","AccessKeyId":"ASIATEST","SecretAccessKey":"secret","Token":"session","Expiration":"2099-01-01T00:00:00Z"}"#
+                            .to_owned(),
+                    ),
+                    ("post", "/model/claude-test/count-tokens") => {
+                        ("", r#"{"inputTokens":7}"#.to_owned())
+                    }
+                    _ => {
+                        let _ = stream
+                            .write_all(
+                                b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                            )
+                            .await;
+                        continue;
+                    }
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\n{extra}content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            }
+        });
+        (heads, server)
+    }
+
+    /// Each Bedrock request takes the transport of its purpose, here with
+    /// `HTTPS_PROXY` set. The default chain's metadata requests go out
+    /// directly, as npm sends them with Node's `http`, for the client
+    /// `build()` makes and for a side call alike; the model request takes the
+    /// handle's transport (marked here); the side call takes the fetch
+    /// transport, so the proxy. Both signed requests carry what the chain
+    /// resolved from the stand-in IMDS, whose endpoint comes from the
+    /// carrier's `AWS_CONFIG_FILE`. The chain reads only the carrier, so the
+    /// guards set its whole AWS environment.
+    #[tokio::test]
+    async fn bedrock_requests_take_the_transport_of_their_purpose() {
+        let _env_lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _cleared = [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SESSION_TOKEN",
+            "AWS_PROFILE",
+            "AWS_WEB_IDENTITY_TOKEN_FILE",
+            "AWS_ROLE_ARN",
+            "AWS_CONTAINER_CREDENTIALS_FULL_URI",
+            "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
+            "AWS_EC2_METADATA_DISABLED",
+            "AWS_EC2_METADATA_V1_DISABLED",
+            "AWS_EC2_METADATA_SERVICE_ENDPOINT",
+            "AWS_EC2_METADATA_SERVICE_ENDPOINT_MODE",
+            "https_proxy",
+            "http_proxy",
+            "HTTP_PROXY",
+            "no_proxy",
+            "NO_PROXY",
+        ]
+        .map(EnvVarGuard::unset);
+        let service = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = service.local_addr().unwrap();
+        let (heads, server) = spawn_aws_stand_in(service);
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_address = proxy.local_addr().unwrap();
+        let (proxied, proxy_server) = spawn_aws_stand_in(proxy);
+        let home = std::env::temp_dir().join(format!("cometix-aws-chain-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&home).unwrap();
+        let config = home.join("config");
+        let credentials = home.join("credentials");
+        std::fs::write(
+            &config,
+            format!("[default]\nec2_metadata_service_endpoint = http://{address}/\n"),
+        )
+        .unwrap();
+        std::fs::write(&credentials, "").unwrap();
+        let _guards = [
+            EnvVarGuard::set("AWS_CONFIG_FILE", &config),
+            EnvVarGuard::set("AWS_SHARED_CREDENTIALS_FILE", &credentials),
+            EnvVarGuard::set("HTTPS_PROXY", format!("http://{proxy_address}")),
+        ];
+
+        // The client `build()` makes, on the handle's transport.
+        let client = AnthropicClientHandle {
+            fetch_options: marked_client(),
+            ..bedrock_handle(BedrockAuth::DefaultChain, Some(format!("http://{address}")))
+        }
+        .build()
+        .unwrap();
+        let params = anthropic_sdk::resources::beta::messages::BetaMessageCreateParams {
+            model: "claude-test".to_string(),
+            max_tokens: 16,
+            messages: vec![anthropic_sdk::resources::beta::messages::BetaMessageParam {
+                role: "user".to_string(),
+                content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
+                    "hi".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+        let _ = client
+            .beta()
+            .messages()
+            .create_with_options(&params, None)
+            .await;
+
+        // A side call, on the fetch transport.
+        let response = send_bedrock_request(
+            reqwest::Method::POST,
+            "http://bedrock-runtime.invalid",
+            "/model/claude-test/count-tokens",
+            b"{}".to_vec(),
+            "us-east-1",
+            &BedrockAuth::DefaultChain,
+        )
+        .await;
+        assert_eq!(response, Some(serde_json::json!({"inputTokens": 7})));
+
+        let heads = heads.lock().unwrap().clone();
+        let proxied = proxied.lock().unwrap().clone();
+        // Two lookups, one per chain, each straight to the metadata service
+        // and on neither of the other transports.
+        let metadata: Vec<_> = heads
+            .iter()
+            .filter(|head| head.contains(" /latest/"))
+            .collect();
+        assert_eq!(
+            metadata
+                .iter()
+                .filter(|head| head.starts_with("put /latest/api/token "))
+                .count(),
+            2,
+            "{heads:?}"
+        );
+        for head in &metadata {
+            assert!(!head.contains("\r\nx-test-transport:"), "{head}");
+        }
+        let invoke = heads
+            .iter()
+            .find(|head| head.starts_with("post /model/claude-test/invoke "))
+            .expect("the model request reached the server");
+        assert!(
+            invoke.contains("\r\nx-test-transport: handle\r\n"),
+            "{invoke}"
+        );
+        // Only the side call went through the proxy.
+        let [side_call] = proxied.as_slice() else {
+            panic!("one proxied request expected: {proxied:?}");
+        };
+        assert!(
+            side_call
+                .starts_with("post http://bedrock-runtime.invalid/model/claude-test/count-tokens "),
+            "{side_call}"
+        );
+        assert!(!side_call.contains("\r\nx-test-transport:"), "{side_call}");
+        for signed in [invoke, side_call] {
+            assert!(
+                signed.contains("\r\nauthorization: aws4-hmac-sha256 credential=asiatest/"),
+                "{signed}"
+            );
+            assert!(
+                signed.contains("\r\nx-amz-security-token: session\r\n"),
+                "{signed}"
+            );
+        }
+        server.abort();
+        proxy_server.abort();
+        let _ = std::fs::remove_dir_all(home);
     }
 
     /// CC `ARGS.fetchOptions`: the SDK sends through the environment's proxy.
@@ -2197,6 +2821,9 @@ mod tests {
             provider: ProviderConfig::Bedrock {
                 region: "us-east-1".to_string(),
                 auth: BedrockAuth::SkipAuth,
+                base_url: None,
+                api_key: None,
+                auth_token: None,
             },
             default_headers: HashMap::new(),
             max_retries: 2,
@@ -2236,6 +2863,7 @@ mod tests {
                 auth: VertexAuth::SkipAuth,
                 base_url: None,
                 api_key: None,
+                auth_token: None,
             },
             default_headers: HashMap::new(),
             max_retries: 2,
