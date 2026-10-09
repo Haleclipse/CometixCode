@@ -177,6 +177,13 @@ fn client_builder() -> reqwest::ClientBuilder {
 ///
 /// Callers add their own request options (redirects, timeout) and build.
 /// NO_PROXY is the one in the environment when this is called.
+///
+/// It is also the WebSocket transport. CC opens its WebSockets with
+/// `getWebSocketProxyUrl(url)` (`:263-275`, the Bun branch; `:243-256`
+/// `getWebSocketProxyAgent` is the Node `ws` one) and
+/// `getWebSocketTLSOptions()` (`mtls.ts:100-112`): `getProxyUrl()` unless
+/// `shouldBypassProxy(url)`, and the mTLS and CA options, the same three this
+/// combines (see `utils/mcp_websocket_transport.rs`).
 pub fn create_axios_instance() -> anyhow::Result<reqwest::ClientBuilder> {
     let env = crate::utils::process_env::snapshot();
     let proxy_url = get_proxy_url(&env);

@@ -152,7 +152,10 @@ flate2 = "1.1.9"
 # SOCKS connector is already built.
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "system-proxy", "socks"] }
 sse-stream = { version = "0.2", optional = true }
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect"], optional = true }
+# The handshake goes out on reqwest (utils/mcp_websocket_transport.rs), so the
+# WebSocket takes CC's proxy and TLS options like every other request; only
+# the frame codec and its handshake helpers are used from here.
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"], optional = true }
 
 tracing = "0.1"
 
@@ -184,14 +187,12 @@ crossterm = "0.29"
 # Target tables only add the TLS feature; shared features stay in [dependencies].
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["native-tls"], optional = true }
 rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
     "reqwest-native-tls",
 ] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["rustls-tls-webpki-roots"], optional = true }
 rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
     "reqwest-tls-no-provider",
 ] }

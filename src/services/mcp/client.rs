@@ -2451,10 +2451,12 @@ mod runtime {
             "User-Agent".to_string(),
             crate::utils::http::get_mcp_user_agent(),
         )]);
+        // CC `...(serverRef.authToken && { ... })` (`client.ts:712-714`):
+        // any non-empty token, whitespace too.
         if let Some(auth_token) = config
             .auth_token
             .as_deref()
-            .filter(|token| !token.trim().is_empty())
+            .filter(|token| !token.is_empty())
         {
             headers.insert(
                 "X-Claude-Code-Ide-Authorization".to_string(),
