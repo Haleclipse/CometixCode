@@ -56,7 +56,9 @@ const NO_MCP_RESOURCES_COPY: &str =
 
 /// List MCP resources from live connected clients.
 /// Maps to: CC `tools/ListMcpResourcesTool/ListMcpResourcesTool.ts` `call`
-/// using `ensureConnectedClient(client)` and `fetchResourcesForClient(fresh)`.
+/// and its `fetchResourcesForClient(fresh)`. CC first takes `fresh` from
+/// `ensureConnectedClient(client)`, which reconnects through the memo; that is
+/// not ported, so the client registered under the server's name is used.
 pub(crate) async fn list_mcp_resources_output(
     input: &serde_json::Value,
     state: &crate::state::app_state_store::McpState,
@@ -411,6 +413,8 @@ mod tests {
     #[test]
     fn list_mcp_resources_tool_serves_lru_cached_resources_like_official() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
+        // The fetch caches hold fetches run on the process runtime.
+        crate::utils::process_runtime::initialize_test_process_runtime();
         let script_path = std::env::temp_dir().join(format!(
             "cometix-list-mcp-resources-live-{}.mjs",
             uuid::Uuid::new_v4()
@@ -484,7 +488,7 @@ rl.on('line', line => {
                     plugin_source: None,
                 };
                 let discovery =
-                    crate::services::mcp::client::connect_to_server(SERVER, &config).await;
+                    crate::services::mcp::client::reconnect_mcp_server_impl(SERVER, &config).await;
                 assert_eq!(
                     discovery.server.client.status,
                     crate::services::mcp::types::McpServerConnectionType::Connected
@@ -509,9 +513,9 @@ rl.on('line', line => {
                     ..crate::state::app_state_store::McpState::default()
                 };
 
-                // `connect_to_server` already warmed the memoized fetch, so the
-                // tool observes the startup prefetch rather than the stale
-                // AppState snapshot or a second `resources/list`.
+                // Connecting fetched through the memoized fetch, so the tool
+                // observes that prefetch rather than the stale AppState
+                // snapshot or a second `resources/list`.
                 let output = super::list_mcp_resources_output(
                     &serde_json::json!({ "server": SERVER }),
                     &state,

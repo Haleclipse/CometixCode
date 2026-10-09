@@ -58,7 +58,7 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk"
 version = "0.74.0"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#7611f5efc0cdba1e745af58a5797f9043f6aeabd"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#16dc3e424e7c5041bcc952ebb54d9ec4b2b1ced7"
 dependencies = [
  "async-trait",
  "bytes",
@@ -80,7 +80,7 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk-bedrock"
 version = "0.26.3"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#7611f5efc0cdba1e745af58a5797f9043f6aeabd"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#16dc3e424e7c5041bcc952ebb54d9ec4b2b1ced7"
 dependencies = [
  "anthropic-sdk",
  "base64 0.22.1",
@@ -104,7 +104,7 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk-foundry"
 version = "0.2.3"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#7611f5efc0cdba1e745af58a5797f9043f6aeabd"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#16dc3e424e7c5041bcc952ebb54d9ec4b2b1ced7"
 dependencies = [
  "anthropic-sdk",
  "chrono",
@@ -121,7 +121,7 @@ dependencies = [
 [[package]]
 name = "anthropic-sdk-vertex"
 version = "0.14.3"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#7611f5efc0cdba1e745af58a5797f9043f6aeabd"
+source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#16dc3e424e7c5041bcc952ebb54d9ec4b2b1ced7"
 dependencies = [
  "anthropic-sdk",
  "base64 0.22.1",

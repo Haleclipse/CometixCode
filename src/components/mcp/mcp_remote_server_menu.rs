@@ -361,7 +361,13 @@ pub fn MCPRemoteServerMenu<'a>(
                             )));
                             return;
                         }
-                        crate::services::mcp::client::clear_server_cache(&server.name, None).await;
+                        // CC `clearServerCache(server.name, { ...server.config, scope: server.scope })`.
+                        let server_ref = crate::services::mcp::types::ScopedMcpServerConfig {
+                            scope: server.scope,
+                            ..server.config.clone()
+                        };
+                        crate::services::mcp::client::clear_server_cache(&server.name, Some(&server_ref))
+                            .await;
                         {
                             let base = runtime_mcp
                                 .current()
@@ -467,7 +473,13 @@ pub fn MCPRemoteServerMenu<'a>(
                         is_reconnecting.set(false);
                     }
                     RemoteServerMenuAction::ClaudeAiClearAuthentication => {
-                        crate::services::mcp::client::clear_server_cache(&server.name, None).await;
+                        // CC `clearServerCache(server.name, { ...server.config, scope: server.scope })`.
+                        let server_ref = crate::services::mcp::types::ScopedMcpServerConfig {
+                            scope: server.scope,
+                            ..server.config.clone()
+                        };
+                        crate::services::mcp::client::clear_server_cache(&server.name, Some(&server_ref))
+                            .await;
                         {
                             let base = runtime_mcp
                                 .current()

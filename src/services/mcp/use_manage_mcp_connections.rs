@@ -336,7 +336,14 @@ pub async fn handle_mcp_server_closed_event(
     config: ScopedMcpServerConfig,
     runtime_mcp: McpWriter,
 ) {
-    clear_server_cache(&name, None).await;
+    // CC's handler opens with `clearServerCache(client.name, client.config)`
+    // (`useManageMCPConnections.ts:336`), unawaited. Assigning this handler
+    // (`:333`) replaced `connectToServer`'s own `onclose` wrapper
+    // (`client.ts:1374`), so for the REPL's connections that call is what
+    // deletes the closed connection's memo entry and the name's fetch caches.
+    // The close watcher that emitted this event has already done both for
+    // exactly that connection; clearing the key again here could only close a
+    // newer connection made under it since.
     match closed_server_reconnect_decision(config.transport, is_mcp_server_disabled(&name)) {
         ClosedServerReconnectDecision::SkipDisabled => {}
         ClosedServerReconnectDecision::MarkFailed => {
@@ -1827,18 +1834,18 @@ pub async fn toggle_mcp_server_once(
     config: &ScopedMcpServerConfig,
 ) -> anyhow::Result<McpConnectionDiscovery> {
     cancel_pending_mcp_reconnect(name);
-    let client = current_state
+    let server = current_state
         .clients
         .iter()
         .find(|server| server.client.name == name)
-        .map(|server| &server.client)
         .ok_or_else(|| anyhow::anyhow!("MCP server {name} not found"))?;
+    let client = &server.client;
     let is_currently_disabled = client.status == McpServerConnectionType::Disabled;
 
     if !is_currently_disabled {
         set_mcp_server_enabled(name, false)?;
         if client.status == McpServerConnectionType::Connected {
-            clear_server_cache(name, None).await;
+            clear_server_cache(name, Some(server.config.as_ref().unwrap_or(config))).await;
         }
         return Ok(McpConnectionDiscovery::disabled(name, config));
     }

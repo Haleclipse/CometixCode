@@ -10379,7 +10379,7 @@ rl.on('line', line => {
                     plugin_source: None,
                 };
                 let discovery =
-                    crate::services::mcp::client::connect_to_server(SERVER, &config).await;
+                    crate::services::mcp::client::reconnect_mcp_server_impl(SERVER, &config).await;
                 assert_eq!(
                     discovery.server.client.status,
                     crate::services::mcp::types::McpServerConnectionType::Connected

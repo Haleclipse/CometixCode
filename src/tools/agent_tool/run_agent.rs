@@ -285,14 +285,50 @@ fn initial_agent_content_replacement_state(
         .or_else(|| input.context.content_replacement_state.clone())
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 struct AgentMcpInitialization {
     mcp_state: crate::state::app_state_store::McpState,
     tools: Vec<Tool>,
-    cleanup_server_names: Vec<String>,
+    cleanup: AgentMcpCleanup,
 }
 
-/// Maps to: CC `runAgent.ts#initializeAgentMcpServers`.
+/// Maps to: CC `runAgent.ts:194-210`, the `cleanup` `initializeAgentMcpServers`
+/// returns: closes the inline servers' connections — CC's
+/// `newlyCreatedClients` — and never a referenced server's, which is the
+/// parent's memoized connection.
+///
+/// CC calls it from `runAgent`'s `finally` (`:816-818`), however the agent
+/// ends. Each return path here runs it; dropping the agent's future runs it
+/// too. CC's `finally` cannot run while a connect is pending, so an inline
+/// server still being connected then is closed once it is made.
+#[derive(Debug, Default)]
+struct AgentMcpCleanup {
+    newly_created_clients: Vec<crate::services::mcp::types::McpServerSnapshot>,
+    connecting: Option<(String, crate::services::mcp::types::ScopedMcpServerConfig)>,
+}
+
+impl AgentMcpCleanup {
+    fn run(&mut self) {
+        if let Some((name, config)) = self.connecting.take() {
+            crate::services::mcp::client::cleanup_memoized_connection(&name, &config);
+        }
+        for client in self.newly_created_clients.drain(..) {
+            if client.client.status
+                == crate::services::mcp::types::McpServerConnectionType::Connected
+            {
+                crate::services::mcp::client::cleanup_connection(&client);
+            }
+        }
+    }
+}
+
+impl Drop for AgentMcpCleanup {
+    fn drop(&mut self) {
+        self.run();
+    }
+}
+
+/// Maps to: CC `runAgent.ts:95-217` `initializeAgentMcpServers`.
 async fn initialize_agent_mcp_servers(
     agent_definition: &AgentDefinition,
     parent_state: &crate::state::app_state_store::McpState,
@@ -300,15 +336,13 @@ async fn initialize_agent_mcp_servers(
     let Some(specs) = agent_definition.mcp_servers.as_ref() else {
         return AgentMcpInitialization {
             mcp_state: parent_state.clone(),
-            tools: Vec::new(),
-            cleanup_server_names: Vec::new(),
+            ..AgentMcpInitialization::default()
         };
     };
     if specs.is_empty() {
         return AgentMcpInitialization {
             mcp_state: parent_state.clone(),
-            tools: Vec::new(),
-            cleanup_server_names: Vec::new(),
+            ..AgentMcpInitialization::default()
         };
     }
 
@@ -325,17 +359,16 @@ async fn initialize_agent_mcp_servers(
         );
         return AgentMcpInitialization {
             mcp_state: parent_state.clone(),
-            tools: Vec::new(),
-            cleanup_server_names: Vec::new(),
+            ..AgentMcpInitialization::default()
         };
     }
 
     let mut state = parent_state.clone();
-    let mut agent_only_state = crate::state::app_state_store::McpState::default();
-    let mut cleanup_server_names = Vec::new();
+    let mut tools = Vec::new();
+    let mut cleanup = AgentMcpCleanup::default();
 
     for spec in specs {
-        let (name, config, cleanup_after_agent) = match spec {
+        let (name, config, is_newly_created) = match spec {
             AgentMcpServerSpec::Reference(name) => {
                 let Some(config) =
                     crate::services::mcp::config::get_mcp_config_by_name_readonly(name)
@@ -352,27 +385,65 @@ async fn initialize_agent_mcp_servers(
             AgentMcpServerSpec::Inline { name, config } => (name.clone(), config.clone(), true),
         };
 
-        let discovery = crate::services::mcp::client::connect_to_server(&name, &config).await;
-        if cleanup_after_agent {
-            cleanup_server_names.push(name.clone());
+        // CC's memoized `connectToServer`: a referenced server the parent
+        // already holds comes back as that same connection.
+        if is_newly_created {
+            cleanup.connecting = Some((name.clone(), config.clone()));
         }
-        upsert_mcp_server_snapshot(&mut state, discovery.server.clone());
-        upsert_mcp_server_snapshot(&mut agent_only_state, discovery.server);
+        let mut client = crate::services::mcp::client::connect_to_server(&name, &config).await;
+        if is_newly_created {
+            cleanup.connecting = None;
+            cleanup.newly_created_clients.push(client.clone());
+        }
+
+        if client.client.status != crate::services::mcp::types::McpServerConnectionType::Connected {
+            tracing::warn!(
+                agent_type = %agent_definition.agent_type,
+                server = %name,
+                status = ?client.client.status,
+                "failed to connect to agent MCP server"
+            );
+            // CC appends the agent's clients to the parent's
+            // (`runAgent.ts:213-214`): an entry the parent already holds stays
+            // as it is, with any tools it carries.
+            if !state
+                .clients
+                .iter()
+                .any(|server| server.client.name == name)
+            {
+                upsert_mcp_server_snapshot(&mut state, client);
+            }
+            continue;
+        }
+        // CC `fetchToolsForClient(client)`: memoized by name and refreshed on
+        // `list_changed`, so a shared connection's tools are the parent's
+        // current ones.
+        client.tools = crate::services::mcp::client::fetch_tools_for_client(&client).await;
+        let server_tools = crate::services::mcp::client::mcp_tools_for_server_snapshot(&client);
+        tracing::debug!(
+            agent_type = %agent_definition.agent_type,
+            server = %name,
+            tools = server_tools.len(),
+            "connected to agent MCP server"
+        );
+        tools.extend(server_tools.iter().cloned());
+        // The agent fetches the tools only; the prompts and resources state
+        // already holds for the server stay.
+        crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
+            &mut state,
+            crate::services::mcp::use_manage_mcp_connections::McpPendingUpdate {
+                server: client,
+                tools: Some(server_tools),
+                commands: None,
+                resources: None,
+            },
+        );
     }
 
-    let tools = agent_only_state.tools.clone();
     AgentMcpInitialization {
         mcp_state: state,
         tools,
-        cleanup_server_names,
-    }
-}
-
-/// Maps to: CC `runAgent.ts#initializeAgentMcpServers` cleanup function for
-/// inline dynamic MCP servers only.
-async fn cleanup_agent_mcp_servers(server_names: &[String]) {
-    for server_name in server_names {
-        crate::services::mcp::client::clear_server_cache(server_name, None).await;
+        cleanup,
     }
 }
 
@@ -917,7 +988,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
         &run_cwd,
     );
 
-    let agent_mcp =
+    let mut agent_mcp =
         initialize_agent_mcp_servers(input.agent_definition, &input.context.mcp_state).await;
     let resolved_tools = merge_agent_mcp_tools(resolved_tools, agent_mcp.tools.clone());
 
@@ -1066,7 +1137,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
                 // CC's write queue drains on its own 100 ms timer regardless of
                 // how `runAgent` returns, so a parked record still lands.
                 sidechain.flush();
-                cleanup_agent_mcp_servers(&agent_mcp.cleanup_server_names).await;
+                agent_mcp.cleanup.run();
                 release_agent_registrations(&agent_id, input.context);
                 return Ok(RunAgentOutcome::Backgrounded(BackgroundedAgentRun {
                     agent_id,
@@ -1086,7 +1157,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
                         handle.abort_controller.abort();
                         let _ = handle.commands.send(crate::query::QueryCommand::Abort).await;
                         sidechain.flush();
-                        cleanup_agent_mcp_servers(&agent_mcp.cleanup_server_names).await;
+                        agent_mcp.cleanup.run();
                         release_agent_registrations(&agent_id, input.context);
                         return Ok(RunAgentOutcome::Backgrounded(BackgroundedAgentRun {
                             agent_id,
@@ -1112,7 +1183,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
                 .send(crate::query::QueryCommand::Abort)
                 .await;
             sidechain.flush();
-            cleanup_agent_mcp_servers(&agent_mcp.cleanup_server_names).await;
+            agent_mcp.cleanup.run();
             release_agent_registrations(&agent_id, input.context);
             crate::tasks::local_shell_task::kill_shell_tasks::kill_shell_tasks_for_agent(&agent_id);
             return Err(anyhow::Error::new(AgentExecutionAborted {
@@ -1257,7 +1328,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     // drained it on its own timer.
     sidechain.flush();
 
-    cleanup_agent_mcp_servers(&agent_mcp.cleanup_server_names).await;
+    agent_mcp.cleanup.run();
 
     execute_subagent_stop_hooks_from_settings(
         &agent_id,
@@ -2897,7 +2968,317 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
         assert_eq!(initialized.mcp_state, parent_state);
         assert!(initialized.tools.is_empty());
-        assert!(initialized.cleanup_server_names.is_empty());
+        assert!(initialized.cleanup.newly_created_clients.is_empty());
+    }
+
+    /// CC `runAgent.ts:140-151` with the memoized `connectToServer` and
+    /// `fetchToolsForClient`: a subagent that references a server by name
+    /// gets the parent's connection — not connected again — and the tools the
+    /// fetch cache holds for it, refreshed since the parent's snapshot. Its
+    /// cleanup leaves the parent's connection alone.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn a_referenced_mcp_server_shares_the_parents_connection_and_tools() {
+        use crate::services::mcp::types::McpServerConnectionType;
+        let _env_guard = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
+        let config_dir = fixture.dir.join("config");
+        let managed_dir = fixture.dir.join("managed");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&managed_dir).unwrap();
+        std::fs::write(
+            config_dir.join(".claude.json"),
+            serde_json::json!({
+                "mcpServers": {
+                    "shared": {
+                        "command": "node",
+                        "args": [fixture.script.to_string_lossy(), fixture.log.to_string_lossy()]
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
+        crate::utils::config::clear_global_config_cache_for_testing();
+        crate::utils::process_runtime::initialize_test_process_runtime();
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let config =
+                    crate::services::mcp::config::get_mcp_config_by_name_readonly("shared")
+                        .expect("the server is configured");
+                let parent =
+                    crate::services::mcp::client::reconnect_mcp_server_impl("shared", &config)
+                        .await;
+                assert_eq!(
+                    parent.server.client.status,
+                    McpServerConnectionType::Connected,
+                    "{:?}",
+                    parent.server.client.error
+                );
+                let parent_connection_id = parent.server.connection_id;
+                let mut parent_state = crate::state::app_state_store::McpState::default();
+                crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
+                    &mut parent_state,
+                    parent,
+                );
+                // `tools/list_changed` after the parent's snapshot was taken.
+                crate::services::mcp::client::refresh_mcp_tools_for_client("shared")
+                    .await
+                    .expect("the server is connected");
+
+                let mut agent = AgentDefinition::new(
+                    "custom",
+                    "Use custom",
+                    AgentDefinitionSource::UserSettings,
+                );
+                agent.mcp_servers = Some(vec![AgentMcpServerSpec::Reference("shared".to_string())]);
+                let initialized = initialize_agent_mcp_servers(&agent, &parent_state).await;
+
+                assert_eq!(fixture.count("initialize"), 1);
+                assert_eq!(fixture.count("tools/list"), 2);
+                assert!(initialized.cleanup.newly_created_clients.is_empty());
+                assert_eq!(
+                    initialized
+                        .tools
+                        .iter()
+                        .map(|tool| tool.name.as_str())
+                        .collect::<Vec<_>>(),
+                    ["mcp__shared__lookup_2"]
+                );
+                let shared = initialized
+                    .mcp_state
+                    .clients
+                    .iter()
+                    .find(|server| server.client.name == "shared")
+                    .expect("the agent's state holds the server");
+                assert_eq!(shared.connection_id, parent_connection_id);
+                drop(initialized);
+
+                assert_eq!(
+                    crate::services::mcp::client::connect_to_server("shared", &config)
+                        .await
+                        .connection_id,
+                    parent_connection_id
+                );
+                crate::services::mcp::client::clear_server_cache("shared", None).await;
+            });
+        crate::utils::config::clear_global_config_cache_for_testing();
+    }
+
+    /// CC `runAgent.ts:153-210`: an inline server is the agent's own. Its
+    /// tools are the agent's only when it connected, and its connection is
+    /// closed when the agent ends — here by dropping the initialization, as
+    /// an abandoned agent future would — so the next connect makes a new one.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn an_inline_mcp_server_is_closed_when_the_agent_ends() {
+        use crate::services::mcp::types::{ConfigScope, McpServerConnectionType};
+        let _env_guard = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
+        let managed_dir = fixture.dir.join("managed");
+        std::fs::create_dir_all(&managed_dir).unwrap();
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        crate::utils::process_runtime::initialize_test_process_runtime();
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let config = crate::services::mcp::types::ScopedMcpServerConfig {
+                    scope: ConfigScope::Dynamic,
+                    ..fixture.config(&[])
+                };
+                let broken = crate::services::mcp::types::ScopedMcpServerConfig {
+                    command: Some("cometix-definitely-not-a-command".to_string()),
+                    args: Vec::new(),
+                    ..config.clone()
+                };
+                let mut agent = AgentDefinition::new(
+                    "custom",
+                    "Use custom",
+                    AgentDefinitionSource::UserSettings,
+                );
+                agent.mcp_servers = Some(vec![
+                    AgentMcpServerSpec::Inline {
+                        name: "inline".to_string(),
+                        config: config.clone(),
+                    },
+                    AgentMcpServerSpec::Inline {
+                        name: "broken".to_string(),
+                        config: broken,
+                    },
+                ]);
+                let initialized = initialize_agent_mcp_servers(
+                    &agent,
+                    &crate::state::app_state_store::McpState::default(),
+                )
+                .await;
+
+                assert_eq!(
+                    initialized
+                        .tools
+                        .iter()
+                        .map(|tool| tool.name.as_str())
+                        .collect::<Vec<_>>(),
+                    ["mcp__inline__lookup_1"]
+                );
+                assert_eq!(initialized.cleanup.newly_created_clients.len(), 2);
+                let broken = initialized
+                    .mcp_state
+                    .clients
+                    .iter()
+                    .find(|server| server.client.name == "broken")
+                    .expect("the agent's state holds the failed server");
+                assert_eq!(broken.client.status, McpServerConnectionType::Failed);
+                assert!(crate::services::mcp::client::is_connected_mcp_client("inline").await);
+
+                drop(initialized);
+                assert!(!crate::services::mcp::client::is_connected_mcp_client("inline").await);
+                let again =
+                    crate::services::mcp::client::connect_to_server("inline", &config).await;
+                assert_eq!(again.client.status, McpServerConnectionType::Connected);
+                assert_eq!(fixture.count("initialize"), 2);
+                crate::services::mcp::client::clear_server_cache("inline", None).await;
+                crate::services::mcp::client::clear_server_cache("broken", None).await;
+            });
+    }
+
+    /// An agent dropped while its inline server is still connecting: the
+    /// connection, made on the process runtime, is closed once it is made,
+    /// as CC's `finally` cleanup would close it after the connect.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn an_inline_mcp_server_connecting_when_the_agent_is_dropped_is_closed_once_made() {
+        use crate::services::mcp::types::ConfigScope;
+        let _env_guard = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
+        let managed_dir = fixture.dir.join("managed");
+        std::fs::create_dir_all(&managed_dir).unwrap();
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        crate::utils::process_runtime::initialize_test_process_runtime();
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let config = crate::services::mcp::types::ScopedMcpServerConfig {
+                    scope: ConfigScope::Dynamic,
+                    ..fixture.config(&["slow-first"])
+                };
+                let mut agent = AgentDefinition::new(
+                    "custom",
+                    "Use custom",
+                    AgentDefinitionSource::UserSettings,
+                );
+                agent.mcp_servers = Some(vec![AgentMcpServerSpec::Inline {
+                    name: "slow-inline".to_string(),
+                    config: config.clone(),
+                }]);
+                let parent_state = crate::state::app_state_store::McpState::default();
+                let initializing = initialize_agent_mcp_servers(&agent, &parent_state);
+                tokio::select! {
+                    _ = initializing => panic!("the fixture answers its first initialize late"),
+                    _ = fixture.until("the first initialize", |fixture| {
+                        fixture.count("initialize") == 1
+                    }) => {}
+                }
+
+                fixture
+                    .until("the connection to be made and closed", |_| {
+                        crate::services::mcp::client::memoized_connection_ids("slow-inline")
+                            .is_empty()
+                    })
+                    .await;
+                assert!(
+                    !crate::services::mcp::client::is_connected_mcp_client("slow-inline").await
+                );
+                assert_eq!(fixture.count("initialize"), 1);
+            });
+    }
+
+    /// CC `runAgent.ts:213-214` appends the agent's clients to the parent's:
+    /// a referenced server that does not connect leaves the parent's entry for
+    /// it — here a needs-auth one with its authenticate tool — as it is.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn a_referenced_mcp_server_that_fails_leaves_the_parents_entry() {
+        let _env_guard = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
+        let config_dir = fixture.dir.join("config");
+        let managed_dir = fixture.dir.join("managed");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        std::fs::create_dir_all(&managed_dir).unwrap();
+        std::fs::write(
+            config_dir.join(".claude.json"),
+            serde_json::json!({
+                "mcpServers": {
+                    "shared": {
+                        "command": "node",
+                        "args": [
+                            fixture.script.to_string_lossy(),
+                            fixture.log.to_string_lossy(),
+                            "exit-on-initialize"
+                        ]
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
+        crate::utils::config::clear_global_config_cache_for_testing();
+        crate::utils::process_runtime::initialize_test_process_runtime();
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let config =
+                    crate::services::mcp::config::get_mcp_config_by_name_readonly("shared")
+                        .expect("the server is configured");
+                let mut parent_state = crate::state::app_state_store::McpState::default();
+                crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
+                    &mut parent_state,
+                    crate::services::mcp::client::McpConnectionDiscovery::needs_auth(
+                        "shared", &config,
+                    ),
+                );
+                assert_eq!(parent_state.tools.len(), 1);
+
+                let mut agent = AgentDefinition::new(
+                    "custom",
+                    "Use custom",
+                    AgentDefinitionSource::UserSettings,
+                );
+                agent.mcp_servers = Some(vec![AgentMcpServerSpec::Reference("shared".to_string())]);
+                let initialized = initialize_agent_mcp_servers(&agent, &parent_state).await;
+
+                assert_eq!(fixture.count("initialize"), 1);
+                assert!(initialized.tools.is_empty());
+                assert_eq!(initialized.mcp_state, parent_state);
+                crate::services::mcp::client::clear_server_cache("shared", None).await;
+            });
+        crate::utils::config::clear_global_config_cache_for_testing();
     }
 
     /// CC `AgentTool.tsx:833-845`: the worker pool is
