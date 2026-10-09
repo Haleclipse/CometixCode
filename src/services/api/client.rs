@@ -584,7 +584,8 @@ pub enum FoundryAuth {
 /// Maps to: CC services/api/client.ts:266-288
 #[derive(Clone, Debug)]
 pub enum VertexAuth {
-    /// `new GoogleAuth(...)`: the SDK's Application Default Credentials.
+    /// `new GoogleAuth(...)`: the SDK's Application Default Credentials, on
+    /// the carrier and CC's transport.
     GoogleAuth,
     /// CC's mock `GoogleAuth` (`client.ts:265-271`), for proxies and tests:
     /// `getRequestHeaders()` returns no header.
@@ -843,7 +844,32 @@ impl AnthropicClientHandle {
                 let token_provider: Option<
                     std::sync::Arc<dyn anthropic_sdk_vertex::TokenProvider>,
                 > = match auth {
-                    VertexAuth::GoogleAuth => None,
+                    // CC `new GoogleAuth({ scopes, projectId? })`
+                    // (`client.ts:271-287`), a new one per client. The npm
+                    // package reads `process.env` and sends through gaxios;
+                    // here it reads the carrier, so a project's
+                    // `GOOGLE_*`/`GCE_METADATA_*` settings applied after trust
+                    // reach it, and its requests go through CC's transport,
+                    // as the Azure credential's do. gaxios' own proxy rules
+                    // differ (Cometix-specific deviation, docs/ENV_REDESIGN.md
+                    // C2c-4).
+                    VertexAuth::GoogleAuth => {
+                        use anthropic_sdk_vertex::google_auth::Environment;
+                        let env = Environment::new(
+                            crate::utils::process_env::snapshot()
+                                .iter()
+                                .map(|(key, value)| (key.to_owned(), value.to_owned())),
+                        );
+                        let http_client = crate::utils::proxy::create_axios_instance()
+                            .and_then(|builder| Ok(builder.build()?))
+                            .map_err(|error| ClientError::Sdk(error.to_string()))?;
+                        Some(std::sync::Arc::new(anthropic_sdk_vertex::GoogleAuth::new(
+                            anthropic_sdk_vertex::GoogleAuthOptions {
+                                env,
+                                http_client: Some(http_client),
+                            },
+                        )))
+                    }
                     VertexAuth::SkipAuth => Some(std::sync::Arc::new(SkipVertexAuth)),
                 };
                 let config = anthropic_sdk_vertex::VertexConfig {
@@ -1916,6 +1942,122 @@ mod tests {
         assert_eq!(api_key.as_deref(), Some("env-key"));
         assert_eq!(auth_token.as_deref(), Some("env-token"));
         let _ = std::fs::remove_dir_all(config_home);
+    }
+
+    /// CC `new GoogleAuth(...)` on the carrier and CC's transport: the
+    /// credential file comes from the carrier's `GOOGLE_APPLICATION_CREDENTIALS`
+    /// (the OS environment has none), the token request goes through the
+    /// carrier's `HTTPS_PROXY` (its endpoint resolves nowhere else), and the
+    /// model request, on the handle's transport, carries the token.
+    #[tokio::test]
+    async fn vertex_google_auth_reads_the_carrier_and_sends_through_cc_transport() {
+        use tokio::io::AsyncWriteExt;
+        let _env_lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_address = proxy.local_addr().unwrap();
+        let proxy_server = tokio::spawn(async move {
+            let (mut stream, _) = proxy.accept().await.unwrap();
+            let (head, _) = read_http_request(&mut stream).await;
+            let body = r#"{"access_token":"proxied-token","expires_in":3600}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+            head
+        });
+        let api = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let api_address = api.local_addr().unwrap();
+        let api_server = tokio::spawn(async move {
+            let (mut stream, _) = api.accept().await.unwrap();
+            let (head, _) = read_http_request(&mut stream).await;
+            let _ = stream
+                .write_all(
+                    b"HTTP/1.1 400 Bad Request\r\ncontent-type: application/json\r\n\
+                      content-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await;
+            head
+        });
+        let file = std::env::temp_dir().join(format!("cometix-adc-{}.json", uuid::Uuid::new_v4()));
+        std::fs::write(
+            &file,
+            serde_json::json!({
+                "type": "authorized_user",
+                "client_id": "client-id",
+                "client_secret": "client-secret",
+                "refresh_token": "refresh-token",
+                "token_uri": "http://oauth.invalid/token",
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let _guards = [
+            EnvVarGuard::set("GOOGLE_APPLICATION_CREDENTIALS", &file),
+            EnvVarGuard::unset("google_application_credentials"),
+            EnvVarGuard::unset("GOOGLE_CLOUD_QUOTA_PROJECT"),
+            EnvVarGuard::set("HTTPS_PROXY", format!("http://{proxy_address}")),
+            EnvVarGuard::unset("https_proxy"),
+            EnvVarGuard::unset("HTTP_PROXY"),
+            EnvVarGuard::unset("http_proxy"),
+            EnvVarGuard::unset("NO_PROXY"),
+            EnvVarGuard::unset("no_proxy"),
+        ];
+        let handle = AnthropicClientHandle {
+            provider: ProviderConfig::Vertex {
+                region: "us-east5".to_string(),
+                project_id: Some("test-project".to_string()),
+                auth: VertexAuth::GoogleAuth,
+                base_url: Some(format!("http://{api_address}/v1")),
+                api_key: None,
+                auth_token: None,
+            },
+            default_headers: HashMap::new(),
+            max_retries: 0,
+            timeout_ms: 5_000,
+            fetch: ResolvedFetch {
+                inject_client_request_id: false,
+                source: Some("test".to_string()),
+            },
+            fetch_options: direct_client(),
+            log_level: anthropic_sdk::LogLevel::Warn,
+        };
+        let client = handle.build().unwrap();
+        let params = anthropic_sdk::resources::beta::messages::BetaMessageCreateParams {
+            model: "claude-test".to_string(),
+            max_tokens: 16,
+            messages: vec![anthropic_sdk::resources::beta::messages::BetaMessageParam {
+                role: "user".to_string(),
+                content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
+                    "hi".to_string(),
+                ),
+            }],
+            ..Default::default()
+        };
+        let _ = client
+            .beta()
+            .messages()
+            .create_with_options(&params, None)
+            .await;
+        let token = tokio::time::timeout(std::time::Duration::from_secs(10), proxy_server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            token.starts_with("post http://oauth.invalid/token "),
+            "{token}"
+        );
+        let model = tokio::time::timeout(std::time::Duration::from_secs(10), api_server)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(
+            model.contains("\r\nauthorization: bearer proxied-token\r\n"),
+            "{model}"
+        );
+        let _ = std::fs::remove_file(file);
     }
 
     fn foundry_handle(
