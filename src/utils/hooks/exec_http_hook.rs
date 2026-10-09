@@ -201,6 +201,31 @@ fn validate_ssrf_preflight(url: &reqwest::Url) -> Result<(), String> {
         .map_err(|error| error.message)
 }
 
+/// The sandbox network proxy an HTTP hook goes through, CC's
+/// `{ host, port, protocol }`.
+struct SandboxProxyConfig {
+    host: &'static str,
+    port: u16,
+    protocol: &'static str,
+}
+
+/// Maps to: CC `execHttpHook.ts:21-41` `getSandboxProxyConfig`: with
+/// sandboxing on, wait for the network proxy, then its HTTP port on
+/// 127.0.0.1.
+fn get_sandbox_proxy_config() -> Option<SandboxProxyConfig> {
+    use crate::utils::sandbox::sandbox_adapter;
+    if !sandbox_adapter::is_sandboxing_enabled() {
+        return None;
+    }
+    sandbox_adapter::wait_for_network_initialization();
+    let port = sandbox_adapter::get_proxy_port()?;
+    Some(SandboxProxyConfig {
+        host: "127.0.0.1",
+        port,
+        protocol: "http",
+    })
+}
+
 /// Execute an HTTP hook with an explicit policy snapshot.
 /// Maps to: CC `execHttpHook(...)` with `getHttpHookPolicy()` injected for
 /// deterministic tests and service callers that already loaded settings.
@@ -230,21 +255,29 @@ pub async fn exec_http_hook_with_policy(
         }
     };
 
-    // Maps to: CC `execHttpHook.ts:173-199`. The env-var proxy (HTTP_PROXY /
-    // HTTPS_PROXY, respecting NO_PROXY) resolves the target itself.
-    // DEVIATION(SCOPE): the sandbox network proxy (`getSandboxProxyConfig`,
-    // `:21-41`) is not wired here yet.
+    // Maps to: CC `execHttpHook.ts:173-199`. With sandboxing on, the hook goes
+    // through the sandbox network proxy, which enforces the domain allowlist
+    // (403 for a blocked domain) and chains to the parent proxy itself.
+    // Otherwise the env-var proxy (HTTP_PROXY / HTTPS_PROXY, respecting
+    // NO_PROXY) resolves the target.
     // Cometix-specific deviation: CC tests `getProxyUrl() !== undefined`, so a
     // proxy variable set to "" drops the SSRF guard while `configureGlobalAgents`
     // (`if (proxyUrl)`) installs no proxy: an unguarded direct request. Here an
     // empty value is no proxy, and the guard stays.
+    let sandbox_proxy = get_sandbox_proxy_config();
     let env = crate::utils::process_env::snapshot();
-    let env_proxy_active = crate::utils::proxy::get_proxy_url(&env).is_some()
+    let env_proxy_active = sandbox_proxy.is_none()
+        && crate::utils::proxy::get_proxy_url(&env).is_some()
         && !crate::utils::proxy::should_bypass_proxy(
             &hook.url,
             crate::utils::proxy::get_no_proxy(&env).as_deref(),
         );
-    if env_proxy_active {
+    if let Some(sandbox_proxy) = &sandbox_proxy {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Hooks: HTTP hook POST to {} (via sandbox proxy :{})",
+            hook.url, sandbox_proxy.port
+        ));
+    } else if env_proxy_active {
         crate::utils::debug::log_for_debugging(&format!(
             "Hooks: HTTP hook POST to {} (via env-var proxy)",
             hook.url
@@ -257,7 +290,7 @@ pub async fn exec_http_hook_with_policy(
     // resolves the target, and a corporate proxy on a private IP must not be
     // blocked. Cometix checks the target before connecting, where CC guards
     // the connection's DNS lookup.
-    if !env_proxy_active {
+    if sandbox_proxy.is_none() && !env_proxy_active {
         if let Err(error) = validate_ssrf_preflight(&url) {
             return ExecHttpHookResult {
                 ok: false,
@@ -286,8 +319,16 @@ pub async fn exec_http_hook_with_policy(
         .unwrap_or(DEFAULT_HTTP_HOOK_TIMEOUT_MS);
     // CC posts through the global axios instance, whose interceptor
     // `configureGlobalAgents` installs; `create_axios_instance` resolves the
-    // same proxy, NO_PROXY, mTLS and CA options. `maxRedirects: 0`.
+    // same proxy, NO_PROXY, mTLS and CA options. `proxy: sandboxProxy`
+    // replaces that proxy with the sandbox's. `maxRedirects: 0`.
     let client = match crate::utils::proxy::create_axios_instance().and_then(|builder| {
+        let builder = match &sandbox_proxy {
+            Some(sandbox_proxy) => builder.no_proxy().proxy(reqwest::Proxy::all(format!(
+                "{}://{}:{}",
+                sandbox_proxy.protocol, sandbox_proxy.host, sandbox_proxy.port
+            ))?),
+            None => builder,
+        };
         builder
             .timeout(Duration::from_millis(timeout_ms))
             .redirect(reqwest::redirect::Policy::none())

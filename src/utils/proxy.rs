@@ -159,9 +159,11 @@ fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<reqwest::Url> {
 }
 
 /// A client builder with what every client shares: the crypto provider and
-/// Node's `NODE_TLS_REJECT_UNAUTHORIZED`.
-fn client_builder() -> reqwest::ClientBuilder {
+/// Node's `NODE_TLS_REJECT_UNAUTHORIZED`. The one place a reqwest client is
+/// built (`clippy.toml` bans the others).
+pub(crate) fn client_builder() -> reqwest::ClientBuilder {
     crate::utils::tls_provider::install_crypto_provider();
+    #[allow(clippy::disallowed_methods)] // The allowed constructor.
     let builder = reqwest::Client::builder();
     if crate::utils::tls_provider::get_allow_unauthorized() {
         builder.tls_danger_accept_invalid_certs(true)

@@ -85,8 +85,7 @@ fn load_ca_certificates() -> Option<CaCertificates> {
         Ok(certificates) if !certificates.is_empty() => {
             // rustls only decodes the PEM here and checks the certificates
             // when a client is built, so build one now.
-            crate::utils::tls_provider::install_crypto_provider();
-            if let Err(error) = reqwest::Client::builder()
+            if let Err(error) = crate::utils::proxy::client_builder()
                 .no_proxy()
                 .tls_certs_merge(certificates.iter().cloned())
                 .build()

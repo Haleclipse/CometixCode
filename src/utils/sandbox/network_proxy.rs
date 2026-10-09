@@ -1,6 +1,6 @@
 //! Native network proxy used by the Bash OS sandbox.
 //!
-//! Maps to: `@anthropic-ai/sandbox-runtime` 0.2.x
+//! Maps to: `@anthropic-ai/sandbox-runtime` 0.0.44 (CC's `^0.0.44`)
 //! `sandbox/{sandbox-manager,http-proxy,socks-proxy,linux-sandbox-utils}.ts`,
 //! as consumed by CC `utils/sandbox/sandbox-adapter.ts`.
 //!
@@ -48,6 +48,9 @@ struct NetworkProxyRuntime {
     shutdown: Arc<AtomicBool>,
     bridges: Mutex<Vec<Child>>,
 }
+
+/// The upstream proxy the listeners chain through, resolved when they start.
+type ParentRoute = Arc<Option<ParentProxy>>;
 
 impl NetworkProxyRuntime {
     fn stop(&self) {
@@ -100,13 +103,26 @@ pub fn ensure_network_proxy(
     }
 
     let shutdown = Arc::new(AtomicBool::new(false));
+    // sandbox-manager.js `initialize`: the parent proxy is resolved before the
+    // listeners start and captured by them; a later config update does not
+    // reach running listeners. CC passes no `network.parentProxy`, so it comes
+    // from the environment, here the carrier.
+    let parent: ParentRoute =
+        Arc::new(resolve_parent_proxy(&crate::utils::process_env::snapshot()));
+    if let Some(parent) = parent.as_ref() {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Parent proxy configured: http={} https={}",
+            redact_url(parent.http_url.as_ref()),
+            redact_url(parent.https_url.as_ref()),
+        ));
+    }
     let http_port = match config.http_proxy_port {
         Some(port) => port,
-        None => start_http_proxy(Arc::clone(&shutdown))?,
+        None => start_http_proxy(Arc::clone(&shutdown), Arc::clone(&parent))?,
     };
     let socks_port = match config.socks_proxy_port {
         Some(port) => port,
-        None => start_socks_proxy(Arc::clone(&shutdown))?,
+        None => start_socks_proxy(Arc::clone(&shutdown), Arc::clone(&parent))?,
     };
 
     let (linux_http_socket, linux_socks_socket, bridges) = if cfg!(target_os = "linux") {
@@ -142,26 +158,36 @@ pub fn ensure_network_proxy(
     Ok(endpoints)
 }
 
-fn start_http_proxy(shutdown: Arc<AtomicBool>) -> Result<u16> {
+/// sandbox-manager.js `getProxyPort`: the HTTP proxy's port, the external
+/// one when `network.httpProxyPort` is set; `None` before the proxy runs.
+pub fn http_proxy_port() -> Option<u16> {
+    NETWORK_RUNTIME
+        .lock()
+        .ok()?
+        .as_ref()
+        .map(|runtime| runtime.endpoints.http_port)
+}
+
+fn start_http_proxy(shutdown: Arc<AtomicBool>, parent: ParentRoute) -> Result<u16> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .context("Could not bind the sandbox HTTP proxy")?;
     listener.set_nonblocking(true)?;
     let port = listener.local_addr()?.port();
     std::thread::Builder::new()
         .name("cometix-sandbox-http-proxy".to_string())
-        .spawn(move || accept_loop(listener, shutdown, handle_http_connection))
+        .spawn(move || accept_loop(listener, shutdown, parent, handle_http_connection))
         .context("Could not start the sandbox HTTP proxy")?;
     Ok(port)
 }
 
-fn start_socks_proxy(shutdown: Arc<AtomicBool>) -> Result<u16> {
+fn start_socks_proxy(shutdown: Arc<AtomicBool>, parent: ParentRoute) -> Result<u16> {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
         .context("Could not bind the sandbox SOCKS proxy")?;
     listener.set_nonblocking(true)?;
     let port = listener.local_addr()?.port();
     std::thread::Builder::new()
         .name("cometix-sandbox-socks-proxy".to_string())
-        .spawn(move || accept_loop(listener, shutdown, handle_socks_connection))
+        .spawn(move || accept_loop(listener, shutdown, parent, handle_socks_connection))
         .context("Could not start the sandbox SOCKS proxy")?;
     Ok(port)
 }
@@ -169,11 +195,13 @@ fn start_socks_proxy(shutdown: Arc<AtomicBool>) -> Result<u16> {
 fn accept_loop(
     listener: TcpListener,
     shutdown: Arc<AtomicBool>,
-    handler: fn(TcpStream) -> Result<()>,
+    parent: ParentRoute,
+    handler: fn(TcpStream, Option<&ParentProxy>) -> Result<()>,
 ) {
     while !shutdown.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, _)) => {
+                let parent = Arc::clone(&parent);
                 std::thread::spawn(move || {
                     // Darwin accept inherits O_NONBLOCK from the listener.
                     // This worker uses blocking Read/Write (including copy in
@@ -183,7 +211,7 @@ fn accept_loop(
                     let result = stream
                         .set_nonblocking(false)
                         .map_err(anyhow::Error::from)
-                        .and_then(|()| handler(stream));
+                        .and_then(|()| handler(stream, parent.as_ref().as_ref()));
                     if let Err(error) = result {
                         crate::utils::debug::log_for_debugging(&format!(
                             "Sandbox network proxy connection failed: {error:#}"
@@ -224,7 +252,7 @@ fn read_http_header(stream: &mut TcpStream) -> Result<(Vec<u8>, Vec<u8>)> {
     }
 }
 
-fn handle_http_connection(mut client: TcpStream) -> Result<()> {
+fn handle_http_connection(mut client: TcpStream, parent: Option<&ParentProxy>) -> Result<()> {
     client.set_nodelay(true)?;
     let (header, buffered_body) = read_http_header(&mut client)?;
     let header_text = std::str::from_utf8(&header).context("HTTP proxy headers are not UTF-8")?;
@@ -252,8 +280,28 @@ fn handle_http_connection(mut client: TcpStream) -> Result<()> {
             client.write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nX-Proxy-Error: blocked-by-allowlist\r\nConnection: close\r\n\r\nConnection blocked by network allowlist")?;
             return Ok(());
         }
-        let mut upstream = connect_target(&host, port)?;
+        // http-proxy.js: the parent proxy unless the host bypasses it, else
+        // a direct dial; either failing is a 502.
+        let upstream = match parent_route(parent, &host, true) {
+            Some(proxy_url) => connect_via_parent_proxy(proxy_url, &host, port),
+            None => connect_target(&host, port).map(|stream| (stream, Vec::new())),
+        };
+        let (mut upstream, early) = match upstream {
+            Ok(upstream) => upstream,
+            Err(error) => {
+                crate::utils::debug::log_for_debugging(&format!(
+                    "CONNECT tunnel failed: {error:#}"
+                ));
+                client.write_all(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")?;
+                return Ok(());
+            }
+        };
         client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")?;
+        // Bytes the parent sent after its CONNECT response belong to the
+        // tunnel.
+        if !early.is_empty() {
+            client.write_all(&early)?;
+        }
         if !buffered_body.is_empty() {
             upstream.write_all(&buffered_body)?;
         }
@@ -306,16 +354,46 @@ fn handle_http_connection(mut client: TcpStream) -> Result<()> {
         bail!("HTTP proxy request body exceeds 64 MiB");
     }
 
-    let mut upstream = connect_target(&parsed.host, parsed.port)?;
+    // http-proxy.js: through the parent proxy the request is sent in
+    // absolute form, rebuilt from the parsed parts (the host that was
+    // allowlist-checked), with the parent's credentials; a failed upstream
+    // is a 502.
+    let route = parent_route(parent, &parsed.host, false);
+    let upstream = match route {
+        Some(proxy_url) => dial_parent_proxy(proxy_url),
+        None => connect_target(&parsed.host, parsed.port),
+    };
+    let mut upstream = match upstream {
+        Ok(upstream) => upstream,
+        Err(error) => {
+            crate::utils::debug::log_for_debugging(&format!("Proxy request failed: {error:#}"));
+            client.write_all(
+                b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nBad Gateway",
+            )?;
+            return Ok(());
+        }
+    };
     client.set_read_timeout(None)?;
     client.set_write_timeout(None)?;
     upstream.set_read_timeout(None)?;
     upstream.set_write_timeout(None)?;
-    write!(
-        upstream,
-        "{method} {} {version}\r\nHost: {}\r\nConnection: close\r\n",
-        parsed.path_and_query, parsed.authority
-    )?;
+    match route {
+        Some(proxy_url) => {
+            write!(
+                upstream,
+                "{method} http://{}{} {version}\r\nHost: {}\r\nConnection: close\r\n",
+                parsed.authority, parsed.path_and_query, parsed.authority
+            )?;
+            if let Some(authorization) = proxy_auth_header(proxy_url) {
+                write!(upstream, "Proxy-Authorization: {authorization}\r\n")?;
+            }
+        }
+        None => write!(
+            upstream,
+            "{method} {} {version}\r\nHost: {}\r\nConnection: close\r\n",
+            parsed.path_and_query, parsed.authority
+        )?,
+    }
     for (name, value) in forwarded_headers {
         write!(upstream, "{name}: {value}\r\n")?;
     }
@@ -420,7 +498,7 @@ fn parse_port(value: &str) -> Result<u16> {
     Ok(port)
 }
 
-fn handle_socks_connection(mut client: TcpStream) -> Result<()> {
+fn handle_socks_connection(mut client: TcpStream, parent: Option<&ParentProxy>) -> Result<()> {
     client.set_read_timeout(Some(IO_TIMEOUT))?;
     client.set_write_timeout(Some(IO_TIMEOUT))?;
     let mut greeting = [0u8; 2];
@@ -476,12 +554,27 @@ fn handle_socks_connection(mut client: TcpStream) -> Result<()> {
         send_socks_status(&mut client, 2)?;
         return Ok(());
     }
-    match connect_target(&host, port) {
-        Ok(upstream) => {
+    // socks-proxy.js: SOCKS is an opaque tunnel like CONNECT, so it takes
+    // the parent's HTTPS proxy whatever the port; a failure is
+    // HOST_UNREACHABLE.
+    let upstream = match parent_route(parent, &host, true) {
+        Some(proxy_url) => connect_via_parent_proxy(proxy_url, &host, port),
+        None => connect_target(&host, port).map(|stream| (stream, Vec::new())),
+    };
+    match upstream {
+        Ok((upstream, early)) => {
             send_socks_status(&mut client, 0)?;
+            if !early.is_empty() {
+                client.write_all(&early)?;
+            }
             tunnel(client, upstream)?;
         }
-        Err(_) => send_socks_status(&mut client, 4)?,
+        Err(error) => {
+            crate::utils::debug::log_for_debugging(&format!(
+                "SOCKS connect to {host}:{port} failed: {error:#}"
+            ));
+            send_socks_status(&mut client, 4)?;
+        }
     }
     Ok(())
 }
@@ -491,12 +584,16 @@ fn send_socks_status(stream: &mut TcpStream, status: u8) -> std::io::Result<()> 
 }
 
 fn connect_target(host: &str, port: u16) -> Result<TcpStream> {
+    connect_with_timeout(host, port, CONNECT_TIMEOUT)
+}
+
+fn connect_with_timeout(host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {
     let addresses = (host, port)
         .to_socket_addrs()
         .with_context(|| format!("Could not resolve {host}"))?;
     let mut last_error = None;
     for address in addresses {
-        match TcpStream::connect_timeout(&address, CONNECT_TIMEOUT) {
+        match TcpStream::connect_timeout(&address, timeout) {
             Ok(stream) => {
                 stream.set_nodelay(true)?;
                 stream.set_read_timeout(Some(IO_TIMEOUT))?;
@@ -631,6 +728,451 @@ fn parse_ipv4_number(value: &str) -> Option<u64> {
         return u64::from_str_radix(&value[1..], 8).ok();
     }
     value.parse::<u64>().ok()
+}
+
+// ── Parent proxy ────────────────────────────────────────────────────────────
+// Maps to: `@anthropic-ai/sandbox-runtime` 0.0.44 `sandbox/parent-proxy.js`
+// and its callers in `http-proxy.js`/`socks-proxy.js`. When the environment Cometix runs
+// in needs an HTTP proxy for outbound traffic, the sandbox's own proxies chain
+// through it rather than dialing directly.
+//
+// Deviation: an `https://` parent proxy is not supported (npm dials it with
+// TLS); a connection that would take it fails instead of going direct.
+
+/// sandbox-runtime `parent-proxy.js:openConnectTunnel`'s `CONNECT_TIMEOUT_MS`.
+const PARENT_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// The cap on a parent's CONNECT response header.
+const MAX_CONNECT_RESPONSE_BYTES: usize = 16 * 1024;
+
+/// `resolveParentProxy`'s result.
+#[derive(Clone, Debug)]
+struct ParentProxy {
+    http_url: Option<url::Url>,
+    https_url: Option<url::Url>,
+    no_proxy: NoProxyRules,
+}
+
+/// `parseNoProxy`'s rules: golang.org/x/net/http/httpproxy suffix matching
+/// plus CIDR blocks.
+#[derive(Clone, Debug, Default)]
+struct NoProxyRules {
+    all: bool,
+    suffixes: Vec<String>,
+    cidr: Vec<(IpAddr, u8)>,
+}
+
+/// `resolveParentProxy(undefined)`: CC configures no parent proxy, so it is
+/// `HTTP_PROXY ?? http_proxy` and `HTTPS_PROXY ?? https_proxy ?? <the HTTP
+/// one>`, with `NO_PROXY ?? no_proxy`. `??` keeps an empty value, which then
+/// counts as no proxy rather than falling through to the lowercase name.
+fn resolve_parent_proxy(env: &crate::utils::process_env::EnvSnapshot) -> Option<ParentProxy> {
+    let http = env.var("HTTP_PROXY").or_else(|| env.var("http_proxy"));
+    let https = env
+        .var("HTTPS_PROXY")
+        .or_else(|| env.var("https_proxy"))
+        .or(http);
+    let no_proxy = env
+        .var("NO_PROXY")
+        .or_else(|| env.var("no_proxy"))
+        .unwrap_or_default();
+    if http.is_none_or(str::is_empty) && https.is_none_or(str::is_empty) {
+        return None;
+    }
+    let http_url = http.and_then(parse_parent_proxy_url);
+    let https_url = https.and_then(parse_parent_proxy_url);
+    if http_url.is_none() && https_url.is_none() {
+        return None;
+    }
+    Some(ParentProxy {
+        http_url,
+        https_url,
+        no_proxy: parse_no_proxy(no_proxy),
+    })
+}
+
+/// `resolveParentProxy`'s `parse`: a schemeless `host:port` is `http://`, as
+/// curl takes it; any scheme but http and https, or an empty host, is logged
+/// and ignored.
+fn parse_parent_proxy_url(value: &str) -> Option<url::Url> {
+    if value.is_empty() {
+        return None;
+    }
+    let has_scheme = value.find("://").is_some_and(|index| {
+        let scheme = &value[..index];
+        scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+    });
+    let with_scheme = if has_scheme {
+        value.to_owned()
+    } else {
+        format!("http://{value}")
+    };
+    match url::Url::parse(&with_scheme) {
+        Ok(url)
+            if matches!(url.scheme(), "http" | "https")
+                && url.host_str().is_some_and(|host| !host.is_empty()) =>
+        {
+            Some(url)
+        }
+        _ => {
+            crate::utils::debug::log_for_debugging_with_level(
+                &format!(
+                    "Invalid parent proxy URL, ignoring: {}",
+                    redact_userinfo(value)
+                ),
+                crate::utils::debug::DebugLogLevel::Error,
+            );
+            None
+        }
+    }
+}
+
+/// `parseNoProxy`.
+fn parse_no_proxy(raw: &str) -> NoProxyRules {
+    let mut rules = NoProxyRules::default();
+    for entry in raw.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        if entry == "*" {
+            rules.all = true;
+            continue;
+        }
+        if let Some((ip, prefix)) = entry.split_once('/') {
+            // A malformed CIDR is ignored, not taken as a suffix.
+            if let (Ok(ip), true) = (
+                ip.parse::<IpAddr>(),
+                !prefix.is_empty() && prefix.bytes().all(|byte| byte.is_ascii_digit()),
+            ) {
+                let max = if ip.is_ipv6() { 128 } else { 32 };
+                if let Ok(prefix) = prefix.parse::<u8>() {
+                    if prefix <= max {
+                        rules.cidr.push((ip, prefix));
+                    }
+                }
+            }
+            continue;
+        }
+        let mut value = entry.to_lowercase();
+        // `[v6]` or `[v6]:port`.
+        if let Some(inner) = value.strip_prefix('[').and_then(|rest| {
+            let end = rest.find(']').filter(|&end| end > 0)?;
+            let tail = &rest[end + 1..];
+            (tail.is_empty()
+                || tail.strip_prefix(':').is_some_and(|port| {
+                    !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit())
+                }))
+            .then(|| rest[..end].to_owned())
+        }) {
+            value = inner;
+        }
+        if let Some(rest) = value.strip_prefix("*.") {
+            value = format!(".{rest}");
+        }
+        match value.parse::<IpAddr>() {
+            // A bare IP literal is an exact-match block.
+            Ok(ip) => {
+                rules.cidr.push((ip, if ip.is_ipv6() { 128 } else { 32 }));
+                continue;
+            }
+            Err(_) => {
+                if let Some((host, port)) = value.rsplit_once(':') {
+                    if !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) {
+                        value = host.to_owned();
+                    }
+                }
+            }
+        }
+        rules.suffixes.push(value);
+    }
+    rules
+}
+
+/// `shouldBypassParentProxy`: loopback always goes direct; then `*`, the
+/// CIDR blocks and the suffixes. The port is not consulted.
+fn should_bypass_parent_proxy(parent: &ParentProxy, host: &str) -> bool {
+    let lowered = host.to_lowercase();
+    let host = strip_brackets(lowered.strip_suffix('.').unwrap_or(&lowered));
+    if host == "localhost" {
+        return true;
+    }
+    let ip = host.parse::<IpAddr>().ok();
+    if ip.is_some_and(is_loopback) {
+        return true;
+    }
+    if parent.no_proxy.all {
+        return true;
+    }
+    if let Some(ip) = ip {
+        if parent
+            .no_proxy
+            .cidr
+            .iter()
+            .any(|(network, prefix)| in_subnet(ip, *network, *prefix))
+        {
+            return true;
+        }
+    }
+    parent.no_proxy.suffixes.iter().any(|suffix| {
+        if let Some(domain) = suffix.strip_prefix('.') {
+            host == domain || host.ends_with(suffix.as_str())
+        } else {
+            host == suffix || host.ends_with(&format!(".{suffix}"))
+        }
+    })
+}
+
+/// `LOOPBACK`: 127.0.0.0/8, `::1` and the v4-mapped `::ffff:127.0.0.0/104`.
+fn is_loopback(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => ip.octets()[0] == 127,
+        IpAddr::V6(ip) => {
+            ip == std::net::Ipv6Addr::LOCALHOST
+                || in_subnet(
+                    IpAddr::V6(ip),
+                    IpAddr::V6(Ipv4Addr::new(127, 0, 0, 0).to_ipv6_mapped()),
+                    104,
+                )
+        }
+    }
+}
+
+/// `net.BlockList` membership for one subnet of the same family.
+fn in_subnet(ip: IpAddr, network: IpAddr, prefix: u8) -> bool {
+    let (ip, network, width) = match (ip, network) {
+        (IpAddr::V4(ip), IpAddr::V4(network)) => (
+            u128::from(u32::from(ip)),
+            u128::from(u32::from(network)),
+            32,
+        ),
+        (IpAddr::V6(ip), IpAddr::V6(network)) => (u128::from(ip), u128::from(network), 128),
+        _ => return false,
+    };
+    let prefix = u32::from(prefix).min(width);
+    if prefix == 0 {
+        return true;
+    }
+    let shift = width - prefix;
+    (ip >> shift) == (network >> shift)
+}
+
+/// `selectParentProxyUrl`: a tunnel takes the HTTPS proxy, else the HTTP
+/// one; plain HTTP takes only the HTTP proxy, as curl does.
+fn select_parent_proxy_url(parent: &ParentProxy, is_https: bool) -> Option<&url::Url> {
+    if is_https {
+        parent.https_url.as_ref().or(parent.http_url.as_ref())
+    } else {
+        parent.http_url.as_ref()
+    }
+}
+
+/// The parent proxy URL a connection to `host` takes, if any.
+fn parent_route<'a>(
+    parent: Option<&'a ParentProxy>,
+    host: &str,
+    is_https: bool,
+) -> Option<&'a url::Url> {
+    parent
+        .filter(|parent| !should_bypass_parent_proxy(parent, host))
+        .and_then(|parent| select_parent_proxy_url(parent, is_https))
+}
+
+/// The TCP connection to a parent proxy, `Number(port) || 80`.
+fn dial_parent_proxy(proxy_url: &url::Url) -> Result<TcpStream> {
+    if proxy_url.scheme() == "https" {
+        bail!(
+            "The parent proxy {} uses https, which the sandbox network proxy does not support",
+            redact_url(Some(proxy_url))
+        );
+    }
+    let host = strip_brackets(proxy_url.host_str().unwrap_or_default());
+    connect_with_timeout(host, proxy_url.port().unwrap_or(80), PARENT_CONNECT_TIMEOUT)
+}
+
+/// `connectViaParentProxy` / `openConnectTunnel`: `CONNECT host:port`
+/// through the parent, which must answer 2xx. Returns the tunnel and any
+/// bytes that followed the parent's response header.
+fn connect_via_parent_proxy(
+    proxy_url: &url::Url,
+    dest_host: &str,
+    dest_port: u16,
+) -> Result<(TcpStream, Vec<u8>)> {
+    let bare = strip_brackets(dest_host);
+    if !is_valid_host(bare) {
+        bail!(
+            "Invalid destination host for CONNECT: {}",
+            serde_json::to_string(dest_host)?
+        );
+    }
+    if dest_port == 0 {
+        bail!("Invalid destination port: {dest_port}");
+    }
+    let authority = if bare.parse::<std::net::Ipv6Addr>().is_ok() {
+        format!("[{bare}]:{dest_port}")
+    } else {
+        format!("{bare}:{dest_port}")
+    };
+    let mut stream = dial_parent_proxy(proxy_url)?;
+    stream.set_read_timeout(Some(PARENT_CONNECT_TIMEOUT))?;
+    stream.set_write_timeout(Some(PARENT_CONNECT_TIMEOUT))?;
+    let mut request = format!("CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\n");
+    if let Some(authorization) = proxy_auth_header(proxy_url) {
+        request.push_str(&format!("Proxy-Authorization: {authorization}\r\n"));
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes())?;
+
+    let mut response = Vec::new();
+    let mut chunk = [0u8; 4096];
+    let end = loop {
+        if let Some(end) = response.windows(4).position(|window| window == b"\r\n\r\n") {
+            break end;
+        }
+        if response.len() > MAX_CONNECT_RESPONSE_BYTES {
+            bail!("CONNECT response header too large");
+        }
+        let count = match stream.read(&mut chunk) {
+            Ok(count) => count,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                bail!("CONNECT handshake timed out")
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if count == 0 {
+            bail!("Proxy closed during CONNECT handshake");
+        }
+        response.extend_from_slice(&chunk[..count]);
+    };
+    // `toString('latin1')`: one character per byte.
+    let header: String = response[..end]
+        .iter()
+        .map(|&byte| char::from(byte))
+        .collect();
+    let status_line = header.split("\r\n").next().unwrap_or_default();
+    if !is_success_status_line(status_line) {
+        bail!("Proxy refused CONNECT: {}", status_line.trim());
+    }
+    Ok((stream, response[end + 4..].to_vec()))
+}
+
+/// `/^HTTP\/1\.[01] 2\d\d(?:\s|$)/`.
+fn is_success_status_line(line: &str) -> bool {
+    let Some(rest) = line
+        .strip_prefix("HTTP/1.0 ")
+        .or_else(|| line.strip_prefix("HTTP/1.1 "))
+    else {
+        return false;
+    };
+    let bytes = rest.as_bytes();
+    bytes.len() >= 3
+        && bytes[0] == b'2'
+        && bytes[1].is_ascii_digit()
+        && bytes[2].is_ascii_digit()
+        && bytes.get(3).is_none_or(|byte| byte.is_ascii_whitespace())
+}
+
+/// `proxyAuthHeader`: Basic credentials from the URL's userinfo,
+/// percent-decoded, or as written when the encoding is malformed.
+fn proxy_auth_header(proxy_url: &url::Url) -> Option<String> {
+    use base64::Engine as _;
+    let username = proxy_url.username();
+    let password = proxy_url.password().unwrap_or_default();
+    if username.is_empty() && password.is_empty() {
+        return None;
+    }
+    let credentials = match (
+        decode_uri_component(username),
+        decode_uri_component(password),
+    ) {
+        (Some(username), Some(password)) => format!("{username}:{password}"),
+        _ => format!("{username}:{password}"),
+    };
+    Some(format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(credentials)
+    ))
+}
+
+/// `decodeURIComponent`, `None` where it throws (a malformed escape or bytes
+/// that are not UTF-8).
+fn decode_uri_component(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = value
+                .get(index + 1..index + 3)
+                .filter(|hex| hex.bytes().all(|byte| byte.is_ascii_hexdigit()))?;
+            decoded.push(u8::from_str_radix(hex, 16).ok()?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+/// `stripBrackets`.
+fn strip_brackets(host: &str) -> &str {
+    host.strip_prefix('[')
+        .and_then(|rest| rest.strip_suffix(']'))
+        .unwrap_or(host)
+}
+
+/// `isValidHost`: a DNS name or an IP literal without a zone identifier,
+/// which keeps control characters off the wire.
+fn is_valid_host(host: &str) -> bool {
+    if host.is_empty() || host.len() > 255 {
+        return false;
+    }
+    let bare = strip_brackets(host);
+    if bare.contains('%') {
+        return false;
+    }
+    bare.parse::<IpAddr>().is_ok()
+        || bare
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+/// `redactUrl`.
+fn redact_url(url: Option<&url::Url>) -> String {
+    let Some(url) = url else {
+        return "-".to_owned();
+    };
+    if url.username().is_empty() && url.password().is_none() {
+        return url.to_string();
+    }
+    let mut redacted = url.clone();
+    let _ = redacted.set_username("***");
+    let _ = redacted.set_password(Some("***"));
+    redacted.to_string()
+}
+
+/// `redactUserinfo`: `//user:pass@` becomes `//***:***@`.
+fn redact_userinfo(raw: &str) -> String {
+    match raw.find("//") {
+        Some(start) => {
+            let rest = &raw[start + 2..];
+            match rest.find(['@', '/']) {
+                Some(at) if rest.as_bytes()[at] == b'@' => {
+                    format!("{}//***:***@{}", &raw[..start], &rest[at + 1..])
+                }
+                _ => raw.to_owned(),
+            }
+        }
+        None => raw.to_owned(),
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -837,7 +1379,7 @@ mod tests {
         use std::os::fd::AsRawFd;
         static OBSERVED: std::sync::OnceLock<std::sync::mpsc::Sender<bool>> =
             std::sync::OnceLock::new();
-        fn observe(stream: TcpStream) -> Result<()> {
+        fn observe(stream: TcpStream, _parent: Option<&ParentProxy>) -> Result<()> {
             // F_GETFL reads the accepted socket's descriptor flags; it does
             // not change them or depend on payload/thread scheduling.
             let flags = unsafe { libc::fcntl(stream.as_raw_fd(), libc::F_GETFL) };
@@ -856,7 +1398,9 @@ mod tests {
         let worker_shutdown = shutdown.clone();
         let (sent, received) = std::sync::mpsc::channel();
         OBSERVED.set(sent).unwrap();
-        let worker = std::thread::spawn(move || accept_loop(listener, worker_shutdown, observe));
+        let worker = std::thread::spawn(move || {
+            accept_loop(listener, worker_shutdown, Arc::new(None), observe)
+        });
         let client = TcpStream::connect(address).unwrap();
         let observed = received.recv_timeout(Duration::from_secs(3));
         shutdown.store(true, Ordering::Release);
@@ -866,5 +1410,273 @@ mod tests {
             observed.unwrap(),
             "blocking handlers must not inherit accept polling mode"
         );
+    }
+
+    // ── Parent proxy ────────────────────────────────────────────────────────
+
+    use crate::utils::test_env::EnvVarGuard;
+
+    fn proxy_variables(pairs: &[(&'static str, &str)]) -> Vec<EnvVarGuard> {
+        [
+            "HTTP_PROXY",
+            "http_proxy",
+            "HTTPS_PROXY",
+            "https_proxy",
+            "NO_PROXY",
+            "no_proxy",
+        ]
+        .into_iter()
+        .map(|key| match pairs.iter().find(|(name, _)| *name == key) {
+            Some((_, value)) => EnvVarGuard::set(key, value),
+            None => EnvVarGuard::unset(key),
+        })
+        .collect()
+    }
+
+    fn resolved(pairs: &[(&'static str, &str)]) -> Option<ParentProxy> {
+        let _guards = proxy_variables(pairs);
+        resolve_parent_proxy(&crate::utils::process_env::snapshot())
+    }
+
+    /// `resolveParentProxy`: `??`, so an empty upper-case variable hides the
+    /// lower-case one and counts as no proxy; the HTTPS proxy falls back to
+    /// the HTTP one; a schemeless value is `http://`; other schemes are
+    /// ignored.
+    #[test]
+    fn the_parent_proxy_resolves_as_sandbox_runtime_resolves_it() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        assert!(resolved(&[]).is_none());
+        assert!(resolved(&[("HTTP_PROXY", ""), ("http_proxy", "http://lower:1")]).is_none());
+
+        let parent = resolved(&[("HTTP_PROXY", "proxy.corp:3128")]).unwrap();
+        assert_eq!(
+            parent.http_url.as_ref().map(url::Url::as_str),
+            Some("http://proxy.corp:3128/")
+        );
+        assert_eq!(parent.https_url, parent.http_url);
+
+        let parent = resolved(&[
+            ("HTTP_PROXY", "http://plain:80"),
+            ("HTTPS_PROXY", "socks5://ignored:1080"),
+        ])
+        .unwrap();
+        assert!(parent.https_url.is_none());
+        // A tunnel falls back to the HTTP proxy; plain HTTP takes only it.
+        assert_eq!(
+            select_parent_proxy_url(&parent, true).map(url::Url::as_str),
+            Some("http://plain/")
+        );
+
+        let parent = resolved(&[("HTTPS_PROXY", "http://secure:8443")]).unwrap();
+        assert!(select_parent_proxy_url(&parent, false).is_none());
+        assert!(select_parent_proxy_url(&parent, true).is_some());
+    }
+
+    /// `parseNoProxy` and `shouldBypassParentProxy`: golang suffixes, CIDR
+    /// blocks, bare IPs, ports stripped, loopback always direct.
+    #[test]
+    fn parent_no_proxy_takes_suffixes_cidr_and_loopback() {
+        let parent = ParentProxy {
+            http_url: None,
+            https_url: None,
+            no_proxy: parse_no_proxy(
+                "example.com, .internal, *.corp, 10.0.0.0/8, 192.168.1.5, [fd00::1]:443, host:8080, bad/xx",
+            ),
+        };
+        for (host, bypass) in [
+            ("example.com", true),
+            ("a.example.com", true),
+            ("notexample.com", false),
+            ("internal", true),
+            ("x.internal", true),
+            ("x.corp", true),
+            ("10.2.3.4", true),
+            ("192.168.1.5", true),
+            ("192.168.1.6", false),
+            ("[fd00::1]", true),
+            ("host", true),
+            ("EXAMPLE.COM.", true),
+            ("localhost", true),
+            ("127.5.5.5", true),
+            ("::ffff:127.0.0.1", true),
+            ("8.8.8.8", false),
+        ] {
+            assert_eq!(should_bypass_parent_proxy(&parent, host), bypass, "{host}");
+        }
+        let all = ParentProxy {
+            no_proxy: parse_no_proxy("*"),
+            ..parent
+        };
+        assert!(should_bypass_parent_proxy(&all, "8.8.8.8"));
+    }
+
+    /// A parent proxy that answers one CONNECT with `response`, returns the
+    /// request it read, and echoes four bytes when it accepted.
+    fn spawn_parent(response: &'static [u8]) -> (u16, std::thread::JoinHandle<String>) {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 256];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let count = stream.read(&mut chunk).unwrap();
+                assert!(count > 0);
+                request.extend_from_slice(&chunk[..count]);
+            }
+            stream.write_all(response).unwrap();
+            if response.starts_with(b"HTTP/1.1 200") {
+                let mut bytes = [0u8; 4];
+                if stream.read_exact(&mut bytes).is_ok() {
+                    let _ = stream.write_all(&bytes);
+                }
+            }
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        (port, handle)
+    }
+
+    /// `connectViaParentProxy`: the parent's credentials, decoded; bytes it
+    /// sent after its response stay with the tunnel.
+    #[test]
+    fn a_parent_tunnel_carries_the_credentials_and_its_early_bytes() {
+        use base64::Engine as _;
+        let (port, parent) = spawn_parent(b"HTTP/1.1 200 Connection established\r\n\r\nEARLY");
+        let url = url::Url::parse(&format!("http://user:p%40ss@127.0.0.1:{port}")).unwrap();
+        let (mut tunnel, early) = connect_via_parent_proxy(&url, "example.com", 443).unwrap();
+        assert_eq!(early, b"EARLY");
+        tunnel.write_all(b"ping").unwrap();
+        let mut echoed = [0u8; 4];
+        tunnel.read_exact(&mut echoed).unwrap();
+        assert_eq!(&echoed, b"ping");
+        let request = parent.join().unwrap();
+        let credentials = base64::engine::general_purpose::STANDARD.encode("user:p@ss");
+        assert_eq!(
+            request,
+            format!(
+                "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic {credentials}\r\n\r\n"
+            )
+        );
+    }
+
+    #[test]
+    fn a_refused_parent_connect_reports_its_status_line() {
+        let (port, parent) = spawn_parent(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n");
+        let url = url::Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
+        let error = connect_via_parent_proxy(&url, "example.com", 443).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Proxy refused CONNECT: HTTP/1.1 407 Proxy Authentication Required"
+        );
+        parent.join().unwrap();
+        let error = connect_via_parent_proxy(&url, "bad\r\nhost", 443).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("Invalid destination host for CONNECT:"),
+            "{error}"
+        );
+    }
+
+    /// The sandbox's HTTP proxy chains an allowed CONNECT through the parent
+    /// the carrier names, and a plain request in absolute form.
+    #[test]
+    fn the_sandbox_proxy_chains_through_the_parent_proxy() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        reset_network_proxy_for_test();
+        super::super::sandbox_adapter::clear_sandbox_ask_callback_for_test();
+        let (port, parent) = spawn_parent(b"HTTP/1.1 200 Connection established\r\n\r\n");
+        let _guards =
+            proxy_variables(&[("HTTPS_PROXY", format!("http://127.0.0.1:{port}").as_str())]);
+        let endpoints =
+            ensure_network_proxy(&super::super::sandbox_adapter::NetworkRestrictionConfig {
+                allowed_domains: vec!["example.com".to_string()],
+                ..Default::default()
+            })
+            .unwrap();
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, endpoints.http_port)).unwrap();
+        client
+            .write_all(b"CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n")
+            .unwrap();
+        let mut response = [0u8; 39];
+        client.read_exact(&mut response).unwrap();
+        assert_eq!(&response, b"HTTP/1.1 200 Connection Established\r\n\r\n");
+        client.write_all(b"ping").unwrap();
+        let mut echoed = [0u8; 4];
+        client.read_exact(&mut echoed).unwrap();
+        assert_eq!(&echoed, b"ping");
+        drop(client);
+        assert!(
+            parent
+                .join()
+                .unwrap()
+                .starts_with("CONNECT example.com:443 HTTP/1.1\r\n")
+        );
+        reset_network_proxy_for_test();
+
+        // Plain HTTP takes only HTTP_PROXY.
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let parent = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 256];
+            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+                let count = stream.read(&mut chunk).unwrap();
+                assert!(count > 0);
+                request.extend_from_slice(&chunk[..count]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .unwrap();
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        let _guards =
+            proxy_variables(&[("HTTP_PROXY", format!("http://127.0.0.1:{port}").as_str())]);
+        let endpoints =
+            ensure_network_proxy(&super::super::sandbox_adapter::NetworkRestrictionConfig {
+                allowed_domains: vec!["example.com".to_string()],
+                ..Default::default()
+            })
+            .unwrap();
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, endpoints.http_port)).unwrap();
+        client
+            .write_all(b"GET http://example.com/path?q=1 HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            .unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        assert!(response.ends_with("\r\n\r\nok"), "{response:?}");
+        let request = parent.join().unwrap();
+        assert!(
+            request.starts_with(
+                "GET http://example.com/path?q=1 HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n"
+            ),
+            "{request:?}"
+        );
+        reset_network_proxy_for_test();
+    }
+
+    /// http-proxy.js: an upstream that cannot be reached is a 502.
+    #[test]
+    fn an_unreachable_connect_target_is_a_bad_gateway() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        reset_network_proxy_for_test();
+        super::super::sandbox_adapter::clear_sandbox_ask_callback_for_test();
+        let _guards = proxy_variables(&[]);
+        let closed = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let closed_port = closed.local_addr().unwrap().port();
+        drop(closed);
+        let endpoints =
+            ensure_network_proxy(&super::super::sandbox_adapter::NetworkRestrictionConfig {
+                allowed_domains: vec!["127.0.0.1".to_string()],
+                ..Default::default()
+            })
+            .unwrap();
+        let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, endpoints.http_port)).unwrap();
+        write!(client, "CONNECT 127.0.0.1:{closed_port} HTTP/1.1\r\n\r\n").unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        assert_eq!(response, "HTTP/1.1 502 Bad Gateway\r\n\r\n");
+        reset_network_proxy_for_test();
     }
 }

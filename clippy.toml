@@ -43,3 +43,19 @@ reason = "CC's os.homedir() is crate::utils::node_os::homedir; see PORTING.md 'N
 [[disallowed-methods]]
 path = "std::env::temp_dir"
 reason = "CC's os.tmpdir() is crate::utils::node_os::tmpdir; see PORTING.md 'Node os built-ins'"
+
+# HTTP clients come from crate::utils::proxy, which maps CC's agents and
+# fetch options (proxy, NO_PROXY, mTLS, CA, NODE_TLS_REJECT_UNAUTHORIZED) and
+# installs the crypto provider first. A client built here directly misses all
+# of them. The one allowed constructor is proxy.rs `client_builder`.
+[[disallowed-methods]]
+path = "reqwest::Client::new"
+reason = "take a transport from crate::utils::proxy (create_axios_instance, get_proxy_fetch_options, get_proxy_agent); see utils/proxy.rs"
+
+[[disallowed-methods]]
+path = "reqwest::Client::builder"
+reason = "take a transport from crate::utils::proxy (create_axios_instance, get_proxy_fetch_options, get_proxy_agent); see utils/proxy.rs"
+
+[[disallowed-methods]]
+path = "reqwest::ClientBuilder::new"
+reason = "take a transport from crate::utils::proxy (create_axios_instance, get_proxy_fetch_options, get_proxy_agent); see utils/proxy.rs"

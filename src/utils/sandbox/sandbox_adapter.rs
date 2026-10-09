@@ -358,6 +358,32 @@ pub fn refresh_config() {
     super::network_proxy::update_network_config(&config.network);
 }
 
+/// Maps to: CC `SandboxManager.waitForNetworkInitialization`
+/// (`sandbox-adapter.ts:959`, sandbox-runtime `sandbox-manager.js:425-439`).
+/// CC starts the network proxy in `initialize()` at startup and this waits
+/// for it; Cometix starts it on first use, so waiting is starting it for the
+/// current settings. `false` when sandboxing is off or the proxy cannot start.
+pub fn wait_for_network_initialization() -> bool {
+    if !is_sandboxing_enabled() {
+        return false;
+    }
+    let config = convert_to_sandbox_runtime_config(&get_initial_settings());
+    match super::network_proxy::ensure_network_proxy(&config.network) {
+        Ok(_) => true,
+        Err(error) => {
+            crate::utils::debug::log_for_debugging(&format!(
+                "Sandbox network proxy initialization failed: {error:#}"
+            ));
+            false
+        }
+    }
+}
+
+/// Maps to: CC `SandboxManager.getProxyPort` (`sandbox-adapter.ts:955`).
+pub fn get_proxy_port() -> Option<u16> {
+    super::network_proxy::http_proxy_port()
+}
+
 /// An OS-enforced shell invocation produced by `SandboxManager.wrapWithSandbox`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SandboxedShellCommand {
