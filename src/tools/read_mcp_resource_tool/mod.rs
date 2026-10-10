@@ -207,7 +207,11 @@ pub(crate) async fn read_mcp_resource_output(
         return Err(format!("Server \"{server}\" does not support resources"));
     }
 
-    crate::services::mcp::client::read_mcp_resource(server, uri)
+    // CC `ensureConnectedClient(client)` (:94), then the read over it.
+    let connected = crate::services::mcp::client::ensure_connected_client(client)
+        .await
+        .map_err(|error| error.to_string())?;
+    crate::services::mcp::client::read_mcp_resource(server, connected.connection_id, uri)
         .await
         .map(|value| read_mcp_resource_result_from_value(server, value))
         .map_err(|error| error.to_string())

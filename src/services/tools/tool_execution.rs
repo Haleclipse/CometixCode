@@ -1908,15 +1908,46 @@ async fn dynamic_mcp_tool_result(
     let meta = Some(crate::services::mcp::client::mcp_tool_use_id_meta(
         &request.tool_use_id,
     ));
-    match crate::services::mcp::client::call_mcp_tool_with_elicitation(
-        &server_name,
-        &tool_name,
-        args.clone(),
-        meta,
-        context.handle_elicitation.clone(),
-    )
-    .await
-    {
+    let Some(server) = server else {
+        return Some(tool_error_result(
+            request,
+            format!(
+                "<tool_use_error>Error: MCP server \"{server_name}\" is not connected</tool_use_error>"
+            ),
+        ));
+    };
+    // Maps to: CC `client.ts:1858-1922`: each attempt calls over
+    // `ensureConnectedClient(client)`; an expired session has cleared the
+    // connection, and the call is retried once on a fresh one.
+    const MAX_SESSION_RETRIES: usize = 1;
+    let mut attempt = 0;
+    let call_result = loop {
+        let result = match crate::services::mcp::client::ensure_connected_client(server).await {
+            Ok(connected) => {
+                crate::services::mcp::client::call_mcp_tool_with_elicitation(
+                    &server_name,
+                    connected.connection_id,
+                    &tool_name,
+                    args.clone(),
+                    meta.clone(),
+                    context.handle_elicitation.clone(),
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        };
+        match result {
+            Err(error)
+                if error.is::<crate::services::mcp::client::McpSessionExpiredError>()
+                    && attempt < MAX_SESSION_RETRIES =>
+            {
+                tracing::debug!(server = %server_name, tool = %tool_name, "retrying MCP tool after session recovery");
+                attempt += 1;
+            }
+            result => break result,
+        }
+    };
+    match call_result {
         Ok(value) => {
             if value
                 .get("isError")
@@ -10352,6 +10383,9 @@ rl.on('line', line => {
 "#,
         )
         .expect("write MCP fixture");
+        // The call goes through the memoized connection, made on the process
+        // runtime.
+        crate::utils::process_runtime::initialize_test_process_runtime();
 
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -10441,6 +10475,222 @@ rl.on('line', line => {
                     .await;
             });
         let _ = std::fs::remove_file(script_path);
+    }
+
+    /// A tool request for `server`'s `tool`, with the server's discovered
+    /// snapshot as the only client in the context.
+    #[cfg(feature = "mcp_runtime")]
+    fn dynamic_mcp_tool_call(
+        server: crate::services::mcp::types::McpServerSnapshot,
+        tool: &str,
+    ) -> (PermissionRequest, crate::tool::ToolUseContext) {
+        let tool_name =
+            crate::services::mcp::mcp_string_utils::build_mcp_tool_name(&server.client.name, tool);
+        let request = mock_permission_request_with_input(
+            "perm-dynamic-mcp".to_string(),
+            "toolu_dynamic_mcp".to_string(),
+            tool_name,
+            String::new(),
+            serde_json::json!({}),
+            PermissionMode::Default,
+        );
+        let context = crate::tool::ToolUseContext::default().with_mcp_state({
+            let mut state = crate::state::app_state_store::McpState {
+                clients: vec![server],
+                ..crate::state::app_state_store::McpState::default()
+            };
+            crate::services::mcp::client::refresh_flat_mcp_capabilities(&mut state);
+            state
+        });
+        (request, context)
+    }
+
+    /// CC's MCP tool `call` gets its client from `ensureConnectedClient`
+    /// (`client.ts:1862`): once the server's process has exited and its close
+    /// deleted the memo entry, the next call connects again instead of
+    /// failing with "not connected".
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn dynamic_mcp_tool_reconnects_after_its_server_exits() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
+        crate::utils::process_runtime::initialize_test_process_runtime();
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                const SERVER: &str = "exiting-stdio-fixture";
+                let config = fixture.config(&[]);
+                let discovery =
+                    crate::services::mcp::client::reconnect_mcp_server_impl(SERVER, &config).await;
+                let (request, context) = dynamic_mcp_tool_call(discovery.server, "lookup_1");
+
+                for expected_initializes in [1, 2] {
+                    // The fixture answers each tool call, then exits.
+                    let message = LocalToolExecutor
+                        .result_after_permission(
+                            &request,
+                            PermissionPromptChoice::AllowOnce,
+                            &context,
+                            None,
+                            None,
+                        )
+                        .await
+                        .expect("dynamic MCP tool should produce a result");
+                    let block = user_tool_result_block(&message).expect("a tool result");
+                    assert_eq!(
+                        block.derived_status(),
+                        ToolResultStatus::Success,
+                        "{}",
+                        block.content
+                    );
+                    assert_eq!(fixture.count("initialize"), expected_initializes);
+                    fixture
+                        .until("the exited server's connection to close", |_| {
+                            !futures::executor::block_on(
+                                crate::services::mcp::client::is_connected_mcp_client(SERVER),
+                            )
+                        })
+                        .await;
+                }
+
+                crate::services::mcp::client::clear_server_cache(SERVER, None).await;
+                let _ = crate::services::mcp::client::drain_mcp_connection_callback_observations()
+                    .await;
+            });
+    }
+
+    /// CC `callMCPTool` (`client.ts:3210-3231`): a 404 to a request that
+    /// carried the session id clears the connection and throws
+    /// `McpSessionExpiredError`; the tool `call` retries once
+    /// (`:1912-1922`), and `ensureConnectedClient` makes a fresh session.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn dynamic_mcp_tool_retries_once_on_a_fresh_session_after_its_session_expires() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_runtime::initialize_test_process_runtime();
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                use crate::services::mcp::client::session_http_fixture::{
+                    SESSION_NOT_FOUND, SessionHttpFixture,
+                };
+                let fixture =
+                    SessionHttpFixture::spawn(|_, session| session == "s1", SESSION_NOT_FOUND)
+                        .await;
+                const SERVER: &str = "session-http-fixture";
+                let config = fixture.config();
+                let discovery =
+                    crate::services::mcp::client::reconnect_mcp_server_impl(SERVER, &config).await;
+                assert_eq!(
+                    discovery.server.client.status,
+                    crate::services::mcp::types::McpServerConnectionType::Connected,
+                    "{:?}",
+                    discovery.server.client.error
+                );
+                let first_connection = discovery.server.connection_id;
+                let (request, context) = dynamic_mcp_tool_call(discovery.server, "lookup");
+                let message = LocalToolExecutor
+                    .result_after_permission(
+                        &request,
+                        PermissionPromptChoice::AllowOnce,
+                        &context,
+                        None,
+                        None,
+                    )
+                    .await
+                    .expect("dynamic MCP tool should produce a result");
+                let block = user_tool_result_block(&message).expect("a tool result");
+                assert_eq!(
+                    block.derived_status(),
+                    ToolResultStatus::Success,
+                    "{}",
+                    block.content
+                );
+                assert_eq!(block.content, "ok:s2");
+                assert_eq!(
+                    fixture.log(),
+                    [
+                        "initialize s1",
+                        "tools/call s1",
+                        "initialize s2",
+                        "tools/call s2"
+                    ]
+                );
+                // A fresh connection, not the old one re-initialized in place.
+                assert_ne!(
+                    crate::services::mcp::client::connect_to_server(SERVER, &config)
+                        .await
+                        .connection_id,
+                    first_connection
+                );
+
+                crate::services::mcp::client::clear_server_cache(SERVER, None).await;
+                let _ = crate::services::mcp::client::drain_mcp_connection_callback_observations()
+                    .await;
+            });
+    }
+
+    /// CC retries an expired session once (`MAX_SESSION_RETRIES`,
+    /// `client.ts:1858`); a second expiry fails the call with
+    /// `McpSessionExpiredError`'s message. rmcp reports the 404 before reading
+    /// its body, so a 404 without CC's -32001 body counts as expired too.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn dynamic_mcp_tool_fails_after_its_session_expires_twice() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_runtime::initialize_test_process_runtime();
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                use crate::services::mcp::client::session_http_fixture::SessionHttpFixture;
+                let fixture = SessionHttpFixture::spawn(|_, _| true, "Not Found").await;
+                const SERVER: &str = "expiring-http-fixture";
+                let config = fixture.config();
+                let discovery =
+                    crate::services::mcp::client::reconnect_mcp_server_impl(SERVER, &config).await;
+                let (request, context) = dynamic_mcp_tool_call(discovery.server, "lookup");
+                let message = LocalToolExecutor
+                    .result_after_permission(
+                        &request,
+                        PermissionPromptChoice::AllowOnce,
+                        &context,
+                        None,
+                        None,
+                    )
+                    .await
+                    .expect("dynamic MCP tool should produce a result");
+                let block = user_tool_result_block(&message).expect("a tool result");
+                assert_eq!(block.derived_status(), ToolResultStatus::Error);
+                assert!(
+                    block
+                        .content
+                        .contains(&format!("MCP server \"{SERVER}\" session expired")),
+                    "{}",
+                    block.content
+                );
+                assert_eq!(
+                    fixture.log(),
+                    [
+                        "initialize s1",
+                        "tools/call s1",
+                        "initialize s2",
+                        "tools/call s2"
+                    ]
+                );
+
+                crate::services::mcp::client::clear_server_cache(SERVER, None).await;
+                let _ = crate::services::mcp::client::drain_mcp_connection_callback_observations()
+                    .await;
+            });
     }
 
     #[tokio::test]

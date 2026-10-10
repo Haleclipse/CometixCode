@@ -768,12 +768,13 @@ pub fn mcp_prompt_command_snapshot(
 }
 
 /// Resolves a slash-command-facing `mcp__server__prompt` command back to the
-/// live raw MCP server/prompt names. Maps to CC `fetchCommandsForClient(...)`
-/// prompt command records consumed by `processPromptSlashCommand(...)`.
+/// live MCP client and raw prompt. Maps to CC `fetchCommandsForClient(...)`
+/// prompt command records consumed by `processPromptSlashCommand(...)`; each
+/// record closes over the `client` it was fetched from.
 pub fn resolve_mcp_prompt_command_invocation(
     full_command_name: &str,
     state: &McpState,
-) -> Option<(String, McpPromptSnapshot)> {
+) -> Option<(McpServerSnapshot, McpPromptSnapshot)> {
     state
         .clients
         .iter()
@@ -781,11 +782,34 @@ pub fn resolve_mcp_prompt_command_invocation(
         .find_map(|server| {
             server.prompts.iter().find_map(|prompt| {
                 let candidate = mcp_prompt_command_name(&server.client.name, &prompt.name);
-                (candidate == full_command_name)
-                    .then(|| (server.client.name.clone(), prompt.clone()))
+                (candidate == full_command_name).then(|| (server.clone(), prompt.clone()))
             })
         })
 }
+
+/// Maps to: CC `client.ts:161-170` `McpSessionExpiredError` — the server
+/// dropped the session and the connection cache was cleared; the caller gets
+/// a fresh client through `ensureConnectedClient` and retries.
+#[derive(Debug)]
+pub struct McpSessionExpiredError {
+    server_name: String,
+}
+
+impl McpSessionExpiredError {
+    pub fn new(server_name: impl Into<String>) -> Self {
+        Self {
+            server_name: server_name.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for McpSessionExpiredError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "MCP server \"{}\" session expired", self.server_name)
+    }
+}
+
+impl std::error::Error for McpSessionExpiredError {}
 
 /// Flattens MCP prompt content for the current transcript/model-message bridge.
 /// Maps to CC `processPromptSlashCommand(...)` returning `ContentBlockParam[]`.
@@ -2316,10 +2340,14 @@ mod runtime {
             headers.extend(session_headers);
         }
 
+        // rmcp re-initializes an expired session in the transport by default.
+        // The SDK transport CC uses throws instead, and the tool call clears
+        // the connection and retries on a fresh one (`client.ts:3210-3231`,
+        // `:1912-1922`).
         Ok(
             StreamableHttpClientTransportConfig::with_uri(url.to_string())
                 .custom_headers(header_map_from_strings(headers)?)
-                .reinit_on_expired_session(true)
+                .reinit_on_expired_session(false)
                 .auth_header(auth_header.unwrap_or_default()),
         )
     }
@@ -2339,10 +2367,12 @@ mod runtime {
                 crate::bootstrap::state::get_session_id(),
             ),
         ]);
+        // No session re-initialization in the transport, as in
+        // `streamable_http_config`.
         Ok(
             StreamableHttpClientTransportConfig::with_uri(url.to_string())
                 .custom_headers(header_map_from_strings(headers)?)
-                .reinit_on_expired_session(true)
+                .reinit_on_expired_session(false)
                 .auth_header(token),
         )
     }
@@ -2892,13 +2922,66 @@ mod runtime {
             || message.contains("insufficient scope")
     }
 
-    fn is_session_expired_error(error: &anyhow::Error) -> bool {
-        // Maps to: CC `isMcpSessionExpiredError(...)` and the follow-up
-        // "Connection closed" check for streamable HTTP transports.
-        let message = error.to_string().to_ascii_lowercase();
-        (message.contains("404")
-            && (message.contains("-32001") || message.contains("session not found")))
-            || (message.contains("-32000") && message.contains("connection closed"))
+    /// Maps to: CC `client.ts:193-206` `isMcpSessionExpiredError`: a 404 to a
+    /// request that carried a session id — rmcp's
+    /// `StreamableHttpError::SessionExpired`, which reaches the caller inside
+    /// `ServiceError::TransportSend`. CC also requires the body's JSON-RPC
+    /// code -32001; rmcp returns that error before reading the body.
+    fn is_mcp_session_expired_error(error: &anyhow::Error) -> bool {
+        let session_expired = |cause: &(dyn std::error::Error + 'static)| {
+            matches!(
+                cause.downcast_ref::<StreamableHttpError<reqwest::Error>>(),
+                Some(StreamableHttpError::SessionExpired)
+            )
+        };
+        error.chain().any(|cause| {
+            session_expired(cause)
+                || matches!(
+                    cause.downcast_ref::<ServiceError>(),
+                    Some(ServiceError::TransportSend(transport))
+                        if session_expired(transport.error.as_ref())
+                )
+        })
+    }
+
+    /// Maps to: CC `callMCPTool`'s session-expiry test (`client.ts:3210-3223`):
+    /// [`is_mcp_session_expired_error`], or the SDK's -32000 "Connection
+    /// closed" — rmcp's `ServiceError::TransportClosed` — for a call whose
+    /// `http` or `claudeai-proxy` transport closed under it.
+    fn is_tool_call_session_expired_error(
+        error: &anyhow::Error,
+        config: &ScopedMcpServerConfig,
+    ) -> bool {
+        is_mcp_session_expired_error(error)
+            || (matches!(config.transport, Transport::Http | Transport::ClaudeAiProxy)
+                && error.chain().any(|cause| {
+                    matches!(
+                        cause.downcast_ref::<ServiceError>(),
+                        Some(ServiceError::TransportClosed)
+                    )
+                }))
+    }
+
+    /// Maps to: CC the connection's `onerror` session-expiry branch
+    /// (`client.ts:1313-1327`): an `http` or `claudeai-proxy` request that
+    /// failed on an expired session closes its transport, whose `onclose`
+    /// drops the connection from the memo and the fetch caches — whatever the
+    /// request was, so the next `ensureConnectedClient` reconnects.
+    fn close_on_expired_session(
+        name: &str,
+        connection_id: u64,
+        config: &ScopedMcpServerConfig,
+        error: &anyhow::Error,
+    ) {
+        if matches!(config.transport, Transport::Http | Transport::ClaudeAiProxy)
+            && is_mcp_session_expired_error(error)
+        {
+            tracing::debug!(
+                server = name,
+                "MCP session expired (server returned 404 with session-not-found), triggering reconnection"
+            );
+            close_connection(name, connection_id);
+        }
     }
 
     fn mcp_error_from_anyhow(error: &anyhow::Error) -> Option<&McpError> {
@@ -3039,6 +3122,7 @@ mod runtime {
     struct McpFetchClient {
         name: String,
         connection_id: u64,
+        config: ScopedMcpServerConfig,
         peer: Peer<RoleClient>,
     }
 
@@ -3051,28 +3135,52 @@ mod runtime {
             if client.client.status != McpServerConnectionType::Connected {
                 return None;
             }
-            let clients = CONNECTED_CLIENTS.lock().unwrap();
-            let live = clients.get(&client.client.name)?;
-            (Some(live.connection_id) == client.connection_id).then(|| Self {
+            let (connection_id, peer, config) =
+                registered_connection(&client.client.name, Some(client.connection_id?)).ok()?;
+            Some(Self {
                 name: client.client.name.clone(),
-                connection_id: live.connection_id,
-                peer: live.peer.clone(),
+                connection_id,
+                config,
+                peer,
             })
         }
 
         /// The connection registered under `name`.
         fn registered(name: &str) -> anyhow::Result<Self> {
-            CONNECTED_CLIENTS
-                .lock()
-                .unwrap()
-                .get(name)
-                .map(|client| Self {
-                    name: name.to_string(),
-                    connection_id: client.connection_id,
-                    peer: client.peer.clone(),
-                })
-                .ok_or_else(|| anyhow::anyhow!("MCP server \"{name}\" is not connected"))
+            let (connection_id, peer, config) = registered_connection(name, None)?;
+            Ok(Self {
+                name: name.to_string(),
+                connection_id,
+                config,
+                peer,
+            })
         }
+
+        /// A failed fetch request goes through the connection's `onerror`.
+        fn request_failed(&self, error: &anyhow::Error) {
+            close_on_expired_session(&self.name, self.connection_id, &self.config, error);
+        }
+    }
+
+    /// The connection registered under `name` — only if it is `connection_id`
+    /// when one is given (the connection `ensureConnectedClient` returned).
+    fn registered_connection(
+        name: &str,
+        connection_id: Option<u64>,
+    ) -> anyhow::Result<(u64, Peer<RoleClient>, ScopedMcpServerConfig)> {
+        CONNECTED_CLIENTS
+            .lock()
+            .unwrap()
+            .get(name)
+            .filter(|client| connection_id.is_none_or(|id| id == client.connection_id))
+            .map(|client| {
+                (
+                    client.connection_id,
+                    client.peer.clone(),
+                    client.config.clone(),
+                )
+            })
+            .ok_or_else(|| anyhow::anyhow!("MCP server \"{name}\" is not connected"))
     }
 
     /// Maps to: CC `memoizeWithLRU(fetch, client => client.name,
@@ -3196,6 +3304,8 @@ mod runtime {
                 Vec::new()
             }
             Err(error) => {
+                let error = anyhow::Error::new(error);
+                client.request_failed(&error);
                 tracing::warn!(server = %client.name, error = %error, "failed to fetch MCP tools");
                 Vec::new()
             }
@@ -3229,6 +3339,8 @@ mod runtime {
                 Vec::new()
             }
             Err(error) => {
+                let error = anyhow::Error::new(error);
+                client.request_failed(&error);
                 tracing::warn!(server = %client.name, error = %error, "failed to fetch MCP resources");
                 Vec::new()
             }
@@ -3260,6 +3372,8 @@ mod runtime {
                 Vec::new()
             }
             Err(error) => {
+                let error = anyhow::Error::new(error);
+                client.request_failed(&error);
                 tracing::warn!(server = %client.name, error = %error, "failed to fetch MCP prompts");
                 Vec::new()
             }
@@ -3352,13 +3466,6 @@ mod runtime {
     ) -> anyhow::Result<Vec<ServerResource>> {
         let client = McpFetchClient::registered(name)?;
         FETCH_RESOURCES_FOR_CLIENT.cache.delete(name);
-        Ok(fetch_through_cache(&FETCH_RESOURCES_FOR_CLIENT, client, fetch_resources).await)
-    }
-
-    /// Maps to: CC `ListMcpResourcesTool`'s `fetchResourcesForClient(fresh)`
-    /// (`ListMcpResourcesTool.ts:89`) — LRU-cached, never refreshed by the tool.
-    pub async fn fetch_mcp_resources_for_client(name: &str) -> anyhow::Result<Vec<ServerResource>> {
-        let client = McpFetchClient::registered(name)?;
         Ok(fetch_through_cache(&FETCH_RESOURCES_FOR_CLIENT, client, fetch_resources).await)
     }
 
@@ -3623,10 +3730,15 @@ mod runtime {
     /// memo and the name's fetch caches; that happens here at once, as CC's
     /// close has run it by the time `cleanup()` resolves.
     pub fn cleanup_connection(client: &McpServerSnapshot) {
-        let Some(connection_id) = client.connection_id else {
-            return;
-        };
-        let name = &client.client.name;
+        if let Some(connection_id) = client.connection_id {
+            close_connection(&client.client.name, connection_id);
+        }
+    }
+
+    /// Closes the one connection `connection_id` and does at once what its
+    /// `onclose` wrapper would: drop it from the memo, and the name's fetch
+    /// caches with it while it was the registered connection.
+    fn close_connection(name: &str, connection_id: u64) {
         delete_memoized_connection(name, connection_id);
         if close_registered_client(name, connection_id) {
             delete_fetch_caches(name);
@@ -3782,16 +3894,15 @@ mod runtime {
         params: Value,
     ) -> anyhow::Result<()> {
         // Maps to: CC `ConnectedMCPServer.client.notification({ method, params })`.
-        let peer = CONNECTED_CLIENTS
-            .lock()
-            .unwrap()
-            .get(name)
-            .map(|client| client.peer.clone())
-            .ok_or_else(|| anyhow::anyhow!("MCP server \"{name}\" is not connected"))?;
+        let (connection_id, peer, config) = registered_connection(name, None)?;
         let notification = CustomNotification::new(method.to_string(), Some(params));
         peer.send_notification(ClientNotification::CustomNotification(notification))
             .await
-            .map_err(anyhow::Error::new)
+            .map_err(|error| {
+                let error = anyhow::Error::new(error);
+                close_on_expired_session(name, connection_id, &config, &error);
+                error
+            })
     }
 
     /// Maps to: CC `client.ts:595` `connectToServer`, memoized by
@@ -3939,6 +4050,27 @@ mod runtime {
             prompts: Vec::new(),
             resources: Vec::new(),
         }
+    }
+
+    /// Maps to: CC `client.ts:1688-1704` `ensureConnectedClient`: the
+    /// memoized connection for `client`'s name and config — the same one
+    /// while it is healthy, a fresh one once its close or a clear deleted the
+    /// memo entry. SDK servers run in-process and are returned as they are.
+    pub async fn ensure_connected_client(
+        client: &McpServerSnapshot,
+    ) -> anyhow::Result<McpServerSnapshot> {
+        let name = &client.client.name;
+        let Some(config) = client.config.as_ref() else {
+            anyhow::bail!("MCP server \"{name}\" is not connected");
+        };
+        if config.transport == Transport::Sdk {
+            return Ok(client.clone());
+        }
+        let connected = connect_to_server(name, config).await;
+        if connected.client.status != McpServerConnectionType::Connected {
+            anyhow::bail!("MCP server \"{name}\" is not connected");
+        }
+        Ok(connected)
     }
 
     pub async fn setup_sdk_mcp_clients(
@@ -4157,48 +4289,89 @@ mod runtime {
         params
     }
 
+    /// The connection a failed request went out on.
+    type FailedRequest = (anyhow::Error, Option<(ScopedMcpServerConfig, u64)>);
+
+    /// A request on `connection_id` failed: the connection's `onerror` sees
+    /// the error first.
+    fn request_failed(
+        server_name: &str,
+        config: ScopedMcpServerConfig,
+        connection_id: u64,
+        error: anyhow::Error,
+    ) -> FailedRequest {
+        close_on_expired_session(server_name, connection_id, &config, &error);
+        (error, Some((config, connection_id)))
+    }
+
+    /// `connection_id` is the connection `ensureConnectedClient` returned for
+    /// the call, or `None` to use whichever is registered under the name.
     async fn call_mcp_tool_once(
         server_name: &str,
+        connection_id: Option<u64>,
         tool_name: &str,
         args: Map<String, Value>,
         meta: Option<Map<String, Value>>,
-    ) -> Result<Value, (anyhow::Error, Option<ScopedMcpServerConfig>)> {
+    ) -> Result<Value, FailedRequest> {
         let timeout = Duration::from_millis(super::get_mcp_tool_timeout_ms_from_env(|key| {
             crate::utils::process_env::var(key)
         }));
-        let (peer, config) = {
-            let clients = CONNECTED_CLIENTS.lock().unwrap();
-            let Some(client) = clients.get(server_name) else {
-                return Err((
-                    anyhow::anyhow!("MCP server \"{server_name}\" is not connected"),
-                    None,
-                ));
-            };
-            (client.peer.clone(), client.config.clone())
-        };
+        let (connection_id, peer, config) =
+            registered_connection(server_name, connection_id).map_err(|error| (error, None))?;
         let params = call_tool_request_params(tool_name, args, meta);
         let call_result = tokio::time::timeout(timeout, peer.call_tool(params)).await;
         let result = match call_result {
-            Err(_) => return Err((anyhow::anyhow!("MCP tool call timed out"), Some(config))),
+            Err(_) => {
+                return Err((
+                    anyhow::anyhow!("MCP tool call timed out"),
+                    Some((config, connection_id)),
+                ));
+            }
             Ok(Ok(result)) => result,
-            Ok(Err(error)) => return Err((anyhow::Error::new(error), Some(config))),
+            Ok(Err(error)) => {
+                return Err(request_failed(
+                    server_name,
+                    config,
+                    connection_id,
+                    anyhow::Error::new(error),
+                ));
+            }
         };
         serde_json::to_value(result).map_err(|error| (anyhow::Error::new(error), None))
     }
 
+    /// The connection to retry on after a remote auth failure, once a token
+    /// refresh succeeded and a fresh connection was made with it.
     async fn handle_remote_call_auth_failure_and_retry_connect(
         server_name: &str,
         config: &ScopedMcpServerConfig,
         error: &anyhow::Error,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<u64>> {
         record_remote_auth_challenge(server_name, config, error)?;
         if refresh_after_remote_auth_failure(server_name, config, error).await? {
             clear_server_cache(server_name, Some(config)).await;
             let client = connect_to_server(server_name, config).await;
-            return Ok(client.client.status == McpServerConnectionType::Connected);
+            return Ok((client.client.status == McpServerConnectionType::Connected)
+                .then_some(client.connection_id)
+                .flatten());
         }
         set_mcp_auth_cache_entry(server_name);
-        Ok(false)
+        Ok(None)
+    }
+
+    /// Maps to: CC `client.ts:3224-3230`: the expired session's connection
+    /// goes, so the next tool call creates a fresh session, then
+    /// `McpSessionExpiredError`. CC clears by key — `clearServerCache(name,
+    /// config)` — which also takes a connection another failed call has just
+    /// made under that key through `ensureConnectedClient`; here only the
+    /// failed call's own connection is closed.
+    fn session_expired(server_name: &str, connection_id: u64) -> super::McpSessionExpiredError {
+        tracing::debug!(
+            server = server_name,
+            "MCP session expired during tool call, clearing connection cache for re-initialization"
+        );
+        close_connection(server_name, connection_id);
+        super::McpSessionExpiredError::new(server_name)
     }
 
     fn record_final_remote_call_error(
@@ -4229,6 +4402,7 @@ mod runtime {
     ) -> anyhow::Result<Value> {
         call_mcp_tool_with_elicitation(
             server_name,
+            None,
             tool_name,
             args,
             meta,
@@ -4237,8 +4411,11 @@ mod runtime {
         .await
     }
 
+    /// `connection_id` is the connection `ensureConnectedClient` returned for
+    /// the call, or `None` to use whichever is registered under the name.
     pub async fn call_mcp_tool_with_elicitation(
         server_name: &str,
+        connection_id: Option<u64>,
         tool_name: &str,
         args: Map<String, Value>,
         meta: Option<Map<String, Value>>,
@@ -4250,9 +4427,17 @@ mod runtime {
         // (client.ts:1880).
         let mut url_elicitation_attempt = 0usize;
         loop {
-            match call_mcp_tool_once(server_name, tool_name, args.clone(), meta.clone()).await {
+            match call_mcp_tool_once(
+                server_name,
+                connection_id,
+                tool_name,
+                args.clone(),
+                meta.clone(),
+            )
+            .await
+            {
                 Ok(value) => return Ok(value),
-                Err((error, Some(config))) => {
+                Err((error, Some((config, failed_connection)))) => {
                     if is_url_elicitation_required_error(&error) {
                         if url_elicitation_attempt >= MAX_URL_ELICITATION_RETRIES {
                             return Err(error);
@@ -4275,33 +4460,42 @@ mod runtime {
                     }
 
                     if is_auth_error(&error)
-                        && handle_remote_call_auth_failure_and_retry_connect(
-                            server_name,
-                            &config,
-                            &error,
-                        )
-                        .await?
+                        && let Some(retry_connection) =
+                            handle_remote_call_auth_failure_and_retry_connect(
+                                server_name,
+                                &config,
+                                &error,
+                            )
+                            .await?
                     {
-                        match call_mcp_tool_once(server_name, tool_name, args.clone(), meta.clone())
-                            .await
+                        match call_mcp_tool_once(
+                            server_name,
+                            Some(retry_connection),
+                            tool_name,
+                            args.clone(),
+                            meta.clone(),
+                        )
+                        .await
                         {
                             Ok(value) => return Ok(value),
-                            Err((retry_error, Some(retry_config))) => {
+                            Err((retry_error, Some((retry_config, failed_connection)))) => {
                                 record_final_remote_call_error(
                                     server_name,
                                     &retry_config,
                                     &retry_error,
                                 )?;
-                                if is_session_expired_error(&retry_error) {
-                                    clear_server_cache(server_name, Some(&retry_config)).await;
+                                if is_tool_call_session_expired_error(&retry_error, &retry_config) {
+                                    return Err(
+                                        session_expired(server_name, failed_connection).into()
+                                    );
                                 }
                                 return Err(retry_error);
                             }
                             Err((retry_error, None)) => return Err(retry_error),
                         }
                     }
-                    if is_session_expired_error(&error) {
-                        clear_server_cache(server_name, Some(&config)).await;
+                    if is_tool_call_session_expired_error(&error, &config) {
+                        return Err(session_expired(server_name, failed_connection).into());
                     }
                     return Err(error);
                 }
@@ -4312,26 +4506,23 @@ mod runtime {
 
     async fn get_mcp_prompt_once(
         server_name: &str,
+        connection_id: u64,
         prompt_name: &str,
         arg_names: &[String],
         args: &str,
-    ) -> Result<Vec<Value>, (anyhow::Error, Option<ScopedMcpServerConfig>)> {
-        let (peer, config) = {
-            let clients = CONNECTED_CLIENTS.lock().unwrap();
-            let Some(client) = clients.get(server_name) else {
-                return Err((
-                    anyhow::anyhow!("MCP server \"{server_name}\" is not connected"),
-                    None,
-                ));
-            };
-            (client.peer.clone(), client.config.clone())
-        };
+    ) -> Result<Vec<Value>, FailedRequest> {
+        let (connection_id, peer, config) = registered_connection(server_name, Some(connection_id))
+            .map_err(|error| (error, None))?;
         let params = GetPromptRequestParams::new(prompt_name.to_string())
             .with_arguments(super::mcp_prompt_arguments_from_args(arg_names, args));
-        let result = peer
-            .get_prompt(params)
-            .await
-            .map_err(|error| (anyhow::Error::new(error), Some(config)))?;
+        let result = peer.get_prompt(params).await.map_err(|error| {
+            request_failed(
+                server_name,
+                config,
+                connection_id,
+                anyhow::Error::new(error),
+            )
+        })?;
         let mut blocks = Vec::new();
         for message in result.messages {
             let content = serde_json::to_value(message.content)
@@ -4345,28 +4536,34 @@ mod runtime {
     }
 
     /// Maps to: CC MCP prompt command `getPromptForCommand(args)` from
-    /// `fetchCommandsForClient(...)`.
+    /// `fetchCommandsForClient(...)` (`client.ts:2073-2093`): the prompt is
+    /// fetched over `ensureConnectedClient(client)`.
     pub async fn get_mcp_prompt_for_command(
-        server_name: &str,
+        client: &McpServerSnapshot,
         prompt_name: &str,
         arg_names: &[String],
         args: &str,
     ) -> anyhow::Result<Vec<Value>> {
-        match get_mcp_prompt_once(server_name, prompt_name, arg_names, args).await {
+        let connected = ensure_connected_client(client).await?;
+        let server_name = connected.client.name.as_str();
+        let Some(connection_id) = connected.connection_id else {
+            anyhow::bail!("MCP server \"{server_name}\" is not connected");
+        };
+        match get_mcp_prompt_once(server_name, connection_id, prompt_name, arg_names, args).await {
             Ok(value) => Ok(value),
-            Err((error, Some(config))) => {
+            Err((error, Some((config, _)))) => {
                 if is_auth_error(&error)
-                    && handle_remote_call_auth_failure_and_retry_connect(
-                        server_name,
-                        &config,
-                        &error,
-                    )
-                    .await?
+                    && let Some(retry_connection) =
+                        handle_remote_call_auth_failure_and_retry_connect(
+                            server_name,
+                            &config,
+                            &error,
+                        )
+                        .await?
                 {
-                    match get_mcp_prompt_once(server_name, prompt_name, arg_names, args).await {
-                        Ok(value) => Ok(value),
-                        Err((retry_error, _)) => Err(retry_error),
-                    }
+                    get_mcp_prompt_once(server_name, retry_connection, prompt_name, arg_names, args)
+                        .await
+                        .map_err(|(retry_error, _)| retry_error)
                 } else {
                     Err(error)
                 }
@@ -4377,18 +4574,11 @@ mod runtime {
 
     async fn read_mcp_resource_once(
         server_name: &str,
+        connection_id: Option<u64>,
         uri: &str,
-    ) -> Result<Value, (anyhow::Error, Option<ScopedMcpServerConfig>)> {
-        let (peer, config) = {
-            let clients = CONNECTED_CLIENTS.lock().unwrap();
-            let Some(client) = clients.get(server_name) else {
-                return Err((
-                    anyhow::anyhow!("MCP server \"{server_name}\" is not connected"),
-                    None,
-                ));
-            };
-            (client.peer.clone(), client.config.clone())
-        };
+    ) -> Result<Value, FailedRequest> {
+        let (connection_id, peer, config) =
+            registered_connection(server_name, connection_id).map_err(|error| (error, None))?;
         // Maps to: CC `ReadMcpResourceTool.call(...)` `client.capabilities?.resources`
         // guard before sending `resources/read`.
         if !peer
@@ -4397,46 +4587,56 @@ mod runtime {
         {
             return Err((
                 anyhow::anyhow!("Server \"{server_name}\" does not support resources"),
-                Some(config),
+                Some((config, connection_id)),
             ));
         }
         let result = peer
             .read_resource(ReadResourceRequestParams::new(uri.to_string()))
-            .await;
-        let result = result.map_err(|error| (anyhow::Error::new(error), Some(config)))?;
+            .await
+            .map_err(|error| {
+                request_failed(
+                    server_name,
+                    config,
+                    connection_id,
+                    anyhow::Error::new(error),
+                )
+            })?;
         serde_json::to_value(result).map_err(|error| (anyhow::Error::new(error), None))
     }
 
-    pub async fn read_mcp_resource(server_name: &str, uri: &str) -> anyhow::Result<Value> {
-        match read_mcp_resource_once(server_name, uri).await {
+    /// `connection_id` is the connection `ensureConnectedClient` returned for
+    /// the read, or `None` to use whichever is registered under the name.
+    pub async fn read_mcp_resource(
+        server_name: &str,
+        connection_id: Option<u64>,
+        uri: &str,
+    ) -> anyhow::Result<Value> {
+        match read_mcp_resource_once(server_name, connection_id, uri).await {
             Ok(value) => Ok(value),
-            Err((error, Some(config))) => {
+            Err((error, Some((config, _)))) => {
                 if is_auth_error(&error)
-                    && handle_remote_call_auth_failure_and_retry_connect(
-                        server_name,
-                        &config,
-                        &error,
-                    )
-                    .await?
+                    && let Some(retry_connection) =
+                        handle_remote_call_auth_failure_and_retry_connect(
+                            server_name,
+                            &config,
+                            &error,
+                        )
+                        .await?
                 {
-                    return match read_mcp_resource_once(server_name, uri).await {
+                    return match read_mcp_resource_once(server_name, Some(retry_connection), uri)
+                        .await
+                    {
                         Ok(value) => Ok(value),
-                        Err((retry_error, Some(retry_config))) => {
+                        Err((retry_error, Some((retry_config, _)))) => {
                             record_final_remote_call_error(
                                 server_name,
                                 &retry_config,
                                 &retry_error,
                             )?;
-                            if is_session_expired_error(&retry_error) {
-                                clear_server_cache(server_name, Some(&retry_config)).await;
-                            }
                             Err(retry_error)
                         }
                         Err((retry_error, None)) => Err(retry_error),
                     };
-                }
-                if is_session_expired_error(&error) {
-                    clear_server_cache(server_name, Some(&config)).await;
                 }
                 Err(error)
             }
@@ -4510,6 +4710,18 @@ mod runtime {
 
     pub async fn fetch_tools_for_client(_client: &McpServerSnapshot) -> Vec<McpToolSnapshot> {
         Vec::new()
+    }
+
+    pub async fn fetch_resources_for_client(_client: &McpServerSnapshot) -> Vec<ServerResource> {
+        Vec::new()
+    }
+
+    pub async fn ensure_connected_client(
+        _client: &McpServerSnapshot,
+    ) -> anyhow::Result<McpServerSnapshot> {
+        Err(anyhow::anyhow!(
+            "mcp_runtime feature is disabled; rmcp client is not compiled"
+        ))
     }
 
     pub fn cleanup_connection(_client: &McpServerSnapshot) {}
@@ -4591,14 +4803,6 @@ mod runtime {
         ))
     }
 
-    pub async fn fetch_mcp_resources_for_client(
-        _name: &str,
-    ) -> anyhow::Result<Vec<ServerResource>> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
     pub async fn send_channel_permission_request_to_relays(
         _params: &crate::services::mcp::channel_permissions::ChannelPermissionRequestParams,
     ) -> crate::services::mcp::channel_permissions::ChannelPermissionRelaySendReport {
@@ -4631,6 +4835,7 @@ mod runtime {
     // disabled-runtime error as the other MCP tool-call adapters.
     pub async fn call_mcp_tool_with_elicitation(
         server_name: &str,
+        _connection_id: Option<u64>,
         tool_name: &str,
         args: Map<String, Value>,
         meta: Option<Map<String, Value>>,
@@ -4640,7 +4845,7 @@ mod runtime {
     }
 
     pub async fn get_mcp_prompt_for_command(
-        _server_name: &str,
+        _client: &McpServerSnapshot,
         _prompt_name: &str,
         _arg_names: &[String],
         _args: &str,
@@ -4650,7 +4855,11 @@ mod runtime {
         ))
     }
 
-    pub async fn read_mcp_resource(_server_name: &str, _uri: &str) -> anyhow::Result<Value> {
+    pub async fn read_mcp_resource(
+        _server_name: &str,
+        _connection_id: Option<u64>,
+        _uri: &str,
+    ) -> anyhow::Result<Value> {
         Err(anyhow::anyhow!(
             "mcp_runtime feature is disabled; rmcp client is not compiled"
         ))
@@ -4660,12 +4869,12 @@ mod runtime {
 pub use runtime::{
     call_mcp_tool, call_mcp_tool_with_elicitation, call_mcp_tool_with_meta, cleanup_connection,
     cleanup_memoized_connection, clear_mcp_auth_cache, clear_server_cache, connect_to_server,
-    detach_mcp_close_handler, experimental_capabilities_by_server, fetch_mcp_resources_for_client,
-    fetch_tools_for_client, get_mcp_prompt_for_command, get_mcp_tools_commands_and_resources,
-    is_connected_mcp_client, read_mcp_resource, reconnect_mcp_server_impl,
-    refresh_mcp_prompts_for_client, refresh_mcp_resources_for_client, refresh_mcp_tools_for_client,
-    register_ide_selection_sink, send_custom_notification_to_connected_client,
-    setup_sdk_mcp_clients,
+    detach_mcp_close_handler, ensure_connected_client, experimental_capabilities_by_server,
+    fetch_resources_for_client, fetch_tools_for_client, get_mcp_prompt_for_command,
+    get_mcp_tools_commands_and_resources, is_connected_mcp_client, read_mcp_resource,
+    reconnect_mcp_server_impl, refresh_mcp_prompts_for_client, refresh_mcp_resources_for_client,
+    refresh_mcp_tools_for_client, register_ide_selection_sink,
+    send_custom_notification_to_connected_client, setup_sdk_mcp_clients,
 };
 
 /// A stdio MCP server for the connection and fetch caches. It appends each
@@ -4734,6 +4943,182 @@ rl.on('line', line => {
 
 #[cfg(all(test, feature = "mcp_runtime"))]
 pub(crate) use runtime::memoized_connection_ids;
+
+/// A streamable HTTP MCP server that gives every `initialize` a new session
+/// (`s1`, `s2`, ...) and answers 404 to the requests `expires` picks.
+#[cfg(all(test, feature = "mcp_runtime"))]
+pub(crate) mod session_http_fixture {
+    use std::sync::{Arc, Mutex};
+
+    pub(crate) struct SessionHttpFixture {
+        pub(crate) url: String,
+        /// `initialize s1`, `tools/call s1`, `prompts/get s2`, ...
+        pub(crate) log: Arc<Mutex<Vec<String>>>,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    impl Drop for SessionHttpFixture {
+        fn drop(&mut self) {
+            self.task.abort();
+        }
+    }
+
+    impl SessionHttpFixture {
+        /// `expires(method, session)` picks the requests answered with a 404
+        /// whose body is `not_found_body`. Serves on the current runtime.
+        pub(crate) async fn spawn(
+            expires: impl Fn(&str, &str) -> bool + Send + 'static,
+            not_found_body: &'static str,
+        ) -> Self {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind HTTP MCP fixture");
+            let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+            let log = Arc::new(Mutex::new(Vec::new()));
+            let task = tokio::spawn({
+                let log = log.clone();
+                async move {
+                    let mut sessions = 0;
+                    loop {
+                        let Ok((mut socket, _)) = listener.accept().await else {
+                            return;
+                        };
+                        let mut buffer = Vec::new();
+                        let mut chunk = [0_u8; 4096];
+                        let request = loop {
+                            let read = socket.read(&mut chunk).await.unwrap_or(0);
+                            buffer.extend_from_slice(&chunk[..read]);
+                            let raw = String::from_utf8_lossy(&buffer).to_string();
+                            let Some(header_end) = raw.find("\r\n\r\n") else {
+                                if read == 0 {
+                                    break raw;
+                                }
+                                continue;
+                            };
+                            let length = raw[..header_end]
+                                .lines()
+                                .find_map(|line| {
+                                    let (name, value) = line.split_once(':')?;
+                                    name.eq_ignore_ascii_case("content-length")
+                                        .then(|| value.trim().parse::<usize>().ok())
+                                        .flatten()
+                                })
+                                .unwrap_or(0);
+                            if read == 0 || buffer.len() >= header_end + 4 + length {
+                                break raw;
+                            }
+                        };
+                        let (head, body) = request.split_once("\r\n\r\n").unwrap_or((&request, ""));
+                        let verb = head.split(' ').next().unwrap_or_default();
+                        let session = head
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("mcp-session-id")
+                                    .then(|| value.trim().to_string())
+                            })
+                            .unwrap_or_default();
+                        let message: serde_json::Value =
+                            serde_json::from_str(body).unwrap_or_default();
+                        let method = message["method"].as_str().unwrap_or_default();
+                        let id = message.get("id").cloned().unwrap_or_default();
+                        let respond = |status: &str, extra: &str, body: String| {
+                            format!(
+                                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                                body.len()
+                            )
+                        };
+                        let result = |result: serde_json::Value| {
+                            respond(
+                                "200 OK",
+                                "",
+                                serde_json::json!({ "jsonrpc": "2.0", "id": id, "result": result })
+                                    .to_string(),
+                            )
+                        };
+                        let call = verb == "POST" && matches!(method, "tools/call" | "prompts/get");
+                        if call {
+                            log.lock().unwrap().push(format!("{method} {session}"));
+                        }
+                        let wire = match (verb, method) {
+                            _ if call && expires(method, &session) => {
+                                respond("404 Not Found", "", not_found_body.to_string())
+                            }
+                            ("POST", "initialize") => {
+                                sessions += 1;
+                                log.lock().unwrap().push(format!("initialize s{sessions}"));
+                                respond(
+                                    "200 OK",
+                                    &format!("Mcp-Session-Id: s{sessions}\r\n"),
+                                    serde_json::json!({
+                                        "jsonrpc": "2.0",
+                                        "id": id,
+                                        "result": {
+                                            "protocolVersion": "2025-11-25",
+                                            "capabilities": { "tools": {}, "prompts": {} },
+                                            "serverInfo": { "name": "session-fixture", "version": "1.0.0" }
+                                        }
+                                    })
+                                    .to_string(),
+                                )
+                            }
+                            ("POST", "tools/list") => result(serde_json::json!({ "tools": [{
+                                "name": "lookup",
+                                "inputSchema": { "type": "object", "properties": {} }
+                            }] })),
+                            ("POST", "prompts/list") => result(serde_json::json!({ "prompts": [{
+                                "name": "daily"
+                            }] })),
+                            ("POST", "tools/call") => result(serde_json::json!({
+                                "content": [{ "type": "text", "text": format!("ok:{session}") }]
+                            })),
+                            ("POST", "prompts/get") => result(serde_json::json!({
+                                "messages": [{
+                                    "role": "user",
+                                    "content": { "type": "text", "text": format!("prompt:{session}") }
+                                }]
+                            })),
+                            ("POST", _) => "HTTP/1.1 202 Accepted\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+                            ("DELETE", _) => "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+                            _ => "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
+                        };
+                        let _ = socket.write_all(wire.as_bytes()).await;
+                    }
+                }
+            });
+            Self { url, log, task }
+        }
+
+        pub(crate) fn config(&self) -> super::ScopedMcpServerConfig {
+            super::ScopedMcpServerConfig {
+                name: None,
+                scope: crate::services::mcp::types::ConfigScope::User,
+                transport: super::Transport::Http,
+                command: None,
+                args: Vec::new(),
+                env: std::collections::BTreeMap::new(),
+                url: Some(self.url.clone()),
+                headers: std::collections::BTreeMap::new(),
+                headers_helper: None,
+                oauth: None,
+                ide_running_in_windows: None,
+                ide_name: None,
+                auth_token: None,
+                id: None,
+                plugin_source: None,
+            }
+        }
+
+        pub(crate) fn log(&self) -> Vec<String> {
+            self.log.lock().unwrap().clone()
+        }
+    }
+
+    /// The body MCP servers send with a session-not-found 404.
+    pub(crate) const SESSION_NOT_FOUND: &str =
+        r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32001,"message":"Session not found"}}"#;
+}
 
 /// Test helpers for [`COUNTING_STDIO_FIXTURE`].
 #[cfg(all(test, feature = "mcp_runtime"))]
@@ -5585,16 +5970,17 @@ mod tests {
             state.commands[0].source,
             crate::commands::CommandSource::Mcp
         );
+        let (server, prompt) =
+            resolve_mcp_prompt_command_invocation("mcp__docs__summarize", &state)
+                .expect("the prompt resolves");
+        assert_eq!(server.client.name, "docs");
         assert_eq!(
-            resolve_mcp_prompt_command_invocation("mcp__docs__summarize", &state),
-            Some((
-                "docs".to_string(),
-                McpPromptSnapshot {
-                    name: "summarize".to_string(),
-                    description: Some("Summarize docs".to_string()),
-                    arg_names: vec!["path".to_string()],
-                }
-            ))
+            prompt,
+            McpPromptSnapshot {
+                name: "summarize".to_string(),
+                description: Some("Summarize docs".to_string()),
+                arg_names: vec!["path".to_string()],
+            }
         );
         assert_eq!(
             resolve_mcp_prompt_command_invocation("mcp__pending__hidden", &state),
@@ -5848,6 +6234,15 @@ mod tests {
         );
         assert_eq!(client.tools.len(), 1);
         assert_eq!(client.tools[0].name, "echo");
+        // CC `ensureConnectedClient` returns an SDK client as it is
+        // (`client.ts:1692-1694`).
+        assert_eq!(
+            ensure_connected_client(client)
+                .await
+                .expect("an SDK client")
+                .connection_id,
+            client.connection_id
+        );
         assert_eq!(setup.tools.len(), 1);
         assert_eq!(setup.tools[0].name, "mcp__sdk-connected__echo");
         let methods = methods.lock().unwrap().clone();
@@ -6749,6 +7144,92 @@ rl.on('line', line => {
         });
     }
 
+    /// CC `ensureConnectedClient` (`client.ts:1688-1704`): the memoized
+    /// connection while it is healthy, a fresh one after a clear, and "not
+    /// connected" when the memoized result is not a connection.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn ensure_connected_client_reuses_reconnects_or_reports_not_connected() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let fixture = counting_fixture::CountingFixture::new();
+        block_on_with_process_runtime(async {
+            const SERVER: &str = "ensure-stdio-fixture";
+            let config = fixture.config(&[]);
+            let client = runtime::connect_to_server(SERVER, &config).await;
+            let same = runtime::ensure_connected_client(&client)
+                .await
+                .expect("a healthy connection");
+            assert_eq!(same.connection_id, client.connection_id);
+            assert_eq!(fixture.count("initialize"), 1);
+
+            runtime::clear_server_cache(SERVER, Some(&config)).await;
+            let fresh = runtime::ensure_connected_client(&client)
+                .await
+                .expect("a fresh connection");
+            assert_ne!(fresh.connection_id, client.connection_id);
+            assert_eq!(fixture.count("initialize"), 2);
+            runtime::clear_server_cache(SERVER, None).await;
+
+            const FAILING: &str = "ensure-failing-stdio-fixture";
+            let mut failing = client.clone();
+            failing.client.name = FAILING.to_string();
+            failing.config = Some(fixture.config(&["exit-on-initialize"]));
+            let error = runtime::ensure_connected_client(&failing)
+                .await
+                .expect_err("the server exits during initialize");
+            assert_eq!(
+                error.to_string(),
+                format!("MCP server \"{FAILING}\" is not connected")
+            );
+            runtime::clear_server_cache(FAILING, None).await;
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+        });
+    }
+
+    /// CC's `onerror` closes the transport of an expired session whatever the
+    /// request was (`client.ts:1313-1327`): the prompt that hit it fails, and
+    /// the next one reconnects through `ensureConnectedClient`.
+    #[cfg(feature = "mcp_runtime")]
+    #[test]
+    fn an_expired_session_on_a_prompt_closes_its_connection() {
+        use session_http_fixture::{SESSION_NOT_FOUND, SessionHttpFixture};
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        block_on_with_process_runtime(async {
+            let fixture = SessionHttpFixture::spawn(
+                |method, session| method == "prompts/get" && session == "s1",
+                SESSION_NOT_FOUND,
+            )
+            .await;
+            const SERVER: &str = "prompt-session-http-fixture";
+            let config = fixture.config();
+            let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
+            assert_eq!(
+                discovery.server.client.status,
+                McpServerConnectionType::Connected
+            );
+
+            runtime::get_mcp_prompt_for_command(&discovery.server, "daily", &[], "")
+                .await
+                .expect_err("the session expired");
+            let blocks = runtime::get_mcp_prompt_for_command(&discovery.server, "daily", &[], "")
+                .await
+                .expect("a fresh session");
+            assert_eq!(blocks[0]["text"].as_str(), Some("prompt:s2"));
+            assert_eq!(
+                fixture.log(),
+                [
+                    "initialize s1",
+                    "prompts/get s1",
+                    "initialize s2",
+                    "prompts/get s2"
+                ]
+            );
+
+            runtime::clear_server_cache(SERVER, None).await;
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+        });
+    }
+
     /// Rust keeps one connection per name. Registering another config's
     /// connection under a taken name closes the previous one and deletes the
     /// name's fetch caches; the previous connection's later close leaves the
@@ -7216,7 +7697,7 @@ rl.on('line', line => {
                 assert_eq!(discovery.server.resources.len(), 1);
                 assert_eq!(discovery.server.resources[0].uri, uri);
 
-                let value = runtime::read_mcp_resource(SERVER, uri)
+                let value = runtime::read_mcp_resource(SERVER, None, uri)
                     .await
                     .expect("resource read should succeed");
                 assert_eq!(value["contents"][0]["uri"].as_str(), Some(uri));
@@ -7307,7 +7788,7 @@ rl.on('line', line => {
                 );
                 assert!(discovery.server.resources.is_empty());
 
-                let error = runtime::read_mcp_resource(SERVER, "file:///tmp/missing.txt")
+                let error = runtime::read_mcp_resource(SERVER, None, "file:///tmp/missing.txt")
                     .await
                     .expect_err("read should be rejected before resources/read");
                 assert_eq!(
@@ -7383,53 +7864,49 @@ rl.on('line', line => {
         )
         .expect("write MCP fixture");
 
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let _ = runtime::drain_mcp_connection_callback_observations().await;
-                const SERVER: &str = "get-prompt-stdio-fixture";
-                let config = ScopedMcpServerConfig {
-                    name: None,
-                    scope: crate::services::mcp::types::ConfigScope::User,
-                    transport: Transport::Stdio,
-                    command: Some("node".to_string()),
-                    args: vec![script_path.to_string_lossy().to_string()],
-                    env: BTreeMap::new(),
-                    url: None,
-                    headers: BTreeMap::new(),
-                    headers_helper: None,
-                    oauth: None,
-                    ide_running_in_windows: None,
-                    ide_name: None,
-                    auth_token: None,
-                    id: None,
-                    plugin_source: None,
-                };
-                let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
-                assert_eq!(
-                    discovery.server.client.status,
-                    McpServerConnectionType::Connected
-                );
-                assert_eq!(discovery.server.prompts.len(), 1);
-                assert_eq!(discovery.server.prompts[0].name, "daily");
-                assert_eq!(discovery.server.prompts[0].arg_names, vec!["topic"]);
+        block_on_with_process_runtime(async {
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+            const SERVER: &str = "get-prompt-stdio-fixture";
+            let config = ScopedMcpServerConfig {
+                name: None,
+                scope: crate::services::mcp::types::ConfigScope::User,
+                transport: Transport::Stdio,
+                command: Some("node".to_string()),
+                args: vec![script_path.to_string_lossy().to_string()],
+                env: BTreeMap::new(),
+                url: None,
+                headers: BTreeMap::new(),
+                headers_helper: None,
+                oauth: None,
+                ide_running_in_windows: None,
+                ide_name: None,
+                auth_token: None,
+                id: None,
+                plugin_source: None,
+            };
+            let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
+            assert_eq!(
+                discovery.server.client.status,
+                McpServerConnectionType::Connected
+            );
+            assert_eq!(discovery.server.prompts.len(), 1);
+            assert_eq!(discovery.server.prompts[0].name, "daily");
+            assert_eq!(discovery.server.prompts[0].arg_names, vec!["topic"]);
 
-                let blocks = runtime::get_mcp_prompt_for_command(
-                    SERVER,
-                    "daily",
-                    &["topic".to_string()],
-                    "roadmap",
-                )
-                .await
-                .expect("prompt get should succeed");
-                assert_eq!(blocks.len(), 1);
-                assert_eq!(blocks[0]["type"].as_str(), Some("text"));
-                assert_eq!(blocks[0]["text"].as_str(), Some("summarize:roadmap"));
-                runtime::clear_server_cache(SERVER, None).await;
-                let _ = runtime::drain_mcp_connection_callback_observations().await;
-            });
+            let blocks = runtime::get_mcp_prompt_for_command(
+                &discovery.server,
+                "daily",
+                &["topic".to_string()],
+                "roadmap",
+            )
+            .await
+            .expect("prompt get should succeed");
+            assert_eq!(blocks.len(), 1);
+            assert_eq!(blocks[0]["type"].as_str(), Some("text"));
+            assert_eq!(blocks[0]["text"].as_str(), Some("summarize:roadmap"));
+            runtime::clear_server_cache(SERVER, None).await;
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+        });
         let _ = std::fs::remove_file(script_path);
     }
 

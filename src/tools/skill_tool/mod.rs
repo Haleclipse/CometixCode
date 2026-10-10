@@ -452,7 +452,7 @@ async fn execute_mcp_skill(
         )));
     };
     let blocks = match crate::services::mcp::client::get_mcp_prompt_for_command(
-        &server.client.name,
+        server,
         &prompt.name,
         &prompt.arg_names,
         skill_args.unwrap_or_default(),

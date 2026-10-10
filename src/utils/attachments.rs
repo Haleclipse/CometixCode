@@ -1205,9 +1205,11 @@ async fn process_mcp_resource_attachments(
             resource.name.clone()
         };
         let description = resource.description.clone();
-        let content = crate::services::mcp::client::read_mcp_resource(server_name, uri)
-            .await
-            .ok()?;
+        // CC reads over the AppState client itself (`client.client.readResource`).
+        let content =
+            crate::services::mcp::client::read_mcp_resource(server_name, server.connection_id, uri)
+                .await
+                .ok()?;
         let attachment = AttachmentMessage::new(serde_json::json!({
             "type": "mcp_resource",
             "server": server_name,
