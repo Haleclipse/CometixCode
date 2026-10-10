@@ -6,7 +6,6 @@
 //! ['mcp'], headers, proxy, tls })` step: the handshake on CC's transport,
 //! then `tokio-tungstenite` on the upgraded connection.
 
-#[cfg(feature = "mcp_runtime")]
 mod runtime {
     use futures::stream::BoxStream;
     use futures::{SinkExt, StreamExt};
@@ -431,5 +430,4 @@ mod runtime {
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 pub(crate) use runtime::{WebSocketTransport, connect_mcp_websocket_transport};

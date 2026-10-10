@@ -10319,7 +10319,6 @@ mod executor_tests {
         }
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn local_tool_executor_runs_dynamic_mcp_tool_against_live_stdio_client() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -10479,7 +10478,6 @@ rl.on('line', line => {
 
     /// A tool request for `server`'s `tool`, with the server's discovered
     /// snapshot as the only client in the context.
-    #[cfg(feature = "mcp_runtime")]
     fn dynamic_mcp_tool_call(
         server: crate::services::mcp::types::McpServerSnapshot,
         tool: &str,
@@ -10509,7 +10507,6 @@ rl.on('line', line => {
     /// (`client.ts:1862`): once the server's process has exited and its close
     /// deleted the memo entry, the next call connects again instead of
     /// failing with "not connected".
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn dynamic_mcp_tool_reconnects_after_its_server_exits() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -10566,7 +10563,6 @@ rl.on('line', line => {
     /// carried the session id clears the connection and throws
     /// `McpSessionExpiredError`; the tool `call` retries once
     /// (`:1912-1922`), and `ensureConnectedClient` makes a fresh session.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn dynamic_mcp_tool_retries_once_on_a_fresh_session_after_its_session_expires() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -10640,7 +10636,6 @@ rl.on('line', line => {
     /// `client.ts:1858`); a second expiry fails the call with
     /// `McpSessionExpiredError`'s message. rmcp reports the 404 before reading
     /// its body, so a 404 without CC's -32001 body counts as expired too.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn dynamic_mcp_tool_fails_after_its_session_expires_twice() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();

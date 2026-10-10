@@ -1,7 +1,6 @@
 //! Official MCP registry cache.
 //! Maps to: CC `services/mcp/officialRegistry.ts`.
 
-#[cfg(feature = "mcp_runtime")]
 mod runtime {
     use serde::Deserialize;
     use std::collections::BTreeSet;
@@ -137,18 +136,6 @@ mod runtime {
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 pub use runtime::{
     is_official_mcp_url, prefetch_official_mcp_urls, reset_official_mcp_urls_for_testing,
 };
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub async fn prefetch_official_mcp_urls() {}
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub fn is_official_mcp_url(_normalized_url: &str) -> bool {
-    false
-}
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub fn reset_official_mcp_urls_for_testing() {}

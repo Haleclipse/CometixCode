@@ -20,7 +20,6 @@ pub const MAX_HTTP_CONTENT_LENGTH: usize = 10 * 1024 * 1024;
 /// Maps to CC `FETCH_TIMEOUT_MS`.
 const FETCH_TIMEOUT_MS: u64 = 60_000;
 /// Maps to CC `DOMAIN_CHECK_TIMEOUT_MS`.
-#[allow(dead_code)]
 const DOMAIN_CHECK_TIMEOUT_MS: u64 = 10_000;
 /// Maps to CC `MAX_REDIRECTS`.
 const MAX_REDIRECTS: usize = 10;
@@ -191,15 +190,7 @@ pub(crate) fn validate_url(url: &str) -> bool {
 /// Maps to CC `WebFetchTool.validateInput`'s bare `new URL(url)` parse probe
 /// (`WebFetchTool.ts:193-195`), which is looser than `validateURL`.
 pub(crate) fn is_parseable_url(url: &str) -> bool {
-    #[cfg(feature = "mcp_runtime")]
-    {
-        reqwest::Url::parse(url).is_ok()
-    }
-
-    #[cfg(not(feature = "mcp_runtime"))]
-    {
-        validate_url_parts(url).is_some()
-    }
+    reqwest::Url::parse(url).is_ok()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -211,53 +202,16 @@ struct UrlParts {
 }
 
 fn validate_url_parts(url: &str) -> Option<UrlParts> {
-    #[cfg(feature = "mcp_runtime")]
-    {
-        let parsed = reqwest::Url::parse(url).ok()?;
-        return Some(UrlParts {
-            protocol: parsed.scheme().to_string(),
-            hostname: parsed
-                .host_str()?
-                .trim_end_matches('.')
-                .to_ascii_lowercase(),
-            port: parsed.port().map(|port| port.to_string()),
-            has_credentials: !parsed.username().is_empty() || parsed.password().is_some(),
-        });
-    }
-
-    #[cfg(not(feature = "mcp_runtime"))]
-    {
-        let after_scheme = url
-            .strip_prefix("https://")
-            .or_else(|| url.strip_prefix("http://"))?;
-        let authority_end = after_scheme
-            .find(['/', '?', '#'])
-            .unwrap_or(after_scheme.len());
-        let authority = &after_scheme[..authority_end];
-        if authority.is_empty() {
-            return None;
-        }
-        let (has_credentials, host_port) = match authority.rsplit_once('@') {
-            Some((_, host)) => (true, host),
-            None => (false, authority),
-        };
-        let hostname = host_port
-            .split_once(':')
-            .map_or(host_port, |(host, _)| host)
+    let parsed = reqwest::Url::parse(url).ok()?;
+    Some(UrlParts {
+        protocol: parsed.scheme().to_string(),
+        hostname: parsed
+            .host_str()?
             .trim_end_matches('.')
-            .to_ascii_lowercase();
-        Some(UrlParts {
-            protocol: if url.starts_with("https://") {
-                "https"
-            } else {
-                "http"
-            }
-            .to_string(),
-            hostname,
-            port: host_port.split_once(':').map(|(_, port)| port.to_string()),
-            has_credentials,
-        })
-    }
+            .to_ascii_lowercase(),
+        port: parsed.port().map(|port| port.to_string()),
+        has_credentials: !parsed.username().is_empty() || parsed.password().is_some(),
+    })
 }
 
 /// Maps to CC `isPermittedRedirect(...)`.
@@ -327,7 +281,6 @@ pub(crate) fn redirect_code_text(status_code: u16) -> String {
 }
 
 /// Maps to CC `getURLMarkdownContent(...)`.
-#[cfg(feature = "mcp_runtime")]
 pub(crate) async fn get_url_markdown_content(
     url: &str,
     abort_controller: &AbortController,
@@ -451,19 +404,6 @@ pub(crate) async fn get_url_markdown_content(
     }))
 }
 
-/// Safe fallback when the network/runtime feature is disabled.
-/// Maps to CC `getURLMarkdownContent(...)`; current safety behavior: no HTTP
-/// request is sent. Build with default features (`mcp_runtime`) to enable the
-/// real network path.
-#[cfg(not(feature = "mcp_runtime"))]
-pub(crate) async fn get_url_markdown_content(
-    _url: &str,
-    _abort_controller: &AbortController,
-) -> anyhow::Result<UrlMarkdownContent> {
-    anyhow::bail!("WebFetch network execution requires the mcp_runtime feature")
-}
-
-#[cfg(feature = "mcp_runtime")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum DomainCheckResult {
     Allowed,
@@ -472,7 +412,6 @@ enum DomainCheckResult {
 }
 
 /// Maps to CC `checkDomainBlocklist(...)`.
-#[cfg(feature = "mcp_runtime")]
 async fn check_domain_blocklist(
     domain: &str,
     abort_controller: &AbortController,
@@ -514,7 +453,6 @@ async fn check_domain_blocklist(
     Ok(DomainCheckResult::Blocked)
 }
 
-#[cfg(feature = "mcp_runtime")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct HttpResponseBody {
     status_code: u16,
@@ -523,14 +461,12 @@ struct HttpResponseBody {
     body: Vec<u8>,
 }
 
-#[cfg(feature = "mcp_runtime")]
 enum HttpFetchResult {
     Response(HttpResponseBody),
     Redirect(RedirectInfo),
 }
 
 /// Maps to CC `getWithPermittedRedirects(...)`.
-#[cfg(feature = "mcp_runtime")]
 async fn get_with_permitted_redirects(
     client: &reqwest::Client,
     url: &str,

@@ -13,11 +13,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-#[cfg(feature = "mcp_runtime")]
 use rmcp::RoleClient;
-#[cfg(feature = "mcp_runtime")]
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
-#[cfg(feature = "mcp_runtime")]
 use rmcp::transport::Transport as RmcpTransport;
 
 pub const SDK_CONTROL_TRANSPORT_DEFERRED_REASON: &str =
@@ -39,14 +36,12 @@ pub type SdkControlCloseHandler = Arc<dyn Fn() + Send + Sync + 'static>;
 /// Maps to: CC assignable `Transport.onerror` field.
 pub type SdkControlErrorHandler = Arc<dyn Fn(anyhow::Error) + Send + Sync + 'static>;
 
-#[cfg(feature = "mcp_runtime")]
 #[derive(Clone)]
 struct SdkControlRuntimeChannels {
     incoming_tx: tokio::sync::mpsc::Sender<RxJsonRpcMessage<RoleClient>>,
     incoming_rx: Arc<tokio::sync::Mutex<tokio::sync::mpsc::Receiver<RxJsonRpcMessage<RoleClient>>>>,
 }
 
-#[cfg(feature = "mcp_runtime")]
 impl SdkControlRuntimeChannels {
     fn new() -> Self {
         let (incoming_tx, incoming_rx) = tokio::sync::mpsc::channel(64);
@@ -59,28 +54,23 @@ impl SdkControlRuntimeChannels {
 
 /// Error type for the rmcp transport implementation.
 /// Maps to: CC promise rejection from `SdkControlClientTransport.send(...)`.
-#[cfg(feature = "mcp_runtime")]
 #[derive(Debug)]
 pub struct SdkControlTransportError(anyhow::Error);
 
-#[cfg(feature = "mcp_runtime")]
 impl std::fmt::Display for SdkControlTransportError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 impl std::error::Error for SdkControlTransportError {}
 
-#[cfg(feature = "mcp_runtime")]
 impl From<anyhow::Error> for SdkControlTransportError {
     fn from(value: anyhow::Error) -> Self {
         Self(value)
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 impl From<serde_json::Error> for SdkControlTransportError {
     fn from(value: serde_json::Error) -> Self {
         Self(anyhow::Error::new(value))
@@ -98,7 +88,6 @@ pub struct SdkControlClientTransport {
     on_close: Option<SdkControlCloseHandler>,
     #[allow(dead_code)]
     on_error: Option<SdkControlErrorHandler>,
-    #[cfg(feature = "mcp_runtime")]
     runtime_channels: SdkControlRuntimeChannels,
 }
 
@@ -111,7 +100,6 @@ impl SdkControlClientTransport {
             on_message: None,
             on_close: None,
             on_error: None,
-            #[cfg(feature = "mcp_runtime")]
             runtime_channels: SdkControlRuntimeChannels::new(),
         }
     }
@@ -171,7 +159,6 @@ impl SdkControlClientTransport {
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 impl RmcpTransport<RoleClient> for SdkControlClientTransport {
     type Error = SdkControlTransportError;
 

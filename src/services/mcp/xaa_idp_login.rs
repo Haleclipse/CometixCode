@@ -12,9 +12,7 @@ use std::sync::Arc;
 
 const CLAUDE_CODE_ENABLE_XAA: &str = "CLAUDE_CODE_ENABLE_XAA";
 const ID_TOKEN_EXPIRY_BUFFER_S: i64 = 60;
-#[cfg(feature = "mcp_runtime")]
 const IDP_LOGIN_TIMEOUT_SECS: u64 = 5 * 60;
-#[cfg(feature = "mcp_runtime")]
 const IDP_REQUEST_TIMEOUT_SECS: u64 = 30;
 
 /// Maps to: CC `services/mcp/xaaIdpLogin.ts#XaaIdpSettings`.
@@ -76,16 +74,13 @@ pub fn get_xaa_idp_settings() -> Option<XaaIdpSettings> {
 
 /// Maps to: CC `services/mcp/xaaIdpLogin.ts#issuerKey`.
 pub fn issuer_key(issuer: &str) -> String {
-    #[cfg(feature = "mcp_runtime")]
-    {
-        if let Ok(mut url) = reqwest::Url::parse(issuer) {
-            let path = url.path().trim_end_matches('/').to_string();
-            url.set_path(&path);
-            if let Some(host) = url.host_str().map(|host| host.to_ascii_lowercase()) {
-                let _ = url.set_host(Some(&host));
-            }
-            return url.to_string();
+    if let Ok(mut url) = reqwest::Url::parse(issuer) {
+        let path = url.path().trim_end_matches('/').to_string();
+        url.set_path(&path);
+        if let Some(host) = url.host_str().map(|host| host.to_ascii_lowercase()) {
+            let _ = url.set_host(Some(&host));
         }
+        return url.to_string();
     }
     issuer.trim_end_matches('/').to_string()
 }
@@ -240,7 +235,6 @@ fn jwt_exp(jwt: &str) -> Option<i64> {
     value.get("exp")?.as_i64()
 }
 
-#[cfg(feature = "mcp_runtime")]
 mod runtime {
     use super::*;
     use sha2::{Digest, Sha256};
@@ -881,18 +875,7 @@ mod runtime {
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 pub use runtime::{acquire_idp_id_token, discover_oidc};
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub async fn discover_oidc(_idp_issuer: &str) -> anyhow::Result<OidcMetadata> {
-    anyhow::bail!("mcp_runtime feature is disabled; MCP XAA is not compiled")
-}
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub async fn acquire_idp_id_token(_opts: IdpLoginOptions) -> anyhow::Result<String> {
-    anyhow::bail!("mcp_runtime feature is disabled; MCP XAA is not compiled")
-}
 
 #[cfg(test)]
 mod tests {

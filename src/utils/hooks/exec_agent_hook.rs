@@ -748,7 +748,6 @@ mod tests {
         ])
         .unwrap();
         crate::utils::managed_env::apply_safe_config_environment_variables();
-        #[cfg(feature = "mcp_runtime")]
         crate::utils::tls_provider::install_crypto_provider();
         let parent = ToolUseContext::default();
         for ok in [true, false] {

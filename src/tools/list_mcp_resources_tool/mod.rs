@@ -418,7 +418,6 @@ mod tests {
     /// invalidated only by `onclose` and `resources/list_changed`. So the first
     /// call populates from the live peer and repeat calls are served from cache
     /// without another `resources/list` round trip.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn list_mcp_resources_tool_serves_lru_cached_resources_like_official() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();

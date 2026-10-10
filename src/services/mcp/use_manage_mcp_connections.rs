@@ -724,7 +724,6 @@ pub(crate) async fn emit_server_closed(name: String, config: ScopedMcpServerConf
 /// handler in `client.rs` because the decision is this file's: `client.rs` is
 /// the transport seam that happens to receive the notification, and
 /// `useManageMCPConnections.ts` is what CC gives the choice to.
-#[cfg(feature = "mcp_runtime")]
 pub(crate) fn declares_tools_list_changed(capabilities: &rmcp::model::ServerCapabilities) -> bool {
     capabilities
         .tools
@@ -736,7 +735,6 @@ pub(crate) fn declares_tools_list_changed(capabilities: &rmcp::model::ServerCapa
 /// Maps to: CC `useManageMCPConnections.ts:667`
 /// `if (client.capabilities?.prompts?.listChanged)` — see
 /// [`declares_tools_list_changed`] for why the gate moved inside.
-#[cfg(feature = "mcp_runtime")]
 pub(crate) fn declares_prompts_list_changed(
     capabilities: &rmcp::model::ServerCapabilities,
 ) -> bool {
@@ -754,7 +752,6 @@ pub(crate) fn declares_prompts_list_changed(
 /// Note this is the `listChanged` sub-capability, NOT `!!capabilities.resources`
 /// (CC `client.ts:2169`), which is a separate question already answered by
 /// `McpServerSnapshot::supports_resources`.
-#[cfg(feature = "mcp_runtime")]
 pub(crate) fn declares_resources_list_changed(
     capabilities: &rmcp::model::ServerCapabilities,
 ) -> bool {
@@ -2423,7 +2420,6 @@ mod tests {
     /// `client.capabilities?.X?.listChanged`, so BOTH an absent capability and
     /// a declared capability without the sub-flag are falsy, and only an
     /// explicit `true` registers the handler.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn list_changed_gates_match_official_optional_chaining() {
         use rmcp::model::{

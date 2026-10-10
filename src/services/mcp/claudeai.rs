@@ -14,7 +14,6 @@ fn debug_log(message: impl AsRef<str>) {
     crate::utils::debug::log_for_debugging(message.as_ref());
 }
 
-#[cfg(feature = "mcp_runtime")]
 mod runtime {
     use super::*;
     use serde::Deserialize;
@@ -220,19 +219,7 @@ mod runtime {
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 pub use runtime::{clear_claude_ai_mcp_configs_cache, fetch_claude_ai_mcp_configs_if_eligible};
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub async fn fetch_claude_ai_mcp_configs_if_eligible()
--> indexmap::IndexMap<String, ScopedMcpServerConfig> {
-    indexmap::IndexMap::new()
-}
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub fn clear_claude_ai_mcp_configs_cache() {
-    crate::services::mcp::client::clear_mcp_auth_cache();
-}
 
 /// Maps to: CC `services/mcp/claudeai.ts#markClaudeAiMcpConnected`.
 pub fn mark_claude_ai_mcp_connected(name: &str) -> anyhow::Result<()> {

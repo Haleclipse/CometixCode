@@ -2976,7 +2976,6 @@ mod tests {
     /// gets the parent's connection — not connected again — and the tools the
     /// fetch cache holds for it, refreshed since the parent's snapshot. Its
     /// cleanup leaves the parent's connection alone.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn a_referenced_mcp_server_shares_the_parents_connection_and_tools() {
         use crate::services::mcp::types::McpServerConnectionType;
@@ -3077,7 +3076,6 @@ mod tests {
     /// tools are the agent's only when it connected, and its connection is
     /// closed when the agent ends — here by dropping the initialization, as
     /// an abandoned agent future would — so the next connect makes a new one.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn an_inline_mcp_server_is_closed_when_the_agent_ends() {
         use crate::services::mcp::types::{ConfigScope, McpServerConnectionType};
@@ -3158,7 +3156,6 @@ mod tests {
     /// An agent dropped while its inline server is still connecting: the
     /// connection, made on the process runtime, is closed once it is made,
     /// as CC's `finally` cleanup would close it after the connect.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn an_inline_mcp_server_connecting_when_the_agent_is_dropped_is_closed_once_made() {
         use crate::services::mcp::types::ConfigScope;
@@ -3215,7 +3212,6 @@ mod tests {
     /// CC `runAgent.ts:213-214` appends the agent's clients to the parent's:
     /// a referenced server that does not connect leaves the parent's entry for
     /// it — here a needs-auth one with its authenticate tool — as it is.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn a_referenced_mcp_server_that_fails_leaves_the_parents_entry() {
         let _env_guard = TEST_ENV_LOCK

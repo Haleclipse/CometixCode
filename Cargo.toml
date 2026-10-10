@@ -19,7 +19,6 @@ name = "cometix"
 path = "src/bin/cometix.rs"
 
 [features]
-default = ["mcp_runtime"]
 # L1 replacement for CC runtime `process.env.USER_TYPE === 'ant'` gates.
 # The default build is the external distribution; this feature compiles the
 # Anthropic-internal capability profile and cannot be enabled at runtime.
@@ -29,14 +28,6 @@ anthropic_internal = []
 voice_mode = []
 # Maps to CC build-time `feature('ULTRATHINK')` transcript highlighting.
 ultrathink = []
-# Maps to CC `@modelcontextprotocol/sdk` runtime client usage. The Rust
-# equivalent is the official `modelcontextprotocol/rust-sdk` crate (`rmcp`).
-mcp_runtime = [
-    "dep:rmcp",
-    "dep:http",
-    "dep:sse-stream",
-    "dep:tokio-tungstenite",
-]
 
 [dependencies]
 # Source strip-ansi import used by staticRender/exportRenderer.
@@ -130,7 +121,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 
 anyhow = "1"
 libc = "0.2"
-http = { version = "1", optional = true }
+http = "1"
 # TLS backend is target-specific (see [target.'cfg(...)'.dependencies] below).
 # Shared features only — do not put native-tls / rustls here or both platforms
 # get a feature union and native-tls always wins.
@@ -151,18 +142,18 @@ flate2 = "1.1.9"
 # `utils/proxy.rs` sends them as `socks5h`. It adds no crate: hyper-util's
 # SOCKS connector is already built.
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "system-proxy", "socks"] }
-sse-stream = { version = "0.2", optional = true }
+sse-stream = "0.2"
 # The handshake goes out on reqwest (utils/mcp_websocket_transport.rs), so the
 # WebSocket takes CC's proxy and TLS options like every other request; only
 # the frame codec and its handshake helpers are used from here.
-tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"], optional = true }
+tokio-tungstenite = { version = "0.30", default-features = false, features = ["handshake"] }
 
 tracing = "0.1"
 
 # Official Rust SDK for Model Context Protocol, matching CC's
 # `@modelcontextprotocol/sdk` dependency in `services/mcp/client.ts`.
 # TLS feature for rmcp's reqwest is selected per-target below.
-rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
+rmcp = { version = "2.1.0", default-features = false, features = [
     "auth",
     "client",
     "elicitation",
@@ -187,13 +178,13 @@ crossterm = "0.29"
 # Target tables only add the TLS feature; shared features stay in [dependencies].
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
-rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
+rmcp = { version = "2.1.0", default-features = false, features = [
     "reqwest-native-tls",
 ] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
-rmcp = { version = "2.1.0", default-features = false, optional = true, features = [
+rmcp = { version = "2.1.0", default-features = false, features = [
     "reqwest-tls-no-provider",
 ] }
 # ring crypto provider for rustls — tls_provider installs it before HTTPS.

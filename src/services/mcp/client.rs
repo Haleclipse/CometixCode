@@ -1087,7 +1087,6 @@ fn needs_auth_connection(name: &str, config: &ScopedMcpServerConfig) -> McpServe
 /// Maps to: CC `services/mcp/client.ts:2214-2225#processBatched`.
 /// `pMap`'s returned array is discarded: each processor publishes its own
 /// completion, and a finished item immediately releases its concurrency slot.
-#[cfg(any(feature = "mcp_runtime", test))]
 pub(super) async fn process_batched<T, F, Fut>(items: Vec<T>, concurrency: usize, processor: F)
 where
     F: Fn(T) -> Fut,
@@ -1099,7 +1098,6 @@ where
         .await;
 }
 
-#[cfg(feature = "mcp_runtime")]
 mod runtime {
     use super::*;
     use crate::hooks::use_ide_selection::{
@@ -4645,227 +4643,6 @@ mod runtime {
     }
 }
 
-#[cfg(not(feature = "mcp_runtime"))]
-mod runtime {
-    use super::*;
-
-    pub fn detach_mcp_close_handler(_name: &str, _connection_id: Option<u64>) {}
-
-    pub fn clear_server_cache(
-        name: &str,
-        _server_ref: Option<&ScopedMcpServerConfig>,
-    ) -> impl std::future::Future<Output = ()> + Send + 'static {
-        let name = name.to_owned();
-        async move {
-            clear_mcp_server_instructions(&name);
-        }
-    }
-
-    /// No rmcp client registry to attach the REPL ide-selection sink to.
-    pub fn register_ide_selection_sink(
-        _sink: async_channel::Sender<crate::hooks::use_ide_selection::IdeSelection>,
-    ) {
-    }
-
-    pub async fn is_connected_mcp_client(_name: &str) -> bool {
-        false
-    }
-
-    pub async fn send_custom_notification_to_connected_client(
-        _name: &str,
-        _method: &str,
-        _params: Value,
-    ) -> anyhow::Result<()> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
-    pub async fn drain_mcp_connection_callback_observations()
-    -> Vec<crate::services::mcp::use_manage_mcp_connections::McpConnectionCallbackObservation> {
-        Vec::new()
-    }
-
-    pub async fn respond_to_mcp_elicitation(
-        _server_name: &str,
-        _request_id: &str,
-        _result: ElicitationResult,
-    ) -> bool {
-        false
-    }
-
-    pub fn clear_mcp_auth_cache() {}
-
-    pub async fn connect_to_server(
-        name: &str,
-        config: &ScopedMcpServerConfig,
-    ) -> McpServerSnapshot {
-        McpConnectionDiscovery::failed(
-            name,
-            config,
-            "mcp_runtime feature is disabled; rmcp client is not compiled",
-        )
-        .server
-    }
-
-    pub async fn fetch_tools_for_client(_client: &McpServerSnapshot) -> Vec<McpToolSnapshot> {
-        Vec::new()
-    }
-
-    pub async fn fetch_resources_for_client(_client: &McpServerSnapshot) -> Vec<ServerResource> {
-        Vec::new()
-    }
-
-    pub async fn ensure_connected_client(
-        _client: &McpServerSnapshot,
-    ) -> anyhow::Result<McpServerSnapshot> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
-    pub fn cleanup_connection(_client: &McpServerSnapshot) {}
-
-    pub fn cleanup_memoized_connection(_name: &str, _config: &ScopedMcpServerConfig) {}
-
-    pub async fn reconnect_mcp_server_impl(
-        name: &str,
-        config: &ScopedMcpServerConfig,
-    ) -> McpConnectionDiscovery {
-        McpConnectionDiscovery::from(connect_to_server(name, config).await)
-    }
-
-    pub async fn setup_sdk_mcp_clients(
-        configs: &indexmap::IndexMap<String, ScopedMcpServerConfig>,
-        _send_mcp_message: crate::services::mcp::sdk_control_transport::SendMcpMessageCallback,
-    ) -> SdkMcpClientsSetup {
-        let clients = configs
-            .iter()
-            .map(|(name, config)| {
-                McpConnectionDiscovery::failed(
-                    name,
-                    config,
-                    "mcp_runtime feature is disabled; rmcp client is not compiled",
-                )
-                .server
-            })
-            .collect::<Vec<_>>();
-        SdkMcpClientsSetup {
-            clients,
-            tools: Vec::new(),
-        }
-    }
-
-    pub async fn get_mcp_tools_commands_and_resources(
-        on_connection_attempt: impl Fn(McpConnectionDiscovery) + Sync,
-        configs: &indexmap::IndexMap<String, ScopedMcpServerConfig>,
-    ) {
-        for (name, config) in crate::utils::process_env::ecmascript_object_entries(configs) {
-            let discovery = if super::super::config::is_mcp_server_disabled(name) {
-                McpConnectionDiscovery::disabled(name, config)
-            } else {
-                McpConnectionDiscovery::failed(
-                    name,
-                    config,
-                    "mcp_runtime feature is disabled; rmcp client is not compiled",
-                )
-            };
-            on_connection_attempt(discovery);
-        }
-    }
-
-    pub async fn refresh_mcp_tools_for_client(_name: &str) -> anyhow::Result<Vec<McpToolSnapshot>> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
-    pub async fn refresh_mcp_prompts_for_client(
-        _name: &str,
-    ) -> anyhow::Result<Vec<McpPromptSnapshot>> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
-    /// No client registry is compiled, so no peer ever declares experimental
-    /// capabilities.
-    pub async fn experimental_capabilities_by_server()
-    -> std::collections::BTreeMap<String, std::collections::BTreeMap<String, Value>> {
-        std::collections::BTreeMap::new()
-    }
-
-    pub async fn refresh_mcp_resources_for_client(
-        _name: &str,
-    ) -> anyhow::Result<Vec<ServerResource>> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
-    pub async fn send_channel_permission_request_to_relays(
-        _params: &crate::services::mcp::channel_permissions::ChannelPermissionRequestParams,
-    ) -> crate::services::mcp::channel_permissions::ChannelPermissionRelaySendReport {
-        crate::services::mcp::channel_permissions::ChannelPermissionRelaySendReport {
-            enabled: false,
-            ..Default::default()
-        }
-    }
-
-    pub async fn call_mcp_tool(
-        server_name: &str,
-        tool_name: &str,
-        args: Map<String, Value>,
-    ) -> anyhow::Result<Value> {
-        call_mcp_tool_with_meta(server_name, tool_name, args, None).await
-    }
-
-    pub async fn call_mcp_tool_with_meta(
-        _server_name: &str,
-        _tool_name: &str,
-        _args: Map<String, Value>,
-        _meta: Option<Map<String, Value>>,
-    ) -> anyhow::Result<Value> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
-    // Feature-disabled adapter: preserve the public entry point and the same
-    // disabled-runtime error as the other MCP tool-call adapters.
-    pub async fn call_mcp_tool_with_elicitation(
-        server_name: &str,
-        _connection_id: Option<u64>,
-        tool_name: &str,
-        args: Map<String, Value>,
-        meta: Option<Map<String, Value>>,
-        _handle_elicitation: crate::tool::HandleElicitationCallback,
-    ) -> anyhow::Result<Value> {
-        call_mcp_tool_with_meta(server_name, tool_name, args, meta).await
-    }
-
-    pub async fn get_mcp_prompt_for_command(
-        _client: &McpServerSnapshot,
-        _prompt_name: &str,
-        _arg_names: &[String],
-        _args: &str,
-    ) -> anyhow::Result<Vec<Value>> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-
-    pub async fn read_mcp_resource(
-        _server_name: &str,
-        _connection_id: Option<u64>,
-        _uri: &str,
-    ) -> anyhow::Result<Value> {
-        Err(anyhow::anyhow!(
-            "mcp_runtime feature is disabled; rmcp client is not compiled"
-        ))
-    }
-}
-
 pub use runtime::{
     call_mcp_tool, call_mcp_tool_with_elicitation, call_mcp_tool_with_meta, cleanup_connection,
     cleanup_memoized_connection, clear_mcp_auth_cache, clear_server_cache, connect_to_server,
@@ -4884,7 +4661,7 @@ pub use runtime::{
 /// `initialize` recorded in that file is answered half a second late; with
 /// `exit-on-initialize`, it exits instead of answering. Any tool call makes it
 /// exit.
-#[cfg(all(test, feature = "mcp_runtime"))]
+#[cfg(test)]
 pub(crate) const COUNTING_STDIO_FIXTURE: &str = r#"
 import fs from 'node:fs'
 import readline from 'node:readline'
@@ -4941,12 +4718,12 @@ rl.on('line', line => {
 })
 "#;
 
-#[cfg(all(test, feature = "mcp_runtime"))]
+#[cfg(test)]
 pub(crate) use runtime::memoized_connection_ids;
 
 /// A streamable HTTP MCP server that gives every `initialize` a new session
 /// (`s1`, `s2`, ...) and answers 404 to the requests `expires` picks.
-#[cfg(all(test, feature = "mcp_runtime"))]
+#[cfg(test)]
 pub(crate) mod session_http_fixture {
     use std::sync::{Arc, Mutex};
 
@@ -5121,7 +4898,7 @@ pub(crate) mod session_http_fixture {
 }
 
 /// Test helpers for [`COUNTING_STDIO_FIXTURE`].
-#[cfg(all(test, feature = "mcp_runtime"))]
+#[cfg(test)]
 pub(crate) mod counting_fixture {
     use super::*;
 
@@ -5209,7 +4986,6 @@ mod tests {
     /// rmcp's Streamable HTTP default follows no redirect, so a server's
     /// custom headers never reach a redirect target; the proxy-aware client
     /// keeps that.
-    #[cfg(feature = "mcp_runtime")]
     #[tokio::test]
     async fn streamable_http_client_follows_no_redirect() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -5371,7 +5147,6 @@ mod tests {
     /// identity delivers the CC-shaped reset OBJECT through the REPL sink
     /// captured from the connection-manage registry. Non-ide names never
     /// capture a sink (strict `name === 'ide'` gate, utils/ide.ts:1251).
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn ide_identity_change_sends_official_reset_object_through_registered_sink() {
         let _lock = TEST_ENV_LOCK
@@ -5394,7 +5169,6 @@ mod tests {
     /// needed"): entry removal sends the identity-change reset and then drops
     /// only that connection's sender clone — the registry-held sender stays
     /// alive so the REPL channel keeps serving future ide connections.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn per_connection_ide_sink_drop_releases_only_that_connections_sender() {
         let _lock = TEST_ENV_LOCK
@@ -5505,7 +5279,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn mcp_call_tool_request_params_include_official_meta_payload() {
         let params = runtime::call_tool_request_params(
@@ -5525,7 +5298,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn mcp_connection_batch_size_env_matches_official_defaults() {
         let _env_guard = TEST_ENV_LOCK
@@ -6081,7 +5853,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[tokio::test]
     async fn setup_sdk_mcp_clients_emits_control_messages_and_reports_failures() {
         let mut configs = indexmap::IndexMap::new();
@@ -6144,7 +5915,6 @@ mod tests {
         assert_eq!(seen_servers.lock().unwrap().as_slice(), &["sdk-server"]);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[tokio::test]
     async fn setup_sdk_mcp_clients_connects_via_control_transport_and_fetches_tools() {
         let mut configs = indexmap::IndexMap::new();
@@ -6463,7 +6233,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn elicitation_notification_messages_match_official_hooks() {
         assert_eq!(
@@ -6476,7 +6245,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn url_elicitation_required_error_parsing_matches_official_validation() {
         let error = anyhow::Error::new(rmcp::ErrorData::url_elicitation_required(
@@ -6513,7 +6281,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn channel_custom_notification_emits_callback_observation() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -6590,7 +6357,6 @@ mod tests {
             });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn channel_permission_custom_notification_emits_callback_observation() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -6646,7 +6412,6 @@ mod tests {
     /// Maps to: CC `callMCPToolWithUrlElicitationRetry` client.ts:2944-2947 —
     /// with a handleElicitation leg (print/SDK mode) the resolution delegates
     /// to it instead of queuing an ElicitationRequestEvent for the dialog.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn url_elicitation_prefers_the_sdk_handler_over_the_queue() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -6703,7 +6468,6 @@ mod tests {
             });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn url_elicitation_required_retry_queue_accept_and_decline_paths() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -6792,7 +6556,6 @@ mod tests {
             });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn stdio_url_elicitation_required_retries_after_user_accepts() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -6941,7 +6704,6 @@ rl.on('line', line => {
 
     /// A turn-scoped runtime driving the test, with the process runtime the
     /// memoized connections and fetches run on published.
-    #[cfg(feature = "mcp_runtime")]
     fn block_on_with_process_runtime(test: impl std::future::Future<Output = ()>) {
         crate::utils::process_runtime::initialize_test_process_runtime();
         tokio::runtime::Builder::new_current_thread()
@@ -6951,12 +6713,10 @@ rl.on('line', line => {
             .block_on(test);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     fn registered_connection_id(name: &str) -> Option<u64> {
         runtime::registered_connection_id(name)
     }
 
-    #[cfg(feature = "mcp_runtime")]
     fn tool_names(tools: &[McpToolSnapshot]) -> Vec<&str> {
         tools.iter().map(|tool| tool.name.as_str()).collect()
     }
@@ -6965,7 +6725,6 @@ rl.on('line', line => {
     /// serverRef)`: concurrent and later calls for the same name and config
     /// share one connection, which carries no tools — callers fetch those —
     /// and `clearServerCache` makes the next call connect again.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn connect_to_server_is_memoized_by_name_and_config() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7005,7 +6764,6 @@ rl.on('line', line => {
     /// Without a process runtime a memoized connection would live on the
     /// caller's runtime, which may end with the turn, so each call connects
     /// for itself and the newer connection takes the name.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn connect_to_server_without_a_process_runtime_is_not_memoized() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7031,7 +6789,6 @@ rl.on('line', line => {
     /// CC's `onclose` wrapper (`client.ts:1374-1402`): a connection that
     /// ends leaves the memo and takes the name's fetch caches with it, so the
     /// next call connects and fetches again.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn a_closed_connection_leaves_the_memo_and_the_fetch_caches() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7074,7 +6831,6 @@ rl.on('line', line => {
     /// CC's get the client the clear then closes; fetches through it come
     /// back empty. The fixture answers the first `initialize` late, so the
     /// newer connection is registered first.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn a_connection_cleared_while_connecting_does_not_displace_a_newer_one() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7118,7 +6874,6 @@ rl.on('line', line => {
     /// lodash `memoize` caches the promise whatever it settles to, so CC's
     /// failed connection is the answer until `clearServerCache` —
     /// `reconnectMcpServerImpl` — deletes it.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn a_failed_connection_stays_memoized_until_cleared() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7147,7 +6902,6 @@ rl.on('line', line => {
     /// CC `ensureConnectedClient` (`client.ts:1688-1704`): the memoized
     /// connection while it is healthy, a fresh one after a clear, and "not
     /// connected" when the memoized result is not a connection.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn ensure_connected_client_reuses_reconnects_or_reports_not_connected() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7189,7 +6943,6 @@ rl.on('line', line => {
     /// CC's `onerror` closes the transport of an expired session whatever the
     /// request was (`client.ts:1313-1327`): the prompt that hit it fails, and
     /// the next one reconnects through `ensureConnectedClient`.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn an_expired_session_on_a_prompt_closes_its_connection() {
         use session_http_fixture::{SESSION_NOT_FOUND, SessionHttpFixture};
@@ -7234,7 +6987,6 @@ rl.on('line', line => {
     /// connection under a taken name closes the previous one and deletes the
     /// name's fetch caches; the previous connection's later close leaves the
     /// newer one's caches alone.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn a_connection_under_a_taken_name_replaces_the_previous_one() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7278,7 +7030,6 @@ rl.on('line', line => {
     /// concurrent and later fetches share one `tools/list`, the
     /// `tools/list_changed` refresh deletes the entry and fetches again, and
     /// `clearServerCache` deletes it with the connection.
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn tool_fetches_are_memoized_by_name_until_refreshed_or_cleared() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7321,7 +7072,6 @@ rl.on('line', line => {
         });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn stdio_tools_list_changed_notification_refreshes_live_tools() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7435,7 +7185,6 @@ rl.on('line', line => {
         let _ = std::fs::remove_file(script_path);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn stdio_prompts_and_resources_list_changed_refresh_live_state() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7601,7 +7350,6 @@ rl.on('line', line => {
         let _ = std::fs::remove_file(script_path);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn stdio_read_mcp_resource_reads_text_content_from_live_server() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7715,7 +7463,6 @@ rl.on('line', line => {
         let _ = std::fs::remove_file(script_path);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn stdio_read_mcp_resource_checks_resource_capability_like_official_tool() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7801,7 +7548,6 @@ rl.on('line', line => {
         let _ = std::fs::remove_file(script_path);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn stdio_get_mcp_prompt_for_command_fetches_live_prompt_content() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7910,7 +7656,6 @@ rl.on('line', line => {
         let _ = std::fs::remove_file(script_path);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn streamable_http_connects_and_discovers_tools_from_live_server() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -8070,7 +7815,6 @@ rl.on('line', line => {
             });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn legacy_sse_connects_and_discovers_tools_from_live_server() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -8260,7 +8004,6 @@ rl.on('line', line => {
             });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn websocket_connects_and_discovers_tools_from_live_server() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -8425,7 +8168,6 @@ rl.on('line', line => {
             });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn streamable_http_401_challenge_returns_unavailable_without_credential_or_auth_cache_write() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -8522,7 +8264,6 @@ rl.on('line', line => {
         let _ = std::fs::remove_dir_all(config_home);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn streamable_http_call_mcp_tool_uses_live_peer_and_meta() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
@@ -8703,7 +8444,6 @@ rl.on('line', line => {
             });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn streamable_http_auth_header_precedence_matches_official_connect_to_server() {
         assert_eq!(
@@ -8726,7 +8466,6 @@ rl.on('line', line => {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn runtime_auth_helpers_extract_legacy_sse_www_authenticate_challenges() {
         let insufficient_scope_header =
@@ -8754,7 +8493,6 @@ rl.on('line', line => {
         assert!(!runtime::is_insufficient_scope_auth_error(&unauthorized));
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn cached_needs_auth_skips_remote_probe_and_projects_auth_tool() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();

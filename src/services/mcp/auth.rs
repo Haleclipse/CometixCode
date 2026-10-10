@@ -432,7 +432,6 @@ impl ClaudeAuthProvider {
     }
 }
 
-#[cfg(feature = "mcp_runtime")]
 mod runtime {
     use super::super::types::{ScopedMcpServerConfig, Transport};
     use super::*;
@@ -2452,95 +2451,12 @@ mod runtime {
     }
 }
 
-#[cfg(not(feature = "mcp_runtime"))]
-mod runtime {
-    use super::*;
-
-    /// Maps to: CC `services/mcp/auth.ts#fetchAuthServerMetadata`.
-    /// Current behavior: no runtime OAuth network discovery without the
-    /// `mcp_runtime` feature. The full implementation is compiled with rmcp's
-    /// official `auth` feature.
-    pub async fn fetch_auth_server_metadata(
-        _server_url: &str,
-        _configured_metadata_url: Option<&str>,
-    ) -> anyhow::Result<Option<McpAuthorizationServerMetadata>> {
-        anyhow::bail!("mcp_runtime feature is disabled; MCP OAuth discovery is not compiled")
-    }
-
-    pub async fn refresh_mcp_oauth_access_token_after_auth_failure(
-        _server_name: &str,
-        _config: &super::super::types::ScopedMcpServerConfig,
-        _transport_type: &str,
-        _server_url: &str,
-    ) -> anyhow::Result<Option<String>> {
-        anyhow::bail!("mcp_runtime feature is disabled; MCP OAuth token refresh is not compiled")
-    }
-
-    pub fn record_mcp_www_authenticate_challenge(
-        _server_name: &str,
-        _config: &super::super::types::ScopedMcpServerConfig,
-        _transport_type: &str,
-        _server_url: &str,
-        _www_authenticate_header: &str,
-        _required_scope: Option<&str>,
-    ) -> anyhow::Result<bool> {
-        anyhow::bail!(
-            "mcp_runtime feature is disabled; MCP OAuth WWW-Authenticate handling is not compiled"
-        )
-    }
-
-    pub async fn revoke_server_tokens(
-        _server_name: &str,
-        _config: &super::super::types::ScopedMcpServerConfig,
-        _preserve_step_up_state: bool,
-    ) -> anyhow::Result<()> {
-        anyhow::bail!("mcp_runtime feature is disabled; MCP OAuth revocation is not compiled")
-    }
-
-    pub fn save_mcp_client_secret(
-        _server_name: &str,
-        _config: &super::super::types::ScopedMcpServerConfig,
-        _client_secret: &str,
-    ) -> anyhow::Result<()> {
-        anyhow::bail!(
-            "mcp_runtime feature is disabled; MCP OAuth client-secret storage is not compiled"
-        )
-    }
-
-    pub fn get_mcp_client_config(
-        _server_name: &str,
-        _config: &super::super::types::ScopedMcpServerConfig,
-    ) -> anyhow::Result<Option<String>> {
-        anyhow::bail!(
-            "mcp_runtime feature is disabled; MCP OAuth client-secret storage is not compiled"
-        )
-    }
-
-    pub fn clear_mcp_client_config(
-        _server_name: &str,
-        _config: &super::super::types::ScopedMcpServerConfig,
-    ) -> anyhow::Result<()> {
-        anyhow::bail!(
-            "mcp_runtime feature is disabled; MCP OAuth client-secret storage is not compiled"
-        )
-    }
-
-    pub async fn perform_mcp_oauth_flow(
-        _server_name: &str,
-        _config: &super::super::types::ScopedMcpServerConfig,
-        _options: McpOAuthFlowOptions,
-    ) -> anyhow::Result<McpOAuthFlowResult> {
-        anyhow::bail!("mcp_runtime feature is disabled; MCP OAuth flow is not compiled")
-    }
-}
-
 pub use runtime::{
     clear_mcp_client_config, fetch_auth_server_metadata, get_mcp_client_config,
     perform_mcp_oauth_flow, record_mcp_www_authenticate_challenge,
     refresh_mcp_oauth_access_token_after_auth_failure, revoke_server_tokens,
     save_mcp_client_secret,
 };
-#[cfg(feature = "mcp_runtime")]
 pub(crate) use runtime::oauth_http_client;
 
 #[cfg(test)]
@@ -2563,7 +2479,6 @@ mod tests {
     /// built-in client would connect direct. Discovery asks for no redirect
     /// and follows same-origin ones itself, so a cross-origin 302 is never
     /// followed.
-    #[cfg(feature = "mcp_runtime")]
     #[tokio::test]
     async fn oauth_discovery_goes_through_the_fetch_proxy() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -2610,7 +2525,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn mcp_token_presence_and_discovery_only_state_use_the_auth_owner() {
         with_temp_config_home(|dir| {
@@ -2689,7 +2603,6 @@ mod tests {
         });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn manual_callback_url_submit_parses_and_validates_like_official() {
         let callback = super::runtime::validate_manual_oauth_callback(
@@ -2800,7 +2713,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[tokio::test]
     async fn configured_metadata_url_requires_https_like_official() {
         let error = fetch_auth_server_metadata(
@@ -2817,7 +2729,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[tokio::test]
     async fn mcp_revocation_send_uses_canonical_default_closed_gate() {
         crate::utils::tls_provider::install_crypto_provider();
@@ -2847,7 +2758,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "mcp_runtime")]
     fn test_http_config() -> crate::services::mcp::types::ScopedMcpServerConfig {
         crate::services::mcp::types::ScopedMcpServerConfig {
             name: None,
@@ -2868,14 +2778,12 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "mcp_runtime")]
     fn test_http_xaa_config() -> crate::services::mcp::types::ScopedMcpServerConfig {
         let mut config = test_http_config();
         config.oauth = Some(serde_json::json!({"clientId":"configured-client", "xaa": true}));
         config
     }
 
-    #[cfg(feature = "mcp_runtime")]
     fn with_temp_config_home<T>(body: impl FnOnce(std::path::PathBuf) -> T) -> T {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir =
@@ -2887,7 +2795,6 @@ mod tests {
         result
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn mcp_client_secret_helpers_are_default_closed_without_changing_bytes() {
         with_temp_config_home(|home| {
@@ -2916,7 +2823,6 @@ mod tests {
         });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn preconfigured_oauth_client_config_uses_readonly_saved_secret_for_token_exchange() {
         with_temp_config_home(|home| {
@@ -2944,7 +2850,6 @@ mod tests {
         });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn perform_mcp_oauth_flow_xaa_disabled_fails_without_standard_oauth_fallback() {
         with_temp_config_home(|_| {
@@ -2966,7 +2871,6 @@ mod tests {
         });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn claude_auth_provider_tokens_uses_active_cached_token_without_refresh_probe() {
         let token = with_temp_config_home(|home| {
@@ -2997,7 +2901,6 @@ mod tests {
         assert_eq!(token.as_deref(), Some("active-token"));
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn claude_auth_provider_tokens_returns_none_for_expired_token_without_refresh() {
         let token = with_temp_config_home(|home| {
@@ -3028,7 +2931,6 @@ mod tests {
         assert_eq!(token, None);
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn blocked_www_authenticate_cache_write_returns_unavailable_and_preserves_bytes() {
         with_temp_config_home(|home| {
@@ -3054,7 +2956,6 @@ mod tests {
         });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn blocked_mcp_token_delete_preserves_step_up_entry_bytes() {
         with_temp_config_home(|home| {
@@ -3098,7 +2999,6 @@ mod tests {
         });
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn cached_resource_metadata_resource_validation_matches_rmcp_mixup_guard() {
         assert!(runtime::resource_identifiers_match(
@@ -3111,7 +3011,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn cached_resource_metadata_auth_server_url_rejects_private_hosts_like_rmcp() {
         assert_eq!(
@@ -3128,7 +3027,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn cached_reauth_state_reads_step_up_scope_and_resource_metadata_like_official() {
         let entry = serde_json::json!({
@@ -3145,7 +3043,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn oauth_token_response_from_snapshot_preserves_refresh_token_for_rmcp_refresh() {
         let snapshot = runtime::McpOAuthTokenSnapshot {

@@ -88,7 +88,6 @@ pub fn should_notify_vscode_file_updated_for_audience(
     ) && has_vscode_client
 }
 
-#[cfg(feature = "mcp_runtime")]
 pub fn handle_vscode_log_event_notification(
     server_name: &str,
     notification: &rmcp::model::CustomNotification,
@@ -113,7 +112,6 @@ pub fn handle_vscode_log_event_notification(
     true
 }
 
-#[cfg(feature = "mcp_runtime")]
 pub async fn setup_vscode_sdk_mcp(
     sdk_clients: &[crate::services::mcp::types::McpServerSnapshot],
 ) -> bool {
@@ -139,14 +137,6 @@ pub async fn setup_vscode_sdk_mcp(
     .is_ok()
 }
 
-#[cfg(not(feature = "mcp_runtime"))]
-pub async fn setup_vscode_sdk_mcp(
-    _sdk_clients: &[crate::services::mcp::types::McpServerSnapshot],
-) -> bool {
-    false
-}
-
-#[cfg(feature = "mcp_runtime")]
 pub async fn notify_vscode_file_updated(
     file_path: &str,
     old_content: Option<&str>,
@@ -172,15 +162,6 @@ pub async fn notify_vscode_file_updated(
             false
         }
     }
-}
-
-#[cfg(not(feature = "mcp_runtime"))]
-pub async fn notify_vscode_file_updated(
-    _file_path: &str,
-    _old_content: Option<&str>,
-    _new_content: Option<&str>,
-) -> bool {
-    false
 }
 
 #[cfg(test)]
@@ -253,7 +234,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "mcp_runtime")]
     #[test]
     fn vscode_log_event_handler_filters_server_and_method() {
         let notification = rmcp::model::CustomNotification::new(
