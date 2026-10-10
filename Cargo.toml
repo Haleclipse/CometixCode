@@ -153,7 +153,7 @@ tracing = "0.1"
 # Official Rust SDK for Model Context Protocol, matching CC's
 # `@modelcontextprotocol/sdk` dependency in `services/mcp/client.ts`.
 # TLS feature for rmcp's reqwest is selected per-target below.
-rmcp = { version = "2.1.0", default-features = false, features = [
+rmcp = { version = "3.5.1", default-features = false, features = [
     "auth",
     "client",
     "elicitation",
@@ -178,13 +178,13 @@ crossterm = "0.29"
 # Target tables only add the TLS feature; shared features stay in [dependencies].
 [target.'cfg(target_os = "android")'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["native-tls"] }
-rmcp = { version = "2.1.0", default-features = false, features = [
+rmcp = { version = "3.5.1", default-features = false, features = [
     "reqwest-native-tls",
 ] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
-rmcp = { version = "2.1.0", default-features = false, features = [
+rmcp = { version = "3.5.1", default-features = false, features = [
     "reqwest-tls-no-provider",
 ] }
 # ring crypto provider for rustls — tls_provider installs it before HTTPS.

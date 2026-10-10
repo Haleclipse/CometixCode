@@ -1111,13 +1111,16 @@ mod runtime {
     use http::{HeaderName, HeaderValue};
     use rmcp::handler::client::ClientHandler;
     use rmcp::model::{
-        CallToolRequestParams, ClientCapabilities, ClientInfo, ClientNotification,
-        CustomNotification, ElicitRequestParams as RmcpElicitRequestParams,
-        ElicitResult as RmcpElicitResult, ElicitationAction as RmcpElicitationAction,
-        ElicitationCapability, ElicitationResponseNotificationParam, ErrorCode,
-        GetPromptRequestParams, Implementation, ListRootsResult, Meta, ReadResourceRequestParams,
-        Root, RootsCapabilities, ServerInfo,
+        CallToolRequestParams, ClientCapabilities, ClientNotification, CustomNotification,
+        ElicitRequestParams as RmcpElicitRequestParams, ElicitResult as RmcpElicitResult,
+        ElicitationAction as RmcpElicitationAction, ElicitationCapability, ErrorCode,
+        GetPromptRequestParams, Implementation, InitializeRequestParams, ProtocolVersion,
+        ReadResourceRequestParams, RequestMetaObject, RootsCapabilities, ServerPeerInfo,
     };
+    // SEP-2577 deprecates roots in the 2026-07-28 draft; CC's SDK (1.29)
+    // still serves `roots/list`, on the 2025-11-25 protocol Cometix speaks.
+    #[allow(deprecated)]
+    use rmcp::model::{ListRootsResult, Root};
     use rmcp::service::{
         ClientInitializeError, NotificationContext, Peer, QuitReason, RequestContext,
         RunningService, RunningServiceCancellationToken, RxJsonRpcMessage, ServiceError,
@@ -1130,7 +1133,7 @@ mod runtime {
         DynamicTransportError, StreamableHttpClientTransport, TokioChildProcess,
         Transport as RmcpTransport,
     };
-    use rmcp::{ErrorData as McpError, RoleClient, serve_client};
+    use rmcp::{ErrorData as McpError, RoleClient};
     use serde::{Deserialize, Serialize};
     use std::collections::{BTreeMap, HashMap, VecDeque};
     use std::fmt;
@@ -1147,6 +1150,41 @@ mod runtime {
     const DEFAULT_MCP_CONNECTION_TIMEOUT_MS: u64 = 30_000;
     const MCP_AUTH_CACHE_TTL_MS: u64 = 15 * 60 * 1000;
     const MAX_URL_ELICITATION_RETRIES: usize = 3;
+    /// CC SDK `ErrorCode.UrlElicitationRequired` (`types.ts`). rmcp dropped
+    /// the constant in 3.x along with its URL-elicitation error helpers.
+    pub(super) const URL_ELICITATION_REQUIRED: ErrorCode = ErrorCode(-32042);
+    /// CC SDK `ElicitationCompleteNotificationSchema.method`.
+    const ELICITATION_COMPLETE_NOTIFICATION_METHOD: &str = "notifications/elicitation/complete";
+    /// CC SDK `LATEST_PROTOCOL_VERSION`, the version `Client.connect` sends
+    /// in `initialize`. rmcp's default (`ProtocolVersion::LATEST`) is the
+    /// 2026-07-28 draft, which has no `initialize` handshake at all.
+    const LATEST_PROTOCOL_VERSION: ProtocolVersion = ProtocolVersion::V_2025_11_25;
+
+    /// CC `client.connect(transport)`: the `initialize` handshake.
+    ///
+    /// rmcp's client also keeps a response cache (SEP-2549) that the SDK CC
+    /// runs on (1.29) does not have: `resources/read` and the `*/list`
+    /// helpers answer from it while a server's `ttlMs` lasts, and fall back
+    /// to a stale entry when a refetch fails. CC sends every request and
+    /// surfaces every failure, so the cache is off for every connection.
+    pub(super) async fn serve_client<T, E, A>(
+        handler: CometixMcpClientHandler,
+        transport: T,
+    ) -> Result<RunningService<RoleClient, CometixMcpClientHandler>, ClientInitializeError>
+    where
+        T: rmcp::transport::IntoTransport<RoleClient, E, A>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        // Boxed: rmcp 3's handshake future is deep enough that inlining it
+        // into every caller's state machine overflows rustc's layout query
+        // depth (`cli::print::run_stream_json`).
+        let service = Box::pin(rmcp::serve_client(handler, transport)).await?;
+        service
+            .peer()
+            .set_response_cache_config(rmcp::ClientCacheConfig::disabled())
+            .await;
+        Ok(service)
+    }
 
     pub(super) static CONNECTED_CLIENTS: LazyLock<
         std::sync::Mutex<HashMap<String, ConnectedMcpClient>>,
@@ -1445,6 +1483,39 @@ mod runtime {
         });
     }
 
+    /// Maps to: CC `elicitationHandler.ts:173-206`, the
+    /// `ElicitationCompleteNotificationSchema` handler. rmcp has no typed
+    /// variant for `notifications/elicitation/complete`, so it arrives here as
+    /// a custom notification. A payload without a string `elicitationId`
+    /// fails the SDK schema and never reaches CC's handler; it is consumed
+    /// and dropped the same way.
+    pub(super) async fn handle_elicitation_complete_notification(
+        server_name: &str,
+        notification: &CustomNotification,
+    ) -> bool {
+        if notification.method != ELICITATION_COMPLETE_NOTIFICATION_METHOD {
+            return false;
+        }
+        let Some(elicitation_id) = notification
+            .params
+            .as_ref()
+            .and_then(|params| params.get("elicitationId"))
+            .and_then(Value::as_str)
+        else {
+            return true;
+        };
+        spawn_elicitation_notification_hooks(
+            elicitation_complete_notification_message(server_name, elicitation_id),
+            "elicitation_complete",
+        );
+        crate::services::mcp::use_manage_mcp_connections::emit_elicitation_completed(
+            server_name.to_string(),
+            elicitation_id.to_string(),
+        )
+        .await;
+        true
+    }
+
     async fn run_elicitation_result_hooks_for_response(
         server_name: &str,
         request: &RmcpElicitRequestParams,
@@ -1475,7 +1546,7 @@ mod runtime {
     }
 
     fn server_info_has_experimental_capability(
-        peer_info: Option<&ServerInfo>,
+        peer_info: Option<&ServerPeerInfo>,
         capability: &str,
     ) -> bool {
         peer_info
@@ -1532,7 +1603,7 @@ mod runtime {
     pub(super) async fn emit_channel_message_event_from_custom_notification(
         server_name: String,
         notification: CustomNotification,
-        peer_info: Option<&ServerInfo>,
+        peer_info: Option<&ServerPeerInfo>,
     ) -> bool {
         // Maps to: CC `ChannelMessageNotificationSchema` handler registered in
         // `useManageMCPConnections.ts` for `notifications/claude/channel`.
@@ -1570,7 +1641,7 @@ mod runtime {
     pub(super) async fn emit_channel_permission_event_from_custom_notification(
         server_name: String,
         notification: CustomNotification,
-        peer_info: Option<&ServerInfo>,
+        peer_info: Option<&ServerPeerInfo>,
     ) -> bool {
         // Maps to: CC `ChannelPermissionNotificationSchema` handler registered
         // in `useManageMCPConnections.ts` for
@@ -1706,9 +1777,10 @@ mod runtime {
     }
 
     impl ClientHandler for CometixMcpClientHandler {
-        fn get_info(&self) -> ClientInfo {
+        fn get_info(&self) -> InitializeRequestParams {
             // Maps to: CC `new Client({ name:'claude-code', title:'Claude Code', ... },
-            // { capabilities:{ roots:{}, elicitation:{} } })`.
+            // { capabilities:{ roots:{}, elicitation:{} } })`, initialized at the
+            // SDK's `LATEST_PROTOCOL_VERSION`.
             let mut implementation = Implementation::new(
                 "claude-code",
                 option_env!("CARGO_PKG_VERSION").unwrap_or("unknown"),
@@ -1723,16 +1795,17 @@ mod runtime {
             // form/url subcapabilities, for Java MCP SDK compatibility.
             capabilities.elicitation = Some(ElicitationCapability::default());
 
-            ClientInfo::new(capabilities, implementation)
+            InitializeRequestParams::new(capabilities, implementation)
+                .with_protocol_version(LATEST_PROTOCOL_VERSION)
         }
 
+        #[allow(deprecated)]
         fn list_roots(
             &self,
             _context: RequestContext<RoleClient>,
         ) -> impl Future<Output = Result<ListRootsResult, McpError>> + Send + '_ {
             let cwd = self.cwd.clone();
             async move {
-                #[allow(deprecated)]
                 Ok(ListRootsResult::new(vec![Root::new(format!(
                     "file://{}",
                     cwd.to_string_lossy()
@@ -1787,26 +1860,6 @@ mod runtime {
                     run_elicitation_result_hooks_for_response(&server_name, &request, raw_result)
                         .await;
                 Ok(elicitation_result_to_rmcp(final_result))
-            }
-        }
-
-        fn on_url_elicitation_notification_complete(
-            &self,
-            params: ElicitationResponseNotificationParam,
-            _context: NotificationContext<RoleClient>,
-        ) -> impl Future<Output = ()> + Send + '_ {
-            let server_name = self.server_name.clone();
-            async move {
-                // Maps to: CC `ElicitationCompleteNotificationSchema` handler.
-                spawn_elicitation_notification_hooks(
-                    elicitation_complete_notification_message(&server_name, &params.elicitation_id),
-                    "elicitation_complete",
-                );
-                crate::services::mcp::use_manage_mcp_connections::emit_elicitation_completed(
-                    server_name,
-                    params.elicitation_id,
-                )
-                .await;
             }
         }
 
@@ -1896,6 +1949,9 @@ mod runtime {
             let server_name = self.server_name.clone();
             let notifying_connection_id = self.connection_id.get().copied();
             async move {
+                if handle_elicitation_complete_notification(&server_name, &notification).await {
+                    return;
+                }
                 if crate::services::mcp::vscode_sdk_mcp::handle_vscode_log_event_notification(
                     &server_name,
                     &notification,
@@ -2999,8 +3055,7 @@ mod runtime {
     pub(super) fn is_url_elicitation_required_error(error: &anyhow::Error) -> bool {
         // Maps to: CC `error.code !== ErrorCode.UrlElicitationRequired`
         // check in `callMCPToolWithUrlElicitationRetry(...)`.
-        mcp_error_from_anyhow(error)
-            .is_some_and(|error| error.code == ErrorCode::URL_ELICITATION_REQUIRED)
+        mcp_error_from_anyhow(error).is_some_and(|error| error.code == URL_ELICITATION_REQUIRED)
             || error.to_string().contains("-32042")
     }
 
@@ -4001,9 +4056,11 @@ mod runtime {
         };
 
         let peer = service.peer().clone();
-        let server_version = peer
-            .peer_info()
-            .map(|info| info.server_info.version.clone());
+        let server_version = peer.peer_info().and_then(|info| {
+            info.server_info
+                .as_ref()
+                .map(|server| server.version.clone())
+        });
         let instructions = peer.peer_info().and_then(|info| info.instructions.clone());
         let supports_resources = peer
             .peer_info()
@@ -4092,9 +4149,9 @@ mod runtime {
                 match serve_client(handler, transport).await {
                     Ok(service) => {
                         let peer = service.peer().clone();
-                        let server_version = peer
-                            .peer_info()
-                            .map(|info| info.server_info.version.clone());
+                        let server_version = peer.peer_info().and_then(|info| {
+                            info.server_info.as_ref().map(|server| server.version.clone())
+                        });
                         let instructions = peer
                             .peer_info()
                             .and_then(|info| info.instructions.clone());
@@ -4283,7 +4340,7 @@ mod runtime {
         meta: Option<Map<String, Value>>,
     ) -> CallToolRequestParams {
         let mut params = CallToolRequestParams::new(tool_name.to_string()).with_arguments(args);
-        params.meta = meta.map(Meta);
+        params.meta = meta.map(RequestMetaObject::from);
         params
     }
 
@@ -4656,11 +4713,15 @@ pub use runtime::{
 
 /// A stdio MCP server for the connection and fetch caches. It appends each
 /// `initialize` and `tools/list` it answers to the file named by its first
-/// argument, and answers the Nth `tools/list` it gets with one tool,
-/// `lookup_N`. With `slow-first` as its second argument, the first
-/// `initialize` recorded in that file is answered half a second late; with
-/// `exit-on-initialize`, it exits instead of answering. Any tool call makes it
-/// exit.
+/// argument, followed for `initialize` by a `protocolVersion <requested>`
+/// line, and answers the Nth `tools/list` it gets with one tool, `lookup_N`.
+/// With `slow-first` as its second argument, the first `initialize` recorded
+/// in that file is answered half a second late; with `exit-on-initialize`, it
+/// exits instead of answering. Any tool call makes it exit, except one to
+/// `complete`, which first sends `notifications/elicitation/complete` for
+/// `elicit-1`. With `resources`, it declares resources and records each
+/// `resources/read`: the first is answered with a one-minute `ttlMs` cache
+/// hint, every later one with an error.
 #[cfg(test)]
 pub(crate) const COUNTING_STDIO_FIXTURE: &str = r#"
 import fs from 'node:fs'
@@ -4668,8 +4729,10 @@ import readline from 'node:readline'
 const counter = process.argv[2]
 const slowFirst = process.argv[3] === 'slow-first'
 const exitOnInitialize = process.argv[3] === 'exit-on-initialize'
+const resources = process.argv[3] === 'resources'
 const rl = readline.createInterface({ input: process.stdin })
 let listCalls = 0
+let resourceReads = 0
 function send(message) {
   process.stdout.write(JSON.stringify(message) + '\n')
 }
@@ -4682,14 +4745,14 @@ rl.on('line', line => {
   if (message.id === undefined) return
   if (message.method === 'initialize') {
     const first = !recorded().includes('initialize')
-    fs.appendFileSync(counter, 'initialize\n')
+    fs.appendFileSync(counter, `initialize\nprotocolVersion ${message.params?.protocolVersion}\n`)
     if (exitOnInitialize) process.exit(1)
     const reply = () => send({
       jsonrpc: '2.0',
       id: message.id,
       result: {
         protocolVersion: '2025-11-25',
-        capabilities: { tools: {} },
+        capabilities: resources ? { tools: {}, resources: {} } : { tools: {} },
         serverInfo: { name: 'memo-fixture', version: '1.0.0' }
       }
     })
@@ -4709,9 +4772,32 @@ rl.on('line', line => {
         }]
       }
     })
+  } else if (message.method === 'tools/call' && message.params?.name === 'complete') {
+    send({
+      jsonrpc: '2.0',
+      method: 'notifications/elicitation/complete',
+      params: { elicitationId: 'elicit-1' }
+    })
+    send({ jsonrpc: '2.0', id: message.id, result: { content: [] } })
   } else if (message.method === 'tools/call') {
     send({ jsonrpc: '2.0', id: message.id, result: { content: [] } })
     setTimeout(() => process.exit(0), 10)
+  } else if (message.method === 'resources/read') {
+    resourceReads += 1
+    fs.appendFileSync(counter, 'resources/read\n')
+    if (resourceReads === 1) {
+      send({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: {
+          contents: [{ uri: message.params.uri, text: 'fresh' }],
+          ttlMs: 60000,
+          cacheScope: 'public'
+        }
+      })
+    } else {
+      send({ jsonrpc: '2.0', id: message.id, error: { code: -32603, message: 'read failed' } })
+    }
   } else {
     send({ jsonrpc: '2.0', id: message.id, error: { code: -32601, message: 'method not found' } })
   }
@@ -6247,7 +6333,8 @@ mod tests {
 
     #[test]
     fn url_elicitation_required_error_parsing_matches_official_validation() {
-        let error = anyhow::Error::new(rmcp::ErrorData::url_elicitation_required(
+        let error = anyhow::Error::new(rmcp::ErrorData::new(
+            runtime::URL_ELICITATION_REQUIRED,
             "open url",
             Some(serde_json::json!({
                 "elicitations": [
@@ -6296,7 +6383,10 @@ mod tests {
                         .to_string(),
                     Map::new(),
                 )]));
-                let peer_info = rmcp::model::ServerInfo::new(capabilities);
+                let peer_info = rmcp::model::ServerPeerInfo::new(
+                    rmcp::model::ProtocolVersion::V_2025_11_25,
+                    capabilities,
+                );
 
                 let emitted = runtime::emit_channel_message_event_from_custom_notification(
                     "slack".to_string(),
@@ -6372,7 +6462,10 @@ mod tests {
                         .to_string(),
                     Map::new(),
                 )]));
-                let peer_info = rmcp::model::ServerInfo::new(capabilities);
+                let peer_info = rmcp::model::ServerPeerInfo::new(
+                    rmcp::model::ProtocolVersion::V_2025_11_25,
+                    capabilities,
+                );
 
                 let emitted = runtime::emit_channel_permission_event_from_custom_notification(
                     "telegram".to_string(),
@@ -6755,6 +6848,117 @@ rl.on('line', line => {
             let fresh = runtime::connect_to_server(SERVER, &config).await;
             assert_ne!(fresh.connection_id, first.connection_id);
             assert_eq!(fixture.count("initialize"), 2);
+
+            runtime::clear_server_cache(SERVER, None).await;
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+        });
+    }
+
+    /// CC's `Client.connect` sends `initialize` at the SDK's
+    /// `LATEST_PROTOCOL_VERSION`, 2025-11-25. rmcp's own default is the
+    /// 2026-07-28 draft, which has no `initialize` handshake.
+    #[test]
+    fn initialize_requests_the_sdk_latest_protocol_version() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let fixture = counting_fixture::CountingFixture::new();
+        block_on_with_process_runtime(async {
+            const SERVER: &str = "protocol-version-fixture";
+            let config = fixture.config(&[]);
+            let connected = runtime::connect_to_server(SERVER, &config).await;
+            assert_eq!(
+                connected.client.status,
+                McpServerConnectionType::Connected,
+                "{:?}",
+                connected.client.error
+            );
+            assert_eq!(fixture.count("protocolVersion 2025-11-25"), 1);
+
+            runtime::clear_server_cache(SERVER, None).await;
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+        });
+    }
+
+    /// CC's SDK keeps no response cache: the second `resources/read` goes to
+    /// the server although the first answer carried a one-minute `ttlMs`, and
+    /// its error reaches the caller instead of the earlier contents.
+    #[test]
+    fn resource_reads_go_to_the_server_every_time() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let fixture = counting_fixture::CountingFixture::new();
+        block_on_with_process_runtime(async {
+            const SERVER: &str = "resource-cache-fixture";
+            let config = fixture.config(&["resources"]);
+            let connected = runtime::connect_to_server(SERVER, &config).await;
+            assert_eq!(
+                connected.client.status,
+                McpServerConnectionType::Connected,
+                "{:?}",
+                connected.client.error
+            );
+
+            let first = runtime::read_mcp_resource(SERVER, connected.connection_id, "memo://doc")
+                .await
+                .expect("first read");
+            assert_eq!(first["contents"][0]["text"], "fresh");
+            let second =
+                runtime::read_mcp_resource(SERVER, connected.connection_id, "memo://doc").await;
+            assert!(
+                second
+                    .as_ref()
+                    .is_err_and(|error| error.to_string().contains("read failed")),
+                "{second:?}"
+            );
+            assert_eq!(fixture.count("resources/read"), 2);
+
+            runtime::clear_server_cache(SERVER, None).await;
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+        });
+    }
+
+    /// `notifications/elicitation/complete` reaches CC's completion handler
+    /// (`elicitationHandler.ts:173-206`), although rmcp no longer types it.
+    #[test]
+    fn elicitation_complete_notification_reaches_the_completion_handler() {
+        use crate::services::mcp::use_manage_mcp_connections::McpConnectionCallbackObservation;
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let fixture = counting_fixture::CountingFixture::new();
+        block_on_with_process_runtime(async {
+            const SERVER: &str = "elicitation-complete-fixture";
+            let config = fixture.config(&[]);
+            let connected = runtime::connect_to_server(SERVER, &config).await;
+            assert_eq!(
+                connected.client.status,
+                McpServerConnectionType::Connected,
+                "{:?}",
+                connected.client.error
+            );
+            let _ = runtime::drain_mcp_connection_callback_observations().await;
+
+            runtime::call_mcp_tool(SERVER, "complete", Map::new())
+                .await
+                .expect("tool call");
+            let completed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    let observations = runtime::drain_mcp_connection_callback_observations().await;
+                    if let Some(found) =
+                        observations
+                            .into_iter()
+                            .find_map(|observation| match observation {
+                                McpConnectionCallbackObservation::ElicitationCompleted {
+                                    name,
+                                    elicitation_id,
+                                } => Some((name, elicitation_id)),
+                                _ => None,
+                            })
+                    {
+                        break found;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .expect("an elicitation completion");
+            assert_eq!(completed, (SERVER.to_string(), "elicit-1".to_string()));
 
             runtime::clear_server_cache(SERVER, None).await;
             let _ = runtime::drain_mcp_connection_callback_observations().await;

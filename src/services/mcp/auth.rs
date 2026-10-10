@@ -490,11 +490,11 @@ mod runtime {
                     _ => &self.stop_redirects,
                 };
                 let request = reqwest::Request::try_from(request.request)
-                    .map_err(|error| OAuthHttpClientError::new(error.to_string()))?;
+                    .map_err(|error| OAuthHttpClientError::from(error.to_string()))?;
                 let response = client
                     .execute(request)
                     .await
-                    .map_err(|error| OAuthHttpClientError::new(error.to_string()))?;
+                    .map_err(|error| OAuthHttpClientError::from(error.to_string()))?;
                 let mut builder = http::Response::builder()
                     .status(response.status())
                     .version(response.version());
@@ -505,9 +505,9 @@ mod runtime {
                 let mut stream = response.bytes_stream();
                 while let Some(chunk) = stream.next().await {
                     let chunk =
-                        chunk.map_err(|error| OAuthHttpClientError::new(error.to_string()))?;
+                        chunk.map_err(|error| OAuthHttpClientError::from(error.to_string()))?;
                     if chunk.len() > MAX_OAUTH_HTTP_RESPONSE_BODY_BYTES - body.len() {
-                        return Err(OAuthHttpClientError::new(format!(
+                        return Err(OAuthHttpClientError::from(format!(
                             "OAuth HTTP response body exceeds {MAX_OAUTH_HTTP_RESPONSE_BODY_BYTES} bytes"
                         )));
                     }
@@ -515,7 +515,7 @@ mod runtime {
                 }
                 builder
                     .body(body)
-                    .map_err(|error| OAuthHttpClientError::new(error.to_string()))
+                    .map_err(|error| OAuthHttpClientError::from(error.to_string()))
             })
         }
     }
@@ -586,8 +586,8 @@ mod runtime {
         if !crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
             return Err(crate::constants::oauth::OAuthCredentialSideEffectsUnavailable.into());
         }
-        match manager.discover_metadata().await {
-            Ok(metadata) => Ok(Some(metadata)),
+        match manager.resolve_metadata().await {
+            Ok(resolution) => Ok(Some(resolution.metadata)),
             Err(AuthError::NoAuthorizationSupport) => Ok(None),
             Err(error) => Err(error.into()),
         }
@@ -595,7 +595,7 @@ mod runtime {
 
     /// Maps to: CC `services/mcp/auth.ts#fetchAuthServerMetadata`.
     ///
-    /// Uses rmcp's official `AuthorizationManager::discover_metadata()` for
+    /// Uses rmcp's official `AuthorizationManager::resolve_metadata()` for
     /// RFC 9728 protected-resource discovery, RFC 8414/OIDC metadata fallback,
     /// SEP-835 scope selection inputs, SSRF guards, and metadata validation.
     pub async fn fetch_auth_server_metadata(
@@ -1109,11 +1109,15 @@ mod runtime {
         write_credentials_json(&credentials)
     }
 
+    /// CC `_doRefresh`'s `error instanceof InvalidGrantError`. rmcp reports a
+    /// server's `invalid_grant` as `TokenRefreshRejected`; the message check
+    /// covers one carried inside another error.
     fn is_invalid_grant_error(error: &AuthError) -> bool {
-        error
-            .to_string()
-            .to_ascii_lowercase()
-            .contains("invalid_grant")
+        matches!(error, AuthError::TokenRefreshRejected(_))
+            || error
+                .to_string()
+                .to_ascii_lowercase()
+                .contains("invalid_grant")
     }
 
     fn is_retryable_refresh_error(error: &AuthError) -> bool {
@@ -2516,7 +2520,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let _ = manager.discover_metadata().await;
+        let _ = manager.resolve_metadata().await;
         server.abort();
         let first = seen_rx.recv().await.expect("a request reached the proxy");
         assert!(first.starts_with("GET http://mcp.invalid/"), "{first}");

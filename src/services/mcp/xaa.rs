@@ -324,7 +324,7 @@ mod runtime {
         if !crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
             return Err(crate::constants::oauth::OAuthCredentialSideEffectsUnavailable.into());
         }
-        let metadata = manager.discover_metadata().await?;
+        let metadata = manager.resolve_metadata().await?.metadata;
         let issuer = metadata
             .issuer
             .clone()
