@@ -143,7 +143,7 @@ fn get_user_snapshot_content(config_file: &Path) -> String {
 }
 
 /// Maps to CC `utils/bash/ShellSnapshot.ts:269-340` `getClaudeCodeSnapshotContent`.
-fn get_claude_code_snapshot_content(env: &crate::utils::process_env::EnvSnapshot) -> String {
+fn get_claude_code_snapshot_content() -> String {
     let (integration_type, rg_integration) = create_ripgrep_shell_integration();
     let mut content = String::from(
         r##"
@@ -167,21 +167,13 @@ fn get_claude_code_snapshot_content(env: &crate::utils::process_env::EnvSnapshot
             "      echo \"# Shadow find/grep with embedded bfs/ugrep\" >> \"$SNAPSHOT_FILE\"\n      cat >> \"$SNAPSHOT_FILE\" << 'FIND_GREP_FUNC_END'\n{find_grep}\nFIND_GREP_FUNC_END\n"
         ));
     }
-    let path = env.var("PATH").unwrap_or_default();
-    content.push_str(&format!(
-        "      echo \"export PATH={}\" >> \"$SNAPSHOT_FILE\"\n",
-        crate::utils::bash::shell_quote::quote(&[&path])
-    ));
+    // 在 shell 中读取已规范化的 PATH，并用 %q 转义，确保快照可安全 source。
+    content.push_str("      printf 'export PATH=%q\\n' \"$PATH\" >> \"$SNAPSHOT_FILE\"\n");
     content
 }
 
 /// Maps to CC `utils/bash/ShellSnapshot.ts:345-395` `getSnapshotScript`.
-fn get_snapshot_script(
-    shell_path: &str,
-    snapshot_path: &Path,
-    config_exists: bool,
-    env: &crate::utils::process_env::EnvSnapshot,
-) -> String {
+fn get_snapshot_script(shell_path: &str, snapshot_path: &Path, config_exists: bool) -> String {
     let config = get_config_file(shell_path);
     let is_zsh = config.ends_with(".zshrc");
     let user = if config_exists {
@@ -213,7 +205,7 @@ fn get_snapshot_script(
       fi
 "##,
         snapshot = crate::utils::bash::shell_quote::quote(&[&snapshot_path.display().to_string()]),
-        claude = get_claude_code_snapshot_content(env),
+        claude = get_claude_code_snapshot_content(),
     )
 }
 
@@ -275,7 +267,7 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
         "snapshot-{shell_type}-{timestamp}-{}.sh",
         uuid::Uuid::new_v4().simple()
     ));
-    let script = get_snapshot_script(bin_shell, &snapshot, config.is_file(), &process_env);
+    let script = get_snapshot_script(bin_shell, &snapshot, config.is_file());
 
     let mut command = std::process::Command::new(bin_shell);
     // CC `ShellSnapshot.ts:460-467`: the base env is `subprocessEnv()` unless
@@ -315,21 +307,16 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
-    /// CC `utils/bash/ShellSnapshot.ts:269-340` captures the current
-    /// `process.env.PATH` in the generated snapshot script.
+    /// 验证快照脚本在目标 shell 中捕获规范化后的 PATH。
     #[test]
-    fn shell_integrations_match_official_snapshot_shape_and_path_capture() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _path = EnvVarGuard::set("PATH", "/cometix/carrier-only-snapshot-path");
-        let env = crate::utils::process_env::snapshot();
+    fn shell_integrations_capture_shell_runtime_path() {
         let (kind, snippet) = create_ripgrep_shell_integration();
         assert!(matches!(kind.as_str(), "alias" | "function"));
         assert!(!snippet.is_empty());
-        let script = get_snapshot_script("/bin/bash", Path::new("/tmp/snapshot.sh"), false, &env);
+        let script = get_snapshot_script("/bin/bash", Path::new("/tmp/snapshot.sh"), false);
         assert!(script.contains("shopt -s expand_aliases"));
         assert!(script.contains("unalias -a"));
-        assert!(script.contains("/cometix/carrier-only-snapshot-path"));
+        assert!(script.contains("printf 'export PATH=%q\\n' \"$PATH\" >> \"$SNAPSHOT_FILE\""));
     }
 }
