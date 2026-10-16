@@ -167,8 +167,8 @@ fn get_claude_code_snapshot_content() -> String {
             "      echo \"# Shadow find/grep with embedded bfs/ugrep\" >> \"$SNAPSHOT_FILE\"\n      cat >> \"$SNAPSHOT_FILE\" << 'FIND_GREP_FUNC_END'\n{find_grep}\nFIND_GREP_FUNC_END\n"
         ));
     }
-    // 在 shell 中读取已规范化的 PATH，并用 %q 转义，确保快照可安全 source。
-    content.push_str("      printf 'export PATH=%q\\n' \"$PATH\" >> \"$SNAPSHOT_FILE\"\n");
+    // 使用 shell 内建 printf 避免用户函数覆盖，并以 %q 转义规范化后的 PATH，确保快照可安全 source。
+    content.push_str("      builtin printf 'export PATH=%q\\n' \"$PATH\" >> \"$SNAPSHOT_FILE\"\n");
     content
 }
 
@@ -308,15 +308,75 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
-    /// 验证快照脚本在目标 shell 中捕获规范化后的 PATH。
+    /// 在真实 Bash 中验证快照能往返恢复运行时 PATH，且用户函数不能覆盖内建 printf。
     #[test]
-    fn shell_integrations_capture_shell_runtime_path() {
+    fn snapshot_script_round_trips_runtime_path_and_uses_builtin_printf() {
         let (kind, snippet) = create_ripgrep_shell_integration();
         assert!(matches!(kind.as_str(), "alias" | "function"));
         assert!(!snippet.is_empty());
-        let script = get_snapshot_script("/bin/bash", Path::new("/tmp/snapshot.sh"), false);
-        assert!(script.contains("shopt -s expand_aliases"));
-        assert!(script.contains("unalias -a"));
-        assert!(script.contains("printf 'export PATH=%q\\n' \"$PATH\" >> \"$SNAPSHOT_FILE\""));
+        #[cfg(windows)]
+        let bash_path = crate::utils::windows_paths::find_git_bash_path().ok();
+        #[cfg(not(windows))]
+        let bash_path = crate::utils::which::which_sync("bash");
+        let Some(bash_path) = bash_path else {
+            eprintln!("跳过快照行为测试：当前环境未找到 Bash");
+            return;
+        };
+
+        let temp_dir =
+            std::env::temp_dir().join(format!("cometix-shell-snapshot-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("创建快照测试目录");
+        let special_path = temp_dir.join("path with space 'and $dollar");
+        std::fs::create_dir_all(&special_path).expect("创建含特殊字符的 PATH 项");
+        let snapshot_path = temp_dir.join("snapshot.sh");
+        let shell_snapshot_path = if cfg!(windows) {
+            crate::utils::windows_paths::windows_path_to_posix_path(
+                &snapshot_path.display().to_string(),
+            )
+        } else {
+            snapshot_path.display().to_string()
+        };
+        let shell_snapshot_path = PathBuf::from(shell_snapshot_path);
+        let snapshot_script = get_snapshot_script("bash", &shell_snapshot_path, false);
+        let quoted_snapshot_path =
+            crate::utils::bash::shell_quote::quote(&[&shell_snapshot_path.display().to_string()]);
+        let script = format!(
+            r#"printf() {{ return 97; }}
+{snapshot_script}
+expected_path=$PATH
+PATH=__cometix_snapshot_test_invalid_path__
+source {quoted_snapshot_path}
+[[ "$PATH" == "$expected_path" ]] || exit 3
+command -v ls >/dev/null 2>&1 || exit 4
+builtin printf '%s' "$PATH"
+"#
+        );
+        let mut path_entries = std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+            .collect::<Vec<_>>();
+        #[cfg(windows)]
+        if let Some(git_root) = bash_path.parent().and_then(Path::parent) {
+            path_entries.push(git_root.join("usr").join("bin"));
+        }
+        #[cfg(not(windows))]
+        if let Some(shell_directory) = bash_path.parent() {
+            path_entries.push(shell_directory.to_path_buf());
+        }
+        path_entries.push(special_path);
+        let test_path = std::env::join_paths(path_entries).expect("构造测试 PATH");
+        let output = std::process::Command::new(&bash_path)
+            .args(["--noprofile", "--norc", "-c", &script])
+            .env("PATH", test_path)
+            .output();
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let output = output.expect("运行快照测试脚本");
+        assert!(
+            output.status.success(),
+            "快照脚本执行失败：{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("path with space 'and $dollar"),
+            "快照未恢复包含空格及特殊字符的 PATH 项"
+        );
     }
 }
