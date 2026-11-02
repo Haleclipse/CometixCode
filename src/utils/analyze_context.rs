@@ -229,7 +229,6 @@ fn memory_type_name(kind: crate::utils::claudemd::ClaudeMdKind) -> &'static str 
         ClaudeMdKind::Managed => "Managed",
         ClaudeMdKind::User => "User",
         ClaudeMdKind::Project => "Project",
-        ClaudeMdKind::Local => "Local",
         ClaudeMdKind::AutoMem => "Auto memory",
         ClaudeMdKind::TeamMem => "Team memory",
     }

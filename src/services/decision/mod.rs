@@ -520,9 +520,16 @@ impl SessionBudget {
     }
 }
 
+static SESSION_BUDGET: OnceLock<Arc<SessionBudget>> = OnceLock::new();
+
+fn global_session_budget() -> Arc<SessionBudget> {
+    Arc::clone(SESSION_BUDGET.get_or_init(|| Arc::new(SessionBudget::default())))
+}
+
 fn session_budget() -> &'static SessionBudget {
-    static BUDGET: OnceLock<SessionBudget> = OnceLock::new();
-    BUDGET.get_or_init(SessionBudget::default)
+    SESSION_BUDGET
+        .get_or_init(|| Arc::new(SessionBudget::default()))
+        .as_ref()
 }
 
 /// Reset the process-wide decision budget. Call on `/clear` / new session.
@@ -599,11 +606,12 @@ pub fn read_api_key_file(path: &str) -> anyhow::Result<String> {
 // Provider (§3, §8)
 // ════════════════════════════════════════════════════════════
 
-/// Caller-facing entry point. Cheap to construct; the backend, connection pool
-/// and budget are process-wide.
+/// Caller-facing entry point. Cheap to construct; the backend, connection pool and default
+/// budget are process-wide.
 pub struct DecisionProvider {
     settings: DecisionSettings,
     backend_override: Option<Arc<dyn DecisionBackend>>,
+    budget: Arc<SessionBudget>,
 }
 
 impl DecisionProvider {
@@ -611,6 +619,7 @@ impl DecisionProvider {
         Self {
             settings,
             backend_override: None,
+            budget: global_session_budget(),
         }
     }
 
@@ -620,9 +629,18 @@ impl DecisionProvider {
 
     /// For tests and future backends (`chat`): bypass the global emrank cell.
     pub fn with_backend(settings: DecisionSettings, backend: Arc<dyn DecisionBackend>) -> Self {
+        Self::with_backend_and_budget(settings, backend, global_session_budget())
+    }
+
+    pub fn with_backend_and_budget(
+        settings: DecisionSettings,
+        backend: Arc<dyn DecisionBackend>,
+        budget: Arc<SessionBudget>,
+    ) -> Self {
         Self {
             settings,
             backend_override: Some(backend),
+            budget,
         }
     }
 
@@ -694,7 +712,7 @@ impl DecisionProvider {
             };
         }
 
-        let budget = session_budget();
+        let budget = self.budget.as_ref();
         if budget.tokens_exhausted(self.settings.max_input_tokens_per_session())
             || !budget.charge_call(self.settings.max_calls_per_session())
         {
@@ -893,7 +911,15 @@ mod tests {
     }
 
     fn build_provider(settings: DecisionSettings, backend: Arc<MockBackend>) -> DecisionProvider {
-        DecisionProvider::with_backend(settings, backend)
+        build_provider_with_budget(settings, backend, Arc::new(SessionBudget::default()))
+    }
+
+    fn build_provider_with_budget(
+        settings: DecisionSettings,
+        backend: Arc<MockBackend>,
+        budget: Arc<SessionBudget>,
+    ) -> DecisionProvider {
+        DecisionProvider::with_backend_and_budget(settings, backend, budget)
     }
 
     #[tokio::test]
@@ -1022,11 +1048,11 @@ mod tests {
 
     #[tokio::test]
     async fn the_call_cap_stops_requests_with_budget_exhausted() {
-        reset_session_budget();
         let mut settings = settings_with(DecisionMode::Active, 0.6);
         settings.max_calls_per_session = Some(1);
         let backend = MockBackend::new(answered(Answer::Noul { probability: 0.95 }));
-        let provider = build_provider(settings, Arc::clone(&backend));
+        let budget = Arc::new(SessionBudget::default());
+        let provider = build_provider_with_budget(settings, Arc::clone(&backend), budget);
         let run = || async {
             provider
                 .decide(
@@ -1045,17 +1071,17 @@ mod tests {
             Some(FallbackReason::BudgetExhausted)
         );
         assert_eq!(backend.requests().len(), 1);
-        reset_session_budget();
     }
 
     #[tokio::test]
     async fn the_token_cap_stops_later_requests() {
-        reset_session_budget();
         let mut settings = settings_with(DecisionMode::Active, 0.6);
         settings.max_input_tokens_per_session = Some(100);
-        let provider = build_provider(
+        let budget = Arc::new(SessionBudget::default());
+        let provider = build_provider_with_budget(
             settings.clone(),
             MockBackend::new(answered(Answer::Noul { probability: 0.95 })),
+            Arc::clone(&budget),
         );
         // First request reports 120 input tokens, over the 100-token cap.
         assert!(
@@ -1073,9 +1099,10 @@ mod tests {
                 .is_some()
         );
         // A fresh provider with the same settings shares the session budget.
-        let provider = build_provider(
+        let provider = build_provider_with_budget(
             settings,
             MockBackend::new(answered(Answer::Noul { probability: 0.95 })),
+            budget,
         );
         assert_eq!(
             provider
@@ -1091,7 +1118,6 @@ mod tests {
                 .fallback_reason(),
             Some(FallbackReason::BudgetExhausted)
         );
-        reset_session_budget();
     }
 
     #[tokio::test]

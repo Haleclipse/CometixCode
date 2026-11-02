@@ -2155,7 +2155,6 @@ fn claude_md_kind_name(kind: crate::utils::claudemd::ClaudeMdKind) -> &'static s
         crate::utils::claudemd::ClaudeMdKind::Managed => "Managed",
         crate::utils::claudemd::ClaudeMdKind::User => "User",
         crate::utils::claudemd::ClaudeMdKind::Project => "Project",
-        crate::utils::claudemd::ClaudeMdKind::Local => "Local",
         crate::utils::claudemd::ClaudeMdKind::AutoMem => "AutoMem",
         crate::utils::claudemd::ClaudeMdKind::TeamMem => "TeamMem",
     }
@@ -2186,7 +2185,6 @@ fn memory_files_to_attachments(
             crate::utils::claudemd::ClaudeMdKind::Managed => Some("Managed"),
             crate::utils::claudemd::ClaudeMdKind::User => Some("User"),
             crate::utils::claudemd::ClaudeMdKind::Project => Some("Project"),
-            crate::utils::claudemd::ClaudeMdKind::Local => Some("Local"),
             crate::utils::claudemd::ClaudeMdKind::AutoMem
             | crate::utils::claudemd::ClaudeMdKind::TeamMem => None,
         }

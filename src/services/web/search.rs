@@ -214,11 +214,17 @@ pub async fn search_with(
     // When all six commercial providers are in soft cooldown, release one to try (provider-health 3.3).
     let all_commercial_soft_down =
         provider_health::all_commercial_in_soft_cooldown(Capability::Search);
+    let commercial_provider_names = providers
+        .iter()
+        .map(|provider| provider.as_search().name())
+        .filter(|name| provider_health::is_commercial_provider(name))
+        .collect::<Vec<_>>();
     let released_commercial = if all_commercial_soft_down {
-        providers
-            .iter()
-            .find(|p| provider_health::is_commercial_provider(p.as_search().name()))
-            .map(|p| p.as_search().name().to_string())
+        provider_health::next_soft_down_provider(
+            Capability::Search,
+            &commercial_provider_names,
+            Instant::now(),
+        )
     } else {
         None
     };

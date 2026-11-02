@@ -21,6 +21,7 @@
 //!    probing state without counting success or failure.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -278,12 +279,14 @@ impl Drop for HealthGuard {
 #[derive(Debug)]
 pub struct ProviderHealthRegistry {
     entries: Mutex<HashMap<(String, Capability), EntryState>>,
+    release_cursor: AtomicUsize,
 }
 
 impl ProviderHealthRegistry {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             entries: Mutex::new(HashMap::new()),
+            release_cursor: AtomicUsize::new(0),
         })
     }
 
@@ -512,6 +515,27 @@ impl ProviderHealthRegistry {
         })
     }
 
+    pub fn next_soft_down_provider(
+        &self,
+        capability: Capability,
+        candidates: &[&str],
+        now: Instant,
+    ) -> Option<String> {
+        if candidates.is_empty() {
+            return None;
+        }
+        let start = self.release_cursor.fetch_add(1, Ordering::Relaxed) % candidates.len();
+        let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        (0..candidates.len())
+            .map(|offset| candidates[(start + offset) % candidates.len()])
+            .find(|provider| {
+                entries
+                    .get(&(provider.to_string(), capability))
+                    .is_some_and(|entry| entry.is_soft_down_at(now))
+            })
+            .map(str::to_owned)
+    }
+
     pub fn downs(&self, provider: &str, capability: Capability) -> u32 {
         let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
         entries
@@ -529,6 +553,7 @@ impl ProviderHealthRegistry {
     pub fn reset(&self) {
         let mut entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
         entries.clear();
+        self.release_cursor.store(0, Ordering::Relaxed);
     }
 }
 
@@ -536,6 +561,7 @@ impl Default for ProviderHealthRegistry {
     fn default() -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
+            release_cursor: AtomicUsize::new(0),
         }
     }
 }
@@ -628,6 +654,14 @@ pub fn all_commercial_in_soft_cooldown(capability: Capability) -> bool {
 
 pub fn all_commercial_in_soft_cooldown_at(capability: Capability, now: Instant) -> bool {
     shared().all_commercial_in_soft_cooldown_at(capability, now)
+}
+
+pub fn next_soft_down_provider(
+    capability: Capability,
+    candidates: &[&str],
+    now: Instant,
+) -> Option<String> {
+    shared().next_soft_down_provider(capability, candidates, now)
 }
 
 pub fn reset() {
@@ -889,6 +923,31 @@ mod tests {
         // 200 with zero results counts as success -> soft_streak reset to 0
         registry.record_success_at("deepseek", Capability::Search, t0);
         assert_eq!(registry.soft_streak("deepseek", Capability::Search), 0);
+    }
+
+    #[test]
+    fn all_soft_down_release_rotates_through_candidates() {
+        let registry = ProviderHealthRegistry::new();
+        let t0 = Instant::now();
+        for provider in COMMERCIAL_PROVIDERS {
+            registry.record_failure_at(
+                provider,
+                Capability::Search,
+                &ProviderError::RateLimited,
+                t0,
+            );
+        }
+        let candidates = COMMERCIAL_PROVIDERS.as_slice();
+        let now = t0 + Duration::from_secs(1);
+
+        assert_eq!(
+            registry.next_soft_down_provider(Capability::Search, candidates, now),
+            Some("anysearch".to_string())
+        );
+        assert_eq!(
+            registry.next_soft_down_provider(Capability::Search, candidates, now),
+            Some("brave".to_string())
+        );
     }
 
     #[test]

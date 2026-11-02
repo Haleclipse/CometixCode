@@ -151,7 +151,9 @@ fn get_project_path_for_config() -> PathBuf {
 pub fn get_memory_path(memory_type: &str) -> PathBuf {
     match memory_type {
         "User" | "user" => crate::utils::env_utils::get_claude_config_home_dir().join("AGENTS.md"),
-        "Local" | "local" => crate::bootstrap::state::get_original_cwd().join("AGENTS.md"),
+        "Local" | "local" => {
+            crate::utils::env_utils::get_claude_config_home_dir().join("AGENTS.md")
+        }
         "Managed" | "managed" => {
             crate::utils::settings::managed_path::get_managed_file_path().join("AGENTS.md")
         }
@@ -1840,6 +1842,12 @@ mod tests {
             crate::memdir::team_mem_paths::get_team_mem_entrypoint()
         );
         assert_ne!(get_memory_path("TeamMem"), get_memory_path("Project"));
+    }
+
+    #[test]
+    fn legacy_local_memory_path_falls_back_to_user_memory() {
+        assert_eq!(get_memory_path("Local"), get_memory_path("User"));
+        assert_eq!(get_memory_path("local"), get_memory_path("user"));
     }
 
     /// CC `utils/managedEnv.ts#applyConfigEnvironmentVariables` feeds

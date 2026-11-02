@@ -37,8 +37,8 @@ pub struct ClaudeMdDiskProjection {
 #[serde(rename_all = "camelCase")]
 pub struct MemoryFileInfo {
     pub path: String,
-    /// CC `type: MemoryType` — `'User' | 'Project' | 'Local' | 'Managed' |
-    /// 'AutoMem' | 'TeamMem'` (utils/memory/types.ts:3-12). Kept as `String`
+    /// CC `type: MemoryType` — `'User' | 'Project' | 'Managed' | 'AutoMem' |
+    /// 'TeamMem'` (utils/memory/types.ts:3-12). Kept as `String`
     /// per this union's scalar-string-field convention (see `plan_mode
     /// reminder_type`), which also keeps feature-gated values parseable.
     #[serde(rename = "type")]
@@ -63,7 +63,6 @@ pub enum ClaudeMdKind {
     Managed,
     User,
     Project,
-    Local,
     AutoMem,
     TeamMem,
 }
@@ -89,7 +88,6 @@ pub enum ClaudeMdSource {
     Managed,
     UserGlobal,
     Project,
-    Local,
 }
 
 impl ClaudeMdSource {
@@ -98,7 +96,6 @@ impl ClaudeMdSource {
             Self::Managed => ClaudeMdKind::Managed,
             Self::UserGlobal => ClaudeMdKind::User,
             Self::Project => ClaudeMdKind::Project,
-            Self::Local => ClaudeMdKind::Local,
         }
     }
 }
@@ -318,7 +315,6 @@ pub fn discover_claude_md_files_with_external_policy(
                 ClaudeMdKind::Managed => Some("Managed"),
                 ClaudeMdKind::User => Some("User"),
                 ClaudeMdKind::Project => Some("Project"),
-                ClaudeMdKind::Local => Some("Local"),
                 ClaudeMdKind::AutoMem | ClaudeMdKind::TeamMem => None,
             };
             let Some(memory_type) = memory_type else {
@@ -416,7 +412,6 @@ pub fn build_claude_md_context() -> String {
             ClaudeMdSource::Managed => "managed",
             ClaudeMdSource::UserGlobal => "user global",
             ClaudeMdSource::Project => "project",
-            ClaudeMdSource::Local => "local",
         };
         parts.push(format!(
             "# Source: {} ({})\n\n{}",
@@ -430,7 +425,7 @@ pub fn build_claude_md_context() -> String {
 }
 
 /// Maps to CC `utils/claudemd.ts:getMemoryFilesForNestedDirectory`
-/// (:1249-1320). This source-shaped owner loads project/local instructions for
+/// (:1249-1320). This source-shaped owner loads project instructions for
 /// one directory below cwd; attachment ordering/dedup remains in
 /// `utils/attachments.rs`.
 pub fn get_memory_files_for_nested_directory(
@@ -671,10 +666,7 @@ fn claude_md_path_matches_excludes(path: &Path, patterns: &[String]) -> bool {
 }
 
 fn is_claude_md_excluded(path: &Path, kind: ClaudeMdKind) -> bool {
-    if !matches!(
-        kind,
-        ClaudeMdKind::User | ClaudeMdKind::Project | ClaudeMdKind::Local
-    ) {
+    if !matches!(kind, ClaudeMdKind::User | ClaudeMdKind::Project) {
         return false;
     }
     let patterns = crate::utils::settings::get_initial_settings()
