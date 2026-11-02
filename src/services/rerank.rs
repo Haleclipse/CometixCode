@@ -21,6 +21,12 @@
 //! caller keeps its fusion order. A score outside [0, 1] or non-finite voids
 //! the **whole batch** — partial acceptance would silently produce a
 //! different ordering than the evaluator measured.
+//!
+//! Each document is truncated to [`DEFAULT_MAX_DOCUMENT_CHARS`] (overridable
+//! with `nyan.retrieval.rerank.maxDocumentChars`) before it is wrapped. The
+//! deployed vLLM rejects a prompt past `max_model_len` 4096 with HTTP 400, and
+//! one `Cargo.lock`-sized snippet is enough to do that and trip the health
+//! machine. Truncation applies only to the bytes posted to `/score`.
 
 use std::time::Duration;
 
@@ -37,6 +43,14 @@ pub const CODE_INSTRUCT: &str =
     "Given a code search query, retrieve relevant code snippets that answer the query";
 pub const WEB_INSTRUCT: &str =
     "Given a web search query, retrieve relevant passages that answer the query";
+
+/// Characters kept from each document before the Qwen3 template is applied.
+///
+/// `qwen3-reranker-0.6b` is served with `max_model_len` 4096 and returns HTTP
+/// 400 for a longer prompt. Random text tokenizes at about one token per
+/// character, and the instruction template plus the query need on the order of
+/// a thousand tokens, so 3000 characters stays inside the limit with margin.
+pub const DEFAULT_MAX_DOCUMENT_CHARS: usize = 3_000;
 
 /// The rendered `text_1` for a query and instruction.
 pub fn instruction_text(instruct: &str, query: &str) -> String {
@@ -104,6 +118,7 @@ pub struct RerankClient {
     health: std::sync::Arc<service_health::ServiceHealth>,
     connect_timeout: Duration,
     request_timeout: Duration,
+    max_document_chars: usize,
 }
 
 impl std::fmt::Debug for RerankClient {
@@ -142,6 +157,7 @@ impl RerankClient {
             health,
             connect_timeout: service_health::ServiceKind::Rerank.default_timeouts().0,
             request_timeout: Duration::from_millis(request_timeout_ms),
+            max_document_chars: settings.max_document_chars() as usize,
         };
         client.install_probe();
         Ok(client)
@@ -163,9 +179,16 @@ impl RerankClient {
             health,
             connect_timeout,
             request_timeout,
+            max_document_chars: DEFAULT_MAX_DOCUMENT_CHARS,
         };
         client.install_probe();
         client
+    }
+
+    /// Override the per-document cap. `usize::MAX` disables truncation.
+    pub fn with_max_document_chars(mut self, max_document_chars: usize) -> Self {
+        self.max_document_chars = max_document_chars;
+        self
     }
 
     pub fn url(&self) -> &str {
@@ -236,10 +259,12 @@ impl RerankClient {
         }
 
         let text_1 = instruction_text(request.kind.instruct(), &request.query);
+        // Copy and cap. `request.documents` is what the caller will return to
+        // the model; only the rerank prompt is shortened.
         let text_2: Vec<String> = request
             .documents
             .iter()
-            .map(|document| document_text(document))
+            .map(|document| document_text(truncate_chars(document, self.max_document_chars)))
             .collect();
         let body = json!({
             "model": self.model,
@@ -329,6 +354,14 @@ impl RerankClient {
             scores,
             latency: started.elapsed(),
         })
+    }
+}
+
+/// Shorten `text` to at most `max_chars` Unicode scalars, never mid-character.
+fn truncate_chars(text: &str, max_chars: usize) -> &str {
+    match text.char_indices().nth(max_chars) {
+        Some((end, _)) => &text[..end],
+        None => text,
     }
 }
 
@@ -425,6 +458,57 @@ mod tests {
             );
             stream.write_all(reply.as_bytes()).await.unwrap();
             String::from_utf8_lossy(&buffer).to_string()
+        });
+        Mock {
+            url: format!("http://{address}"),
+            handle,
+        }
+    }
+
+    /// Like [`mock`], but the response depends on the request the client sent.
+    async fn mock_inspect<F>(decide: F) -> Mock
+    where
+        F: Fn(&str) -> (u16, String) + Send + Sync + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let decide = std::sync::Arc::new(decide);
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = Vec::new();
+            let header_end = loop {
+                let mut chunk = [0u8; 4096];
+                let count = stream.read(&mut chunk).await.unwrap();
+                assert_ne!(count, 0);
+                buffer.extend_from_slice(&chunk[..count]);
+                if let Some(end) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break end + 4;
+                }
+            };
+            let headers = String::from_utf8_lossy(&buffer[..header_end]).to_string();
+            let length: usize = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse().ok())?
+                })
+                .unwrap_or(0);
+            while buffer.len() - header_end < length {
+                let mut chunk = [0u8; 4096];
+                let count = stream.read(&mut chunk).await.unwrap();
+                assert_ne!(count, 0);
+                buffer.extend_from_slice(&chunk[..count]);
+            }
+            let raw = String::from_utf8_lossy(&buffer).to_string();
+            let (status, body) = decide(&raw);
+            let reason = if status == 200 { "OK" } else { "Bad Request" };
+            let reply = format!(
+                "HTTP/1.1 {status} {reason}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(reply.as_bytes()).await.unwrap();
+            raw
         });
         Mock {
             url: format!("http://{address}"),
@@ -603,6 +687,152 @@ mod tests {
         assert_eq!(client.model(), "qwen3-reranker-0.6b");
         assert_eq!(client.connect_timeout, Duration::from_millis(1_500));
         assert_eq!(client.request_timeout, Duration::from_millis(2_000));
+        assert_eq!(client.max_document_chars, DEFAULT_MAX_DOCUMENT_CHARS);
+        assert_eq!(
+            crate::utils::settings::nyan::RerankSettings::default().max_document_chars() as usize,
+            DEFAULT_MAX_DOCUMENT_CHARS
+        );
+    }
+
+    #[test]
+    fn truncation_stops_on_a_char_boundary() {
+        let text = "é".repeat(3);
+        assert_eq!(truncate_chars(&text, 2), "éé");
+        assert_eq!(truncate_chars(&text, 10), text);
+        assert_eq!(truncate_chars("abc", 0), "");
+    }
+
+    #[test]
+    fn an_overlong_snippet_is_truncated_so_the_reranker_does_not_400() {
+        // vLLM returns 400 when one prompt exceeds max_model_len (4096). A
+        // Cargo.lock-sized snippet does that today. The mock answers 400 when
+        // the rendered document is still long, and 200 once the client has
+        // capped it. The caller's own string is not modified.
+        const GUARD: usize = 200;
+        fn guard(raw: &str) -> (u16, String) {
+            let body: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap_or(""))
+                .unwrap_or(Value::Null);
+            let too_long = body["text_2"].as_array().is_some_and(|docs| {
+                docs.iter()
+                    .any(|doc| doc.as_str().is_some_and(|text| text.len() > GUARD))
+            });
+            if too_long {
+                (
+                    400,
+                    r#"{"error":{"message":"maximum context length is 4096 tokens","code":400}}"#
+                        .to_string(),
+                )
+            } else {
+                (200, r#"{"data":[{"score":0.5}]}"#.to_string())
+            }
+        }
+
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let oversized = "x".repeat(50_000);
+                let request = RerankRequest {
+                    kind: RerankKind::Code,
+                    query: "INDEX_SCHEMA_VERSION".to_string(),
+                    documents: vec![oversized],
+                };
+
+                let overflowing = mock_inspect(guard).await;
+                let uncapped = client(&overflowing.url, health()).with_max_document_chars(50_000);
+                assert_eq!(
+                    uncapped.score(&request, Duration::from_secs(2)).await,
+                    Err(RerankFailure::Http),
+                    "an uncapped Cargo.lock-sized snippet is the 400"
+                );
+
+                let capped_mock = mock_inspect(guard).await;
+                let capped = client(&capped_mock.url, health()).with_max_document_chars(32);
+                let outcome = capped
+                    .score(&request, Duration::from_secs(2))
+                    .await
+                    .expect("the truncated document is accepted");
+                assert_eq!(outcome.scores, vec![0.5]);
+                let raw = capped_mock.handle.await.unwrap();
+                let body: Value =
+                    serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                let sent = body["text_2"][0].as_str().unwrap();
+                assert!(sent.contains(&"x".repeat(32)), "{sent}");
+                assert!(!sent.contains(&"x".repeat(33)), "{sent}");
+                assert_eq!(request.documents[0].len(), 50_000);
+            });
+    }
+
+    #[test]
+    fn a_cargo_lock_snippet_is_capped_at_the_default_before_it_reaches_score() {
+        // Fixture for the eval case: the real Cargo.lock (> 40k chars) sent
+        // with the default cap. The mock stands in for vLLM and answers 400
+        // whenever a rendered document is far larger than the default cap
+        // plus the instruction template.
+        const LIMIT: usize = DEFAULT_MAX_DOCUMENT_CHARS + 1_000;
+        fn guard(raw: &str) -> (u16, String) {
+            let body: Value = serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap_or(""))
+                .unwrap_or(Value::Null);
+            let too_long = body["text_2"].as_array().is_some_and(|docs| {
+                docs.iter().any(|doc| {
+                    doc.as_str()
+                        .is_some_and(|text| text.chars().count() > LIMIT)
+                })
+            });
+            if too_long {
+                (
+                    400,
+                    r#"{"error":{"message":"maximum context length is 4096 tokens","code":400}}"#
+                        .to_string(),
+                )
+            } else {
+                (200, r#"{"data":[{"score":0.25}]}"#.to_string())
+            }
+        }
+
+        let lockfile = include_str!("../../Cargo.lock");
+        assert!(
+            lockfile.chars().count() > 40_000,
+            "Cargo.lock is the oversized snippet from the eval"
+        );
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let request = RerankRequest {
+                    kind: RerankKind::Code,
+                    query: "INDEX_SCHEMA_VERSION".to_string(),
+                    documents: vec![lockfile.to_string()],
+                };
+
+                let bare_mock = mock_inspect(guard).await;
+                let bare = client(&bare_mock.url, health())
+                    .with_max_document_chars(lockfile.chars().count());
+                assert_eq!(
+                    bare.score(&request, Duration::from_secs(2)).await,
+                    Err(RerankFailure::Http),
+                    "an untruncated Cargo.lock is the 400"
+                );
+
+                let capped_mock = mock_inspect(guard).await;
+                let capped = client(&capped_mock.url, health());
+                let outcome = capped
+                    .score(&request, Duration::from_secs(2))
+                    .await
+                    .expect("the default cap keeps the prompt inside max_model_len");
+                assert_eq!(outcome.scores, vec![0.25]);
+                let raw = capped_mock.handle.await.unwrap();
+                let body: Value =
+                    serde_json::from_str(raw.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+                let sent = body["text_2"][0].as_str().unwrap();
+                let prefix = truncate_chars(lockfile, DEFAULT_MAX_DOCUMENT_CHARS);
+                assert_eq!(prefix.chars().count(), DEFAULT_MAX_DOCUMENT_CHARS);
+                assert!(sent.contains(prefix));
+                assert!(!sent.contains(truncate_chars(lockfile, DEFAULT_MAX_DOCUMENT_CHARS + 1)));
+                assert_eq!(request.documents[0], lockfile);
+            });
     }
 
     #[test]

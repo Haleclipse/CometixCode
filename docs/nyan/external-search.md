@@ -537,6 +537,7 @@ nyan 抓取器（4.2 全部 SSRF 检查）
 - key 已在 corp-pc 的 `~/.nyan/keys/`（0600）；nyan-pc 需要同样的文件（每台机器各自一份，不同步）。
 - provider 是 search 还是 fetch 由适配器能力决定（2.3），配置里只有一个 `enabled`；某家 `enabled = false` 时
   search 与 fetch 都不用它。
+- `providers` 里没写到的内置服务商保持内置默认并启用。只配 `searxng` 不会丢掉其余六家；要关掉某家，显式写 `enabled: false`。
 - 额度用尽的 provider（如当前的 Tavily）保持 `enabled`：每次返回具名 `quota_exhausted`，不影响其余；额度恢复后自动可用。
 - 没有任何 provider 配置时，WebSearch 不出现在工具列表（`is_enabled = false`），而不是调用时报错。
 - `nyan.web` 整体缺省或关闭时，WebFetch / WebSearch 回到 CC 实现（README 第一节第 3 条）；CC 路径的常量与缓存因此保留。

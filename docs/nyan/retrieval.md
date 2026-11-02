@@ -392,8 +392,9 @@ SemanticSyncState = Synced
   `instruct`：代码检索用 `Given a code search query, retrieve relevant code snippets that answer the query`；网页候选
   （外部搜索 3.4）用 `Given a web search query, retrieve relevant passages that answer the query`。模板字符串进
   generation（换模板即换 rerank 行为，评测可区分）。20 个候选套模板后 133 ms（本机）。
-- 设计：`settings.nyan.retrieval.rerank.enabled = false`（默认关），开启时对融合后 top-N（默认 20）调一次 `/score`，
-  只用于重排；分数必须在 [0,1] 且有限，否则整批作废、回退到融合顺序。
+- 设计：`settings.nyan.retrieval.rerank.enabled = false`（默认关），开启时对融合后 top-N（默认 10，2026-11-01 评测：Hit@5 与 MRR 优于 20，延迟约为 1/4）调一次 `/score`，
+  只用于重排；分数必须在 [0,1] 且有限，否则整批作废、回退到融合顺序。送去 `/score` 的片段按字符截断
+  （`maxDocumentChars`，默认 3000；按最坏 1 token/字符，给模板和查询留出余量，避免单篇 `Cargo.lock` 打出 vLLM 400）。截断不影响返回给模型的片段。
 - 是否默认开启，由评测决定（第八节）。
 - **rerank 客户端是共享组件**：模板、`/score` 调用、分数校验放在 `services/rerank.rs`（切片 G0），服务健康用公共
   `services/service_health.rs` 的 rerank 实例（README 第一节第 9 条），代码检索与外部搜索精排（外部搜索 3.3）共用；
@@ -466,7 +467,7 @@ Decision Provider 时完全相同。
                    "dim": 1536, "apiKeyFile": null },
     "qdrant":    { "url": "http://10.144.0.3:6333", "apiKeyFile": "~/.nyan/keys/qdrant" }
   },
-  "rerank": { "enabled": false, "url": "http://10.144.0.11:8091", "model": "qwen3-reranker-0.6b", "topN": 20 },
+  "rerank": { "enabled": false, "url": "http://10.144.0.11:8091", "model": "qwen3-reranker-0.6b", "topN": 10, "maxDocumentChars": 3000 },
   "budget": { "deadlineMs": 8000, "semanticDeadlineMs": 4500, "rrfK": 60,
               "connectTimeoutMs": 1500, "embedTimeoutMs": 2500, "qdrantTimeoutMs": 1500, "rerankTimeoutMs": 2000 },
   "sync": { "batchSize": 128, "concurrency": 8, "embedBatchTimeoutMs": 60000,

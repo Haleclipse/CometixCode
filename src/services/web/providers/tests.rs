@@ -679,6 +679,9 @@ fn disabled_providers_are_skipped_and_order_is_fixed() {
         "brave": {"enabled": false, "apiKeyFile": key},
         "anysearch": {"enabled": true, "apiKeyFile": key},
         "searxng": {"url": "http://127.0.0.1:1"},
+        "deepseek": {"enabled": false},
+        "exa": {"enabled": false},
+        "firecrawl": {"enabled": false},
     }}));
     let (providers, failures) = configured_providers(&web);
     let names = providers
@@ -699,7 +702,14 @@ fn an_unreadable_key_file_is_reported_not_dropped() {
         "anysearch": {"enabled": true, "apiKeyFile": key_file()},
     }}));
     let (providers, failures) = configured_providers(&web);
-    assert_eq!(providers.len(), 1);
+    let names = providers
+        .iter()
+        .map(|provider| provider.as_search().name())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        ["anysearch", "brave", "deepseek", "firecrawl", "tavily", "searxng"]
+    );
     assert_eq!(
         failures,
         vec![ProviderBuildFailure {
@@ -716,8 +726,49 @@ fn a_missing_key_file_builds_a_keyless_provider() {
         "exa": {"enabled": true, "apiKeyFile": "/nonexistent/dir/key"},
     }}));
     let (providers, failures) = configured_providers(&web);
-    assert_eq!(providers.len(), 1);
+    let names = providers
+        .iter()
+        .map(|provider| provider.as_search().name())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        ["anysearch", "brave", "deepseek", "exa", "firecrawl", "tavily", "searxng"]
+    );
     assert!(failures.is_empty());
+}
+
+#[test]
+fn an_absent_provider_map_configures_nothing() {
+    let (providers, failures) = configured_providers(&settings(json!({})));
+    assert!(providers.is_empty());
+    assert!(failures.is_empty());
+}
+
+#[test]
+fn configuring_only_searxng_still_loads_every_builtin() {
+    let web = settings(json!({"providers": {
+        "searxng": {"url": "http://127.0.0.1:9"},
+    }}));
+    let (providers, failures) = configured_providers(&web);
+    let names = providers
+        .iter()
+        .map(|provider| provider.as_search().name())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        ["anysearch", "brave", "deepseek", "exa", "firecrawl", "tavily", "searxng"]
+    );
+    assert!(failures.is_empty());
+    assert_eq!(
+        web.provider("searxng").url.as_deref(),
+        Some("http://127.0.0.1:9"),
+        "the user's searxng entry overrides the builtin URL"
+    );
+    assert!(web.provider("brave").enabled);
+    assert_eq!(
+        web.provider("brave").api_key_file.as_deref(),
+        Some("~/.nyan/keys/brave")
+    );
 }
 
 #[test]

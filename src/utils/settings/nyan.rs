@@ -325,6 +325,11 @@ pub struct RerankSettings {
     pub model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_n: Option<u32>,
+    /// Characters of each document sent to the reranker. The caller's snippet
+    /// is not shortened. Default stays inside the service's 4096-token limit
+    /// at one token per character, with room for the template and the query.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_document_chars: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -440,7 +445,11 @@ impl RerankSettings {
         self.model.as_deref().unwrap_or("qwen3-reranker-0.6b")
     }
     pub fn top_n(&self) -> u32 {
-        self.top_n.unwrap_or(20)
+        // Eval 2026-11-01: top_n=10 beat 20 on Hit@5 and MRR at about 1/4 the latency.
+        self.top_n.unwrap_or(10)
+    }
+    pub fn max_document_chars(&self) -> u32 {
+        self.max_document_chars.unwrap_or(3_000)
     }
 }
 
@@ -1455,6 +1464,10 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ("url", zod::string().optional()),
         ("model", zod::string().optional()),
         ("topN", zod::number().int().positive().optional()),
+        (
+            "maxDocumentChars",
+            zod::number().int().positive().optional(),
+        ),
     ]);
     let retrieval_budget = zod::object(vec![
         ("deadlineMs", zod::number().int().positive().optional()),
@@ -1721,7 +1734,8 @@ mod tests {
         assert!(!retrieval.rerank().enabled(), "code rerank is opt-in");
         assert_eq!(retrieval.rerank().url(), "http://10.144.0.11:8091");
         assert_eq!(retrieval.rerank().model(), "qwen3-reranker-0.6b");
-        assert_eq!(retrieval.rerank().top_n(), 20);
+        assert_eq!(retrieval.rerank().top_n(), 10);
+        assert_eq!(retrieval.rerank().max_document_chars(), 3_000);
         assert_eq!(retrieval.budget().deadline_ms(), 8_000);
         assert_eq!(retrieval.budget().semantic_deadline_ms(), 4_500);
         assert_eq!(retrieval.budget().rrf_k(), 60);
@@ -1928,6 +1942,19 @@ mod tests {
         // Turning retrieval off does not turn web rerank off.
         let disabled_retrieval = parse(json!({"retrieval": {"enabled": false}}));
         assert!(disabled_retrieval.web_rerank_enabled());
+    }
+
+    #[test]
+    fn rerank_top_n_and_document_cap_are_overridable() {
+        let settings = parse(json!({
+            "retrieval": {"rerank": {"topN": 20, "maxDocumentChars": 1500}}
+        }));
+        assert!(
+            !settings.retrieval().rerank().enabled(),
+            "the switch stays opt-in"
+        );
+        assert_eq!(settings.retrieval().rerank().top_n(), 20);
+        assert_eq!(settings.retrieval().rerank().max_document_chars(), 1500);
     }
 
     #[test]

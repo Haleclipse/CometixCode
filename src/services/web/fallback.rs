@@ -227,7 +227,9 @@ mod tests {
 
     use super::*;
     use crate::services::decision::Answer;
-    use crate::services::web::test_support::{Route, ScriptedBackend, key_file, serve};
+    use crate::services::web::test_support::{
+        Route, ScriptedBackend, key_file, only_mocked_providers, serve,
+    };
 
     fn long_page() -> String {
         format!("<html><body><h1>Real page</h1><p>{}</p></body></html>", "content ".repeat(60))
@@ -236,7 +238,7 @@ mod tests {
     /// `WebSettings` with the given providers pointed at mock base URLs.
     fn web(providers: Value, order: Value) -> WebSettings {
         serde_json::from_value(json!({
-            "providers": providers,
+            "providers": only_mocked_providers(providers),
             "fetchFallback": order,
             "fetch": {"fallbackDeadlineMs": 3000},
         }))

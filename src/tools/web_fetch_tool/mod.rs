@@ -1107,7 +1107,9 @@ mod tests {
             let provider = serve(vec![("/scrape", Route::new(200, "application/json",
                 json!({"data":{"markdown": format!("# Provider page\n{}", "text ".repeat(40))}}).to_string()))]).await;
             let _settings_guard = WebSettingsGuard::install(settings(json!({
-                "providers": {"firecrawl": {"enabled": true, "baseUrl": provider.origin, "apiKeyFile": key_file()}},
+                "providers": crate::services::web::test_support::only_mocked_providers(json!({
+                    "firecrawl": {"enabled": true, "baseUrl": provider.origin, "apiKeyFile": key_file()},
+                })),
                 "fetchFallback": ["firecrawl"],
             })));
             let (home, _home_guard) = config_dir("fallback");
@@ -1127,7 +1129,9 @@ mod tests {
             budget::reset();
             let provider = serve(vec![("/scrape", Route::new(200, "application/json", "{}"))]).await;
             let web = settings(json!({
-                "providers": {"firecrawl": {"enabled": true, "baseUrl": provider.origin, "apiKeyFile": key_file()}},
+                "providers": crate::services::web::test_support::only_mocked_providers(json!({
+                    "firecrawl": {"enabled": true, "baseUrl": provider.origin, "apiKeyFile": key_file()},
+                })),
                 "fetchFallback": ["firecrawl"],
                 "denyHosts": ["blocked.example"],
             }));

@@ -909,7 +909,9 @@ mod tests {
 
         use super::super::{WebSearchTool, is_web_search_tool_enabled, run_nyan_web_search};
         use crate::services::web::budget;
-        use crate::services::web::test_support::{Route, WebSettingsGuard, key_file, serve};
+        use crate::services::web::test_support::{
+            Route, WebSettingsGuard, key_file, only_mocked_providers, serve,
+        };
         use crate::tool::{ToolCall, ToolUseContext};
         use crate::utils::settings::nyan::WebSettings;
 
@@ -1000,7 +1002,7 @@ mod tests {
             budget::reset();
             let server = serve(vec![("/search", results())]).await;
             let _guard = WebSettingsGuard::install(settings(json!({
-                "providers": {"exa": provider(&server.origin)},
+                "providers": only_mocked_providers(json!({"exa": provider(&server.origin)})),
             })));
             let context = ToolUseContext::default();
             let output = run_nyan_web_search(
@@ -1034,7 +1036,10 @@ mod tests {
             let ok = serve(vec![("/search", results())]).await;
             let broken = serve(vec![("/search", Route::new(402, "application/json", "{}"))]).await;
             let _guard = WebSettingsGuard::install(settings(json!({
-                "providers": {"exa": provider(&ok.origin), "firecrawl": provider(&broken.origin)},
+                "providers": only_mocked_providers(json!({
+                    "exa": provider(&ok.origin),
+                    "firecrawl": provider(&broken.origin),
+                })),
             })));
             let output = run_nyan_web_search(
                 &json!({"query": "q"}),
@@ -1055,7 +1060,7 @@ mod tests {
             budget::reset();
             let down = serve(vec![("/search", Route::new(500, "application/json", "{}"))]).await;
             let _guard = WebSettingsGuard::install(settings(json!({
-                "providers": {"exa": provider(&down.origin)},
+                "providers": only_mocked_providers(json!({"exa": provider(&down.origin)})),
             })));
             let error = run_nyan_web_search(&json!({"query": "q"}), &ToolUseContext::default())
                 .await
@@ -1069,7 +1074,7 @@ mod tests {
             budget::reset();
             let server = serve(vec![("/search", results())]).await;
             let _guard = WebSettingsGuard::install(settings(json!({
-                "providers": {"exa": provider(&server.origin)},
+                "providers": only_mocked_providers(json!({"exa": provider(&server.origin)})),
             })));
             let args = json!({"query": "rust ownership", "max_results": 3});
             let request = crate::utils::permissions::permissions::mock_permission_request_with_input(

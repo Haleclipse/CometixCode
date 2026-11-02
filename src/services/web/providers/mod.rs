@@ -349,7 +349,13 @@ pub fn configured_search_providers(web: &WebSettings) -> Vec<ConfiguredSearchPro
     configured_providers(web).0
 }
 
-/// Every enabled provider, plus the ones that were enabled but failed to build.
+/// Every builtin provider, plus the ones that failed to build.
+///
+/// Entries in `providers` override builtins; they do not replace the set. A
+/// key the user left out stays at its builtin default, which is enabled. The
+/// only way to drop a provider is `enabled: false`. An absent `providers` map
+/// still means web search is not configured: nothing is built, and WebSearch
+/// stays hidden.
 pub fn configured_providers(
     web: &WebSettings,
 ) -> (Vec<ConfiguredSearchProvider>, Vec<ProviderBuildFailure>) {
@@ -359,10 +365,7 @@ pub fn configured_providers(
     let mut providers = Vec::new();
     let mut failures = Vec::new();
     for name in PROVIDER_ORDER {
-        let Some(config) = configured.get(name) else {
-            continue;
-        };
-        if config.enabled == Some(false) {
+        if configured.get(name).and_then(|config| config.enabled) == Some(false) {
             continue;
         }
         let built = match name {

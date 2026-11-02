@@ -525,10 +525,12 @@ mod tests {
     use super::*;
     use crate::services::decision::{Answer, FallbackReason};
     use crate::services::service_health::{ServiceHealth, ServiceKind};
-    use crate::services::web::test_support::{Route, ScriptedBackend, key_file, serve};
+    use crate::services::web::test_support::{
+        Route, ScriptedBackend, key_file, only_mocked_providers, serve,
+    };
 
     fn web(providers: Value, extra: Value) -> WebSettings {
-        let mut value = json!({"providers": providers});
+        let mut value = json!({"providers": only_mocked_providers(providers)});
         if let Value::Object(extra) = extra {
             for (key, part) in extra {
                 value[key] = part;

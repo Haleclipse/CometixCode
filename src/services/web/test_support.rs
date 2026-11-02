@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::services::decision::{
@@ -86,6 +87,22 @@ fn disabled_decisions() -> crate::utils::settings::nyan::DecisionSettings {
     let mut settings = crate::utils::settings::nyan::DecisionSettings::default();
     settings.enabled = Some(false);
     settings
+}
+
+/// Tests name the providers they mock. Every other builtin starts disabled so
+/// it is not built against the real endpoint: production loads a builtin the
+/// user did not mention, and the only opt-out is `enabled: false`.
+pub(crate) fn only_mocked_providers(partial: Value) -> Value {
+    let mut providers = serde_json::Map::new();
+    for name in crate::utils::settings::nyan::provider_names() {
+        providers.insert(name.to_string(), json!({"enabled": false}));
+    }
+    if let Some(given) = partial.as_object() {
+        for (name, config) in given {
+            providers.insert(name.clone(), config.clone());
+        }
+    }
+    Value::Object(providers)
 }
 
 /// A key file with a fake key, shared by the process. Providers refuse to send
