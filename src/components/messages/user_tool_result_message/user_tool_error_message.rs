@@ -109,22 +109,23 @@ pub fn UserToolErrorMessage(
     // Maps to CC FileEditTool `renderToolUseErrorMessage`: this must run
     // before the generic error fallback so collapsed validation errors use
     // the tool-specific stable copy.
-    if matches!(props.tool_name.as_str(), "Edit" | "FileEdit") && !error_verbose {
-        if let Some(error) = crate::utils::messages::extract_tag(&content, "tool_use_error") {
-            let (label, color) = if error.contains("File has not been read yet") {
-                ("File must be read first", theme.inactive)
-            } else if error.contains(crate::utils::file::FILE_NOT_FOUND_CWD_NOTE) {
-                ("File not found", theme.error)
-            } else {
-                ("Error editing file", theme.error)
-            };
-            return element! {
-                MessageResponse {
-                    Text(content: label.to_string(), color, wrap: TextWrap::NoWrap)
-                }
+    if matches!(props.tool_name.as_str(), "Edit" | "FileEdit")
+        && !error_verbose
+        && let Some(error) = crate::utils::messages::extract_tag(&content, "tool_use_error")
+    {
+        let (label, color) = if error.contains("File has not been read yet") {
+            ("File must be read first", theme.inactive)
+        } else if error.contains(crate::utils::file::FILE_NOT_FOUND_CWD_NOTE) {
+            ("File not found", theme.error)
+        } else {
+            ("Error editing file", theme.error)
+        };
+        return element! {
+            MessageResponse {
+                Text(content: label.to_string(), color, wrap: TextWrap::NoWrap)
             }
-            .into_any();
         }
+        .into_any();
     }
     // Maps to CC FileWriteTool `renderToolUseErrorMessage` (UI.tsx:268-272):
     // collapsed tagged failures hide filesystem details behind a stable
@@ -204,15 +205,15 @@ pub fn UserToolErrorMessage(
         props.tool_name.as_str(),
         "Grep" | "Glob" | "CodeSearch" | "Search"
     );
-    if is_search_tool {
-        if let Some(short) = grep_tool::ui::search_tool_use_error_message(&content, props.verbose) {
-            return element! {
-                MessageResponse {
-                    Text(content: short.to_string(), color: theme.error, wrap: TextWrap::NoWrap)
-                }
+    if is_search_tool
+        && let Some(short) = grep_tool::ui::search_tool_use_error_message(&content, props.verbose)
+    {
+        return element! {
+            MessageResponse {
+                Text(content: short.to_string(), color: theme.error, wrap: TextWrap::NoWrap)
             }
-            .into_any();
         }
+        .into_any();
     }
     let fallback_verbose = if is_search_tool {
         props.verbose

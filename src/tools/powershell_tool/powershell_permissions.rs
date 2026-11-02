@@ -103,15 +103,14 @@ pub fn powershell_tool_has_permission(
     // deferred prefix ask and the raw-string UNC ask — the port previously
     // tested only the UNC half, so an ask rule could be silently overridden by
     // an exact allow on the parse-failed path (CC :725-730 calls this out).
-    if let Some(result) = exact_allow.as_ref() {
-        if !parsed.valid
-            && pre_parse_ask.is_none()
-            && !contains_vulnerable_unc_path(command)
-            && classify_command_name(command.split_whitespace().next().unwrap_or_default())
-                != CommandNameType::Application
-        {
-            return result.clone();
-        }
+    if let Some(result) = exact_allow.as_ref()
+        && !parsed.valid
+        && pre_parse_ask.is_none()
+        && !contains_vulnerable_unc_path(command)
+        && classify_command_name(command.split_whitespace().next().unwrap_or_default())
+            != CommandNameType::Application
+    {
+        return result.clone();
     }
 
     if let Some(path) = dangerous_removal_path(command) {
@@ -147,28 +146,26 @@ pub fn powershell_tool_has_permission(
 
     if !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK").as_deref(),
-    ) {
-        if let PermissionResult::Ask {
-            decision_reason: Some(PermissionDecisionReason::SafetyCheck { reason, .. }),
-            ..
-        } = powershell_command_is_safe(command)
-        {
-            let decision_reason = PermissionDecisionReason::SafetyCheck {
-                reason,
-                classifier_approvable: true,
-            };
-            decisions.push(PermissionResult::Ask {
-                message: create_permission_request_message(Some(&decision_reason)),
-                updated_input: None,
-                decision_reason: Some(decision_reason),
-                suggestions: Vec::new(),
-                blocked_path: None,
-                metadata: None,
-                is_bash_security_check_for_misparsing: false,
-                pending_classifier_check: None,
-                content_blocks: Vec::new(),
-            });
-        }
+    ) && let PermissionResult::Ask {
+        decision_reason: Some(PermissionDecisionReason::SafetyCheck { reason, .. }),
+        ..
+    } = powershell_command_is_safe(command)
+    {
+        let decision_reason = PermissionDecisionReason::SafetyCheck {
+            reason,
+            classifier_approvable: true,
+        };
+        decisions.push(PermissionResult::Ask {
+            message: create_permission_request_message(Some(&decision_reason)),
+            updated_input: None,
+            decision_reason: Some(decision_reason),
+            suggestions: Vec::new(),
+            blocked_path: None,
+            metadata: None,
+            is_bash_security_check_for_misparsing: false,
+            pending_classifier_check: None,
+            content_blocks: Vec::new(),
+        });
     }
 
     // CC pushes the git-safety asks after the security-check ask
@@ -826,7 +823,8 @@ mod tests {
             ],
         );
 
-        for command in ["scripts\\build.exe --flag"] {
+        {
+            let command = "scripts\\build.exe --flag";
             // Pins the rule as actually matching, so the guard below stays
             // meaningful instead of passing for want of an allow rule.
             assert!(

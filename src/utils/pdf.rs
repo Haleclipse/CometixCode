@@ -284,7 +284,7 @@ mod tests {
         let ok = dir.join("ok.pdf");
         std::fs::write(&ok, b"%PDF-1.4 minimal").unwrap();
         let data = read_pdf(&ok).await.expect("valid header");
-        assert!(data.base64.len() > 0);
+        assert!(!data.base64.is_empty());
 
         if is_pdftoppm_available() {
             let page = dir.join("page.pdf");

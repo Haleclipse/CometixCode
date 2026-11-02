@@ -667,20 +667,20 @@ async fn wait_for_next_prompt_or_shutdown_with_interval(
             })
             .or_else(|| all_messages.iter().position(|message| !message.read));
 
-        if let Some(idx) = selected_index {
-            if let Some(message) = all_messages.get(idx) {
-                crate::utils::teammate_mailbox::mark_message_as_read_by_index(
-                    &identity.agent_name,
-                    Some(&identity.team_name),
-                    idx,
-                );
-                return WaitResult::NewMessage {
-                    message: message.text.clone(),
-                    from: message.from.clone(),
-                    color: message.color.clone(),
-                    summary: message.summary.clone(),
-                };
-            }
+        if let Some(idx) = selected_index
+            && let Some(message) = all_messages.get(idx)
+        {
+            crate::utils::teammate_mailbox::mark_message_as_read_by_index(
+                &identity.agent_name,
+                Some(&identity.team_name),
+                idx,
+            );
+            return WaitResult::NewMessage {
+                message: message.text.clone(),
+                from: message.from.clone(),
+                color: message.color.clone(),
+                summary: message.summary.clone(),
+            };
         }
 
         if let Some(task_prompt) =
@@ -734,9 +734,10 @@ pub fn start_in_process_teammate(config: InProcessRunnerConfig) -> Result<(), St
 }
 
 fn teammate_compaction_model(tool_use_context: &ToolUseContext) -> String {
-    tool_use_context.main_loop_model.clone().unwrap_or_else(|| {
-        crate::utils::model::model::get_main_loop_model()
-    })
+    tool_use_context
+        .main_loop_model
+        .clone()
+        .unwrap_or_else(crate::utils::model::model::get_main_loop_model)
 }
 
 /// Maps to CC `utils/swarm/inProcessRunner.ts` `resolvedAgentDefinition.tools`:
@@ -775,9 +776,7 @@ fn teammate_system_prompt(
     let model = model
         .map(ToOwned::to_owned)
         .or_else(|| tool_use_context.main_loop_model.clone())
-        .unwrap_or_else(|| {
-            crate::utils::model::model::get_main_loop_model()
-        });
+        .unwrap_or_else(crate::utils::model::model::get_main_loop_model);
     // Maps to CC `inProcessRunner.ts:928-933` `getSystemPrompt(
     // toolUseContext.options.tools, toolUseContext.options.mainLoopModel,
     // undefined, toolUseContext.options.mcpClients)` — teammates pass NO

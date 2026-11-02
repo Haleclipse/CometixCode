@@ -350,8 +350,7 @@ fn should_retry_529(query_source: Option<&RetryQuerySource>) -> bool {
 /// Maps to: CC `services/api/withRetry.ts:100-104`
 fn is_persistent_retry_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY").as_deref(),
     )
 }
 
@@ -493,8 +492,9 @@ fn should_retry(error: &ApiError) -> bool {
     }
 
     // CCR mode: auth errors are transient blips
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
-        && (error.status == Some(401) || error.status == Some(403))
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+    ) && (error.status == Some(401) || error.status == Some(403))
     {
         return true;
     }
@@ -520,7 +520,7 @@ fn should_retry(error: &ApiError) -> bool {
         return true;
     }
     if should_retry_header == Some("false") {
-        let is_5xx = error.status.map_or(false, |s| s >= 500);
+        let is_5xx = error.status.is_some_and(|s| s >= 500);
         // Internal builds can ignore x-should-retry:false for 5xx only.
         if !crate::utils::build_profile::has_internal_capability(
             crate::utils::build_profile::InternalCapability::Api,
@@ -567,10 +567,10 @@ fn should_retry(error: &ApiError) -> bool {
 ///
 /// Maps to: CC `services/api/withRetry.ts:530-548`
 pub fn get_retry_delay(attempt: u32, retry_after_header: Option<&str>, max_delay_ms: u64) -> u64 {
-    if let Some(header) = retry_after_header {
-        if let Ok(seconds) = header.parse::<u64>() {
-            return seconds * 1000;
-        }
+    if let Some(header) = retry_after_header
+        && let Ok(seconds) = header.parse::<u64>()
+    {
+        return seconds * 1000;
     }
 
     let exp: u64 = 1u64
@@ -939,60 +939,56 @@ where
 
                 // --- Fast mode fallback on 429/529 ---
                 // Maps to: CC services/api/withRetry.ts:267-305
-                if was_fast_mode_active && !is_persistent_retry_enabled() {
-                    if let Some(api_err) = error.as_api() {
-                        if api_err.status == Some(429) || is_529_error(api_err) {
-                            // Check overage-disabled header
-                            if let Some(overage_reason) = api_err
-                                .header("anthropic-ratelimit-unified-overage-disabled-reason")
-                            {
-                                if !overage_reason.is_empty() {
-                                    // TODO: handleFastModeOverageRejection once fast_mode is ported.
-                                    // See CC `utils/fastMode.ts:handleFastModeOverageRejection`.
-                                    retry_context.fast_mode = Some(false);
-                                    last_error = Some(error);
-                                    attempt += 1;
-                                    continue;
-                                }
-                            }
-
-                            let retry_after_ms = get_retry_after_ms(&error);
-                            if let Some(ms) = retry_after_ms {
-                                if ms < SHORT_RETRY_THRESHOLD_MS {
-                                    // Short retry-after: wait with fast mode still active
-                                    if cancellable_sleep(
-                                        Duration::from_millis(ms),
-                                        &mut options.abort_rx,
-                                    )
-                                    .await
-                                    .is_err()
-                                    {
-                                        return Err(CannotRetryError {
-                                            original_error: RetryableError::Aborted,
-                                            retry_context,
-                                        }
-                                        .into());
-                                    }
-                                    last_error = Some(error);
-                                    attempt += 1;
-                                    continue;
-                                }
-                            }
-
-                            // Long or unknown retry-after: enter cooldown
-                            let _cooldown_ms = retry_after_ms
-                                .unwrap_or(DEFAULT_FAST_MODE_FALLBACK_HOLD_MS)
-                                .max(MIN_COOLDOWN_MS);
-                            // TODO: triggerFastModeCooldown once fast_mode module is ported.
-                            // See CC `utils/fastMode.ts:triggerFastModeCooldown`.
-                            if is_fast_mode_enabled() {
-                                retry_context.fast_mode = Some(false);
-                            }
-                            last_error = Some(error);
-                            attempt += 1;
-                            continue;
-                        }
+                if was_fast_mode_active
+                    && !is_persistent_retry_enabled()
+                    && let Some(api_err) = error.as_api()
+                    && (api_err.status == Some(429) || is_529_error(api_err))
+                {
+                    // Check overage-disabled header
+                    if let Some(overage_reason) =
+                        api_err.header("anthropic-ratelimit-unified-overage-disabled-reason")
+                        && !overage_reason.is_empty()
+                    {
+                        // TODO: handleFastModeOverageRejection once fast_mode is ported.
+                        // See CC `utils/fastMode.ts:handleFastModeOverageRejection`.
+                        retry_context.fast_mode = Some(false);
+                        last_error = Some(error);
+                        attempt += 1;
+                        continue;
                     }
+
+                    let retry_after_ms = get_retry_after_ms(&error);
+                    if let Some(ms) = retry_after_ms
+                        && ms < SHORT_RETRY_THRESHOLD_MS
+                    {
+                        // Short retry-after: wait with fast mode still active
+                        if cancellable_sleep(Duration::from_millis(ms), &mut options.abort_rx)
+                            .await
+                            .is_err()
+                        {
+                            return Err(CannotRetryError {
+                                original_error: RetryableError::Aborted,
+                                retry_context,
+                            }
+                            .into());
+                        }
+                        last_error = Some(error);
+                        attempt += 1;
+                        continue;
+                    }
+
+                    // Long or unknown retry-after: enter cooldown
+                    let _cooldown_ms = retry_after_ms
+                        .unwrap_or(DEFAULT_FAST_MODE_FALLBACK_HOLD_MS)
+                        .max(MIN_COOLDOWN_MS);
+                    // TODO: triggerFastModeCooldown once fast_mode module is ported.
+                    // See CC `utils/fastMode.ts:triggerFastModeCooldown`.
+                    if is_fast_mode_enabled() {
+                        retry_context.fast_mode = Some(false);
+                    }
+                    last_error = Some(error);
+                    attempt += 1;
+                    continue;
                 }
 
                 // --- Fast mode not enabled error ---
@@ -1024,8 +1020,11 @@ where
                     // TODO: Check FALLBACK_FOR_ALL_PRIMARY_MODELS and isNonCustomOpusModel
                     // once model utils are ported.
                     // See CC `utils/model/model.ts:isNonCustomOpusModel`.
-                    let should_track = crate::utils::process_env::var("FALLBACK_FOR_ALL_PRIMARY_MODELS").truthy().is_some()
-                        || is_non_custom_opus_model(&options.model);
+                    let should_track =
+                        crate::utils::process_env::var("FALLBACK_FOR_ALL_PRIMARY_MODELS")
+                            .truthy()
+                            .is_some()
+                            || is_non_custom_opus_model(&options.model);
                     if should_track {
                         consecutive_529_errors += 1;
                         if consecutive_529_errors >= MAX_529_RETRIES {
@@ -1040,7 +1039,9 @@ where
                             // External users (non-sandbox, non-persistent) get a terminal error
                             if !crate::utils::build_profile::has_internal_capability(
                                 crate::utils::build_profile::InternalCapability::Api,
-                            ) && crate::utils::process_env::var("IS_SANDBOX").truthy().is_none()
+                            ) && crate::utils::process_env::var("IS_SANDBOX")
+                                .truthy()
+                                .is_none()
                                 && !is_persistent_retry_enabled()
                             {
                                 return Err(CannotRetryError {
@@ -1099,41 +1100,41 @@ where
 
                 // --- Context overflow adjustment ---
                 // Maps to: CC services/api/withRetry.ts:385-427
-                if let Some(api_err) = error.as_api() {
-                    if let Some(overflow) = parse_max_tokens_context_overflow(api_err) {
-                        let safety_buffer: u64 = 1000;
-                        let available_context = overflow
-                            .context_limit
-                            .saturating_sub(overflow.input_tokens)
-                            .saturating_sub(safety_buffer);
+                if let Some(api_err) = error.as_api()
+                    && let Some(overflow) = parse_max_tokens_context_overflow(api_err)
+                {
+                    let safety_buffer: u64 = 1000;
+                    let available_context = overflow
+                        .context_limit
+                        .saturating_sub(overflow.input_tokens)
+                        .saturating_sub(safety_buffer);
 
-                        if available_context < FLOOR_OUTPUT_TOKENS {
-                            tracing::error!(
-                                "availableContext {} is less than FLOOR_OUTPUT_TOKENS {}",
-                                available_context,
-                                FLOOR_OUTPUT_TOKENS
-                            );
-                            return Err(CannotRetryError {
-                                original_error: error,
-                                retry_context,
-                            }
-                            .into());
+                    if available_context < FLOOR_OUTPUT_TOKENS {
+                        tracing::error!(
+                            "availableContext {} is less than FLOOR_OUTPUT_TOKENS {}",
+                            available_context,
+                            FLOOR_OUTPUT_TOKENS
+                        );
+                        return Err(CannotRetryError {
+                            original_error: error,
+                            retry_context,
                         }
-
-                        let min_required = match &retry_context.thinking_config {
-                            ThinkingConfig::Enabled { budget_tokens } => {
-                                budget_tokens.unwrap_or(0).max(0) as u64 + 1
-                            }
-                            _ => 1,
-                        };
-
-                        let adjusted = FLOOR_OUTPUT_TOKENS.max(available_context).max(min_required);
-                        retry_context.max_tokens_override = Some(adjusted);
-
-                        last_error = Some(error);
-                        attempt += 1;
-                        continue;
+                        .into());
                     }
+
+                    let min_required = match &retry_context.thinking_config {
+                        ThinkingConfig::Enabled { budget_tokens } => {
+                            budget_tokens.unwrap_or(0).max(0) as u64 + 1
+                        }
+                        _ => 1,
+                    };
+
+                    let adjusted = FLOOR_OUTPUT_TOKENS.max(available_context).max(min_required);
+                    retry_context.max_tokens_override = Some(adjusted);
+
+                    last_error = Some(error);
+                    attempt += 1;
+                    continue;
                 }
 
                 // --- Compute retry delay ---
@@ -1292,22 +1293,22 @@ mod tests {
     fn get_retry_delay_exponential_backoff() {
         // Attempt 1: base = 500ms, with some jitter
         let d1 = get_retry_delay(1, None, DEFAULT_MAX_DELAY_MS);
-        assert!(d1 >= 500 && d1 < 700, "attempt 1 delay was {}", d1);
+        assert!((500..700).contains(&d1), "attempt 1 delay was {}", d1);
 
         // Attempt 2: base = 1000ms
         let d2 = get_retry_delay(2, None, DEFAULT_MAX_DELAY_MS);
-        assert!(d2 >= 1000 && d2 < 1300, "attempt 2 delay was {}", d2);
+        assert!((1000..1300).contains(&d2), "attempt 2 delay was {}", d2);
 
         // Attempt 3: base = 2000ms
         let d3 = get_retry_delay(3, None, DEFAULT_MAX_DELAY_MS);
-        assert!(d3 >= 2000 && d3 < 2600, "attempt 3 delay was {}", d3);
+        assert!((2000..2600).contains(&d3), "attempt 3 delay was {}", d3);
     }
 
     #[test]
     fn get_retry_delay_respects_max_delay() {
         // Very high attempt should cap at max_delay_ms + jitter
         let d = get_retry_delay(20, None, 5000);
-        assert!(d >= 5000 && d < 6300, "high attempt delay was {}", d);
+        assert!((5000..6300).contains(&d), "high attempt delay was {}", d);
     }
 
     #[test]
@@ -1321,7 +1322,7 @@ mod tests {
     fn get_retry_delay_invalid_retry_after_falls_back() {
         let d = get_retry_delay(1, Some("not-a-number"), DEFAULT_MAX_DELAY_MS);
         // Should fall back to normal backoff
-        assert!(d >= 500 && d < 700, "fallback delay was {}", d);
+        assert!((500..700).contains(&d), "fallback delay was {}", d);
     }
 
     // -- parse_max_tokens_context_overflow --

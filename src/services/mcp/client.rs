@@ -411,8 +411,7 @@ pub async fn process_mcp_result(
     }
 
     if crate::utils::env_utils::is_env_defined_falsy(
-        crate::utils::process_env::var("ENABLE_MCP_LARGE_OUTPUT_FILES")
-            .as_deref(),
+        crate::utils::process_env::var("ENABLE_MCP_LARGE_OUTPUT_FILES").as_deref(),
     ) || content_contains_images(&transformed.content)
     {
         transformed.content =
@@ -1400,10 +1399,8 @@ mod runtime {
             // Maps to: CC `new Client({ name:'claude-code', title:'Claude Code', ... },
             // { capabilities:{ roots:{}, elicitation:{} } })`, initialized at the
             // SDK's `LATEST_PROTOCOL_VERSION`.
-            let mut implementation = Implementation::new(
-                "nyan",
-                crate::constants::product::VERSION,
-            );
+            let mut implementation =
+                Implementation::new("nyan", crate::constants::product::VERSION);
             implementation.title = Some("nyan".to_string());
             implementation.website_url = Some(crate::constants::product::PRODUCT_URL.to_string());
 
@@ -1724,10 +1721,10 @@ mod runtime {
                     break resolve_legacy_sse_endpoint(url, endpoint)?;
                 }
                 "message" => {
-                    if let Some(data) = event.data.as_deref() {
-                        if let Some(message) = parse_mcp_rx_message(name, data) {
-                            initial_messages.push(message);
-                        }
+                    if let Some(data) = event.data.as_deref()
+                        && let Some(message) = parse_mcp_rx_message(name, data)
+                    {
+                        initial_messages.push(message);
                     }
                 }
                 _ => {}
@@ -2005,10 +2002,8 @@ mod runtime {
         if transport_config.auth_header.as_deref() == Some("") {
             transport_config.auth_header = None;
         }
-        let transport = StreamableHttpClientTransport::with_client(
-            streamable_http_client()?,
-            transport_config,
-        );
+        let transport =
+            StreamableHttpClientTransport::with_client(streamable_http_client()?, transport_config);
         let handler = NyanMcpClientHandler::new(name);
         let timeout = Duration::from_millis(connection_timeout_ms());
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
@@ -2033,10 +2028,8 @@ mod runtime {
         // Rust/rmcp transport boundary for the source's nested `doRequest`:
         // each retry must start a new service with the bearer token it sends.
         let transport_config = claude_ai_proxy_http_config(proxy_url, token)?;
-        let transport = StreamableHttpClientTransport::with_client(
-            streamable_http_client()?,
-            transport_config,
-        );
+        let transport =
+            StreamableHttpClientTransport::with_client(streamable_http_client()?, transport_config);
         let handler = NyanMcpClientHandler::new(name);
         let timeout = Duration::from_millis(connection_timeout_ms());
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
@@ -2083,19 +2076,15 @@ mod runtime {
                         }
                         Err(_) => None,
                     };
-                if token_changed
+                if (token_changed
                     || current_token
                         .as_deref()
-                        .is_some_and(|now| now != sent_token)
+                        .is_some_and(|now| now != sent_token))
+                    && let Some(current_token) = current_token
+                    && let Ok(service) =
+                        serve_claude_ai_proxy_http_with_token(name, proxy_url, current_token).await
                 {
-                    if let Some(current_token) = current_token {
-                        if let Ok(service) =
-                            serve_claude_ai_proxy_http_with_token(name, proxy_url, current_token)
-                                .await
-                        {
-                            return Ok(service);
-                        }
-                    }
+                    return Ok(service);
                 }
                 Err(error)
             }
@@ -2323,27 +2312,26 @@ mod runtime {
         error: &anyhow::Error,
     ) -> Option<(String, Option<String>)> {
         for cause in error.chain() {
-            if let Some(error) = cause.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
-                if let Some(challenge) = streamable_http_challenge_from_error(error) {
-                    return Some(challenge);
-                }
+            if let Some(error) = cause.downcast_ref::<StreamableHttpError<reqwest::Error>>()
+                && let Some(challenge) = streamable_http_challenge_from_error(error)
+            {
+                return Some(challenge);
             }
-            if let Some(error) = cause.downcast_ref::<McpRemoteAuthHttpError>() {
-                if let Some(header) = error.www_authenticate.clone() {
-                    return Some((header.clone(), extract_www_auth_scope_param(&header)));
-                }
+            if let Some(error) = cause.downcast_ref::<McpRemoteAuthHttpError>()
+                && let Some(header) = error.www_authenticate.clone()
+            {
+                return Some((header.clone(), extract_www_auth_scope_param(&header)));
             }
             if let Some(ClientInitializeError::TransportError { error, .. }) =
                 cause.downcast_ref::<ClientInitializeError>()
+                && let Some(challenge) = streamable_http_challenge_from_dynamic_error(error)
             {
-                if let Some(challenge) = streamable_http_challenge_from_dynamic_error(error) {
-                    return Some(challenge);
-                }
+                return Some(challenge);
             }
-            if let Some(ServiceError::TransportSend(error)) = cause.downcast_ref::<ServiceError>() {
-                if let Some(challenge) = streamable_http_challenge_from_dynamic_error(error) {
-                    return Some(challenge);
-                }
+            if let Some(ServiceError::TransportSend(error)) = cause.downcast_ref::<ServiceError>()
+                && let Some(challenge) = streamable_http_challenge_from_dynamic_error(error)
+            {
+                return Some(challenge);
             }
         }
         None
@@ -2356,35 +2344,31 @@ mod runtime {
             {
                 return true;
             }
-            if let Some(error) = cause.downcast_ref::<McpRemoteAuthHttpError>() {
-                if error.status == 403
-                    && error
-                        .www_authenticate
-                        .as_deref()
-                        .is_some_and(|header| header.contains("insufficient_scope"))
-                {
-                    return true;
-                }
+            if let Some(error) = cause.downcast_ref::<McpRemoteAuthHttpError>()
+                && error.status == 403
+                && error
+                    .www_authenticate
+                    .as_deref()
+                    .is_some_and(|header| header.contains("insufficient_scope"))
+            {
+                return true;
             }
             if let Some(ClientInitializeError::TransportError { error, .. }) =
                 cause.downcast_ref::<ClientInitializeError>()
+                && let Some(StreamableHttpError::InsufficientScope(_)) =
+                    error
+                        .error
+                        .downcast_ref::<StreamableHttpError<reqwest::Error>>()
             {
-                if let Some(StreamableHttpError::InsufficientScope(_)) =
-                    error
-                        .error
-                        .downcast_ref::<StreamableHttpError<reqwest::Error>>()
-                {
-                    return true;
-                }
+                return true;
             }
-            if let Some(ServiceError::TransportSend(error)) = cause.downcast_ref::<ServiceError>() {
-                if let Some(StreamableHttpError::InsufficientScope(_)) =
+            if let Some(ServiceError::TransportSend(error)) = cause.downcast_ref::<ServiceError>()
+                && let Some(StreamableHttpError::InsufficientScope(_)) =
                     error
                         .error
                         .downcast_ref::<StreamableHttpError<reqwest::Error>>()
-                {
-                    return true;
-                }
+            {
+                return true;
             }
         }
         false
@@ -2399,8 +2383,7 @@ mod runtime {
     ) -> anyhow::Result<()> {
         if let Some((www_authenticate_header, required_scope)) =
             streamable_http_challenge_from_anyhow(error)
-        {
-            if let Err(record_error) =
+            && let Err(record_error) =
                 crate::services::mcp::auth::record_mcp_www_authenticate_challenge(
                     name,
                     config,
@@ -2409,23 +2392,19 @@ mod runtime {
                     &www_authenticate_header,
                     required_scope.as_deref(),
                 )
+        {
+            if record_error
+                .downcast_ref::<crate::constants::oauth::OAuthCredentialSideEffectsUnavailable>()
+                .is_some()
             {
-                if record_error
-                    .downcast_ref::<crate::constants::oauth::OAuthCredentialSideEffectsUnavailable>(
-                    )
-                    .is_some()
-                {
-                    return Err(record_error);
-                }
-                tracing::debug!(server = name, error = %record_error, "failed to persist MCP WWW-Authenticate challenge");
+                return Err(record_error);
             }
+            tracing::debug!(server = name, error = %record_error, "failed to persist MCP WWW-Authenticate challenge");
         }
         Ok(())
     }
 
-    fn remote_auth_context<'a>(
-        config: &'a ScopedMcpServerConfig,
-    ) -> Option<(&'static str, &'a str)> {
+    fn remote_auth_context(config: &ScopedMcpServerConfig) -> Option<(&'static str, &str)> {
         match config.transport {
             Transport::Http => config.url.as_deref().map(|url| ("http", url)),
             Transport::Sse => config.url.as_deref().map(|url| ("sse", url)),
@@ -2494,7 +2473,7 @@ mod runtime {
                 record_remote_auth_challenge(name, config, &error)?;
                 if refresh_after_remote_auth_failure(name, config, &error).await? {
                     match serve_transport(name, config).await {
-                        Ok(service) => return Ok(service),
+                        Ok(service) => Ok(service),
                         Err(retry_error) => {
                             if is_auth_error(&retry_error) {
                                 record_remote_auth_challenge(name, config, &retry_error)?;
@@ -2512,18 +2491,17 @@ mod runtime {
 
     pub(super) fn is_auth_error(error: &anyhow::Error) -> bool {
         for cause in error.chain() {
-            if let Some(error) = cause.downcast_ref::<McpRemoteAuthHttpError>() {
-                if matches!(error.status, 401 | 403) {
-                    return true;
-                }
+            if let Some(error) = cause.downcast_ref::<McpRemoteAuthHttpError>()
+                && matches!(error.status, 401 | 403)
+            {
+                return true;
             }
-            if let Some(error) = cause.downcast_ref::<reqwest::Error>() {
-                if error
+            if let Some(error) = cause.downcast_ref::<reqwest::Error>()
+                && error
                     .status()
                     .is_some_and(|status| matches!(status.as_u16(), 401 | 403))
-                {
-                    return true;
-                }
+            {
+                return true;
             }
             if matches!(
                 cause.downcast_ref::<StreamableHttpError<reqwest::Error>>(),
@@ -4243,8 +4221,7 @@ pub(crate) mod counting_fixture {
 
     impl CountingFixture {
         pub(crate) fn new() -> Self {
-            let dir =
-                std::env::temp_dir().join(format!("nyan-mcp-memo-{}", uuid::Uuid::new_v4()));
+            let dir = std::env::temp_dir().join(format!("nyan-mcp-memo-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&dir).unwrap();
             let script = dir.join("server.mjs");
             std::fs::write(&script, COUNTING_STDIO_FIXTURE).expect("write MCP fixture");
@@ -4373,11 +4350,17 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _env: Vec<_> = ["https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY", "no_proxy"]
-            .into_iter()
-            .map(EnvVarGuard::unset)
-            .chain([EnvVarGuard::set("NO_PROXY", "127.0.0.1")])
-            .collect();
+        let _env: Vec<_> = [
+            "https_proxy",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "HTTP_PROXY",
+            "no_proxy",
+        ]
+        .into_iter()
+        .map(EnvVarGuard::unset)
+        .chain([EnvVarGuard::set("NO_PROXY", "127.0.0.1")])
+        .collect();
         let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target_address = target.local_addr().unwrap();
         let target_hit = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -4419,7 +4402,10 @@ mod tests {
 
     #[test]
     fn resource_helper_callback_scope_and_reconnect_match_actual_bun_oracle() {
-        let oracle: serde_json::Value = serde_json::from_str(include_str!("../../../tests/fixtures/oracles/mcp-contract-review-0915/oracle.json")).unwrap();
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/mcp-contract-review-0915/oracle.json"
+        ))
+        .unwrap();
         let mut calls = Vec::new();
         for names in [vec!["a", "b"], vec!["c"]] {
             let added = std::sync::atomic::AtomicBool::new(false);
@@ -4690,22 +4676,21 @@ rl.on('line', line => {
                     break;
                 }
                 request.extend_from_slice(&chunk[..count]);
-                if expected_length.is_none() {
-                    if let Some(header_end) =
+                if expected_length.is_none()
+                    && let Some(header_end) =
                         request.windows(4).position(|window| window == b"\r\n\r\n")
-                    {
-                        let headers = String::from_utf8_lossy(&request[..header_end]);
-                        let content_length = headers
-                            .lines()
-                            .find_map(|line| {
-                                let (name, value) = line.split_once(':')?;
-                                name.eq_ignore_ascii_case("content-length")
-                                    .then(|| value.trim().parse::<usize>().ok())
-                                    .flatten()
-                            })
-                            .unwrap_or_default();
-                        expected_length = Some(header_end + 4 + content_length);
-                    }
+                {
+                    let headers = String::from_utf8_lossy(&request[..header_end]);
+                    let content_length = headers
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(':')?;
+                            name.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse::<usize>().ok())
+                                .flatten()
+                        })
+                        .unwrap_or_default();
+                    expected_length = Some(header_end + 4 + content_length);
                 }
                 if expected_length.is_some_and(|length| request.len() >= length) {
                     break;
@@ -6305,10 +6290,8 @@ rl.on('line', line => {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         // Elicitation notification hooks are detached onto it.
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let script_path = std::env::temp_dir().join(format!(
-            "nyan-mcp-url-elicit-{}.mjs",
-            uuid::Uuid::new_v4()
-        ));
+        let script_path =
+            std::env::temp_dir().join(format!("nyan-mcp-url-elicit-{}.mjs", uuid::Uuid::new_v4()));
         std::fs::write(
             &script_path,
             r#"
@@ -7709,10 +7692,8 @@ rl.on('line', line => {
     #[test]
     fn notifications_carry_the_connection_that_sent_them() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let script_path = std::env::temp_dir().join(format!(
-            "nyan-mcp-notifying-{}.mjs",
-            uuid::Uuid::new_v4()
-        ));
+        let script_path =
+            std::env::temp_dir().join(format!("nyan-mcp-notifying-{}.mjs", uuid::Uuid::new_v4()));
         std::fs::write(
             &script_path,
             r#"
@@ -8249,10 +8230,8 @@ rl.on('line', line => {
     #[test]
     fn stdio_get_mcp_prompt_for_command_fetches_live_prompt_content() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let script_path = std::env::temp_dir().join(format!(
-            "nyan-mcp-get-prompt-{}.mjs",
-            uuid::Uuid::new_v4()
-        ));
+        let script_path =
+            std::env::temp_dir().join(format!("nyan-mcp-get-prompt-{}.mjs", uuid::Uuid::new_v4()));
         std::fs::write(
             &script_path,
             r#"

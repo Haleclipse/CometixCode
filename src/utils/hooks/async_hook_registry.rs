@@ -251,10 +251,10 @@ fn parse_sync_response_from_stdout(stdout: &str) -> Value {
         if !trimmed.starts_with('{') {
             continue;
         }
-        if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
-            if parsed.get("async").is_none() {
-                return parsed;
-            }
+        if let Ok(parsed) = serde_json::from_str::<Value>(trimmed)
+            && parsed.get("async").is_none()
+        {
+            return parsed;
         }
     }
     Value::Object(Default::default())
@@ -402,10 +402,9 @@ pub fn remove_delivered_async_hooks(process_ids: &[String]) {
         if registry
             .get(process_id)
             .is_some_and(|entry| entry.snapshot.response_attachment_sent)
+            && let Some(mut entry) = registry.remove(process_id)
         {
-            if let Some(mut entry) = registry.remove(process_id) {
-                stop_interval(&mut entry);
-            }
+            stop_interval(&mut entry);
         }
     }
 }

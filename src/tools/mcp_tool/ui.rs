@@ -109,16 +109,16 @@ pub fn render_tool_result_message(
     input: Option<&Value>,
     options: ToolRenderOptions,
 ) -> Vec<ToolRenderLine> {
-    if !options.verbose {
-        if let Some((channel, url)) = try_slack_send_compact(output, input) {
-            return vec![ToolRenderLine::new(
-                format!(
-                    "Sent a message to {}",
-                    create_hyperlink(&url, Some(&channel))
-                ),
-                ToolRenderTone::Normal,
-            )];
-        }
+    if !options.verbose
+        && let Some((channel, url)) = try_slack_send_compact(output, input)
+    {
+        return vec![ToolRenderLine::new(
+            format!(
+                "Sent a message to {}",
+                create_hyperlink(&url, Some(&channel))
+            ),
+            ToolRenderTone::Normal,
+        )];
     }
 
     let estimated_tokens = crate::utils::mcp_validation::get_content_size_estimate(output);

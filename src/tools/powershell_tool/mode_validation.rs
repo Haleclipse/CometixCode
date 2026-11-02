@@ -272,14 +272,13 @@ pub fn check_permission_mode(
                             .get(index - 1)
                             .map(String::as_str)
                             .unwrap_or_default();
-                        if let Some(colon_index) = arg.find(':') {
-                            if colon_index > 0
-                                && arg[colon_index + 1..].contains(['$', '(', '@', '{', '['])
-                            {
-                                return passthrough(
-                                    "Colon-bound parameter contains an expression that cannot be statically validated",
-                                );
-                            }
+                        if let Some(colon_index) = arg.find(':')
+                            && colon_index > 0
+                            && arg[colon_index + 1..].contains(['$', '(', '@', '{', '['])
+                        {
+                            return passthrough(
+                                "Colon-bound parameter contains an expression that cannot be statically validated",
+                            );
                         }
                     }
                 }

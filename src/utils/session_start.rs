@@ -126,12 +126,13 @@ pub async fn process_session_start_hooks_async(
     }
     let loaded =
         crate::utils::hooks::hooks_config_snapshot::load_hooks_config_from_settings_sources();
-    if !loaded.allow_managed_hooks_only && !loaded.disable_all_hooks {
-        if let Err(error) = crate::utils::plugins::load_plugin_hooks::load_plugin_hooks() {
-            crate::utils::debug::log_for_debugging(&format!(
-                "Warning: Failed to load plugin hooks during {source}: {error}"
-            ));
-        }
+    if !loaded.allow_managed_hooks_only
+        && !loaded.disable_all_hooks
+        && let Err(error) = crate::utils::plugins::load_plugin_hooks::load_plugin_hooks()
+    {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Warning: Failed to load plugin hooks during {source}: {error}"
+        ));
     }
     // Re-read after `load_plugin_hooks`: the settings snapshot is immutable,
     // while registered plugin matchers were atomically installed above.

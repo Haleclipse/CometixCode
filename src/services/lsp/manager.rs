@@ -245,12 +245,12 @@ pub fn reinitialize_lsp_server_manager() {
     // Maps to: CC `:238-244` `void lspManagerInstance.shutdown().catch(...)` —
     // best-effort, fire-and-forget, so `/reload-plugins` does not leak child
     // processes while the new instance is already being built.
-    if let Some(previous) = previous {
-        if let Some(handle) = crate::utils::process_runtime::runtime_handle_for_detached_work() {
-            handle.spawn(async move {
-                let _ = previous.shutdown().await;
-            });
-        }
+    if let Some(previous) = previous
+        && let Some(handle) = crate::utils::process_runtime::runtime_handle_for_detached_work()
+    {
+        handle.spawn(async move {
+            let _ = previous.shutdown().await;
+        });
     }
 
     {

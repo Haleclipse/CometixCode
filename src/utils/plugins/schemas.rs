@@ -1197,8 +1197,7 @@ pub fn plugin_marketplace_entry_schema() -> &'static Schema {
             };
             fields.into_iter().map(|(name, field)| (name, field.optional())).collect::<Vec<_>>()
         };
-        for (name, field) in vec![
-            (
+        for (name, field) in [(
                 "name",
                 zod::string()
                     .min_with_message(1, "Plugin name cannot be empty")
@@ -1220,8 +1219,7 @@ pub fn plugin_marketplace_entry_schema() -> &'static Schema {
                     .optional()
                     .default(serde_json::json!(true))
                     .describe("Require the plugin manifest to be present in the plugin folder. If false, the marketplace entry provides the manifest."),
-            ),
-        ] {
+            )] {
             if let Some((_, current)) = fields.iter_mut().find(|(key, _)| *key == name) {
                 *current = field;
             } else {
@@ -1475,6 +1473,65 @@ pub fn known_marketplace_schema() -> &'static Schema {
 pub fn known_marketplaces_file_schema() -> &'static Schema {
     static S: OnceLock<Schema> = OnceLock::new();
     S.get_or_init(|| zod::record_with_key(zod::string(), known_marketplace_schema().clone()))
+}
+
+/// Maps to: CC `utils/plugins/schemas.ts:107-107#OFFICIAL_GITHUB_ORG`.
+pub const OFFICIAL_GITHUB_ORG: &str = "anthropics";
+
+/// Maps to: CC `utils/plugins/schemas.ts:119-157#validateOfficialNameSource`.
+pub fn validate_official_name_source(name: &str, source: &serde_json::Value) -> Option<String> {
+    if !ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&name.to_lowercase().as_str()) {
+        return None;
+    }
+    if source["source"] == "github" {
+        if source["repo"]
+            .as_str()
+            .unwrap_or("")
+            .to_lowercase()
+            .starts_with(&format!("{OFFICIAL_GITHUB_ORG}/"))
+        {
+            return None;
+        }
+    } else if source["source"] == "git" && source["url"].as_str().is_some_and(|s| !s.is_empty()) {
+        let url = source["url"].as_str().unwrap().to_lowercase();
+        if url.contains("github.com/anthropics/") || url.contains("git@github.com:anthropics/") {
+            return None;
+        }
+    } else {
+        return Some(format!(
+            "The name '{name}' is reserved for official Anthropic marketplaces and can only be used with GitHub sources from the '{OFFICIAL_GITHUB_ORG}' organization."
+        ));
+    }
+    Some(format!(
+        "The name '{name}' is reserved for official Anthropic marketplaces. Only repositories from 'github.com/{OFFICIAL_GITHUB_ORG}/' can use this name."
+    ))
+}
+
+/// Maps to: CC `schemas.ts:1221-1223#isLocalPluginSource`.
+pub fn is_local_plugin_source(source: &serde_json::Value) -> bool {
+    source
+        .as_str()
+        .is_some_and(|source| source.starts_with("./"))
+}
+
+/// Maps to: CC `utils/plugins/schemas.ts:1236-1240#isLocalMarketplaceSource`.
+pub fn is_local_marketplace_source(source: &serde_json::Value) -> bool {
+    source["source"] == "file" || source["source"] == "directory"
+}
+
+/// Maps to: CC `utils/plugins/schemas.ts:35-35#NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES`.
+const NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES: &[&str] = &["knowledge-work-plugins"];
+
+/// Maps to: CC `utils/plugins/schemas.ts:48-58#isMarketplaceAutoUpdate`.
+pub fn is_marketplace_auto_update(marketplace_name: &str, entry: &Value) -> bool {
+    let normalized_name = marketplace_name.to_lowercase();
+    entry
+        .get("autoUpdate")
+        .and_then(Value::as_bool)
+        .unwrap_or_else(|| {
+            ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&normalized_name.as_str())
+                && !NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES.contains(&normalized_name.as_str())
+        })
 }
 
 #[cfg(test)]
@@ -1768,63 +1825,4 @@ mod tests {
             r#"{"version":2,"plugins":{"z@m":[{"scope":"user","projectPath":"","installPath":"relative","version":"","installedAt":"x","lastUpdated":"x","gitCommitSha":"y"}],"A.a_1@M-2":[{"scope":"local","installPath":"a/../b"}],"b@m":[]}}"#
         );
     }
-}
-
-/// Maps to: CC `utils/plugins/schemas.ts:107-107#OFFICIAL_GITHUB_ORG`.
-pub const OFFICIAL_GITHUB_ORG: &str = "anthropics";
-
-/// Maps to: CC `utils/plugins/schemas.ts:119-157#validateOfficialNameSource`.
-pub fn validate_official_name_source(name: &str, source: &serde_json::Value) -> Option<String> {
-    if !ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&name.to_lowercase().as_str()) {
-        return None;
-    }
-    if source["source"] == "github" {
-        if source["repo"]
-            .as_str()
-            .unwrap_or("")
-            .to_lowercase()
-            .starts_with(&format!("{OFFICIAL_GITHUB_ORG}/"))
-        {
-            return None;
-        }
-    } else if source["source"] == "git" && source["url"].as_str().is_some_and(|s| !s.is_empty()) {
-        let url = source["url"].as_str().unwrap().to_lowercase();
-        if url.contains("github.com/anthropics/") || url.contains("git@github.com:anthropics/") {
-            return None;
-        }
-    } else {
-        return Some(format!(
-            "The name '{name}' is reserved for official Anthropic marketplaces and can only be used with GitHub sources from the '{OFFICIAL_GITHUB_ORG}' organization."
-        ));
-    }
-    Some(format!(
-        "The name '{name}' is reserved for official Anthropic marketplaces. Only repositories from 'github.com/{OFFICIAL_GITHUB_ORG}/' can use this name."
-    ))
-}
-
-/// Maps to: CC `schemas.ts:1221-1223#isLocalPluginSource`.
-pub fn is_local_plugin_source(source: &serde_json::Value) -> bool {
-    source
-        .as_str()
-        .is_some_and(|source| source.starts_with("./"))
-}
-
-/// Maps to: CC `utils/plugins/schemas.ts:1236-1240#isLocalMarketplaceSource`.
-pub fn is_local_marketplace_source(source: &serde_json::Value) -> bool {
-    source["source"] == "file" || source["source"] == "directory"
-}
-
-/// Maps to: CC `utils/plugins/schemas.ts:35-35#NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES`.
-const NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES: &[&str] = &["knowledge-work-plugins"];
-
-/// Maps to: CC `utils/plugins/schemas.ts:48-58#isMarketplaceAutoUpdate`.
-pub fn is_marketplace_auto_update(marketplace_name: &str, entry: &Value) -> bool {
-    let normalized_name = marketplace_name.to_lowercase();
-    entry
-        .get("autoUpdate")
-        .and_then(Value::as_bool)
-        .unwrap_or_else(|| {
-            ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&normalized_name.as_str())
-                && !NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES.contains(&normalized_name.as_str())
-        })
 }

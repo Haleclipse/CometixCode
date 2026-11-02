@@ -544,10 +544,10 @@ async fn run_stream_json(
                     }
                     continue;
                 }
-                if let Ok(StructuredInput::User(user)) = &parsed {
-                    if !user.text.is_empty() {
-                        reader_engine_control.queue_user();
-                    }
+                if let Ok(StructuredInput::User(user)) = &parsed
+                    && !user.text.is_empty()
+                {
+                    reader_engine_control.queue_user();
                 }
                 if let Ok(StructuredInput::Control(control)) = &parsed {
                     let subtype = control
@@ -588,20 +588,20 @@ async fn run_stream_json(
     while let Ok(input) = input_rx.recv().await {
         let (prompt, replay_input) = match input {
             Ok(StructuredInput::User(user)) if !user.text.is_empty() => {
-                if let Some(uuid) = user.uuid.as_ref() {
-                    if !received_user_uuids.insert(uuid.clone()) {
-                        engine_control.cancel_queued_user();
-                        if config.replay_user_messages {
-                            json_line(crate::query_engine::replayed_user_message_value(
-                                &user.text,
-                                Some(&QueryEngineReplayInput {
-                                    uuid: user.uuid.clone(),
-                                    timestamp: user.timestamp.clone(),
-                                }),
-                            ));
-                        }
-                        continue;
+                if let Some(uuid) = user.uuid.as_ref()
+                    && !received_user_uuids.insert(uuid.clone())
+                {
+                    engine_control.cancel_queued_user();
+                    if config.replay_user_messages {
+                        json_line(crate::query_engine::replayed_user_message_value(
+                            &user.text,
+                            Some(&QueryEngineReplayInput {
+                                uuid: user.uuid.clone(),
+                                timestamp: user.timestamp.clone(),
+                            }),
+                        ));
                     }
+                    continue;
                 }
                 let replay = QueryEngineReplayInput {
                     uuid: user.uuid.clone(),
@@ -611,10 +611,10 @@ async fn run_stream_json(
             }
             Ok(StructuredInput::User(_)) => continue,
             Ok(StructuredInput::History(message)) => {
-                if config.replay_user_messages {
-                    if let Some(value) = crate::query_engine::stream_message_value(&message) {
-                        json_line(value);
-                    }
+                if config.replay_user_messages
+                    && let Some(value) = crate::query_engine::stream_message_value(&message)
+                {
+                    json_line(value);
                 }
                 engine.push_history(message);
                 continue;
@@ -1043,17 +1043,17 @@ async fn handle_control_request(
                 let abort = crate::tool::AbortController::default();
                 let title =
                     crate::utils::session_title::generate_session_title(&description, &abort).await;
-                if let Some(title) = title.as_deref().filter(|_| persist) {
-                    if let Err(error) = crate::utils::session_storage::save_ai_generated_title(
+                if let Some(title) = title.as_deref().filter(|_| persist)
+                    && let Err(error) = crate::utils::session_storage::save_ai_generated_title(
                         &crate::bootstrap::state::get_session_id(),
                         title,
-                    ) {
-                        // CC wraps this write in try/logError; Rust's error
-                        // log channel here is the debug log.
-                        crate::utils::debug::log_for_debugging(&format!(
-                            "saveAiGeneratedTitle failed: {error}"
-                        ));
-                    }
+                    )
+                {
+                    // CC wraps this write in try/logError; Rust's error
+                    // log channel here is the debug log.
+                    crate::utils::debug::log_for_debugging(&format!(
+                        "saveAiGeneratedTitle failed: {error}"
+                    ));
                 }
                 control_success(&request_id, Some(serde_json::json!({ "title": title })));
             });
@@ -2265,15 +2265,17 @@ fn validate_headless_options(
     // Maps to CC `main.tsx:2099`: `fallbackModel && options.model &&
     // fallbackModel === options.model`, the flags as given.
     if let (Some(fallback), Some(model)) = (
-        config.fallback_model.as_deref().filter(|model| !model.is_empty()),
+        config
+            .fallback_model
+            .as_deref()
+            .filter(|model| !model.is_empty()),
         config.model.as_deref().filter(|model| !model.is_empty()),
-    ) {
-        if fallback == model {
-            return Err(
+    ) && fallback == model
+    {
+        return Err(
                 "Fallback model cannot be the same as the main model. Please specify a different model for --fallback-model."
                     .to_string(),
             );
-        }
     }
     Ok(())
 }
@@ -2999,7 +3001,10 @@ mod tests {
         )
         .await;
         assert_eq!(get_main_loop_model(), "custom-sonnet");
-        assert_eq!(engine.user_specified_model_for_test(), Some("custom-sonnet"));
+        assert_eq!(
+            engine.user_specified_model_for_test(),
+            Some("custom-sonnet")
+        );
 
         // No switch: `activeUserSpecifiedModel` stays.
         engine.set_model("kept".to_string());
@@ -3015,13 +3020,18 @@ mod tests {
         // `null` clears the override; on a switch the new model is adopted.
         engine.set_model("custom-sonnet".to_string());
         handle_control_request(
-            control(serde_json::json!({"subtype": "apply_flag_settings", "settings": {"model": null}})),
+            control(
+                serde_json::json!({"subtype": "apply_flag_settings", "settings": {"model": null}}),
+            ),
             &mut initialized,
             &mut engine,
             &bridge,
         )
         .await;
-        assert_eq!(crate::bootstrap::state::get_main_loop_model_override(), None);
+        assert_eq!(
+            crate::bootstrap::state::get_main_loop_model_override(),
+            None
+        );
         assert_eq!(
             engine.user_specified_model_for_test(),
             Some(get_main_loop_model().as_str())

@@ -14,7 +14,6 @@ use crate::components::custom_select::{
 };
 use crate::components::design_system::dialog::Dialog;
 use crate::components::design_system::theme_provider::use_theme;
-use crate::utils::theme::ThemeSetting;
 use crate::components::language_picker::LanguagePicker;
 use crate::components::model_picker as model;
 use crate::components::model_picker::{ModelPicker, ModelPickerSelection};
@@ -28,6 +27,7 @@ use crate::context::notifications::{
 };
 use crate::hooks::use_search_input::{SearchInput, use_search_input};
 use crate::utils::theme;
+use crate::utils::theme::ThemeSetting;
 use iocraft::prelude::*;
 
 const POINTER: &str = "❯";
@@ -122,8 +122,9 @@ fn apply_runtime_display_settings(items: &mut [SettingItem], prefers_reduced_mot
 
 fn set_theme_row_value(items: &mut [SettingItem], setting: ThemeSetting) {
     if let Some(item) = items.iter_mut().find(|item| item.id == "theme") {
-        item.value =
-            SettingValue::Display(theme::theme_display_label(Some(setting.setting_value())).to_string());
+        item.value = SettingValue::Display(
+            theme::theme_display_label(Some(setting.setting_value())).to_string(),
+        );
     }
 }
 
@@ -287,14 +288,17 @@ fn preview_notification_setting_selection(mut context: NotificationsWriter, item
 
 /// Maps to: CC `Config.tsx:2041-2050`, the EnableAutoUpdates Select.
 fn enable_auto_updates_options() -> Vec<SelectOptionData> {
-    [("Enable with latest channel", "latest"), ("Enable with stable channel", "stable")]
-        .into_iter()
-        .map(|(label, value)| SelectOptionData {
-            label: label.to_string(),
-            value: value.to_string(),
-            ..SelectOptionData::default()
-        })
-        .collect()
+    [
+        ("Enable with latest channel", "latest"),
+        ("Enable with stable channel", "stable"),
+    ]
+    .into_iter()
+    .map(|(label, value)| SelectOptionData {
+        label: label.to_string(),
+        value: value.to_string(),
+        ..SelectOptionData::default()
+    })
+    .collect()
 }
 
 #[derive(Default, Props)]
@@ -357,12 +361,12 @@ fn EnableAutoUpdatesSelect<'a>(
 }
 
 fn auto_updates_disabled_env_var() -> Option<&'static str> {
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref())
-    {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref(),
+    ) {
         Some("DISABLE_AUTOUPDATER")
     } else if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER").as_deref(),
     ) {
         Some("CLAUDE_CODE_DISABLE_AUTOUPDATER")
     } else {
@@ -396,7 +400,6 @@ fn model_value_for_display(value: &str) -> String {
         trimmed.to_string()
     }
 }
-
 
 fn apply_settings_submenu_selection(
     items: &mut [SettingItem],
@@ -801,18 +804,19 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
     };
     // CC's Theme submenu footer resolves `confirm:no` in Confirmation
     // (`Config.tsx:1816-1821`), unlike the Language footer's Settings.
-    let confirmation_cancel_shortcut = crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
-        "confirm:no",
-        &crate::keybindings::types::ContextName::Confirmation,
-        "Esc",
-        keybinding_runtime
-            .as_ref()
-            .map(|runtime| runtime.bindings())
-            .unwrap_or_else(|| {
-                std::sync::Arc::new(crate::keybindings::default_bindings::default_bindings())
-            })
-            .as_slice(),
-    );
+    let confirmation_cancel_shortcut =
+        crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
+            "confirm:no",
+            &crate::keybindings::types::ContextName::Confirmation,
+            "Esc",
+            keybinding_runtime
+                .as_ref()
+                .map(|runtime| runtime.bindings())
+                .unwrap_or_else(|| {
+                    std::sync::Arc::new(crate::keybindings::default_bindings::default_bindings())
+                })
+                .as_slice(),
+        );
     crate::keybindings::use_keybinding::use_keybinding(
         &mut hooks,
         keybinding_runtime.clone(),
@@ -848,7 +852,8 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                         crate::utils::settings::SettingSource::User,
                         &serde_json::Map::from_iter([(
                             "syntaxHighlightingDisabled".to_string(),
-                            initial_disabled.map_or(serde_json::Value::Null, serde_json::Value::Bool),
+                            initial_disabled
+                                .map_or(serde_json::Value::Null, serde_json::Value::Bool),
                         )]),
                     );
                 }
@@ -2231,7 +2236,10 @@ mod tests {
             text.contains("Unset DISABLE_AUTOUPDATER to re-enable auto-updates."),
             "canvas=\n{text}"
         );
-        assert!(!text.contains("Enable with latest channel"), "canvas=\n{text}");
+        assert!(
+            !text.contains("Enable with latest channel"),
+            "canvas=\n{text}"
+        );
     }
 
     #[test]
@@ -2275,7 +2283,10 @@ mod tests {
                 .find(|line| line.contains("Auto-update channel"))
                 .unwrap_or_else(|| panic!("{key:?}: the list should be back; canvas=\n{text}"));
             assert!(row.contains("disabled"), "{key:?}: canvas=\n{text}");
-            assert!(!text.contains("Enable Auto-Updates"), "{key:?}: canvas=\n{text}");
+            assert!(
+                !text.contains("Enable Auto-Updates"),
+                "{key:?}: canvas=\n{text}"
+            );
         }
     }
 
@@ -2353,7 +2364,10 @@ mod tests {
         events.push(press(KeyCode::Char(' ')));
         events.extend(keys);
         let text = drive_config_keys_text(events);
-        assert!(!text.contains("Switch to Stable Channel"), "canvas=\n{text}");
+        assert!(
+            !text.contains("Switch to Stable Channel"),
+            "canvas=\n{text}"
+        );
         text.lines()
             .find(|line| line.contains("Auto-update channel"))
             .unwrap_or_else(|| panic!("the list should be back; canvas=\n{text}"))
@@ -2767,10 +2781,8 @@ mod tests {
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
         let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
         let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
-        let temp_root = std::env::temp_dir().join(format!(
-            "nyan-settings-readonly-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_root =
+            std::env::temp_dir().join(format!("nyan-settings-readonly-{}", uuid::Uuid::new_v4()));
         let config_home = temp_root.join("config-home");
         fs::create_dir_all(&config_home).expect("temp config home should be created");
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
@@ -2806,12 +2818,11 @@ mod tests {
             "Theme selection should close the picker onto the new row value; canvas=\n{theme_text}"
         );
 
-        let output_style_text =
-            drive_output_style_submenu_text(vec![
-                press(KeyCode::Down),
-                press(KeyCode::Enter),
-                press(KeyCode::F(12)),
-            ]);
+        let output_style_text = drive_output_style_submenu_text(vec![
+            press(KeyCode::Down),
+            press(KeyCode::Enter),
+            press(KeyCode::F(12)),
+        ]);
         assert!(
             !output_style_text.contains("Preferred output style")
                 && output_style_text
@@ -2894,7 +2905,8 @@ mod tests {
             "selecting a Theme submenu option should update the displayed value; canvas=\n{text}"
         );
         assert!(
-            !text.contains("Choose the text style") && !text.contains("Enter to select · Esc to cancel"),
+            !text.contains("Choose the text style")
+                && !text.contains("Enter to select · Esc to cancel"),
             "submenu should close after selecting a value; canvas=\n{text}"
         );
     }
@@ -2970,11 +2982,11 @@ mod tests {
     /// Drives a harness that renders a `keys=<count> ` echo one key batch at
     /// a time; returns the mount canvas and the canvas each batch's last key
     /// produced.
-    fn drive_harness(
-        app: AnyElement<'static>,
-        batches: Vec<Vec<TerminalEvent>>,
-    ) -> Vec<Canvas> {
-        drive_harness_waiting(app, batches.into_iter().map(|batch| (None, batch)).collect())
+    fn drive_harness(app: AnyElement<'static>, batches: Vec<Vec<TerminalEvent>>) -> Vec<Canvas> {
+        drive_harness_waiting(
+            app,
+            batches.into_iter().map(|batch| (None, batch)).collect(),
+        )
     }
 
     /// `drive_harness` where a batch paired with a marker also waits for a
@@ -3009,15 +3021,18 @@ mod tests {
                     );
                 };
                 let text = canvas_lines(&canvas).join("\n");
-                assert!(text.contains("keys="), "the echo stopped rendering:\n{text}");
+                assert!(
+                    text.contains("keys="),
+                    "the echo stopped rendering:\n{text}"
+                );
                 last_text = text.clone();
                 if !text.contains(&format!("keys={sent} ")) {
                     continue;
                 }
-                if let Some((Some(marker), _)) = batches.get(batch) {
-                    if !text.contains(marker) {
-                        continue;
-                    }
+                if let Some((Some(marker), _)) = batches.get(batch)
+                    && !text.contains(marker)
+                {
+                    continue;
                 }
                 canvases.push(canvas);
                 let Some((_, next)) = batches.get(batch) else {
@@ -3058,10 +3073,8 @@ mod tests {
         // no keys, an empty batch waits for it and ends the run.
         batches.push((Some("Explanatory"), after_load.next().into_iter().collect()));
         batches.extend(after_load.map(|event| (None, vec![event])));
-        let canvases = drive_harness_waiting(
-            element!(ConfigWithProviderEchoHarness).into_any(),
-            batches,
-        );
+        let canvases =
+            drive_harness_waiting(element!(ConfigWithProviderEchoHarness).into_any(), batches);
         canvas_lines(canvases.last().unwrap()).join("\n")
     }
 
@@ -3092,7 +3105,10 @@ mod tests {
             let mut steps = Vec::new();
             while let Some(canvas) = render_loop.next().await {
                 let text = canvas_lines(&canvas).join("\n");
-                assert!(text.contains("provider setting="), "the echo stopped rendering:\n{text}");
+                assert!(
+                    text.contains("provider setting="),
+                    "the echo stopped rendering:\n{text}"
+                );
                 if !text.contains(&format!("keys={sent} ")) {
                     continue;
                 }
@@ -3111,9 +3127,15 @@ mod tests {
         let expected = [
             (None, "provider setting=dark current=dark"),
             // Opening previews the focused (current) theme.
-            (Some("Choose the text style"), "provider setting=dark current=dark"),
+            (
+                Some("Choose the text style"),
+                "provider setting=dark current=dark",
+            ),
             // Down previews the next option for the whole app.
-            (Some("Choose the text style"), "provider setting=dark current=light"),
+            (
+                Some("Choose the text style"),
+                "provider setting=dark current=light",
+            ),
             // Enter saves it and closes the submenu.
             (None, "provider setting=light current=light"),
             // Escape closes /config and restores the mount-time theme.
@@ -3343,10 +3365,8 @@ mod tests {
     #[test]
     fn config_output_style_picker_renders_official_built_in_options() {
         let _lock = env_lock().lock().unwrap();
-        let temp_root = std::env::temp_dir().join(format!(
-            "nyan-config-output-style-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_root =
+            std::env::temp_dir().join(format!("nyan-config-output-style-{}", uuid::Uuid::new_v4()));
         let cwd = temp_root.join("repo");
         let config_home = temp_root.join("config");
         fs::create_dir_all(&cwd).unwrap();
@@ -3412,7 +3432,10 @@ mod tests {
         // the settled cancel.
         for key in [KeyCode::Esc, KeyCode::Char('n')] {
             let text = drive_output_style_submenu_text(vec![press(key), press(KeyCode::F(12))]);
-            assert!(!text.contains("Preferred output style"), "{key:?}: canvas=\n{text}");
+            assert!(
+                !text.contains("Preferred output style"),
+                "{key:?}: canvas=\n{text}"
+            );
             assert!(
                 text.lines()
                     .any(|line| line.contains("Output style") && line.contains("default")),
@@ -3436,7 +3459,10 @@ mod tests {
             .find(|line| line.contains('╭'))
             .unwrap_or_else(|| panic!("no search box; canvas=\n{}", lines.join("\n")));
         assert_eq!(top.trim_end().chars().count(), 100, "{top:?}");
-        assert!(top.starts_with('╭') && top.trim_end().ends_with('╮'), "{top:?}");
+        assert!(
+            top.starts_with('╭') && top.trim_end().ends_with('╮'),
+            "{top:?}"
+        );
     }
 
     #[test]
@@ -3445,15 +3471,23 @@ mod tests {
         // letter neither starts a search nor is consumed. Ctrl+W and Alt+Q
         // are bound nowhere by default.
         for modifier in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
-            let letter = if modifier == KeyModifiers::CONTROL { 'w' } else { 'q' };
+            let letter = if modifier == KeyModifiers::CONTROL {
+                'w'
+            } else {
+                'q'
+            };
             let mut modified = KeyEvent::new(KeyEventKind::Press, KeyCode::Char(letter));
             modified.modifiers = modifier;
-            let text = drive_config_keys_text(vec![
-                press(KeyCode::Enter),
-                TerminalEvent::Key(modified),
-            ]);
-            assert!(!text.contains(&format!("⌕ {letter}")), "{modifier:?}: canvas=\n{text}");
-            assert!(text.contains("Search settings"), "{modifier:?}: canvas=\n{text}");
+            let text =
+                drive_config_keys_text(vec![press(KeyCode::Enter), TerminalEvent::Key(modified)]);
+            assert!(
+                !text.contains(&format!("⌕ {letter}")),
+                "{modifier:?}: canvas=\n{text}"
+            );
+            assert!(
+                text.contains("Search settings"),
+                "{modifier:?}: canvas=\n{text}"
+            );
         }
     }
 
@@ -3480,12 +3514,11 @@ mod tests {
 
     #[test]
     fn config_output_style_selection_updates_preview_in_memory_only() {
-        let text =
-            drive_output_style_submenu_text(vec![
-                press(KeyCode::Down),
-                press(KeyCode::Enter),
-                press(KeyCode::F(12)),
-            ]);
+        let text = drive_output_style_submenu_text(vec![
+            press(KeyCode::Down),
+            press(KeyCode::Enter),
+            press(KeyCode::F(12)),
+        ]);
 
         assert!(
             text.contains("Output style") && text.contains("Explanatory"),
@@ -3648,17 +3681,15 @@ mod tests {
         // Observe events only after the real Config child has had its turn.
         // No app:interrupt handler is registered: source Settings owns C/D.
         hooks.use_propagated_terminal_events(move |event| {
-            if let TerminalEvent::Key(key) = event.event() {
-                if key.kind != KeyEventKind::Release
-                    && key.modifiers.contains(KeyModifiers::CONTROL)
-                {
-                    if let KeyCode::Char(c @ ('c' | 'd')) = key.code {
-                        let mut next = forwarded.read().clone();
-                        next.push(c);
-                        forwarded.set(next);
-                        event.stop_propagation();
-                    }
-                }
+            if let TerminalEvent::Key(key) = event.event()
+                && key.kind != KeyEventKind::Release
+                && key.modifiers.contains(KeyModifiers::CONTROL)
+                && let KeyCode::Char(c @ ('c' | 'd')) = key.code
+            {
+                let mut next = forwarded.read().clone();
+                next.push(c);
+                forwarded.set(next);
+                event.stop_propagation();
             }
         });
         element! {

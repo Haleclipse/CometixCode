@@ -153,8 +153,8 @@ async fn collect_markdown_files(
     .await;
     // A failed onFile makes source Promise.all reject while siblings keep running.
     // Snapshot the entries completed at this boundary, retaining their completion order.
-    let result = files.lock().unwrap().clone();
-    result
+
+    files.lock().unwrap().clone()
 }
 
 /// Maps to CC `transformPluginSkillFiles`.
@@ -726,8 +726,8 @@ async fn load_skills_from_directory(
         }));
     }
     let _ = futures::future::try_join_all(workers).await;
-    let result = skills.lock().unwrap().clone();
-    result
+
+    skills.lock().unwrap().clone()
 }
 
 // The two source memoized async functions have independent promise identities.

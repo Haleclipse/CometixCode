@@ -119,10 +119,9 @@ impl SecureStorageBackend for PlainTextStorage {
         let updated = (|| -> std::io::Result<()> {
             if let Err(error) =
                 crate::utils::fs_operations::get_fs_implementation().mkdir_sync(&storage_dir, None)
+                && crate::utils::errors::io_errno_code(&error) != Some("EEXIST")
             {
-                if crate::utils::errors::io_errno_code(&error) != Some("EEXIST") {
-                    return Err(error);
-                }
+                return Err(error);
             }
             std::fs::write(&storage_path, serialized)?;
             #[cfg(unix)]
@@ -184,10 +183,7 @@ mod tests {
 
     #[test]
     fn import_copies_into_the_new_file_and_leaves_the_old_bytes_alone() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-cred-import-{}",
-            std::process::id()
-        ));
+        let root = std::env::temp_dir().join(format!("nyan-cred-import-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("old")).unwrap();
         let source = root.join("old/.credentials.json");

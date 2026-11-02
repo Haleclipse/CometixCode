@@ -332,7 +332,7 @@ fn run_mcp_xaa_cli(args: &[String], rt: &tokio::runtime::Runtime) -> anyhow::Res
 }
 
 fn parts(args: &str) -> Vec<&str> {
-    args.trim().split_whitespace().collect()
+    args.split_whitespace().collect()
 }
 
 /// Returns the official `onComplete(...)` output for the current no-client MCP
@@ -489,20 +489,20 @@ pub fn McpCommandPanel<'a>(
         .into_any();
     }
 
-    if let ["reconnect", rest @ ..] = arg_parts.as_slice() {
-        if !rest.is_empty() {
-            let complete_state = pending_result;
-            return element! {
-                MCPReconnect(
-                    server_name: rest.join(" "),
-                    on_complete: move |result: String| {
-                        let mut complete_state = complete_state;
-                        complete_state.set(Some(result));
-                    },
-                )
-            }
-            .into_any();
+    if let ["reconnect", rest @ ..] = arg_parts.as_slice()
+        && !rest.is_empty()
+    {
+        let complete_state = pending_result;
+        return element! {
+            MCPReconnect(
+                server_name: rest.join(" "),
+                on_complete: move |result: String| {
+                    let mut complete_state = complete_state;
+                    complete_state.set(Some(result));
+                },
+            )
         }
+        .into_any();
     }
 
     if matches!(arg_parts.first().copied(), Some("enable" | "disable")) {

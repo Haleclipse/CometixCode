@@ -132,10 +132,7 @@ mod tests {
     #[test]
     fn condensed_logo_prefers_guest_passes_over_overage_credit_like_official() {
         let guest = render_condensed(LogoDisplayData::fixture(), true, true);
-        assert!(
-            guest.contains("Share nyan and earn $5"),
-            "canvas=\n{guest}"
-        );
+        assert!(guest.contains("Share nyan and earn $5"), "canvas=\n{guest}");
         assert!(!guest.contains("$10 in extra usage"), "canvas=\n{guest}");
 
         let overage = render_condensed(LogoDisplayData::fixture(), false, true);

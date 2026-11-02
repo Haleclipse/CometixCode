@@ -120,9 +120,7 @@ pub fn messages_after_cursor(messages: &[Message], cursor: &ExtractCursor) -> Ve
     let Some(index) = messages.iter().position(|message| message.uuid() == uuid) else {
         // M2.2 resume: a cursor that was summarized away sits at the compact
         // boundary, so only the boundary and later are unextracted.
-        if let Some(boundary) =
-            crate::utils::messages::find_last_compact_boundary_index(messages)
-        {
+        if let Some(boundary) = crate::utils::messages::find_last_compact_boundary_index(messages) {
             return messages.iter().skip(boundary).cloned().collect();
         }
         return messages.to_vec();
@@ -237,7 +235,10 @@ fn tool_path_allowed(
 /// @nyan: the single tool allowlist shared by extraction and consolidation.
 /// Read/Glob/Grep/Write/Edit only, every path inside auto-memory; no Bash and
 /// no delete-capable tool exist in this set.
-pub(crate) fn memory_tool_callback(context: &ToolUseContext, memory_dir: &Path) -> CanUseToolCallback {
+pub(crate) fn memory_tool_callback(
+    context: &ToolUseContext,
+    memory_dir: &Path,
+) -> CanUseToolCallback {
     let context = context.clone();
     let memory_dir = memory_dir.to_path_buf();
     CanUseToolCallback::new(
@@ -682,8 +683,12 @@ mod tests {
 
     fn history() -> Vec<Message> {
         vec![
-            Message::User(crate::utils::messages::create_user_message("one".to_string())),
-            Message::User(crate::utils::messages::create_user_message("two".to_string())),
+            Message::User(crate::utils::messages::create_user_message(
+                "one".to_string(),
+            )),
+            Message::User(crate::utils::messages::create_user_message(
+                "two".to_string(),
+            )),
         ]
     }
 
@@ -786,7 +791,10 @@ mod tests {
             std::fs::read_to_string(&index).unwrap(),
             "- [kept](kept.md) — kept\n"
         );
-        assert!(fixture.root.join("me.md").exists(), "file stays a candidate");
+        assert!(
+            fixture.root.join("me.md").exists(),
+            "file stays a candidate"
+        );
     }
 
     #[test]

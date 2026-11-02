@@ -17,7 +17,7 @@ pub struct SubAgentProviderProps {
 /// Suppresses nested expand hints in sub-agent output.
 #[component]
 pub fn SubAgentProvider(props: &mut SubAgentProviderProps) -> impl Into<AnyElement<'static>> {
-    let children = props.children.drain(..).collect::<Vec<_>>();
+    let children = std::mem::take(&mut props.children);
     element! {
         ContextProvider(value: Context::owned(SubAgentContext)) {
             #(children)

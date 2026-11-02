@@ -138,7 +138,9 @@ fn hex_component(hex: &str) -> f64 {
 /// bg 0–6 and 8 are dark, 7 and 9–15 light.
 fn detect_from_color_fg_bg() -> Option<SystemTheme> {
     // `process.env` decodes lossily rather than dropping a non-UTF-8 value.
-    let colorfgbg = crate::utils::process_env::var_os("COLORFGBG")?.to_string_lossy().into_owned();
+    let colorfgbg = crate::utils::process_env::var_os("COLORFGBG")?
+        .to_string_lossy()
+        .into_owned();
     if colorfgbg.is_empty() {
         return None;
     }
@@ -161,11 +163,19 @@ fn detect_from_color_fg_bg() -> Option<SystemTheme> {
 /// whitespace is ignored and all-whitespace is 0, decimal with sign, fraction
 /// and exponent, `0x`/`0o`/`0b` prefixes, `Infinity`. `None` is JS `NaN`.
 fn js_number(value: &str) -> Option<f64> {
-    let trimmed = value.trim_matches(|ch: char| (ch.is_whitespace() && ch != '\u{85}') || ch == '\u{feff}');
+    let trimmed =
+        value.trim_matches(|ch: char| (ch.is_whitespace() && ch != '\u{85}') || ch == '\u{feff}');
     if trimmed.is_empty() {
         return Some(0.0);
     }
-    for (prefix, radix) in [("0x", 16), ("0X", 16), ("0o", 8), ("0O", 8), ("0b", 2), ("0B", 2)] {
+    for (prefix, radix) in [
+        ("0x", 16),
+        ("0X", 16),
+        ("0o", 8),
+        ("0O", 8),
+        ("0b", 2),
+        ("0B", 2),
+    ] {
         if let Some(digits) = trimmed.strip_prefix(prefix) {
             // Digits only: JS reads `0x+7` as NaN, where `from_str_radix`
             // would accept the sign.
@@ -203,17 +213,35 @@ mod tests {
     #[test]
     fn theme_from_osc_color_reads_xparsecolor_forms_by_luminance() {
         // CC systemTheme.ts:60-94.
-        assert_eq!(theme_from_osc_color("rgb:ffff/ffff/ffff"), Some(SystemTheme::Light));
-        assert_eq!(theme_from_osc_color("rgb:0000/0000/0000"), Some(SystemTheme::Dark));
-        assert_eq!(theme_from_osc_color("RGB:1e/1e/2e"), Some(SystemTheme::Dark));
-        assert_eq!(theme_from_osc_color("rgba:f/f/f/0"), Some(SystemTheme::Light));
+        assert_eq!(
+            theme_from_osc_color("rgb:ffff/ffff/ffff"),
+            Some(SystemTheme::Light)
+        );
+        assert_eq!(
+            theme_from_osc_color("rgb:0000/0000/0000"),
+            Some(SystemTheme::Dark)
+        );
+        assert_eq!(
+            theme_from_osc_color("RGB:1e/1e/2e"),
+            Some(SystemTheme::Dark)
+        );
+        assert_eq!(
+            theme_from_osc_color("rgba:f/f/f/0"),
+            Some(SystemTheme::Light)
+        );
         // Green carries most of the weight: pure green is light, pure blue dark.
         assert_eq!(theme_from_osc_color("rgb:0/ff/0"), Some(SystemTheme::Light));
         assert_eq!(theme_from_osc_color("rgb:0/0/ff"), Some(SystemTheme::Dark));
         assert_eq!(theme_from_osc_color("#ffffff"), Some(SystemTheme::Light));
-        assert_eq!(theme_from_osc_color("#000000000000"), Some(SystemTheme::Dark));
+        assert_eq!(
+            theme_from_osc_color("#000000000000"),
+            Some(SystemTheme::Dark)
+        );
         // Anchored at the start only: trailing text after the third run is ignored.
-        assert_eq!(theme_from_osc_color("rgb:ff/ff/ff\u{7}"), Some(SystemTheme::Light));
+        assert_eq!(
+            theme_from_osc_color("rgb:ff/ff/ff\u{7}"),
+            Some(SystemTheme::Light)
+        );
         assert_eq!(theme_from_osc_color("rgb:fffff/0/0"), None);
         assert_eq!(theme_from_osc_color("#fffff"), None);
         assert_eq!(theme_from_osc_color("#"), None);
@@ -223,7 +251,9 @@ mod tests {
     #[test]
     fn system_theme_seeds_from_colorfgbg_and_caches() {
         // CC systemTheme.ts:24-29,109-119.
-        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let seed = |value: &str| {
             let guard = EnvVarGuard::set("COLORFGBG", value);
             reset_cached_system_theme_for_testing();

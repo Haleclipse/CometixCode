@@ -795,7 +795,7 @@ mod tests {
 
         let stale = info("docs", "mcp__docs__old");
         let live = info("docs", "mcp__docs__new");
-        let latest = latest_server_for_view_state(&[live.clone()], stale.clone());
+        let latest = latest_server_for_view_state(std::slice::from_ref(&live), stale.clone());
         assert_eq!(latest.tools[0].name, "mcp__docs__new");
 
         let (latest, tool) = latest_tool_for_detail(&[live], stale, 0);

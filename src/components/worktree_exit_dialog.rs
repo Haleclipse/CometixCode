@@ -132,10 +132,10 @@ pub fn WorktreeExitDialog<'a>(
                         .set((focused_index.get() + 1).min(options.len().saturating_sub(1)));
                 }
                 KeyCode::Enter => {
-                    if let Some(option) = options.get(focused_index.get()) {
-                        if let Some(action) = worktree_exit_action_from_value(&option.value) {
-                            pending_action.set(Some(action));
-                        }
+                    if let Some(option) = options.get(focused_index.get())
+                        && let Some(action) = worktree_exit_action_from_value(&option.value)
+                    {
+                        pending_action.set(Some(action));
                     }
                 }
                 _ => {}
@@ -143,7 +143,7 @@ pub fn WorktreeExitDialog<'a>(
         }
     });
 
-    let action = { pending_action.read().clone() };
+    let action = { *pending_action.read() };
     if let Some(action) = action {
         pending_action.set(None);
         let result =

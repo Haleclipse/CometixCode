@@ -47,13 +47,13 @@ pub(crate) fn normalize(path: &Path) -> PathBuf {
             r.device.extend_from_slice(possible);
             r.end = 4 + possible.len();
         }
-    } else if !sep(input[0]) && r.device.is_empty() {
-        if let Some(colon) = colon.filter(|i| *i > 0) {
-            if reserved(input, Some(colon)) {
-                r.device = input[..=colon].to_vec();
-                r.end = colon + 1;
-            }
-        }
+    } else if !sep(input[0])
+        && r.device.is_empty()
+        && let Some(colon) = colon.filter(|i| *i > 0)
+        && reserved(input, Some(colon))
+    {
+        r.device = input[..=colon].to_vec();
+        r.end = colon + 1;
     }
     let mut tail = normalized_tail(&input[r.end..], !r.absolute);
     if tail.is_empty() && !r.absolute {

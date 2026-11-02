@@ -165,10 +165,10 @@ fn user_facing_name_for_config_home(
     else {
         return "Read".to_string();
     };
-    if is_plan_path(&file_path, config_home) {
+    if is_plan_path(file_path, config_home) {
         return "Reading Plan".to_string();
     }
-    if get_agent_output_task_id(&file_path).is_some() {
+    if get_agent_output_task_id(file_path).is_some() {
         return "Read agent output".to_string();
     }
     "Read".to_string()
@@ -236,7 +236,7 @@ pub fn render_tool_use_message(input: &serde_json::Value, verbose: bool) -> Opti
                 format!(
                     "lines {}-{}",
                     javascript_to_string(start_line),
-                    ryu_js::Buffer::new().format(sum - 1.0).to_string()
+                    ryu_js::Buffer::new().format(sum - 1.0)
                 )
             }
             None => format!("from line {}", javascript_to_string(start_line)),

@@ -105,7 +105,9 @@ fn load_ca_certificates() -> Option<CaCertificates> {
         }
         Ok(_) => {
             log_for_debugging_with_level(
-                &format!("CA certs: No certificate in NODE_EXTRA_CA_CERTS file ({extra_certs_path})"),
+                &format!(
+                    "CA certs: No certificate in NODE_EXTRA_CA_CERTS file ({extra_certs_path})"
+                ),
                 DebugLogLevel::Error,
             );
             None
@@ -171,7 +173,8 @@ mod tests {
         assert!(get_ca_certificates().is_none());
 
         // A well-formed PEM block whose DER is not a certificate.
-        let bogus = std::env::temp_dir().join(format!("nyan-bogus-ca-{}.pem", uuid::Uuid::new_v4()));
+        let bogus =
+            std::env::temp_dir().join(format!("nyan-bogus-ca-{}.pem", uuid::Uuid::new_v4()));
         std::fs::write(
             &bogus,
             "-----BEGIN CERTIFICATE-----\nAAECAwQFBgcICQ==\n-----END CERTIFICATE-----\n",

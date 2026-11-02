@@ -219,18 +219,18 @@ fn pattern_with_root(pattern: &str, source: PermissionRuleSource) -> (String, Op
         }
         return (without_double_slash.to_string(), Some("/".to_string()));
     }
-    if let Some(rest) = pattern.strip_prefix('~') {
-        if rest.starts_with('/') {
-            return (
-                rest.to_string(),
-                Some(
-                    crate::utils::node_os::homedir()
-                        .to_string_lossy()
-                        .nfc()
-                        .collect::<String>(),
-                ),
-            );
-        }
+    if let Some(rest) = pattern.strip_prefix('~')
+        && rest.starts_with('/')
+    {
+        return (
+            rest.to_string(),
+            Some(
+                crate::utils::node_os::homedir()
+                    .to_string_lossy()
+                    .nfc()
+                    .collect::<String>(),
+            ),
+        );
     }
     if pattern.starts_with('/') {
         return (pattern.to_string(), Some(root_path_for_source(source)));
@@ -1559,8 +1559,7 @@ mod tests {
     #[test]
     fn claude_temp_dirs_match_official_shape() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-temp-shape-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-temp-shape-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let resolved = root.canonicalize().unwrap();
         let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);

@@ -221,7 +221,9 @@ pub(crate) fn validate_edit_input(
             let decoded = if bytes.starts_with(&[0xff, 0xfe]) {
                 String::from_utf16_lossy(
                     &bytes
-                        .chunks_exact(2)
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
                         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
                         .collect::<Vec<_>>(),
                 )
@@ -355,13 +357,14 @@ pub(crate) fn validate_edit_input(
     {
         return Err(validation_error(error.to_string(), 0));
     }
-    if context.agent_id.is_some() && full_path == crate::memdir::paths::get_auto_mem_entrypoint() {
-        if let Err(error) = crate::memdir::memdir::validate_agent_memory_index_update(
+    if context.agent_id.is_some()
+        && full_path == crate::memdir::paths::get_auto_mem_entrypoint()
+        && let Err(error) = crate::memdir::memdir::validate_agent_memory_index_update(
             &file_content,
             &updated_settings,
-        ) {
-            return Err(validation_error(error, 0));
-        }
+        )
+    {
+        return Err(validation_error(error, 0));
     }
 
     Ok(EditValidationOk {
@@ -697,20 +700,20 @@ impl crate::tool::ToolCall for FileEditTool {
                 return edit_error(error.to_string(), dynamic_skill_dirs);
             }
 
-            if crate::utils::file_history::file_history_enabled() {
-                if let Some(store) = context.app_store.store.as_ref() {
-                    crate::utils::file_history::file_history_track_edit(
-                        store,
-                        &full_path.display().to_string(),
-                        // The ENVELOPE uuid — CC passes `parentMessage.uuid`
-                        // (`FileWriteTool.ts:261`), which is what
-                        // `fileHistoryRewind` matches on (`fileHistory.ts:367`).
-                        parent_message
-                            .map(|message| message.uuid.as_str())
-                            .unwrap_or_default(),
-                    )
-                    .await;
-                }
+            if crate::utils::file_history::file_history_enabled()
+                && let Some(store) = context.app_store.store.as_ref()
+            {
+                crate::utils::file_history::file_history_track_edit(
+                    store,
+                    &full_path.display().to_string(),
+                    // The ENVELOPE uuid — CC passes `parentMessage.uuid`
+                    // (`FileWriteTool.ts:261`), which is what
+                    // `fileHistoryRewind` matches on (`fileHistory.ts:367`).
+                    parent_message
+                        .map(|message| message.uuid.as_str())
+                        .unwrap_or_default(),
+                )
+                .await;
             }
 
             // Final await above. Do not yield between this re-resolution,
@@ -771,13 +774,12 @@ impl crate::tool::ToolCall for FileEditTool {
 
             if context.agent_id.is_some()
                 && full_path == crate::memdir::paths::get_auto_mem_entrypoint()
-            {
-                if let Err(error) = crate::memdir::memdir::validate_agent_memory_index_update(
+                && let Err(error) = crate::memdir::memdir::validate_agent_memory_index_update(
                     &original_file,
                     &updated_file,
-                ) {
-                    return edit_error(error, dynamic_skill_dirs);
-                }
+                )
+            {
+                return edit_error(error, dynamic_skill_dirs);
             }
             if let Err(error) =
                 crate::memdir::write_guard::check_memory_content(&full_path, &updated_file)
@@ -1139,16 +1141,13 @@ mod tests {
             FileEditTool.get_activity_description(&serde_json::json!({})),
             Some("Editing file".to_string())
         );
-        assert_eq!(
-            FileEditTool
-                .prepare_permission_matcher(&serde_json::json!({
-                    "file_path": "/repo/src/lib.rs",
-                    "old_string": "a",
-                    "new_string": "b"
-                }))
-                .expect("matcher")("/repo/src/**"),
-            true
-        );
+        assert!(FileEditTool
+            .prepare_permission_matcher(&serde_json::json!({
+                "file_path": "/repo/src/lib.rs",
+                "old_string": "a",
+                "new_string": "b"
+            }))
+            .expect("matcher")("/repo/src/**"));
     }
 
     #[test]

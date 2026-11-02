@@ -47,10 +47,8 @@ const DESANITIZATIONS: &[(&str, &str)] = &[
 /// Maps to: CC `tools/FileEditTool/utils.ts#normalizeQuotes`.
 pub fn normalize_quotes(value: &str) -> String {
     value
-        .replace(LEFT_SINGLE_CURLY_QUOTE, "'")
-        .replace(RIGHT_SINGLE_CURLY_QUOTE, "'")
-        .replace(LEFT_DOUBLE_CURLY_QUOTE, "\"")
-        .replace(RIGHT_DOUBLE_CURLY_QUOTE, "\"")
+        .replace([LEFT_SINGLE_CURLY_QUOTE, RIGHT_SINGLE_CURLY_QUOTE], "'")
+        .replace([LEFT_DOUBLE_CURLY_QUOTE, RIGHT_DOUBLE_CURLY_QUOTE], "\"")
 }
 
 /// Maps to: CC `tools/FileEditTool/utils.ts#stripTrailingWhitespace`.

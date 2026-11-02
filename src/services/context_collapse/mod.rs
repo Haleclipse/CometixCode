@@ -26,8 +26,7 @@ pub fn is_context_collapse_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_CONTEXT_COLLAPSE").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_CONTEXT_COLLAPSE")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_CONTEXT_COLLAPSE").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CONTEXT_COLLAPSE").as_deref(),
     )

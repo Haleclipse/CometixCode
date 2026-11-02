@@ -206,7 +206,10 @@ pub fn set_answer(
 
 /// CC `setTextInputMode`.
 pub fn set_text_input_mode(state: State<MultipleChoiceState>, is_in_input: bool) {
-    dispatch(state, MultipleChoiceAction::SetTextInputMode { is_in_input });
+    dispatch(
+        state,
+        MultipleChoiceAction::SetTextInputMode { is_in_input },
+    );
 }
 
 /// Maps to: CC `AskUserQuestionTool.inputSchema.safeParse(...).data.questions`.

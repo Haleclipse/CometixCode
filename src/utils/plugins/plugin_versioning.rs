@@ -56,12 +56,12 @@ pub async fn calculate_plugin_version(
         ));
         return short;
     }
-    if let Some(path) = install_path {
-        if let Some(sha) = get_git_commit_sha(path).await.filter(|s| !s.is_empty()) {
-            let short: String = sha.chars().take(12).collect();
-            log_for_debugging(&format!("Using git SHA for {plugin_id}: {short}"));
-            return short;
-        }
+    if let Some(path) = install_path
+        && let Some(sha) = get_git_commit_sha(path).await.filter(|s| !s.is_empty())
+    {
+        let short: String = sha.chars().take(12).collect();
+        log_for_debugging(&format!("Using git SHA for {plugin_id}: {short}"));
+        return short;
     }
     log_for_debugging(&format!(
         "No version found for {plugin_id}, using 'unknown'"

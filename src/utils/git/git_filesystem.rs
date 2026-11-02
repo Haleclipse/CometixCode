@@ -119,10 +119,10 @@ pub async fn resolve_ref(git_dir: &Path, reference: &str) -> Option<String> {
     if let Some(result) = resolve_ref_in_dir(git_dir, reference).await {
         return Some(result);
     }
-    if let Some(common_dir) = get_common_dir(git_dir).await {
-        if common_dir.as_os_str() != git_dir.as_os_str() {
-            return resolve_ref_in_dir(&common_dir, reference).await;
-        }
+    if let Some(common_dir) = get_common_dir(git_dir).await
+        && common_dir.as_os_str() != git_dir.as_os_str()
+    {
+        return resolve_ref_in_dir(&common_dir, reference).await;
     }
     None
 }
@@ -203,8 +203,7 @@ mod tests {
     struct TestDir(PathBuf);
     impl TestDir {
         fn new() -> Self {
-            let path =
-                std::env::temp_dir().join(format!("nyan-git-head-{}", uuid::Uuid::new_v4()));
+            let path = std::env::temp_dir().join(format!("nyan-git-head-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }

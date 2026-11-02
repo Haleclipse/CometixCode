@@ -271,13 +271,13 @@ pub fn get_effective_channel_allowlist(
     org_list: Option<Vec<ChannelAllowlistEntry>>,
     ledger: Vec<ChannelAllowlistEntry>,
 ) -> EffectiveChannelAllowlist {
-    if is_managed_subscription(subscription) {
-        if let Some(entries) = org_list {
-            return EffectiveChannelAllowlist {
-                entries,
-                source: ChannelAllowlistSource::Org,
-            };
-        }
+    if is_managed_subscription(subscription)
+        && let Some(entries) = org_list
+    {
+        return EffectiveChannelAllowlist {
+            entries,
+            source: ChannelAllowlistSource::Org,
+        };
     }
     EffectiveChannelAllowlist {
         entries: ledger,

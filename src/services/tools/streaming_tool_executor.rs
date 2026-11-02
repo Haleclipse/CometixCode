@@ -1218,10 +1218,10 @@ fn synthetic_error_update(
         );
     // CC `StreamingToolExecutor.ts:171/186/203`: every synthetic tool_result
     // records `sourceToolAssistantUUID: assistantMessage.uuid`.
-    if !assistant_message.uuid.is_empty() {
-        if let Some(result) = tool_result.as_mut() {
-            result.source_tool_assistant_uuid = Some(assistant_message.uuid.clone());
-        }
+    if !assistant_message.uuid.is_empty()
+        && let Some(result) = tool_result.as_mut()
+    {
+        result.source_tool_assistant_uuid = Some(assistant_message.uuid.clone());
     }
     MessageUpdate {
         message: Some(message),

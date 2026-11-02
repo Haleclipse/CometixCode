@@ -251,12 +251,11 @@ impl crate::tool::ToolCall for TaskCreateTool {
                 .tasks_store
                 .as_ref()
                 .or(context.app_store.store.as_ref())
+                && store.get().expanded_view != crate::state::app_state_store::ExpandedView::Tasks
             {
-                if store.get().expanded_view != crate::state::app_state_store::ExpandedView::Tasks {
-                    store.replace_with(|state| {
-                        state.expanded_view = crate::state::app_state_store::ExpandedView::Tasks;
-                    });
-                }
+                store.replace_with(|state| {
+                    state.expanded_view = crate::state::app_state_store::ExpandedView::Tasks;
+                });
             }
             crate::tool::ToolResult {
                 data: crate::tool::ToolOutput::TaskCreate(output),

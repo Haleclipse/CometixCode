@@ -84,10 +84,9 @@ pub fn get_vertex_region_for_model(model: Option<&str>) -> String {
         OVERRIDES
             .iter()
             .find(|(prefix, _)| model.starts_with(prefix))
-    }) {
-        if let Some(region) = process_env::var(variable).truthy() {
-            return region;
-        }
+    }) && let Some(region) = process_env::var(variable).truthy()
+    {
+        return region;
     }
     get_default_vertex_region()
 }

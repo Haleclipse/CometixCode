@@ -147,9 +147,9 @@ async fn fetch_once(
     // @nyan: `web.fetch_fallback` runs on the same decision seam as the tool's
     // page check, so a scripted provider in tests reaches both.
     let provider = crate::services::web::decision::provider();
-    let decisions = provider
-        .as_ref()
-        .map(|provider| crate::services::web::decision::WebDecisions::new(provider, &context.abort_controller));
+    let decisions = provider.as_ref().map(|provider| {
+        crate::services::web::decision::WebDecisions::new(provider, &context.abort_controller)
+    });
     crate::services::web::fallback::fetch_chain(
         url,
         &context.abort_controller,
@@ -299,17 +299,17 @@ async fn run_nyan_web_fetch_with(
     // @nyan: web.page_answers only appends a hint; the body is never rewritten.
     // The tool input's prompt is the only query this tool has (decision-provider 4.2).
     let mut hint = String::new();
-    if !prompt.trim().is_empty() {
-        if let Some(provider) = crate::services::web::decision::provider() {
-            let decisions =
-                crate::services::web::decision::WebDecisions::new(&provider, &context.abort_controller);
-            if decisions.page_lacks_answer(prompt, &selected.text).await {
-                let next = crate::services::web::search::next_candidate(source);
-                hint.push_str(&format!(
-                    "\n[page may not answer the query — consider fetching: {}]",
-                    next.unwrap_or_else(|| "another search result".to_string())
-                ));
-            }
+    if !prompt.trim().is_empty()
+        && let Some(provider) = crate::services::web::decision::provider()
+    {
+        let decisions =
+            crate::services::web::decision::WebDecisions::new(&provider, &context.abort_controller);
+        if decisions.page_lacks_answer(prompt, &selected.text).await {
+            let next = crate::services::web::search::next_candidate(source);
+            hint.push_str(&format!(
+                "\n[page may not answer the query — consider fetching: {}]",
+                next.unwrap_or_else(|| "another search result".to_string())
+            ));
         }
     }
 
@@ -461,19 +461,18 @@ impl crate::tool::ToolCall for WebFetchTool {
             .get("url")
             .and_then(|value| value.as_str())
             .and_then(preapproved::parse_web_fetch_url_host_path)
+            && preapproved::is_preapproved_host(&hostname, &pathname)
         {
-            if preapproved::is_preapproved_host(&hostname, &pathname) {
-                return PermissionResult::Allow {
-                    updated_input: Some(args.clone()),
-                    user_modified: None,
-                    decision_reason: Some(PermissionDecisionReason::Other {
-                        reason: "Preapproved host".to_string(),
-                    }),
-                    tool_use_id: None,
-                    accept_feedback: None,
-                    content_blocks: Vec::new(),
-                };
-            }
+            return PermissionResult::Allow {
+                updated_input: Some(args.clone()),
+                user_modified: None,
+                decision_reason: Some(PermissionDecisionReason::Other {
+                    reason: "Preapproved host".to_string(),
+                }),
+                tool_use_id: None,
+                accept_feedback: None,
+                content_blocks: Vec::new(),
+            };
         }
 
         let rule_content = web_fetch_tool_input_to_permission_rule_content(args);
@@ -860,7 +859,10 @@ mod tests {
         }
 
         fn config_dir(name: &str) -> (std::path::PathBuf, EnvVarGuard) {
-            let dir = std::env::temp_dir().join(format!("nyan-webfetch-{name}-{}", uuid::Uuid::new_v4().simple()));
+            let dir = std::env::temp_dir().join(format!(
+                "nyan-webfetch-{name}-{}",
+                uuid::Uuid::new_v4().simple()
+            ));
             std::fs::create_dir_all(&dir).unwrap();
             let guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
             (dir, guard)
@@ -883,7 +885,10 @@ mod tests {
         }
 
         fn long_html() -> String {
-            format!("<html><body><h1>Doc</h1><p>{}</p></body></html>", "body text ".repeat(40))
+            format!(
+                "<html><body><h1>Doc</h1><p>{}</p></body></html>",
+                "body text ".repeat(40)
+            )
         }
 
         /// The fallback chain treats < 200 chars as a JS shell, so fixture
@@ -901,16 +906,28 @@ mod tests {
             let server = serve(vec![("/doc", Route::html(&long_html()))]).await;
             let url = server.url("/doc");
 
-            let first = fetch(json!({"url": url}), settings(json!({})), Some(mock_config()))
-                .await
-                .unwrap();
+            let first = fetch(
+                json!({"url": url}),
+                settings(json!({})),
+                Some(mock_config()),
+            )
+            .await
+            .unwrap();
             assert!(first.result.starts_with(&url), "{}", first.result);
-            assert!(first.result.contains("<web_content source=\""), "{}", first.result);
+            assert!(
+                first.result.contains("<web_content source=\""),
+                "{}",
+                first.result
+            );
             assert!(first.result.contains("fetched "), "{}", first.result);
 
-            let second = fetch(json!({"url": url}), settings(json!({})), Some(mock_config()))
-                .await
-                .unwrap();
+            let second = fetch(
+                json!({"url": url}),
+                settings(json!({})),
+                Some(mock_config()),
+            )
+            .await
+            .unwrap();
             assert!(second.result.contains("not refetched"), "{}", second.result);
             assert_eq!(server.hits("/doc"), 1, "the cached read must not refetch");
             let _ = std::fs::remove_dir_all(home);
@@ -924,9 +941,13 @@ mod tests {
             let body = padded(&"0123456789".repeat(10));
             let server = serve(vec![("/page", Route::text(&body))]).await;
             let url = server.url("/page");
-            let _ = fetch(json!({"url": url}), settings(json!({})), Some(mock_config()))
-                .await
-                .unwrap();
+            let _ = fetch(
+                json!({"url": url}),
+                settings(json!({})),
+                Some(mock_config()),
+            )
+            .await
+            .unwrap();
             let after_first = budget::snapshot();
 
             let page = fetch(
@@ -938,10 +959,19 @@ mod tests {
             .unwrap();
             let total = body.chars().count();
             assert!(page.result.contains("0123456789"), "{}", page.result);
-            assert!(page.result.contains(&format!("[Showing chars 10–25 of {total}")), "{}", page.result);
+            assert!(
+                page.result
+                    .contains(&format!("[Showing chars 10–25 of {total}")),
+                "{}",
+                page.result
+            );
             assert!(page.result.contains("not refetched"));
             assert_eq!(server.hits("/page"), 1);
-            assert_eq!(budget::snapshot(), after_first, "continuations are not counted");
+            assert_eq!(
+                budget::snapshot(),
+                after_first,
+                "continuations are not counted"
+            );
 
             let tail = fetch(
                 json!({"url": url, "range": &format!("chars:{}-", total - 5)}),
@@ -950,7 +980,10 @@ mod tests {
             )
             .await
             .unwrap();
-            assert!(tail.result.contains(&format!("[Showing chars {}–{total} of {total}]", total - 5)));
+            assert!(
+                tail.result
+                    .contains(&format!("[Showing chars {}–{total} of {total}]", total - 5))
+            );
 
             let over = fetch(
                 json!({"url": url, "range": &format!("chars:{}-", total + 1)}),
@@ -959,7 +992,10 @@ mod tests {
             )
             .await
             .unwrap_err();
-            assert!(over.contains(&format!("range_out_of_bounds: page has {total} chars")), "{over}");
+            assert!(
+                over.contains(&format!("range_out_of_bounds: page has {total} chars")),
+                "{over}"
+            );
             let _ = std::fs::remove_dir_all(home);
         }
 
@@ -968,17 +1004,30 @@ mod tests {
             budget::reset();
             let _settings_guard = WebSettingsGuard::install(settings(json!({})));
             let (home, _home_guard) = config_dir("section");
-            let markdown = padded("# Intro\nintro body\n## Usage\nuse it like this\n## Other\nother body");
+            let markdown =
+                padded("# Intro\nintro body\n## Usage\nuse it like this\n## Other\nother body");
             let server = serve(vec![("/md", Route::new(200, "text/markdown", markdown))]).await;
             let url = server.url("/md");
-            let page = fetch(json!({"url": url, "range": "#usage"}), settings(json!({})), Some(mock_config()))
-                .await
-                .unwrap();
-            assert!(page.result.contains("## Usage\nuse it like this\n"), "{}", page.result);
+            let page = fetch(
+                json!({"url": url, "range": "#usage"}),
+                settings(json!({})),
+                Some(mock_config()),
+            )
+            .await
+            .unwrap();
+            assert!(
+                page.result.contains("## Usage\nuse it like this\n"),
+                "{}",
+                page.result
+            );
             assert!(!page.result.contains("other body"), "{}", page.result);
-            let missing = fetch(json!({"url": url, "range": "#missing"}), settings(json!({})), Some(mock_config()))
-                .await
-                .unwrap_err();
+            let missing = fetch(
+                json!({"url": url, "range": "#missing"}),
+                settings(json!({})),
+                Some(mock_config()),
+            )
+            .await
+            .unwrap_err();
             assert!(missing.starts_with("section_not_found"), "{missing}");
             assert!(missing.contains("Intro"), "{missing}");
             let _ = std::fs::remove_dir_all(home);
@@ -1001,9 +1050,22 @@ mod tests {
             )
             .await
             .unwrap();
-            assert!(page.result.contains("The exact answer is here."), "{}", page.result);
-            assert!(!page.result.contains("An invented sentence."), "{}", page.result);
-            assert!(page.result.contains("1 excerpts discarded (not found in page)"), "{}", page.result);
+            assert!(
+                page.result.contains("The exact answer is here."),
+                "{}",
+                page.result
+            );
+            assert!(
+                !page.result.contains("An invented sentence."),
+                "{}",
+                page.result
+            );
+            assert!(
+                page.result
+                    .contains("1 excerpts discarded (not found in page)"),
+                "{}",
+                page.result
+            );
             let _ = std::fs::remove_dir_all(home);
         }
 
@@ -1042,11 +1104,17 @@ mod tests {
             .await
             .unwrap();
             assert!(
-                page.result.contains("A page about something else entirely."),
+                page.result
+                    .contains("A page about something else entirely."),
                 "the verbatim excerpt is in the body: {}",
                 page.result
             );
-            assert!(page.result.contains("[page may not answer the query — consider fetching:"), "{}", page.result);
+            assert!(
+                page.result
+                    .contains("[page may not answer the query — consider fetching:"),
+                "{}",
+                page.result
+            );
             // The exact candidate can be whatever the most recent search
             // remembered (tests run concurrently); the hint must name one.
             assert!(
@@ -1114,11 +1182,23 @@ mod tests {
             })));
             let (home, _home_guard) = config_dir("fallback");
             let site = serve(vec![("/blocked", Route::new(403, "text/html", "denied"))]).await;
-            let page = fetch(json!({"url": site.url("/blocked")}), settings(json!({})), Some(mock_config()))
-                .await
-                .unwrap();
-            assert!(page.result.contains("(fetched via firecrawl"), "{}", page.result);
-            assert!(page.result.contains("direct fetch failed: http_403"), "{}", page.result);
+            let page = fetch(
+                json!({"url": site.url("/blocked")}),
+                settings(json!({})),
+                Some(mock_config()),
+            )
+            .await
+            .unwrap();
+            assert!(
+                page.result.contains("(fetched via firecrawl"),
+                "{}",
+                page.result
+            );
+            assert!(
+                page.result.contains("direct fetch failed: http_403"),
+                "{}",
+                page.result
+            );
             assert!(page.result.contains("# Provider page"));
             assert_eq!(provider.hits("/scrape"), 1);
             let _ = std::fs::remove_dir_all(home);
@@ -1127,7 +1207,8 @@ mod tests {
         #[tokio::test]
         async fn ssrf_and_config_denials_surface_by_name_and_send_nothing() {
             budget::reset();
-            let provider = serve(vec![("/scrape", Route::new(200, "application/json", "{}"))]).await;
+            let provider =
+                serve(vec![("/scrape", Route::new(200, "application/json", "{}"))]).await;
             let web = settings(json!({
                 "providers": crate::services::web::test_support::only_mocked_providers(json!({
                     "firecrawl": {"enabled": true, "baseUrl": provider.origin, "apiKeyFile": key_file()},
@@ -1150,12 +1231,19 @@ mod tests {
                 ("ftp://example.com/", "denied_scheme"),
                 ("https://blocked.example/", "denied_host"),
             ] {
-                let error = fetch(json!({"url": target}), web.clone(), Some(production.clone()))
-                    .await
-                    .unwrap_err();
+                let error = fetch(
+                    json!({"url": target}),
+                    web.clone(),
+                    Some(production.clone()),
+                )
+                .await
+                .unwrap_err();
                 assert!(error.starts_with(expected), "{target}: {error}");
             }
-            assert!(provider.seen().is_empty(), "no denied URL may reach a provider");
+            assert!(
+                provider.seen().is_empty(),
+                "no denied URL may reach a provider"
+            );
             let _ = std::fs::remove_dir_all(home);
         }
 
@@ -1174,14 +1262,24 @@ mod tests {
                 })));
                 let (dir, _home_guard) = config_dir("budget-calls");
                 home = dir;
-                let _ = fetch(json!({"url": server.url("/a")}), settings(json!({})), Some(mock_config()))
-                    .await
-                    .unwrap();
-                let error =
-                    fetch(json!({"url": server.url("/b")}), settings(json!({})), Some(mock_config()))
-                        .await
-                        .unwrap_err();
-                assert_eq!(error, "budget_exhausted: web fetch limit (1 per session) reached");
+                let _ = fetch(
+                    json!({"url": server.url("/a")}),
+                    settings(json!({})),
+                    Some(mock_config()),
+                )
+                .await
+                .unwrap();
+                let error = fetch(
+                    json!({"url": server.url("/b")}),
+                    settings(json!({})),
+                    Some(mock_config()),
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(
+                    error,
+                    "budget_exhausted: web fetch limit (1 per session) reached"
+                );
                 assert_eq!(server.hits("/b"), 0);
             }
             let _ = std::fs::remove_dir_all(&home);
@@ -1192,11 +1290,17 @@ mod tests {
                     "fetch": {"maxBytesPerSession": 300},
                 })));
                 let (dir, _home_guard) = config_dir("budget-bytes");
-                let error =
-                    fetch(json!({"url": server.url("/a")}), settings(json!({})), Some(mock_config()))
-                        .await
-                        .unwrap_err();
-                assert!(error.starts_with("budget_exhausted: web fetch byte limit"), "{error}");
+                let error = fetch(
+                    json!({"url": server.url("/a")}),
+                    settings(json!({})),
+                    Some(mock_config()),
+                )
+                .await
+                .unwrap_err();
+                assert!(
+                    error.starts_with("budget_exhausted: web fetch byte limit"),
+                    "{error}"
+                );
                 let _ = std::fs::remove_dir_all(dir);
             }
             let _ = std::fs::remove_dir_all(home);

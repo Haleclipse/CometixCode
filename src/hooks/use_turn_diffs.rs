@@ -80,13 +80,12 @@ fn file_edit_result(message: &UserMessage) -> Option<FileEditResult> {
     let structured_patch = value
         .get("structuredPatch")
         .and_then(serde_json::Value::as_array)
-        .map(|hunks| {
+        .and_then(|hunks| {
             hunks
                 .iter()
                 .map(hunk_from_value)
                 .collect::<Option<Vec<_>>>()
         })
-        .flatten()
         .unwrap_or_default();
     let is_new_file = value.get("type").and_then(serde_json::Value::as_str) == Some("create")
         && value
@@ -166,11 +165,11 @@ pub fn extract_turn_diffs(messages: &[Message], cache: &mut TurnDiffCache) -> Ve
         };
         let tool_result = is_tool_result(user);
         if !tool_result && !user.is_compact_summary {
-            if let Some(mut current) = cache.current_turn.take() {
-                if !current.files.is_empty() {
-                    compute_turn_stats(&mut current);
-                    cache.completed_turns.push(current);
-                }
+            if let Some(mut current) = cache.current_turn.take()
+                && !current.files.is_empty()
+            {
+                compute_turn_stats(&mut current);
+                cache.completed_turns.push(current);
             }
             cache.last_turn_index += 1;
             cache.current_turn = Some(TurnDiff {
@@ -225,12 +224,12 @@ pub fn extract_turn_diffs(messages: &[Message], cache: &mut TurnDiffCache) -> Ve
 
     cache.last_processed_index = messages.len();
     let mut result = cache.completed_turns.clone();
-    if let Some(current) = cache.current_turn.as_ref() {
-        if !current.files.is_empty() {
-            let mut current = current.clone();
-            compute_turn_stats(&mut current);
-            result.push(current);
-        }
+    if let Some(current) = cache.current_turn.as_ref()
+        && !current.files.is_empty()
+    {
+        let mut current = current.clone();
+        compute_turn_stats(&mut current);
+        result.push(current);
     }
     result.reverse();
     result

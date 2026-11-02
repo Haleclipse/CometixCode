@@ -309,7 +309,8 @@ mod tests {
     async fn apple_terminal_backup_matches_official_bun_effect_order_and_recovery() {
         let rows: Vec<Value> = serde_json::from_str(include_str!(
             "../../tests/fixtures/oracles/terminal-setup-0913/apple/oracle.json"
-        )).unwrap();
+        ))
+        .unwrap();
         for row in rows {
             let _guard = Guard;
             let input = &row["input"];

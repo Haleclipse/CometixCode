@@ -41,10 +41,10 @@ fn discover_quick_open_files(root: &Path) -> Vec<String> {
                     continue;
                 }
                 walk(root, &path, files);
-            } else if path.is_file() {
-                if let Ok(relative) = path.strip_prefix(root) {
-                    files.push(relative.to_string_lossy().replace('\\', "/"));
-                }
+            } else if path.is_file()
+                && let Ok(relative) = path.strip_prefix(root)
+            {
+                files.push(relative.to_string_lossy().replace('\\', "/"));
             }
         }
     }
@@ -301,13 +301,13 @@ pub fn QuickOpenDialog<'a>(
     let filtered_paths = filter_quick_open_paths(&discovered_paths.read(), &query);
     let focused_path = filtered_paths.get(focused_index.get()).cloned();
     let mut previews = props.previews.clone();
-    if let Some(path) = focused_path.as_deref() {
-        if !previews.iter().any(|preview| preview.path == path) {
-            previews.push(QuickOpenPreview::new(
-                path,
-                read_quick_open_preview(&root_path, path, PREVIEW_LINES),
-            ));
-        }
+    if let Some(path) = focused_path.as_deref()
+        && !previews.iter().any(|preview| preview.path == path)
+    {
+        previews.push(QuickOpenPreview::new(
+            path,
+            read_quick_open_preview(&root_path, path, PREVIEW_LINES),
+        ));
     }
     let items = quick_open_items(
         &filtered_paths,
@@ -353,10 +353,10 @@ pub fn QuickOpenDialog<'a>(
                     focused_index.set(focused_index.get().saturating_sub(1));
                 }
                 KeyCode::Enter => {
-                    if let Some(path) = filtered_paths.get(focused_index.get()) {
-                        if editor_sender.try_send(root_path.join(path)).is_err() {
-                            pending_action.set(Some(QuickOpenAction::Done));
-                        }
+                    if let Some(path) = filtered_paths.get(focused_index.get())
+                        && editor_sender.try_send(root_path.join(path)).is_err()
+                    {
+                        pending_action.set(Some(QuickOpenAction::Done));
                     }
                 }
                 KeyCode::Tab => {

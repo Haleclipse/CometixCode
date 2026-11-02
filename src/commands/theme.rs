@@ -75,7 +75,10 @@ mod tests {
     /// showing the provider's setting, the `onDone` results and a key count
     /// that makes every key produce a frame.
     #[component]
-    fn CommandHarness(props: &CommandHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn CommandHarness(
+        props: &CommandHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
@@ -170,7 +173,11 @@ mod tests {
             frames
         });
         assert_eq!(frames.len(), 4, "the app must keep running: {frames:#?}");
-        assert!(frames[1].contains("Press Ctrl-C again to exit"), "{}", frames[1]);
+        assert!(
+            frames[1].contains("Press Ctrl-C again to exit"),
+            "{}",
+            frames[1]
+        );
     }
 
     /// Sends one key per frame and returns the frame after the last one.
@@ -185,16 +192,22 @@ mod tests {
             let mut last = String::new();
             while let Some(canvas) = render_loop.next().await {
                 last = canvas.to_string();
-                assert!(last.contains("keys="), "the echo stopped rendering:\n{last}");
+                assert!(
+                    last.contains("keys="),
+                    "the echo stopped rendering:\n{last}"
+                );
                 if !last.contains(&format!("keys={sent} ")) {
                     continue;
                 }
                 let Some(code) = keys_in_order.get(sent) else {
                     break;
                 };
-                keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
-                    .await
-                    .unwrap();
+                keys.send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    *code,
+                )))
+                .await
+                .unwrap();
                 sent += 1;
             }
             last

@@ -175,17 +175,17 @@ pub fn decision_reason_lines(reason: &PermissionDecisionReason) -> Vec<DecisionR
             indent: 0,
             success: Some(behavior == "allow"),
         });
-        if let Some(child_reason) = child_reason {
-            if !matches!(
+        if let Some(child_reason) = child_reason
+            && !matches!(
                 child_reason,
                 PermissionDecisionReason::SubcommandResults { .. }
-            ) {
-                lines.push(DecisionReasonLine {
-                    text: format!("⎿  {}", decision_reason_display(child_reason)),
-                    indent: 2,
-                    success: None,
-                });
-            }
+            )
+        {
+            lines.push(DecisionReasonLine {
+                text: format!("⎿  {}", decision_reason_display(child_reason)),
+                indent: 2,
+                success: None,
+            });
         }
         let rules = extract_rules(suggestions)
             .iter()

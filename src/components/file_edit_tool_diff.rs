@@ -222,10 +222,8 @@ mod tests {
     use crate::utils::theme;
 
     fn temp_file(name: &str, content: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "nyan-file-edit-diff-{name}-{}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("nyan-file-edit-diff-{name}-{}", std::process::id()));
         std::fs::write(&path, content).unwrap();
         path
     }
@@ -251,16 +249,10 @@ mod tests {
         let _ = std::fs::remove_file(path);
         let lines = patch_lines(&data);
 
-        assert!(
-            lines.iter().any(|line| *line == " alpha"),
-            "lines={lines:?}"
-        );
-        assert!(lines.iter().any(|line| *line == "-old"), "lines={lines:?}");
-        assert!(lines.iter().any(|line| *line == "+new"), "lines={lines:?}");
-        assert!(
-            lines.iter().any(|line| *line == " omega"),
-            "lines={lines:?}"
-        );
+        assert!(lines.contains(&" alpha"), "lines={lines:?}");
+        assert!(lines.contains(&"-old"), "lines={lines:?}");
+        assert!(lines.contains(&"+new"), "lines={lines:?}");
+        assert!(lines.contains(&" omega"), "lines={lines:?}");
         assert_eq!(data.first_line.as_deref(), Some("alpha"));
         assert!(data.file_content.is_some());
     }
@@ -308,8 +300,8 @@ mod tests {
             }],
         );
         let lines = patch_lines(&data);
-        assert!(lines.iter().any(|line| *line == "-old"), "lines={lines:?}");
-        assert!(lines.iter().any(|line| *line == "+new"), "lines={lines:?}");
+        assert!(lines.contains(&"-old"), "lines={lines:?}");
+        assert!(lines.contains(&"+new"), "lines={lines:?}");
         assert!(data.file_content.is_none());
     }
 
@@ -345,14 +337,8 @@ mod tests {
         let _ = std::fs::remove_file(path);
         let lines = patch_lines(&data);
 
-        assert!(
-            lines.iter().any(|line| *line == "-let value = \"old\";"),
-            "lines={lines:?}"
-        );
-        assert!(
-            lines.iter().any(|line| *line == "+let value = \"new\";"),
-            "lines={lines:?}"
-        );
+        assert!(lines.contains(&"-let value = \"old\";"), "lines={lines:?}");
+        assert!(lines.contains(&"+let value = \"new\";"), "lines={lines:?}");
     }
 
     #[test]

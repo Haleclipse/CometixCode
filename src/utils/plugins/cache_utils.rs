@@ -51,13 +51,13 @@ fn get_orphaned_at_path(version_path: &Path) -> PathBuf {
 }
 /// Maps to: CC cacheUtils.ts:130-140#removeOrphanedAtMarker.
 async fn remove_orphaned_at_marker(version_path: &Path) {
-    if let Err(error) = tokio::fs::remove_file(get_orphaned_at_path(version_path)).await {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            log_for_debugging(&format!(
-                "Failed to remove .orphaned_at: {}: {error}",
-                version_path.display()
-            ));
-        }
+    if let Err(error) = tokio::fs::remove_file(get_orphaned_at_path(version_path)).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log_for_debugging(&format!(
+            "Failed to remove .orphaned_at: {}: {error}",
+            version_path.display()
+        ));
     }
 }
 /// Maps to: CC cacheUtils.ts:142-157#getInstalledVersionPaths.
@@ -109,28 +109,26 @@ async fn process_orphaned_plugin_version(version_path: &Path, now: i64) {
             return;
         }
     };
-    if now - orphaned_at > CLEANUP_AGE_MS {
-        if let Err(error) = tokio::fs::remove_dir_all(version_path).await {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                log_for_debugging(&format!(
-                    "Failed to delete orphaned version: {}: {error}",
-                    version_path.display()
-                ));
-            }
-        }
+    if now - orphaned_at > CLEANUP_AGE_MS
+        && let Err(error) = tokio::fs::remove_dir_all(version_path).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log_for_debugging(&format!(
+            "Failed to delete orphaned version: {}: {error}",
+            version_path.display()
+        ));
     }
 }
 /// Maps to: CC cacheUtils.ts:192-202#removeIfEmpty.
 async fn remove_if_empty(path: &Path) {
-    if read_subdirs(path).await.is_empty() {
-        if let Err(error) = tokio::fs::remove_dir_all(path).await {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                log_for_debugging(&format!(
-                    "Failed to remove empty dir: {}: {error}",
-                    path.display()
-                ));
-            }
-        }
+    if read_subdirs(path).await.is_empty()
+        && let Err(error) = tokio::fs::remove_dir_all(path).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        log_for_debugging(&format!(
+            "Failed to remove empty dir: {}: {error}",
+            path.display()
+        ));
     }
 }
 /// Maps to: CC cacheUtils.ts:204-211#readSubdirs.

@@ -135,15 +135,15 @@ pub fn cached_microcompact_config_from_env() -> CachedMicrocompactConfig {
     ) || crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CODE_CACHED_MICROCOMPACT").as_deref(),
     );
-    if let Some(value) = crate::utils::process_env::var("NYAN_CACHED_MC_TRIGGER_THRESHOLD") {
-        if let Ok(parsed) = value.parse::<usize>() {
-            config.trigger_threshold = parsed.max(1);
-        }
+    if let Some(value) = crate::utils::process_env::var("NYAN_CACHED_MC_TRIGGER_THRESHOLD")
+        && let Ok(parsed) = value.parse::<usize>()
+    {
+        config.trigger_threshold = parsed.max(1);
     }
-    if let Some(value) = crate::utils::process_env::var("NYAN_CACHED_MC_KEEP_RECENT") {
-        if let Ok(parsed) = value.parse::<usize>() {
-            config.keep_recent = parsed.max(1);
-        }
+    if let Some(value) = crate::utils::process_env::var("NYAN_CACHED_MC_KEEP_RECENT")
+        && let Ok(parsed) = value.parse::<usize>()
+    {
+        config.keep_recent = parsed.max(1);
     }
     config
 }
@@ -606,10 +606,10 @@ fn collect_compactable_tool_ids(messages: &[Message]) -> Vec<String> {
             continue;
         };
         for content in &assistant.content {
-            if let AssistantContent::ToolUse(tool_use) = content {
-                if is_compactable_tool_name(&tool_use.name) {
-                    ids.push(tool_use.id.0.clone());
-                }
+            if let AssistantContent::ToolUse(tool_use) = content
+                && is_compactable_tool_name(&tool_use.name)
+            {
+                ids.push(tool_use.id.0.clone());
             }
         }
     }
@@ -838,10 +838,10 @@ mod tests {
                 "current task".to_string(),
             )),
         ];
-        if let Message::User(user) = &mut messages[1] {
-            if let Some(UserContent::ToolResult(result)) = user.content.first_mut() {
-                result.content = "x".repeat(100_000);
-            }
+        if let Message::User(user) = &mut messages[1]
+            && let Some(UserContent::ToolResult(result)) = user.content.first_mut()
+        {
+            result.content = "x".repeat(100_000);
         }
         let context = ToolUseContext {
             main_loop_model: Some("claude-sonnet-4-6".to_string()),
@@ -902,10 +902,10 @@ mod tests {
                 "current task".to_string(),
             )),
         ];
-        if let Message::User(user) = &mut messages[1] {
-            if let Some(UserContent::ToolResult(result)) = user.content.first_mut() {
-                result.content = "x".repeat(100_000);
-            }
+        if let Message::User(user) = &mut messages[1]
+            && let Some(UserContent::ToolResult(result)) = user.content.first_mut()
+        {
+            result.content = "x".repeat(100_000);
         }
         let context = ToolUseContext {
             main_loop_model: Some("claude-sonnet-4-6".to_string()),

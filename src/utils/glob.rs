@@ -123,7 +123,7 @@ pub fn extract_glob_base_directory(pattern: &str) -> ExtractedGlobBaseDirectory 
         .filter_map(|(index, character)| {
             (character == '/' || (cfg!(windows) && character == '\\')).then_some(index)
         })
-        .last();
+        .next_back();
     let Some(last_separator) = last_separator else {
         return ExtractedGlobBaseDirectory {
             base_dir: String::new(),
@@ -506,10 +506,8 @@ mod tests {
 
     #[test]
     fn glob_absolute_patterns_and_offset_limits_match_official_slicing() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-utils-glob-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-utils-glob-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(root.join("nested")).unwrap();
         for name in ["a.txt", "b.txt", "nested/c.txt"] {
             std::fs::write(root.join(name), name).unwrap();

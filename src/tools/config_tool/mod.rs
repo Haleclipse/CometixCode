@@ -212,12 +212,11 @@ pub(crate) async fn config_output(
         if crate::utils::config::load_global_config()
             .remote_control_at_startup
             .is_some()
-        {
-            if let Err(error) = crate::utils::config::save_global_config(|config| {
+            && let Err(error) = crate::utils::config::save_global_config(|config| {
                 config.remote_control_at_startup = None;
-            }) {
-                return config_error(Some("set"), Some(setting), error.to_string());
-            }
+            })
+        {
+            return config_error(Some("set"), Some(setting), error.to_string());
         }
         // CC `:161-171` — one `resolved` read AFTER the delete feeds both the
         // AppState projection and the returned value. Same persist-then-project
@@ -253,36 +252,35 @@ pub(crate) async fn config_output(
         }
     }
 
-    if let Some(options) = supported_settings::get_options_for_setting(setting) {
-        if !options.contains(&setting_value_as_string(&final_value)) {
-            return config_error(
-                Some("set"),
-                Some(setting),
-                format!(
-                    "Invalid value \"{}\". Options: {}",
-                    setting_value_as_string(value),
-                    options.join(", ")
-                ),
-            );
-        }
+    if let Some(options) = supported_settings::get_options_for_setting(setting)
+        && !options.contains(&setting_value_as_string(&final_value))
+    {
+        return config_error(
+            Some("set"),
+            Some(setting),
+            format!(
+                "Invalid value \"{}\". Options: {}",
+                setting_value_as_string(value),
+                options.join(", ")
+            ),
+        );
     }
 
     // Async validation (e.g., model API check) — CC `:216-218`
     // `if (config.validateOnWrite) await config.validateOnWrite(finalValue)`.
-    if let Some(validate_on_write) = config.validate_on_write {
-        if let Err(error) = validate_on_write(&final_value).await {
-            return config_error(Some("set"), Some(setting), error);
-        }
+    if let Some(validate_on_write) = config.validate_on_write
+        && let Err(error) = validate_on_write(&final_value).await
+    {
+        return config_error(Some("set"), Some(setting), error);
     }
 
     // Pre-flight checks for voice mode (CC :231-308).
     if cfg!(feature = "voice_mode")
         && setting == "voiceEnabled"
         && final_value == serde_json::Value::Bool(true)
+        && let Some(error) = voice_enable_preflight_error()
     {
-        if let Some(error) = voice_enable_preflight_error() {
-            return config_error(None, None, error);
-        }
+        return config_error(None, None, error);
     }
 
     let previous_value = read_config_setting_value(config.source, &path);

@@ -148,14 +148,14 @@ pub fn apply_user_prompt_submit_hook_results(
         // CC's `hook_success` case skips an empty payload outright (`:249-252`)
         // and truncates the rest; `system_message` is the Rust carrier for the
         // hook's own textual output.
-        if let Some(system_message) = &hook_result.system_message {
-            if !system_message.is_empty() {
-                result.messages.push(RenderableMessage::system_notice(
-                    uuid::Uuid::new_v4().to_string(),
-                    apply_truncation(system_message),
-                    crate::types::message::SystemMessageLevel::Info,
-                ));
-            }
+        if let Some(system_message) = &hook_result.system_message
+            && !system_message.is_empty()
+        {
+            result.messages.push(RenderableMessage::system_notice(
+                uuid::Uuid::new_v4().to_string(),
+                apply_truncation(system_message),
+                crate::types::message::SystemMessageLevel::Info,
+            ));
         }
     }
 }

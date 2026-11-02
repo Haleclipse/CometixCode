@@ -105,10 +105,8 @@ fn parse_at(
                     // type, or a failed object property — skips it (oracle:
                     // refine_chain_both_fail / min_then_refine_fail vs
                     // type_fail_skips_refine / object_field_fail_skips_refine).
-                    if string_type_stage_passed(inner, input) {
-                        if !f(input.unwrap()) {
-                            issues.push(custom_issue(path, message));
-                        }
+                    if string_type_stage_passed(inner, input) && !f(input.unwrap()) {
+                        issues.push(custom_issue(path, message));
                     }
                     Err(())
                 }
@@ -211,22 +209,17 @@ fn parse_at(
             for check in check_order {
                 match check {
                     super::schema::StringCheck::Min => {
-                        if let Some(n) = min_length {
-                            if (s.encode_utf16().count() as u64) < *n {
-                                let mut issue = size_issue(
-                                    path,
-                                    IssueCode::TooSmall,
-                                    "string",
-                                    *n,
-                                    "characters",
-                                );
-                                // `.min(n, message)` swaps the text only (oracle:
-                                // string_min_custom_message).
-                                if let Some(message) = min_message {
-                                    issue.message = (*message).to_string();
-                                }
-                                issues.push(issue);
+                        if let Some(n) = min_length
+                            && (s.encode_utf16().count() as u64) < *n
+                        {
+                            let mut issue =
+                                size_issue(path, IssueCode::TooSmall, "string", *n, "characters");
+                            // `.min(n, message)` swaps the text only (oracle:
+                            // string_min_custom_message).
+                            if let Some(message) = min_message {
+                                issue.message = (*message).to_string();
                             }
+                            issues.push(issue);
                         }
                     }
                     super::schema::StringCheck::Length => {
@@ -253,29 +246,29 @@ fn parse_at(
                         }
                     }
                     super::schema::StringCheck::Prefix => {
-                        if let Some(p) = starts_with {
-                            if !s.starts_with(p) {
-                                let mut issue = starts_with_issue(path, p);
-                                if let Some(message) = starts_with_message {
-                                    issue.message = (*message).to_string();
-                                }
-                                issues.push(issue);
+                        if let Some(p) = starts_with
+                            && !s.starts_with(p)
+                        {
+                            let mut issue = starts_with_issue(path, p);
+                            if let Some(message) = starts_with_message {
+                                issue.message = (*message).to_string();
                             }
+                            issues.push(issue);
                         }
                     }
                     super::schema::StringCheck::Suffix => {
-                        if let Some(suffix) = ends_with {
-                            if !s.ends_with(suffix) {
-                                issues.push(Issue {
-                                    code: IssueCode::InvalidFormat,
-                                    origin: Some("string"),
-                                    format: Some("ends_with"),
-                                    suffix: Some((*suffix).to_string()),
-                                    path: path.clone(),
-                                    message: format!("Invalid string: must end with \"{suffix}\""),
-                                    ..Issue::default()
-                                });
-                            }
+                        if let Some(suffix) = ends_with
+                            && !s.ends_with(suffix)
+                        {
+                            issues.push(Issue {
+                                code: IssueCode::InvalidFormat,
+                                origin: Some("string"),
+                                format: Some("ends_with"),
+                                suffix: Some((*suffix).to_string()),
+                                path: path.clone(),
+                                message: format!("Invalid string: must end with \"{suffix}\""),
+                                ..Issue::default()
+                            });
                         }
                     }
                     super::schema::StringCheck::Regex => {
@@ -300,10 +293,10 @@ fn parse_at(
                         }
                     }
                     super::schema::StringCheck::Format => {
-                        if let Some(f) = format {
-                            if !format_matches(*f, s) {
-                                issues.push(format_issue(path, *f));
-                            }
+                        if let Some(f) = format
+                            && !format_matches(*f, s)
+                        {
+                            issues.push(format_issue(path, *f));
                         }
                     }
                 }
@@ -354,19 +347,19 @@ fn parse_at(
                 return Err(());
             }
             // `.min()` / `.max()` are inclusive (oracle: num_min / num_max).
-            if let Some(bound) = min {
-                if n < *bound {
-                    let desc = format!(">={}", super::javascript_number_to_string(*bound));
-                    issues.push(bound_issue(path, IssueCode::TooSmall, *bound, true, &desc));
-                    return Err(());
-                }
+            if let Some(bound) = min
+                && n < *bound
+            {
+                let desc = format!(">={}", super::javascript_number_to_string(*bound));
+                issues.push(bound_issue(path, IssueCode::TooSmall, *bound, true, &desc));
+                return Err(());
             }
-            if let Some(bound) = max {
-                if n > *bound {
-                    let desc = format!("<={}", super::javascript_number_to_string(*bound));
-                    issues.push(bound_issue(path, IssueCode::TooBig, *bound, true, &desc));
-                    return Err(());
-                }
+            if let Some(bound) = max
+                && n > *bound
+            {
+                let desc = format!("<={}", super::javascript_number_to_string(*bound));
+                issues.push(bound_issue(path, IssueCode::TooBig, *bound, true, &desc));
+                return Err(());
             }
             Ok(Some(input.cloned().unwrap()))
         }
@@ -396,22 +389,22 @@ fn parse_at(
                 return Err(());
             };
             // The count checks run before the per-item ones and short-circuit.
-            if let Some(n) = min_items {
-                if (items.len() as u64) < *n {
-                    let mut issue = size_issue(path, IssueCode::TooSmall, "array", *n, "items");
-                    // `.min(n, message)` swaps the text only.
-                    if let Some(message) = min_message {
-                        issue.message = (*message).to_string();
-                    }
-                    issues.push(issue);
-                    return Err(());
+            if let Some(n) = min_items
+                && (items.len() as u64) < *n
+            {
+                let mut issue = size_issue(path, IssueCode::TooSmall, "array", *n, "items");
+                // `.min(n, message)` swaps the text only.
+                if let Some(message) = min_message {
+                    issue.message = (*message).to_string();
                 }
+                issues.push(issue);
+                return Err(());
             }
-            if let Some(n) = max_items {
-                if (items.len() as u64) > *n {
-                    issues.push(size_issue(path, IssueCode::TooBig, "array", *n, "items"));
-                    return Err(());
-                }
+            if let Some(n) = max_items
+                && (items.len() as u64) > *n
+            {
+                issues.push(size_issue(path, IssueCode::TooBig, "array", *n, "items"));
+                return Err(());
             }
             let mut out = Vec::with_capacity(items.len());
             for (i, item) in items.iter().enumerate() {
@@ -496,10 +489,10 @@ fn parse_at(
             let mut errors = Vec::new();
             for variant in variants {
                 let mut variant_issues = Vec::new();
-                if let Ok(data) = parse_at(variant, input, &mut Vec::new(), &mut variant_issues) {
-                    if variant_issues.is_empty() {
-                        return Ok(data);
-                    }
+                if let Ok(data) = parse_at(variant, input, &mut Vec::new(), &mut variant_issues)
+                    && variant_issues.is_empty()
+                {
+                    return Ok(data);
                 }
                 errors.push(variant_issues);
             }
@@ -523,14 +516,13 @@ fn parse_at(
                 // settings arm of MarketplaceSourceSchema is a described
                 // object, and HookCommandSchema's tag fields are described
                 // literals; both still discriminate.
-                if let Some(shape) = variant_object_shape(variant) {
-                    if let Some(lit) = shape_get(shape, tag).and_then(tag_literal) {
-                        if let Some(lit_str) = lit.as_str() {
-                            options.push(lit_str.to_string());
-                            if map.get(*tag).and_then(Value::as_str) == Some(lit_str) {
-                                return parse_at(variant, input, path, issues);
-                            }
-                        }
+                if let Some(shape) = variant_object_shape(variant)
+                    && let Some(lit) = shape_get(shape, tag).and_then(tag_literal)
+                    && let Some(lit_str) = lit.as_str()
+                {
+                    options.push(lit_str.to_string());
+                    if map.get(*tag).and_then(Value::as_str) == Some(lit_str) {
+                        return parse_at(variant, input, path, issues);
                     }
                 }
             }

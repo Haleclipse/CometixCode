@@ -202,7 +202,8 @@ mod tests {
     fn refresh_error_merge_matches_actual_bun_oracle_and_preserves_fresh_duplicates() {
         let oracle: serde_json::Value = serde_json::from_str(include_str!(
             "../../../tests/fixtures/oracles/mcp-contract-review-0915/refresh-oracle.json"
-        )).unwrap();
+        ))
+        .unwrap();
         let existing = vec![
             error("lsp-manager", "preserved"),
             error("plugin:p1", "old-distinct"),

@@ -444,8 +444,6 @@ mod tests {
         assert!(is_auto_mem_path(Path::new(
             "/tmp/nyan-memory/sub/../topic.md"
         )));
-        assert!(!is_auto_mem_path(Path::new(
-            "/tmp/nyan-memory2/topic.md"
-        )));
+        assert!(!is_auto_mem_path(Path::new("/tmp/nyan-memory2/topic.md")));
     }
 }

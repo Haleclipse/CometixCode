@@ -1634,36 +1634,34 @@ mod runtime {
             return Ok(());
         }
 
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            if let Some(access_token) = access_token {
-                let request = client
-                    .post(endpoint)
-                    .header(
-                        reqwest::header::AUTHORIZATION,
-                        format!("Bearer {access_token}"),
-                    )
-                    .header(
-                        reqwest::header::CONTENT_TYPE,
-                        "application/x-www-form-urlencoded",
-                    )
-                    .body(form_urlencoded_body(&[
-                        ("token".to_string(), token.to_string()),
-                        ("token_type_hint".to_string(), token_type_hint.to_string()),
-                    ]));
-                // Deviation (L2, same OAuth safety gate): the source's
-                // non-compliant Bearer retry is independently guarded so no
-                // alternate revocation send bypasses the product switch.
-                if !crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
-                    return Err(
-                        crate::constants::oauth::OAuthCredentialSideEffectsUnavailable.into(),
-                    );
-                }
-                let response = request.send().await?;
-                if response.status().is_success() {
-                    return Ok(());
-                }
-                anyhow::bail!("HTTP {} revoking {token_type_hint}", response.status());
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED
+            && let Some(access_token) = access_token
+        {
+            let request = client
+                .post(endpoint)
+                .header(
+                    reqwest::header::AUTHORIZATION,
+                    format!("Bearer {access_token}"),
+                )
+                .header(
+                    reqwest::header::CONTENT_TYPE,
+                    "application/x-www-form-urlencoded",
+                )
+                .body(form_urlencoded_body(&[
+                    ("token".to_string(), token.to_string()),
+                    ("token_type_hint".to_string(), token_type_hint.to_string()),
+                ]));
+            // Deviation (L2, same OAuth safety gate): the source's
+            // non-compliant Bearer retry is independently guarded so no
+            // alternate revocation send bypasses the product switch.
+            if !crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
+                return Err(crate::constants::oauth::OAuthCredentialSideEffectsUnavailable.into());
             }
+            let response = request.send().await?;
+            if response.status().is_success() {
+                return Ok(());
+            }
+            anyhow::bail!("HTTP {} revoking {token_type_hint}", response.status());
         }
 
         tracing::debug!(server = server_name, status = %response.status(), token_type_hint, "MCP OAuth token revocation failed");
@@ -1801,8 +1799,8 @@ mod runtime {
                         } else {
                             "client_secret_basic"
                         };
-                        if let Some(refresh_token) = snapshot.refresh_token.as_deref() {
-                            if let Err(error) = revoke_token(
+                        if let Some(refresh_token) = snapshot.refresh_token.as_deref()
+                            && let Err(error) = revoke_token(
                                 server_name,
                                 &revocation_endpoint,
                                 refresh_token,
@@ -1813,12 +1811,11 @@ mod runtime {
                                 auth_method,
                             )
                             .await
-                            {
-                                tracing::debug!(server = server_name, error = %error, "failed to revoke MCP OAuth refresh token");
-                            }
+                        {
+                            tracing::debug!(server = server_name, error = %error, "failed to revoke MCP OAuth refresh token");
                         }
-                        if let Some(access_token) = snapshot.access_token.as_deref() {
-                            if let Err(error) = revoke_token(
+                        if let Some(access_token) = snapshot.access_token.as_deref()
+                            && let Err(error) = revoke_token(
                                 server_name,
                                 &revocation_endpoint,
                                 access_token,
@@ -1829,9 +1826,8 @@ mod runtime {
                                 auth_method,
                             )
                             .await
-                            {
-                                tracing::debug!(server = server_name, error = %error, "failed to revoke MCP OAuth access token");
-                            }
+                        {
+                            tracing::debug!(server = server_name, error = %error, "failed to revoke MCP OAuth access token");
                         }
                     }
                 }
@@ -1861,7 +1857,7 @@ mod runtime {
     fn html_response(status: &str, body: &str) -> String {
         format!(
             "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
-            body.as_bytes().len()
+            body.len()
         )
     }
 
@@ -2348,9 +2344,12 @@ mod runtime {
             .and_then(Value::as_bool)
             .unwrap_or(false)
         {
-            let client_metadata_url = crate::utils::process_env::var("MCP_OAUTH_CLIENT_METADATA_URL")
-                .truthy()
-                .unwrap_or_else(|| crate::constants::oauth::MCP_CLIENT_METADATA_URL.to_string());
+            let client_metadata_url =
+                crate::utils::process_env::var("MCP_OAUTH_CLIENT_METADATA_URL")
+                    .truthy()
+                    .unwrap_or_else(|| {
+                        crate::constants::oauth::MCP_CLIENT_METADATA_URL.to_string()
+                    });
             let client_config =
                 OAuthClientConfig::new(client_metadata_url.clone(), redirect_uri.clone())
                     .with_scopes(scopes.clone());
@@ -2455,13 +2454,13 @@ mod runtime {
     }
 }
 
+pub(crate) use runtime::oauth_http_client;
 pub use runtime::{
     clear_mcp_client_config, fetch_auth_server_metadata, get_mcp_client_config,
     perform_mcp_oauth_flow, record_mcp_www_authenticate_challenge,
     refresh_mcp_oauth_access_token_after_auth_failure, revoke_server_tokens,
     save_mcp_client_secret,
 };
-pub(crate) use runtime::oauth_http_client;
 
 /// Dynamic registration `client_name`. Settings `mcpOauthClientName` wins;
 /// otherwise the name is `nyan`.
@@ -2479,7 +2478,9 @@ mod tests {
 
     #[test]
     fn mcp_oauth_client_name_defaults_to_nyan_and_settings_override() {
-        use crate::utils::settings::settings_cache::{reset_settings_cache, set_session_settings_cache};
+        use crate::utils::settings::settings_cache::{
+            reset_settings_cache, set_session_settings_cache,
+        };
         use crate::utils::settings::types::SettingsJson;
         use crate::utils::settings::validation::SettingsWithErrors;
 
@@ -2528,11 +2529,20 @@ mod tests {
         crate::utils::tls_provider::install_crypto_provider();
         let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_address = proxy.local_addr().unwrap();
-        let _env: Vec<_> = ["https_proxy", "http_proxy", "HTTP_PROXY", "no_proxy", "NO_PROXY"]
-            .into_iter()
-            .map(EnvVarGuard::unset)
-            .chain([EnvVarGuard::set("HTTPS_PROXY", format!("http://{proxy_address}"))])
-            .collect();
+        let _env: Vec<_> = [
+            "https_proxy",
+            "http_proxy",
+            "HTTP_PROXY",
+            "no_proxy",
+            "NO_PROXY",
+        ]
+        .into_iter()
+        .map(EnvVarGuard::unset)
+        .chain([EnvVarGuard::set(
+            "HTTPS_PROXY",
+            format!("http://{proxy_address}"),
+        )])
+        .collect();
         let (seen_tx, mut seen_rx) = tokio::sync::mpsc::unbounded_channel();
         let server = tokio::spawn(async move {
             loop {
@@ -2561,7 +2571,10 @@ mod tests {
         let first = seen_rx.recv().await.expect("a request reached the proxy");
         assert!(first.starts_with("GET http://mcp.invalid/"), "{first}");
         while let Ok(line) = seen_rx.try_recv() {
-            assert!(!line.contains("other.invalid"), "followed a cross-origin redirect: {line}");
+            assert!(
+                !line.contains("other.invalid"),
+                "followed a cross-origin redirect: {line}"
+            );
         }
     }
 

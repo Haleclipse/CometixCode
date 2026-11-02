@@ -306,7 +306,10 @@ mod tests {
     /// a line counting key presses (so each key produces a frame) and
     /// listing its callbacks.
     #[component]
-    fn ToggleHarness(props: &ToggleHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn ToggleHarness(
+        props: &ToggleHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             KeybindingRuntime::with_default_bindings(),
@@ -352,7 +355,11 @@ mod tests {
 
     /// Sends one key per frame; returns the mount frame and the frame after
     /// each key.
-    fn drive(current_value: bool, is_mid_conversation: bool, keys_in_order: Vec<KeyEvent>) -> Vec<String> {
+    fn drive(
+        current_value: bool,
+        is_mid_conversation: bool,
+        keys_in_order: Vec<KeyEvent>,
+    ) -> Vec<String> {
         drive_batches(
             current_value,
             is_mid_conversation,
@@ -369,11 +376,13 @@ mod tests {
     ) -> Vec<String> {
         futures::executor::block_on(async move {
             let (keys, events) = async_channel::unbounded();
-            let mut app = element!(ToggleHarness(
-                current_value: current_value,
-                is_mid_conversation: is_mid_conversation,
-                results: Some(Arc::new(Mutex::new(Vec::new()))),
-            ));
+            let mut app = element!(
+                ToggleHarness(
+                    current_value: current_value,
+                    is_mid_conversation: is_mid_conversation,
+                    results: Some(Arc::new(Mutex::new(Vec::new()))),
+                )
+            );
             let mut render_loop = Box::pin(app.mock_terminal_render_loop(
                 MockTerminalConfig::with_events(events).with_size(100, 30),
             ));
@@ -447,7 +456,12 @@ mod tests {
             .lines()
             .position(|line| line.contains("Enter to confirm"))
             .unwrap();
-        let enter_col = text.lines().nth(footer_y).unwrap().find("Enter to confirm").unwrap();
+        let enter_col = text
+            .lines()
+            .nth(footer_y)
+            .unwrap()
+            .find("Enter to confirm")
+            .unwrap();
         let style = canvas
             .resolved_text_style(enter_col, footer_y)
             .expect("footer style");
@@ -459,15 +473,31 @@ mod tests {
     fn thinking_toggle_opens_focused_on_the_current_value() {
         // CC :99 `defaultFocusValue={currentValue ? 'true' : 'false'}`.
         let frames = drive(false, false, Vec::new());
-        assert!(focused_row(&frames[0]).contains("Disabled"), "{}", frames[0]);
+        assert!(
+            focused_row(&frames[0]).contains("Disabled"),
+            "{}",
+            frames[0]
+        );
     }
 
     #[test]
     fn thinking_toggle_selects_with_j_and_enter_outside_a_conversation() {
         // Select context j/↓ move; Enter selects (:67-74 without a
         // confirmation outside a conversation).
-        let frames = drive(true, false, vec![key(KeyCode::Char('j')), key(KeyCode::Enter), key(KeyCode::F(12))]);
-        assert!(frames[3].contains("results=[select false]"), "{}", frames[3]);
+        let frames = drive(
+            true,
+            false,
+            vec![
+                key(KeyCode::Char('j')),
+                key(KeyCode::Enter),
+                key(KeyCode::F(12)),
+            ],
+        );
+        assert!(
+            frames[3].contains("results=[select false]"),
+            "{}",
+            frames[3]
+        );
     }
 
     // F12 is a key nothing binds: the frame after it shows what the key
@@ -488,8 +518,16 @@ mod tests {
                 key(KeyCode::F(12)),
             ],
         );
-        assert!(frames[3].contains("Do you want to proceed?"), "{}", frames[3]);
-        assert!(frames[5].contains("results=[select false]"), "{}", frames[5]);
+        assert!(
+            frames[3].contains("Do you want to proceed?"),
+            "{}",
+            frames[3]
+        );
+        assert!(
+            frames[5].contains("results=[select false]"),
+            "{}",
+            frames[5]
+        );
     }
 
     #[test]
@@ -508,8 +546,16 @@ mod tests {
                 key(KeyCode::F(12)),
             ],
         );
-        assert!(frames[3].contains("Do you want to proceed?"), "{}", frames[3]);
-        assert!(frames[5].contains("results=[select false]"), "{}", frames[5]);
+        assert!(
+            frames[3].contains("Do you want to proceed?"),
+            "{}",
+            frames[3]
+        );
+        assert!(
+            frames[5].contains("results=[select false]"),
+            "{}",
+            frames[5]
+        );
     }
 
     #[test]
@@ -531,9 +577,21 @@ mod tests {
             ],
         );
         assert!(focused_row(&frames[1]).contains("Enabled"), "{}", frames[1]);
-        assert!(frames[3].contains("Do you want to proceed?"), "{}", frames[3]);
-        assert!(!frames[5].contains("Do you want to proceed?"), "{}", frames[5]);
-        assert!(focused_row(&frames[5]).contains("Disabled"), "{}", frames[5]);
+        assert!(
+            frames[3].contains("Do you want to proceed?"),
+            "{}",
+            frames[3]
+        );
+        assert!(
+            !frames[5].contains("Do you want to proceed?"),
+            "{}",
+            frames[5]
+        );
+        assert!(
+            focused_row(&frames[5]).contains("Disabled"),
+            "{}",
+            frames[5]
+        );
         assert!(frames[7].contains("results=[cancel]"), "{}", frames[7]);
     }
 
@@ -550,13 +608,21 @@ mod tests {
                 vec![key(KeyCode::F(12))],
             ],
         );
-        assert!(frames[3].contains("results=[select false]"), "{}", frames[3]);
+        assert!(
+            frames[3].contains("results=[select false]"),
+            "{}",
+            frames[3]
+        );
     }
 
     #[test]
     fn thinking_toggle_n_cancels_from_the_select() {
         // Confirmation context binds n to confirm:no as well as Esc.
-        let frames = drive(true, false, vec![key(KeyCode::Char('n')), key(KeyCode::F(12))]);
+        let frames = drive(
+            true,
+            false,
+            vec![key(KeyCode::Char('n')), key(KeyCode::F(12))],
+        );
         assert!(frames[2].contains("results=[cancel]"), "{}", frames[2]);
     }
 
@@ -566,6 +632,10 @@ mod tests {
         let mut ctrl_c = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('c'));
         ctrl_c.modifiers = KeyModifiers::CONTROL;
         let frames = drive(true, false, vec![ctrl_c]);
-        assert!(frames[1].contains("Press Ctrl-C again to exit"), "{}", frames[1]);
+        assert!(
+            frames[1].contains("Press Ctrl-C again to exit"),
+            "{}",
+            frames[1]
+        );
     }
 }

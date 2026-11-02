@@ -43,18 +43,13 @@ pub fn get_next_date_range(current: StatsDateRange) -> StatsDateRange {
     DATE_RANGE_ORDER[(index + 1) % DATE_RANGE_ORDER.len()]
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum StatsResult {
     Success(ClaudeCodeStats),
     Error(String),
     Empty,
+    #[default]
     Loading,
-}
-
-impl Default for StatsResult {
-    fn default() -> Self {
-        Self::Loading
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -409,14 +404,13 @@ fn chart_colored(symbol: char, series_index: usize) -> String {
 }
 
 fn chart_axis_label(value: f64) -> String {
-    let label = if value >= 1_000_000.0 {
+    if value >= 1_000_000.0 {
         format!("{:.1}M", value / 1_000_000.0)
     } else if value >= 1_000.0 {
         format!("{:.0}k", value / 1_000.0)
     } else {
         format!("{value:.0}")
-    };
-    label
+    }
 }
 
 /// Native translation of the `asciichart.plot(...)` dependency used by
@@ -1051,11 +1045,11 @@ fn stats_styled_line(line: &str, chart: bool, theme: Theme) -> AnyElement<'stati
             CHART_TONE_RESET => None,
             _ => {
                 let tone = forced_tone.unwrap_or_else(|| stats_glyph_tone(character, chart));
-                if let Some((last_tone, text)) = runs.last_mut() {
-                    if *last_tone == tone {
-                        text.push(character);
-                        continue;
-                    }
+                if let Some((last_tone, text)) = runs.last_mut()
+                    && *last_tone == tone
+                {
+                    text.push(character);
+                    continue;
                 }
                 runs.push((tone, character.to_string()));
                 forced_tone

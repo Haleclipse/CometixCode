@@ -65,100 +65,100 @@ pub fn get_pill_label(tasks: &[PillTask]) -> String {
     // list (both call sites gate on length > 0, BackgroundTaskStatus.tsx:195
     // and SystemTextMessage.tsx:357); the total Rust function falls through to
     // the `:66` fallback ("0 background tasks") instead of CC's TypeError.
-    if let Some(first) = tasks.first() {
-        if all_same_type {
-            match first {
-                PillTask::LocalBash { .. } => {
-                    // CC `:16-28` — shells/monitors split by `kind`.
-                    let monitors = tasks
-                        .iter()
-                        .filter(|task| matches!(task, PillTask::LocalBash { is_monitor: true }))
-                        .count();
-                    let shells = n - monitors;
-                    let mut parts = Vec::new();
-                    if shells > 0 {
-                        parts.push(if shells == 1 {
-                            "1 shell".to_string()
-                        } else {
-                            format!("{shells} shells")
-                        });
-                    }
-                    if monitors > 0 {
-                        parts.push(if monitors == 1 {
-                            "1 monitor".to_string()
-                        } else {
-                            format!("{monitors} monitors")
-                        });
-                    }
-                    return parts.join(", ");
-                }
-                PillTask::InProcessTeammate { .. } => {
-                    // CC `:29-36` — distinct team names via a Set.
-                    let team_count = tasks
-                        .iter()
-                        .filter_map(|task| match task {
-                            PillTask::InProcessTeammate { team_name } => Some(team_name.as_str()),
-                            _ => None,
-                        })
-                        .collect::<std::collections::BTreeSet<_>>()
-                        .len();
-                    return if team_count == 1 {
-                        "1 team".to_string()
+    if let Some(first) = tasks.first()
+        && all_same_type
+    {
+        match first {
+            PillTask::LocalBash { .. } => {
+                // CC `:16-28` — shells/monitors split by `kind`.
+                let monitors = tasks
+                    .iter()
+                    .filter(|task| matches!(task, PillTask::LocalBash { is_monitor: true }))
+                    .count();
+                let shells = n - monitors;
+                let mut parts = Vec::new();
+                if shells > 0 {
+                    parts.push(if shells == 1 {
+                        "1 shell".to_string()
                     } else {
-                        format!("{team_count} teams")
-                    };
+                        format!("{shells} shells")
+                    });
                 }
-                PillTask::LocalAgent => {
-                    // CC `:37-38`.
-                    return if n == 1 {
-                        "1 local agent".to_string()
-                    } else {
-                        format!("{n} local agents")
-                    };
-                }
-                PillTask::RemoteAgent {
-                    is_ultraplan,
-                    ultraplan_phase,
-                } => {
-                    // CC `:39-56` — ◇ open diamond while running/needs-input,
-                    // ◆ filled once ExitPlanMode is awaiting approval.
-                    if n == 1 && *is_ultraplan {
-                        return match ultraplan_phase {
-                            Some(UltraplanPhase::PlanReady) => {
-                                format!("{DIAMOND_FILLED} ultraplan ready")
-                            }
-                            Some(UltraplanPhase::NeedsInput) => {
-                                format!("{DIAMOND_OPEN} ultraplan needs your input")
-                            }
-                            _ => format!("{DIAMOND_OPEN} ultraplan"),
-                        };
-                    }
-                    return if n == 1 {
-                        format!("{DIAMOND_OPEN} 1 cloud session")
-                    } else {
-                        format!("{DIAMOND_OPEN} {n} cloud sessions")
-                    };
-                }
-                PillTask::LocalWorkflow => {
-                    // CC `:57-58`.
-                    return if n == 1 {
-                        "1 background workflow".to_string()
-                    } else {
-                        format!("{n} background workflows")
-                    };
-                }
-                PillTask::MonitorMcp => {
-                    // CC `:59-60`.
-                    return if n == 1 {
+                if monitors > 0 {
+                    parts.push(if monitors == 1 {
                         "1 monitor".to_string()
                     } else {
-                        format!("{n} monitors")
+                        format!("{monitors} monitors")
+                    });
+                }
+                return parts.join(", ");
+            }
+            PillTask::InProcessTeammate { .. } => {
+                // CC `:29-36` — distinct team names via a Set.
+                let team_count = tasks
+                    .iter()
+                    .filter_map(|task| match task {
+                        PillTask::InProcessTeammate { team_name } => Some(team_name.as_str()),
+                        _ => None,
+                    })
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .len();
+                return if team_count == 1 {
+                    "1 team".to_string()
+                } else {
+                    format!("{team_count} teams")
+                };
+            }
+            PillTask::LocalAgent => {
+                // CC `:37-38`.
+                return if n == 1 {
+                    "1 local agent".to_string()
+                } else {
+                    format!("{n} local agents")
+                };
+            }
+            PillTask::RemoteAgent {
+                is_ultraplan,
+                ultraplan_phase,
+            } => {
+                // CC `:39-56` — ◇ open diamond while running/needs-input,
+                // ◆ filled once ExitPlanMode is awaiting approval.
+                if n == 1 && *is_ultraplan {
+                    return match ultraplan_phase {
+                        Some(UltraplanPhase::PlanReady) => {
+                            format!("{DIAMOND_FILLED} ultraplan ready")
+                        }
+                        Some(UltraplanPhase::NeedsInput) => {
+                            format!("{DIAMOND_OPEN} ultraplan needs your input")
+                        }
+                        _ => format!("{DIAMOND_OPEN} ultraplan"),
                     };
                 }
-                PillTask::Dream => {
-                    // CC `:61-62`.
-                    return "dreaming".to_string();
-                }
+                return if n == 1 {
+                    format!("{DIAMOND_OPEN} 1 cloud session")
+                } else {
+                    format!("{DIAMOND_OPEN} {n} cloud sessions")
+                };
+            }
+            PillTask::LocalWorkflow => {
+                // CC `:57-58`.
+                return if n == 1 {
+                    "1 background workflow".to_string()
+                } else {
+                    format!("{n} background workflows")
+                };
+            }
+            PillTask::MonitorMcp => {
+                // CC `:59-60`.
+                return if n == 1 {
+                    "1 monitor".to_string()
+                } else {
+                    format!("{n} monitors")
+                };
+            }
+            PillTask::Dream => {
+                // CC `:61-62`.
+                return "dreaming".to_string();
             }
         }
     }

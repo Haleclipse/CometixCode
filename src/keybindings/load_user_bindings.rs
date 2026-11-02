@@ -21,8 +21,10 @@ pub struct KeybindingsLoadResult {
 static CACHED_RESULT: LazyLock<RwLock<Option<KeybindingsLoadResult>>> =
     LazyLock::new(|| RwLock::new(None));
 
-type ChangeSubscribers =
-    Vec<(u64, futures::channel::mpsc::UnboundedSender<KeybindingsLoadResult>)>;
+type ChangeSubscribers = Vec<(
+    u64,
+    futures::channel::mpsc::UnboundedSender<KeybindingsLoadResult>,
+)>;
 
 /// Maps to: CC `keybindingsChanged = createSignal<[result]>()`
 /// (loadUserBindings.ts:71): every mounted KeybindingSetup hears each reload.
@@ -379,10 +381,8 @@ mod tests {
     #[test]
     fn user_bindings_append_after_defaults_and_override_last_wins() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-keybindings-loader-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-keybindings-loader-{}", uuid::Uuid::new_v4()));
         let _restore = RestoreConfigDir {
             value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             root: root.clone(),
@@ -472,10 +472,8 @@ mod tests {
     #[test]
     fn watcher_reloads_after_stable_write_without_retained_frame_io() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-keybindings-watcher-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-keybindings-watcher-{}", uuid::Uuid::new_v4()));
         let _restore = RestoreConfigDir {
             value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             root: root.clone(),

@@ -185,7 +185,10 @@ mod tests {
     /// a line counting key presses (so each key produces a frame) and
     /// listing the choices it reported.
     #[component]
-    fn DialogHarness(props: &DialogHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn DialogHarness(
+        props: &DialogHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
@@ -240,9 +243,12 @@ mod tests {
                 let Some(code) = keys_in_order.get(sent) else {
                     break;
                 };
-                keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
-                    .await
-                    .unwrap();
+                keys.send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    *code,
+                )))
+                .await
+                .unwrap();
                 sent += 1;
             }
             last
@@ -297,6 +303,9 @@ mod tests {
             .position(|line| line.contains("The stable channel may have"))
             .unwrap();
         assert!(lines[body + 1].trim().is_empty(), "canvas=\n{text}");
-        assert!(lines[body + 2].contains("How would you like"), "canvas=\n{text}");
+        assert!(
+            lines[body + 2].contains("How would you like"),
+            "canvas=\n{text}"
+        );
     }
 }

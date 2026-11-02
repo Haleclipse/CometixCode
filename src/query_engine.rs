@@ -893,10 +893,9 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
     if crate::utils::env_utils::is_nyan_write_enabled()
         && crate::utils::file_history::file_history_enabled()
         && crate::utils::session_storage::is_session_write_enabled()
+        && let Some(store) = context.app_store.store.as_ref()
     {
-        if let Some(store) = context.app_store.store.as_ref() {
-            crate::utils::file_history::file_history_make_snapshot(store, &base.turn_id).await;
-        }
+        crate::utils::file_history::file_history_make_snapshot(store, &base.turn_id).await;
     }
     let mut outcome = QueryEngineOutcome::default();
     let max_attempts = crate::utils::process_env::var("MAX_STRUCTURED_OUTPUT_RETRIES")
@@ -998,10 +997,8 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
                         }
                     }
                     history.push(message.clone());
-                    if stream_json {
-                        if let Some(value) = stream_message_value(&message) {
-                            emit_output(output_sink, value);
-                        }
+                    if stream_json && let Some(value) = stream_message_value(&message) {
+                        emit_output(output_sink, value);
                     }
                 }
                 // CC claude.ts:2229-2248 / QueryEngine.ts:718-726: the last
@@ -1107,15 +1104,14 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
                 .max_budget_usd
                 .as_deref()
                 .and_then(|value| value.parse::<f64>().ok())
+                && crate::cost_tracker::get_total_cost() >= max_budget_usd
             {
-                if crate::cost_tracker::get_total_cost() >= max_budget_usd {
-                    handle.abort_controller.abort();
-                    outcome.reason = "max_budget_usd".to_string();
-                    outcome
-                        .errors
-                        .push(format!("Reached maximum budget (${max_budget_usd})"));
-                    break;
-                }
+                handle.abort_controller.abort();
+                outcome.reason = "max_budget_usd".to_string();
+                outcome
+                    .errors
+                    .push(format!("Reached maximum budget (${max_budget_usd})"));
+                break;
             }
         }
 
@@ -1434,13 +1430,12 @@ fn resolve_system_prompt(
         );
     // Maps to CC QueryEngine.ts:316-325: explicit custom prompts can opt into
     // memory mechanics; place it after custom copy and before appended policy.
-    let memory_mechanics_prompt = if custom.is_some()
-        && crate::memdir::paths::has_auto_mem_path_override()
-    {
-        crate::memdir::memdir::load_memory_prompt()
-    } else {
-        None
-    };
+    let memory_mechanics_prompt =
+        if custom.is_some() && crate::memdir::paths::has_auto_mem_path_override() {
+            crate::memdir::memdir::load_memory_prompt()
+        } else {
+            None
+        };
     let mut prompt = custom
         .map(|prompt| vec![prompt])
         .unwrap_or(default_system_prompt);
@@ -1753,8 +1748,7 @@ mod tests {
     fn custom_prompt_memory_order_matches_official_query_engine_assembly() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _project = IsolatedProjectSettings::pin();
-        let root =
-            std::env::temp_dir().join(format!("nyan-query-memory-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-query-memory-{}", uuid::Uuid::new_v4()));
         struct Cleanup(std::path::PathBuf);
         impl Drop for Cleanup {
             fn drop(&mut self) {
@@ -1772,16 +1766,15 @@ mod tests {
             append_system_prompt: Some("APPEND".into()),
             ..Default::default()
         };
-        let (prompt, _, context) =
-            resolve_system_prompt(
-                &config,
-                &crate::utils::model::model::get_main_loop_model(),
-                &[],
-                &[],
-                &[],
-                &QueryEngineOverrides::default(),
-            )
-            .unwrap();
+        let (prompt, _, context) = resolve_system_prompt(
+            &config,
+            &crate::utils::model::model::get_main_loop_model(),
+            &[],
+            &[],
+            &[],
+            &QueryEngineOverrides::default(),
+        )
+        .unwrap();
         // CC QueryEngine.ts:316-325: custom → opted-in memory mechanics → append.
         assert_eq!(prompt.len(), 3);
         assert_eq!(prompt[0], "CUSTOM");

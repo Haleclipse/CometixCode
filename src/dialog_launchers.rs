@@ -383,10 +383,7 @@ mod tests {
             text.contains("No conversations found to resume."),
             "canvas=\n{text}"
         );
-        assert!(
-            !text.contains("nyan"),
-            "REPL mounted early:\n{text}"
-        );
+        assert!(!text.contains("nyan"), "REPL mounted early:\n{text}");
 
         std::env::set_current_dir(previous_cwd).unwrap();
         crate::bootstrap::state::set_original_cwd(previous_original_cwd);

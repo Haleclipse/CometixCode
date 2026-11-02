@@ -48,10 +48,10 @@ fn set_sandbox_hint_recent(count: u32, wake: Option<&FooterLayoutWake>) {
     // any count change must re-render (not just visibility flips) — mirrors
     // CC's per-violation setState re-render. Event-driven only; a repeated
     // same-count write (e.g. decay after already-hidden) stays silent.
-    if prev != count {
-        if let Some(wake) = wake {
-            wake.bump();
-        }
+    if prev != count
+        && let Some(wake) = wake
+    {
+        wake.bump();
     }
 }
 

@@ -11,7 +11,7 @@ use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 use std::collections::HashMap;
 
-#[derive(Props)]
+#[derive(Props, Default)]
 pub struct SelectEventModeProps<'a> {
     pub hook_event_metadata: HashMap<HookEvent, HookEventMetadata>,
     pub hooks_by_event: HashMap<HookEvent, usize>,
@@ -19,19 +19,6 @@ pub struct SelectEventModeProps<'a> {
     pub restricted_by_policy: bool,
     pub on_select_event: HandlerMut<'a, HookEvent>,
     pub on_cancel: HandlerMut<'a, ()>,
-}
-
-impl Default for SelectEventModeProps<'_> {
-    fn default() -> Self {
-        Self {
-            hook_event_metadata: HashMap::new(),
-            hooks_by_event: HashMap::new(),
-            total_hooks_count: 0,
-            restricted_by_policy: false,
-            on_select_event: HandlerMut::default(),
-            on_cancel: HandlerMut::default(),
-        }
-    }
 }
 
 /// Maps to: CC `SelectEventMode`.

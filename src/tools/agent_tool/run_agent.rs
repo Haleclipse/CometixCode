@@ -548,10 +548,8 @@ fn agent_permission_context_for_run(
         PermissionMode::BypassPermissions | PermissionMode::AcceptEdits
     ) || (parent.mode == PermissionMode::Auto
         && crate::utils::permissions::permission_setup::is_transcript_classifier_feature_enabled());
-    if !parent_mode_wins {
-        if let Some(mode) = agent_permission_mode {
-            context.mode = mode;
-        }
+    if !parent_mode_wins && let Some(mode) = agent_permission_mode {
+        context.mode = mode;
     }
     // Maps to CC `tools/AgentTool/runAgent.ts:465-478`: this is replacement, not a merge.
     // Parent approvals from user/project/local/flag/policy/command/session must
@@ -1197,10 +1195,10 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
                 event,
                 ttft_ms,
             }) => {
-                if event.get("type").and_then(serde_json::Value::as_str) == Some("message_start") {
-                    if let Some(ttft_ms) = ttft_ms {
-                        agent_tool_use_context.api_metrics_sink.push(ttft_ms);
-                    }
+                if event.get("type").and_then(serde_json::Value::as_str) == Some("message_start")
+                    && let Some(ttft_ms) = ttft_ms
+                {
+                    agent_tool_use_context.api_metrics_sink.push(ttft_ms);
                 }
             }
             // C3c-3: `Message` carries a whole model message (the seam's CC
@@ -2723,10 +2721,8 @@ mod tests {
 
     #[test]
     fn preloads_agent_frontmatter_skills_like_official_run_agent() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-agent-skill-preload-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-agent-skill-preload-{}", uuid::Uuid::new_v4()));
         let skills_dir = root.join(".claude").join("skills");
         let skill_file = skills_dir.join("audit").join("SKILL.md");
         std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
@@ -4573,8 +4569,7 @@ mod tests {
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
-        let root =
-            std::env::temp_dir().join(format!("nyan-agent-delta-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-agent-delta-{}", uuid::Uuid::new_v4()));
         let _projects = set_test_projects_dir_override(root.join("projects"));
         let cwd = root.join("project");
         std::fs::create_dir_all(&cwd).unwrap();
@@ -4968,8 +4963,7 @@ mod input_contract_tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let previous = crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
-        let root =
-            std::env::temp_dir().join(format!("nyan-agent-input-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-agent-input-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let context = ToolUseContext::default().with_cwd_override(Some(root.clone()));
         let mut agent =
@@ -5006,8 +5000,7 @@ mod input_contract_tests {
         // The production CLI installs this provider before constructing API clients.
         crate::utils::tls_provider::install_crypto_provider();
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-agent-input-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-agent-input-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         struct Fixture {
             root: std::path::PathBuf,
@@ -5048,7 +5041,7 @@ mod input_contract_tests {
         ];
         fixture.env = env
             .iter()
-            .map(|(key, value)| EnvVarGuard::set(*key, value))
+            .map(|(key, value)| EnvVarGuard::set(key, value))
             .collect();
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
         fixture.server = Some(tokio::spawn(async move {
@@ -5418,7 +5411,7 @@ mod input_contract_tests {
                     // Source raw named-argument RegExp throws during the real
                     // plugin callback. This proves preparation completed and
                     // terminates before query/model construction without a mock.
-                    let error = result.err().expect("invalid named regexp must throw");
+                    let error = result.expect_err("invalid named regexp must throw");
                     assert!(
                         error.to_string().starts_with("Invalid regular expression:"),
                         "{error}"

@@ -38,10 +38,9 @@ pub fn ClaudeInChromeOnboarding<'a>(
                 kind,
                 ..
             }) = event
+                && kind != KeyEventKind::Release
             {
-                if kind != KeyEventKind::Release {
-                    pending_done.set(true);
-                }
+                pending_done.set(true);
             }
         }
     });

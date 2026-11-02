@@ -1076,18 +1076,17 @@ pub(crate) async fn cache_marketplace_from_git(
 /// Maps to: CC `utils/plugins/marketplaceManager.ts:1213-1226#redactUrlCredentials`.
 /// WHATWG URL uses the existing url crate carrier (valid Unicode URL subset).
 fn redact_url_credentials(url_string: &str) -> String {
-    if let Ok(mut parsed) = url::Url::parse(url_string) {
-        if matches!(parsed.scheme(), "http" | "https")
-            && (!parsed.username().is_empty() || parsed.password().is_some_and(|s| !s.is_empty()))
-        {
-            if !parsed.username().is_empty() {
-                let _ = parsed.set_username("***");
-            }
-            if parsed.password().is_some_and(|s| !s.is_empty()) {
-                let _ = parsed.set_password(Some("***"));
-            }
-            return parsed.to_string();
+    if let Ok(mut parsed) = url::Url::parse(url_string)
+        && matches!(parsed.scheme(), "http" | "https")
+        && (!parsed.username().is_empty() || parsed.password().is_some_and(|s| !s.is_empty()))
+    {
+        if !parsed.username().is_empty() {
+            let _ = parsed.set_username("***");
         }
+        if parsed.password().is_some_and(|s| !s.is_empty()) {
+            let _ = parsed.set_password(Some("***"));
+        }
+        return parsed.to_string();
     }
     url_string.into()
 }
@@ -1197,7 +1196,7 @@ pub fn save_marketplace_to_settings(
     current.insert(name.into(), entry.clone());
     let _ = crate::utils::settings::update_settings_for_source(
         setting_source,
-        &serde_json::json!({"extraKnownMarketplaces":current})
+        serde_json::json!({"extraKnownMarketplaces":current})
             .as_object()
             .unwrap(),
     );
@@ -1559,8 +1558,7 @@ pub fn load_and_cache_marketplace(
             && cleanup_needed
             && !temporary_cache_path.as_os_str().is_empty()
             && !is_local_marketplace_source(source)
-        {
-            if let Err(error) = fs
+            && let Err(error) = fs
                 .rm(
                     &temporary_cache_path,
                     crate::utils::fs_operations::RmOptions {
@@ -1569,15 +1567,14 @@ pub fn load_and_cache_marketplace(
                     },
                 )
                 .await
-            {
-                crate::utils::debug::log_for_debugging_with_level(
-                    &format!(
-                        "Warning: Failed to clean up temporary marketplace cache at {}: {error}",
-                        temporary_cache_path.display()
-                    ),
-                    crate::utils::debug::DebugLogLevel::Warn,
-                );
-            }
+        {
+            crate::utils::debug::log_for_debugging_with_level(
+                &format!(
+                    "Warning: Failed to clean up temporary marketplace cache at {}: {error}",
+                    temporary_cache_path.display()
+                ),
+                crate::utils::debug::DebugLogLevel::Warn,
+            );
         }
         loaded
     }
@@ -1735,11 +1732,11 @@ pub async fn remove_marketplace_source(name: &str) -> anyhow::Result<()> {
             continue;
         };
         let mut updates = serde_json::Map::new();
-        if let Some(serde_json::Value::Object(mut entries)) = settings.extra_known_marketplaces {
-            if entries.contains_key(name) {
-                entries.insert(name.into(), serde_json::Value::Null);
-                updates.insert("extraKnownMarketplaces".into(), entries.into());
-            }
+        if let Some(serde_json::Value::Object(mut entries)) = settings.extra_known_marketplaces
+            && entries.contains_key(name)
+        {
+            entries.insert(name.into(), serde_json::Value::Null);
+            updates.insert("extraKnownMarketplaces".into(), entries.into());
         }
         if let Some(serde_json::Value::Object(mut plugins)) = settings.enabled_plugins {
             let mut removed = false;
@@ -2018,17 +2015,16 @@ pub async fn set_marketplace_auto_update(name: &str, auto_update: bool) -> anyho
     }
     config.get_mut(name).unwrap()["autoUpdate"] = auto_update.into();
     save_known_marketplaces_config(config).await?;
-    if let Some(source) = get_marketplace_declaring_source(name) {
-        if let Some(declared) = crate::utils::settings::get_settings_for_source(source)
+    if let Some(source) = get_marketplace_declaring_source(name)
+        && let Some(declared) = crate::utils::settings::get_settings_for_source(source)
             .and_then(|s| s.extra_known_marketplaces)
             .and_then(|v| v.get(name).cloned())
-        {
-            save_marketplace_to_settings(
-                name,
-                &serde_json::json!({"source":declared["source"],"autoUpdate":auto_update}),
-                source,
-            )?;
-        }
+    {
+        save_marketplace_to_settings(
+            name,
+            &serde_json::json!({"source":declared["source"],"autoUpdate":auto_update}),
+            source,
+        )?;
     }
     crate::utils::debug::log_for_debugging(&format!(
         "Set autoUpdate={auto_update} for marketplace: {name}"
@@ -2595,8 +2591,7 @@ mod tests {
     #[tokio::test]
     async fn missing_local_marketplace_git_cache_fails_and_cleans_without_network() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-market-git-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-market-git-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let cache = root.join("cache");
         let source = root.join("missing-local-source");
@@ -2635,10 +2630,8 @@ mod tests {
             ExecFileStdin, ExecFileWithCwdOptions, exec_file_no_throw_with_cwd_options,
         };
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-market-transitions-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-market-transitions-{}", uuid::Uuid::new_v4()));
         let source = root.join("source");
         let cache = root.join("cache");
         std::fs::create_dir_all(source.join("plugins/a")).unwrap();

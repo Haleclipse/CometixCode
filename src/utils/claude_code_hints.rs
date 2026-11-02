@@ -32,7 +32,6 @@ static SHOWN_THIS_SESSION: LazyLock<std::sync::atomic::AtomicBool> =
 
 fn first_command_token(command: &str) -> String {
     command
-        .trim()
         .split_whitespace()
         .next()
         .unwrap_or_default()

@@ -395,7 +395,10 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     #[test]
     fn format_install_count_dynamic_json_matches_official_bun() {
-        let oracle:serde_json::Value=serde_json::from_str(include_str!("../../../tests/fixtures/oracles/plugin-ui-complete-0914/counts-oracle.json")).unwrap();
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/plugin-ui-complete-0914/counts-oracle.json"
+        ))
+        .unwrap();
         for case in oracle.as_array().unwrap() {
             let value = JsoncValue::from_json(case["value"].clone());
             assert_eq!(

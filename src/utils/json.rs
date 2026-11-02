@@ -492,12 +492,11 @@ impl JsoncValue {
         }
         if self.kind == 3 {
             let name = String::from_utf16_lossy(key);
-            if let Ok(index) = name.parse::<usize>() {
-                if index.to_string() == name {
-                    if let Some(child) = self.children.get(index) {
-                        return Some(child);
-                    }
-                }
+            if let Ok(index) = name.parse::<usize>()
+                && index.to_string() == name
+                && let Some(child) = self.children.get(index)
+            {
+                return Some(child);
             }
         }
         self.prototype
@@ -974,10 +973,10 @@ pub fn read_jsonl_file(file_path: impl AsRef<Path>) -> io::Result<Vec<Value>> {
         total_read += bytes_read;
     }
     let buf = &buf[..total_read];
-    if let Some(newline_index) = buf.iter().position(|byte| *byte == b'\n') {
-        if newline_index + 1 < total_read {
-            return Ok(parse_jsonl(&buf[newline_index + 1..]));
-        }
+    if let Some(newline_index) = buf.iter().position(|byte| *byte == b'\n')
+        && newline_index + 1 < total_read
+    {
+        return Ok(parse_jsonl(&buf[newline_index + 1..]));
     }
     Ok(parse_jsonl(buf))
 }

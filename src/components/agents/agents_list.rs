@@ -196,11 +196,12 @@ pub fn AgentsList<'a>(
     let mut create_selected = hooks.use_state(move || has_create);
     let mut pending_action = hooks.use_state(|| None::<ListAction>);
 
-    if !has_create && selected_key.read().is_none() {
-        if let Some(first) = selectable.first() {
-            selected_key.set(Some((first.agent.agent_type.clone(), first.display_source)));
-            create_selected.set(false);
-        }
+    if !has_create
+        && selected_key.read().is_none()
+        && let Some(first) = selectable.first()
+    {
+        selected_key.set(Some((first.agent.agent_type.clone(), first.display_source)));
+        create_selected.set(false);
     }
     let action = {
         let value = pending_action.read();
@@ -228,12 +229,12 @@ pub fn AgentsList<'a>(
             ListAction::Accept => {
                 if create_selected.get() && has_create {
                     (props.on_create_new)(());
-                } else if let Some(key) = selected_key.read().clone() {
-                    if let Some(agent) = selectable.iter().find(|agent| {
+                } else if let Some(key) = selected_key.read().clone()
+                    && let Some(agent) = selectable.iter().find(|agent| {
                         agent.agent.agent_type == key.0 && agent.display_source == key.1
-                    }) {
-                        (props.on_select)(agent.agent.clone());
-                    }
+                    })
+                {
+                    (props.on_select)(agent.agent.clone());
                 }
             }
             ListAction::Previous | ListAction::Next if total > 0 => {

@@ -280,7 +280,7 @@ mod tests {
         assert_eq!(format_entry(&server), "server:planner");
         assert_eq!(format_entry(&plugin), "plugin:mailbox@anthropic");
         assert_eq!(
-            channel_flag(&[server.clone()], true),
+            channel_flag(std::slice::from_ref(&server), true),
             "--dangerously-load-development-channels"
         );
         assert_eq!(channel_flag(&[server.clone(), plugin], true), "Channels");

@@ -217,9 +217,7 @@ mod tests {
             crate::utils::settings::nyan::SummaryStyle::Cc,
         );
         assert!(prompt.starts_with("CRITICAL: Respond with TEXT ONLY."));
-        assert!(prompt.contains(
-            "Additional Instructions:\nFocus on Rust changes"
-        ));
+        assert!(prompt.contains("Additional Instructions:\nFocus on Rust changes"));
         assert!(prompt.ends_with("Tool calls will be rejected and you will fail the task."));
         // Placeholder consumed exactly once; no `Additional focus` leak.
         assert!(!prompt.contains("{{CUSTOM_INSTRUCTIONS}}"));

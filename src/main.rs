@@ -1044,12 +1044,13 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     if setup_complete.get() && !plugin_hooks_loaded.get() {
         let policy =
             crate::utils::hooks::hooks_config_snapshot::load_hooks_config_from_settings_sources();
-        if !policy.allow_managed_hooks_only && !policy.disable_all_hooks {
-            if let Err(error) = crate::utils::plugins::load_plugin_hooks::load_plugin_hooks() {
-                crate::utils::debug::log_for_debugging(&format!(
-                    "Warning: Failed to load plugin hooks after setup: {error}"
-                ));
-            }
+        if !policy.allow_managed_hooks_only
+            && !policy.disable_all_hooks
+            && let Err(error) = crate::utils::plugins::load_plugin_hooks::load_plugin_hooks()
+        {
+            crate::utils::debug::log_for_debugging(&format!(
+                "Warning: Failed to load plugin hooks after setup: {error}"
+            ));
         }
         crate::utils::plugins::load_plugin_hooks::setup_plugin_hook_hot_reload();
         plugin_hooks_loaded.set(true);
@@ -1571,11 +1572,7 @@ pub fn run(config: crate::cli::CliConfig) {
     // retrieval/web decision does not pay the handshake inside its 800 ms
     // budget. No-op when the decision provider is disabled or not configured.
     crate::services::decision::DecisionProvider::from_nyan(
-        &startup_settings
-            .settings
-            .nyan
-            .clone()
-            .unwrap_or_default(),
+        &startup_settings.settings.nyan.clone().unwrap_or_default(),
     )
     .prewarm();
     let (mcp_startup, mcp_warnings) = match resolve_mcp_startup_config(&config) {
@@ -1724,7 +1721,8 @@ pub fn run(config: crate::cli::CliConfig) {
     // which CC starts from the first KeybindingSetup mount and keeps for the
     // process. The watcher and all reload I/O live outside the retained tree;
     // each `KeybindingSetup` mount subscribes to what it emits.
-    let _keybinding_watcher = crate::keybindings::load_user_bindings::initialize_keybinding_watcher();
+    let _keybinding_watcher =
+        crate::keybindings::load_user_bindings::initialize_keybinding_watcher();
 
     utils::debug::log_for_debugging(&format!(
         "[STARTUP] setup() completed in {}ms",
@@ -2140,10 +2138,8 @@ mod tests {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let cwd = std::env::temp_dir().join(format!(
-            "nyan-main-resume-order-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let cwd =
+            std::env::temp_dir().join(format!("nyan-main-resume-order-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&cwd).unwrap();
         let cwd = fs::canonicalize(&cwd).unwrap();
         let _process_state =
@@ -2313,10 +2309,8 @@ mod tests {
     #[test]
     fn direct_uuid_resume_failure_renders_exit_with_error_and_requests_exit_one() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-main-fatal-resume-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-main-fatal-resume-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let root = fs::canonicalize(root).unwrap();
         let _process_state = MainProcessStateGuard::enter(&root, &["CLAUBBIT"]);
@@ -2390,10 +2384,8 @@ mod tests {
     #[test]
     fn non_unique_cli_resume_value_opens_filtered_picker_after_setup() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-main-resume-search-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-main-resume-search-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
         let root = fs::canonicalize(root).unwrap();
         let _process_state = MainProcessStateGuard::enter(&root, &["CLAUBBIT"]);
@@ -2597,7 +2589,8 @@ mod tests {
         let original = crate::bootstrap::state::get_main_loop_model_override();
         let cli = crate::cli::parse_cli_config(&argv(&["--model", "sonnet"]));
         crate::bootstrap::state::set_main_loop_model_override(Some(Some("moved".into())));
-        let state = build_headless_initial_app_state(&SettingsJson::default(), &[], true, &cli).unwrap();
+        let state =
+            build_headless_initial_app_state(&SettingsJson::default(), &[], true, &cli).unwrap();
         assert_eq!(
             crate::bootstrap::state::get_main_loop_model_override(),
             Some(Some("moved".to_string()))
@@ -3044,7 +3037,7 @@ mod tests {
         assert_eq!(scanned, cli_args(&["--print", "hi"]));
         assert!(compute_is_non_interactive(&scanned, true));
 
-        let program_only = vec!["--print".to_string()];
+        let program_only = ["--print".to_string()];
         let scanned: Vec<String> = program_only.iter().skip(1).cloned().collect();
         assert!(!compute_is_non_interactive(&scanned, true));
     }

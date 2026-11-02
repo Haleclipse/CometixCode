@@ -128,17 +128,18 @@ pub fn try_parse_shell_command(command: &str) -> Result<Vec<ParseEntry>, String>
                 index += 1;
                 while index < end {
                     let character = chars[index];
-                    if quote == '"' && character == '\\' {
-                        if let Some(next) = chars.get(index + 1).copied() {
-                            if matches!(next, '"' | '\\' | '$') {
-                                output.push(next);
-                            } else {
-                                output.push('\\');
-                                output.push(next);
-                            }
-                            index += 2;
-                            continue;
+                    if quote == '"'
+                        && character == '\\'
+                        && let Some(next) = chars.get(index + 1).copied()
+                    {
+                        if matches!(next, '"' | '\\' | '$') {
+                            output.push(next);
+                        } else {
+                            output.push('\\');
+                            output.push(next);
                         }
+                        index += 2;
+                        continue;
                     }
                     if quote == '"' && character == '$' {
                         let (value, next) = parse_env_var(&chars, index)?;
@@ -269,7 +270,7 @@ pub fn has_malformed_tokens(command: &str, parsed: &[ParseEntry]) -> bool {
         }
         index += 1;
     }
-    if double_count % 2 != 0 || single_count % 2 != 0 {
+    if !double_count.is_multiple_of(2) || !single_count.is_multiple_of(2) {
         return true;
     }
 

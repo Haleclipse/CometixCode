@@ -105,10 +105,7 @@ fn warm_eligibility_with_settings(
         // useful when the response did not advertise an ephemeral TTL.
         return None;
     };
-    Some(WarmEligibility {
-        ttl,
-        cached_tokens,
-    })
+    Some(WarmEligibility { ttl, cached_tokens })
 }
 
 fn current_generation(generation: u64) -> bool {
@@ -171,7 +168,9 @@ fn warming_message() -> crate::types::message::Message {
     })
 }
 
-async fn run_one(cache: &CacheSafeParams) -> anyhow::Result<crate::services::api::claude::NonNullableUsage> {
+async fn run_one(
+    cache: &CacheSafeParams,
+) -> anyhow::Result<crate::services::api::claude::NonNullableUsage> {
     let result = run_forked_agent(ForkedAgentParams {
         prompt_messages: vec![warming_message()],
         cache_safe_params: cache.clone(),
@@ -252,8 +251,7 @@ pub fn observe_real_request(
     thinking: &ThinkingConfig,
     has_tool_use: bool,
 ) {
-    if is_cache_sharing_fork(source) || !matches!(source, QuerySource::Prompt | QuerySource::Sdk)
-    {
+    if is_cache_sharing_fork(source) || !matches!(source, QuerySource::Prompt | QuerySource::Sdk) {
         return;
     }
     invalidate();
@@ -352,8 +350,15 @@ mod tests {
     #[test]
     fn ttl_and_token_floor_come_from_the_final_in_memory_usage() {
         let on = settings(CacheWarmingMode::Active);
-        let five = eligible(&on, &usage(25_000), ttl_5m(), "claude-sonnet-4-6", &ThinkingConfig::Disabled, true)
-            .expect("5m cache is eligible");
+        let five = eligible(
+            &on,
+            &usage(25_000),
+            ttl_5m(),
+            "claude-sonnet-4-6",
+            &ThinkingConfig::Disabled,
+            true,
+        )
+        .expect("5m cache is eligible");
         assert_eq!(five.ttl, Duration::from_secs(300));
         assert_eq!(five.cached_tokens, 25_000);
 
@@ -361,8 +366,15 @@ mod tests {
             ephemeral_1h_input_tokens: 25_000,
             ..Default::default()
         };
-        let one_hour = eligible(&on, &usage(25_000), hour, "claude-sonnet-4-6", &ThinkingConfig::Disabled, true)
-            .expect("1h cache is eligible");
+        let one_hour = eligible(
+            &on,
+            &usage(25_000),
+            hour,
+            "claude-sonnet-4-6",
+            &ThinkingConfig::Disabled,
+            true,
+        )
+        .expect("1h cache is eligible");
         assert_eq!(one_hour.ttl, Duration::from_secs(3600));
 
         // cache_read + cache_creation both count toward the floor.
@@ -371,21 +383,58 @@ mod tests {
             cache_creation_input_tokens: 9_000,
             ..Default::default()
         };
-        assert!(eligible(&on, &split, ttl_5m(), "claude-sonnet-4-6", &ThinkingConfig::Disabled, true).is_some());
-        assert!(eligible(&on, &usage(19_999), ttl_5m(), "claude-sonnet-4-6", &ThinkingConfig::Disabled, true).is_none());
+        assert!(
+            eligible(
+                &on,
+                &split,
+                ttl_5m(),
+                "claude-sonnet-4-6",
+                &ThinkingConfig::Disabled,
+                true
+            )
+            .is_some()
+        );
+        assert!(
+            eligible(
+                &on,
+                &usage(19_999),
+                ttl_5m(),
+                "claude-sonnet-4-6",
+                &ThinkingConfig::Disabled,
+                true
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn unknown_ttl_never_warms() {
         let on = settings(CacheWarmingMode::Active);
         // Gateway models report cache_read but no ephemeral_* breakdown.
-        assert!(eligible(&on, &usage(90_000), CacheTtlUsage::default(), "gpt-6.1-sol", &ThinkingConfig::Disabled, true).is_none());
+        assert!(
+            eligible(
+                &on,
+                &usage(90_000),
+                CacheTtlUsage::default(),
+                "gpt-6.1-sol",
+                &ThinkingConfig::Disabled,
+                true
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn warming_mode_gates_active_idle_and_off() {
         let args = |settings: &CacheSettings, has_tool_use: bool| {
-            eligible(settings, &usage(25_000), ttl_5m(), "claude-sonnet-4-6", &ThinkingConfig::Disabled, has_tool_use)
+            eligible(
+                settings,
+                &usage(25_000),
+                ttl_5m(),
+                "claude-sonnet-4-6",
+                &ThinkingConfig::Disabled,
+                has_tool_use,
+            )
         };
         assert!(args(&settings(CacheWarmingMode::Off), true).is_none());
         assert!(args(&settings(CacheWarmingMode::Off), false).is_none());
@@ -403,22 +452,64 @@ mod tests {
     #[test]
     fn enabled_and_converted_adaptive_thinking_never_warms() {
         let on = settings(CacheWarmingMode::Active);
-        let enabled = ThinkingConfig::Enabled { budget_tokens: None };
+        let enabled = ThinkingConfig::Enabled {
+            budget_tokens: None,
+        };
         assert!(!model_supports_adaptive_thinking("claude-sonnet-4-5"));
         assert!(model_supports_thinking("claude-sonnet-4-5"));
-        assert!(eligible(&on, &usage(25_000), ttl_5m(), "claude-sonnet-4-5", &enabled, true).is_none());
+        assert!(
+            eligible(
+                &on,
+                &usage(25_000),
+                ttl_5m(),
+                "claude-sonnet-4-5",
+                &enabled,
+                true
+            )
+            .is_none()
+        );
         // Adaptive on a model without native adaptive thinking is rewritten to
         // Enabled by the request builder, so it is not prefix-identical either.
-        assert!(eligible(&on, &usage(25_000), ttl_5m(), "claude-sonnet-4-5", &ThinkingConfig::Adaptive, true).is_none());
+        assert!(
+            eligible(
+                &on,
+                &usage(25_000),
+                ttl_5m(),
+                "claude-sonnet-4-5",
+                &ThinkingConfig::Adaptive,
+                true
+            )
+            .is_none()
+        );
     }
 
     #[test]
     fn disabled_or_native_adaptive_thinking_may_warm() {
         let on = settings(CacheWarmingMode::Active);
-        assert!(eligible(&on, &usage(25_000), ttl_5m(), "claude-sonnet-4-5", &ThinkingConfig::Disabled, true).is_some());
+        assert!(
+            eligible(
+                &on,
+                &usage(25_000),
+                ttl_5m(),
+                "claude-sonnet-4-5",
+                &ThinkingConfig::Disabled,
+                true
+            )
+            .is_some()
+        );
         let adaptive_model = "claude-sonnet-4-6";
         assert!(model_supports_adaptive_thinking(adaptive_model));
-        assert!(eligible(&on, &usage(25_000), ttl_5m(), adaptive_model, &ThinkingConfig::Adaptive, true).is_some());
+        assert!(
+            eligible(
+                &on,
+                &usage(25_000),
+                ttl_5m(),
+                adaptive_model,
+                &ThinkingConfig::Adaptive,
+                true
+            )
+            .is_some()
+        );
     }
 
     #[test]
@@ -446,17 +537,19 @@ mod tests {
         let on = settings(CacheWarmingMode::Active);
         let model = "claude-3-5-haiku-20241022";
         assert!(!model_supports_thinking(model));
-        assert!(eligible(
-            &on,
-            &usage(25_000),
-            ttl_5m(),
-            model,
-            &ThinkingConfig::Enabled {
-                budget_tokens: Some(4096)
-            },
-            true,
-        )
-        .is_some());
+        assert!(
+            eligible(
+                &on,
+                &usage(25_000),
+                ttl_5m(),
+                model,
+                &ThinkingConfig::Enabled {
+                    budget_tokens: Some(4096)
+                },
+                true,
+            )
+            .is_some()
+        );
     }
 
     #[test]

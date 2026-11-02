@@ -453,13 +453,13 @@ fn protect_against_bare_git_repo_planting(
             }
         }
     }
-    if let Some(main_repo) = detect_worktree_main_repo(cwd) {
-        if main_repo != cwd {
-            config
-                .filesystem
-                .allow_write
-                .push(main_repo.display().to_string());
-        }
+    if let Some(main_repo) = detect_worktree_main_repo(cwd)
+        && main_repo != cwd
+    {
+        config
+            .filesystem
+            .allow_write
+            .push(main_repo.display().to_string());
     }
     config.filesystem.deny_write.sort();
     config.filesystem.deny_write.dedup();
@@ -1183,14 +1183,13 @@ fn source_order() -> [SettingSource; 5] {
 fn push_web_fetch_domain_rules(target: &mut Vec<String>, rules: Option<&Vec<String>>) {
     for rule_string in rules.into_iter().flatten() {
         let rule = permission_rule_value_from_string(rule_string);
-        if rule.tool_name == WEB_FETCH_TOOL_NAME {
-            if let Some(domain) = rule
+        if rule.tool_name == WEB_FETCH_TOOL_NAME
+            && let Some(domain) = rule
                 .rule_content
                 .as_deref()
                 .and_then(|content| content.strip_prefix("domain:"))
-            {
-                target.push(domain.to_string());
-            }
+        {
+            target.push(domain.to_string());
         }
     }
 }
@@ -1208,24 +1207,24 @@ fn push_file_permission_paths(
 
     for rule_string in permissions.allow.iter().flatten() {
         let rule = permission_rule_value_from_string(rule_string);
-        if rule.tool_name == "Edit" {
-            if let Some(content) = rule.rule_content.as_deref() {
-                allow_write.push(resolve_path_pattern_for_sandbox(content, source));
-            }
+        if rule.tool_name == "Edit"
+            && let Some(content) = rule.rule_content.as_deref()
+        {
+            allow_write.push(resolve_path_pattern_for_sandbox(content, source));
         }
     }
 
     for rule_string in permissions.deny.iter().flatten() {
         let rule = permission_rule_value_from_string(rule_string);
-        if rule.tool_name == "Edit" {
-            if let Some(content) = rule.rule_content.as_deref() {
-                deny_write.push(resolve_path_pattern_for_sandbox(content, source));
-            }
+        if rule.tool_name == "Edit"
+            && let Some(content) = rule.rule_content.as_deref()
+        {
+            deny_write.push(resolve_path_pattern_for_sandbox(content, source));
         }
-        if rule.tool_name == FILE_READ_TOOL_NAME {
-            if let Some(content) = rule.rule_content.as_deref() {
-                deny_read.push(resolve_path_pattern_for_sandbox(content, source));
-            }
+        if rule.tool_name == FILE_READ_TOOL_NAME
+            && let Some(content) = rule.rule_content.as_deref()
+        {
+            deny_read.push(resolve_path_pattern_for_sandbox(content, source));
         }
     }
 }
@@ -1559,11 +1558,11 @@ fn sandbox_excluded_command_pattern(
             if !rules.iter().any(|rule| rule.tool_name == BASH_TOOL_NAME) {
                 continue;
             }
-            if let Some(rule) = rules.iter().find(|rule| rule.tool_name == BASH_TOOL_NAME) {
-                if let Some(rule_content) = rule.rule_content.as_deref() {
-                    command_pattern = permission_rule_extract_prefix(rule_content)
-                        .unwrap_or_else(|| rule_content.to_string());
-                }
+            if let Some(rule) = rules.iter().find(|rule| rule.tool_name == BASH_TOOL_NAME)
+                && let Some(rule_content) = rule.rule_content.as_deref()
+            {
+                command_pattern = permission_rule_extract_prefix(rule_content)
+                    .unwrap_or_else(|| rule_content.to_string());
             }
             break;
         }
@@ -2020,10 +2019,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn seatbelt_wrapper_enforces_write_boundary() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-seatbelt-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-seatbelt-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         let root = root.canonicalize().unwrap();
         let outside = root.with_extension("outside");
@@ -2485,7 +2482,7 @@ mod tests {
             let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
             let _managed_guard = EnvVarGuard::set(
                 "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-                &root.join("missing-managed-settings.json"),
+                root.join("missing-managed-settings.json"),
             );
 
             let expected =

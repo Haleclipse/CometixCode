@@ -6,8 +6,8 @@
 
 use super::message::Message;
 use super::messages_list::MessageLookups;
-use crate::types::message::{RenderableMessage, RenderableMessageKind, SystemMessage};
 use crate::components::offscreen_freeze::OffscreenFreeze;
+use crate::types::message::{RenderableMessage, RenderableMessageKind, SystemMessage};
 use crate::utils::theme::ThemeName;
 use iocraft::prelude::*;
 use std::collections::hash_map::DefaultHasher;
@@ -255,7 +255,8 @@ fn message_row_static_key_from_parts(
     // `lookups: None` mounts keep `should_render_statically`'s existing
     // treat-as-resolved extension.
     let memo_may_bail = !is_message_streaming(message, streaming_tool_use_ids)
-        && lookups.is_none_or(|lookups| all_tools_resolved(message, &lookups.resolved_tool_use_ids));
+        && lookups
+            .is_none_or(|lookups| all_tools_resolved(message, &lookups.resolved_tool_use_ids));
     (memo_may_bail
         && should_render_statically(
             message,
@@ -340,7 +341,10 @@ fn get_tool_use_id(message: &RenderableMessage) -> Option<&str> {
 }
 
 /// Maps to: CC `MessageRow.tsx:255-271` `isMessageStreaming`.
-fn is_message_streaming(message: &RenderableMessage, streaming_tool_use_ids: &HashSet<String>) -> bool {
+fn is_message_streaming(
+    message: &RenderableMessage,
+    streaming_tool_use_ids: &HashSet<String>,
+) -> bool {
     match &message.kind {
         RenderableMessageKind::GroupedToolUse(group) => group.messages.iter().any(|member| {
             assistant_tool_use_id(member).is_some_and(|id| streaming_tool_use_ids.contains(id))
@@ -354,7 +358,10 @@ fn is_message_streaming(message: &RenderableMessage, streaming_tool_use_ids: &Ha
 }
 
 /// Maps to: CC `MessageRow.tsx:277-298` `allToolsResolved`.
-fn all_tools_resolved(message: &RenderableMessage, resolved_tool_use_ids: &BTreeSet<String>) -> bool {
+fn all_tools_resolved(
+    message: &RenderableMessage,
+    resolved_tool_use_ids: &BTreeSet<String>,
+) -> bool {
     match &message.kind {
         RenderableMessageKind::GroupedToolUse(group) => group.messages.iter().all(|member| {
             assistant_tool_use_id(member).is_some_and(|id| resolved_tool_use_ids.contains(id))
@@ -598,14 +605,13 @@ fn apply_row_runtime_state(
     // were still executing finalized early whenever anything followed it —
     // exactly the parallel-execution case the CC comment calls out — and it
     // showed as active while merely loading with no live tool at all.
-    if let RenderableMessageKind::CollapsedReadSearch(group) = &mut message.kind {
-        if crate::utils::collapse_read_search::has_any_tool_in_progress(
+    if let RenderableMessageKind::CollapsedReadSearch(group) = &mut message.kind
+        && (crate::utils::collapse_read_search::has_any_tool_in_progress(
             group,
             &props.in_progress_tool_use_ids,
-        ) || (props.is_loading && !props.has_content_after)
-        {
-            group.active = true;
-        }
+        ) || (props.is_loading && !props.has_content_after))
+    {
+        group.active = true;
     }
 
     // Progress hydration for tool-use rows is gone with the row field itself:

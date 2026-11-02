@@ -289,22 +289,23 @@ pub fn render_tool_result_lines(
 ) -> Vec<ToolRenderLine> {
     // Maps to CC `renderToolUseErrorMessage`: intended validation failures are
     // compact in normal mode, while verbose mode falls through to full error.
-    if status == ToolResultStatus::Error && !options.verbose {
-        if let Some(error) = crate::utils::messages::extract_tag(fallback, "tool_use_error") {
-            if error.contains("File has not been read yet") {
-                return vec![ToolRenderLine::new(
-                    "File must be read first",
-                    ToolRenderTone::Inactive,
-                )];
-            }
-            if error.contains(crate::utils::file::FILE_NOT_FOUND_CWD_NOTE) {
-                return vec![ToolRenderLine::new("File not found", ToolRenderTone::Error)];
-            }
+    if status == ToolResultStatus::Error
+        && !options.verbose
+        && let Some(error) = crate::utils::messages::extract_tag(fallback, "tool_use_error")
+    {
+        if error.contains("File has not been read yet") {
             return vec![ToolRenderLine::new(
-                "Error editing file",
-                ToolRenderTone::Error,
+                "File must be read first",
+                ToolRenderTone::Inactive,
             )];
         }
+        if error.contains(crate::utils::file::FILE_NOT_FOUND_CWD_NOTE) {
+            return vec![ToolRenderLine::new("File not found", ToolRenderTone::Error)];
+        }
+        return vec![ToolRenderLine::new(
+            "Error editing file",
+            ToolRenderTone::Error,
+        )];
     }
     // The error tail delegates to FallbackToolUseErrorMessage exactly as CC
     // does (UI.tsx:209): "Error: " prefix, InvalidToolParameters mapping,

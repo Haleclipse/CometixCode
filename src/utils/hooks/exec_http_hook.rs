@@ -136,7 +136,9 @@ pub fn interpolate_env_vars_with(
 
 /// Maps to: CC `interpolateEnvVars(...)`.
 pub fn interpolate_env_vars(value: &str, allowed_env_vars: &HashSet<String>) -> String {
-    interpolate_env_vars_with(value, allowed_env_vars, |name| crate::utils::process_env::var(name))
+    interpolate_env_vars_with(value, allowed_env_vars, |name| {
+        crate::utils::process_env::var(name)
+    })
 }
 
 fn effective_allowed_env_vars(hook: &HttpHook, policy: &HttpHookPolicy) -> HashSet<String> {
@@ -290,28 +292,30 @@ pub async fn exec_http_hook_with_policy(
     // resolves the target, and a corporate proxy on a private IP must not be
     // blocked. Nyan checks the target before connecting, where CC guards
     // the connection's DNS lookup.
-    if sandbox_proxy.is_none() && !env_proxy_active {
-        if let Err(error) = validate_ssrf_preflight(&url) {
-            return ExecHttpHookResult {
-                ok: false,
-                body: String::new(),
-                error: Some(error),
-                ..Default::default()
-            };
-        }
+    if sandbox_proxy.is_none()
+        && !env_proxy_active
+        && let Err(error) = validate_ssrf_preflight(&url)
+    {
+        return ExecHttpHookResult {
+            ok: false,
+            body: String::new(),
+            error: Some(error),
+            ..Default::default()
+        };
     }
 
-    let headers = match build_headers_with(hook, policy, |name| crate::utils::process_env::var(name)) {
-        Ok(headers) => headers,
-        Err(error) => {
-            return ExecHttpHookResult {
-                ok: false,
-                body: String::new(),
-                error: Some(error),
-                ..Default::default()
-            };
-        }
-    };
+    let headers =
+        match build_headers_with(hook, policy, |name| crate::utils::process_env::var(name)) {
+            Ok(headers) => headers,
+            Err(error) => {
+                return ExecHttpHookResult {
+                    ok: false,
+                    body: String::new(),
+                    error: Some(error),
+                    ..Default::default()
+                };
+            }
+        };
 
     let timeout_ms = hook
         .timeout
@@ -597,7 +601,10 @@ mod tests {
         let result = exec_http_hook_with_policy(&hook, "{}", &Default::default()).await;
         assert!(result.ok, "{result:?}");
         let request = server.await.unwrap();
-        assert!(request.starts_with("POST http://hooks.invalid/hook HTTP/1.1"), "{request}");
+        assert!(
+            request.starts_with("POST http://hooks.invalid/hook HTTP/1.1"),
+            "{request}"
+        );
 
         // Bypassed by NO_PROXY: direct, and the guard applies again.
         let hook = http_hook("http://169.254.169.254/latest/meta-data".to_string());

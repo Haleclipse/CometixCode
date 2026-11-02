@@ -541,7 +541,10 @@ mod tests {
                 "Tabs did not reach source outcome; frames={history:?}"
             );
         }
-        let oracle:serde_json::Value=serde_json::from_str(include_str!("../../../tests/fixtures/oracles/plugin-ui-complete-0914/tabs-oracle.json")).unwrap();
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/plugin-ui-complete-0914/tabs-oracle.json"
+        ))
+        .unwrap();
         for case in oracle.as_array().unwrap() {
             let name = case["name"].as_str().unwrap();
             let events = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -822,7 +825,8 @@ mod tests {
         // an undrawn layout gap previously looked neutral but leaked SGR.
         let cases: serde_json::Value = serde_json::from_str(include_str!(
             "../../../tests/fixtures/oracles/tabs-style-0915/oracle.json"
-        )).unwrap();
+        ))
+        .unwrap();
         for case in cases.as_array().unwrap() {
             let width = case["width"].as_u64().unwrap() as usize;
             // At 28 columns Yoga shrinks/repositions the labels. That existing
@@ -875,10 +879,15 @@ mod tests {
     fn OptInBody(props: &OptInBodyProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let focus = use_tab_header_focus(&mut hooks);
         hooks.use_terminal_events(move |event| {
-            if let TerminalEvent::Key(KeyEvent { code: KeyCode::Char('u'), kind, .. }) = event {
-                if kind == KeyEventKind::Press && !focus.header_focused {
-                    focus.focus_header();
-                }
+            if let TerminalEvent::Key(KeyEvent {
+                code: KeyCode::Char('u'),
+                kind,
+                ..
+            }) = event
+                && kind == KeyEventKind::Press
+                && !focus.header_focused
+            {
+                focus.focus_header();
             }
         });
         element! { Text(content: format!("{} header={}", props.label, focus.header_focused)) }
@@ -929,7 +938,10 @@ mod tests {
     /// Sends one key per frame; returns the body line of the mount frame and
     /// of the frame after each key.
     fn drive_focus(nav_from_content: bool, keys_in_order: Vec<KeyCode>) -> Vec<String> {
-        drive_focus_batches(nav_from_content, keys_in_order.into_iter().map(|key| vec![key]).collect())
+        drive_focus_batches(
+            nav_from_content,
+            keys_in_order.into_iter().map(|key| vec![key]).collect(),
+        )
     }
 
     /// Sends each batch of keys back to back, so a batch reaches the app as
@@ -961,9 +973,12 @@ mod tests {
                     break;
                 };
                 for code in batch {
-                    keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
-                        .await
-                        .unwrap();
+                    keys.send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        *code,
+                    )))
+                    .await
+                    .unwrap();
                 }
                 sent += batch.len();
             }
@@ -981,7 +996,10 @@ mod tests {
             false,
             vec![vec![KeyCode::Down, KeyCode::Right], vec![KeyCode::Right]],
         );
-        assert_eq!(bodies, vec!["body A header=true", "body B static", "body A header=true"]);
+        assert_eq!(
+            bodies,
+            vec!["body A header=true", "body B static", "body A header=true"]
+        );
     }
 
     #[test]
@@ -991,7 +1009,12 @@ mod tests {
         // header has focus; the content's focusHeader gives it back.
         let bodies = drive_focus(
             false,
-            vec![KeyCode::Down, KeyCode::Right, KeyCode::Char('u'), KeyCode::Right],
+            vec![
+                KeyCode::Down,
+                KeyCode::Right,
+                KeyCode::Char('u'),
+                KeyCode::Right,
+            ],
         );
         assert_eq!(
             bodies,
@@ -1012,7 +1035,12 @@ mod tests {
         let bodies = drive_focus(false, vec![KeyCode::Right, KeyCode::Down, KeyCode::Right]);
         assert_eq!(
             bodies,
-            vec!["body A header=true", "body B static", "body B static", "body A header=true"]
+            vec![
+                "body A header=true",
+                "body B static",
+                "body B static",
+                "body A header=true"
+            ]
         );
     }
 

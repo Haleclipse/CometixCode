@@ -634,13 +634,12 @@ pub fn DiscoverPlugins(
     if let Some(error) = props.error.as_ref().filter(|s| !s.is_empty()) {
         return element! {Text(content:error.clone(),color:theme.error)}.into_any();
     }
-    if details_active {
-        if let Some(plugin) = selected_plugin.read().clone() {
-            let options = build_plugin_details_menu_options(
-                plugin.entry["homepage"].as_str(),
-                extract_git_hub_repo(&plugin),
-            );
-            return element!{View(flex_direction:FlexDirection::Column){
+    if details_active && let Some(plugin) = selected_plugin.read().clone() {
+        let options = build_plugin_details_menu_options(
+            plugin.entry["homepage"].as_str(),
+            extract_git_hub_repo(&plugin),
+        );
+        return element!{View(flex_direction:FlexDirection::Column){
             View(margin_bottom:1u32){Text(content:"Plugin details",weight:Weight::Bold)}
             View(flex_direction:FlexDirection::Column,margin_bottom:1u32){
                 Text(content:plugin.entry["name"].as_str().unwrap_or("").to_string(),weight:Weight::Bold)
@@ -654,7 +653,6 @@ pub fn DiscoverPlugins(
             View(flex_direction:FlexDirection::Column){#(options.iter().enumerate().map(|(i,o)|element!{View{Text(content:if details_menu_index.get()==i{"> "}else{"  "}) Text(content:if is_installing.get()&&o.action.starts_with("install-"){ "Installing…" }else{o.label},weight:if details_menu_index.get()==i{Weight::Bold}else{Weight::Normal})}}))}
             View(margin_top:1u32){Byline{ConfigurableShortcutHint(action:"select:accept".to_string(),context:"Select".to_string(),fallback:"Enter".to_string(),description:"select".to_string(),dim:true) ConfigurableShortcutHint(action:"confirm:no".to_string(),context:"Confirmation".to_string(),fallback:"Esc".to_string(),description:"back".to_string(),dim:true)}}
         }}.into_any();
-        }
     }
     if available_plugins.read().is_empty() {
         return element!{View(flex_direction:FlexDirection::Column){View(margin_bottom:1u32){Text(content:"Discover plugins",weight:Weight::Bold)} EmptyStateMessage(reason:empty_reason.get()) View(margin_top:1u32){Text(content:"Esc to go back",dim:true,italic:true)}}}.into_any();

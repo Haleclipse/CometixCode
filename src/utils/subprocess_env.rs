@@ -191,8 +191,7 @@ mod tests {
         );
         assert!(
             !env.iter()
-                .any(|(key, value)| key == "NYAN_SUBPROCESS_ENV_TEST_DELETED"
-                    && value.is_some())
+                .any(|(key, value)| key == "NYAN_SUBPROCESS_ENV_TEST_DELETED" && value.is_some())
         );
     }
 

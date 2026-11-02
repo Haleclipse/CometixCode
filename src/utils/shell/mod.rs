@@ -153,10 +153,10 @@ pub fn get_shell_config() -> Result<Arc<bash_provider::BashShellProvider>, Strin
 
 /// Run the shell snapshot's graceful-shutdown cleanup.
 pub fn cleanup_shell_config() {
-    if let Ok(mut provider) = BASH_PROVIDER.lock() {
-        if let Some(provider) = provider.take() {
-            provider.cleanup_snapshot();
-        }
+    if let Ok(mut provider) = BASH_PROVIDER.lock()
+        && let Some(provider) = provider.take()
+    {
+        provider.cleanup_snapshot();
     }
 }
 
@@ -356,19 +356,20 @@ pub fn exec(
         if use_sandbox {
             crate::utils::sandbox::sandbox_adapter::cleanup_after_command(&sandbox_cleanup_paths);
         }
-        if !prevent_cwd_changes && result.background_task_id.is_none() {
-            if let Ok(value) = std::fs::read_to_string(&cwd_file) {
-                let value = value.trim();
-                if !value.is_empty() {
-                    let path = if cfg!(windows) {
-                        PathBuf::from(crate::utils::windows_paths::posix_path_to_windows_path(
-                            value,
-                        ))
-                    } else {
-                        PathBuf::from(value)
-                    };
-                    result.cwd_after = Some(path);
-                }
+        if !prevent_cwd_changes
+            && result.background_task_id.is_none()
+            && let Ok(value) = std::fs::read_to_string(&cwd_file)
+        {
+            let value = value.trim();
+            if !value.is_empty() {
+                let path = if cfg!(windows) {
+                    PathBuf::from(crate::utils::windows_paths::posix_path_to_windows_path(
+                        value,
+                    ))
+                } else {
+                    PathBuf::from(value)
+                };
+                result.cwd_after = Some(path);
             }
         }
         let _ = std::fs::remove_file(&cwd_file);

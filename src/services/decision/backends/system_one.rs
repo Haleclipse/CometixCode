@@ -301,12 +301,12 @@ fn request_id(response: &reqwest::Response) -> Option<String> {
     // The design names `X-Request-ID`; legacy's provider emits
     // `x-typesafe-request-id`. Accept either.
     for name in ["x-request-id", "x-typesafe-request-id"] {
-        if let Some(value) = response.headers().get(name) {
-            if let Ok(value) = value.to_str() {
-                let value = value.trim();
-                if !value.is_empty() {
-                    return Some(value.to_string());
-                }
+        if let Some(value) = response.headers().get(name)
+            && let Ok(value) = value.to_str()
+        {
+            let value = value.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
             }
         }
     }

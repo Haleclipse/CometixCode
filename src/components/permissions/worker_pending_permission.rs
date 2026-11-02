@@ -50,7 +50,7 @@ pub fn WorkerPendingPermission(
             }
             #(agent_name.clone().zip(agent_color).map(|(name, color)| element! {
                 View(margin_bottom: 1u32) {
-                    WorkerBadge(badge: super::worker_badge::WorkerBadgeProps { name: name, color: Some(color) })
+                    WorkerBadge(badge: super::worker_badge::WorkerBadgeProps { name, color: Some(color) })
                 }
             }))
             View() {

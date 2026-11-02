@@ -979,8 +979,7 @@ mod tests {
         };
 
         let plan = terminal_notification_service_plan_from_config(
-            TerminalNotificationOptions::new("idle_prompt", "Nyan is waiting")
-                .with_title("Custom"),
+            TerminalNotificationOptions::new("idle_prompt", "Nyan is waiting").with_title("Custom"),
             &config,
             &env,
         );

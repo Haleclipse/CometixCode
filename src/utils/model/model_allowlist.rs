@@ -115,10 +115,11 @@ pub fn is_model_allowed(model: &str) -> bool {
     }
 
     for entry in &normalized_allowlist {
-        if !is_model_family_alias(entry) && is_model_alias(entry) {
-            if parse_user_specified_model(entry).to_ascii_lowercase() == normalized_model {
-                return true;
-            }
+        if !is_model_family_alias(entry)
+            && is_model_alias(entry)
+            && parse_user_specified_model(entry).to_ascii_lowercase() == normalized_model
+        {
+            return true;
         }
     }
 
@@ -146,10 +147,8 @@ mod tests {
 
     impl SettingsFixture {
         fn new(available_models: Option<&[&str]>) -> Self {
-            let root = std::env::temp_dir().join(format!(
-                "nyan-allowlist-{}",
-                uuid::Uuid::new_v4().simple()
-            ));
+            let root = std::env::temp_dir()
+                .join(format!("nyan-allowlist-{}", uuid::Uuid::new_v4().simple()));
             std::fs::create_dir_all(&root).unwrap();
             let settings = match available_models {
                 Some(models) => serde_json::json!({ "availableModels": models }),

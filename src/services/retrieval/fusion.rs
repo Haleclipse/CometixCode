@@ -53,7 +53,7 @@ pub fn rrf_fuse(
             candidate
         })
         .collect::<Vec<_>>();
-    results.sort_by(|left, right| compare_candidates(left, right));
+    results.sort_by(compare_candidates);
     results.truncate(keep);
     results
 }

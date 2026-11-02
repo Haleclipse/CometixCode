@@ -393,10 +393,10 @@ pub fn run_tools_for_message_events(
 ) -> ToolOrchestrationUpdate {
     let update = run_tool_use_permission_gate(message, context, permission_queue);
     let mut events = Vec::new();
-    if update.blocked_on_permission {
-        if let Some(request) = update.request.clone() {
-            events.push(ToolOrchestrationEvent::PermissionRequest(request));
-        }
+    if update.blocked_on_permission
+        && let Some(request) = update.request.clone()
+    {
+        events.push(ToolOrchestrationEvent::PermissionRequest(request));
     }
     events.push(ToolOrchestrationEvent::NewContext(context.clone()));
 

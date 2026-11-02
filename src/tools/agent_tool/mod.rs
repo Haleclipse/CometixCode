@@ -490,31 +490,31 @@ fn cleanup_worktree_if_needed(
             worktree_branch: None,
         };
     }
-    if let Some(head_commit) = info.head_commit.as_deref() {
-        if !crate::utils::worktree::has_worktree_changes(&info.worktree_path, head_commit) {
-            let _ = crate::utils::worktree::remove_agent_worktree(
-                &info.worktree_path,
-                info.worktree_branch.as_deref(),
-                info.git_root.as_deref(),
-                info.hook_based,
-            );
-            // CC `:939-947` — clear worktreePath from the agent metadata so
-            // resume does not try to use a deleted directory. Fire-and-forget:
-            // a failure only logs, matching `void … .catch(log)`.
-            if let Err(error) = crate::utils::session_storage::write_agent_metadata(
-                &metadata.agent_id,
-                &crate::utils::session_storage::AgentMetadata {
-                    agent_type: metadata.agent_type,
-                    worktree_path: None,
-                    description: Some(metadata.description),
-                },
-            ) {
-                crate::utils::debug::log_for_debugging(&format!(
-                    "Failed to clear worktree metadata: {error}"
-                ));
-            }
-            return WorktreeCleanupResult::default();
+    if let Some(head_commit) = info.head_commit.as_deref()
+        && !crate::utils::worktree::has_worktree_changes(&info.worktree_path, head_commit)
+    {
+        let _ = crate::utils::worktree::remove_agent_worktree(
+            &info.worktree_path,
+            info.worktree_branch.as_deref(),
+            info.git_root.as_deref(),
+            info.hook_based,
+        );
+        // CC `:939-947` — clear worktreePath from the agent metadata so
+        // resume does not try to use a deleted directory. Fire-and-forget:
+        // a failure only logs, matching `void … .catch(log)`.
+        if let Err(error) = crate::utils::session_storage::write_agent_metadata(
+            &metadata.agent_id,
+            &crate::utils::session_storage::AgentMetadata {
+                agent_type: metadata.agent_type,
+                worktree_path: None,
+                description: Some(metadata.description),
+            },
+        ) {
+            crate::utils::debug::log_for_debugging(&format!(
+                "Failed to clear worktree metadata: {error}"
+            ));
         }
+        return WorktreeCleanupResult::default();
     }
     WorktreeCleanupResult {
         worktree_path: Some(info.worktree_path),
@@ -1476,20 +1476,19 @@ fn selected_agent_definition(
     if active_agents
         .iter()
         .any(|agent| agent.agent_type == requested)
-    {
-        if let Some(rule) = crate::utils::permissions::permissions::get_deny_rule_for_agent(
+        && let Some(rule) = crate::utils::permissions::permissions::get_deny_rule_for_agent(
             &context.tool_permission_context,
             constants::AGENT_TOOL_NAME,
             requested,
-        ) {
-            return Err(format!(
-                "Agent type '{requested}' has been denied by permission rule '{}({requested})' from {}.",
-                constants::AGENT_TOOL_NAME,
-                crate::utils::permissions::permissions::permission_rule_source_display_string(
-                    rule.source,
-                ),
-            ));
-        }
+        )
+    {
+        return Err(format!(
+            "Agent type '{requested}' has been denied by permission rule '{}({requested})' from {}.",
+            constants::AGENT_TOOL_NAME,
+            crate::utils::permissions::permissions::permission_rule_source_display_string(
+                rule.source,
+            ),
+        ));
     }
     let available = agents
         .iter()
@@ -2187,13 +2186,13 @@ impl crate::tool::ToolCall for AgentTool {
                 &agent_definition.agent_type,
                 input_string(args, "description").unwrap_or("agent task"),
             );
-            if let Some(path) = cwd_override.as_ref() {
-                if explicit_cwd.is_some() && !path.is_absolute() {
-                    let cleanup =
-                        cleanup_worktree_if_needed(worktree_info, cleanup_metadata.clone());
-                    drop(cleanup);
-                    return agent_tool_error("Agent cwd must be an absolute path.");
-                }
+            if let Some(path) = cwd_override.as_ref()
+                && explicit_cwd.is_some()
+                && !path.is_absolute()
+            {
+                let cleanup = cleanup_worktree_if_needed(worktree_info, cleanup_metadata.clone());
+                drop(cleanup);
+                return agent_tool_error("Agent cwd must be an absolute path.");
             }
             let run_context = if let Some(cwd_override) = cwd_override {
                 context.clone().with_cwd_override(Some(cwd_override))

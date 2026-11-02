@@ -234,27 +234,25 @@ pub fn TreeSelect<'a>(
         (props.on_focus)(node);
     }
 
-    if let Some(controlled_id) = props.focus_node_id.as_ref() {
-        if last_focused_id.read().as_ref() != Some(controlled_id) {
-            if let Some(index) = flattened
-                .iter()
-                .position(|flat| &flat.node.id == controlled_id)
-            {
-                focused_index.set(index);
-                last_focused_id.set(Some(controlled_id.clone()));
-                pending_focus.set(Some(flattened[index].node.clone()));
-            }
-        }
+    if let Some(controlled_id) = props.focus_node_id.as_ref()
+        && last_focused_id.read().as_ref() != Some(controlled_id)
+        && let Some(index) = flattened
+            .iter()
+            .position(|flat| &flat.node.id == controlled_id)
+    {
+        focused_index.set(index);
+        last_focused_id.set(Some(controlled_id.clone()));
+        pending_focus.set(Some(flattened[index].node.clone()));
     }
     if focused_index.get() >= flattened.len() {
         focused_index.set(flattened.len().saturating_sub(1));
     }
 
-    if last_focused_id.read().is_none() {
-        if let Some(flat) = flattened.get(focused_index.get()) {
-            last_focused_id.set(Some(flat.node.id.clone()));
-            pending_focus.set(Some(flat.node.clone()));
-        }
+    if last_focused_id.read().is_none()
+        && let Some(flat) = flattened.get(focused_index.get())
+    {
+        last_focused_id.set(Some(flat.node.id.clone()));
+        pending_focus.set(Some(flat.node.clone()));
     }
 
     let action_to_process = {

@@ -1,7 +1,7 @@
 //! Provider error/log redaction.
 
 pub fn redact_error(raw: &str, secrets: &[String]) -> String {
-    let mut value = raw.replace('\n', " ").replace('\r', " ");
+    let mut value = raw.replace(['\n', '\r'], " ");
     for secret in secrets {
         let secret = secret.trim();
         if !secret.is_empty() {

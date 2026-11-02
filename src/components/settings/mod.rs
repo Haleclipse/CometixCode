@@ -602,7 +602,10 @@ mod tests {
                     1 if last.contains("Choose the text style") => {
                         let mut ctrl_c = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('c'));
                         ctrl_c.modifiers = KeyModifiers::CONTROL;
-                        for event in [TerminalEvent::Key(ctrl_c.clone()), TerminalEvent::Key(ctrl_c)] {
+                        for event in [
+                            TerminalEvent::Key(ctrl_c.clone()),
+                            TerminalEvent::Key(ctrl_c),
+                        ] {
                             keys.send(event).await.unwrap();
                         }
                         stage = 2;

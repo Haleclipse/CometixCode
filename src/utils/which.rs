@@ -221,8 +221,7 @@ mod tests {
 
     #[test]
     fn async_lookup_matches_official_bun_eager_call_before_await() {
-        let file =
-            std::env::temp_dir().join(format!("nyan-which-eager-{}", uuid::Uuid::new_v4()));
+        let file = std::env::temp_dir().join(format!("nyan-which-eager-{}", uuid::Uuid::new_v4()));
         std::fs::write(&file, "#!/bin/sh\nexit 77\n").unwrap();
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
         let nul_command = format!("{}\0suffix", file.display());

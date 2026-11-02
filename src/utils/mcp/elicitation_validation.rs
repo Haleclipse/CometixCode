@@ -252,21 +252,21 @@ pub fn validate_elicitation_input(string_value: &str, schema: &Value) -> Validat
     match schema_type(schema) {
         Some("string") => {
             let char_count = string_value.chars().count();
-            if let Some(min) = schema.get("minLength").and_then(Value::as_u64) {
-                if char_count < min as usize {
-                    return ValidationResult::invalid(format!(
-                        "Must be at least {min} {}",
-                        plural(min as usize, "character")
-                    ));
-                }
+            if let Some(min) = schema.get("minLength").and_then(Value::as_u64)
+                && char_count < min as usize
+            {
+                return ValidationResult::invalid(format!(
+                    "Must be at least {min} {}",
+                    plural(min as usize, "character")
+                ));
             }
-            if let Some(max) = schema.get("maxLength").and_then(Value::as_u64) {
-                if char_count > max as usize {
-                    return ValidationResult::invalid(format!(
-                        "Must be at most {max} {}",
-                        plural(max as usize, "character")
-                    ));
-                }
+            if let Some(max) = schema.get("maxLength").and_then(Value::as_u64)
+                && char_count > max as usize
+            {
+                return ValidationResult::invalid(format!(
+                    "Must be at most {max} {}",
+                    plural(max as usize, "character")
+                ));
             }
             if let Some(error) = validate_string_format(string_value, schema) {
                 return ValidationResult::invalid(error);

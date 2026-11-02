@@ -701,97 +701,94 @@ fn run_tool_use_permission_gate_for_request_with_assistant(
     }
     let mut parsed_tool_use = tool_use.clone();
     let mut call_input = None;
-    if let Some(tool) = tool_definition {
-        if !is_legacy_summary_only_tool_input(tool_use) {
-            // Maps to: CC `services/tools/toolExecution.ts:615-676`.
-            // First parse the schema-owned input and preserve it as
-            // `callInput`. Read validates that initial value before backfill;
-            // observers receive a separate absolute-path clone afterward.
-            let mut parsed_input = find_tool_call(&tool.name)
-                .map(|tool_call| tool_call.normalize_input_with_context(&tool_use.input, context))
-                .unwrap_or_else(|| tool_use.input.clone());
-            match tool.input_zod_schema.as_ref().map_or_else(
-                || validate_tool_input_for_execution(&tool.name, &parsed_input, &tool.input_schema),
-                |schema| carrier_parsed_input(&tool.name, schema.0, &parsed_input).map(Some),
-            ) {
-                Err(error) => {
-                    let formatted =
-                        match build_schema_not_sent_hint(tool, &context.messages, &context.tools) {
-                            Some(hint) => format!("{}{hint}", error.formatted),
-                            None => error.formatted,
-                        };
-                    let message = input_validation_error_result(tool_use, &formatted, &error.raw);
-                    let mut tool_result =
-                        transcript_tool_result_to_model_message(&message, &tool.name);
-                    // CC `toolExecution.ts:676` (input validation error result).
-                    stamp_source_tool_assistant_uuid(&mut tool_result, assistant_message);
-                    return ToolExecutionUpdate {
-                        blocked_on_permission: false,
-                        request: None,
-                        message: Some(message),
-                        tool_result,
-                        forced_choice: None,
+    if let Some(tool) = tool_definition
+        && !is_legacy_summary_only_tool_input(tool_use)
+    {
+        // Maps to: CC `services/tools/toolExecution.ts:615-676`.
+        // First parse the schema-owned input and preserve it as
+        // `callInput`. Read validates that initial value before backfill;
+        // observers receive a separate absolute-path clone afterward.
+        let mut parsed_input = find_tool_call(&tool.name)
+            .map(|tool_call| tool_call.normalize_input_with_context(&tool_use.input, context))
+            .unwrap_or_else(|| tool_use.input.clone());
+        match tool.input_zod_schema.as_ref().map_or_else(
+            || validate_tool_input_for_execution(&tool.name, &parsed_input, &tool.input_schema),
+            |schema| carrier_parsed_input(&tool.name, schema.0, &parsed_input).map(Some),
+        ) {
+            Err(error) => {
+                let formatted =
+                    match build_schema_not_sent_hint(tool, &context.messages, &context.tools) {
+                        Some(hint) => format!("{}{hint}", error.formatted),
+                        None => error.formatted,
                     };
-                }
-                // CC `toolExecution.ts:761` `processedInput = parsedInput.data`
-                // — the parse result (unknown fields stripped) replaces the
-                // input for permission, validation, and execution.
-                Ok(Some(data)) => parsed_input = data,
-                Ok(None) => {}
+                let message = input_validation_error_result(tool_use, &formatted, &error.raw);
+                let mut tool_result = transcript_tool_result_to_model_message(&message, &tool.name);
+                // CC `toolExecution.ts:676` (input validation error result).
+                stamp_source_tool_assistant_uuid(&mut tool_result, assistant_message);
+                return ToolExecutionUpdate {
+                    blocked_on_permission: false,
+                    request: None,
+                    message: Some(message),
+                    tool_result,
+                    forced_choice: None,
+                };
             }
-            call_input = Some(parsed_input.clone());
-            if let Some(tool_call) = find_tool_call(&tool.name) {
-                // CC validates the strict initially parsed Read input before
-                // creating the observable absolute-path clone. Other tools
-                // retain their existing slice-owned observable validation.
-                let validation_input = if tool_call.name() == "Read" {
-                    parsed_input.clone()
-                } else {
-                    tool_call.backfill_observable_input(&parsed_input, context)
-                };
-                let validation_message = match tool_call.validate_input(&validation_input, context)
-                {
-                    crate::tool::ValidationResult::Ok => None,
-                    crate::tool::ValidationResult::Error {
-                        message: validation_message,
-                        error_code,
-                    } => Some(semantic_input_validation_error_result(
-                        tool_use,
-                        &validation_message,
-                        error_code,
-                    )),
-                    crate::tool::ValidationResult::Fatal {
-                        message: validation_message,
-                    } => Some(fatal_input_validation_error_result(
-                        tool_use,
-                        &tool.name,
-                        &validation_message,
-                    )),
-                };
-                if let Some(message) = validation_message {
-                    let mut tool_result =
-                        transcript_tool_result_to_model_message(&message, &tool.name);
-                    // CC `toolExecution.ts:729` (semantic validation error).
-                    stamp_source_tool_assistant_uuid(&mut tool_result, assistant_message);
-                    return ToolExecutionUpdate {
-                        blocked_on_permission: false,
-                        request: None,
-                        message: Some(message),
-                        tool_result,
-                        forced_choice: None,
-                    };
-                }
-                parsed_tool_use.input = if tool_call.name() == "Read" {
-                    tool_call.backfill_observable_input(&parsed_input, context)
-                } else {
-                    validation_input
-                };
-            } else {
-                parsed_tool_use.input = parsed_input;
-            }
-            parsed_tool_use.input_summary =
-                permission_input_summary(&parsed_tool_use.tool_name, &parsed_tool_use.input);
+            // CC `toolExecution.ts:761` `processedInput = parsedInput.data`
+            // — the parse result (unknown fields stripped) replaces the
+            // input for permission, validation, and execution.
+            Ok(Some(data)) => parsed_input = data,
+            Ok(None) => {}
         }
+        call_input = Some(parsed_input.clone());
+        if let Some(tool_call) = find_tool_call(&tool.name) {
+            // CC validates the strict initially parsed Read input before
+            // creating the observable absolute-path clone. Other tools
+            // retain their existing slice-owned observable validation.
+            let validation_input = if tool_call.name() == "Read" {
+                parsed_input.clone()
+            } else {
+                tool_call.backfill_observable_input(&parsed_input, context)
+            };
+            let validation_message = match tool_call.validate_input(&validation_input, context) {
+                crate::tool::ValidationResult::Ok => None,
+                crate::tool::ValidationResult::Error {
+                    message: validation_message,
+                    error_code,
+                } => Some(semantic_input_validation_error_result(
+                    tool_use,
+                    &validation_message,
+                    error_code,
+                )),
+                crate::tool::ValidationResult::Fatal {
+                    message: validation_message,
+                } => Some(fatal_input_validation_error_result(
+                    tool_use,
+                    &tool.name,
+                    &validation_message,
+                )),
+            };
+            if let Some(message) = validation_message {
+                let mut tool_result = transcript_tool_result_to_model_message(&message, &tool.name);
+                // CC `toolExecution.ts:729` (semantic validation error).
+                stamp_source_tool_assistant_uuid(&mut tool_result, assistant_message);
+                return ToolExecutionUpdate {
+                    blocked_on_permission: false,
+                    request: None,
+                    message: Some(message),
+                    tool_result,
+                    forced_choice: None,
+                };
+            }
+            parsed_tool_use.input = if tool_call.name() == "Read" {
+                tool_call.backfill_observable_input(&parsed_input, context)
+            } else {
+                validation_input
+            };
+        } else {
+            parsed_tool_use.input = parsed_input;
+        }
+        parsed_tool_use.input_summary =
+            permission_input_summary(&parsed_tool_use.tool_name, &parsed_tool_use.input);
     }
     // Official `runToolUse` runs PreToolUse before canUseTool. Typed
     // production orchestration therefore returns the parsed request here and
@@ -847,40 +844,35 @@ fn run_tool_use_permission_gate_for_request_with_assistant(
         .map(|(key, path)| (key, path.display().to_string()));
         if let (Some((key, destination)), Some(call_input)) =
             (checked_file_destination, call_input.as_mut())
+            && let Some(object) = call_input.as_object_mut()
         {
-            if let Some(object) = call_input.as_object_mut() {
-                object.insert(key.to_string(), serde_json::Value::String(destination));
-                if effective_tool_use.tool_name == crate::tools::file_edit_tool::FILE_EDIT_TOOL_NAME
+            object.insert(key.to_string(), serde_json::Value::String(destination));
+            if effective_tool_use.tool_name == crate::tools::file_edit_tool::FILE_EDIT_TOOL_NAME {
+                if let Some(path) = effective_tool_use
+                    .input
+                    .get("file_path")
+                    .and_then(serde_json::Value::as_str)
                 {
-                    if let Some(path) = effective_tool_use
-                        .input
-                        .get("file_path")
-                        .and_then(serde_json::Value::as_str)
-                    {
-                        object.insert(
-                            crate::tools::file_edit_tool::CHECKED_EDIT_APPROVED_PATH_KEY
-                                .to_string(),
-                            serde_json::Value::String(path.to_string()),
-                        );
-                    }
-                } else if effective_tool_use.tool_name
-                    == crate::tools::notebook_edit_tool::constants::NOTEBOOK_EDIT_TOOL_NAME
-                {
-                    if let Some(path) = effective_tool_use
-                        .input
-                        .get("notebook_path")
-                        .and_then(serde_json::Value::as_str)
-                    {
-                        let expanded =
-                            crate::utils::path::expand_path(path, Some(&context.effective_cwd()))
-                                .unwrap_or_else(|_| std::path::PathBuf::from(path));
-                        object.insert(
-                            crate::tools::notebook_edit_tool::CHECKED_NOTEBOOK_APPROVED_PATH_KEY
-                                .to_string(),
-                            serde_json::Value::String(expanded.display().to_string()),
-                        );
-                    }
+                    object.insert(
+                        crate::tools::file_edit_tool::CHECKED_EDIT_APPROVED_PATH_KEY.to_string(),
+                        serde_json::Value::String(path.to_string()),
+                    );
                 }
+            } else if effective_tool_use.tool_name
+                == crate::tools::notebook_edit_tool::constants::NOTEBOOK_EDIT_TOOL_NAME
+                && let Some(path) = effective_tool_use
+                    .input
+                    .get("notebook_path")
+                    .and_then(serde_json::Value::as_str)
+            {
+                let expanded =
+                    crate::utils::path::expand_path(path, Some(&context.effective_cwd()))
+                        .unwrap_or_else(|_| std::path::PathBuf::from(path));
+                object.insert(
+                    crate::tools::notebook_edit_tool::CHECKED_NOTEBOOK_APPROVED_PATH_KEY
+                        .to_string(),
+                    serde_json::Value::String(expanded.display().to_string()),
+                );
             }
         }
         let mut request = mock_permission_request_with_input(
@@ -1054,40 +1046,35 @@ fn run_tool_use_permission_gate_for_request_with_assistant(
     if let Some(request) = request.as_mut() {
         if let (Some((key, destination)), Some(call_input)) =
             (checked_file_destination, call_input.as_mut())
+            && let Some(object) = call_input.as_object_mut()
         {
-            if let Some(object) = call_input.as_object_mut() {
-                object.insert(key.to_string(), serde_json::Value::String(destination));
-                if effective_tool_use.tool_name == crate::tools::file_edit_tool::FILE_EDIT_TOOL_NAME
+            object.insert(key.to_string(), serde_json::Value::String(destination));
+            if effective_tool_use.tool_name == crate::tools::file_edit_tool::FILE_EDIT_TOOL_NAME {
+                if let Some(path) = effective_tool_use
+                    .input
+                    .get("file_path")
+                    .and_then(serde_json::Value::as_str)
                 {
-                    if let Some(path) = effective_tool_use
-                        .input
-                        .get("file_path")
-                        .and_then(serde_json::Value::as_str)
-                    {
-                        object.insert(
-                            crate::tools::file_edit_tool::CHECKED_EDIT_APPROVED_PATH_KEY
-                                .to_string(),
-                            serde_json::Value::String(path.to_string()),
-                        );
-                    }
-                } else if effective_tool_use.tool_name
-                    == crate::tools::notebook_edit_tool::constants::NOTEBOOK_EDIT_TOOL_NAME
-                {
-                    if let Some(path) = effective_tool_use
-                        .input
-                        .get("notebook_path")
-                        .and_then(serde_json::Value::as_str)
-                    {
-                        let expanded =
-                            crate::utils::path::expand_path(path, Some(&context.effective_cwd()))
-                                .unwrap_or_else(|_| std::path::PathBuf::from(path));
-                        object.insert(
-                            crate::tools::notebook_edit_tool::CHECKED_NOTEBOOK_APPROVED_PATH_KEY
-                                .to_string(),
-                            serde_json::Value::String(expanded.display().to_string()),
-                        );
-                    }
+                    object.insert(
+                        crate::tools::file_edit_tool::CHECKED_EDIT_APPROVED_PATH_KEY.to_string(),
+                        serde_json::Value::String(path.to_string()),
+                    );
                 }
+            } else if effective_tool_use.tool_name
+                == crate::tools::notebook_edit_tool::constants::NOTEBOOK_EDIT_TOOL_NAME
+                && let Some(path) = effective_tool_use
+                    .input
+                    .get("notebook_path")
+                    .and_then(serde_json::Value::as_str)
+            {
+                let expanded =
+                    crate::utils::path::expand_path(path, Some(&context.effective_cwd()))
+                        .unwrap_or_else(|_| std::path::PathBuf::from(path));
+                object.insert(
+                    crate::tools::notebook_edit_tool::CHECKED_NOTEBOOK_APPROVED_PATH_KEY
+                        .to_string(),
+                    serde_json::Value::String(expanded.display().to_string()),
+                );
             }
         }
         request.call_input = call_input;
@@ -1439,12 +1426,11 @@ pub(crate) fn validate_tool_input_against_schema(
         .get("additionalProperties")
         .and_then(|value| value.as_bool())
         == Some(false)
+        && let Some(properties) = properties
     {
-        if let Some(properties) = properties {
-            for key in input_object.keys() {
-                if !properties.contains_key(key) {
-                    return Err(format!("unknown field `{key}`"));
-                }
+        for key in input_object.keys() {
+            if !properties.contains_key(key) {
+                return Err(format!("unknown field `{key}`"));
             }
         }
     }
@@ -1467,15 +1453,15 @@ fn validate_json_schema_property(
 ) -> Result<(), String> {
     validate_json_schema_combinators(key, value, schema)?;
 
-    if let Some(expected) = schema.get("const") {
-        if expected != value {
-            return Err(format!("field `{key}` must equal the required constant"));
-        }
+    if let Some(expected) = schema.get("const")
+        && expected != value
+    {
+        return Err(format!("field `{key}` must equal the required constant"));
     }
-    if let Some(values) = schema.get("enum").and_then(|value| value.as_array()) {
-        if !values.iter().any(|candidate| candidate == value) {
-            return Err(format!("field `{key}` must be one of the allowed values"));
-        }
+    if let Some(values) = schema.get("enum").and_then(|value| value.as_array())
+        && !values.iter().any(|candidate| candidate == value)
+    {
+        return Err(format!("field `{key}` must be one of the allowed values"));
     }
 
     if let Some(kind) = schema.get("type") {
@@ -1487,10 +1473,10 @@ fn validate_json_schema_property(
             {
                 return Err(format!("field `{key}` has invalid type"));
             }
-        } else if let Some(kind) = kind.as_str() {
-            if !json_value_matches_schema_type(value, kind) {
-                return Err(format!("field `{key}` must be {kind}"));
-            }
+        } else if let Some(kind) = kind.as_str()
+            && !json_value_matches_schema_type(value, kind)
+        {
+            return Err(format!("field `{key}` must be {kind}"));
         }
     }
 
@@ -1507,13 +1493,12 @@ fn validate_json_schema_combinators(
             validate_json_schema_property(key, value, branch)?;
         }
     }
-    if let Some(any_of) = schema.get("anyOf").and_then(serde_json::Value::as_array) {
-        if !any_of
+    if let Some(any_of) = schema.get("anyOf").and_then(serde_json::Value::as_array)
+        && !any_of
             .iter()
             .any(|branch| validate_json_schema_property(key, value, branch).is_ok())
-        {
-            return Err(format!("field `{key}` does not match any allowed schema"));
-        }
+    {
+        return Err(format!("field `{key}` does not match any allowed schema"));
     }
     if let Some(one_of) = schema.get("oneOf").and_then(serde_json::Value::as_array) {
         let matches = one_of
@@ -1551,19 +1536,19 @@ fn validate_json_schema_constraints(
     schema: &serde_json::Value,
 ) -> Result<(), String> {
     if let Some(string) = value.as_str() {
-        if let Some(min_length) = schema.get("minLength").and_then(|value| value.as_u64()) {
-            if (string.chars().count() as u64) < min_length {
-                return Err(format!(
-                    "field `{key}` must be at least {min_length} character(s)"
-                ));
-            }
+        if let Some(min_length) = schema.get("minLength").and_then(|value| value.as_u64())
+            && (string.chars().count() as u64) < min_length
+        {
+            return Err(format!(
+                "field `{key}` must be at least {min_length} character(s)"
+            ));
         }
-        if let Some(max_length) = schema.get("maxLength").and_then(|value| value.as_u64()) {
-            if (string.chars().count() as u64) > max_length {
-                return Err(format!(
-                    "field `{key}` must be at most {max_length} character(s)"
-                ));
-            }
+        if let Some(max_length) = schema.get("maxLength").and_then(|value| value.as_u64())
+            && (string.chars().count() as u64) > max_length
+        {
+            return Err(format!(
+                "field `{key}` must be at most {max_length} character(s)"
+            ));
         }
         if let Some(pattern) = schema.get("pattern").and_then(serde_json::Value::as_str) {
             let pattern = regex::Regex::new(pattern)
@@ -1616,19 +1601,19 @@ fn validate_json_schema_constraints(
     }
 
     if let Some(array) = value.as_array() {
-        if let Some(min_items) = schema.get("minItems").and_then(|value| value.as_u64()) {
-            if array.len() < min_items as usize {
-                return Err(format!(
-                    "field `{key}` must contain at least {min_items} item(s)"
-                ));
-            }
+        if let Some(min_items) = schema.get("minItems").and_then(|value| value.as_u64())
+            && array.len() < min_items as usize
+        {
+            return Err(format!(
+                "field `{key}` must contain at least {min_items} item(s)"
+            ));
         }
-        if let Some(max_items) = schema.get("maxItems").and_then(|value| value.as_u64()) {
-            if array.len() > max_items as usize {
-                return Err(format!(
-                    "field `{key}` must contain at most {max_items} item(s)"
-                ));
-            }
+        if let Some(max_items) = schema.get("maxItems").and_then(|value| value.as_u64())
+            && array.len() > max_items as usize
+        {
+            return Err(format!(
+                "field `{key}` must contain at most {max_items} item(s)"
+            ));
         }
         if schema
             .get("uniqueItems")
@@ -1776,14 +1761,14 @@ pub async fn prepare_permission_request_before_prompt(
 /// Maps to: CC `services/tools/toolExecution.ts` `checkPermissionsAndCallTool`
 /// input parsing seam (`tool.inputSchema.safeParse(input)`, toolExecution.ts:615).
 pub(crate) fn parse_request_input(request: &PermissionRequest) -> serde_json::Value {
-    if !request.input.is_null() {
-        if !matches!(
+    if !request.input.is_null()
+        && !matches!(
             &request.input,
             serde_json::Value::Object(map)
                 if map.len() == 1 && map.contains_key("summary")
-        ) {
-            return request.input.clone();
-        }
+        )
+    {
+        return request.input.clone();
     }
     serde_json::from_str(&request.input_summary)
         .unwrap_or_else(|_| serde_json::json!({ "value": request.input_summary }))
@@ -7176,10 +7161,8 @@ mod tests {
             "nyan-post-failure-{}.json",
             uuid::Uuid::new_v4().simple()
         ));
-        let missing = std::env::temp_dir().join(format!(
-            "nyan-absent-{}.txt",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let missing =
+            std::env::temp_dir().join(format!("nyan-absent-{}.txt", uuid::Uuid::new_v4().simple()));
 
         let context = ToolUseContext::with_permission_context(ToolPermissionContext::default());
         assert!(
@@ -10197,14 +10180,13 @@ fn model_content_blocks_from_tool_output(
                     .map(crate::types::message::ToolResultContentBlock::from_structured_value)
                     .collect();
             }
-            if output.is_image {
-                if let Some(parsed) = crate::tools::bash_tool::utils::parse_data_uri(&output.stdout)
-                {
-                    return vec![crate::types::message::ToolResultContentBlock::image_base64(
-                        parsed.media_type,
-                        parsed.data,
-                    )];
-                }
+            if output.is_image
+                && let Some(parsed) = crate::tools::bash_tool::utils::parse_data_uri(&output.stdout)
+            {
+                return vec![crate::types::message::ToolResultContentBlock::image_base64(
+                    parsed.media_type,
+                    parsed.data,
+                )];
             }
             Vec::new()
         }
@@ -11593,8 +11575,7 @@ rl.on('line', line => {
 
     #[tokio::test]
     async fn local_tool_executor_runs_glob_and_grep_readonly_tools() {
-        let root =
-            std::env::temp_dir().join(format!("nyan-search-tools-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-search-tools-{}", uuid::Uuid::new_v4()));
         let nested = root.join("src");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(
@@ -11850,8 +11831,7 @@ rl.on('line', line => {
     async fn local_tool_executor_writes_and_edits_files_after_permission() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let root =
-            std::env::temp_dir().join(format!("nyan-write-edit-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-write-edit-{}", uuid::Uuid::new_v4()));
         let path = root.join("nested").join("file.txt");
         let mut context = crate::tool::ToolUseContext::default();
         let write_request = mock_permission_request_with_input(
@@ -12884,8 +12864,7 @@ rl.on('line', line => {
         let cwd_state_guard = CwdStateGuard::capture();
         crate::utils::worktree::restore_worktree_session(None);
 
-        let repo =
-            std::env::temp_dir().join(format!("nyan-worktree-test-{}", std::process::id()));
+        let repo = std::env::temp_dir().join(format!("nyan-worktree-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(&repo).expect("mkdir repo");
         let status = std::process::Command::new("git")

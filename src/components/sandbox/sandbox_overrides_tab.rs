@@ -228,11 +228,15 @@ fn OverridesSelect(
     link.styles.color = Some(theme.inactive);
     let allow_text = vec![
         heading("Allow unsandboxed fallback:"),
-        body(" When a command fails due to sandbox restrictions, Claude can retry with dangerouslyDisableSandbox to run outside the sandbox (falling back to default permissions)."),
+        body(
+            " When a command fails due to sandbox restrictions, Claude can retry with dangerouslyDisableSandbox to run outside the sandbox (falling back to default permissions).",
+        ),
     ];
     let strict_text = vec![
         heading("Strict sandbox mode:"),
-        body(" All bash commands invoked by the model must run in the sandbox unless they are explicitly listed in excludedCommands."),
+        body(
+            " All bash commands invoked by the model must run in the sandbox unless they are explicitly listed in excludedCommands.",
+        ),
     ];
     let learn_more = vec![body("Learn more: "), link];
 
@@ -282,7 +286,10 @@ mod tests {
     /// TabsContext has it), and a line counting key presses so each key
     /// produces a frame.
     #[component]
-    fn OverridesHarness(props: &OverridesHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn OverridesHarness(
+        props: &OverridesHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             KeybindingRuntime::with_default_bindings(),
@@ -334,9 +341,12 @@ mod tests {
                 let Some(code) = keys_in_order.get(sent) else {
                     break;
                 };
-                keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
-                    .await
-                    .unwrap();
+                keys.send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    *code,
+                )))
+                .await
+                .unwrap();
                 sent += 1;
             }
             last
@@ -368,9 +378,23 @@ mod tests {
     fn sandbox_overrides_locked_by_policy_is_text_only_and_writes_nothing() {
         // CC :32-49: the locked tab has no Select, so Enter chooses nothing
         // and allowUnsandboxedCommands is never written.
-        let (last, results) = drive(true, vec![KeyCode::Enter, KeyCode::Down, KeyCode::Enter, KeyCode::F(12)]);
-        assert!(last.contains("managed by a higher-priority configuration"), "{last}");
-        assert!(last.contains("Current setting: Strict sandbox mode"), "{last}");
+        let (last, results) = drive(
+            true,
+            vec![
+                KeyCode::Enter,
+                KeyCode::Down,
+                KeyCode::Enter,
+                KeyCode::F(12),
+            ],
+        );
+        assert!(
+            last.contains("managed by a higher-priority configuration"),
+            "{last}"
+        );
+        assert!(
+            last.contains("Current setting: Strict sandbox mode"),
+            "{last}"
+        );
         assert!(!last.contains("Configure Overrides:"), "{last}");
         assert!(results.is_empty(), "{results:?}");
     }

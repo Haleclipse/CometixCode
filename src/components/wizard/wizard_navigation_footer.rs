@@ -22,7 +22,7 @@ pub fn WizardNavigationFooter(
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let exit_state = crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings(&mut hooks, true);
-    let custom = props.instructions.drain(..).collect::<Vec<_>>();
+    let custom = std::mem::take(&mut props.instructions);
     let instruction_text = props.instruction_text.clone();
 
     let body: AnyElement<'static> = if let Some(hint) = exit_state.hint() {

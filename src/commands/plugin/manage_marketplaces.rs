@@ -134,7 +134,7 @@ pub fn ManageMarketplaces(
                 // CC `ManageMarketplaces.tsx:320-325` verbatim: first-match pinning is not antisymmetric, so the sort goes through the non-validating JS-sort primitive (utils/js_sort.rs; mirror PR #7).
                 crate::utils::js_sort::sort_by(&mut new_states,|a,b|{if a.name=="claude-plugin-directory"{std::cmp::Ordering::Less}else if b.name=="claude-plugin-directory"{std::cmp::Ordering::Greater}else{crate::tools::grep_tool::javascript_locale_compare(&a.name,&b.name)}});
                 marketplace_states.set(new_states.clone());
-                if was_in_details_view {if let Some(selected)=selected {if let Some(updated)=new_states.iter().find(|s|s.name==selected.name){selected_marketplace.set(Some(updated.clone()));}}}
+                if was_in_details_view&& let Some(selected)=selected&& let Some(updated)=new_states.iter().find(|s|s.name==selected.name){selected_marketplace.set(Some(updated.clone()));}
                 let mut actions=Vec::new();
                 if updated_count>0 {let plugin_part=if updated_plugin_count>0{format!(" ({updated_plugin_count} {} bumped)",plural(updated_plugin_count,"plugin",None))}else{String::new()};actions.push(format!("Updated {updated_count} {}{plugin_part}",plural(updated_count,"marketplace",None)));}
                 if removed_count>0 {actions.push(format!("Removed {removed_count} {}",plural(removed_count,"marketplace",None)));}
@@ -177,7 +177,7 @@ pub fn ManageMarketplaces(
                 crate::utils::js_sort::sort_by(&mut states,|a,b|{if a.name=="claude-plugin-directory"{std::cmp::Ordering::Less}else if b.name=="claude-plugin-directory"{std::cmp::Ordering::Greater}else{crate::tools::grep_tool::javascript_locale_compare(&a.name,&b.name)}});
                 marketplace_states.set(states.clone());
                 if let Some(error)=format_marketplace_loading_errors(&loaded.failures,success_count){if error.r#type==MarketplaceLoadingErrorType::Warning{process_error.set(Some(error.message));}else{anyhow::bail!(error.message);}}
-                if let Some(target)=target.filter(|s|!s.is_empty()) {if !*has_attempted_auto_action.read() && error.as_deref().is_none_or(str::is_empty){
+                if let Some(target)=target.filter(|s|!s.is_empty())&& !*has_attempted_auto_action.read() && error.as_deref().is_none_or(str::is_empty){
                     *has_attempted_auto_action.write()=true;
                     if let Some(index)=states.iter().position(|s|s.name==target){selected_index.set(index+1);if let Some(action)=action.filter(|s|!s.is_empty()){
                         if action=="update"{states[index].pending_update=true;}else if action=="remove"{states[index].pending_remove=true;}
@@ -185,7 +185,7 @@ pub fn ManageMarketplaces(
                         crate::utils::process_runtime::runtime_handle_for_detached_work().expect("marketplace timer runtime").spawn(async move{tokio::time::sleep(std::time::Duration::from_millis(100)).await;auto_apply(Some(states));});
                     }else{selected_marketplace.set(Some(states[index].clone()));internal_view.set(InternalViewState::Details);}}
                     else{set_error(Some(format!("Marketplace not found: {target}")));}
-                }}
+                }
                 Ok(())
             }.await;
             if let Err(error)=result{let message=error.to_string();set_error(Some(message.clone()));process_error.set(Some(message));}
@@ -518,10 +518,11 @@ pub fn ManageMarketplaces(
         View(margin_left:3u32){#(if exit_state.pending{element!{Text(content:format!("Press {} again to go back",exit_state.key_name.unwrap_or("")),dim:true,italic:true)}.into_any()}else{element!{ContextProvider(value:Context::owned(crate::components::design_system::keyboard_shortcut_hint::KeyboardShortcutHintStyleContext{dim:true,italic:true})){Byline{ConfigurableShortcutHint(action:"select:accept",context:"Select",fallback:"Enter",description:"select") ConfigurableShortcutHint(action:"confirm:no",context:"Confirmation",fallback:"Esc",description:"go back")}}}.into_any()})}
     }}.into_any();
     }
-    if view == InternalViewState::ConfirmRemove {
-        if let Some(selected) = selected.as_ref() {
-            let count = selected.installed_plugins.len();
-            return element!{View(flex_direction:FlexDirection::Column){
+    if view == InternalViewState::ConfirmRemove
+        && let Some(selected) = selected.as_ref()
+    {
+        let count = selected.installed_plugins.len();
+        return element!{View(flex_direction:FlexDirection::Column){
         View{Text(content:"Remove marketplace ",weight:Weight::Bold,color:theme.warning) Text(content:selected.name.clone(),weight:Weight::Bold,italic:true,color:theme.warning) Text(content:"?",weight:Weight::Bold,color:theme.warning)}
         View(flex_direction:FlexDirection::Column){
             #( (count>0).then(||element!{View(margin_top:1u32){Text(content:format!("This will also uninstall {count} {} from this marketplace:",plural(count,"plugin",None)),color:theme.warning)}}))
@@ -529,13 +530,13 @@ pub fn ManageMarketplaces(
             View(margin_top:1u32){Text(content:"Press ") Text(content:"y",weight:Weight::Bold) Text(content:" to confirm or ") Text(content:"n",weight:Weight::Bold) Text(content:" to cancel")}
         }
     }}.into_any();
-        }
     }
-    if view == InternalViewState::Details {
-        if let Some(selected) = selected.as_ref() {
-            let updating = selected.pending_update || processing;
-            let count = selected.plugin_count.unwrap_or(0);
-            return element!{View(flex_direction:FlexDirection::Column){
+    if view == InternalViewState::Details
+        && let Some(selected) = selected.as_ref()
+    {
+        let updating = selected.pending_update || processing;
+        let count = selected.plugin_count.unwrap_or(0);
+        return element!{View(flex_direction:FlexDirection::Column){
             Text(content:selected.name.clone(),weight:Weight::Bold) Text(content:selected.source.clone(),dim:true)
             View(margin_top:1u32){Text(content:format!("{count} available {}",plural(count,"plugin",None)))}
             #((!selected.installed_plugins.is_empty()).then(||element!{View(flex_direction:FlexDirection::Column,margin_top:1u32){Text(content:format!("Installed plugins ({}):",selected.installed_plugins.len()),weight:Weight::Bold)
@@ -548,7 +549,6 @@ pub fn ManageMarketplaces(
             #((!updating&&!crate::utils::config::should_skip_plugin_autoupdate()&&selected.auto_update).then(||element!{View(margin_top:1u32){Text(content:"Auto-update enabled. nyan will automatically update this marketplace and its installed plugins.",dim:true)}}))
             View(margin_left:3u32){#(if updating{element!{Text(content:"Please wait…",dim:true,italic:true)}.into_any()}else{element!{ContextProvider(value:Context::owned(crate::components::design_system::keyboard_shortcut_hint::KeyboardShortcutHintStyleContext{dim:true,italic:true})){Byline{ConfigurableShortcutHint(action:"select:accept",context:"Select",fallback:"Enter",description:"select") ConfigurableShortcutHint(action:"confirm:no",context:"Confirmation",fallback:"Esc",description:"go back")}}}.into_any()})}
         }}.into_any();
-        }
     }
     let (update_count, remove_count) = get_pending_counts();
     element!{View(flex_direction:FlexDirection::Column){

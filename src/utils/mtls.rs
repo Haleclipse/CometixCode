@@ -72,7 +72,9 @@ fn memoized<T: Clone>(slot: &RwLock<Option<T>>, compute: impl FnOnce() -> T) -> 
     {
         return cached;
     }
-    let mut slot = slot.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut slot = slot
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some(cached) = slot.clone() {
         return cached;
     }
@@ -165,7 +167,8 @@ fn build_identity(config: &MTLSConfig) -> Option<reqwest::Identity> {
         }
         return None;
     };
-    if key.contains("-----BEGIN ENCRYPTED PRIVATE KEY-----") || key.contains("Proc-Type: 4,ENCRYPTED")
+    if key.contains("-----BEGIN ENCRYPTED PRIVATE KEY-----")
+        || key.contains("Proc-Type: 4,ENCRYPTED")
     {
         log_for_debugging_with_level(
             "mTLS: Encrypted client keys are not supported; no client certificate is sent",
@@ -239,7 +242,13 @@ mod tests {
         let _passphrase = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE", "secret");
         reset();
         let config = get_mtls_config().unwrap();
-        assert!(config.cert.as_deref().unwrap().contains("BEGIN CERTIFICATE"));
+        assert!(
+            config
+                .cert
+                .as_deref()
+                .unwrap()
+                .contains("BEGIN CERTIFICATE")
+        );
         // The unreadable key is logged and left out.
         assert_eq!(config.key, None);
         assert_eq!(config.passphrase.as_deref(), Some("secret"));
@@ -264,7 +273,12 @@ mod tests {
         reset();
         let agent = get_mtls_agent().unwrap();
         assert!(agent.identity.is_some());
-        assert!(agent.apply(reqwest::Client::builder().no_proxy()).build().is_ok());
+        assert!(
+            agent
+                .apply(reqwest::Client::builder().no_proxy())
+                .build()
+                .is_ok()
+        );
 
         let _key = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY", fixture("client-encrypted.key"));
         reset();
@@ -278,7 +292,12 @@ mod tests {
         let _key = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY", fixture("other.key"));
         reset();
         let agent = get_mtls_agent().unwrap();
-        assert!(agent.apply(reqwest::Client::builder().no_proxy()).build().is_err());
+        assert!(
+            agent
+                .apply(reqwest::Client::builder().no_proxy())
+                .build()
+                .is_err()
+        );
         reset();
     }
 
@@ -297,7 +316,12 @@ mod tests {
         assert!(agent.identity.is_none());
         assert_eq!(agent.ca.as_ref().map(|ca| ca.len()), Some(1));
         // The CA reaches the platform verifier: the client builds.
-        assert!(agent.apply(reqwest::Client::builder().no_proxy()).build().is_ok());
+        assert!(
+            agent
+                .apply(reqwest::Client::builder().no_proxy())
+                .build()
+                .is_ok()
+        );
 
         let _ca = EnvVarGuard::unset("NODE_EXTRA_CA_CERTS");
         reset();

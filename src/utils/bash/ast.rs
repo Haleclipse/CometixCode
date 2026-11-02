@@ -753,10 +753,11 @@ fn collect_redirected_statement(
     };
     let before = commands.len();
     collect_commands_scoped(body, source, commands, variable_scope)?;
-    if commands.len() > before && !redirects.is_empty() {
-        if let Some(last) = commands.last_mut() {
-            last.redirects.extend(redirects);
-        }
+    if commands.len() > before
+        && !redirects.is_empty()
+        && let Some(last) = commands.last_mut()
+    {
+        last.redirects.extend(redirects);
     }
     Ok(())
 }
@@ -1445,14 +1446,15 @@ fn resolve_string_scoped(
     let mut dynamic = false;
     let mut literal = false;
     for child in children {
-        if let Some(previous) = cursor {
-            if child.start_byte() > previous && child.kind() != "\"" {
-                let gap = source.get(previous..child.start_byte()).unwrap_or_default();
-                let newline_count = gap.bytes().filter(|byte| *byte == b'\n').count();
-                if newline_count > 0 {
-                    result.push_str(&"\n".repeat(newline_count));
-                    literal = true;
-                }
+        if let Some(previous) = cursor
+            && child.start_byte() > previous
+            && child.kind() != "\""
+        {
+            let gap = source.get(previous..child.start_byte()).unwrap_or_default();
+            let newline_count = gap.bytes().filter(|byte| *byte == b'\n').count();
+            if newline_count > 0 {
+                result.push_str(&"\n".repeat(newline_count));
+                literal = true;
             }
         }
         cursor = Some(child.end_byte());
@@ -1875,10 +1877,9 @@ fn parse_redirect(
         .and_then(|descriptor| descriptor.parse::<u32>().ok());
     let destination = node.child_by_field_name("destination").or_else(|| {
         let mut cursor = node.walk();
-        let found = node
-            .named_children(&mut cursor)
-            .find(|child| child.kind() != "file_descriptor");
-        found
+
+        node.named_children(&mut cursor)
+            .find(|child| child.kind() != "file_descriptor")
     });
     let Some(destination) = destination else {
         return Err(too_complex(node, "Redirect has no static destination"));
@@ -2005,10 +2006,10 @@ fn resolve_double_quoted_content(text: &str) -> String {
                 .peek()
                 .is_some_and(|next| matches!(*next, '$' | '`' | '"' | '\\' | '\n'))
         {
-            if let Some(next) = chars.next() {
-                if next != '\n' {
-                    resolved.push(next);
-                }
+            if let Some(next) = chars.next()
+                && next != '\n'
+            {
+                resolved.push(next);
             }
         } else {
             resolved.push(ch);

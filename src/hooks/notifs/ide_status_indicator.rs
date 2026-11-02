@@ -81,10 +81,10 @@ pub fn ide_status_notifications(snapshot: &IdeStatusSnapshot) -> Vec<Notificatio
     notifications
 }
 
-pub fn ide_status_hint_candidate<'a>(
-    snapshot: &'a IdeStatusSnapshot,
+pub fn ide_status_hint_candidate(
+    snapshot: &IdeStatusSnapshot,
     show_jetbrains_info: bool,
-) -> Option<&'a str> {
+) -> Option<&str> {
     if snapshot.is_remote_mode
         || snapshot.is_supported_terminal
         || snapshot.ide_status.is_some()

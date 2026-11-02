@@ -119,7 +119,10 @@ pub fn question_select_options(
 /// CC `getExternalEditor()` shown through `toIDEDisplayName`.
 pub(crate) fn external_editor_name() -> Option<String> {
     crate::utils::prompt_editor::external_editor_command().map(|(program, args)| {
-        let command = std::iter::once(program).chain(args).collect::<Vec<_>>().join(" ");
+        let command = std::iter::once(program)
+            .chain(args)
+            .collect::<Vec<_>>()
+            .join(" ");
         crate::utils::ide::to_ide_display_name(Some(&command))
     })
 }
@@ -311,7 +314,11 @@ pub fn QuestionView(props: &QuestionViewProps, mut hooks: Hooks) -> impl Into<An
         }
     };
     let navigation_hint = if props.questions.len() == 1 {
-        format!("{}/{} to navigate", figures().arrow_up, figures().arrow_down)
+        format!(
+            "{}/{} to navigate",
+            figures().arrow_up,
+            figures().arrow_down
+        )
     } else {
         "Tab/Arrow keys to navigate".to_string()
     };

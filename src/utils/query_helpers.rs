@@ -131,74 +131,71 @@ pub fn extract_read_files_from_messages(
                 continue;
             };
 
-            if let Some(read_file_path) = file_read_tool_use_ids.get(tool_use_id) {
-                if let Some(result_content) = content.get("content").and_then(Value::as_str) {
-                    if !result_content.starts_with(FILE_UNCHANGED_STUB) {
-                        if let Some(timestamp_ms) = timestamp_ms(message) {
-                            let processed = strip_system_reminders(result_content);
-                            let file_content = processed
-                                .split('\n')
-                                .map(strip_line_number_prefix)
-                                .collect::<Vec<_>>()
-                                .join("\n")
-                                .trim()
-                                .to_string();
-                            let entry = ReadFileStateEntry::new(
-                                read_file_path.clone(),
-                                Some(file_content),
-                                Some(timestamp_ms),
-                                ReadFileStateSource::Read,
-                            );
-                            cache.set(Path::new(read_file_path), entry);
-                        }
-                    }
-                }
+            if let Some(read_file_path) = file_read_tool_use_ids.get(tool_use_id)
+                && let Some(result_content) = content.get("content").and_then(Value::as_str)
+                && !result_content.starts_with(FILE_UNCHANGED_STUB)
+                && let Some(timestamp_ms) = timestamp_ms(message)
+            {
+                let processed = strip_system_reminders(result_content);
+                let file_content = processed
+                    .split('\n')
+                    .map(strip_line_number_prefix)
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .trim()
+                    .to_string();
+                let entry = ReadFileStateEntry::new(
+                    read_file_path.clone(),
+                    Some(file_content),
+                    Some(timestamp_ms),
+                    ReadFileStateSource::Read,
+                );
+                cache.set(Path::new(read_file_path), entry);
             }
 
             if let Some((write_file_path, write_content)) = file_write_tool_use_ids.get(tool_use_id)
+                && let Some(timestamp_ms) = timestamp_ms(message)
             {
-                if let Some(timestamp_ms) = timestamp_ms(message) {
-                    let entry = ReadFileStateEntry::new(
-                        write_file_path.clone(),
-                        Some(write_content.clone()),
-                        Some(timestamp_ms),
-                        ReadFileStateSource::Write,
-                    );
-                    cache.set(Path::new(write_file_path), entry);
-                }
+                let entry = ReadFileStateEntry::new(
+                    write_file_path.clone(),
+                    Some(write_content.clone()),
+                    Some(timestamp_ms),
+                    ReadFileStateSource::Write,
+                );
+                cache.set(Path::new(write_file_path), entry);
             }
 
-            if let Some(edit_file_path) = file_edit_tool_use_ids.get(tool_use_id) {
-                if content.get("is_error").and_then(Value::as_bool) != Some(true) {
-                    let path = Path::new(edit_file_path);
-                    match (
-                        crate::utils::file_read::read_file_sync_with_metadata(path),
-                        crate::utils::file::get_file_modification_time_result(path),
-                    ) {
-                        (Ok(metadata), Ok(timestamp_ms)) => {
-                            let entry = ReadFileStateEntry::new(
-                                edit_file_path.clone(),
-                                Some(metadata.content),
-                                Some(timestamp_ms),
-                                ReadFileStateSource::EditRefresh,
-                            );
-                            cache.set(Path::new(edit_file_path), entry);
-                        }
-                        (Err(error), _) | (_, Err(error)) => {
-                            // CC skips files deleted/inaccessible since Edit.
-                            // The Vec-returning Rust compatibility API cannot
-                            // throw unexpected I/O errors, so log those while
-                            // retaining the same safe skip behavior.
-                            if !matches!(
-                                error.kind(),
-                                std::io::ErrorKind::NotFound
-                                    | std::io::ErrorKind::PermissionDenied
-                                    | std::io::ErrorKind::NotADirectory
-                            ) {
-                                crate::utils::debug::log_for_debugging(&format!(
-                                    "Unable to restore Edit read-file state for {edit_file_path}: {error}"
-                                ));
-                            }
+            if let Some(edit_file_path) = file_edit_tool_use_ids.get(tool_use_id)
+                && content.get("is_error").and_then(Value::as_bool) != Some(true)
+            {
+                let path = Path::new(edit_file_path);
+                match (
+                    crate::utils::file_read::read_file_sync_with_metadata(path),
+                    crate::utils::file::get_file_modification_time_result(path),
+                ) {
+                    (Ok(metadata), Ok(timestamp_ms)) => {
+                        let entry = ReadFileStateEntry::new(
+                            edit_file_path.clone(),
+                            Some(metadata.content),
+                            Some(timestamp_ms),
+                            ReadFileStateSource::EditRefresh,
+                        );
+                        cache.set(Path::new(edit_file_path), entry);
+                    }
+                    (Err(error), _) | (_, Err(error)) => {
+                        // CC skips files deleted/inaccessible since Edit.
+                        // The Vec-returning Rust compatibility API cannot
+                        // throw unexpected I/O errors, so log those while
+                        // retaining the same safe skip behavior.
+                        if !matches!(
+                            error.kind(),
+                            std::io::ErrorKind::NotFound
+                                | std::io::ErrorKind::PermissionDenied
+                                | std::io::ErrorKind::NotADirectory
+                        ) {
+                            crate::utils::debug::log_for_debugging(&format!(
+                                "Unable to restore Edit read-file state for {edit_file_path}: {error}"
+                            ));
                         }
                     }
                 }
@@ -228,10 +225,10 @@ pub fn extract_bash_tools_from_messages(messages: &[Value]) -> Vec<String> {
                 .get("input")
                 .and_then(|input| input.get("command"))
                 .and_then(Value::as_str);
-            if let Some(tool) = extract_cli_name(command) {
-                if seen.insert(tool.clone()) {
-                    tools.push(tool);
-                }
+            if let Some(tool) = extract_cli_name(command)
+                && seen.insert(tool.clone())
+            {
+                tools.push(tool);
             }
         }
     }
@@ -308,7 +305,7 @@ fn strip_line_number_prefix(line: &str) -> &str {
 }
 
 fn extract_cli_name(command: Option<&str>) -> Option<String> {
-    let tokens = command?.trim().split_whitespace();
+    let tokens = command?.split_whitespace();
     for token in tokens {
         if is_env_assignment(token) || token == "sudo" {
             continue;

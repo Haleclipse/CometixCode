@@ -101,7 +101,7 @@ pub fn get_session_plugin_cache_path()
                             format!("claude-plugin-session-{suffix}")
                         );
                         crate::utils::fs_operations::get_fs_implementation()
-                            .mkdir(&(&dir), None)
+                            .mkdir(&dir, None)
                             .await?;
                         *SESSION_PLUGIN_CACHE_PATH.lock().unwrap() = Some(dir.clone());
                         crate::utils::debug::log_for_debugging(&format!(
@@ -166,7 +166,7 @@ pub fn reset_session_plugin_cache() {
 pub async fn atomic_write_to_zip_cache(target: &Path, data: &[u8]) -> anyhow::Result<()> {
     let dir = zip_path!(target, "..");
     crate::utils::fs_operations::get_fs_implementation()
-        .mkdir(&(&dir), None)
+        .mkdir(&dir, None)
         .await?;
     let mut random = [0u8; 4];
     getrandom::fill(&mut random).map_err(|e| anyhow::anyhow!(e.to_string()))?;
@@ -466,7 +466,7 @@ pub async fn extract_zip_to_directory(zip_path: &Path, target_dir: &Path) -> any
     let files = crate::utils::dxt::zip::unzip_file(&bytes).await?;
     let modes = crate::utils::dxt::zip::parse_zip_modes(&bytes);
     crate::utils::fs_operations::get_fs_implementation()
-        .mkdir(&(target_dir), None)
+        .mkdir(target_dir, None)
         .await?;
     for (relative, data) in &files {
         if relative.ends_with('/') {

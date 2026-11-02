@@ -119,22 +119,22 @@ pub fn validate_user_config(
                 }
                 _ => {}
             }
-            if field.get("type").and_then(Value::as_str) == Some("number") {
-                if let Some(number) = value.as_f64() {
-                    if field
-                        .get("min")
-                        .and_then(Value::as_f64)
-                        .is_some_and(|n| number < n)
-                    {
-                        errors.push(format!("{title} must be at least {}", field["min"]));
-                    }
-                    if field
-                        .get("max")
-                        .and_then(Value::as_f64)
-                        .is_some_and(|n| number > n)
-                    {
-                        errors.push(format!("{title} must be at most {}", field["max"]));
-                    }
+            if field.get("type").and_then(Value::as_str) == Some("number")
+                && let Some(number) = value.as_f64()
+            {
+                if field
+                    .get("min")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|n| number < n)
+                {
+                    errors.push(format!("{title} must be at least {}", field["min"]));
+                }
+                if field
+                    .get("max")
+                    .and_then(Value::as_f64)
+                    .is_some_and(|n| number > n)
+                {
+                    errors.push(format!("{title} must be at most {}", field["max"]));
                 }
             }
         }
@@ -479,10 +479,10 @@ async fn extract_mcpb_contents(
     let total = entries.len();
     for (index, (path, data)) in entries.into_iter().enumerate() {
         let full = mcpb_path!(extract_path, path);
-        if let Some(dir) = full.parent() {
-            if dir != extract_path {
-                crate::utils::fs_operations::mkdir(dir, None).await?;
-            }
+        if let Some(dir) = full.parent()
+            && dir != extract_path
+        {
+            crate::utils::fs_operations::mkdir(dir, None).await?;
         }
         if [".json", ".js", ".ts", ".txt", ".md", ".yml", ".yaml"]
             .iter()
@@ -500,10 +500,10 @@ async fn extract_mcpb_contents(
                 tokio::fs::set_permissions(&full, std::fs::Permissions::from_mode(mode & 0o777))
                     .await;
         }
-        if (index + 1) % 10 == 0 {
-            if let Some(cb) = on_progress {
-                cb(&format!("Extracted {}/{total} files", index + 1))?;
-            }
+        if (index + 1) % 10 == 0
+            && let Some(cb) = on_progress
+        {
+            cb(&format!("Extracted {}/{total} files", index + 1))?;
         }
     }
     crate::utils::debug::log_for_debugging(&format!(
@@ -579,26 +579,26 @@ pub async fn check_mcpb_changed(source: &str, plugin_path: &std::path::Path) -> 
                             - i64::from(e.duration().subsec_nanos() % 1_000_000 != 0)
                     }
                 });
-        if let (Some(file), Some(cached)) = (file, cached) {
-            if file > cached {
-                // Native Date diagnostic rendering: chrono supplies host timezone;
-                // JS's localized parenthetical timezone name is not available here.
-                let display = |millis| {
-                    chrono::DateTime::from_timestamp_millis(millis)
-                        .map(|d| {
-                            d.with_timezone(&chrono::Local)
-                                .format("%a %b %d %Y %H:%M:%S GMT%z")
-                                .to_string()
-                        })
-                        .unwrap_or_else(|| "Invalid Date".into())
-                };
-                log_for_debugging(&format!(
-                    "MCPB file modified: {} > {}",
-                    display(file),
-                    display(cached)
-                ));
-                return true;
-            }
+        if let (Some(file), Some(cached)) = (file, cached)
+            && file > cached
+        {
+            // Native Date diagnostic rendering: chrono supplies host timezone;
+            // JS's localized parenthetical timezone name is not available here.
+            let display = |millis| {
+                chrono::DateTime::from_timestamp_millis(millis)
+                    .map(|d| {
+                        d.with_timezone(&chrono::Local)
+                            .format("%a %b %d %Y %H:%M:%S GMT%z")
+                            .to_string()
+                    })
+                    .unwrap_or_else(|| "Invalid Date".into())
+            };
+            log_for_debugging(&format!(
+                "MCPB file modified: {} > {}",
+                display(file),
+                display(cached)
+            ));
+            return true;
         }
     }
     false
@@ -616,64 +616,50 @@ pub async fn load_mcpb_file(
     crate::utils::fs_operations::mkdir(&cache_dir, None).await?;
     crate::utils::debug::log_for_debugging(&format!("Loading MCPB from source: {source}"));
     let metadata = load_cache_metadata(&cache_dir, source).await;
-    if let Some(metadata) = metadata {
-        if !check_mcpb_changed(source, plugin_path).await {
-            crate::utils::debug::log_for_debugging(&format!(
-                "Using cached MCPB from {} (hash: {})",
-                metadata.extracted_path.display(),
-                metadata.content_hash
-            ));
-            let path = mcpb_path!(&metadata.extracted_path, "manifest.json");
-            let bytes = tokio::fs::read(&path).await.map_err(|error| {
-                if error.kind() == std::io::ErrorKind::NotFound {
-                    let error = anyhow::anyhow!("Cached manifest not found: {}", path.display());
-                    crate::utils::log::log_error(crate::utils::log::LogError::new(
-                        error.to_string(),
-                    ));
-                    error
-                } else {
-                    error.into()
-                }
-            })?;
-            let manifest =
-                crate::utils::dxt::helpers::parse_and_validate_manifest_from_bytes(&bytes).await?;
-            if let Some(schema) = manifest
-                .get("user_config")
-                .filter(|s| s.as_object().is_some_and(|v| !v.is_empty()))
-            {
-                let server = manifest["name"].as_str().unwrap();
-                let saved = load_mcp_server_user_config(plugin_id, server);
-                let empty = UserConfigValues::new();
-                let config = provided_user_config.or(saved.as_ref()).unwrap_or(&empty);
-                let validation = validate_user_config(config, schema);
-                if force_config_dialog || !validation.valid {
-                    return Ok(McpbFileResult::NeedsConfig(McpbNeedsConfigResult {
-                        config_schema: schema.clone(),
-                        manifest,
-                        extracted_path: metadata.extracted_path,
-                        content_hash: metadata.content_hash,
-                        existing_config: saved.unwrap_or_default(),
-                        validation_errors: validation.errors,
-                    }));
-                }
-                if let Some(provided) = provided_user_config {
-                    save_mcp_server_user_config(plugin_id, server, provided, schema)?;
-                }
-                let mcp_config =
-                    generate_mcp_config(&manifest, &metadata.extracted_path, config).await?;
-                return Ok(McpbFileResult::Loaded(McpbLoadResult {
+    if let Some(metadata) = metadata
+        && !check_mcpb_changed(source, plugin_path).await
+    {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Using cached MCPB from {} (hash: {})",
+            metadata.extracted_path.display(),
+            metadata.content_hash
+        ));
+        let path = mcpb_path!(&metadata.extracted_path, "manifest.json");
+        let bytes = tokio::fs::read(&path).await.map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                let error = anyhow::anyhow!("Cached manifest not found: {}", path.display());
+                crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
+                error
+            } else {
+                error.into()
+            }
+        })?;
+        let manifest =
+            crate::utils::dxt::helpers::parse_and_validate_manifest_from_bytes(&bytes).await?;
+        if let Some(schema) = manifest
+            .get("user_config")
+            .filter(|s| s.as_object().is_some_and(|v| !v.is_empty()))
+        {
+            let server = manifest["name"].as_str().unwrap();
+            let saved = load_mcp_server_user_config(plugin_id, server);
+            let empty = UserConfigValues::new();
+            let config = provided_user_config.or(saved.as_ref()).unwrap_or(&empty);
+            let validation = validate_user_config(config, schema);
+            if force_config_dialog || !validation.valid {
+                return Ok(McpbFileResult::NeedsConfig(McpbNeedsConfigResult {
+                    config_schema: schema.clone(),
                     manifest,
-                    mcp_config,
                     extracted_path: metadata.extracted_path,
                     content_hash: metadata.content_hash,
+                    existing_config: saved.unwrap_or_default(),
+                    validation_errors: validation.errors,
                 }));
             }
-            let mcp_config = generate_mcp_config(
-                &manifest,
-                &metadata.extracted_path,
-                &UserConfigValues::new(),
-            )
-            .await?;
+            if let Some(provided) = provided_user_config {
+                save_mcp_server_user_config(plugin_id, server, provided, schema)?;
+            }
+            let mcp_config =
+                generate_mcp_config(&manifest, &metadata.extracted_path, config).await?;
             return Ok(McpbFileResult::Loaded(McpbLoadResult {
                 manifest,
                 mcp_config,
@@ -681,6 +667,18 @@ pub async fn load_mcpb_file(
                 content_hash: metadata.content_hash,
             }));
         }
+        let mcp_config = generate_mcp_config(
+            &manifest,
+            &metadata.extracted_path,
+            &UserConfigValues::new(),
+        )
+        .await?;
+        return Ok(McpbFileResult::Loaded(McpbLoadResult {
+            manifest,
+            mcp_config,
+            extracted_path: metadata.extracted_path,
+            content_hash: metadata.content_hash,
+        }));
     }
     let data = if is_url(source) {
         let dest = mcpb_path!(
@@ -1231,11 +1229,12 @@ mod tests {
     #[tokio::test]
     async fn local_bundle_schema_to_config_and_cache_matches_official_bun() {
         let dir = temp_dir("schema-pipeline");
-        let valid = include_bytes!(
-            "../../../tests/fixtures/oracles/mcpb-schema-0915/valid.mcpb"
-        );
+        let valid = include_bytes!("../../../tests/fixtures/oracles/mcpb-schema-0915/valid.mcpb");
         std::fs::write(dir.join("probe.mcpb"), valid).unwrap();
-        let oracle: Value = serde_json::from_str(include_str!("../../../tests/fixtures/oracles/mcpb-schema-0915/bundle-oracle.json")).unwrap();
+        let oracle: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/mcpb-schema-0915/bundle-oracle.json"
+        ))
+        .unwrap();
         let mut first_path = None;
         for _ in 0..2 {
             let loaded = load_mcpb_file("probe.mcpb", &dir, "probe@test", None, None, false)
@@ -1277,14 +1276,12 @@ mod tests {
             .unwrap();
             first_path = Some(loaded.extracted_path);
         }
-        let invalid = include_bytes!(
-            "../../../tests/fixtures/oracles/mcpb-schema-0915/invalid.mcpb"
-        );
+        let invalid =
+            include_bytes!("../../../tests/fixtures/oracles/mcpb-schema-0915/invalid.mcpb");
         std::fs::write(dir.join("invalid.mcpb"), invalid).unwrap();
         let error = load_mcpb_file("invalid.mcpb", &dir, "probe@test", None, None, false)
             .await
-            .err()
-            .expect("strict schema rejects before extraction");
+            .expect_err("strict schema rejects before extraction");
         assert_eq!(
             error.to_string(),
             "Invalid manifest: Unrecognized key(s) in object: 'unknown'"
@@ -1304,7 +1301,11 @@ mod tests {
         let config = dir.join("config");
         std::fs::create_dir_all(&config).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
-        std::fs::write(dir.join("probe.mcpb"), include_bytes!("../../../tests/fixtures/oracles/mcpb-schema-0915/needs-config.mcpb")).unwrap();
+        std::fs::write(
+            dir.join("probe.mcpb"),
+            include_bytes!("../../../tests/fixtures/oracles/mcpb-schema-0915/needs-config.mcpb"),
+        )
+        .unwrap();
         for pass in 0..2 {
             let result = load_mcpb_file("probe.mcpb", &dir, "schema-probe@test", None, None, false)
                 .await

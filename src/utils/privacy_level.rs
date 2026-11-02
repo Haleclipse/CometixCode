@@ -13,7 +13,10 @@ pub enum PrivacyLevel {
 }
 
 pub fn get_privacy_level_with(get_env: &impl Fn(&str) -> Option<String>) -> PrivacyLevel {
-    if get_env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC").truthy().is_some() {
+    if get_env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+        .truthy()
+        .is_some()
+    {
         PrivacyLevel::EssentialTraffic
     } else if get_env("DISABLE_TELEMETRY").truthy().is_some() {
         PrivacyLevel::NoTelemetry

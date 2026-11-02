@@ -47,7 +47,9 @@ static PROGRESS: LazyLock<Mutex<ExtractionProgress>> =
 static CURSOR_LOADED: LazyLock<Mutex<Option<String>>> = LazyLock::new(|| Mutex::new(None));
 
 fn progress() -> std::sync::MutexGuard<'static, ExtractionProgress> {
-    PROGRESS.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    PROGRESS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Main-thread, auto-memory-on, non-bare, `nyan.memory.extract` gate shared by
@@ -329,7 +331,11 @@ pub(crate) async fn extract_before_compact_with_deps<D: crate::query::deps::Quer
     // The in-flight run may have just advanced the cursor.
     let cursor = {
         let fresh = progress().cursor.clone();
-        if fresh.message_uuid.is_some() { fresh } else { cursor }
+        if fresh.message_uuid.is_some() {
+            fresh
+        } else {
+            cursor
+        }
     };
     // Boxed so the snapshot adds one pointer to this future, not its state.
     let shadow_before = Box::pin(snapshot_before_memory_run()).await;
@@ -520,7 +526,10 @@ mod tests {
             _env: env,
             _lock: lock,
         };
-        crate::bootstrap::state::switch_session("driver-active", Some(fixture.session_root.clone()));
+        crate::bootstrap::state::switch_session(
+            "driver-active",
+            Some(fixture.session_root.clone()),
+        );
         std::fs::write(fixture.session_root.join("driver-active.jsonl"), "").unwrap();
         // Adopt the session file so cursor entries land on disk (not in the
         // pre-materialization pending queue).
@@ -546,8 +555,12 @@ mod tests {
 
     fn messages() -> Vec<Message> {
         vec![
-            Message::User(crate::utils::messages::create_user_message("u1".to_string())),
-            Message::User(crate::utils::messages::create_user_message("u2".to_string())),
+            Message::User(crate::utils::messages::create_user_message(
+                "u1".to_string(),
+            )),
+            Message::User(crate::utils::messages::create_user_message(
+                "u2".to_string(),
+            )),
         ]
     }
 
@@ -633,7 +646,11 @@ mod tests {
         .await;
         assert!(matches!(status, ExtractStatus::Failed(_)));
         let state = progress_for_test();
-        assert_eq!(state.cursor, ExtractCursor::default(), "cursor must not move");
+        assert_eq!(
+            state.cursor,
+            ExtractCursor::default(),
+            "cursor must not move"
+        );
         assert_eq!(state.turns_since_extract, 1);
 
         // Still due (the counter never reset), so the next turn retries.

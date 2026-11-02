@@ -241,18 +241,18 @@ pub fn bash_tool_use_options(input: BashToolUseOptionsInput) -> Vec<BashPermissi
                 true,
                 Some(": "),
             ));
-        } else if !input.suggestions.is_empty() {
-            if let Some(label) = generate_shell_suggestions_label(
+        } else if !input.suggestions.is_empty()
+            && let Some(label) = generate_shell_suggestions_label(
                 &input.suggestions,
                 BASH_TOOL_NAME,
                 &input.current_cwd,
                 Some(strip_bash_redirections),
-            ) {
-                options.push(BashPermissionOption::select(
-                    label,
-                    BashToolUseOptionValue::YesApplySuggestions,
-                ));
-            }
+            )
+        {
+            options.push(BashPermissionOption::select(
+                label,
+                BashToolUseOptionValue::YesApplySuggestions,
+            ));
         }
 
         let editable_prefix_shown = options

@@ -309,12 +309,11 @@ pub async fn search_with(
     merged.truncate(search_settings.fusion_keep() as usize);
 
     let mut reranked = false;
-    if web.search().rerank().enabled() {
-        if let Some(client) = rerank_client {
-            if rerank_hits(client, query, &mut merged, &web.search()).await {
-                reranked = true;
-            }
-        }
+    if web.search().rerank().enabled()
+        && let Some(client) = rerank_client
+        && rerank_hits(client, query, &mut merged, &web.search()).await
+    {
+        reranked = true;
     }
 
     if let Some(decisions) = decisions {

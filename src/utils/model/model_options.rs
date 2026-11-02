@@ -572,27 +572,26 @@ fn get_model_options_base(
 fn get_model_family_info(model: &str) -> Option<(&'static str, String)> {
     let canonical = get_canonical_name(model);
 
-    if canonical.contains("claude-sonnet-4-6")
+    if (canonical.contains("claude-sonnet-4-6")
         || canonical.contains("claude-sonnet-4-5")
         || canonical.contains("claude-sonnet-4-")
         || canonical.contains("claude-3-7-sonnet")
-        || canonical.contains("claude-3-5-sonnet")
+        || canonical.contains("claude-3-5-sonnet"))
+        && let Some(current_name) = get_marketing_name_for_model(&get_default_sonnet_model())
     {
-        if let Some(current_name) = get_marketing_name_for_model(&get_default_sonnet_model()) {
-            return Some(("Sonnet", current_name));
-        }
+        return Some(("Sonnet", current_name));
     }
 
-    if canonical.contains("claude-opus-4") {
-        if let Some(current_name) = get_marketing_name_for_model(&get_default_opus_model()) {
-            return Some(("Opus", current_name));
-        }
+    if canonical.contains("claude-opus-4")
+        && let Some(current_name) = get_marketing_name_for_model(&get_default_opus_model())
+    {
+        return Some(("Opus", current_name));
     }
 
-    if canonical.contains("claude-haiku") || canonical.contains("claude-3-5-haiku") {
-        if let Some(current_name) = get_marketing_name_for_model(&get_default_haiku_model()) {
-            return Some(("Haiku", current_name));
-        }
+    if (canonical.contains("claude-haiku") || canonical.contains("claude-3-5-haiku"))
+        && let Some(current_name) = get_marketing_name_for_model(&get_default_haiku_model())
+    {
+        return Some(("Haiku", current_name));
     }
 
     None
@@ -641,19 +640,17 @@ pub fn get_model_options_for_audience(
     // The custom model from the ANTHROPIC_CUSTOM_MODEL_OPTION env var.
     if let Some(env_custom_model) =
         crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION").truthy()
-    {
-        if !options
+        && !options
             .iter()
             .any(|existing| existing.value.as_deref() == Some(env_custom_model.as_str()))
-        {
-            options.push(ModelOption::new(
-                Some(&env_custom_model),
-                &crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION_NAME")
-                    .unwrap_or_else(|| env_custom_model.clone()),
-                crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION")
-                    .unwrap_or_else(|| format!("Custom model ({env_custom_model})")),
-            ));
-        }
+    {
+        options.push(ModelOption::new(
+            Some(&env_custom_model),
+            &crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION_NAME")
+                .unwrap_or_else(|| env_custom_model.clone()),
+            crate::utils::process_env::var("ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION")
+                .unwrap_or_else(|| format!("Custom model ({env_custom_model})")),
+        ));
     }
 
     // Additional model options fetched during bootstrap.
@@ -768,7 +765,7 @@ mod tests {
 
             let cleared_env = CLEARED_ENV
                 .iter()
-                .map(|name| EnvVarGuard::unset(*name))
+                .map(|name| EnvVarGuard::unset(name))
                 .collect();
 
             crate::utils::settings::settings_cache::reset_settings_cache();

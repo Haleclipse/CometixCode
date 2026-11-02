@@ -29,13 +29,13 @@ impl SecureStorageBackend for MacOsKeychainStorage {
         #[cfg(all(target_os = "macos", not(test)))]
         let parsed = (|| -> Option<SecureStorageData> {
             let username = get_username();
-            let mut service_names = vec![get_mac_os_keychain_storage_service_name(
-                CREDENTIALS_SERVICE_SUFFIX,
-            )
-            .ok()?];
-            service_names.extend(super::mac_os_keychain_helpers::legacy_keychain_service_names(
-                CREDENTIALS_SERVICE_SUFFIX,
-            ));
+            let mut service_names =
+                vec![get_mac_os_keychain_storage_service_name(CREDENTIALS_SERVICE_SUFFIX).ok()?];
+            service_names.extend(
+                super::mac_os_keychain_helpers::legacy_keychain_service_names(
+                    CREDENTIALS_SERVICE_SUFFIX,
+                ),
+            );
             crate::utils::auth::record_auth_io(
                 crate::utils::auth::AuthIoOperation::KeychainSubprocess,
             );

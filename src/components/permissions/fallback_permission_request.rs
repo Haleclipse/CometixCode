@@ -86,9 +86,9 @@ pub fn fallback_permission_response(
         None => response,
     };
     match value {
-        FallbackPermissionOptionValue::Yes => {
-            with_feedback(PermissionPromptResponse::new(PermissionPromptChoice::AllowOnce))
-        }
+        FallbackPermissionOptionValue::Yes => with_feedback(PermissionPromptResponse::new(
+            PermissionPromptChoice::AllowOnce,
+        )),
         FallbackPermissionOptionValue::YesDontAskAgain => {
             PermissionPromptResponse::new(PermissionPromptChoice::AlwaysAllow)
                 .with_permission_updates(vec![PermissionUpdate::AddRules {
@@ -123,7 +123,9 @@ fn fallback_prompt_options(
         options.push(
             PermissionPromptOption::new(
                 FallbackPermissionOptionValue::YesDontAskAgain.as_str(),
-                format!("Yes, and don't ask again for {user_facing_name} commands in {original_cwd}"),
+                format!(
+                    "Yes, and don't ask again for {user_facing_name} commands in {original_cwd}"
+                ),
             )
             .with_label_segments(vec![
                 StyledSegment::new("Yes, and don't ask again for "),
@@ -228,10 +230,10 @@ pub fn truncate_to_lines(input: &str, max_lines: usize) -> String {
         };
         out.push(line.to_string());
     }
-    if lines.next().is_some() {
-        if let Some(last) = out.last_mut() {
-            last.push('…');
-        }
+    if lines.next().is_some()
+        && let Some(last) = out.last_mut()
+    {
+        last.push('…');
     }
     out.join("\n")
 }
@@ -370,7 +372,10 @@ mod tests {
     fn fallback_permission_options_include_official_always_allow_label() {
         let options = fallback_prompt_options("CustomTool", "/repo", true);
         assert_eq!(
-            options.iter().map(|option| option.label.as_str()).collect::<Vec<_>>(),
+            options
+                .iter()
+                .map(|option| option.label.as_str())
+                .collect::<Vec<_>>(),
             vec![
                 "Yes",
                 "Yes, and don't ask again for CustomTool commands in /repo",
@@ -381,14 +386,20 @@ mod tests {
         assert_eq!(
             options
                 .iter()
-                .map(|option| option.feedback_config.as_ref().map(|config| config.feedback_type))
+                .map(|option| option
+                    .feedback_config
+                    .as_ref()
+                    .map(|config| config.feedback_type))
                 .collect::<Vec<_>>(),
             vec![Some(FeedbackType::Accept), None, Some(FeedbackType::Reject)]
         );
         // CC :134 `if (showAlwaysAllowOptions)`.
         let managed_only = fallback_prompt_options("CustomTool", "/repo", false);
         assert_eq!(
-            managed_only.iter().map(|option| option.value.as_str()).collect::<Vec<_>>(),
+            managed_only
+                .iter()
+                .map(|option| option.value.as_str())
+                .collect::<Vec<_>>(),
             vec!["yes", "no"]
         );
     }
@@ -397,10 +408,15 @@ mod tests {
     #[test]
     fn fallback_permission_response_matches_official_handle_select() {
         let feedback = || Some("be careful".to_string());
-        let yes = fallback_permission_response(FallbackPermissionOptionValue::Yes, feedback(), "CustomTool");
+        let yes = fallback_permission_response(
+            FallbackPermissionOptionValue::Yes,
+            feedback(),
+            "CustomTool",
+        );
         assert_eq!(
             yes,
-            PermissionPromptResponse::new(PermissionPromptChoice::AllowOnce).with_feedback("be careful")
+            PermissionPromptResponse::new(PermissionPromptChoice::AllowOnce)
+                .with_feedback("be careful")
         );
         // CC :74-85: a localSettings allow rule for the tool as a whole, even
         // when the request's own rule carries content; no feedback.
@@ -419,7 +435,11 @@ mod tests {
                 rules: vec![PermissionRuleValue::new("CustomTool", None)],
             }]
         );
-        let no = fallback_permission_response(FallbackPermissionOptionValue::No, feedback(), "CustomTool");
+        let no = fallback_permission_response(
+            FallbackPermissionOptionValue::No,
+            feedback(),
+            "CustomTool",
+        );
         assert_eq!(
             no,
             PermissionPromptResponse::new(PermissionPromptChoice::Deny).with_feedback("be careful")

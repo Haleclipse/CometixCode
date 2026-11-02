@@ -149,11 +149,11 @@ pub async fn mark_flagged_plugins_seen(plugin_ids: &[String]) {
     let mut updated = get_flagged_plugins();
     let mut changed = false;
     for id in plugin_ids {
-        if let Some(entry) = updated.get_mut(id) {
-            if entry.seen_at.as_ref().is_none_or(|s| s.is_empty()) {
-                entry.seen_at = Some(now.clone());
-                changed = true;
-            }
+        if let Some(entry) = updated.get_mut(id)
+            && entry.seen_at.as_ref().is_none_or(|s| s.is_empty())
+        {
+            entry.seen_at = Some(now.clone());
+            changed = true;
         }
     }
     if changed {

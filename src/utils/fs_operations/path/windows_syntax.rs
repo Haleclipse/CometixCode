@@ -147,7 +147,7 @@ pub(crate) fn join_inputs(paths: &[&Path]) -> PathBuf {
     if !intentional_unc {
         let count = out.iter().take_while(|b| separator(**b)).count();
         if count > 1 {
-            out.splice(..count, [b'\\']);
+            out.splice(..count, *b"\\");
         }
     }
     native(out).into()

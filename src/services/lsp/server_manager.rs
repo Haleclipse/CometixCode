@@ -186,10 +186,9 @@ impl LspServerManager {
             if matches!(
                 server.state(),
                 LspServerState::Running | LspServerState::Error
-            ) {
-                if let Err(error) = server.stop().await {
-                    errors.push(format!("{name}: {error}"));
-                }
+            ) && let Err(error) = server.stop().await
+            {
+                errors.push(format!("{name}: {error}"));
             }
         }
 

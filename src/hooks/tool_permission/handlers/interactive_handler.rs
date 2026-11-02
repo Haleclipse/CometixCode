@@ -53,14 +53,13 @@ pub fn tool_use_confirm_for_request(
     fill_tool_description(&mut request);
     // CC interactiveHandler.ts:84 vs inProcessRunner.ts:215-235: only the
     // interactive builder uses displayInput. Teammates retain original input.
-    if !is_in_process_teammate {
-        if let Some(crate::types::permissions::PermissionDecision::Ask {
+    if !is_in_process_teammate
+        && let Some(crate::types::permissions::PermissionDecision::Ask {
             updated_input: Some(input),
             ..
         }) = &request.permission_result
-        {
-            request.input = input.clone();
-        }
+    {
+        request.input = input.clone();
     }
     let mut confirm = ToolUseConfirm::new(request)
         .with_permission_prompt_start_time_ms(now_ms())

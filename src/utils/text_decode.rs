@@ -270,10 +270,8 @@ impl StreamingDecoder {
         if chunk.starts_with(&[0xFE, 0xFF]) {
             return Ok(Self::with_encoding(encoding_rs::UTF_16BE, "utf-16be"));
         }
-        if check_binary {
-            if let Some(kind) = binary_kind(chunk) {
-                return Err(DecodeError::Binary { kind });
-            }
+        if check_binary && let Some(kind) = binary_kind(chunk) {
+            return Err(DecodeError::Binary { kind });
         }
         if valid_utf8_prefix(chunk) {
             return Ok(Self::with_encoding(encoding_rs::UTF_8, "utf-8"));
@@ -371,7 +369,7 @@ impl StreamingDecoder {
                 pending.extend_from_slice(bytes);
                 let complete = pending.len() / 4 * 4;
                 let mut output = String::with_capacity(complete / 2);
-                for chunk in pending[..complete].chunks_exact(4) {
+                for chunk in pending[..complete].as_chunks::<4>().0 {
                     let value = if *little_endian {
                         u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
                     } else {
@@ -554,11 +552,11 @@ fn decode_bom(bytes: &[u8]) -> Result<Option<DecodedText>, DecodeError> {
 }
 
 fn decode_utf32(bytes: &[u8], little_endian: bool) -> Result<DecodedText, DecodeError> {
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err(DecodeError::Undecodable);
     }
     let mut text = String::with_capacity(bytes.len() / 2);
-    for chunk in bytes.chunks_exact(4) {
+    for chunk in bytes.as_chunks::<4>().0 {
         let value = if little_endian {
             u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
         } else {
@@ -678,7 +676,7 @@ mod tests {
     fn insufficient_evidence_reports_ambiguity_or_single_candidate() {
         // Too few non-ASCII bytes for the detector; several legacy encodings
         // decode this cleanly, so the answer is the named-candidate error.
-        let bytes = vec![0xA1u8, 0xA1].repeat(8);
+        let bytes = [0xA1u8, 0xA1].repeat(8);
         let error = decode_bytes(&bytes, None, "a.txt").unwrap_err();
         match error {
             DecodeError::Ambiguous { candidates } => {
@@ -690,7 +688,7 @@ mod tests {
 
         // 0x81 followed by 0x20 fails every multi-byte candidate; only
         // windows-1252 accepts it, so it is adopted with the source note.
-        let bytes = vec![0x81u8, 0x20].repeat(2);
+        let bytes = [0x81u8, 0x20].repeat(2);
         let decoded = decode_bytes(&bytes, None, "a.txt").unwrap();
         assert_eq!(decoded.encoding, "windows-1252");
         assert_eq!(
@@ -707,7 +705,7 @@ mod tests {
         // Same ambiguity rule as whole-file decoding: too little evidence and
         // several clean decodes means no guess at all.
         assert!(decode_line(&encode(GBK, "你好世界")).is_none());
-        assert!(decode_line(&vec![0xA1u8, 0xA1].repeat(8)).is_none());
+        assert!(decode_line(&[0xA1u8, 0xA1].repeat(8)).is_none());
     }
 
     #[test]

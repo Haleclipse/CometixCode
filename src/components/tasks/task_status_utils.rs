@@ -217,7 +217,10 @@ mod tests {
             is_in_process_teammate: true,
             ..Default::default()
         };
-        assert!(should_hide_tasks_footer(&[teammate.clone()], true));
+        assert!(should_hide_tasks_footer(
+            std::slice::from_ref(&teammate),
+            true
+        ));
         assert!(!should_hide_tasks_footer(&[teammate], false));
         assert!(!should_hide_tasks_footer(&[], true));
         assert!(!should_hide_tasks_footer(

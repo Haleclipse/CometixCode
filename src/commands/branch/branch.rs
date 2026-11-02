@@ -310,8 +310,7 @@ mod tests {
 
     impl BranchFixture {
         fn new() -> Self {
-            let root =
-                std::env::temp_dir().join(format!("nyan-branch-{}", uuid::Uuid::new_v4()));
+            let root = std::env::temp_dir().join(format!("nyan-branch-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(root.join("working")).unwrap();
             fs::create_dir_all(root.join("active-project")).unwrap();
             let fixture = Self {

@@ -258,18 +258,18 @@ pub fn foreground_main_session_task(
         let tasks = Arc::make_mut(&mut next.tasks);
         // CC `:295` — `[prevId]: {...prevTask, isBackgrounded: true}`.
         if restore_prev {
-            if let Some(entry) = prev_id.as_deref().and_then(|pid| tasks.get_mut(pid)) {
-                if let TaskState::Other(other) = Arc::make_mut(entry) {
-                    other.is_backgrounded = Some(true);
-                }
+            if let Some(entry) = prev_id.as_deref().and_then(|pid| tasks.get_mut(pid))
+                && let TaskState::Other(other) = Arc::make_mut(entry)
+            {
+                other.is_backgrounded = Some(true);
             }
             restored_prev = prev_id;
         }
         // CC `:296` — `[taskId]: {...task, isBackgrounded: false}`.
-        if let Some(entry) = tasks.get_mut(task_id) {
-            if let TaskState::Other(other) = Arc::make_mut(entry) {
-                other.is_backgrounded = Some(false);
-            }
+        if let Some(entry) = tasks.get_mut(task_id)
+            && let TaskState::Other(other) = Arc::make_mut(entry)
+        {
+            other.is_backgrounded = Some(false);
         }
         UpdateDecision::Replace {
             next: Arc::new(next),

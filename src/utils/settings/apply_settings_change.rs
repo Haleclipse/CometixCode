@@ -65,14 +65,13 @@ pub fn apply_settings_change(source: SettingSource, store: &AppStore) {
             );
 
         state.settings = Arc::new(fresh.settings.clone());
-        if previous_effort != new_effort {
-            if let Some(effort) = new_effort
+        if previous_effort != new_effort
+            && let Some(effort) = new_effort
                 .as_deref()
                 .and_then(crate::utils::effort::parse_effort_value)
             {
                 state.effort_value = Some(effort);
             }
-        }
         state.set_tool_permission_context(permission_context);
     });
 }

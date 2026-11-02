@@ -35,8 +35,7 @@ pub fn get_record_file_path() -> Option<PathBuf> {
     if !crate::utils::build_profile::has_internal_capability(
         crate::utils::build_profile::InternalCapability::Ui,
     ) || !is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_TERMINAL_RECORDING")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_TERMINAL_RECORDING").as_deref(),
     ) {
         return None;
     }

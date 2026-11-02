@@ -156,9 +156,8 @@ fn push_identifier(
         // digit (`autoCompact`, `sha256Hash`). Runs of capitals (`HTTPClient`)
         // split before the last capital so `HTTP` + `Client` survive.
         let camel = byte.is_ascii_uppercase()
-            && previous.is_some_and(|previous| {
-                previous.is_ascii_lowercase() || previous.is_ascii_digit()
-            });
+            && previous
+                .is_some_and(|previous| previous.is_ascii_lowercase() || previous.is_ascii_digit());
         let acronym_split = byte.is_ascii_uppercase()
             && previous.is_some_and(|previous| previous.is_ascii_uppercase())
             && bytes.get(index + 1).is_some_and(u8::is_ascii_lowercase);
@@ -186,7 +185,10 @@ fn push_word(bytes: &[u8], start: usize, end: usize, tokens: &mut Vec<(usize, us
         return;
     }
     let lowered = String::from_utf8_lossy(word).to_ascii_lowercase();
-    if lowered.chars().all(|character| !character.is_ascii_alphanumeric()) {
+    if lowered
+        .chars()
+        .all(|character| !character.is_ascii_alphanumeric())
+    {
         return;
     }
     tokens.push((start, end, lowered));
@@ -258,11 +260,7 @@ impl TextIndex {
     }
 
     /// Replace every chunk of one file. The caller commits once per batch.
-    pub fn replace_file(
-        writer: &mut IndexWriter,
-        fields: &TextFields,
-        document: &ChunkDocument,
-    ) {
+    pub fn replace_file(writer: &mut IndexWriter, fields: &TextFields, document: &ChunkDocument) {
         let _ = writer.delete_term(Term::from_field_text(fields.path, &document.path));
         writer
             .add_document(doc!(
@@ -329,9 +327,8 @@ impl TextIndex {
             .map_err(|error| error.to_string())?;
         let mut hits = Vec::new();
         for (score, address) in found {
-            let document: tantivy::TantivyDocument = searcher
-                .doc(address)
-                .map_err(|error| error.to_string())?;
+            let document: tantivy::TantivyDocument =
+                searcher.doc(address).map_err(|error| error.to_string())?;
             let path = document
                 .get_first(self.path_field)
                 .and_then(|value| value.as_str().map(str::to_owned));
@@ -370,9 +367,7 @@ impl TextIndex {
                 .then_with(|| left.start_line.cmp(&right.start_line))
                 .then_with(|| left.end_line.cmp(&right.end_line))
         });
-        hits.dedup_by(|left, right| {
-            left.path == right.path && left.start_line == right.start_line
-        });
+        hits.dedup_by(|left, right| left.path == right.path && left.start_line == right.start_line);
         hits.truncate(max_results);
         Ok(hits)
     }
@@ -398,7 +393,10 @@ fn schema() -> (Schema, Field, Field, Field, Field, Field, Field) {
     let end = builder.add_u64_field("end", STORED);
     let symbol = builder.add_text_field("symbol", STRING | STORED);
     let hash = builder.add_text_field("fileHash", STRING | STORED);
-    let body = builder.add_text_field("body", TextOptions::default().set_indexing_options(body_indexing));
+    let body = builder.add_text_field(
+        "body",
+        TextOptions::default().set_indexing_options(body_indexing),
+    );
     let schema = builder.build();
     (schema, path, start, end, symbol, hash, body)
 }
@@ -431,7 +429,8 @@ mod tests {
 
     #[test]
     fn bm25_search_is_deterministic_and_splits_identifiers() {
-        let root = std::env::temp_dir().join(format!("nyan-text-{}", uuid::Uuid::new_v4().simple()));
+        let root =
+            std::env::temp_dir().join(format!("nyan-text-{}", uuid::Uuid::new_v4().simple()));
         let index = TextIndex::open(&root).unwrap();
         let fields = index.fields();
         let mut writer = index.writer().unwrap();
@@ -462,15 +461,21 @@ mod tests {
         // Same query twice: same order.
         let again = index.search("autoCompactIfNeeded", 10).unwrap();
         assert_eq!(
-            hits.iter().map(|hit| (&hit.path, hit.start_line)).collect::<Vec<_>>(),
-            again.iter().map(|hit| (&hit.path, hit.start_line)).collect::<Vec<_>>()
+            hits.iter()
+                .map(|hit| (&hit.path, hit.start_line))
+                .collect::<Vec<_>>(),
+            again
+                .iter()
+                .map(|hit| (&hit.path, hit.start_line))
+                .collect::<Vec<_>>()
         );
         let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn replace_file_removes_old_chunks() {
-        let root = std::env::temp_dir().join(format!("nyan-text-{}", uuid::Uuid::new_v4().simple()));
+        let root =
+            std::env::temp_dir().join(format!("nyan-text-{}", uuid::Uuid::new_v4().simple()));
         let index = TextIndex::open(&root).unwrap();
         let fields = index.fields();
         let mut writer = index.writer().unwrap();

@@ -32,17 +32,17 @@ pub fn process_text_prompt(
         content.extend(image_content_blocks);
         RenderableMessage::user_blocks(id, content)
     };
-    if is_meta {
-        if let crate::types::message::RenderableMessageKind::User { message } = &mut message.kind {
-            for block in &mut message.content {
-                *block = match std::mem::replace(block, UserContent::Text(String::new())) {
-                    UserContent::Text(text) => UserContent::MetaText(text),
-                    UserContent::Image { media_type, data } => {
-                        UserContent::MetaImage { media_type, data }
-                    }
-                    other => other,
-                };
-            }
+    if is_meta
+        && let crate::types::message::RenderableMessageKind::User { message } = &mut message.kind
+    {
+        for block in &mut message.content {
+            *block = match std::mem::replace(block, UserContent::Text(String::new())) {
+                UserContent::Text(text) => UserContent::MetaText(text),
+                UserContent::Image { media_type, data } => {
+                    UserContent::MetaImage { media_type, data }
+                }
+                other => other,
+            };
         }
     }
     // CC `processTextPrompt(...)` threads `permissionMode` into

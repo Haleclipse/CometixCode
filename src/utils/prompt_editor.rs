@@ -137,8 +137,7 @@ fn unique_prompt_path() -> PathBuf {
         .unwrap_or_default()
         .as_nanos();
     // CC `promptEditor.ts:143` `generateTempFilePath()`: `join(tmpdir(), …)`.
-    crate::utils::node_os::tmpdir()
-        .join(format!("nyan-prompt-{}-{nanos}.md", std::process::id()))
+    crate::utils::node_os::tmpdir().join(format!("nyan-prompt-{}-{nanos}.md", std::process::id()))
 }
 
 fn editor_display_name(program: &str) -> String {
@@ -176,7 +175,9 @@ fn command_exists(command: &str) -> bool {
 pub fn external_editor_command() -> Option<(String, Vec<String>)> {
     static RESOLVED: std::sync::OnceLock<Option<(String, Vec<String>)>> =
         std::sync::OnceLock::new();
-    RESOLVED.get_or_init(resolve_external_editor_command).clone()
+    RESOLVED
+        .get_or_init(resolve_external_editor_command)
+        .clone()
 }
 
 fn resolve_external_editor_command() -> Option<(String, Vec<String>)> {

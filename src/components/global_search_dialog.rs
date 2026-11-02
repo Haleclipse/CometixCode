@@ -389,13 +389,12 @@ pub fn GlobalSearchDialog<'a>(
     let preview_on_right = global_search_preview_on_right(columns);
     let filtered_matches = filter_global_search_matches(&source_matches, &query);
     let mut previews = props.previews.clone();
-    if let Some(item) = filtered_matches.get(focused_index.get()) {
-        if !previews
+    if let Some(item) = filtered_matches.get(focused_index.get())
+        && !previews
             .iter()
             .any(|preview| preview.file == item.file && preview.line == item.line)
-        {
-            previews.push(read_global_search_preview(&root_path, item));
-        }
+    {
+        previews.push(read_global_search_preview(&root_path, item));
     }
     let items = global_search_items(&filtered_matches, &previews, columns, preview_on_right);
     let item_count = items.len();
@@ -436,10 +435,10 @@ pub fn GlobalSearchDialog<'a>(
                     focused_index.set(focused_index.get().saturating_sub(1));
                 }
                 KeyCode::Enter => {
-                    if let Some(item) = filtered_matches.get(focused_index.get()) {
-                        if editor_sender.try_send(root_path.join(&item.file)).is_err() {
-                            pending_action.set(Some(GlobalSearchAction::Done));
-                        }
+                    if let Some(item) = filtered_matches.get(focused_index.get())
+                        && editor_sender.try_send(root_path.join(&item.file)).is_err()
+                    {
+                        pending_action.set(Some(GlobalSearchAction::Done));
                     }
                 }
                 KeyCode::Tab => {

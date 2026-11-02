@@ -102,7 +102,11 @@ pub fn build_account_properties() -> Vec<Property> {
     {
         properties.push(property("API key", api_key_source));
     }
-    if crate::utils::process_env::var_os("IS_DEMO").as_deref().truthy().is_none() {
+    if crate::utils::process_env::var_os("IS_DEMO")
+        .as_deref()
+        .truthy()
+        .is_none()
+    {
         if let Some(organization) = account_info.organization {
             properties.push(property("Organization", organization));
         }
@@ -137,8 +141,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 crate::utils::env_utils::get_aws_region(),
             ));
             if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH")
-                    .as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH").as_deref(),
             ) {
                 properties.push(unlabeled_property("AWS auth skipped"));
             }
@@ -156,8 +159,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 crate::utils::env_utils::get_default_vertex_region(),
             ));
             if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH")
-                    .as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH").as_deref(),
             ) {
                 properties.push(unlabeled_property("GCP auth skipped"));
             }
@@ -175,8 +177,7 @@ pub fn build_api_provider_properties() -> Vec<Property> {
                 "ANTHROPIC_FOUNDRY_RESOURCE",
             );
             if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH")
-                    .as_deref(),
+                crate::utils::process_env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH").as_deref(),
             ) {
                 properties.push(unlabeled_property("Microsoft Foundry auth skipped"));
             }
@@ -197,10 +198,14 @@ pub fn build_api_provider_properties() -> Vec<Property> {
     if let Some(mtls_config) = mtls_config {
         // `mtlsConfig.cert && ...`: an empty file's contents are falsy.
         let loaded = |contents: &Option<String>| contents.as_deref().is_some_and(|c| !c.is_empty());
-        if let Some(cert_path) = truthy("CLAUDE_CODE_CLIENT_CERT").filter(|_| loaded(&mtls_config.cert)) {
+        if let Some(cert_path) =
+            truthy("CLAUDE_CODE_CLIENT_CERT").filter(|_| loaded(&mtls_config.cert))
+        {
             properties.push(property("mTLS client cert", cert_path));
         }
-        if let Some(key_path) = truthy("CLAUDE_CODE_CLIENT_KEY").filter(|_| loaded(&mtls_config.key)) {
+        if let Some(key_path) =
+            truthy("CLAUDE_CODE_CLIENT_KEY").filter(|_| loaded(&mtls_config.key))
+        {
             properties.push(property("mTLS client key", key_path));
         }
     }

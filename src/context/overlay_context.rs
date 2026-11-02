@@ -44,7 +44,9 @@ impl OverlayRegistration {
     pub fn register(store: AppStore, id: &str) -> Self {
         let id: Arc<str> = id.into();
         {
-            let mut live = LIVE_GUARDS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut live = LIVE_GUARDS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             match live
                 .iter_mut()
                 .find(|(other, other_id, _)| other.same_instance(&store) && *other_id == id)
@@ -76,7 +78,9 @@ impl Drop for OverlayRegistration {
     fn drop(&mut self) {
         // Only the last live guard of the id removes it (module doc).
         let last = {
-            let mut live = LIVE_GUARDS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut live = LIVE_GUARDS
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             match live.iter().position(|(other, other_id, _)| {
                 other.same_instance(&self.store) && *other_id == self.id
             }) {
@@ -205,8 +209,8 @@ mod tests {
     #[component]
     fn Holder(props: &HolderProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let store = props.store.clone();
-        let _registration =
-            hooks.use_state(move || store.map(|store| OverlayRegistration::register(store, "select")));
+        let _registration = hooks
+            .use_state(move || store.map(|store| OverlayRegistration::register(store, "select")));
         element!(View)
     }
 
@@ -242,12 +246,14 @@ mod tests {
                 let probe = store.clone();
                 use futures::StreamExt;
                 let mut app = element!(Swapper(store: Some(store)));
-                let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                    MockTerminalConfig::with_events(futures::stream::iter(vec![TerminalEvent::Key(
-                        KeyEvent::new(KeyEventKind::Press, KeyCode::F(12)),
-                    )]))
-                    .with_size(40, 5),
-                ));
+                let mut render_loop = Box::pin(
+                    app.mock_terminal_render_loop(
+                        MockTerminalConfig::with_events(futures::stream::iter(vec![
+                            TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::F(12))),
+                        ]))
+                        .with_size(40, 5),
+                    ),
+                );
                 loop {
                     let next = crate::utils::race(render_loop.next(), async {
                         futures_timer::Delay::new(std::time::Duration::from_secs(10)).await;

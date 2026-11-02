@@ -133,19 +133,14 @@ pub fn is_keep_shadow_enabled() -> bool {
         return true;
     }
     // Also respect explicit point configuration if user configured it
-    if let Some(decision) = &nyan.decision {
-        if decision.enabled() {
-            if let Some(points) = &decision.points {
-                if let Some(point_cfg) = points.get("compaction.keep") {
-                    if point_cfg.mode == Some(crate::utils::settings::nyan::DecisionMode::Shadow)
-                        || point_cfg.mode
-                            == Some(crate::utils::settings::nyan::DecisionMode::Active)
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
+    if let Some(decision) = &nyan.decision
+        && decision.enabled()
+        && let Some(points) = &decision.points
+        && let Some(point_cfg) = points.get("compaction.keep")
+        && (point_cfg.mode == Some(crate::utils::settings::nyan::DecisionMode::Shadow)
+            || point_cfg.mode == Some(crate::utils::settings::nyan::DecisionMode::Active))
+    {
+        return true;
     }
     false
 }

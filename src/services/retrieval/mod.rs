@@ -62,7 +62,9 @@ async fn cached_index(
     let result = tokio::task::spawn_blocking(move || {
         let cache = INDEX_CACHE.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()));
         let fresh = {
-            let mut guard = cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut guard = cache
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(cached) = guard.get(&root) {
                 // Git knows which files changed, so a fresh-looking cache is
                 // still refreshed when HEAD or the working tree moved.
@@ -81,7 +83,9 @@ async fn cached_index(
         let Some(fresh) = fresh else {
             return Ok(None);
         };
-        let mut guard = cache.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         guard.insert(
             root,
             CachedIndex {
@@ -169,7 +173,8 @@ pub async fn search_with_provider(
     }
 
     // 4.11: intent only changes the symbol weight and relation expansion.
-    let intent = decisions::decide_intent(provider, &request.query, abort, &mut decisions_log).await;
+    let intent =
+        decisions::decide_intent(provider, &request.query, abort, &mut decisions_log).await;
 
     let exact_started = Instant::now();
     match exact::search_exact(&root, &request, abort, permission_context) {
@@ -211,17 +216,20 @@ pub async fn search_with_provider(
     }
 
     let index_started = Instant::now();
-    let index = match cached_index(&root, retrieval.index().max_file_bytes(), permission_context).await {
+    let index = match cached_index(
+        &root,
+        retrieval.index().max_file_bytes(),
+        permission_context,
+    )
+    .await
+    {
         Ok(Some(index)) => {
             // 4.8.1: changed files enter the pending queue; queued entries for
             // deleted files leave it.
             if retrieval.semantic().is_some()
                 && let Some(semantic_settings) = retrieval.semantic()
-                && let Ok(client) = semantic::SemanticClient::from_settings(
-                    &semantic_settings,
-                    &root,
-                    &budget,
-                )
+                && let Ok(client) =
+                    semantic::SemanticClient::from_settings(&semantic_settings, &root, &budget)
             {
                 let _ = client.queue_changed(&index);
                 let _ = client.ensure_initial_pending(&index);
@@ -302,12 +310,8 @@ pub async fn search_with_provider(
             }
         } else {
             let symbol_started = Instant::now();
-            let mut symbols = index.search_symbols(
-                &request,
-                intent.relation,
-                false,
-                MAX_BRANCH_CANDIDATES,
-            );
+            let mut symbols =
+                index.search_symbols(&request, intent.relation, false, MAX_BRANCH_CANDIDATES);
             let symbol_elapsed_ms = symbol_started.elapsed().as_millis() as u64;
             for candidate in &mut symbols {
                 candidate.latency_ms = symbol_elapsed_ms;
@@ -559,7 +563,11 @@ async fn extra_round(
     };
     let _ = abort;
     let mut extra = index.search_symbols(&widened, false, false, widened.max_results);
-    extra.extend(index.search_text(&widened, widened.max_results).unwrap_or_default());
+    extra.extend(
+        index
+            .search_text(&widened, widened.max_results)
+            .unwrap_or_default(),
+    );
     let mut verified = Vec::new();
     for candidate in extra {
         if let Ok(inspection) = inspect::inspect_candidate(root, &candidate) {

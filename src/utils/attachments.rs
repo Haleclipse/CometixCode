@@ -802,31 +802,30 @@ pub(crate) async fn generate_file_attachment(
                 }
             }
         }
-        if let Some(existing) = tool_use_context.read_file_state.get(path) {
-            if let Ok(metadata) = crate::utils::fs_operations::get_fs_implementation()
+        if let Some(existing) = tool_use_context.read_file_state.get(path)
+            && let Ok(metadata) = crate::utils::fs_operations::get_fs_implementation()
                 .stat(path)
                 .await
-            {
-                let current_mtime = metadata.mtime_ms.floor() as i64;
-                if existing.timestamp_ms == Some(current_mtime) {
-                    let existing_content = existing.content.as_deref().unwrap_or_default();
-                    let total_lines = existing_content.matches('\n').count().saturating_add(1);
-                    return Some(AttachmentMessage::new(serde_json::json!({
-                        "type": "already_read_file",
-                        "filename": filename,
-                        "displayPath": display_path,
-                        "content": {
-                            "type": "text",
-                            "file": {
-                                "filePath": filename,
-                                "content": existing_content,
-                                "numLines": total_lines,
-                                "startLine": options.offset.unwrap_or(1),
-                                "totalLines": total_lines,
-                            }
+        {
+            let current_mtime = metadata.mtime_ms.floor() as i64;
+            if existing.timestamp_ms == Some(current_mtime) {
+                let existing_content = existing.content.as_deref().unwrap_or_default();
+                let total_lines = existing_content.matches('\n').count().saturating_add(1);
+                return Some(AttachmentMessage::new(serde_json::json!({
+                    "type": "already_read_file",
+                    "filename": filename,
+                    "displayPath": display_path,
+                    "content": {
+                        "type": "text",
+                        "file": {
+                            "filePath": filename,
+                            "content": existing_content,
+                            "numLines": total_lines,
+                            "startLine": options.offset.unwrap_or(1),
+                            "totalLines": total_lines,
                         }
-                    })));
-                }
+                    }
+                })));
             }
         }
     }
@@ -962,17 +961,17 @@ pub(crate) fn extract_agent_mentions(content: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut results = Vec::new();
     for captures in QUOTED_AGENT.captures_iter(content) {
-        if let Some(agent) = captures.get(1).map(|capture| capture.as_str().to_string()) {
-            if seen.insert(agent.clone()) {
-                results.push(agent);
-            }
+        if let Some(agent) = captures.get(1).map(|capture| capture.as_str().to_string())
+            && seen.insert(agent.clone())
+        {
+            results.push(agent);
         }
     }
     for captures in UNQUOTED_AGENT.captures_iter(content) {
-        if let Some(agent) = captures.get(1).map(|capture| capture.as_str().to_string()) {
-            if seen.insert(agent.clone()) {
-                results.push(agent);
-            }
+        if let Some(agent) = captures.get(1).map(|capture| capture.as_str().to_string())
+            && seen.insert(agent.clone())
+        {
+            results.push(agent);
         }
     }
     results
@@ -1080,10 +1079,10 @@ async fn process_at_mentioned_files(
                     break;
                 }
                 entry_count = entry_count.saturating_add(1);
-                if names.len() < MAX_DIR_ENTRIES {
-                    if let Ok(name) = entry.file_name().into_string() {
-                        names.push(name);
-                    }
+                if names.len() < MAX_DIR_ENTRIES
+                    && let Ok(name) = entry.file_name().into_string()
+                {
+                    names.push(name);
                 }
             }
             let truncated = entry_count.saturating_sub(MAX_DIR_ENTRIES);
@@ -1476,7 +1475,7 @@ pub(crate) fn get_agent_listing_delta_attachment(
         .collect::<Vec<_>>();
     let added_lines = filtered
         .iter()
-        .map(|agent| crate::tools::agent_tool::prompt::format_agent_line(agent))
+        .map(crate::tools::agent_tool::prompt::format_agent_line)
         .collect::<Vec<_>>();
     let subscription = crate::utils::auth::get_subscription_type();
     Some(AttachmentMessage::new(serde_json::json!({

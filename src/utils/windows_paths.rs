@@ -81,12 +81,12 @@ pub fn find_git_bash_path() -> Result<PathBuf, String> {
         r"C:\Program Files (x86)\Git\cmd\git.exe",
     ] {
         let git = PathBuf::from(git);
-        if executable_exists(&git) {
-            if let Some(root) = git.parent().and_then(Path::parent) {
-                let bash = root.join("bin").join("bash.exe");
-                if executable_exists(&bash) {
-                    return Ok(bash);
-                }
+        if executable_exists(&git)
+            && let Some(root) = git.parent().and_then(Path::parent)
+        {
+            let bash = root.join("bin").join("bash.exe");
+            if executable_exists(&bash) {
+                return Ok(bash);
             }
         }
     }

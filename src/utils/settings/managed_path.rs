@@ -17,10 +17,10 @@ pub(crate) fn get_managed_file_path() -> PathBuf {
         // builds must ignore the Ant-only environment variable.
         return path;
     }
-    if crate::utils::build_profile::build_audience().is_internal() {
-        if let Some(path) = override_path {
-            return path;
-        }
+    if crate::utils::build_profile::build_audience().is_internal()
+        && let Some(path) = override_path
+    {
+        return path;
     }
 
     #[cfg(target_os = "macos")]

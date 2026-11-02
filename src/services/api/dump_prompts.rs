@@ -32,7 +32,9 @@ static DUMP_STATE: Mutex<Option<HashMap<String, DumpState>>> = Mutex::new(None);
 static CACHED_REQUESTS: Mutex<Vec<CachedApiRequest>> = Mutex::new(Vec::new());
 
 fn dump_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_DUMP_PROMPTS").as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("NYAN_DUMP_PROMPTS").as_deref(),
+    )
 }
 
 pub fn get_dump_prompts_path(agent_id_or_session_id: Option<&str>) -> PathBuf {
@@ -59,10 +61,10 @@ pub fn clear_api_request_cache() {
 }
 
 pub fn clear_dump_state(agent_id_or_session_id: &str) {
-    if let Ok(mut guard) = DUMP_STATE.lock() {
-        if let Some(map) = guard.as_mut() {
-            map.remove(agent_id_or_session_id);
-        }
+    if let Ok(mut guard) = DUMP_STATE.lock()
+        && let Some(map) = guard.as_mut()
+    {
+        map.remove(agent_id_or_session_id);
     }
 }
 
@@ -227,14 +229,14 @@ pub fn dump_request_value(request: &Value, session_id: Option<&str>) {
             .cloned()
             .unwrap_or_default();
         for msg in messages.iter().skip(state.message_count_seen) {
-            if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
-                if let Ok(s) = serde_json::to_string(&json!({
+            if msg.get("role").and_then(|r| r.as_str()) == Some("user")
+                && let Ok(s) = serde_json::to_string(&json!({
                     "type": "message",
                     "timestamp": ts,
                     "data": msg,
-                })) {
-                    entries.push(s);
-                }
+                }))
+            {
+                entries.push(s);
             }
         }
         state.message_count_seen = messages.len();

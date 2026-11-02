@@ -285,22 +285,22 @@ pub async fn create_agent_worktree_from_cwd(
 ) -> anyhow::Result<AgentWorktreeInfo> {
     validate_worktree_slug(slug).map_err(anyhow::Error::msg)?;
 
-    if let Some((config, hook_context, base_env)) = load_worktree_hooks_config_and_context(cwd) {
-        if crate::services::hooks::worktree::has_worktree_create_hook(&config) {
-            let base_input = crate::services::hooks::create_base_hook_input(&hook_context);
-            let hook_result = crate::services::hooks::worktree::execute_worktree_create_hook(
-                &config, slug, base_input, base_env,
-            )
-            .await
-            .map_err(anyhow::Error::msg)?;
-            return Ok(AgentWorktreeInfo {
-                worktree_path: hook_result.worktree_path,
-                worktree_branch: None,
-                head_commit: None,
-                git_root: None,
-                hook_based: Some(true),
-            });
-        }
+    if let Some((config, hook_context, base_env)) = load_worktree_hooks_config_and_context(cwd)
+        && crate::services::hooks::worktree::has_worktree_create_hook(&config)
+    {
+        let base_input = crate::services::hooks::create_base_hook_input(&hook_context);
+        let hook_result = crate::services::hooks::worktree::execute_worktree_create_hook(
+            &config, slug, base_input, base_env,
+        )
+        .await
+        .map_err(anyhow::Error::msg)?;
+        return Ok(AgentWorktreeInfo {
+            worktree_path: hook_result.worktree_path,
+            worktree_branch: None,
+            head_commit: None,
+            git_root: None,
+            hook_based: Some(true),
+        });
     }
 
     let git_root = crate::utils::git::find_canonical_git_root(cwd).ok_or_else(|| {

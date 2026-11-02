@@ -785,10 +785,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn glob_read_deny_rules_hide_matching_files_before_results_are_returned() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-glob-deny-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-glob-deny-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(root.join("secret")).unwrap();
         std::fs::create_dir_all(root.join("rootless")).unwrap();
         std::fs::write(root.join("visible.txt"), "visible").unwrap();
@@ -881,10 +879,8 @@ mod tests {
         use crate::types::message::ToolResultStatus;
         use crate::types::permissions::PermissionMode;
 
-        let root = std::env::temp_dir().join(format!(
-            "nyan-glob-limit-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-glob-limit-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         for name in ["a.txt", "b.txt", "c.txt"] {
             std::fs::write(root.join(name), name).unwrap();
@@ -1007,10 +1003,8 @@ mod tests {
 
     #[test]
     fn glob_output_uses_official_result_cap_and_relative_paths() {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-glob-cap-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-glob-cap-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         for index in 0..101 {
             std::fs::write(dir.join(format!("file-{index:03}.txt")), "x").unwrap();
@@ -1076,10 +1070,8 @@ mod tests {
 
     #[test]
     fn glob_output_uses_cwd_override_when_path_is_omitted() {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-glob-cwd-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-glob-cwd-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("needle.txt"), "match").unwrap();
         let args = serde_json::json!({"pattern": "*.txt"});

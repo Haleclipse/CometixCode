@@ -113,15 +113,14 @@ pub fn on_change_app_state(new: &AppState, old: &AppState) {
         let show_expanded_todos = new.expanded_view == ExpandedView::Tasks;
         let show_spinner_tree = new.expanded_view == ExpandedView::Teammates;
         let current = crate::utils::config::load_global_config();
-        if current.show_expanded_todos != Some(show_expanded_todos)
-            || current.show_spinner_tree != Some(show_spinner_tree)
-        {
-            if let Err(error) = save_global_config(|config| {
+        if (current.show_expanded_todos != Some(show_expanded_todos)
+            || current.show_spinner_tree != Some(show_spinner_tree))
+            && let Err(error) = save_global_config(|config| {
                 config.show_expanded_todos = Some(show_expanded_todos);
                 config.show_spinner_tree = Some(show_spinner_tree);
-            }) {
-                tracing::warn!(%error, "failed to persist expandedView");
-            }
+            })
+        {
+            tracing::warn!(%error, "failed to persist expandedView");
         }
     }
 

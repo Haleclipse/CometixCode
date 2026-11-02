@@ -120,14 +120,15 @@ fn update_retry_after(state: &mut MockState) {
         .headers
         .get("anthropic-ratelimit-unified-reset")
         .and_then(|value| value.parse::<i64>().ok());
-    if rejected && overage_rejected {
-        if let Some(reset) = reset {
-            state.headers.insert(
-                "retry-after".to_string(),
-                reset.saturating_sub(now_seconds()).max(0).to_string(),
-            );
-            return;
-        }
+    if rejected
+        && overage_rejected
+        && let Some(reset) = reset
+    {
+        state.headers.insert(
+            "retry-after".to_string(),
+            reset.saturating_sub(now_seconds()).max(0).to_string(),
+        );
+        return;
     }
     state.headers.remove("retry-after");
 }
@@ -181,10 +182,10 @@ pub fn set_mock_header(key: &str, mut value: Option<String>) {
         // disable check, so the service stays enabled until `clearMockHeaders`.
         return;
     }
-    if key == "reset" || key == "overage-reset" {
-        if let Some(hours) = value.as_deref().and_then(|value| value.parse::<f64>().ok()) {
-            value = Some((now_seconds() as f64 + hours * 3600.0).floor().to_string());
-        }
+    if (key == "reset" || key == "overage-reset")
+        && let Some(hours) = value.as_deref().and_then(|value| value.parse::<f64>().ok())
+    {
+        value = Some((now_seconds() as f64 + hours * 3600.0).floor().to_string());
     }
     if key == "claim" {
         let kind = match value.as_deref() {

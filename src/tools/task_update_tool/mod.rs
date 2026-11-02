@@ -196,32 +196,32 @@ pub(crate) fn task_update_output(input: &serde_json::Value) -> TaskUpdateOutput 
     let mut patch = TaskUpdatePatch::default();
     let mut status_change = None;
 
-    if let Some(subject) = input.get("subject").and_then(|value| value.as_str()) {
-        if subject != existing.subject {
-            patch.subject = Some(subject.to_string());
-            updated_fields.push("subject".to_string());
-        }
+    if let Some(subject) = input.get("subject").and_then(|value| value.as_str())
+        && subject != existing.subject
+    {
+        patch.subject = Some(subject.to_string());
+        updated_fields.push("subject".to_string());
     }
-    if let Some(description) = input.get("description").and_then(|value| value.as_str()) {
-        if description != existing.description {
-            patch.description = Some(description.to_string());
-            updated_fields.push("description".to_string());
-        }
+    if let Some(description) = input.get("description").and_then(|value| value.as_str())
+        && description != existing.description
+    {
+        patch.description = Some(description.to_string());
+        updated_fields.push("description".to_string());
     }
     // CC compares and assigns verbatim (:177-180) — no trimming, no
     // empty-string collapse.
-    if let Some(active_form) = input.get("activeForm").and_then(|value| value.as_str()) {
-        if existing.active_form.as_deref() != Some(active_form) {
-            patch.active_form = Some(active_form.to_string());
-            updated_fields.push("activeForm".to_string());
-        }
+    if let Some(active_form) = input.get("activeForm").and_then(|value| value.as_str())
+        && existing.active_form.as_deref() != Some(active_form)
+    {
+        patch.active_form = Some(active_form.to_string());
+        updated_fields.push("activeForm".to_string());
     }
     let owner_given = input.get("owner").and_then(|value| value.as_str());
-    if let Some(owner) = owner_given {
-        if existing.owner.as_deref() != Some(owner) {
-            patch.owner = Some(Some(owner.to_string()));
-            updated_fields.push("owner".to_string());
-        }
+    if let Some(owner) = owner_given
+        && existing.owner.as_deref() != Some(owner)
+    {
+        patch.owner = Some(Some(owner.to_string()));
+        updated_fields.push("owner".to_string());
     }
     // Maps to: CC `TaskUpdateTool.ts:185-199` — when a teammate marks a task
     // in_progress without naming an owner and the task has none, the agent's
@@ -230,11 +230,10 @@ pub(crate) fn task_update_output(input: &serde_json::Value) -> TaskUpdateOutput 
         && input.get("status").and_then(|value| value.as_str()) == Some("in_progress")
         && owner_given.is_none()
         && existing.owner.is_none()
+        && let Some(agent_name) = crate::utils::teammate::get_agent_name()
     {
-        if let Some(agent_name) = crate::utils::teammate::get_agent_name() {
-            patch.owner = Some(Some(agent_name));
-            updated_fields.push("owner".to_string());
-        }
+        patch.owner = Some(Some(agent_name));
+        updated_fields.push("owner".to_string());
     }
     // CC processes metadata (:200-211) BEFORE status (:212-270) — the order
     // is observable in `updatedFields`. The zod strict schema only admits an
@@ -285,54 +284,53 @@ pub(crate) fn task_update_output(input: &serde_json::Value) -> TaskUpdateOutput 
     }
 
     let owner_update = patch.owner.clone().flatten();
-    if patch.subject.is_some()
+    if (patch.subject.is_some()
         || patch.description.is_some()
         || patch.active_form.is_some()
         || patch.owner.is_some()
         || patch.status.is_some()
-        || patch.metadata.is_some()
+        || patch.metadata.is_some())
+        && update_task(&list_id, &task_id, patch).is_none()
     {
-        if update_task(&list_id, &task_id, patch).is_none() {
-            return task_update_failure(
-                task_id,
-                updated_fields,
-                status_change,
-                "Failed to persist task update",
-            );
-        }
+        return task_update_failure(
+            task_id,
+            updated_fields,
+            status_change,
+            "Failed to persist task update",
+        );
     }
 
     // Maps to: CC `TaskUpdateTool.ts:276-298` — an ownership change notifies
     // the new owner's mailbox with a `task_assignment` message. CC passes
     // `taskListId` as the mailbox team argument; delivery is best-effort
     // there (void await), so a failed write does not fail the update.
-    if let Some(new_owner) = owner_update.as_deref() {
-        if crate::utils::agent_swarms_enabled::is_agent_swarms_enabled() {
-            let sender_name =
-                crate::utils::teammate::get_agent_name().unwrap_or_else(|| "team-lead".to_string());
-            let sender_color = crate::utils::teammate::get_teammate_color();
-            let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-            let assignment_message = serde_json::json!({
-                "type": "task_assignment",
-                "taskId": task_id,
-                "subject": existing.subject,
-                "description": existing.description,
-                "assignedBy": sender_name,
-                "timestamp": timestamp,
-            })
-            .to_string();
-            let _ = crate::utils::teammate_mailbox::write_to_mailbox(
-                new_owner,
-                crate::utils::teammate_mailbox::TeammateMessageInput {
-                    from: sender_name,
-                    text: assignment_message,
-                    timestamp,
-                    color: sender_color,
-                    summary: None,
-                },
-                Some(&list_id),
-            );
-        }
+    if let Some(new_owner) = owner_update.as_deref()
+        && crate::utils::agent_swarms_enabled::is_agent_swarms_enabled()
+    {
+        let sender_name =
+            crate::utils::teammate::get_agent_name().unwrap_or_else(|| "team-lead".to_string());
+        let sender_color = crate::utils::teammate::get_teammate_color();
+        let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+        let assignment_message = serde_json::json!({
+            "type": "task_assignment",
+            "taskId": task_id,
+            "subject": existing.subject,
+            "description": existing.description,
+            "assignedBy": sender_name,
+            "timestamp": timestamp,
+        })
+        .to_string();
+        let _ = crate::utils::teammate_mailbox::write_to_mailbox(
+            new_owner,
+            crate::utils::teammate_mailbox::TeammateMessageInput {
+                from: sender_name,
+                text: assignment_message,
+                timestamp,
+                color: sender_color,
+                summary: None,
+            },
+            Some(&list_id),
+        );
     }
 
     // Maps to: CC `TaskUpdateTool.ts:300-311` — only ids not already in
@@ -515,12 +513,11 @@ impl crate::tool::ToolCall for TaskUpdateTool {
                 .tasks_store
                 .as_ref()
                 .or(context.app_store.store.as_ref())
+                && store.get().expanded_view != crate::state::app_state_store::ExpandedView::Tasks
             {
-                if store.get().expanded_view != crate::state::app_state_store::ExpandedView::Tasks {
-                    store.replace_with(|state| {
-                        state.expanded_view = crate::state::app_state_store::ExpandedView::Tasks;
-                    });
-                }
+                store.replace_with(|state| {
+                    state.expanded_view = crate::state::app_state_store::ExpandedView::Tasks;
+                });
             }
             // Maps to: CC `TaskUpdateTool.ts:231-265` — TaskCompleted hooks run
             // BEFORE the write, and a blocking one returns `success: false`

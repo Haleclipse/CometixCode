@@ -223,8 +223,7 @@ pub fn Select(props: &SelectProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
     if has_two_column_descriptions {
         let max_label_width = props.options[start..end]
             .iter()
-            .enumerate()
-            .map(|(_, option)| {
+            .map(|option| {
                 let is_selected = props.selected_value.as_ref() == Some(&option.value);
                 let index_width = if props.hide_indexes {
                     0

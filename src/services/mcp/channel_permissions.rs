@@ -275,10 +275,10 @@ pub fn truncate_for_preview(input: &impl Serialize) -> String {
 /// (`channelPermissions.ts:177-194`): the connected clients on the
 /// allowlist that declare both `claude/channel` and
 /// `claude/channel/permission` in their experimental capabilities.
-pub fn filter_permission_relay_clients<'a>(
-    clients: &'a [crate::services::mcp::types::McpServerConnection],
+pub fn filter_permission_relay_clients(
+    clients: &[crate::services::mcp::types::McpServerConnection],
     is_in_allowlist: impl Fn(&str) -> bool,
-) -> Vec<&'a crate::services::mcp::types::ConnectedMcpServer> {
+) -> Vec<&crate::services::mcp::types::ConnectedMcpServer> {
     clients
         .iter()
         .filter_map(crate::services::mcp::types::McpServerConnection::as_connected)

@@ -58,10 +58,10 @@ fn register_store(task_id: &str, store: &AppStore) {
 }
 
 pub fn task_store(task_id: &str, preferred: Option<&AppStore>) -> Option<AppStore> {
-    if let Some(store) = preferred {
-        if store.get().tasks.contains_key(task_id) {
-            return Some(store.clone());
-        }
+    if let Some(store) = preferred
+        && store.get().tasks.contains_key(task_id)
+    {
+        return Some(store.clone());
     }
     TASK_STORES
         .lock()
@@ -107,10 +107,10 @@ fn update_task(
         let mut next = (**prev).clone();
         // P4 identity: make_mut(map) + make_mut(task Arc) yields fresh map
         // and per-task references — CC's `{...prev.tasks, [id]: {...task}}`.
-        if let Some(entry) = Arc::make_mut(&mut next.tasks).get_mut(task_id) {
-            if let TaskState::LocalShell(task) = Arc::make_mut(entry) {
-                update(task);
-            }
+        if let Some(entry) = Arc::make_mut(&mut next.tasks).get_mut(task_id)
+            && let TaskState::LocalShell(task) = Arc::make_mut(entry)
+        {
+            update(task);
         }
         UpdateDecision::Replace {
             next: Arc::new(next),
@@ -318,24 +318,24 @@ fn attach_completion_handler(task_id: &str, shell_command: ShellCommand, store: 
             }
             let mut next = (**prev).clone();
             let mut was_killed = false;
-            if let Some(entry) = Arc::make_mut(&mut next.tasks).get_mut(&task_id) {
-                if let TaskState::LocalShell(task) = Arc::make_mut(entry) {
-                    if task.status == "killed" {
-                        was_killed = true;
+            if let Some(entry) = Arc::make_mut(&mut next.tasks).get_mut(&task_id)
+                && let TaskState::LocalShell(task) = Arc::make_mut(entry)
+            {
+                if task.status == "killed" {
+                    was_killed = true;
+                } else {
+                    task.status = if result.code == 0 {
+                        "completed".to_string()
                     } else {
-                        task.status = if result.code == 0 {
-                            "completed".to_string()
-                        } else {
-                            "failed".to_string()
-                        };
-                    }
-                    task.result = Some(LocalShellTaskResult {
-                        code: result.code,
-                        interrupted: result.interrupted,
-                    });
-                    task.shell_command = None;
-                    task.end_time_ms = Some(now_ms());
+                        "failed".to_string()
+                    };
                 }
+                task.result = Some(LocalShellTaskResult {
+                    code: result.code,
+                    interrupted: result.interrupted,
+                });
+                task.shell_command = None;
+                task.end_time_ms = Some(now_ms());
             }
             UpdateDecision::Replace {
                 next: Arc::new(next),

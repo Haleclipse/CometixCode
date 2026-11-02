@@ -153,7 +153,7 @@ pub fn clear_pending_sandbox_request(store: &crate::state::store::AppStore) {
 
 /// Poller-local fields that are not AppState (permission confirm queue drains
 /// into REPL `permission_queue`; pane kills are fire-and-forget side effects).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct InboxPollerState {
     /// Maps to CC REPL `ToolUseConfirmQueue` populated from pane-worker
     /// permission requests in `useInboxPoller.ts`.
@@ -163,16 +163,6 @@ pub struct InboxPollerState {
     /// `waitForNextPromptOrShutdown` in `utils/swarm/inProcessRunner.ts`, not
     /// this file-backed inbox poller.
     pub is_in_process_teammate: bool,
-}
-
-impl Default for InboxPollerState {
-    fn default() -> Self {
-        Self {
-            permission_queue: Vec::new(),
-            pending_pane_kills: Vec::new(),
-            is_in_process_teammate: false,
-        }
-    }
 }
 
 /// Working set for one poll / deliver cycle.
@@ -319,14 +309,14 @@ pub fn get_agent_name_to_poll(
     if crate::utils::teammate::is_teammate() {
         return crate::utils::teammate::get_agent_name();
     }
-    if let Some(team_context) = team_context {
-        if crate::utils::teammate::is_team_lead(Some(&team_context.lead_agent_id)) {
-            return team_context
-                .teammates
-                .get(&team_context.lead_agent_id)
-                .map(|teammate| teammate.name.clone())
-                .or_else(|| Some(TEAM_LEAD_NAME.to_string()));
-        }
+    if let Some(team_context) = team_context
+        && crate::utils::teammate::is_team_lead(Some(&team_context.lead_agent_id))
+    {
+        return team_context
+            .teammates
+            .get(&team_context.lead_agent_id)
+            .map(|teammate| teammate.name.clone())
+            .or_else(|| Some(TEAM_LEAD_NAME.to_string()));
     }
     None
 }
@@ -1029,64 +1019,62 @@ fn handle_shutdown_approvals(
         let Some(teammate_name) = parsed.get("from").and_then(Value::as_str) else {
             continue;
         };
-        if let Some(team_context) = team_context.as_mut() {
-            if let Some((teammate_id, teammate)) = team_context
+        if let Some(team_context) = team_context.as_mut()
+            && let Some((teammate_id, teammate)) = team_context
                 .teammates
                 .iter()
                 .find(|(_, teammate)| teammate.name == teammate_name)
                 .map(|(id, teammate)| (id.clone(), teammate.clone()))
-            {
-                let pane_id = parsed
-                    .get("paneId")
-                    .and_then(Value::as_str)
-                    .filter(|value| !value.is_empty())
-                    .map(ToOwned::to_owned)
-                    .or_else(|| teammate.tmux_pane_id.clone());
-                let backend_type = parsed
-                    .get("backendType")
-                    .and_then(Value::as_str)
-                    .filter(|value| !value.is_empty())
-                    .map(ToOwned::to_owned)
-                    .or_else(|| teammate.backend_type.clone());
-                if let Some(pane_id) = pane_id {
-                    state.poller.pending_pane_kills.push(PaneKillRequest {
-                        agent_id: teammate_id.clone(),
-                        pane_id,
-                        backend_type,
-                        team_name: team_context.team_name.clone(),
-                    });
-                }
-                team_context.teammates.remove(&teammate_id);
-                let _ = crate::utils::swarm::team_helpers::remove_member_by_agent_id(
-                    &team_context.team_name,
-                    &teammate_id,
-                );
-                // Maps to: CC useInboxPoller.ts:749-765 — inside the same
-                // setAppState that drops the teammate from teamContext, mark
-                // the teammate's in-process task completed so
-                // hasRunningTeammates flips false and the spinner stops.
-                // Wiring deviation (recorded): the Rust poll core is
-                // by-value with no store access, so the tasks half runs
-                // through the in-process registry + bound task store instead
-                // of this poll's write-back transaction.
-                crate::tasks::in_process_teammate_task::complete_in_process_teammate_tasks_for_agent(
-                    &teammate_id,
-                );
-                state.inbox.messages.push(InboxQueuedMessage {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    from: "system".to_string(),
-                    text: serde_json::json!({
-                        "type": "teammate_terminated",
-                        "message": format!("{teammate_name} has shut down."),
-                    })
-                    .to_string(),
-                    timestamp: chrono::Utc::now()
-                        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-                    status: InboxMessageStatus::Pending,
-                    color: None,
-                    summary: None,
+        {
+            let pane_id = parsed
+                .get("paneId")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .or_else(|| teammate.tmux_pane_id.clone());
+            let backend_type = parsed
+                .get("backendType")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+                .or_else(|| teammate.backend_type.clone());
+            if let Some(pane_id) = pane_id {
+                state.poller.pending_pane_kills.push(PaneKillRequest {
+                    agent_id: teammate_id.clone(),
+                    pane_id,
+                    backend_type,
+                    team_name: team_context.team_name.clone(),
                 });
             }
+            team_context.teammates.remove(&teammate_id);
+            let _ = crate::utils::swarm::team_helpers::remove_member_by_agent_id(
+                &team_context.team_name,
+                &teammate_id,
+            );
+            // Maps to: CC useInboxPoller.ts:749-765 — inside the same
+            // setAppState that drops the teammate from teamContext, mark
+            // the teammate's in-process task completed so
+            // hasRunningTeammates flips false and the spinner stops.
+            // Wiring deviation (recorded): the Rust poll core is
+            // by-value with no store access, so the tasks half runs
+            // through the in-process registry + bound task store instead
+            // of this poll's write-back transaction.
+            crate::tasks::in_process_teammate_task::complete_in_process_teammate_tasks_for_agent(
+                &teammate_id,
+            );
+            state.inbox.messages.push(InboxQueuedMessage {
+                id: uuid::Uuid::new_v4().to_string(),
+                from: "system".to_string(),
+                text: serde_json::json!({
+                    "type": "teammate_terminated",
+                    "message": format!("{teammate_name} has shut down."),
+                })
+                .to_string(),
+                timestamp: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                status: InboxMessageStatus::Pending,
+                color: None,
+                summary: None,
+            });
         }
         regular_messages.push(message.clone());
     }

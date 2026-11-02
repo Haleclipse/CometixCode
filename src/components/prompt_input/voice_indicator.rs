@@ -48,7 +48,7 @@ pub fn VoiceIndicator(
             let pulse = if reduced {
                 false
             } else {
-                ((frame.time_ms / 500) as usize) % 2 == 0
+                ((frame.time_ms / 500) as usize).is_multiple_of(2)
             };
             element! { Text(content: "Voice: processing…".to_string(), color: theme.warning, dim: pulse) }.into_any()
         }

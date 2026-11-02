@@ -50,7 +50,9 @@ pub fn detect_line_endings(path: &std::path::Path, encoding: FileEncoding) -> Li
                 FileEncoding::Utf8 => String::from_utf8_lossy(bytes).into_owned(),
                 FileEncoding::Utf16Le => String::from_utf16_lossy(
                     &bytes
-                        .chunks_exact(2)
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
                         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
                         .collect::<Vec<_>>(),
                 ),
@@ -166,7 +168,7 @@ pub fn write_file_sync_and_flush_to_target(
     };
     let atomic_result = (|| {
         sync_write_new(&temporary_path, bytes)?;
-        if let Some(permissions) = existing_permissions.clone() {
+        if let Some(permissions) = existing_permissions {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -406,12 +408,12 @@ pub fn get_display_path(path: &str) -> String {
             return relative;
         }
     }
-    if let (Ok(canon_path), Ok(canon_cwd)) = (absolute_path.canonicalize(), cwd.canonicalize()) {
-        if let Ok(relative) = canon_path.strip_prefix(&canon_cwd) {
-            let relative = relative.to_string_lossy().replace('\\', "/");
-            if !relative.starts_with("..") {
-                return relative;
-            }
+    if let (Ok(canon_path), Ok(canon_cwd)) = (absolute_path.canonicalize(), cwd.canonicalize())
+        && let Ok(relative) = canon_path.strip_prefix(&canon_cwd)
+    {
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        if !relative.starts_with("..") {
+            return relative;
         }
     }
 
@@ -425,7 +427,7 @@ pub fn get_display_path(path: &str) -> String {
         } else {
             path
         };
-        return format!("~{}", &source[home.len()..].replace('\\', "/"));
+        return format!("~{}", source[home.len()..].replace('\\', "/"));
     }
     if absolute == home || path == home {
         return "~".to_string();
@@ -450,10 +452,10 @@ fn expand_path_for_display(path: &str, cwd: &std::path::Path) -> String {
     if let Some(rest) = trimmed.strip_prefix("~/") {
         return format!("{}/{rest}", home()).replace('\\', "/");
     }
-    if cfg!(windows) {
-        if let Some(rest) = trimmed.strip_prefix("~\\") {
-            return format!("{}\\{rest}", home());
-        }
+    if cfg!(windows)
+        && let Some(rest) = trimmed.strip_prefix("~\\")
+    {
+        return format!("{}\\{rest}", home());
     }
     let candidate = std::path::Path::new(trimmed);
     if candidate.is_absolute() {
@@ -627,13 +629,12 @@ mod tests {
         let second_len = second.len();
         let reader = std::thread::spawn(move || {
             while !reader_stopped.load(Ordering::Acquire) {
-                if let Ok(bytes) = std::fs::read(&reader_target) {
-                    if !((bytes.len() == first_len && bytes.iter().all(|byte| *byte == b'a'))
+                if let Ok(bytes) = std::fs::read(&reader_target)
+                    && !((bytes.len() == first_len && bytes.iter().all(|byte| *byte == b'a'))
                         || (bytes.len() == second_len && bytes.iter().all(|byte| *byte == b'b')))
-                    {
-                        *reader_invalid.lock().unwrap() = Some(bytes.len());
-                        break;
-                    }
+                {
+                    *reader_invalid.lock().unwrap() = Some(bytes.len());
+                    break;
                 }
             }
         });

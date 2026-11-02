@@ -22,10 +22,9 @@ pub fn get_local_iso_date() -> String {
 pub fn get_local_month_year() -> String {
     if let Some(override_date) =
         crate::utils::process_env::var("CLAUDE_CODE_OVERRIDE_DATE").truthy()
+        && let Ok(date) = chrono::NaiveDate::parse_from_str(&override_date, "%Y-%m-%d")
     {
-        if let Ok(date) = chrono::NaiveDate::parse_from_str(&override_date, "%Y-%m-%d") {
-            return date.format("%B %Y").to_string();
-        }
+        return date.format("%B %Y").to_string();
     }
     chrono::Local::now().format("%B %Y").to_string()
 }

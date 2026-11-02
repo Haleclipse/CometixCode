@@ -168,8 +168,8 @@ pub(crate) async fn run_consolidation_with_deps<D: crate::query::deps::QueryDeps
             let Message::Assistant(assistant) = message else {
                 return;
             };
-            let text = crate::utils::messages::get_assistant_message_text(message)
-                .unwrap_or_default();
+            let text =
+                crate::utils::messages::get_assistant_message_text(message).unwrap_or_default();
             let tool_use_count = assistant
                 .content
                 .iter()
@@ -406,11 +406,10 @@ fn memory_activity_since(memory_dir: &Path, since_ms: u64) -> (Option<u64>, usiz
             } else if file_type.is_file()
                 && path.extension().and_then(|extension| extension.to_str()) == Some("md")
                 && path.file_name().and_then(|name| name.to_str()) != Some("MEMORY.md")
+                && let Some(mtime) = mtime_ms(&path).filter(|mtime| *mtime > since_ms)
             {
-                if let Some(mtime) = mtime_ms(&path).filter(|mtime| *mtime > since_ms) {
-                    *count += 1;
-                    *newest = Some(newest.map_or(mtime, |current| current.max(mtime)));
-                }
+                *count += 1;
+                *newest = Some(newest.map_or(mtime, |current| current.max(mtime)));
             }
         }
     }
@@ -443,7 +442,8 @@ pub fn spawn_idle_consolidation_if_due(
         .as_ref()
         .map(|nyan| nyan.memory())
         .unwrap_or_default();
-    if !settings.auto_dream_enabled.unwrap_or(false) || memory.consolidate() != ConsolidateMode::Auto
+    if !settings.auto_dream_enabled.unwrap_or(false)
+        || memory.consolidate() != ConsolidateMode::Auto
     {
         return;
     }
@@ -506,7 +506,11 @@ pub fn spawn_idle_consolidation_if_due(
         return;
     };
     let context = context.clone();
-    let store = context.app_store.tasks_store.clone().or_else(|| context.app_store.store.clone());
+    let store = context
+        .app_store
+        .tasks_store
+        .clone()
+        .or_else(|| context.app_store.store.clone());
     let max_turns = CONSOLIDATION_MAX_TURNS;
     handle.spawn(async move {
         match run_consolidation(
@@ -729,7 +733,16 @@ mod tests {
         .await
         .unwrap();
         let state = store.get();
-        let (_, task) = state.tasks.iter().find(|(_, task)| matches!(task.as_ref(), crate::state::app_state_store::TaskState::Dream(_))).unwrap();
+        let (_, task) = state
+            .tasks
+            .iter()
+            .find(|(_, task)| {
+                matches!(
+                    task.as_ref(),
+                    crate::state::app_state_store::TaskState::Dream(_)
+                )
+            })
+            .unwrap();
         let crate::state::app_state_store::TaskState::Dream(task) = task.as_ref() else {
             unreachable!()
         };

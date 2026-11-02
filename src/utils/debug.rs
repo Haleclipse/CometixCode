@@ -354,7 +354,9 @@ pub fn frame_timing_sample_tick() -> bool {
             .filter(|&value| value >= 1)
             .unwrap_or(1)
     });
-    COUNTER.fetch_add(1, Ordering::Relaxed) % every == 0
+    COUNTER
+        .fetch_add(1, Ordering::Relaxed)
+        .is_multiple_of(every)
 }
 
 /// Cumulative process CPU time in microseconds, the Rust twin of Node
@@ -371,8 +373,7 @@ pub fn process_cpu_usage_micros() -> (u64, u64) {
         }
         // SAFETY: getrusage returned success, so the struct is initialized.
         let usage = unsafe { usage.assume_init() };
-        let to_micros =
-            |time: libc::timeval| time.tv_sec as u64 * 1_000_000 + time.tv_usec as u64;
+        let to_micros = |time: libc::timeval| time.tv_sec as u64 * 1_000_000 + time.tv_usec as u64;
         (to_micros(usage.ru_utime), to_micros(usage.ru_stime))
     }
     #[cfg(not(unix))]
@@ -408,8 +409,12 @@ impl DebugConfig {
             || debug_to_stderr
             || debug_file.is_some()
             || debug_filter.is_some()
-            || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DEBUG").as_deref())
-            || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DEBUG_SDK").as_deref())
+            || crate::utils::env_utils::is_env_truthy(
+                crate::utils::process_env::var("DEBUG").as_deref(),
+            )
+            || crate::utils::env_utils::is_env_truthy(
+                crate::utils::process_env::var("DEBUG_SDK").as_deref(),
+            )
             || crate::utils::env_utils::is_env_truthy(
                 crate::utils::process_env::var("CLAUDE_CODE_DEBUG").as_deref(),
             );
@@ -463,13 +468,12 @@ fn debug_filter_from_argv(argv: &[String]) -> Option<&str> {
         if let Some(value) = arg.strip_prefix("--debug=") {
             return (!value.is_empty()).then_some(value);
         }
-        if arg == "--debug" || arg == "-d" {
-            if let Some(next) = argv.get(index + 1) {
-                if !next.starts_with('-') {
-                    // Commander `-d [filter]`: next non-flag token is filter.
-                    return Some(next.as_str());
-                }
-            }
+        if (arg == "--debug" || arg == "-d")
+            && let Some(next) = argv.get(index + 1)
+            && !next.starts_with('-')
+        {
+            // Commander `-d [filter]`: next non-flag token is filter.
+            return Some(next.as_str());
         }
     }
     None
@@ -621,7 +625,10 @@ mod tests {
             query_pump,
         };
         assert_eq!(ProfileSelection::parse(None), ProfileSelection::default());
-        assert_eq!(ProfileSelection::parse(Some("")), ProfileSelection::default());
+        assert_eq!(
+            ProfileSelection::parse(Some("")),
+            ProfileSelection::default()
+        );
         assert_eq!(ProfileSelection::parse(Some("1")), ProfileSelection::ALL);
         assert_eq!(ProfileSelection::parse(Some("true")), ProfileSelection::ALL);
         assert_eq!(

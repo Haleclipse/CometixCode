@@ -482,10 +482,9 @@ fn serialize_decision_reason(
         ) || crate::utils::feature_flags::feature_enabled(
             crate::utils::feature_flags::FeatureFlag::TranscriptClassifier,
         ))
+        && let PermissionDecisionReason::Classifier { reason, .. } = reason
     {
-        if let PermissionDecisionReason::Classifier { reason, .. } = reason {
-            return Some(reason.clone());
-        }
+        return Some(reason.clone());
     }
     match reason {
         PermissionDecisionReason::Rule { .. }

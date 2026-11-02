@@ -263,8 +263,7 @@ mod tests {
     fn restore_cost_state_for_session_matches_saved_project_session_only() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = crate::bootstrap::state::get_original_cwd();
-        let root =
-            std::env::temp_dir().join(format!("nyan-cost-restore-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-cost-restore-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let root = std::fs::canonicalize(root).unwrap();
         crate::bootstrap::state::set_original_cwd(&root);

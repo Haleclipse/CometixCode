@@ -97,10 +97,10 @@ fn grouped_tool_use_data(
         &crate::types::message::ToolResult,
     > = std::collections::HashMap::new();
     for result_row in &message.results {
-        if let Some(tool_result) = row_tool_result_block(result_row) {
-            if !tool_result.tool_use_id.0.is_empty() {
-                results_by_tool_use_id.insert(tool_result.tool_use_id.0.as_str(), tool_result);
-            }
+        if let Some(tool_result) = row_tool_result_block(result_row)
+            && !tool_result.tool_use_id.0.is_empty()
+        {
+            results_by_tool_use_id.insert(tool_result.tool_use_id.0.as_str(), tool_result);
         }
     }
 

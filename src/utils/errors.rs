@@ -99,13 +99,12 @@ pub fn is_abort_error(error: &anyhow::Error) -> bool {
         }
         if let Some(cannot_retry) =
             cause.downcast_ref::<crate::services::api::with_retry::CannotRetryError>()
-        {
-            if matches!(
+            && matches!(
                 &cannot_retry.original_error,
                 crate::services::api::with_retry::RetryableError::Aborted
-            ) {
-                return true;
-            }
+            )
+        {
+            return true;
         }
         if cause
             .downcast_ref::<crate::services::api::with_retry::RetryableError>()
@@ -126,10 +125,9 @@ pub fn get_errno_code(error: &anyhow::Error) -> Option<&'static str> {
         }
         if let Some(range) =
             cause.downcast_ref::<crate::utils::read_file_in_range::ReadFileInRangeError>()
+            && let Some(io) = range.io_error()
         {
-            if let Some(io) = range.io_error() {
-                return io_errno_code(io);
-            }
+            return io_errno_code(io);
         }
     }
     None

@@ -21,7 +21,7 @@ pub fn OrderedListItem(
         .try_use_context::<OrderedListItemContext>()
         .map(|context| context.marker.clone())
         .unwrap_or_default();
-    let body = props.children.drain(..).collect::<Vec<_>>();
+    let body = std::mem::take(&mut props.children);
 
     element! {
         View(flex_direction: FlexDirection::Row, column_gap: 1u32) {

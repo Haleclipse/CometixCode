@@ -67,7 +67,9 @@ pub fn CommandKeybindingHandlers(
         &mut hooks,
         runtime,
         props.is_active && !modal_overlay_active,
-        props.pending_command.expect("CommandKeybindingHandlers pending_command"),
+        props
+            .pending_command
+            .expect("CommandKeybindingHandlers pending_command"),
     );
     element!(View(width: 0u32, height: 0u32))
 }

@@ -196,13 +196,11 @@ pub async fn execute_hooks_outside_repl_with_config(
                         | HookEvent::SessionStart
                         | HookEvent::CwdChanged
                         | HookEvent::FileChanged
+                ) && let Ok(path) = crate::utils::session_environment::get_hook_env_file_path(
+                    event.as_str(),
+                    hook_index,
                 ) {
-                    if let Ok(path) = crate::utils::session_environment::get_hook_env_file_path(
-                        event.as_str(),
-                        hook_index,
-                    ) {
-                        env.push(("CLAUDE_ENV_FILE".to_string(), path.display().to_string()));
-                    }
+                    env.push(("CLAUDE_ENV_FILE".to_string(), path.display().to_string()));
                 }
                 let exec_result = exec_command_hook(
                     &command.command,

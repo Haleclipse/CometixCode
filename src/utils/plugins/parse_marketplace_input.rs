@@ -27,18 +27,17 @@ pub async fn parse_marketplace_input(input: &str) -> Option<Value> {
             }
             return Some(result);
         }
-        if let Ok(url) = url::Url::parse(base) {
-            if matches!(url.host_str(), Some("github.com" | "www.github.com"))
-                && regex::Regex::new(r"^/([^/]+/[^/]+?)(/|\.git|$)")
-                    .unwrap()
-                    .is_match(url.path())
-            {
-                let mut result = json!({"source":"git","url":format!("{base}.git")});
-                if let Some(r) = git_ref {
-                    result["ref"] = r.into();
-                }
-                return Some(result);
+        if let Ok(url) = url::Url::parse(base)
+            && matches!(url.host_str(), Some("github.com" | "www.github.com"))
+            && regex::Regex::new(r"^/([^/]+/[^/]+?)(/|\.git|$)")
+                .unwrap()
+                .is_match(url.path())
+        {
+            let mut result = json!({"source":"git","url":format!("{base}.git")});
+            if let Some(r) = git_ref {
+                result["ref"] = r.into();
             }
+            return Some(result);
         }
         return Some(json!({"source":"url","url":base}));
     }

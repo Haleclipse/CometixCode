@@ -239,10 +239,8 @@ mod tests {
 
     #[test]
     fn file_write_ide_diff_support_matches_official_get_config_and_apply_changes() {
-        let path = std::env::temp_dir().join(format!(
-            "nyan-write-perm-ide-diff-{}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("nyan-write-perm-ide-diff-{}", std::process::id()));
         std::fs::write(&path, "old content").unwrap();
         let input = serde_json::json!({
             "file_path": path.display().to_string(),
@@ -293,10 +291,8 @@ mod tests {
 
     #[test]
     fn file_write_permission_request_renders_overwrite_diff_boundary() {
-        let path = std::env::temp_dir().join(format!(
-            "nyan-write-perm-overwrite-{}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("nyan-write-perm-overwrite-{}", std::process::id()));
         std::fs::write(&path, "old line\nline two\n").unwrap();
         // Same read as the create case; the assertion here is on the diff
         // markers, which the default (highlighting enabled) still emits.

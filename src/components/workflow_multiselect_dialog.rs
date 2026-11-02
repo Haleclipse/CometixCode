@@ -202,10 +202,7 @@ mod tests {
             text.contains("Select GitHub workflows to install"),
             "canvas=\n{text}"
         );
-        assert!(
-            text.contains("@nyan - Tag @claude"),
-            "canvas=\n{text}"
-        );
+        assert!(text.contains("@nyan - Tag @claude"), "canvas=\n{text}");
         assert!(text.contains("nyan Review"), "canvas=\n{text}");
         assert!(text.contains(WORKFLOW_EXAMPLES_URL), "canvas=\n{text}");
         assert!(text.contains("Space to toggle"), "canvas=\n{text}");

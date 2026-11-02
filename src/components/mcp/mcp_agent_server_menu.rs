@@ -40,10 +40,10 @@ impl Hook for AgentOAuthAbortCleanup {}
 
 impl Drop for AgentOAuthAbortCleanup {
     fn drop(&mut self) {
-        if let Ok(mut handle) = self.handle.lock() {
-            if let Some(handle) = handle.take() {
-                handle.abort();
-            }
+        if let Ok(mut handle) = self.handle.lock()
+            && let Some(handle) = handle.take()
+        {
+            handle.abort();
         }
     }
 }
@@ -269,7 +269,7 @@ pub fn MCPAgentServerMenu<'a>(
         pending_auth_result.set(None);
         (props.on_complete)(result);
     }
-    let pending_action_value = { pending_action.read().clone() };
+    let pending_action_value = { *pending_action.read() };
     if let Some(action) = pending_action_value {
         pending_action.set(None);
         match action {

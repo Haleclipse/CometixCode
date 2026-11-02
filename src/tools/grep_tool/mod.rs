@@ -372,7 +372,7 @@ fn append_completion_note(mut content: String, output: &Output) -> String {
     }
     if let Some(note) = &output.completion_note {
         if !content.is_empty() {
-            content.push_str("\n");
+            content.push('\n');
         }
         content.push_str(note);
     }
@@ -758,11 +758,11 @@ fn grep_output_with_context(
             let mut total_matches = 0.0_f64;
             let mut file_count = 0usize;
             for line in &final_count_lines {
-                if let Some((_, count_str)) = line.rsplit_once(':') {
-                    if let Some(count) = javascript_parse_int_base10(count_str) {
-                        total_matches += count;
-                        file_count += 1;
-                    }
+                if let Some((_, count_str)) = line.rsplit_once(':')
+                    && let Some(count) = javascript_parse_int_base10(count_str)
+                {
+                    total_matches += count;
+                    file_count += 1;
                 }
             }
             let completion_note = tool_io.completion_notes.then(|| {
@@ -1276,10 +1276,8 @@ mod tests {
 
     #[test]
     fn grep_output_uses_cwd_override_when_path_is_omitted() {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-grep-cwd-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-grep-cwd-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("needle.txt"), "alpha\nneedle\n").unwrap();
         let args = serde_json::json!({"pattern": "needle"});
@@ -1322,10 +1320,8 @@ mod tests {
 
     #[test]
     fn grep_output_applies_head_limit_and_offset_like_official() {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-grep-page-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-grep-page-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         for i in 0..5 {
             std::fs::write(dir.join(format!("f{i}.txt")), format!("needle line {i}\n")).unwrap();
@@ -1657,10 +1653,8 @@ mod tests {
 
     #[test]
     fn grep_execution_covers_official_modes_filters_context_and_multiline() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-grep-modes-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-grep-modes-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(root.join(".git")).unwrap();
         std::fs::write(root.join("a.rs"), "before\nNeedle\nafter\n").unwrap();
         std::fs::write(root.join("b.txt"), "needle one\nneedle two\n").unwrap();
@@ -1906,10 +1900,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn grep_read_deny_rules_filter_every_mode_and_symlink_traversal_roots() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-grep-deny-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-grep-deny-{}", uuid::Uuid::new_v4().simple()));
         let outside = std::env::temp_dir().join(format!(
             "nyan-grep-deny-target-{}",
             uuid::Uuid::new_v4().simple()
@@ -2132,10 +2124,8 @@ mod tests {
         use crate::tool::ToolCall as _;
         use crate::types::message::ToolResultStatus;
 
-        let root = std::env::temp_dir().join(format!(
-            "nyan-grep-call-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-grep-call-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("a.txt"), "needle\n").unwrap();
         let context = crate::tool::ToolUseContext {

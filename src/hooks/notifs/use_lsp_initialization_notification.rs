@@ -90,14 +90,12 @@ pub fn lsp_initialization_poll_outcome_from_status(
             let mut notifications = Vec::new();
             if let Some(servers) = servers {
                 for (server_name, server) in servers {
-                    if server.state == LspServerState::Error {
-                        if let Some(error) = server.last_error.as_deref() {
-                            if let Some(notification) =
-                                lsp_error_notification_once(notified_errors, server_name, error)
-                            {
-                                notifications.push(notification);
-                            }
-                        }
+                    if server.state == LspServerState::Error
+                        && let Some(error) = server.last_error.as_deref()
+                        && let Some(notification) =
+                            lsp_error_notification_once(notified_errors, server_name, error)
+                    {
+                        notifications.push(notification);
                     }
                 }
             }

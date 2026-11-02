@@ -614,10 +614,11 @@ fn extra_known_marketplaces_settings_key_check(
     if let Some(map) = v.as_object() {
         for (key, entry) in map {
             let source = &entry["source"];
-            if source["source"] == "settings" {
-                if let Some(name) = source["name"].as_str() {
-                    if name != key {
-                        issues.push(CheckIssue {
+            if source["source"] == "settings"
+                && let Some(name) = source["name"].as_str()
+                && name != key
+            {
+                issues.push(CheckIssue {
                             path: vec![
                                 PathSegment::Key(key.clone()),
                                 PathSegment::Key("source".to_string()),
@@ -627,8 +628,6 @@ fn extra_known_marketplaces_settings_key_check(
                                 "Settings-sourced marketplace name must match its extraKnownMarketplaces key (got key \"{key}\" but source.name \"{name}\")"
                             ),
                         });
-                    }
-                }
             }
         }
     }

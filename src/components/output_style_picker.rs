@@ -193,7 +193,10 @@ mod tests {
     /// a line counting key presses (so each key produces a frame) and
     /// listing the callbacks it made.
     #[component]
-    fn PickerHarness(props: &PickerHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn PickerHarness(
+        props: &PickerHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
@@ -246,10 +249,12 @@ mod tests {
         let initial_style = initial_style.to_string();
         futures::executor::block_on(async move {
             let (keys, events) = async_channel::unbounded();
-            let mut app = element!(PickerHarness(
-                initial_style: initial_style,
-                results: Some(Arc::new(Mutex::new(Vec::new()))),
-            ));
+            let mut app = element!(
+                PickerHarness(
+                    initial_style: initial_style,
+                    results: Some(Arc::new(Mutex::new(Vec::new()))),
+                )
+            );
             let mut render_loop = Box::pin(app.mock_terminal_render_loop(
                 MockTerminalConfig::with_events(events).with_size(120, 40),
             ));
@@ -272,9 +277,12 @@ mod tests {
                 let Some(code) = keys_in_order.get(after_keys.len()) else {
                     break;
                 };
-                keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
-                    .await
-                    .unwrap();
+                keys.send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    *code,
+                )))
+                .await
+                .unwrap();
             }
             (first.unwrap(), loaded.unwrap(), after_keys)
         })
@@ -339,10 +347,8 @@ mod tests {
     #[test]
     fn output_style_options_for_cwd_include_custom_markdown_styles() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-output-style-picker-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-output-style-picker-{}", uuid::Uuid::new_v4()));
         let cwd = root.join("repo");
         let config_home = root.join("config");
         std::fs::create_dir_all(cwd.join(".git")).unwrap();
@@ -399,8 +405,15 @@ mod tests {
     #[test]
     fn output_style_picker_completes_with_the_focused_style() {
         // CC :61-67 `onComplete(style)`.
-        let (_, _, after) = drive(DEFAULT_OUTPUT_STYLE_NAME, vec![KeyCode::Down, KeyCode::Enter]);
-        assert!(after[1].contains("results=[complete Explanatory]"), "{}", after[1]);
+        let (_, _, after) = drive(
+            DEFAULT_OUTPUT_STYLE_NAME,
+            vec![KeyCode::Down, KeyCode::Enter],
+        );
+        assert!(
+            after[1].contains("results=[complete Explanatory]"),
+            "{}",
+            after[1]
+        );
     }
 
     #[test]
@@ -421,9 +434,12 @@ mod tests {
                 let text = canvas.to_string();
                 if sent == 0 {
                     assert!(text.contains("Loading output styles…"), "{text}");
-                    keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Esc)))
-                        .await
-                        .unwrap();
+                    keys.send(TerminalEvent::Key(KeyEvent::new(
+                        KeyEventKind::Press,
+                        KeyCode::Esc,
+                    )))
+                    .await
+                    .unwrap();
                     sent = 1;
                 } else if text.contains("keys=1 ") && sent == 1 {
                     // A key nothing binds: its frame shows the settled cancel.
@@ -447,7 +463,11 @@ mod tests {
         // CC :72 `<Dialog onCancel={onCancel}>`: confirm:no is Esc and n.
         for key in [KeyCode::Esc, KeyCode::Char('n')] {
             let (_, _, after) = drive(DEFAULT_OUTPUT_STYLE_NAME, vec![key, KeyCode::Char('x')]);
-            assert!(after[1].contains("results=[cancel]"), "{key:?}: {}", after[1]);
+            assert!(
+                after[1].contains("results=[cancel]"),
+                "{key:?}: {}",
+                after[1]
+            );
         }
     }
 }

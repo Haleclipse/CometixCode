@@ -44,7 +44,7 @@ pub(crate) fn blink_is_visible(
         return true;
     }
     let interval = interval_ms.max(1) as u128;
-    (time_ms / interval) % 2 == 0
+    (time_ms / interval).is_multiple_of(2)
 }
 
 #[cfg(test)]

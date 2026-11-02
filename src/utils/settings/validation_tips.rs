@@ -141,24 +141,26 @@ pub fn get_validation_tip(context: &TipContext) -> Option<ValidationTip> {
             .map(|link| format!("{DOCUMENTATION_BASE}/{link}")),
     };
 
-    if context.code == "invalid_value" && tip.suggestion.is_none() {
-        if let Some(values) = context.enum_values {
-            tip.suggestion = Some(format!(
-                "Valid values: {}",
-                values
-                    .iter()
-                    .map(|v| format!("\"{v}\""))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
+    if context.code == "invalid_value"
+        && tip.suggestion.is_none()
+        && let Some(values) = context.enum_values
+    {
+        tip.suggestion = Some(format!(
+            "Valid values: {}",
+            values
+                .iter()
+                .map(|v| format!("\"{v}\""))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
 
     // Add documentation link based on path prefix.
-    if tip.doc_link.is_none() && !context.path.is_empty() {
-        if let Some(prefix) = context.path.split('.').next() {
-            tip.doc_link = path_doc_link(prefix).map(|link| format!("{DOCUMENTATION_BASE}/{link}"));
-        }
+    if tip.doc_link.is_none()
+        && !context.path.is_empty()
+        && let Some(prefix) = context.path.split('.').next()
+    {
+        tip.doc_link = path_doc_link(prefix).map(|link| format!("{DOCUMENTATION_BASE}/{link}"));
     }
 
     Some(tip)

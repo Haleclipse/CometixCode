@@ -385,16 +385,14 @@ pub fn applicable_message_actions(cursor: &MessageActionsState) -> Vec<MessageAc
     if matches!(
         cursor.msg_type,
         NavigableType::GroupedToolUse | NavigableType::Assistant
-    ) {
-        if let Some(tool_name) = cursor.tool_name.as_deref() {
-            if let Some(primary) = primary_input_for_tool(tool_name) {
-                actions.push(MessageActionDef {
-                    key: "p",
-                    base_label: primary.label,
-                    stays: false,
-                });
-            }
-        }
+    ) && let Some(tool_name) = cursor.tool_name.as_deref()
+        && let Some(primary) = primary_input_for_tool(tool_name)
+    {
+        actions.push(MessageActionDef {
+            key: "p",
+            base_label: primary.label,
+            stays: false,
+        });
     }
     actions
 }

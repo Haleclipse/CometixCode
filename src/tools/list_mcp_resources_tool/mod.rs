@@ -76,13 +76,13 @@ pub(crate) async fn list_mcp_resources_output(
         .map(|server| server.name())
         .collect::<Vec<_>>();
 
-    if let Some(server) = target_server {
-        if !available_servers.iter().any(|name| *name == server) {
-            return Err(format!(
-                "Server \"{server}\" not found. Available servers: {}",
-                available_servers.join(", ")
-            ));
-        }
+    if let Some(server) = target_server
+        && !available_servers.contains(&server)
+    {
+        return Err(format!(
+            "Server \"{server}\" not found. Available servers: {}",
+            available_servers.join(", ")
+        ));
     }
 
     // `fetch_resources_for_client` is LRU-cached (by server name) and already

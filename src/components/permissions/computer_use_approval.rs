@@ -494,7 +494,7 @@ fn ComputerUseAppListPanel(
         }
     });
 
-    let pending = { pending_allow.read().clone() };
+    let pending = { *pending_allow.read() };
     if let Some(allow) = pending {
         pending_allow.set(None);
         let now_ms = chrono::Utc::now().timestamp_millis();

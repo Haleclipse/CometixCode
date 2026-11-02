@@ -25,18 +25,13 @@ use std::time::Duration;
 pub const OFFICIAL_PACKAGE_URL: &str = "@anthropic-ai/claude-code";
 
 /// Maps to: CC `utils/autoUpdater.ts:35-39` `InstallStatus`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum InstallStatus {
     Success,
     NoPermissions,
     InstallFailed,
+    #[default]
     InProgress,
-}
-
-impl Default for InstallStatus {
-    fn default() -> Self {
-        Self::InProgress
-    }
 }
 
 /// Maps to: CC `utils/autoUpdater.ts:41-45` `AutoUpdaterResult`.
@@ -376,14 +371,14 @@ pub async fn check_for_native_updates() -> NativeUpdateCheckOutcome {
     let channel = auto_updates_channel();
 
     let mut max_version_issue = None;
-    if let Some(max_version) = get_max_version().await {
-        if version_gt(&current, &max_version) {
-            max_version_issue = Some(
-                get_max_version_message()
-                    .await
-                    .unwrap_or_else(|| "affects your version".to_string()),
-            );
-        }
+    if let Some(max_version) = get_max_version().await
+        && version_gt(&current, &max_version)
+    {
+        max_version_issue = Some(
+            get_max_version_message()
+                .await
+                .unwrap_or_else(|| "affects your version".to_string()),
+        );
     }
 
     let install = install_latest_native(channel).await;

@@ -64,8 +64,8 @@ impl TokenCache {
     }
 
     fn insert(&mut self, key: u64, value: Vec<MarkdownBlock>) {
-        if self.entries.contains_key(&key) {
-            self.entries.insert(key, value);
+        if let std::collections::hash_map::Entry::Occupied(mut e) = self.entries.entry(key) {
+            e.insert(value);
             if let Some(pos) = self.order.iter().position(|existing| *existing == key) {
                 self.order.remove(pos);
             }
@@ -73,10 +73,10 @@ impl TokenCache {
             return;
         }
 
-        if self.entries.len() >= TOKEN_CACHE_MAX {
-            if let Some(oldest) = self.order.pop_front() {
-                self.entries.remove(&oldest);
-            }
+        if self.entries.len() >= TOKEN_CACHE_MAX
+            && let Some(oldest) = self.order.pop_front()
+        {
+            self.entries.remove(&oldest);
         }
         self.order.push_back(key);
         self.entries.insert(key, value);
@@ -149,10 +149,10 @@ pub fn cached_parse_markdown(content: &str) -> Vec<MarkdownBlock> {
     }
 
     let key = content_hash(&stripped);
-    if let Ok(mut cache) = token_cache().lock() {
-        if let Some(hit) = cache.get(key) {
-            return hit;
-        }
+    if let Ok(mut cache) = token_cache().lock()
+        && let Some(hit) = cache.get(key)
+    {
+        return hit;
     }
 
     let parsed = parse_markdown_uncached(&stripped);
@@ -740,10 +740,10 @@ fn ansi_escape_end(input: &str, start: usize) -> Option<usize> {
     let mut end = start + 1;
     if let Some(next) = input[end..].chars().next() {
         end += next.len_utf8();
-        if matches!(next, '(' | ')' | '*' | '+') {
-            if let Some(designator) = input[end..].chars().next() {
-                end += designator.len_utf8();
-            }
+        if matches!(next, '(' | ')' | '*' | '+')
+            && let Some(designator) = input[end..].chars().next()
+        {
+            end += designator.len_utf8();
         }
     }
     Some(end)

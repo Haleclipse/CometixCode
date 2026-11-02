@@ -72,10 +72,11 @@ pub fn extract_debug_categories(message: &str) -> Vec<String> {
         categories.push("1p".to_string());
     }
 
-    if let Some(secondary) = secondary_category(message) {
-        if secondary.len() < 30 && !secondary.contains(' ') {
-            categories.push(secondary);
-        }
+    if let Some(secondary) = secondary_category(message)
+        && secondary.len() < 30
+        && !secondary.contains(' ')
+    {
+        categories.push(secondary);
     }
 
     categories.sort();

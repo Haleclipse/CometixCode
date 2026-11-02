@@ -88,7 +88,8 @@ mod tests {
         let cases: serde_json::Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/oracles/terminal-setup-0913/color-oracle.json"
-        ))).unwrap();
+        )))
+        .unwrap();
         let colors = [
             Color::Black,
             Color::DarkRed,

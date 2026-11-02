@@ -52,18 +52,17 @@ pub fn normalize_content_from_api(
                     } else {
                         input.clone()
                     };
-                    if normalized.is_object() || normalized.is_array() {
-                        if let Some(tool) = content_block
+                    if (normalized.is_object() || normalized.is_array())
+                        && let Some(tool) = content_block
                             .get("name")
                             .and_then(Value::as_str)
                             .and_then(|name| crate::types::tools::find_tool_by_name(tools, name))
-                        {
-                            normalized = crate::utils::api::normalize_tool_input(
-                                &tool.name,
-                                &normalized,
-                                agent_id,
-                            );
-                        }
+                    {
+                        normalized = crate::utils::api::normalize_tool_input(
+                            &tool.name,
+                            &normalized,
+                            agent_id,
+                        );
                     }
                     block["input"] = normalized;
                 }
@@ -1269,10 +1268,10 @@ pub fn strip_caller_field_from_assistant_messages(
                 return message;
             };
             for content in &mut assistant.content {
-                if let AssistantContent::ToolUse(block) = content {
-                    if let Some(object) = block.input.as_object_mut() {
-                        object.remove("caller");
-                    }
+                if let AssistantContent::ToolUse(block) = content
+                    && let Some(object) = block.input.as_object_mut()
+                {
+                    object.remove("caller");
                 }
             }
             Message::Assistant(assistant)
@@ -1402,10 +1401,10 @@ pub fn ensure_tool_result_pairing(
         let mut duplicate_tool_result_ids = HashSet::<String>::new();
         if let Some(user) = &next_user {
             for content in &user.content {
-                if let UserContent::ToolResult(result) = content {
-                    if !existing_tool_result_ids.insert(result.tool_use_id.0.clone()) {
-                        duplicate_tool_result_ids.insert(result.tool_use_id.0.clone());
-                    }
+                if let UserContent::ToolResult(result) = content
+                    && !existing_tool_result_ids.insert(result.tool_use_id.0.clone())
+                {
+                    duplicate_tool_result_ids.insert(result.tool_use_id.0.clone());
                 }
             }
         }
@@ -1999,10 +1998,10 @@ fn merge_adjacent_user_messages<M: TranscriptMessageCarrier>(messages: Vec<M>) -
 
 /// Maps to CC `utils/messages.ts:2505-2515#joinTextAtSeam`.
 pub(crate) fn join_text_at_seam<B: ContentBlock>(mut a: Vec<B>, b: Vec<B>) -> Vec<B> {
-    if b.first().is_some_and(ContentBlock::is_text) {
-        if let Some(text) = a.last_mut().and_then(ContentBlock::text_mut) {
-            text.push('\n');
-        }
+    if b.first().is_some_and(ContentBlock::is_text)
+        && let Some(text) = a.last_mut().and_then(ContentBlock::text_mut)
+    {
+        text.push('\n');
     }
     a.extend(b);
     a
@@ -2052,12 +2051,12 @@ pub(crate) fn merge_user_content_blocks(
     }
     let (tool_results, to_smoosh): (Vec<_>, Vec<_>) =
         b.iter().cloned().partition(ContentBlock::is_tool_result);
-    if !to_smoosh.is_empty() {
-        if let Some(merged) = smoosh_into_tool_result(last.clone(), to_smoosh) {
-            *a.last_mut().unwrap() = UserContent::ToolResult(merged);
-            a.extend(tool_results);
-            return a;
-        }
+    if !to_smoosh.is_empty()
+        && let Some(merged) = smoosh_into_tool_result(last.clone(), to_smoosh)
+    {
+        *a.last_mut().unwrap() = UserContent::ToolResult(merged);
+        a.extend(tool_results);
+        return a;
     }
     a.extend(b);
     a
@@ -2235,14 +2234,13 @@ pub fn normalize_messages_for_api_with_model(
             // canonical tool name. This owned request copy leaves history intact.
             Message::Assistant(mut assistant) => {
                 for block in &mut assistant.content {
-                    if let crate::types::message::AssistantContent::ToolUse(block) = block {
-                        if let Some(tool) =
+                    if let crate::types::message::AssistantContent::ToolUse(block) = block
+                        && let Some(tool) =
                             crate::types::tools::find_tool_by_name(tools, &block.name)
-                        {
-                            block.input =
-                                crate::utils::api::normalize_tool_input_for_api(tool, &block.input);
-                            block.name = tool.name.clone();
-                        }
+                    {
+                        block.input =
+                            crate::utils::api::normalize_tool_input_for_api(tool, &block.input);
+                        block.name = tool.name.clone();
                     }
                 }
                 Message::Assistant(assistant)
@@ -2324,10 +2322,10 @@ fn wrap_messages_in_system_reminder(mut messages: Vec<UserMessage>) -> Vec<UserM
 /// Maps to: CC `utils/messages.ts:1797-1817#ensureSystemReminderWrap`.
 fn ensure_system_reminder_wrap(mut message: UserMessage) -> UserMessage {
     for block in &mut message.content {
-        if let UserContent::Text(text) | UserContent::MetaText(text) = block {
-            if !text.starts_with("<system-reminder>") {
-                *text = wrap_in_system_reminder(text);
-            }
+        if let UserContent::Text(text) | UserContent::MetaText(text) = block
+            && !text.starts_with("<system-reminder>")
+        {
+            *text = wrap_in_system_reminder(text);
         }
     }
     message
@@ -2896,20 +2894,19 @@ Read the team config to discover your teammates' names. Check the task list peri
     }
     if crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::ExperimentalSkillSearch,
-    ) {
-        if let Attachment::SkillDiscovery { skills, .. } = &attachment.attachment {
-            if skills.is_empty() {
-                return vec![];
-            }
-            let lines = skills
-                .iter()
-                .map(|skill| format!("- {}: {}", skill.name, skill.description))
-                .collect::<Vec<_>>()
-                .join("\n");
-            return vec![meta_message(format!(
-                "Skills relevant to your task:\n\n{lines}\n\nThese skills encode project-specific conventions. Invoke via Skill(\"<name>\") for complete instructions."
-            ))];
+    ) && let Attachment::SkillDiscovery { skills, .. } = &attachment.attachment
+    {
+        if skills.is_empty() {
+            return vec![];
         }
+        let lines = skills
+            .iter()
+            .map(|skill| format!("- {}: {}", skill.name, skill.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return vec![meta_message(format!(
+            "Skills relevant to your task:\n\n{lines}\n\nThese skills encode project-specific conventions. Invoke via Skill(\"<name>\") for complete instructions."
+        ))];
     }
     match &attachment.attachment {
         Attachment::File { filename, content, truncated, .. } => {
@@ -5007,7 +5004,9 @@ mod message_merge_tests {
     fn whitespace_filter_matches_official_envelope_identity_and_js_trim() {
         use crate::types::message::{AssistantContent, AssistantMessageIdentity};
         let identity = AssistantContent::MessageIdentity(AssistantMessageIdentity::default());
-        assert!(!has_only_whitespace_text_content(&[identity.clone()]));
+        assert!(!has_only_whitespace_text_content(std::slice::from_ref(
+            &identity
+        )));
         assert!(has_only_whitespace_text_content(&[
             AssistantContent::Text("\u{feff} \n".into()),
             identity.clone()

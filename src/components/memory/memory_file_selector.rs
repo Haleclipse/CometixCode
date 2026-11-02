@@ -826,14 +826,14 @@ mod tests {
 
         crate::memdir::paths::seed_settings(with_auto_memory(false), user.clone());
         let disabled = auto_memory_snapshot();
-        assert_eq!(disabled.enabled, false);
-        assert_eq!(disabled.dream_enabled, false);
+        assert!(!disabled.enabled);
+        assert!(!disabled.dream_enabled);
         assert_eq!(disabled.path, None);
 
         crate::memdir::paths::seed_settings(with_auto_memory(true), user.clone());
         let enabled = auto_memory_snapshot();
-        assert_eq!(enabled.enabled, true);
-        assert_eq!(enabled.dream_enabled, true);
+        assert!(enabled.enabled);
+        assert!(enabled.dream_enabled);
         assert_eq!(enabled.path, Some(PathBuf::from("/tmp/memory-dir")));
         {
             let _env = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "true");

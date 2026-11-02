@@ -182,13 +182,13 @@ fn realpath_deepest_existing(absolute_path: &Path) -> Result<PathBuf, PathTraver
             Err(error) => {
                 let code = errno_code(&error);
                 if code == "ENOENT" {
-                    if let Ok(metadata) = std::fs::symlink_metadata(&current) {
-                        if metadata.file_type().is_symlink() {
-                            return Err(PathTraversalError(format!(
-                                "Dangling symlink detected (target does not exist): \"{}\"",
-                                current.display()
-                            )));
-                        }
+                    if let Ok(metadata) = std::fs::symlink_metadata(&current)
+                        && metadata.file_type().is_symlink()
+                    {
+                        return Err(PathTraversalError(format!(
+                            "Dangling symlink detected (target does not exist): \"{}\"",
+                            current.display()
+                        )));
                     }
                 } else if code == "ELOOP" {
                     return Err(PathTraversalError(format!(

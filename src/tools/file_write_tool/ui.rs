@@ -743,7 +743,7 @@ mod tests {
             "nyan-write-ui-rel-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        crate::bootstrap::state::set_original_cwd(&base.join("project"));
+        crate::bootstrap::state::set_original_cwd(base.join("project"));
         let path = base.join("elsewhere/out.txt");
         let lines = render_tool_result_lines(
             Some(&path.display().to_string()),

@@ -224,7 +224,7 @@ fn slice_context(
         context_end += 1;
         if *byte == NL {
             newlines_seen += 1;
-            if newlines_seen >= context_lines + 1 {
+            if newlines_seen > context_lines {
                 break;
             }
         }

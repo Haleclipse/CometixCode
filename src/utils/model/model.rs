@@ -91,10 +91,11 @@ pub fn get_user_specified_model_setting() -> Option<String> {
 
     // Ignore the user-specified model if it's not in the availableModels
     // allowlist. The source's truthiness guard also skips an empty setting.
-    if let Some(model) = specified_model.as_deref() {
-        if !model.is_empty() && !crate::utils::model::model_allowlist::is_model_allowed(model) {
-            return None;
-        }
+    if let Some(model) = specified_model.as_deref()
+        && !model.is_empty()
+        && !crate::utils::model::model_allowlist::is_model_allowed(model)
+    {
+        return None;
     }
 
     specified_model
@@ -136,10 +137,10 @@ pub fn parse_user_specified_model(model_input: &str) -> String {
 
 /// Maps to: CC `utils/model/model.ts` `getMainLoopModel()`.
 pub fn get_main_loop_model() -> String {
-    if let Some(model) = get_user_specified_model_setting() {
-        if !model.trim().is_empty() {
-            return parse_user_specified_model(&model);
-        }
+    if let Some(model) = get_user_specified_model_setting()
+        && !model.trim().is_empty()
+    {
+        return parse_user_specified_model(&model);
     }
     get_default_main_loop_model()
 }

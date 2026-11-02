@@ -207,45 +207,45 @@ impl Shared {
             state.clear_timer();
         }
         drop(state);
-        if let Some(pending) = pending {
-            if let Err(error) = (self.options.write_fn)(&pending.concat()) {
-                let mut state = self.state.lock().unwrap();
-                let mut restored = pending;
-                if let Some(newer) = state.pending_overflow.take() {
-                    restored.extend(buffer);
-                    restored.extend(newer);
-                } else {
-                    let mut restored_buffer = buffer;
-                    restored_buffer.append(&mut state.buffer);
-                    state.buffer = restored_buffer;
-                    state.buffer_bytes += buffer_bytes;
-                    if timer.is_some() {
-                        state.flush_timer = timer;
-                    }
+        if let Some(pending) = pending
+            && let Err(error) = (self.options.write_fn)(&pending.concat())
+        {
+            let mut state = self.state.lock().unwrap();
+            let mut restored = pending;
+            if let Some(newer) = state.pending_overflow.take() {
+                restored.extend(buffer);
+                restored.extend(newer);
+            } else {
+                let mut restored_buffer = buffer;
+                restored_buffer.append(&mut state.buffer);
+                state.buffer = restored_buffer;
+                state.buffer_bytes += buffer_bytes;
+                if timer.is_some() {
+                    state.flush_timer = timer;
                 }
-                state.pending_overflow = Some(restored);
-                return Err(error);
             }
+            state.pending_overflow = Some(restored);
+            return Err(error);
         }
-        if !buffer.is_empty() {
-            if let Err(error) = (self.options.write_fn)(&buffer.concat()) {
-                let mut state = self.state.lock().unwrap();
-                // Concurrent overflow belongs after the failing snapshot.
-                if let Some(newer) = state.pending_overflow.take() {
-                    let mut restored = buffer;
-                    restored.extend(newer);
-                    state.pending_overflow = Some(restored);
-                } else {
-                    let mut restored = buffer;
-                    restored.append(&mut state.buffer);
-                    state.buffer = restored;
-                    state.buffer_bytes += buffer_bytes;
-                    if timer.is_some() {
-                        state.flush_timer = timer;
-                    }
+        if !buffer.is_empty()
+            && let Err(error) = (self.options.write_fn)(&buffer.concat())
+        {
+            let mut state = self.state.lock().unwrap();
+            // Concurrent overflow belongs after the failing snapshot.
+            if let Some(newer) = state.pending_overflow.take() {
+                let mut restored = buffer;
+                restored.extend(newer);
+                state.pending_overflow = Some(restored);
+            } else {
+                let mut restored = buffer;
+                restored.append(&mut state.buffer);
+                state.buffer = restored;
+                state.buffer_bytes += buffer_bytes;
+                if timer.is_some() {
+                    state.flush_timer = timer;
                 }
-                return Err(error);
             }
+            return Err(error);
         }
         Ok(())
     }

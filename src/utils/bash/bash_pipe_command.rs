@@ -74,27 +74,26 @@ fn build_command_parts(
     let mut seen_non_env_var = false;
     let mut index = start;
     while index < end {
-        if let ParseEntry::String(descriptor) = &parsed[index] {
-            if is_file_descriptor(descriptor) && index + 2 < end {
-                if let (ParseEntry::Operator(operator), ParseEntry::String(target)) =
-                    (&parsed[index + 1], &parsed[index + 2])
-                {
-                    if operator == ">&" && is_file_descriptor(target) {
-                        parts.push(format!("{descriptor}>&{target}"));
-                        index += 3;
-                        continue;
-                    }
-                    if operator == ">" && target == "/dev/null" {
-                        parts.push(format!("{descriptor}>/dev/null"));
-                        index += 3;
-                        continue;
-                    }
-                    if operator == ">" && target.strip_prefix('&').is_some_and(is_file_descriptor) {
-                        parts.push(format!("{descriptor}>{target}"));
-                        index += 3;
-                        continue;
-                    }
-                }
+        if let ParseEntry::String(descriptor) = &parsed[index]
+            && is_file_descriptor(descriptor)
+            && index + 2 < end
+            && let (ParseEntry::Operator(operator), ParseEntry::String(target)) =
+                (&parsed[index + 1], &parsed[index + 2])
+        {
+            if operator == ">&" && is_file_descriptor(target) {
+                parts.push(format!("{descriptor}>&{target}"));
+                index += 3;
+                continue;
+            }
+            if operator == ">" && target == "/dev/null" {
+                parts.push(format!("{descriptor}>/dev/null"));
+                index += 3;
+                continue;
+            }
+            if operator == ">" && target.strip_prefix('&').is_some_and(is_file_descriptor) {
+                parts.push(format!("{descriptor}>{target}"));
+                index += 3;
+                continue;
             }
         }
 

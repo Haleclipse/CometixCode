@@ -78,19 +78,16 @@ pub fn file_history_enabled() -> bool {
     }
     load_global_config().file_checkpointing_enabled != Some(false)
         && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING")
-                .as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING").as_deref(),
         )
 }
 
 /// Maps to: CC `fileHistoryEnabledSdk()`.
 fn file_history_enabled_sdk() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING").as_deref(),
     ) && !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING").as_deref(),
     )
 }
 
@@ -228,14 +225,12 @@ pub async fn file_history_make_snapshot(store: &AppStore, message_id: &str) {
             };
 
             // File exists — reuse the latest backup when unchanged.
-            if let Some(latest) = latest_backup {
-                if let Some(backup_name) = latest.backup_file_name.as_deref() {
-                    if !check_origin_file_changed(&file_path, backup_name, Some(&file_stats)).await
-                    {
-                        tracked_file_backups.insert(tracking_path.clone(), latest.clone());
-                        continue;
-                    }
-                }
+            if let Some(latest) = latest_backup
+                && let Some(backup_name) = latest.backup_file_name.as_deref()
+                && !check_origin_file_changed(&file_path, backup_name, Some(&file_stats)).await
+            {
+                tracked_file_backups.insert(tracking_path.clone(), latest.clone());
+                continue;
             }
 
             // Newer than the latest backup — create a new one.
@@ -503,10 +498,9 @@ fn compare_stats(
             // mtime optimization: if the original was last modified before
             // the backup was taken, the content cannot have diverged.
             if let (Ok(original_mtime), Ok(backup_mtime)) = (original.modified(), backup.modified())
+                && original_mtime < backup_mtime
             {
-                if original_mtime < backup_mtime {
-                    return StatComparison::Unchanged;
-                }
+                return StatComparison::Unchanged;
             }
             StatComparison::NeedContentCompare
         }
@@ -708,10 +702,10 @@ fn get_backup_file_name_first_version(
     state: &FileHistoryState,
 ) -> ResolvedBackupFileName {
     for snapshot in &state.snapshots {
-        if let Some(backup) = snapshot.tracked_file_backups.get(tracking_path) {
-            if backup.version == 1 {
-                return Some(backup.backup_file_name.clone());
-            }
+        if let Some(backup) = snapshot.tracked_file_backups.get(tracking_path)
+            && backup.version == 1
+        {
+            return Some(backup.backup_file_name.clone());
         }
     }
     None
@@ -960,8 +954,7 @@ mod tests {
     async fn diff_stats_count_deleted_lines_against_missing_backup() {
         // With no backup (file absent at target), every current line counts
         // as a deletion on rewind — CC diffLines(original, '').
-        let temp =
-            std::env::temp_dir().join(format!("nyan-fh-diff-{}.txt", uuid::Uuid::new_v4()));
+        let temp = std::env::temp_dir().join(format!("nyan-fh-diff-{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&temp, "one\ntwo\nthree\n").expect("write temp");
         let stats = compute_diff_stats_for_file(&temp.to_string_lossy(), None).await;
         assert_eq!(stats.files_changed.len(), 1);

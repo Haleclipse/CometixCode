@@ -172,6 +172,7 @@ pub fn get_memory_path(memory_type: &str) -> PathBuf {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
+#[derive(Default)]
 pub struct AccountInfo {
     pub account_uuid: Option<String>,
     pub email_address: Option<String>,
@@ -186,30 +187,13 @@ pub struct AccountInfo {
     pub subscription_created_at: Option<String>,
 }
 
-impl Default for AccountInfo {
-    fn default() -> Self {
-        Self {
-            account_uuid: None,
-            email_address: None,
-            organization_uuid: None,
-            organization_name: None,
-            organization_role: None,
-            workspace_role: None,
-            display_name: None,
-            has_extra_usage_enabled: None,
-            billing_type: None,
-            account_created_at: None,
-            subscription_created_at: None,
-        }
-    }
-}
-
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
+#[derive(Default)]
 pub struct McpServerConfig {
     /// Maps to: CC `McpServerConfig.type` transport discriminator.
     #[serde(rename = "type")]
@@ -250,26 +234,6 @@ pub struct McpServerConfig {
     pub id: Option<String>,
 }
 
-impl Default for McpServerConfig {
-    fn default() -> Self {
-        Self {
-            server_type: None,
-            name: None,
-            command: None,
-            args: None,
-            env: None,
-            url: None,
-            headers: None,
-            headers_helper: None,
-            oauth: None,
-            ide_name: None,
-            ide_running_in_windows: None,
-            auth_token: None,
-            id: None,
-        }
-    }
-}
-
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
@@ -296,6 +260,7 @@ impl Default for McpServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
+#[derive(Default)]
 pub struct ProjectConfig {
     pub allowed_tools: Vec<String>,
 
@@ -348,48 +313,6 @@ pub struct ProjectConfig {
     /// be a behavioral mismatch.
     #[serde(flatten)]
     pub other_project_fields: HashMap<String, serde_json::Value>,
-}
-
-impl Default for ProjectConfig {
-    fn default() -> Self {
-        Self {
-            allowed_tools: Vec::new(),
-            mcp_context_uris: Vec::new(),
-            mcp_servers: None,
-            enabled_mcpjson_servers: None,
-            disabled_mcpjson_servers: None,
-            enable_all_project_mcp_servers: None,
-            disabled_mcp_servers: None,
-            enabled_mcp_servers: None,
-            last_api_duration: None,
-            last_api_duration_without_retries: None,
-            last_tool_duration: None,
-            last_cost: None,
-            last_duration: None,
-            last_lines_added: None,
-            last_lines_removed: None,
-            last_total_input_tokens: None,
-            last_total_output_tokens: None,
-            last_total_cache_creation_input_tokens: None,
-            last_total_cache_read_input_tokens: None,
-            last_total_web_search_requests: None,
-            last_fps_average: None,
-            last_fps_low_1_pct: None,
-            last_session_id: None,
-            last_model_usage: None,
-            last_session_metrics: None,
-            example_files: None,
-            example_files_generated_at: None,
-            has_trust_dialog_accepted: None,
-            has_completed_project_onboarding: None,
-            project_onboarding_seen_count: 0,
-            has_claude_md_external_includes_approved: None,
-            has_claude_md_external_includes_warning_shown: None,
-            active_worktree_session: None,
-            remote_control_spawn_mode: None,
-            other_project_fields: HashMap::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1262,10 +1185,10 @@ fn read_cached_global_config(path: &Path, stats: Option<ConfigFileStats>) -> Opt
     if cache.path != path {
         return None;
     }
-    if let Some(stats) = stats {
-        if stats.mtime_ms > cache.mtime_ms {
-            return None;
-        }
+    if let Some(stats) = stats
+        && stats.mtime_ms > cache.mtime_ms
+    {
+        return None;
     }
     CONFIG_CACHE_HITS.fetch_add(1, Ordering::Relaxed);
     Some(cache.config.clone())
@@ -1563,10 +1486,10 @@ pub fn load_global_config() -> GlobalConfig {
     // startup load. A background freshness watcher refreshes external writes.
     // In tests, keep the stat guard so individual cases can mutate temp config
     // files without coordinating with a background thread.
-    if !cfg!(test) {
-        if let Some(config) = read_cached_global_config(&path, None) {
-            return config;
-        }
+    if !cfg!(test)
+        && let Some(config) = read_cached_global_config(&path, None)
+    {
+        return config;
     }
 
     let stats = read_config_file_stats(&path);
@@ -1857,10 +1780,10 @@ fn has_trust_dialog_accepted_for_path(config: &GlobalConfig, cwd: &Path) -> bool
     let mut path = cwd;
     loop {
         let key = normalize_project_path(&path.to_string_lossy());
-        if let Some(project) = config.projects.get(&key) {
-            if project.has_trust_dialog_accepted == Some(true) {
-                return true;
-            }
+        if let Some(project) = config.projects.get(&key)
+            && project.has_trust_dialog_accepted == Some(true)
+        {
+            return true;
         }
         match path.parent() {
             Some(parent) if parent != path => path = parent,

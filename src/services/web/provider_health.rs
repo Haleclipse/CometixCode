@@ -311,13 +311,12 @@ impl ProviderHealthRegistry {
         if let Some(fp) = fingerprint {
             let mut mismatch = false;
             for cap in [Capability::Search, Capability::Fetch] {
-                if let Some(entry) = entries.get(&(provider.to_string(), cap)) {
-                    if let Some(existing_fp) = &entry.fingerprint {
-                        if existing_fp != fp {
-                            mismatch = true;
-                            break;
-                        }
-                    }
+                if let Some(entry) = entries.get(&(provider.to_string(), cap))
+                    && let Some(existing_fp) = &entry.fingerprint
+                    && existing_fp != fp
+                {
+                    mismatch = true;
+                    break;
                 }
             }
             if mismatch {
@@ -333,10 +332,10 @@ impl ProviderHealthRegistry {
             .entry((provider.to_string(), capability))
             .or_default();
 
-        if let Some(fp) = fingerprint {
-            if entry.fingerprint.is_none() {
-                entry.fingerprint = Some(fp.to_string());
-            }
+        if let Some(fp) = fingerprint
+            && entry.fingerprint.is_none()
+        {
+            entry.fingerprint = Some(fp.to_string());
         }
 
         // The "release one when every commercial provider is soft-down" rule

@@ -217,10 +217,10 @@ pub fn get_rule_by_contents_for_tool_name(
         PermissionBehavior::Ask => get_ask_rules(context),
     };
     for rule in rules {
-        if rule.rule_value.tool_name == tool_name {
-            if let Some(content) = rule.rule_value.rule_content.as_ref() {
-                rules_by_content.insert(content.clone(), rule);
-            }
+        if rule.rule_value.tool_name == tool_name
+            && let Some(content) = rule.rule_value.rule_content.as_ref()
+        {
+            rules_by_content.insert(content.clone(), rule);
         }
     }
     rules_by_content
@@ -258,24 +258,24 @@ pub fn create_permission_request_message(
         PermissionDecisionReason::SubcommandResults { reasons } => {
             let needs_approval = reasons
                 .iter()
-                .filter_map(|(command, result)| {
+                .filter(|&(_, result)| {
                     matches!(
                         result.as_ref(),
                         PermissionResult::Ask { .. } | PermissionResult::Passthrough { .. }
                     )
-                    .then(|| {
-                        if tool_name == crate::tools::bash_tool::tool_name::BASH_TOOL_NAME {
-                            let extracted =
-                                crate::utils::bash::commands::extract_output_redirections(command);
-                            if extracted.redirections.is_empty() {
-                                command.clone()
-                            } else {
-                                extracted.command_without_redirections
-                            }
-                        } else {
+                })
+                .map(|(command, _result)| {
+                    if tool_name == crate::tools::bash_tool::tool_name::BASH_TOOL_NAME {
+                        let extracted =
+                            crate::utils::bash::commands::extract_output_redirections(command);
+                        if extracted.redirections.is_empty() {
                             command.clone()
+                        } else {
+                            extracted.command_without_redirections
                         }
-                    })
+                    } else {
+                        command.clone()
+                    }
                 })
                 .collect::<Vec<_>>();
             if needs_approval.is_empty() {
@@ -900,14 +900,15 @@ fn has_permissions_to_use_tool_inner<'a>(
             // prompted for shell-analysis findings (redirection, `rm`, …). Bypass
             // is the user turning confirmation off wholesale, so it covers these
             // too; a user-configured `ask` rule (step 1f) still wins.
-            PermissionResult::Ask { decision_reason, .. } => {
+            PermissionResult::Ask {
+                decision_reason, ..
+            } => {
                 let safety_check = matches!(
                     decision_reason,
                     Some(crate::utils::permissions::permission_result::PermissionDecisionReason::SafetyCheck { .. })
                 );
                 tool_permission_ask_is_bypass_immune(decision_reason.as_ref())
-                    && !(safety_check
-                        && params.context.mode == PermissionMode::BypassPermissions)
+                    && !(safety_check && params.context.mode == PermissionMode::BypassPermissions)
             }
             _ => false,
         };
@@ -1226,34 +1227,33 @@ fn has_permissions_to_use_tool_inner<'a>(
                 &fallback_context
             };
             let tool_permission = tool_call.check_permissions(&permission_input, tool_context);
-            if tool_call.requires_user_interaction() {
-                if let crate::utils::permissions::permission_result::PermissionResult::Ask {
+            if tool_call.requires_user_interaction()
+                && let crate::utils::permissions::permission_result::PermissionResult::Ask {
                     suggestions,
                     decision_reason,
                     message,
                     ..
                 } = &tool_permission
-                {
-                    // CC step 1e returns this ask before bypass and whole-tool
-                    // allow checks. dontAsk remains the final outer transform.
-                    let mut request = permission_request_from_tool_result(
-                        &params,
-                        Some(suggestions),
-                        matches!(
-                            decision_reason,
-                            Some(PermissionDecisionReason::SubcommandResults { .. })
-                        ),
-                        decision_reason.clone(),
-                        message.clone(),
-                    );
-                    request.permission_result =
-                        crate::types::permissions::PermissionDecision::try_from(
-                            tool_permission.clone(),
-                        )
-                        .ok();
-                    let result = HasPermissionsToUseToolResult::Ask(request);
-                    return PreClassifierOutcome::Done { params, result };
-                }
+            {
+                // CC step 1e returns this ask before bypass and whole-tool
+                // allow checks. dontAsk remains the final outer transform.
+                let mut request = permission_request_from_tool_result(
+                    &params,
+                    Some(suggestions),
+                    matches!(
+                        decision_reason,
+                        Some(PermissionDecisionReason::SubcommandResults { .. })
+                    ),
+                    decision_reason.clone(),
+                    message.clone(),
+                );
+                request.permission_result =
+                    crate::types::permissions::PermissionDecision::try_from(
+                        tool_permission.clone(),
+                    )
+                    .ok();
+                let result = HasPermissionsToUseToolResult::Ask(request);
+                return PreClassifierOutcome::Done { params, result };
             }
             // The tool's own result IS the decision. CC step 3
             // (permissions.ts:1299-1310) rewrites ONLY `passthrough` into `ask`;
@@ -2326,10 +2326,10 @@ fn load_denial_tracking(
     if let Some(local) = local {
         return local.get();
     }
-    if let Some(store) = app_store {
-        if let Some(state) = store.get().denial_tracking {
-            return state;
-        }
+    if let Some(store) = app_store
+        && let Some(state) = store.get().denial_tracking
+    {
+        return state;
     }
     create_denial_tracking_state()
 }
@@ -4910,10 +4910,7 @@ mod tests {
         let approvable_path = cwd.join(".git/nyan-parity-probe").display().to_string();
         // `PROGRA~1` is an 8.3 short name → `hasSuspiciousWindowsPathPattern` →
         // `classifierApprovable: false` (CC `filesystem.ts:630-639`).
-        let non_approvable_path = cwd
-            .join("PROGRA~1/nyan-parity-probe")
-            .display()
-            .to_string();
+        let non_approvable_path = cwd.join("PROGRA~1/nyan-parity-probe").display().to_string();
 
         let run = |path: &str, should_avoid_permission_prompts: bool| {
             let auto_context = ToolPermissionContext {

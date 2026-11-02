@@ -396,12 +396,7 @@ pub fn PowerShellPermissionRequest<'a>(
         let reject_feedback = reject_feedback;
         let options = options.clone();
         move |event| {
-            let TerminalEvent::Key(KeyEvent {
-                code,
-                kind,
-                ..
-            }) = event.event()
-            else {
+            let TerminalEvent::Key(KeyEvent { code, kind, .. }) = event.event() else {
                 return;
             };
             if *kind == KeyEventKind::Release {
@@ -429,7 +424,7 @@ pub fn PowerShellPermissionRequest<'a>(
         }
     });
 
-    let selected = { pending_select.read().clone() };
+    let selected = { *pending_select.read() };
     if let Some(value) = selected {
         pending_select.set(None);
         let mut selection = PowerShellPermissionSelection::new(value);
@@ -449,13 +444,12 @@ pub fn PowerShellPermissionRequest<'a>(
     let description_to_show = if props.explainer_visible {
         None
     } else {
-        request
-            .description
-            .trim()
-            .is_empty()
-            .then(|| input_description.clone())
-            .unwrap_or_else(|| Some(request.description.clone()))
-            .filter(|description| !description.trim().is_empty())
+        if request.description.trim().is_empty() {
+            input_description.clone()
+        } else {
+            Some(request.description.clone())
+        }
+        .filter(|description| !description.trim().is_empty())
     };
     let show_tab_to_amend = options
         .get(focused)

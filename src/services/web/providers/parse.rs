@@ -189,9 +189,7 @@ fn firecrawl_page(url: &str, value: &Value) -> Result<ProviderPage, ProviderErro
             .trim()
             .to_ascii_lowercase();
     }
-    if let Some(source) =
-        str_at(data, "/metadata/sourceURL").filter(|source| is_http_url(source))
-    {
+    if let Some(source) = str_at(data, "/metadata/sourceURL").filter(|source| is_http_url(source)) {
         result.final_url = source.to_string();
     }
     result.freshness = Some(match str_at(data, "/metadata/cachedAt") {
@@ -245,7 +243,10 @@ fn tavily_page(url: &str, value: &Value) -> Result<ProviderPage, ProviderError> 
 fn any_page(url: &str, value: &Value, _provider: &str) -> Result<ProviderPage, ProviderError> {
     // AnySearch answers `{data: {url, title, content}}`; DeepSeek answers
     // `{title, content}` and older AnySearch shapes used `results[0]`.
-    let value = value.get("data").filter(|data| data.get("content").is_some()).unwrap_or(value);
+    let value = value
+        .get("data")
+        .filter(|data| data.get("content").is_some())
+        .unwrap_or(value);
     let node = if value.get("content").is_some() {
         value
     } else {
@@ -423,7 +424,10 @@ mod tests {
         assert_eq!(page.status, 203);
         assert_eq!(page.content_type, "text/html");
         assert_eq!(page.final_url, "https://example.com/final");
-        assert_eq!(page.freshness.as_deref(), Some("cached:2026-10-26T01:00:00Z"));
+        assert_eq!(
+            page.freshness.as_deref(),
+            Some("cached:2026-10-26T01:00:00Z")
+        );
         assert_eq!(page.format, "markdown");
 
         let live = parse_page(
@@ -474,7 +478,10 @@ mod tests {
             json!({"results":[{"url":url,"title":"T","content":"any body"}]}),
         )
         .unwrap();
-        assert_eq!((any.content.as_str(), any.title.as_deref()), ("any body", Some("T")));
+        assert_eq!(
+            (any.content.as_str(), any.title.as_deref()),
+            ("any body", Some("T"))
+        );
         let deepseek = parse_page(
             ProviderKind::DeepSeek,
             url,
@@ -492,7 +499,11 @@ mod tests {
             Err(ProviderError::Invalid)
         );
         assert_eq!(
-            parse_page(ProviderKind::Tavily, url, json!({"results":[],"failed_results":[{"url":url}]})),
+            parse_page(
+                ProviderKind::Tavily,
+                url,
+                json!({"results":[],"failed_results":[{"url":url}]})
+            ),
             Err(ProviderError::Invalid)
         );
         for kind in [ProviderKind::Brave, ProviderKind::Searxng] {

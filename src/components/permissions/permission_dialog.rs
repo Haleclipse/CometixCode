@@ -37,7 +37,7 @@ pub fn PermissionDialog(
     let border_color = props.color.unwrap_or(theme.permission);
     let title_color = props.title_color;
     let inner_padding_x = props.inner_padding_x.unwrap_or(1);
-    let body = props.children.drain(..).collect::<Vec<_>>();
+    let body = std::mem::take(&mut props.children);
 
     element! {
         View(

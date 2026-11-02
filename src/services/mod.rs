@@ -8,8 +8,8 @@ pub mod analytics;
 pub mod api;
 /// @nyan: idle memory consolidation (memory 4.4 / auto-dream).
 pub mod auto_dream;
-pub mod claude_ai_limits;
 pub mod cache_warmer;
+pub mod claude_ai_limits;
 pub mod compact;
 pub mod context_collapse;
 /// @nyan: quick classification backend for the four modules and host-runtime

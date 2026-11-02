@@ -379,7 +379,7 @@ fn web_search_progress_from_stream_content(
             let search_query = input.get("query").and_then(|value| value.as_str())?;
             let changed = tool_use_queries
                 .get(id)
-                .map_or(true, |previous| previous != search_query);
+                .is_none_or(|previous| previous != search_query);
             if !changed {
                 return None;
             }
@@ -938,7 +938,10 @@ mod tests {
         #[test]
         fn configured_nyan_web_without_providers_hides_the_tool() {
             let _guard = WebSettingsGuard::install(settings(json!({})));
-            assert!(!is_web_search_tool_enabled(), "no provider → no WebSearch tool");
+            assert!(
+                !is_web_search_tool_enabled(),
+                "no provider → no WebSearch tool"
+            );
         }
 
         #[tokio::test]
@@ -946,16 +949,24 @@ mod tests {
             budget::reset();
             let _guard = WebSettingsGuard::install(settings(json!({})));
             let args = json!({"query": "rust"});
-            let request = crate::utils::permissions::permissions::mock_permission_request_with_input(
-                "perm-no-provider".to_string(),
-                "toolu_no_provider".to_string(),
-                "WebSearch".to_string(),
-                String::new(),
-                args.clone(),
-                crate::types::permissions::PermissionMode::Default,
-            );
+            let request =
+                crate::utils::permissions::permissions::mock_permission_request_with_input(
+                    "perm-no-provider".to_string(),
+                    "toolu_no_provider".to_string(),
+                    "WebSearch".to_string(),
+                    String::new(),
+                    args.clone(),
+                    crate::types::permissions::PermissionMode::Default,
+                );
             let result = WebSearchTool
-                .call(&args, &request, &ToolUseContext::default(), None, None, None)
+                .call(
+                    &args,
+                    &request,
+                    &ToolUseContext::default(),
+                    None,
+                    None,
+                    None,
+                )
                 .await;
             let (content, status) = WebSearchTool
                 .map_tool_result_to_tool_result_block_param(&result.data, "toolu_no_provider");
@@ -975,7 +986,10 @@ mod tests {
             {
                 let _guard = WebSettingsGuard::none();
                 let prompt = super::super::prompt::get_web_search_prompt();
-                assert!(prompt.contains("Searches are performed automatically within a single API call"));
+                assert!(
+                    prompt
+                        .contains("Searches are performed automatically within a single API call")
+                );
                 assert!(!prompt.contains("configured web providers"));
             }
             {
@@ -1041,16 +1055,16 @@ mod tests {
                     "firecrawl": provider(&broken.origin),
                 })),
             })));
-            let output = run_nyan_web_search(
-                &json!({"query": "q"}),
-                &ToolUseContext::default(),
-            )
-            .await
-            .unwrap();
+            let output = run_nyan_web_search(&json!({"query": "q"}), &ToolUseContext::default())
+                .await
+                .unwrap();
             let super::super::WebSearchResultItem::Text(text) = &output.results[0] else {
                 panic!("expected text");
             };
-            assert!(text.contains("[searched: exa — firecrawl quota_exhausted]"), "{text}");
+            assert!(
+                text.contains("[searched: exa — firecrawl quota_exhausted]"),
+                "{text}"
+            );
             assert!(text.contains("Rust Book"), "{text}");
             budget::reset();
         }
@@ -1077,14 +1091,15 @@ mod tests {
                 "providers": only_mocked_providers(json!({"exa": provider(&server.origin)})),
             })));
             let args = json!({"query": "rust ownership", "max_results": 3});
-            let request = crate::utils::permissions::permissions::mock_permission_request_with_input(
-                "perm-nyan-search".to_string(),
-                "toolu_nyan_search".to_string(),
-                "WebSearch".to_string(),
-                String::new(),
-                args.clone(),
-                crate::types::permissions::PermissionMode::Default,
-            );
+            let request =
+                crate::utils::permissions::permissions::mock_permission_request_with_input(
+                    "perm-nyan-search".to_string(),
+                    "toolu_nyan_search".to_string(),
+                    "WebSearch".to_string(),
+                    String::new(),
+                    args.clone(),
+                    crate::types::permissions::PermissionMode::Default,
+                );
             let result = WebSearchTool
                 .call(
                     &args,
@@ -1099,7 +1114,10 @@ mod tests {
                 .map_tool_result_to_tool_result_block_param(&result.data, "toolu_nyan_search");
             assert_eq!(status, crate::types::message::ToolResultStatus::Success);
             assert!(content.contains("Rust Book"), "{content}");
-            assert!(content.contains("REMINDER: Search results are leads, not sources"), "{content}");
+            assert!(
+                content.contains("REMINDER: Search results are leads, not sources"),
+                "{content}"
+            );
             budget::reset();
         }
 

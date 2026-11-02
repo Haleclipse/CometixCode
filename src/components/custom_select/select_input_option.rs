@@ -315,7 +315,7 @@ pub fn SelectInputOption(
     );
 
     // CC :262 — children render between the index and the content.
-    let children: Vec<AnyElement<'static>> = props.children.drain(..).collect();
+    let children: Vec<AnyElement<'static>> = std::mem::take(&mut props.children);
     let padded_index = format!(
         "{:<width$}",
         format!("{}.", props.index),

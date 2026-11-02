@@ -457,17 +457,17 @@ pub(crate) fn reorder_messages_for_ui(messages: Vec<RenderableMessage>) -> Vec<R
     let mut processed_tool_uses = HashSet::new();
     for message in messages {
         if let Some(tool_use_id) = assistant_tool_use_id(&message).map(str::to_string) {
-            if processed_tool_uses.insert(tool_use_id.clone()) {
-                if let Some(group) = groups.get(&tool_use_id) {
-                    if let Some(tool_use) = &group.tool_use {
-                        result.push(tool_use.clone());
-                    }
-                    result.extend(group.pre_hooks.iter().cloned());
-                    if let Some(tool_result) = &group.tool_result {
-                        result.push(tool_result.clone());
-                    }
-                    result.extend(group.post_hooks.iter().cloned());
+            if processed_tool_uses.insert(tool_use_id.clone())
+                && let Some(group) = groups.get(&tool_use_id)
+            {
+                if let Some(tool_use) = &group.tool_use {
+                    result.push(tool_use.clone());
                 }
+                result.extend(group.pre_hooks.iter().cloned());
+                if let Some(tool_result) = &group.tool_result {
+                    result.push(tool_result.clone());
+                }
+                result.extend(group.post_hooks.iter().cloned());
             }
             continue;
         }
@@ -575,10 +575,10 @@ pub(crate) fn apply_grouping(
     // `GroupedToolUseContent` render time (CC `GroupedToolUseContent.tsx:35-48`).
     let mut results_by_tool_use_id: HashMap<String, RenderableMessage> = HashMap::new();
     for message in &messages {
-        if let Some(tool_use_id) = user_tool_result_id(message) {
-            if grouped_tool_use_ids.contains(tool_use_id) {
-                results_by_tool_use_id.insert(tool_use_id.to_string(), message.clone());
-            }
+        if let Some(tool_use_id) = user_tool_result_id(message)
+            && grouped_tool_use_ids.contains(tool_use_id)
+        {
+            results_by_tool_use_id.insert(tool_use_id.to_string(), message.clone());
         }
     }
 
@@ -3900,18 +3900,17 @@ mod tests {
     #[test]
     fn nonvisual_tool_use_rows_still_pair_their_results_in_lookups() {
         let mut nonvisual = tool_use_named("tool-nb", "toolu_nb", "NotebookEdit", "");
-        if let RenderableMessageKind::Assistant { message } = &mut nonvisual.kind {
-            if let Some(crate::types::message::AssistantContent::ToolUse(tool_use)) =
+        if let RenderableMessageKind::Assistant { message } = &mut nonvisual.kind
+            && let Some(crate::types::message::AssistantContent::ToolUse(tool_use)) =
                 message.content.first_mut()
-            {
-                // No cell_type → renderToolUseMessage None → nonvisual.
-                tool_use.input = serde_json::json!({
-                    "notebook_path": "/tmp/nb.ipynb",
-                    "cell_id": "cell-a",
-                    "new_source": "print('x')",
-                    "edit_mode": "replace"
-                });
-            }
+        {
+            // No cell_type → renderToolUseMessage None → nonvisual.
+            tool_use.input = serde_json::json!({
+                "notebook_path": "/tmp/nb.ipynb",
+                "cell_id": "cell-a",
+                "new_source": "print('x')",
+                "edit_mode": "replace"
+            });
         }
         assert!(
             assistant_row_is_nonvisual_tool_use(&nonvisual),

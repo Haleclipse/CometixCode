@@ -509,7 +509,10 @@ mod tests {
 
     #[test]
     fn path_and_local_source_predicate_match_official_bun_oracle() {
-        let oracle: Value = serde_json::from_str(include_str!("../../../tests/fixtures/oracles/plugin-installation-review-0914/oracle.json")).unwrap();
+        let oracle: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/plugin-installation-review-0914/oracle.json"
+        ))
+        .unwrap();
         for case in oracle["paths"].as_array().unwrap() {
             let result = validate_path_within_base(
                 Path::new(case["base"].as_str().unwrap()),
@@ -903,8 +906,7 @@ mod tests {
     #[tokio::test]
     async fn canonical_second_member_failure_keeps_prior_effects_matches_official_order() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-plugin-order-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-plugin-order-{}", uuid::Uuid::new_v4()));
         let _config = set_config_dir(&root);
         let _home = EnvVarGuard::set(HOME_VAR, &root);
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
@@ -948,10 +950,8 @@ mod tests {
     #[tokio::test]
     async fn canonical_registry_failure_keeps_materialization_matches_official_order() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-plugin-save-order-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-plugin-save-order-{}", uuid::Uuid::new_v4()));
         let _config = set_config_dir(&root);
         let _home = EnvVarGuard::set(HOME_VAR, &root);
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");

@@ -569,10 +569,8 @@ mod tests {
     fn task_claim_respects_official_owner_status_and_blocker_rules() {
         let _guard = TASK_TOOL_TEST_LOCK.lock().unwrap();
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-task-claim-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-task-claim-{}", uuid::Uuid::new_v4().simple()));
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         let _list_guard = EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", "session");
         let _ = reset_task_list("session");
@@ -669,10 +667,8 @@ mod tests {
     fn reset_task_list_removes_task_files_and_preserves_high_water_mark() {
         let _guard = TASK_TOOL_TEST_LOCK.lock().unwrap();
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-task-reset-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-task-reset-{}", uuid::Uuid::new_v4().simple()));
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
         let task_list_id = "alpha";
         let dir = get_tasks_dir(task_list_id);

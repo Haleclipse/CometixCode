@@ -111,7 +111,7 @@ pub fn render_result_lines(
     file_path: Option<&str>,
     awaiting_leader_approval: bool,
 ) -> Vec<ToolRenderLine> {
-    let is_empty_plan = plan.map_or(true, |plan| plan.trim().is_empty());
+    let is_empty_plan = plan.is_none_or(|plan| plan.trim().is_empty());
     if is_empty_plan {
         return vec![ToolRenderLine::new(
             format!("{BLACK_CIRCLE} Exited plan mode"),

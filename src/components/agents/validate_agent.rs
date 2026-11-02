@@ -47,16 +47,16 @@ pub fn validate_agent(
     if let Some(error) = validate_agent_type(&agent.agent_type) {
         errors.push(error);
     }
-    if !agent.agent_type.is_empty() {
-        if let Some(duplicate) = existing_agents.iter().find(|candidate| {
+    if !agent.agent_type.is_empty()
+        && let Some(duplicate) = existing_agents.iter().find(|candidate| {
             candidate.agent_type == agent.agent_type && candidate.source != agent.source
-        }) {
-            errors.push(format!(
-                "Agent type \"{}\" already exists in {}",
-                agent.agent_type,
-                get_agent_source_display_name(Some(duplicate.source))
-            ));
-        }
+        })
+    {
+        errors.push(format!(
+            "Agent type \"{}\" already exists in {}",
+            agent.agent_type,
+            get_agent_source_display_name(Some(duplicate.source))
+        ));
     }
 
     if agent.when_to_use.is_empty() {

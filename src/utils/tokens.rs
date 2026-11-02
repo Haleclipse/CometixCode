@@ -107,11 +107,11 @@ pub fn get_assistant_message_content_length(message: &AssistantMessage) -> usize
 pub fn token_count_with_estimation(messages: &[Message]) -> i64 {
     let mut anchor: Option<(usize, &TokenUsage)> = None;
     for (index, message) in messages.iter().enumerate().rev() {
-        if let Message::Assistant(assistant) = message {
-            if let Some(usage) = assistant.usage.as_ref() {
-                anchor = Some((index, usage));
-                break;
-            }
+        if let Message::Assistant(assistant) = message
+            && let Some(usage) = assistant.usage.as_ref()
+        {
+            anchor = Some((index, usage));
+            break;
         }
     }
 
@@ -128,9 +128,9 @@ pub fn token_count_with_estimation(messages: &[Message]) -> i64 {
 /// counted inside that usage, so a replacement decided after the request was
 /// sent has to be subtracted explicitly (compaction C4).
 pub fn usage_anchor_index(messages: &[Message]) -> Option<usize> {
-    messages.iter().rposition(|message| {
-        matches!(message, Message::Assistant(assistant) if assistant.usage.is_some())
-    })
+    messages.iter().rposition(
+        |message| matches!(message, Message::Assistant(assistant) if assistant.usage.is_some()),
+    )
 }
 
 #[cfg(test)]

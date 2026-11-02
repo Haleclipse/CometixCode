@@ -58,7 +58,8 @@ pub type PromptHookExecutor = Arc<
 >;
 
 fn small_fast_model() -> String {
-    crate::utils::process_env::var("NYAN_SMALL_FAST_MODEL").unwrap_or_else(|| "claude-3-5-haiku-latest".into())
+    crate::utils::process_env::var("NYAN_SMALL_FAST_MODEL")
+        .unwrap_or_else(|| "claude-3-5-haiku-latest".into())
 }
 
 fn assistant_text_content(message: &AssistantMessage) -> String {

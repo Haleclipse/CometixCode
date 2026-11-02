@@ -215,13 +215,12 @@ pub fn strip_safe_heredoc_substitutions(command: &str) -> Option<String> {
     let (delimiter, quoted_len) = if let Some(rest) = trimmed.strip_prefix('\'') {
         let end = rest.find('\'')?;
         (&rest[..end], end + 2)
-    } else if let Some(rest) = trimmed.strip_prefix('\\') {
+    } else {
+        let rest = trimmed.strip_prefix('\\')?;
         let end = rest
             .find(|ch: char| ch.is_whitespace())
             .unwrap_or(rest.len());
         (&rest[..end], end + 1)
-    } else {
-        return None;
     };
     if delimiter.is_empty()
         || !delimiter

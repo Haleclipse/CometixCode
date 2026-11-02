@@ -33,10 +33,10 @@ fn fd_path(fd: i32) -> String {
 pub fn get_token_from_file_descriptor_with_env(
     get_env: &impl Fn(&str) -> Option<String>,
 ) -> Option<String> {
-    if let Ok(cache) = SESSION_INGRESS_TOKEN_CACHE.lock() {
-        if let Some(cached) = cache.clone() {
-            return cached;
-        }
+    if let Ok(cache) = SESSION_INGRESS_TOKEN_CACHE.lock()
+        && let Some(cached) = cache.clone()
+    {
+        return cached;
     }
 
     let fallback_path = env_value(get_env, "CLAUDE_SESSION_INGRESS_TOKEN_FILE")

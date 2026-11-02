@@ -44,7 +44,9 @@ pub fn MemoryCommandPanel<'a>(
     let consolidate_channel =
         hooks.use_const(|| Arc::new(async_channel::unbounded::<Result<String, String>>()));
     let consolidate_receiver = consolidate_channel.1.clone();
-    let app_store = hooks.try_use_context::<crate::state::store::AppStore>().map(|store| store.clone());
+    let app_store = hooks
+        .try_use_context::<crate::state::store::AppStore>()
+        .map(|store| store.clone());
     hooks.use_future(async move {
         while let Ok(result) = consolidate_receiver.recv().await {
             completed_selection.set(Some(result));
@@ -80,11 +82,7 @@ pub fn MemoryCommandPanel<'a>(
                     crate::utils::process_env::var("VISUAL").truthy()
                 {
                     Some(format!("Using $VISUAL=\"{value}\"."))
-                } else if let Some(value) = crate::utils::process_env::var("EDITOR").truthy() {
-                    Some(format!("Using $EDITOR=\"{value}\"."))
-                } else {
-                    None
-                };
+                } else { crate::utils::process_env::var("EDITOR").truthy().map(|value| format!("Using $EDITOR=\"{value}\".")) };
                 let hint = editor_info.map_or_else(
                     || "> To use a different editor, set the $EDITOR or $VISUAL environment variable.".to_string(),
                     |info| format!("> {info} To change editor, set $EDITOR or $VISUAL environment variable."),
@@ -130,10 +128,9 @@ pub fn MemoryCommandPanel<'a>(
                 Some(handle) => {
                     let store = app_store.clone();
                     handle.spawn(async move {
-                        let result = crate::services::auto_dream::run_manual_consolidation(
-                            store.clone(),
-                        )
-                        .await;
+                        let result =
+                            crate::services::auto_dream::run_manual_consolidation(store.clone())
+                                .await;
                         // The panel closes right after "started", so the real
                         // outcome has to surface as a notification (success
                         // and every named failure alike).

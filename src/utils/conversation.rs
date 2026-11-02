@@ -212,12 +212,12 @@ fn with_single_content_block(
     ensure_context_management: bool,
 ) -> serde_json::Value {
     let mut output = message.clone();
-    if let Some(index) = derived_index {
-        if let Some(uuid) = output.get("uuid").and_then(|value| value.as_str()) {
-            let derived = crate::utils::messages::derive_uuid(uuid, index);
-            if let Some(obj) = output.as_object_mut() {
-                obj.insert("uuid".to_string(), serde_json::Value::String(derived));
-            }
+    if let Some(index) = derived_index
+        && let Some(uuid) = output.get("uuid").and_then(|value| value.as_str())
+    {
+        let derived = crate::utils::messages::derive_uuid(uuid, index);
+        if let Some(obj) = output.as_object_mut() {
+            obj.insert("uuid".to_string(), serde_json::Value::String(derived));
         }
     }
     if let Some(message_obj) = output
@@ -255,14 +255,16 @@ pub fn restore_skill_state_from_messages(messages: &[serde_json::Value]) -> Skil
                     let name = skill.get("name").and_then(|value| value.as_str());
                     let path = skill.get("path").and_then(|value| value.as_str());
                     let content = skill.get("content").and_then(|value| value.as_str());
-                    if let (Some(name), Some(path), Some(content)) = (name, path, content) {
-                        if !name.is_empty() && !path.is_empty() && !content.is_empty() {
-                            state.invoked_skills.push(InvokedSkill {
-                                name: name.to_string(),
-                                path: path.to_string(),
-                                content: content.to_string(),
-                            });
-                        }
+                    if let (Some(name), Some(path), Some(content)) = (name, path, content)
+                        && !name.is_empty()
+                        && !path.is_empty()
+                        && !content.is_empty()
+                    {
+                        state.invoked_skills.push(InvokedSkill {
+                            name: name.to_string(),
+                            path: path.to_string(),
+                            content: content.to_string(),
+                        });
                     }
                 }
             }
@@ -417,14 +419,13 @@ pub fn filter_orphaned_thinking_only(messages: Vec<serde_json::Value>) -> Vec<se
             let t = b.get("type").and_then(|v| v.as_str()).unwrap_or("");
             t != "thinking" && t != "redacted_thinking"
         });
-        if has_non_thinking {
-            if let Some(id) = msg
+        if has_non_thinking
+            && let Some(id) = msg
                 .get("message")
                 .and_then(|m| m.get("id"))
                 .and_then(|v| v.as_str())
-            {
-                ids_with_non_thinking.insert(id.to_string());
-            }
+        {
+            ids_with_non_thinking.insert(id.to_string());
         }
     }
 
@@ -455,10 +456,10 @@ pub fn filter_orphaned_thinking_only(messages: Vec<serde_json::Value>) -> Vec<se
                 .get("message")
                 .and_then(|m| m.get("id"))
                 .and_then(|v| v.as_str());
-            if let Some(id) = msg_id {
-                if ids_with_non_thinking.contains(id) {
-                    return true;
-                }
+            if let Some(id) = msg_id
+                && ids_with_non_thinking.contains(id)
+            {
+                return true;
             }
             false
         })
@@ -705,12 +706,11 @@ fn validate_permission_modes(messages: Vec<serde_json::Value>) -> Vec<serde_json
             if msg_type != "user" {
                 return msg;
             }
-            if let Some(obj) = msg.as_object_mut() {
-                if let Some(mode) = obj.get("permissionMode").and_then(|v| v.as_str()) {
-                    if !valid_modes.contains(&mode) {
-                        obj.remove("permissionMode");
-                    }
-                }
+            if let Some(obj) = msg.as_object_mut()
+                && let Some(mode) = obj.get("permissionMode").and_then(|v| v.as_str())
+                && !valid_modes.contains(&mode)
+            {
+                obj.remove("permissionMode");
             }
             msg
         })

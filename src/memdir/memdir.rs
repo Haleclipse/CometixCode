@@ -428,13 +428,13 @@ pub fn load_memory_prompt() -> Option<String> {
     // keeping parallel tests from creating whichever config-home path another
     // test temporarily installs. Tests that explicitly override the memory path
     // still exercise directory creation.
-    if !cfg!(test) || crate::memdir::paths::has_auto_mem_path_override() {
-        if let Err(error) = std::fs::create_dir_all(&memory_dir) {
-            eprintln!(
-                "ensureMemoryDirExists failed for {}: {error}",
-                memory_dir.display()
-            );
-        }
+    if (!cfg!(test) || crate::memdir::paths::has_auto_mem_path_override())
+        && let Err(error) = std::fs::create_dir_all(&memory_dir)
+    {
+        eprintln!(
+            "ensureMemoryDirExists failed for {}: {error}",
+            memory_dir.display()
+        );
     }
     // CC memdir.ts:441-446 gates on the trimmed text but threads the raw value.
     let extra_guidelines = crate::utils::process_env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES")

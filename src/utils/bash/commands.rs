@@ -45,12 +45,13 @@ pub fn split_command_with_operators(command: &str) -> Vec<String> {
         let character = chars[index];
         if let Some(active) = quote {
             word.push(character);
-            if character == '\\' && active == '"' {
-                if let Some(next) = chars.get(index + 1) {
-                    word.push(*next);
-                    index += 2;
-                    continue;
-                }
+            if character == '\\'
+                && active == '"'
+                && let Some(next) = chars.get(index + 1)
+            {
+                word.push(*next);
+                index += 2;
+                continue;
             }
             if character == active {
                 quote = None;
@@ -232,13 +233,12 @@ pub fn split_command_deprecated(command: &str) -> Vec<String> {
             continue;
         }
 
-        if let (Some(previous_index), Some(previous)) = (index.checked_sub(1), previous) {
-            if previous.len() >= 3
-                && previous.as_bytes()[previous.len() - 2] == b' '
-                && FILE_DESCRIPTORS.contains(&&previous[previous.len() - 1..])
-            {
-                parts[previous_index] = Some(previous[..previous.len() - 2].to_string());
-            }
+        if let (Some(previous_index), Some(previous)) = (index.checked_sub(1), previous)
+            && previous.len() >= 3
+            && previous.as_bytes()[previous.len() - 2] == b' '
+            && FILE_DESCRIPTORS.contains(&&previous[previous.len() - 1..])
+        {
+            parts[previous_index] = Some(previous[..previous.len() - 2].to_string());
         }
         parts[index] = None;
         parts[index + 1] = None;
@@ -718,13 +718,13 @@ pub fn extract_output_redirections(command: &str) -> ExtractOutputRedirectionsRe
             let is_start = index == 0
                 || matches!(previous, Some(ParseEntry::Operator(operator)) if matches!(operator.as_str(), "&&" | "||" | ";" | "|"));
             paren_stack.push((index, is_start));
-        } else if entry_operator(Some(part), ")") {
-            if let Some((opening, is_start)) = paren_stack.pop() {
-                let next = parts.get(index + 1);
-                if is_start && (entry_operator(next, ">") || entry_operator(next, ">>")) {
-                    redirected_subshells.insert(opening);
-                    redirected_subshells.insert(index);
-                }
+        } else if entry_operator(Some(part), ")")
+            && let Some((opening, is_start)) = paren_stack.pop()
+        {
+            let next = parts.get(index + 1);
+            if is_start && (entry_operator(next, ">") || entry_operator(next, ">>")) {
+                redirected_subshells.insert(opening);
+                redirected_subshells.insert(index);
             }
         }
     }

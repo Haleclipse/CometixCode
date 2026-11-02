@@ -56,7 +56,11 @@ fn exa_quota_code(body: &[u8]) -> bool {
     let mut codes = Vec::new();
     for key in ["code", "tag", "errorCode"] {
         codes.extend(value.get(key).and_then(Value::as_str));
-        codes.extend(value.pointer(&format!("/error/{key}")).and_then(Value::as_str));
+        codes.extend(
+            value
+                .pointer(&format!("/error/{key}"))
+                .and_then(Value::as_str),
+        );
     }
     codes.iter().any(|code| EXA_QUOTA_CODES.contains(code))
 }
@@ -68,9 +72,7 @@ fn exa_quota_code(body: &[u8]) -> bool {
 /// logged for it.
 pub(super) fn log_failure(kind: ProviderKind, status: u16, body: &[u8], api_key: Option<&str>) {
     if kind == ProviderKind::AnySearch && status == 402 {
-        crate::utils::debug::log_for_debugging(&format!(
-            "web provider anysearch: HTTP 402 (body withheld)"
-        ));
+        crate::utils::debug::log_for_debugging("web provider anysearch: HTTP 402 (body withheld)");
         return;
     }
     let secrets = api_key.map(str::to_string).into_iter().collect::<Vec<_>>();
@@ -118,7 +120,12 @@ mod tests {
             );
         }
         assert_eq!(
-            classify(ProviderKind::Exa, 402, &headers(None), b"{\"error\":\"payment\"}"),
+            classify(
+                ProviderKind::Exa,
+                402,
+                &headers(None),
+                b"{\"error\":\"payment\"}"
+            ),
             ProviderError::Http(402)
         );
         for body in [

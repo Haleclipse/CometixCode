@@ -29,9 +29,7 @@ fn keychain_service_name(prefix: &str, service_suffix: &str) -> anyhow::Result<S
         format!("-{hash}")
     };
     let oauth_suffix = crate::constants::oauth::get_oauth_config()?.oauth_file_suffix;
-    Ok(format!(
-        "{prefix}{oauth_suffix}{service_suffix}{dir_hash}"
-    ))
+    Ok(format!("{prefix}{oauth_suffix}{service_suffix}{dir_hash}"))
 }
 
 pub(crate) fn get_mac_os_keychain_storage_service_name(

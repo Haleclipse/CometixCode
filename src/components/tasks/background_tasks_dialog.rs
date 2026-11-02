@@ -344,27 +344,27 @@ fn dispatch_action(
     action: BackgroundTasksDialogAction,
     store: Option<&crate::state::store::AppStore>,
 ) {
-    if props.tool_use_context.is_some() || props.app_store.is_some() {
-        if let BackgroundTasksDialogAction::Stop(id) = &action {
-            if let Some(store) = store {
-                if matches!(
-                    store.get().tasks.get(id).map(|task| task.as_ref()),
-                    Some(crate::state::app_state_store::TaskState::Dream(_))
-                ) {
-                    crate::tasks::dream_task::kill_dream_task(id, store);
-                    return;
-                }
-            }
-            if crate::tasks::local_agent_task::task_identity_snapshot(id).is_some() {
-                crate::tasks::local_agent_task::kill_async_agent(id);
-            } else {
-                crate::tasks::local_shell_task::kill_shell_tasks::kill_task(id, store);
-            }
+    if (props.tool_use_context.is_some() || props.app_store.is_some())
+        && let BackgroundTasksDialogAction::Stop(id) = &action
+    {
+        if let Some(store) = store
+            && matches!(
+                store.get().tasks.get(id).map(|task| task.as_ref()),
+                Some(crate::state::app_state_store::TaskState::Dream(_))
+            )
+        {
+            crate::tasks::dream_task::kill_dream_task(id, store);
             return;
         }
-        // Other task types are not produced by this batch's live projection.
-        // Preserve fixture/custom caller callbacks; no runtime support is claimed.
+        if crate::tasks::local_agent_task::task_identity_snapshot(id).is_some() {
+            crate::tasks::local_agent_task::kill_async_agent(id);
+        } else {
+            crate::tasks::local_shell_task::kill_shell_tasks::kill_task(id, store);
+        }
+        return;
     }
+    // Other task types are not produced by this batch's live projection.
+    // Preserve fixture/custom caller callbacks; no runtime support is claimed.
     (props.on_action)(action);
 }
 

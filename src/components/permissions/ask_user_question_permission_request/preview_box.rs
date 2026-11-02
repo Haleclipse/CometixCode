@@ -81,7 +81,7 @@ pub fn preview_box_model(
     let effective_min_height = min_height.unwrap_or(0).min(effective_max_lines);
     let padding_needed = effective_min_height
         .saturating_sub(displayed.len() + if is_truncated { 1usize } else { 0usize });
-    displayed.extend(std::iter::repeat(String::new()).take(padding_needed));
+    displayed.extend(std::iter::repeat_n(String::new(), padding_needed));
 
     let content_width = displayed
         .iter()

@@ -253,7 +253,6 @@ fn restore_session_to_original_cwd(original_cwd: &str) {
     // process.chdir" — the utility layer owns the process chdir; this layer
     // only updates shell/session state (setCwd resolves, never chdirs).
     let resolved = crate::utils::shell::set_cwd(std::path::Path::new(original_cwd), None)
-        .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from(original_cwd));
     // EnterWorktree points originalCwd at the worktree (intentional — see
     // state.ts getProjectRoot comment). Reset to the real original.

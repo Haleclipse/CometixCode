@@ -147,10 +147,10 @@ fn set_effort_value(effort_value: EffortValue, model: &str) -> EffortCommandResu
     };
     let was_clamped = effort_value != clamped;
     let persistable = to_persistable_effort(Some(&clamped));
-    if let Some(value) = persistable.as_deref() {
-        if let Err(error) = update_effort_setting(Some(value)) {
-            return EffortCommandResult::message(format!("Failed to set effort level: {error}"));
-        }
+    if let Some(value) = persistable.as_deref()
+        && let Err(error) = update_effort_setting(Some(value))
+    {
+        return EffortCommandResult::message(format!("Failed to set effort level: {error}"));
     }
 
     unpin_launch_effort();
@@ -160,7 +160,8 @@ fn set_effort_value(effort_value: EffortValue, model: &str) -> EffortCommandResu
         None => false,
     };
     if env_conflicts {
-        let env_raw = crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
+        let env_raw =
+            crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
         if persistable.is_none() {
             return EffortCommandResult::with_update(
                 format!(
@@ -241,7 +242,8 @@ fn unset_effort_level() -> EffortCommandResult {
 
     unpin_launch_effort();
     if matches!(get_effort_env_override(), Some(Some(_))) {
-        let env_raw = crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
+        let env_raw =
+            crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
         return EffortCommandResult::with_update(
             format!(
                 "Cleared effort from settings, but CLAUDE_CODE_EFFORT_LEVEL={env_raw} still controls this session"
@@ -280,7 +282,8 @@ fn set_ultracode_effort(model: &str) -> EffortCommandResult {
     };
     let value = EffortValue::Named("xhigh".to_string());
     if env_conflicts {
-        let env_raw = crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
+        let env_raw =
+            crate::utils::process_env::var("CLAUDE_CODE_EFFORT_LEVEL").unwrap_or_default();
         return EffortCommandResult::with_ultracode(
             format!(
                 "CLAUDE_CODE_EFFORT_LEVEL={env_raw} overrides effort this session — clear it and ultracode takes over"
@@ -438,8 +441,8 @@ mod tests {
 
     impl EnvGuard {
         fn isolated() -> Self {
-            let root = std::env::temp_dir()
-                .join(format!("nyan-effort-command-{}", uuid::Uuid::new_v4()));
+            let root =
+                std::env::temp_dir().join(format!("nyan-effort-command-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
             Self {
                 config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),

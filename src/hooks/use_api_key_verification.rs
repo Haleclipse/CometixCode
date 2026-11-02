@@ -14,19 +14,14 @@ use iocraft::prelude::*;
 use std::sync::Arc;
 
 /// Maps to: CC `hooks/useApiKeyVerification.ts:12-18` `VerificationStatus`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum VerificationStatus {
+    #[default]
     Loading,
     Valid,
     Invalid,
     Missing,
     Error,
-}
-
-impl Default for VerificationStatus {
-    fn default() -> Self {
-        Self::Loading
-    }
 }
 
 /// Maps to: CC `hooks/useApiKeyVerification.ts:20-22`
@@ -173,7 +168,7 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let previous_env = AUTH_ENV_KEYS
                 .iter()
-                .map(|key| EnvVarGuard::unset(*key))
+                .map(|key| EnvVarGuard::unset(key))
                 .collect::<Vec<_>>();
             let previous_cwd = std::env::current_dir().expect("current cwd");
             let previous_original_cwd = crate::bootstrap::state::get_original_cwd();

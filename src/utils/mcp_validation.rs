@@ -37,12 +37,12 @@ pub fn get_max_mcp_output_tokens() -> f64 {
         while index < bytes.len() && bytes[index].is_ascii_digit() {
             index += 1;
         }
-        if index > start {
-            if let Ok(parsed) = value[start..index].parse::<f64>() {
-                let parsed = sign * parsed;
-                if parsed.is_finite() && parsed > 0.0 {
-                    return parsed;
-                }
+        if index > start
+            && let Ok(parsed) = value[start..index].parse::<f64>()
+        {
+            let parsed = sign * parsed;
+            if parsed.is_finite() && parsed > 0.0 {
+                return parsed;
             }
         }
     }

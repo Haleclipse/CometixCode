@@ -226,10 +226,10 @@ fn render_user(
                         .get(tool_result.tool_use_id.0.as_str())
                 });
                 let tool_name = tool_use_row
-                    .and_then(|row| crate::components::message_row::assistant_tool_use_name(row))
+                    .and_then(crate::components::message_row::assistant_tool_use_name)
                     .unwrap_or_default();
-                let tool_input = tool_use_row
-                    .and_then(|row| crate::components::message_row::assistant_tool_use_input(row));
+                let tool_input =
+                    tool_use_row.and_then(crate::components::message_row::assistant_tool_use_input);
                 // Maps to: CC `progressMessagesForMessage` resolved from the
                 // lookups for the paired tool_use.
                 let progress_messages = lookups

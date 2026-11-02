@@ -680,13 +680,12 @@ where
             // `ModelMessage` transport — headless output has no row
             // projection.
             Ok(QueryEvent::Message(message)) | Ok(QueryEvent::ModelMessage(message)) => {
-                if let crate::types::message::Message::Assistant(assistant) = &message {
-                    if let Some(request_id) = assistant
+                if let crate::types::message::Message::Assistant(assistant) = &message
+                    && let Some(request_id) = assistant
                         .request_id()
                         .filter(|request_id| !request_ids.iter().any(|seen| seen == request_id))
-                    {
-                        request_ids.push(request_id.to_string());
-                    }
+                {
+                    request_ids.push(request_id.to_string());
                 }
                 if let Some(callback) = on_message.as_ref() {
                     callback(&message);
@@ -695,10 +694,9 @@ where
                     &message,
                     crate::types::message::Message::Assistant(_)
                         | crate::types::message::Message::User(_)
-                ) {
-                    if let Some(sidechain) = sidechain.as_mut() {
-                        sidechain.record(&message);
-                    }
+                ) && let Some(sidechain) = sidechain.as_mut()
+                {
+                    sidechain.record(&message);
                 }
                 output_messages.push(message);
             }
@@ -778,7 +776,10 @@ mod tests {
             QuerySource::AutoDream,
             QuerySource::CacheWarm,
         ] {
-            assert!(is_cache_sharing_fork(&source), "{source:?} shares the cache");
+            assert!(
+                is_cache_sharing_fork(&source),
+                "{source:?} shares the cache"
+            );
         }
         for source in [
             QuerySource::Prompt,

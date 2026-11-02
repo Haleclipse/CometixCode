@@ -165,7 +165,7 @@ pub fn SandboxPermissionRequest<'a>(
         }
     });
 
-    let selected = { pending_select.read().clone() };
+    let selected = { *pending_select.read() };
     if let Some(value) = selected {
         pending_select.set(None);
         (props.on_user_response)(sandbox_permission_response_for_option(value));

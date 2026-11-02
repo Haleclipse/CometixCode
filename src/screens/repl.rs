@@ -2007,15 +2007,13 @@ fn push_or_replace_progress_entry(
     entries: &mut Vec<HistoryEntry>,
     new_message: crate::types::message::ProgressMessage,
 ) {
-    if crate::utils::session_storage::is_ephemeral_tool_progress(new_message.data.wire_type()) {
-        if let Some(HistoryEntry::Message(Message::Progress(last))) = entries.last_mut() {
-            if last.parent_tool_use_id == new_message.parent_tool_use_id
-                && last.data.wire_type() == new_message.data.wire_type()
-            {
-                *last = new_message;
-                return;
-            }
-        }
+    if crate::utils::session_storage::is_ephemeral_tool_progress(new_message.data.wire_type())
+        && let Some(HistoryEntry::Message(Message::Progress(last))) = entries.last_mut()
+        && last.parent_tool_use_id == new_message.parent_tool_use_id
+        && last.data.wire_type() == new_message.data.wire_type()
+    {
+        *last = new_message;
+        return;
     }
     entries.push(HistoryEntry::Message(Message::Progress(new_message)));
 }
@@ -3379,23 +3377,21 @@ fn resume(
     let mut loaded = crate::utils::session_restore::ResumeLoadResult::try_from(&target)?;
     if crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::CoordinatorMode,
-    ) {
-        if let Some(warning) =
-            crate::coordinator::coordinator_mode::match_session_mode(loaded.mode.as_deref())
-        {
-            let warning = Message::System(SystemMessage::informational(
-                warning,
-                SystemMessageLevel::Warning,
-            ));
-            Arc::make_mut(&mut loaded.messages).push(warning);
-            loaded.renderable_messages =
-                Arc::new(crate::utils::messages::normalize_messages(&loaded.messages));
-            agent_definitions = Arc::new(
-                crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
-                    &crate::bootstrap::state::get_original_cwd(),
-                ),
-            );
-        }
+    ) && let Some(warning) =
+        crate::coordinator::coordinator_mode::match_session_mode(loaded.mode.as_deref())
+    {
+        let warning = Message::System(SystemMessage::informational(
+            warning,
+            SystemMessageLevel::Warning,
+        ));
+        Arc::make_mut(&mut loaded.messages).push(warning);
+        loaded.renderable_messages =
+            Arc::new(crate::utils::messages::normalize_messages(&loaded.messages));
+        agent_definitions = Arc::new(
+            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
+                &crate::bootstrap::state::get_original_cwd(),
+            ),
+        );
     }
     // CC `REPL.tsx:2398-2403` passes `getAppState: () => store.getState()` into
     // `executeSessionEndHooks`, so the session-derived hooks are merged
@@ -4114,7 +4110,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // Maps to CC `const queuedCommands = useCommandQueue()`. The reactive
     // snapshot keeps showSpinner mounted between queued task notifications.
     let queued_commands = crate::hooks::use_command_queue::use_command_queue(&mut hooks);
-    let _apply_initial_launch_state = hooks.use_const({
+    hooks.use_const({
         let app_store = app_store.clone();
         let initial_main_thread_agent_definition = initial_main_thread_agent_definition.clone();
         move || {
@@ -4754,7 +4750,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     });
     // Seed AppState.showRemoteCallout once from the startup snapshot (CC
     // main/bridge sets the field; REPL only reads/dismisses via AppState).
-    let _seed_remote_callout = hooks.use_const({
+    hooks.use_const({
         let app_store = app_store.clone();
         move || {
             if initial_show_remote_callout {
@@ -4900,14 +4896,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             // CC resume.tsx:233-235: resume failure settles this
                             // invocation only after context.resume rejects.
                             crate::utils::log::log_error(crate::utils::log::LogError::new(&message));
-                            if picker.completion.set(()).is_ok() {
-                                if let Some(invocation) = picker.invocation.as_ref() {
+                            if picker.completion.set(()).is_ok()
+                                && let Some(invocation) = picker.invocation.as_ref() {
                                     append_local_command_invocation_result(
                                         &mut history_state, invocation,
                                         &format!("Failed to resume: {message}"), false,
                                     );
                                 }
-                            }
                         } else if let Some(invocation) = invocation.as_ref().or_else(|| {
                             active
                                 .as_ref()
@@ -4933,11 +4928,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     // CC resume.tsx:230-231: onDone(undefined, display:skip)
                     // follows the actual state commit, never the selection.
                     if resume_succeeded { let _ = picker.completion.set(()); }
-                    if let Some(mut current) = active_local_command_ui.try_write() {
-                        if current.as_ref().is_some_and(|current| Arc::ptr_eq(&current.completion, &picker.completion)) {
+                    if let Some(mut current) = active_local_command_ui.try_write()
+                        && current.as_ref().is_some_and(|current| Arc::ptr_eq(&current.completion, &picker.completion)) {
                             *current = None;
                         }
-                    }
                 } else {
                     active_local_command_ui.set(clear_local_command_ui(active));
                 }
@@ -5072,26 +5066,23 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     history_state.set(Arc::new(entries));
                     conversation_id.set(conversation_id.get().wrapping_add(1));
                     crate::services::compact::post_compact_cleanup::run_post_compact_cleanup(None);
-                    if direction == PartialCompactDirection::From {
-                        if let Message::User(message) = selected {
-                            if let Some((text, mode)) = crate::utils::messages::text_for_resubmit(&message) {
+                    if direction == PartialCompactDirection::From
+                        && let Message::User(message) = selected
+                            && let Some((text, mode)) = crate::utils::messages::text_for_resubmit(&message) {
                                 let revision = restored_input.read().as_ref().map_or(1, |update| update.revision.wrapping_add(1));
                                 let pasted_contents = restored_input.read().as_ref().and_then(|update| update.pasted_contents.clone());
                                 restored_input.set(Some(crate::components::prompt_input::PromptInputTextUpdate { revision, cursor_offset: Some(text.len()), text: text.clone(), mode: Some(mode), pasted_contents }));
                                 set_input_value(text);
                             }
-                        }
-                    }
                     let shortcut = crate::keybindings::shortcut_format::get_shortcut_display("app:toggleTranscript", &crate::keybindings::types::ContextName::Global, "ctrl+o");
                     crate::context::notifications::NotificationsWriter::new(store.clone()).add_notification(
                         crate::context::notifications::Notification::text("summarize-ctrl-o-hint", format!("Conversation summarized ({shortcut} for history)"), crate::context::notifications::NotificationPriority::Medium).with_timeout_ms(8000));
                 });
-                if let Err(error) = &result {
-                    if error != crate::services::compact::compact::ERROR_MESSAGE_USER_ABORT && error != crate::services::compact::compact::ERROR_MESSAGE_NOT_ENOUGH_MESSAGES {
+                if let Err(error) = &result
+                    && error != crate::services::compact::compact::ERROR_MESSAGE_USER_ABORT && error != crate::services::compact::compact::ERROR_MESSAGE_NOT_ENOUGH_MESSAGES {
                         crate::context::notifications::NotificationsWriter::new(store).add_notification(
                             crate::context::notifications::Notification::text("error-compacting-conversation", "Error compacting conversation", crate::context::notifications::NotificationPriority::Immediate).with_color(crate::context::notifications::NotificationColor::Error));
                     }
-                }
                 let _ = completion.send(result);
             }
         }
@@ -5294,11 +5285,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     if !still_active {
                         continue;
                     }
-                    if query_pump_profile {
-                        if let Ok(event) = &event {
+                    if query_pump_profile
+                        && let Ok(event) = &event {
                             query_pump_burst.record_event(event);
                         }
-                    }
                     match event {
                         Ok(QueryEvent::StreamRequestStart) => {
                             stream_mode.set(SpinnerMode::Requesting);
@@ -5683,15 +5673,14 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
 
                             // Maps to CC `QueryEngine.query()` eager/cowork
                             // result boundary.
-                            if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_EAGER_FLUSH").as_deref()) || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_IS_COWORK").as_deref()) {
-                                if let Err(error) =
+                            if (crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_EAGER_FLUSH").as_deref()) || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_IS_COWORK").as_deref()))
+                                && let Err(error) =
                                     crate::utils::session_storage::flush_session_storage().await
                                 {
                                     crate::utils::debug::log_for_debugging(&format!(
                                         "Failed to flush session storage at query completion: {error}"
                                     ));
                                 }
-                            }
                             streaming_text_preview.set(None);
                             has_interruptible_tool_in_progress
                                 .store(false, std::sync::atomic::Ordering::SeqCst);
@@ -5920,12 +5909,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
 
             if has_interruptible_tool_in_progress
                 .load(std::sync::atomic::Ordering::SeqCst)
-            {
-                if let Some(handle) = active_query.read().clone() {
+                && let Some(handle) = active_query.read().clone() {
                     handle.abort_controller.abort_with_reason("interrupt");
                     let _ = handle.commands.try_send(QueryCommand::Abort);
                 }
-            }
             // C3c-4: submitted user rows enter the ONE history as `Message`
             // entries (model-visibility by type); the render rows and the
             // typed API history below are projections of the same entries.
@@ -6571,15 +6558,13 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         // immediate commands; a blocking tool must keep running.
                         if has_interruptible_tool_in_progress
                             .load(std::sync::atomic::Ordering::SeqCst)
-                        {
-                            if let Some(handle) = active_query.read().clone() {
+                            && let Some(handle) = active_query.read().clone() {
                                 // Publish the DOM-style abort reason before waking
                                 // the query actor; ShellCommand must observe
                                 // `interrupt` rather than a racing generic abort.
                                 handle.abort_controller.abort_with_reason("interrupt");
                                 let _ = handle.commands.try_send(QueryCommand::Abort);
                             }
-                        }
                         // C3c-4: the submitted user rows already entered the ONE
                         // history as `Message` entries; both query views are
                         // projections of it. Pasted images are blocks of that submitted
@@ -7003,11 +6988,10 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             // this command later.
             if has_interruptible_tool_in_progress_for_submit
                 .load(std::sync::atomic::Ordering::SeqCst)
+                && let Some(handle) = active_query_for_submit.read().clone()
             {
-                if let Some(handle) = active_query_for_submit.read().clone() {
-                    handle.abort_controller.abort_with_reason("interrupt");
-                    let _ = handle.commands.try_send(QueryCommand::Abort);
-                }
+                handle.abort_controller.abort_with_reason("interrupt");
+                let _ = handle.commands.try_send(QueryCommand::Abort);
             }
             if let Some(queued) = crate::utils::handle_prompt_submit::queued_command_for_submission(
                 &text,
@@ -7166,22 +7150,22 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             .as_ref()
             .map(|context| context.current())
             .unwrap_or_default();
-        if let Some(parsed) = crate::utils::slash_command_parsing::parse_slash_command(&text) {
-            if let Some(command) = crate::services::mcp::client::find_mcp_prompt_command(
+        if let Some(parsed) = crate::utils::slash_command_parsing::parse_slash_command(&text)
+            && let Some(command) = crate::services::mcp::client::find_mcp_prompt_command(
                 &parsed.name,
                 &commands_for_submit,
-            ) {
-                // MCP prompt slash commands dispatch a query now (REPL.tsx:4525).
-                clear_ide_selection_for_submit();
-                mcp_prompt_submit_action(McpPromptSlashCommandSubmit {
-                    input: text,
-                    turn_id: Uuid::new_v4().to_string(),
-                    command: command.clone(),
-                    args: parsed.args,
-                    tool_permission_context: tool_permission_context_for_submit,
-                });
-                return;
-            }
+            )
+        {
+            // MCP prompt slash commands dispatch a query now (REPL.tsx:4525).
+            clear_ide_selection_for_submit();
+            mcp_prompt_submit_action(McpPromptSlashCommandSubmit {
+                input: text,
+                turn_id: Uuid::new_v4().to_string(),
+                command: command.clone(),
+                args: parsed.args,
+                tool_permission_context: tool_permission_context_for_submit,
+            });
+            return;
         }
 
         prompt_query_action_for_submit(PromptQuerySubmit {
@@ -8099,37 +8083,36 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 };
                 append_history_rows(&mut history_state, rows);
             }
-            if let Some(mut current) = active_local_command_ui.try_write() {
-                if current
+            if let Some(mut current) = active_local_command_ui.try_write()
+                && current
                     .as_ref()
                     .is_some_and(|current| Arc::ptr_eq(&current.completion, &active.completion))
-                {
-                    *current = None;
-                }
+            {
+                *current = None;
             }
         })
     };
 
     let mut on_local_command_ui_result = move |output: String| {
-        if let Some(active) = active_local_command_ui.read().clone() {
-            if let Some(invocation) = active.invocation.as_ref() {
-                if let LocalCommandPanel::Export(_, preceding_input_blocks) = &active.panel {
-                    let result = crate::utils::process_user_input::process_slash_command::local_jsx_command_result(
+        if let Some(active) = active_local_command_ui.read().clone()
+            && let Some(invocation) = active.invocation.as_ref()
+        {
+            if let LocalCommandPanel::Export(_, preceding_input_blocks) = &active.panel {
+                let result = crate::utils::process_user_input::process_slash_command::local_jsx_command_result(
                         &invocation.slash_command.command_name, &invocation.slash_command.args, Some(&output), None,
                         false, &[], preceding_input_blocks.clone());
-                    append_history_rows(&mut history_state, result.messages);
-                } else if matches!(active.panel, LocalCommandPanel::AddDir { .. }) {
-                    let mut result = crate::utils::process_user_input::process_slash_command::model_visible_local_command_result(None, &invocation.slash_command.command_name, &invocation.slash_command.args, &output, false, None);
-                    crate::utils::process_user_input::process_slash_command::prepend_local_command_caveat(&mut result);
-                    append_history_rows(&mut history_state, result.messages);
-                } else {
-                    append_local_command_invocation_result(
-                        &mut history_state,
-                        invocation,
-                        &output,
-                        false,
-                    );
-                }
+                append_history_rows(&mut history_state, result.messages);
+            } else if matches!(active.panel, LocalCommandPanel::AddDir { .. }) {
+                let mut result = crate::utils::process_user_input::process_slash_command::model_visible_local_command_result(None, &invocation.slash_command.command_name, &invocation.slash_command.args, &output, false, None);
+                crate::utils::process_user_input::process_slash_command::prepend_local_command_caveat(&mut result);
+                append_history_rows(&mut history_state, result.messages);
+            } else {
+                append_local_command_invocation_result(
+                    &mut history_state,
+                    invocation,
+                    &output,
+                    false,
+                );
             }
         }
         let current = active_local_command_ui.read().clone();
@@ -8153,15 +8136,15 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         let continuation = permissions_continuation.read().clone();
         permissions_continuation.set(None);
         active_local_command_ui.set(clear_local_command_ui(current.clone()));
-        if let Some(active) = current {
-            if let Some(invocation) = active.invocation.as_ref() {
+        if let Some(active) = current
+            && let Some(invocation) = active.invocation.as_ref() {
                 let command = &invocation.slash_command.command_name;
                 let args = &invocation.slash_command.args;
                 if active.is_immediate {
                     // CC REPL.tsx:4346-4388: shouldQuery is intentionally not
                     // read here. Meta messages still append even for display:skip.
-                    if let Some(output) = done.result.as_deref().filter(|text| !text.is_empty()) {
-                        if done.display != Some(CommandResultDisplay::Skip) {
+                    if let Some(output) = done.result.as_deref().filter(|text| !text.is_empty())
+                        && done.display != Some(CommandResultDisplay::Skip) {
                             let mut notifications = crate::context::notifications::NotificationsWriter::new(permission_notification_store.clone());
                             notifications.add_notification(crate::context::notifications::Notification::text(
                                 format!("immediate-{command}"), output.to_string(),
@@ -8173,7 +8156,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                                 ));
                             }
                         }
-                    }
                     let mut entries = history_state.read().as_ref().clone();
                     entries.extend(done.meta_messages.into_iter().map(|text| HistoryEntry::Message(Message::User(
                         crate::utils::messages::create_user_message_with_meta(text, true),
@@ -8205,70 +8187,61 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     }
                 }
             }
-        }
     };
 
     let mut on_diff_done = move |done: DiffDialogDone| {
-        if done.display != crate::utils::worktree::CommandResultDisplay::Skip {
-            if let Some(active) = active_local_command_ui.read().clone() {
-                if let Some(invocation) = active.invocation.as_ref() {
-                    append_local_command_invocation_result(
-                        &mut history_state,
-                        invocation,
-                        &done.result,
-                        false,
-                    );
-                }
-            }
+        if done.display != crate::utils::worktree::CommandResultDisplay::Skip
+            && let Some(active) = active_local_command_ui.read().clone()
+            && let Some(invocation) = active.invocation.as_ref()
+        {
+            append_local_command_invocation_result(
+                &mut history_state,
+                invocation,
+                &done.result,
+                false,
+            );
         }
         let current = active_local_command_ui.read().clone();
         active_local_command_ui.set(clear_local_command_ui(current));
     };
 
     let mut on_hooks_done = move |done: HooksConfigMenuDone| {
-        if done.display != crate::utils::worktree::CommandResultDisplay::Skip {
-            if let Some(active) = active_local_command_ui.read().clone() {
-                if let Some(invocation) = active.invocation.as_ref() {
-                    append_local_command_invocation_result(
-                        &mut history_state,
-                        invocation,
-                        &done.result,
-                        false,
-                    );
-                }
-            }
+        if done.display != crate::utils::worktree::CommandResultDisplay::Skip
+            && let Some(active) = active_local_command_ui.read().clone()
+            && let Some(invocation) = active.invocation.as_ref()
+        {
+            append_local_command_invocation_result(
+                &mut history_state,
+                invocation,
+                &done.result,
+                false,
+            );
         }
         let current = active_local_command_ui.read().clone();
         active_local_command_ui.set(clear_local_command_ui(current));
     };
 
     let mut on_agents_done = move |result: String| {
-        if let Some(active) = active_local_command_ui.read().clone() {
-            if let Some(invocation) = active.invocation.as_ref() {
-                append_local_command_invocation_result(
-                    &mut history_state,
-                    invocation,
-                    &result,
-                    false,
-                );
-            }
+        if let Some(active) = active_local_command_ui.read().clone()
+            && let Some(invocation) = active.invocation.as_ref()
+        {
+            append_local_command_invocation_result(&mut history_state, invocation, &result, false);
         }
         let current = active_local_command_ui.read().clone();
         active_local_command_ui.set(clear_local_command_ui(current));
     };
 
     let mut on_skills_done = move |done: SkillsMenuDone| {
-        if done.display != crate::utils::worktree::CommandResultDisplay::Skip {
-            if let Some(active) = active_local_command_ui.read().clone() {
-                if let Some(invocation) = active.invocation.as_ref() {
-                    append_local_command_invocation_result(
-                        &mut history_state,
-                        invocation,
-                        &done.result,
-                        false,
-                    );
-                }
-            }
+        if done.display != crate::utils::worktree::CommandResultDisplay::Skip
+            && let Some(active) = active_local_command_ui.read().clone()
+            && let Some(invocation) = active.invocation.as_ref()
+        {
+            append_local_command_invocation_result(
+                &mut history_state,
+                invocation,
+                &done.result,
+                false,
+            );
         }
         let current = active_local_command_ui.read().clone();
         active_local_command_ui.set(clear_local_command_ui(current));
@@ -17560,8 +17533,8 @@ mod tests {
                             }
                             3 => {
                                 let snapshot = probe.snapshot.lock().unwrap();
-                                if let Some(snapshot) = snapshot.as_ref() {
-                                    if !snapshot.local_command_open
+                                if let Some(snapshot) = snapshot.as_ref()
+                                    && !snapshot.local_command_open
                                         && snapshot.query_id.as_deref() == Some(query_id.as_str())
                                         && snapshot.model_messages.iter().any(|message| matches!(message,
                                             Message::User(user) if user.content.iter().any(|content| matches!(content,
@@ -17570,7 +17543,6 @@ mod tests {
                                         )) {
                                         stage = 4; break;
                                     }
-                                }
                             }
                             _ => {}
                         }

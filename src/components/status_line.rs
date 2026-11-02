@@ -185,16 +185,17 @@ pub fn build_status_line_command_input(
     }
 
     if let Some(agent) = crate::utils::session_storage::get_current_session_metadata().agent_setting
+        && !agent.trim().is_empty()
     {
-        if !agent.trim().is_empty() {
-            input.agent = Some(StatusLineAgent {
-                name: agent,
-                r#type: None,
-            });
-        }
+        input.agent = Some(StatusLineAgent {
+            name: agent,
+            r#type: None,
+        });
     }
 
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+    ) {
         input.remote = Some(StatusLineRemote {
             session_id: session_id.clone(),
         });

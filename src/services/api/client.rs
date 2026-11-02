@@ -13,8 +13,8 @@ pub use crate::utils::auth::AwsCredentials;
 use crate::utils::auth::{is_claude_ai_subscriber, refresh_and_get_aws_credentials};
 use crate::utils::env_utils::{get_aws_region, get_vertex_region_for_model};
 use crate::utils::model::model::get_small_fast_model;
-use anthropic_sdk::Nullable;
 use crate::utils::process_env::{self, EnvSnapshot, JsTruthy};
+use anthropic_sdk::Nullable;
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -1242,18 +1242,23 @@ impl anthropic_sdk::HttpMiddleware for ResolvedFetch {
         Box::pin(async move {
             if self.inject_client_request_id
                 && !request.headers().contains_key(CLIENT_REQUEST_ID_HEADER)
+                && let Ok(id) =
+                    reqwest::header::HeaderValue::from_str(&uuid::Uuid::new_v4().to_string())
             {
-                if let Ok(id) = reqwest::header::HeaderValue::from_str(&uuid::Uuid::new_v4().to_string())
-                {
-                    request.headers_mut().insert(CLIENT_REQUEST_ID_HEADER, id);
-                }
+                request.headers_mut().insert(CLIENT_REQUEST_ID_HEADER, id);
             }
             // `headers.get` is a ByteString (one char per byte); `id ? ... : ''`
             // omits an empty preset.
             let id = request
                 .headers()
                 .get(CLIENT_REQUEST_ID_HEADER)
-                .map(|value| value.as_bytes().iter().map(|&byte| char::from(byte)).collect::<String>())
+                .map(|value| {
+                    value
+                        .as_bytes()
+                        .iter()
+                        .map(|&byte| char::from(byte))
+                        .collect::<String>()
+                })
                 .filter(|id| !id.is_empty())
                 .map(|id| format!(" {CLIENT_REQUEST_ID_HEADER}={id}"))
                 .unwrap_or_default();
@@ -1495,10 +1500,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-api-key-oauth-gate-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-api-key-oauth-gate-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
@@ -1534,10 +1537,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-sdk-defaults-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-sdk-defaults-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
@@ -1583,10 +1584,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-sdk-base-url-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-sdk-base-url-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
@@ -1637,7 +1636,10 @@ mod tests {
             .headers_mut()
             .insert(CLIENT_REQUEST_ID_HEADER, "caller-id".parse().unwrap());
         injecting.before_request(&mut preset).await.unwrap();
-        assert_eq!(preset.headers().get(CLIENT_REQUEST_ID_HEADER).unwrap(), "caller-id");
+        assert_eq!(
+            preset.headers().get(CLIENT_REQUEST_ID_HEADER).unwrap(),
+            "caller-id"
+        );
 
         let mut other = request();
         ResolvedFetch {
@@ -2425,9 +2427,9 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(
-            request.contains(&format!(
-                "\r\nauthorization: aws4-hmac-sha256 credential=akidexample/"
-            )),
+            request.contains(
+                &"\r\nauthorization: aws4-hmac-sha256 credential=akidexample/".to_string()
+            ),
             "{request}"
         );
         assert!(request.contains("\r\nx-amz-date: "), "{request}");
@@ -2703,10 +2705,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-sdk-proxy-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-sdk-proxy-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_address = proxy.local_addr().unwrap();
@@ -2777,10 +2777,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-blank-auth-token-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-blank-auth-token-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
@@ -2814,10 +2812,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-subscriber-null-key-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-subscriber-null-key-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
@@ -2876,10 +2872,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-selected-oauth-gate-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-selected-oauth-gate-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");

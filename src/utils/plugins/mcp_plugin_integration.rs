@@ -636,10 +636,8 @@ mod tests {
     use std::io::Write;
 
     fn temp_dir(label: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-plugin-mcp-{label}-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-plugin-mcp-{label}-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).expect("temp dir");
         dir
     }

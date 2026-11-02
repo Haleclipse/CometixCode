@@ -128,10 +128,10 @@ pub fn validate_permission_rule(rule: &str) -> PermissionRuleValidation {
                 format!("mcp__{}", mcp_info.server_name),
                 format!("mcp__{}__*", mcp_info.server_name),
             ];
-            if let Some(tool_name) = &mcp_info.tool_name {
-                if tool_name != "*" {
-                    examples.push(format!("mcp__{}__{}", mcp_info.server_name, tool_name));
-                }
+            if let Some(tool_name) = &mcp_info.tool_name
+                && tool_name != "*"
+            {
+                examples.push(format!("mcp__{}__{}", mcp_info.server_name, tool_name));
             }
             return PermissionRuleValidation {
                 valid: false,
@@ -180,75 +180,75 @@ pub fn validate_permission_rule(rule: &str) -> PermissionRuleValidation {
     // Bash-specific validation. Wildcards are allowed at any position; only
     // the legacy :* prefix syntax has placement rules. Quote balancing is
     // deliberately not validated (bash quoting rules are complex).
-    if is_bash_prefix_tool(&parsed.tool_name) {
-        if let Some(content) = parsed.rule_content.as_deref() {
-            if content.contains(":*") && !content.ends_with(":*") {
-                return PermissionRuleValidation {
-                    valid: false,
-                    error: Some("The :* pattern must be at the end".to_string()),
-                    suggestion: Some(
-                        "Move :* to the end for prefix matching, or use * for wildcard matching"
-                            .to_string(),
-                    ),
-                    examples: vec![
-                        "Bash(npm run:*) - prefix matching (legacy)".to_string(),
-                        "Bash(npm run *) - wildcard matching".to_string(),
-                    ],
-                };
-            }
-            if content == ":*" {
-                return PermissionRuleValidation {
-                    valid: false,
-                    error: Some("Prefix cannot be empty before :*".to_string()),
-                    suggestion: Some("Specify a command prefix before :*".to_string()),
-                    examples: vec!["Bash(npm:*)".to_string(), "Bash(git:*)".to_string()],
-                };
-            }
+    if is_bash_prefix_tool(&parsed.tool_name)
+        && let Some(content) = parsed.rule_content.as_deref()
+    {
+        if content.contains(":*") && !content.ends_with(":*") {
+            return PermissionRuleValidation {
+                valid: false,
+                error: Some("The :* pattern must be at the end".to_string()),
+                suggestion: Some(
+                    "Move :* to the end for prefix matching, or use * for wildcard matching"
+                        .to_string(),
+                ),
+                examples: vec![
+                    "Bash(npm run:*) - prefix matching (legacy)".to_string(),
+                    "Bash(npm run *) - wildcard matching".to_string(),
+                ],
+            };
+        }
+        if content == ":*" {
+            return PermissionRuleValidation {
+                valid: false,
+                error: Some("Prefix cannot be empty before :*".to_string()),
+                suggestion: Some("Specify a command prefix before :*".to_string()),
+                examples: vec!["Bash(npm:*)".to_string(), "Bash(git:*)".to_string()],
+            };
         }
     }
 
     // File tool validation.
-    if is_file_pattern_tool(&parsed.tool_name) {
-        if let Some(content) = parsed.rule_content.as_deref() {
-            // Check for :* in file patterns (common mistake from Bash patterns).
-            if content.contains(":*") {
-                return PermissionRuleValidation {
-                    valid: false,
-                    error: Some("The \":*\" syntax is only for Bash prefix rules".to_string()),
-                    suggestion: Some(
-                        "Use glob patterns like \"*\" or \"**\" for file matching".to_string(),
+    if is_file_pattern_tool(&parsed.tool_name)
+        && let Some(content) = parsed.rule_content.as_deref()
+    {
+        // Check for :* in file patterns (common mistake from Bash patterns).
+        if content.contains(":*") {
+            return PermissionRuleValidation {
+                valid: false,
+                error: Some("The \":*\" syntax is only for Bash prefix rules".to_string()),
+                suggestion: Some(
+                    "Use glob patterns like \"*\" or \"**\" for file matching".to_string(),
+                ),
+                examples: vec![
+                    format!("{}(*.ts) - matches .ts files", parsed.tool_name),
+                    format!("{}(src/**) - matches all files in src", parsed.tool_name),
+                    format!("{}(**/*.test.ts) - matches test files", parsed.tool_name),
+                ],
+            };
+        }
+        // Warn about wildcards not at boundaries — a loose check; middle
+        // wildcards might be valid but often indicate confusion. CC's
+        // regex /^\*|\*$|\*\*|\/\*|\*\.|\*\)/ expanded to its alternates.
+        let at_boundary = content.starts_with('*')
+            || content.ends_with('*')
+            || content.contains("**")
+            || content.contains("/*")
+            || content.contains("*.")
+            || content.contains("*)");
+        if content.contains('*') && !at_boundary {
+            return PermissionRuleValidation {
+                valid: false,
+                error: Some("Wildcard placement might be incorrect".to_string()),
+                suggestion: Some("Wildcards are typically used at path boundaries".to_string()),
+                examples: vec![
+                    format!("{}(*.js) - all .js files", parsed.tool_name),
+                    format!("{}(src/*) - all files directly in src", parsed.tool_name),
+                    format!(
+                        "{}(src/**) - all files recursively in src",
+                        parsed.tool_name
                     ),
-                    examples: vec![
-                        format!("{}(*.ts) - matches .ts files", parsed.tool_name),
-                        format!("{}(src/**) - matches all files in src", parsed.tool_name),
-                        format!("{}(**/*.test.ts) - matches test files", parsed.tool_name),
-                    ],
-                };
-            }
-            // Warn about wildcards not at boundaries — a loose check; middle
-            // wildcards might be valid but often indicate confusion. CC's
-            // regex /^\*|\*$|\*\*|\/\*|\*\.|\*\)/ expanded to its alternates.
-            let at_boundary = content.starts_with('*')
-                || content.ends_with('*')
-                || content.contains("**")
-                || content.contains("/*")
-                || content.contains("*.")
-                || content.contains("*)");
-            if content.contains('*') && !at_boundary {
-                return PermissionRuleValidation {
-                    valid: false,
-                    error: Some("Wildcard placement might be incorrect".to_string()),
-                    suggestion: Some("Wildcards are typically used at path boundaries".to_string()),
-                    examples: vec![
-                        format!("{}(*.js) - all .js files", parsed.tool_name),
-                        format!("{}(src/*) - all files directly in src", parsed.tool_name),
-                        format!(
-                            "{}(src/**) - all files recursively in src",
-                            parsed.tool_name
-                        ),
-                    ],
-                };
-            }
+                ],
+            };
         }
     }
 

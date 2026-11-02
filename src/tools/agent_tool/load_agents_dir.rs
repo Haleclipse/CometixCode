@@ -159,17 +159,16 @@ impl AgentDefinition {
     /// port's existing Option carrier, not an empty successful prompt.
     pub fn get_system_prompt(&self, context: &crate::tool::ToolUseContext) -> Option<String> {
         let mut prompt = self.system_prompt.clone()?;
-        if self.source != AgentDefinitionSource::BuiltIn {
-            if let Some(memory) = self.memory {
-                if crate::memdir::paths::is_auto_memory_enabled() {
-                    prompt.push_str("\n\n");
-                    prompt.push_str(&super::agent_memory::load_agent_memory_prompt(
-                        &self.agent_type,
-                        memory,
-                        &context.effective_cwd(),
-                    ));
-                }
-            }
+        if self.source != AgentDefinitionSource::BuiltIn
+            && let Some(memory) = self.memory
+            && crate::memdir::paths::is_auto_memory_enabled()
+        {
+            prompt.push_str("\n\n");
+            prompt.push_str(&super::agent_memory::load_agent_memory_prompt(
+                &self.agent_type,
+                memory,
+                &context.effective_cwd(),
+            ));
         }
         Some(prompt)
     }

@@ -203,17 +203,17 @@ pub fn process_hook_json_output_for_event(
     command: &str,
     expected_hook_event: &str,
 ) -> HookResult {
-    if let Some(specific) = json.hook_specific_output.as_ref() {
-        if specific.hook_event_name.as_deref() != Some(expected_hook_event) {
-            return HookResult {
-                outcome: HookOutcome::NonBlockingError,
-                system_message: Some(format!(
-                    "Hook output error: Hook returned incorrect event name: expected '{expected_hook_event}' but got '{}'",
-                    specific.hook_event_name.as_deref().unwrap_or("missing")
-                )),
-                ..HookResult::default()
-            };
-        }
+    if let Some(specific) = json.hook_specific_output.as_ref()
+        && specific.hook_event_name.as_deref() != Some(expected_hook_event)
+    {
+        return HookResult {
+            outcome: HookOutcome::NonBlockingError,
+            system_message: Some(format!(
+                "Hook output error: Hook returned incorrect event name: expected '{expected_hook_event}' but got '{}'",
+                specific.hook_event_name.as_deref().unwrap_or("missing")
+            )),
+            ..HookResult::default()
+        };
     }
     process_hook_json_output(json, command)
 }

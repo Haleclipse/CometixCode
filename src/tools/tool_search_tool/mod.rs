@@ -213,12 +213,11 @@ fn parse_tool_name(name: &str) -> ParsedToolName {
 fn compile_term_patterns(terms: &[String]) -> std::collections::HashMap<String, regex::Regex> {
     let mut patterns = std::collections::HashMap::new();
     for term in terms {
-        if !patterns.contains_key(term) {
-            if let Ok(pattern) =
+        if !patterns.contains_key(term)
+            && let Ok(pattern) =
                 regex::Regex::new(&format!(r"(?-u:\b){}(?-u:\b)", regex::escape(term)))
-            {
-                patterns.insert(term.clone(), pattern);
-            }
+        {
+            patterns.insert(term.clone(), pattern);
         }
     }
     patterns
@@ -297,10 +296,9 @@ pub(crate) fn tool_search_matches(
         for name in requested {
             if let Some(tool) = crate::types::tools::find_tool_by_name(deferred_tools, name)
                 .or_else(|| crate::types::tools::find_tool_by_name(tools, name))
+                && !found.contains(&tool.name)
             {
-                if !found.contains(&tool.name) {
-                    found.push(tool.name.clone());
-                }
+                found.push(tool.name.clone());
             }
         }
         return found;

@@ -63,5 +63,5 @@ pub fn is_policy_allowed(policy: &str) -> bool {
     };
     restrictions
         .get(policy)
-        .map_or(true, |restriction| restriction.allowed)
+        .is_none_or(|restriction| restriction.allowed)
 }

@@ -400,16 +400,16 @@ pub(crate) fn apply_model_picker_selection(
         prior_persisted.as_deref(),
         has_toggled_effort,
     );
-    if let Some(value) = effort_level.as_ref() {
-        if let Some(persistable) = crate::utils::effort::to_persistable_effort(Some(value)) {
-            let _ = crate::utils::settings::update_settings_for_source(
-                crate::utils::settings::SettingSource::User,
-                &serde_json::Map::from_iter([(
-                    "effortLevel".to_string(),
-                    serde_json::Value::String(persistable),
-                )]),
-            );
-        }
+    if let Some(value) = effort_level.as_ref()
+        && let Some(persistable) = crate::utils::effort::to_persistable_effort(Some(value))
+    {
+        let _ = crate::utils::settings::update_settings_for_source(
+            crate::utils::settings::SettingSource::User,
+            &serde_json::Map::from_iter([(
+                "effortLevel".to_string(),
+                serde_json::Value::String(persistable),
+            )]),
+        );
     }
     state.effort_value = effort_level;
     if has_toggled_effort && model_supports_effort(selected_value) {

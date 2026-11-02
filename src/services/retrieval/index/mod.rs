@@ -11,13 +11,13 @@
 pub mod symbols;
 pub mod text;
 
+use ignore::WalkBuilder;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use ignore::WalkBuilder;
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use crate::utils::permissions::filesystem::read_deny_rg_globs;
 use crate::utils::text_decode::{DecodeError, decode_bytes};
@@ -161,12 +161,7 @@ impl IndexLock {
             {
                 Ok(mut handle) => {
                     use std::io::Write;
-                    let _ = write!(
-                        handle,
-                        "{} {}",
-                        std::process::id(),
-                        unix_now().as_millis()
-                    );
+                    let _ = write!(handle, "{} {}", std::process::id(), unix_now().as_millis());
                     return Some(Self { path, owned: true });
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -278,9 +273,8 @@ impl LocalIndex {
         let mut text = None;
         if writable {
             let existing = TextIndex::open_existing(&text_dir);
-            let needs_rebuild = !changed_files.is_empty()
-                || !removed_files.is_empty()
-                || existing.is_none();
+            let needs_rebuild =
+                !changed_files.is_empty() || !removed_files.is_empty() || existing.is_none();
             if needs_rebuild {
                 let changed_documents = changed_files
                     .iter()
@@ -361,7 +355,9 @@ impl LocalIndex {
                 || stale_generation
                 || !index.changed_files.is_empty()
                 || !index.removed_files.is_empty()
-                || previous.as_ref().and_then(|previous| previous.head.as_deref())
+                || previous
+                    .as_ref()
+                    .and_then(|previous| previous.head.as_deref())
                     != current_head.as_deref();
             if dirty {
                 index.persist(current_head.as_deref())?;
@@ -400,9 +396,7 @@ impl LocalIndex {
         max_file_bytes: u64,
         permission_context: &crate::tool::ToolPermissionContext,
     ) -> Result<Option<Self>, String> {
-        let root = root
-            .canonicalize()
-            .map_err(|error| error.to_string())?;
+        let root = root.canonicalize().map_err(|error| error.to_string())?;
         let storage = storage_for(&root);
         let generation = generation_for(&root, max_file_bytes);
         let current = load_persisted(&storage).is_some_and(|index| index.generation == generation);
@@ -412,7 +406,9 @@ impl LocalIndex {
         static BUILDING: std::sync::Mutex<Option<std::collections::BTreeSet<PathBuf>>> =
             std::sync::Mutex::new(None);
         {
-            let mut guard = BUILDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut guard = BUILDING
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let building = guard.get_or_insert_with(Default::default);
             if !building.insert(root.clone()) {
                 return Ok(None);
@@ -423,7 +419,9 @@ impl LocalIndex {
         let future = async move {
             let result = tokio::task::spawn_blocking(move || {
                 let result = LocalIndex::open(&build_root, max_file_bytes, &permission);
-                let mut guard = BUILDING.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut guard = BUILDING
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
                 if let Some(building) = guard.as_mut() {
                     building.remove(&build_root);
                 }
@@ -556,9 +554,7 @@ impl LocalIndex {
                         continue;
                     }
                     for reference in &file.references {
-                        let matches_target = target_names
-                            .iter()
-                            .any(|name| *name == reference.name)
+                        let matches_target = target_names.contains(&reference.name)
                             || query_tokens.iter().any(|token| {
                                 identifier_tokens(&reference.name)
                                     .iter()
@@ -615,7 +611,11 @@ impl LocalIndex {
     /// BM25 text search over the Tantivy index. When the index is not usable
     /// (`building`/`rebuilding`) this returns `None` so the caller can report
     /// the branch as unavailable instead of "zero matches".
-    pub fn search_text(&self, request: &SearchRequest, max_results: usize) -> Option<Vec<Candidate>> {
+    pub fn search_text(
+        &self,
+        request: &SearchRequest,
+        max_results: usize,
+    ) -> Option<Vec<Candidate>> {
         let text = self.text.as_ref()?;
         let hits = text.search(&request.query, text::SEARCH_LIMIT).ok()?;
         let mut per_file = HashMap::<String, usize>::new();
@@ -760,7 +760,8 @@ pub(crate) fn decode_for_snippet(bytes: &[u8], path: &str) -> Result<String, Str
         .map_err(|error| error.message(path))
 }
 
-fn load_persisted(storage: &Path) -> Option<PersistedIndex> {    let bytes = std::fs::read(storage.join("index.json")).ok()?;
+fn load_persisted(storage: &Path) -> Option<PersistedIndex> {
+    let bytes = std::fs::read(storage.join("index.json")).ok()?;
     let index: PersistedIndex = serde_json::from_slice(&bytes).ok()?;
     (index.schema == INDEX_SCHEMA_VERSION).then_some(index)
 }
@@ -855,21 +856,20 @@ fn refresh_files(
                 existing.size != metadata.len() || existing.mtime_ms != mtime_ms
             }
         };
-        if !must_check {
-            if let Some(existing) = previous_entry {
-                files.push(existing.clone());
-                continue;
-            }
+        if !must_check && let Some(existing) = previous_entry {
+            files.push(existing.clone());
+            continue;
         }
         let Ok(bytes) = std::fs::read(path) else {
             continue;
         };
         let hash = hex_hash(&bytes);
-        if let Some(existing) = previous_entry {
-            if existing.file_hash_raw == hash && existing.size == metadata.len() {
-                files.push(existing.clone());
-                continue;
-            }
+        if let Some(existing) = previous_entry
+            && existing.file_hash_raw == hash
+            && existing.size == metadata.len()
+        {
+            files.push(existing.clone());
+            continue;
         }
         let decoded = match decode_bytes(&bytes, None, &relative) {
             Ok(decoded) => decoded,
@@ -954,7 +954,10 @@ fn git_changed_files(
         return None;
     }
     let mut changed = HashSet::new();
-    let mut fields = output.stdout.split(|byte| *byte == 0).filter(|field| !field.is_empty());
+    let mut fields = output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|field| !field.is_empty());
     while let Some(field) = fields.next() {
         // "XY path" for normal entries; renames emit the old path as an
         // extra NUL-separated field (the new path is in the status record).
@@ -968,19 +971,19 @@ fn git_changed_files(
             fields.next();
         }
     }
-    if let (Some(previous), Some(current)) = (previous_head, current_head) {
-        if previous != current {
-            let diff = Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(["diff", "--name-only", "-z", previous, current, "--"])
-                .output()
-                .ok()?;
-            if diff.status.success() {
-                for path in diff.stdout.split(|byte| *byte == 0) {
-                    if !path.is_empty() {
-                        changed.insert(String::from_utf8_lossy(path).into_owned());
-                    }
+    if let (Some(previous), Some(current)) = (previous_head, current_head)
+        && previous != current
+    {
+        let diff = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["diff", "--name-only", "-z", previous, current, "--"])
+            .output()
+            .ok()?;
+        if diff.status.success() {
+            for path in diff.stdout.split(|byte| *byte == 0) {
+                if !path.is_empty() {
+                    changed.insert(String::from_utf8_lossy(path).into_owned());
                 }
             }
         }
@@ -1146,7 +1149,8 @@ fn make_chunks(text: &str, symbols: &[SymbolRecord], symbol_checked: bool) -> Ve
         let mut cursor = start;
         while cursor <= end {
             let mut sub_end = (cursor + MAX_CHUNK_LINES - 1).min(end);
-            while sub_end > cursor && lines[cursor - 1..sub_end].join("\n").len() > MAX_CHUNK_BYTES {
+            while sub_end > cursor && lines[cursor - 1..sub_end].join("\n").len() > MAX_CHUNK_BYTES
+            {
                 sub_end -= 1;
             }
             chunks.push(ChunkRecord {
@@ -1229,10 +1233,32 @@ pub fn matches_request(path: &str, request: &SearchRequest) -> bool {
 /// "who calls parse_config" matches `parse_config`, but only when something
 /// remains: a bare `call` or `File` query must still find that symbol.
 const RELATION_WORDS: &[&str] = &[
-    "who", "what", "which", "where", "calls", "caller", "callers", "called", "reference",
-    "references", "referenced", "usage", "usages", "used", "uses", "using", "impact",
-    "impacts", "depends", "dependency", "dependencies", "dependents", "definition",
-    "definitions", "defined", "outline",
+    "who",
+    "what",
+    "which",
+    "where",
+    "calls",
+    "caller",
+    "callers",
+    "called",
+    "reference",
+    "references",
+    "referenced",
+    "usage",
+    "usages",
+    "used",
+    "uses",
+    "using",
+    "impact",
+    "impacts",
+    "depends",
+    "dependency",
+    "dependencies",
+    "dependents",
+    "definition",
+    "definitions",
+    "defined",
+    "outline",
 ];
 
 /// `outline src/foo.rs` / `大纲 services/retrieval` returns the symbol table
@@ -1270,7 +1296,8 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn temp_project(name: &str) -> (PathBuf, PathBuf) {
-        let root = std::env::temp_dir().join(format!("nyan-{name}-{}", uuid::Uuid::new_v4().simple()));
+        let root =
+            std::env::temp_dir().join(format!("nyan-{name}-{}", uuid::Uuid::new_v4().simple()));
         let config = root.join("config");
         let project = root.join("project");
         std::fs::create_dir_all(&project).unwrap();
@@ -1351,8 +1378,7 @@ mod tests {
         let second = open(&project);
         assert_eq!(second.files().len(), 2);
         assert!(second.changed_files().contains(&"a.rs".to_string()));
-        let alpha = second
-            .search_symbols(&SearchRequest::new("alpha"), false, false, 10);
+        let alpha = second.search_symbols(&SearchRequest::new("alpha"), false, false, 10);
         assert!(alpha.is_empty());
         assert!(
             !second
@@ -1368,7 +1394,12 @@ mod tests {
         std::fs::remove_file(project.join("b.rs")).unwrap();
         let third = open(&project);
         assert_eq!(third.removed_files(), &["b.rs".to_string()]);
-        assert!(third.search_text(&SearchRequest::new("gamma"), 10).unwrap().is_empty());
+        assert!(
+            third
+                .search_text(&SearchRequest::new("gamma"), 10)
+                .unwrap()
+                .is_empty()
+        );
         let _ = std::fs::remove_dir_all(project.parent().unwrap());
     }
 
@@ -1415,13 +1446,24 @@ mod tests {
         let mut request = SearchRequest::new("alpha");
         request.path = Some("docs".to_string());
         let text = index.search_text(&request, 10).unwrap();
-        assert!(text.iter().all(|candidate| candidate.path.starts_with("docs/")));
+        assert!(
+            text.iter()
+                .all(|candidate| candidate.path.starts_with("docs/"))
+        );
         let symbols = index.search_symbols(&request, false, false, 10);
-        assert!(symbols.iter().all(|candidate| candidate.path.starts_with("docs/")));
+        assert!(
+            symbols
+                .iter()
+                .all(|candidate| candidate.path.starts_with("docs/"))
+        );
         request.path = None;
         request.glob = Some("**/*.rs".to_string());
         let symbols = index.search_symbols(&request, false, false, 10);
-        assert!(symbols.iter().all(|candidate| candidate.path.ends_with(".rs")));
+        assert!(
+            symbols
+                .iter()
+                .all(|candidate| candidate.path.ends_with(".rs"))
+        );
         let _ = std::fs::remove_dir_all(project.parent().unwrap());
     }
 
@@ -1436,21 +1478,13 @@ mod tests {
         )
         .unwrap();
         let index = open(&project);
-        let callers = index.search_symbols(
-            &SearchRequest::new("who calls target"),
-            true,
-            false,
-            10,
-        );
+        let callers =
+            index.search_symbols(&SearchRequest::new("who calls target"), true, false, 10);
         assert!(callers.iter().any(|candidate| {
             candidate.symbol.as_deref() == Some("caller") && candidate.start_line == 3
         }));
-        let references = index.search_symbols(
-            &SearchRequest::new("references target"),
-            false,
-            true,
-            10,
-        );
+        let references =
+            index.search_symbols(&SearchRequest::new("references target"), false, true, 10);
         assert!(references.iter().any(|candidate| candidate.start_line == 3));
         let outline = index.search_symbols(&SearchRequest::new("outline a.rs"), false, false, 10);
         assert_eq!(outline.len(), 2);

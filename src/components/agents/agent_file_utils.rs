@@ -272,8 +272,7 @@ mod tests {
 
     #[test]
     fn save_create_new_flush_update_and_delete_use_actual_filename() {
-        let root =
-            std::env::temp_dir().join(format!("nyan-agent-files-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-agent-files-{}", uuid::Uuid::new_v4()));
         let config = root.join("config");
         let path = save_agent_to_file(
             AgentFileSource::ProjectSettings,

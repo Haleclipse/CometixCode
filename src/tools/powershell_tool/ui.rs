@@ -202,13 +202,13 @@ pub(crate) fn render_tool_result_message(
         lines.push(ToolRenderLine::new(text, ToolRenderTone::Inactive));
     }
     // `{timeoutMs ? (...) : null}` (UI.tsx:159-163).
-    if let Some(timeout) = timeout_ms.filter(|timeout| *timeout > 0) {
-        if let Some(text) = crate::components::shell::shell_time_display::shell_time_display_text(
+    if let Some(timeout) = timeout_ms.filter(|timeout| *timeout > 0)
+        && let Some(text) = crate::components::shell::shell_time_display::shell_time_display_text(
             None,
             Some(timeout),
-        ) {
-            lines.push(ToolRenderLine::new(text, ToolRenderTone::Inactive));
-        }
+        )
+    {
+        lines.push(ToolRenderLine::new(text, ToolRenderTone::Inactive));
     }
     lines
 }

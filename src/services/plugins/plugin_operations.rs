@@ -477,18 +477,20 @@ pub async fn set_plugin_enabled_op(
     let is_override = scope
         .zip(found.as_ref())
         .is_some_and(|(scope, (_, found))| precedence(scope) > precedence(*found));
-    if let (Some(scope), Some((_, found_scope))) = (scope, found.as_ref()) {
-        if value.is_none() && *found_scope != scope && !is_override {
-            return Ok(PluginOperationResult {
-                message: format!(
-                    "Plugin \"{plugin}\" is installed at {} scope, not {}. Use --scope {} or omit --scope to auto-detect.",
-                    scope_name(*found_scope),
-                    scope_name(scope),
-                    scope_name(*found_scope)
-                ),
-                ..Default::default()
-            });
-        }
+    if let (Some(scope), Some((_, found_scope))) = (scope, found.as_ref())
+        && value.is_none()
+        && *found_scope != scope
+        && !is_override
+    {
+        return Ok(PluginOperationResult {
+            message: format!(
+                "Plugin \"{plugin}\" is installed at {} scope, not {}. Use --scope {} or omit --scope to auto-detect.",
+                scope_name(*found_scope),
+                scope_name(scope),
+                scope_name(*found_scope)
+            ),
+            ..Default::default()
+        });
     }
     let current = if scope.is_some() && !is_override {
         value == Some(&Value::Bool(true))

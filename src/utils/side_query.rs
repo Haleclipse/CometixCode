@@ -274,9 +274,9 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
             role: message.role.clone(),
             content: match &message.content {
                 MessageContent::Text(text) => BetaMessageContent::Text(text.clone()),
-                MessageContent::Blocks(blocks) => BetaMessageContent::Blocks(serde_json::from_value(
-                    serde_json::to_value(blocks)?,
-                )?),
+                MessageContent::Blocks(blocks) => BetaMessageContent::Blocks(
+                    serde_json::from_value(serde_json::to_value(blocks)?)?,
+                ),
             },
         });
     }

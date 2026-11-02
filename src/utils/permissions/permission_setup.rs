@@ -301,10 +301,10 @@ pub fn remove_dangerous_permissions(
 ) -> ToolPermissionContext {
     let mut updated = context.clone();
     for permission in dangerous_permissions {
-        if is_permission_update_destination(permission.source) {
-            if let Some(rules) = updated.always_allow_rules.get_mut(&permission.source) {
-                rules.retain(|rule| rule != &permission.rule_value);
-            }
+        if is_permission_update_destination(permission.source)
+            && let Some(rules) = updated.always_allow_rules.get_mut(&permission.source)
+        {
+            rules.retain(|rule| rule != &permission.rule_value);
         }
     }
     updated
@@ -513,8 +513,7 @@ pub fn is_transcript_classifier_feature_enabled() -> bool {
     crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::TranscriptClassifier,
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("NYAN_TRANSCRIPT_CLASSIFIER")
-            .as_deref(),
+        crate::utils::process_env::var("NYAN_TRANSCRIPT_CLASSIFIER").as_deref(),
     )
 }
 

@@ -307,10 +307,8 @@ mod tests {
     #[test]
     fn local_settings_write_preserves_unrelated_fields_like_update_settings_for_source() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let temp_dir = std::env::temp_dir().join(format!(
-            "nyan-mcp-approval-write-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("nyan-mcp-approval-write-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(temp_dir.join(".claude")).unwrap();
         std::fs::write(
             temp_dir.join(".claude/settings.local.json"),

@@ -245,12 +245,11 @@ pub fn user_message_option_display(
         return "((empty message))".to_string();
     }
 
-    if contains_tag(&message_text, BASH_INPUT_TAG) {
-        if let Some(input) =
+    if contains_tag(&message_text, BASH_INPUT_TAG)
+        && let Some(input) =
             extract_tag(&message_text, BASH_INPUT_TAG).filter(|text| !text.is_empty())
-        {
-            return format!("! {input}");
-        }
+    {
+        return format!("! {input}");
     }
 
     if contains_tag(&message_text, COMMAND_MESSAGE_TAG) {
@@ -336,7 +335,7 @@ pub fn restore_code_confirmation_text(
     diff_stats_for_restore: Option<&DiffStats>,
 ) -> Option<String> {
     let diff_stats = diff_stats_for_restore?;
-    if diff_stats.files_changed.first().is_none() {
+    if diff_stats.files_changed.is_empty() {
         return Some("The code has not changed (nothing will be restored).".to_string());
     }
 
@@ -779,10 +778,9 @@ pub fn MessageSelector<'a>(
     if let Some(option) = restore_options
         .iter()
         .find(|o| Some(o.value.official_value()) == restore_select.focused_value().as_deref())
+        && selected_restore_option.get() != option.value
     {
-        if selected_restore_option.get() != option.value {
-            selected_restore_option.set(option.value);
-        }
+        selected_restore_option.set(option.value);
     }
     let mut restore_result =
         hooks.use_state(|| Option::<(RestoreOption, Result<(), String>)>::None);
@@ -947,7 +945,7 @@ pub fn MessageSelector<'a>(
             keybinding_runtime.clone(),
             "messageSelector:up",
             ContextName::MessageSelector,
-            nav_active.clone(),
+            nav_active,
             move || {
                 selected_index.set(selected_index.get().saturating_sub(1));
                 true
@@ -961,7 +959,7 @@ pub fn MessageSelector<'a>(
             keybinding_runtime.clone(),
             "messageSelector:down",
             ContextName::MessageSelector,
-            nav_active.clone(),
+            nav_active,
             move || {
                 selected_index.set((selected_index.get() + 1).min(option_count.saturating_sub(1)));
                 true
@@ -975,7 +973,7 @@ pub fn MessageSelector<'a>(
             keybinding_runtime.clone(),
             "messageSelector:top",
             ContextName::MessageSelector,
-            nav_active.clone(),
+            nav_active,
             move || {
                 selected_index.set(0);
                 true
@@ -989,7 +987,7 @@ pub fn MessageSelector<'a>(
             keybinding_runtime.clone(),
             "messageSelector:bottom",
             ContextName::MessageSelector,
-            nav_active.clone(),
+            nav_active,
             move || {
                 selected_index.set(option_count.saturating_sub(1));
                 true

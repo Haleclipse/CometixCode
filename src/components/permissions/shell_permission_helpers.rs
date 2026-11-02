@@ -61,9 +61,9 @@ pub fn format_path_list(paths: &[String]) -> String {
     }
 }
 
-fn add_rule_entries<'a>(
-    suggestions: &'a [PermissionUpdate],
-) -> Vec<&'a crate::types::permissions::PermissionRuleValue> {
+fn add_rule_entries(
+    suggestions: &[PermissionUpdate],
+) -> Vec<&crate::types::permissions::PermissionRuleValue> {
     suggestions
         .iter()
         .flat_map(|suggestion| match suggestion {

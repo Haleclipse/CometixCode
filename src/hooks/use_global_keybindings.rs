@@ -138,7 +138,9 @@ pub fn GlobalKeybindingHandlers(
         &mut hooks,
         runtime,
         app_store,
-        props.redraw_generation.expect("GlobalKeybindingHandlers redraw_generation"),
+        props
+            .redraw_generation
+            .expect("GlobalKeybindingHandlers redraw_generation"),
         props.screen.expect("GlobalKeybindingHandlers screen"),
         props
             .show_all_in_transcript

@@ -41,10 +41,10 @@ pub fn get_plan_slug(session_id: Option<&str>) -> String {
         .map(str::to_string)
         .unwrap_or_else(crate::bootstrap::state::get_session_id);
 
-    if let Ok(cache) = PLAN_SLUG_CACHE.read() {
-        if let Some(slug) = cache.get(&session_id).filter(|slug| !slug.is_empty()) {
-            return slug.clone();
-        }
+    if let Ok(cache) = PLAN_SLUG_CACHE.read()
+        && let Some(slug) = cache.get(&session_id).filter(|slug| !slug.is_empty())
+    {
+        return slug.clone();
     }
 
     let mut slug = String::new();
@@ -226,7 +226,7 @@ pub fn copy_plan_for_resume(
                 let recovered = find_file_snapshot_entry(&messages, "plan")
                     .and_then(|entry| entry.get("content").and_then(serde_json::Value::as_str))
                     .filter(|content| !content.is_empty())
-                    .map(|content| {
+                    .inspect(|content| {
                         crate::utils::debug::log_for_debugging_with_level(
                             &format!(
                                 "Plan recovered from file snapshot, {} chars",
@@ -234,7 +234,6 @@ pub fn copy_plan_for_resume(
                             ),
                             crate::utils::debug::DebugLogLevel::Info,
                         );
-                        content
                     })
                     .or_else(|| {
                         recover_plan_from_messages(&messages).inspect(|content| {
@@ -412,8 +411,7 @@ mod tests {
     struct PlanFixtureDirectory(std::path::PathBuf);
     impl PlanFixtureDirectory {
         fn new() -> Self {
-            let path =
-                std::env::temp_dir().join(format!("nyan-branch-{}", uuid::Uuid::new_v4()));
+            let path = std::env::temp_dir().join(format!("nyan-branch-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }

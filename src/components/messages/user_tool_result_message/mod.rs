@@ -24,10 +24,10 @@ use crate::components::notebook_edit_tool_use_rejected_message::NotebookEditTool
 use crate::tools::{
     ask_user_question_tool, bash_tool, code_search_tool, config_tool, enter_plan_mode_tool,
     enter_worktree_tool, exit_plan_mode_tool, exit_worktree_tool, file_edit_tool, file_read_tool,
-    file_write_tool, glob_tool, grep_tool, list_mcp_resources_tool, lsp_tool, mcp_tool, notebook_edit_tool,
-    powershell_tool, read_mcp_resource_tool, remote_trigger_tool, schedule_cron_tool,
-    send_message_tool, skill_tool, synthetic_output_tool, task_output_tool, task_stop_tool,
-    web_fetch_tool, web_search_tool,
+    file_write_tool, glob_tool, grep_tool, list_mcp_resources_tool, lsp_tool, mcp_tool,
+    notebook_edit_tool, powershell_tool, read_mcp_resource_tool, remote_trigger_tool,
+    schedule_cron_tool, send_message_tool, skill_tool, synthetic_output_tool, task_output_tool,
+    task_stop_tool, web_fetch_tool, web_search_tool,
 };
 use crate::types::message::{ReadResultKind, ToolResultStatus};
 use crate::utils::truncate::truncate;
@@ -555,7 +555,10 @@ fn render_tool_result_lines_by_tool_name(
         let Some(output) = tool_use_result.and_then(code_search_tool::parse_output) else {
             return Some(Vec::new());
         };
-        return Some(vec![ToolRenderLine::new(output.content, ToolRenderTone::Normal)]);
+        return Some(vec![ToolRenderLine::new(
+            output.content,
+            ToolRenderTone::Normal,
+        )]);
     }
     if tool_name.eq_ignore_ascii_case("EnterWorktree")
         || tool_name.eq_ignore_ascii_case("ExitWorktree")

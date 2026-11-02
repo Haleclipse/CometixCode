@@ -13,7 +13,10 @@ use crate::utils::settings::{SettingSource, get_settings_for_source};
 /// run right after the safe environment at startup (`init.ts:79`), before
 /// any TLS connection.
 pub fn apply_extra_ca_certs_from_config() {
-    if crate::utils::process_env::var("NODE_EXTRA_CA_CERTS").truthy().is_some() {
+    if crate::utils::process_env::var("NODE_EXTRA_CA_CERTS")
+        .truthy()
+        .is_some()
+    {
         return;
     }
     if let Some(config_path) = get_extra_certs_path_from_config() {
@@ -33,19 +36,30 @@ fn get_extra_certs_path_from_config() -> Option<String> {
     let global_config = crate::utils::config::load_global_config();
     let global_env = global_config.env.as_ref();
     let settings = get_settings_for_source(SettingSource::User);
-    let settings_env = settings.as_ref().and_then(|settings| settings.env.as_deref());
+    let settings_env = settings
+        .as_ref()
+        .and_then(|settings| settings.env.as_deref());
 
     let keys = |env: Option<Vec<&String>>| {
         env.map_or_else(
             || "none".to_string(),
-            |keys| keys.into_iter().map(String::as_str).collect::<Vec<_>>().join(","),
+            |keys| {
+                keys.into_iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            },
         )
     };
     log_for_debugging(&format!(
         "CA certs: Config fallback - globalEnv keys: {}, settingsEnv keys: {}",
         // CC's default global config has `env: {}` (`config.ts:605`), so an
         // absent one lists no keys rather than "none".
-        keys(Some(global_env.map(|env| env.keys().collect()).unwrap_or_default())),
+        keys(Some(
+            global_env
+                .map(|env| env.keys().collect())
+                .unwrap_or_default()
+        )),
         keys(settings_env.map(|env| env.keys().collect())),
     ));
 

@@ -214,7 +214,8 @@ pub fn direct_footer_row_count_from_app(
             count += 1;
         }
     }
-    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
+    let is_remote_mode =
+        is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
     if auth_status_indicator(api_key_status, is_remote_mode).is_some() {
         count += 1;
     }
@@ -351,7 +352,8 @@ pub fn Notifications(
         },
         std::sync::Arc::as_ptr(&props.messages) as usize,
     );
-    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
+    let is_remote_mode =
+        is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
     // Same documented operand-order deviation as
     // `direct_footer_row_count_from_app` / the bridge indicator: CC's
     // `getSubscriptionType()` is an in-memory read, the Rust one performs
@@ -408,7 +410,7 @@ pub fn Notifications(
         return element! { View(width: 0u32, height: 0u32) }.into_any();
     }
 
-    let api_key_elapsed = api_key_helper_elapsed.read().clone();
+    let api_key_elapsed = *api_key_helper_elapsed.read();
 
     let mut head_rows: Vec<FooterRow> = Vec::new();
     let mut mid_rows: Vec<FooterRow> = Vec::new();
@@ -464,12 +466,11 @@ pub fn Notifications(
         props.auto_updater_result.as_ref().map(|r| r.status),
     );
     // Maps to: CC `showSuccessMessage={!isShowingCompactMessage}`.
-    let show_success = crate::services::compact::auto_compact::calculate_token_warning_state(
+    let show_success = !crate::services::compact::auto_compact::calculate_token_warning_state(
         token_usage as i64,
         &main_loop_model,
     )
-    .is_above_warning_threshold
-        == false;
+    .is_above_warning_threshold;
 
     let (col_pl, col_pr) = if props.inline {
         (0u32, 0u32)
@@ -618,7 +619,7 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             let previous_env = NOTIFICATIONS_RUNTIME_ENV_KEYS
                 .iter()
-                .map(|key| EnvVarGuard::unset(*key))
+                .map(|key| EnvVarGuard::unset(key))
                 .collect::<Vec<_>>();
             let previous_cwd = std::env::current_dir().expect("current cwd");
             let previous_original_cwd = crate::bootstrap::state::get_original_cwd();

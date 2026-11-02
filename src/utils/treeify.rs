@@ -41,12 +41,11 @@ pub fn treeify(obj: &TreeNode, options: TreeifyOptions) -> String {
         return "(empty)".to_string();
     }
 
-    if obj.len() == 1 {
-        if let Some((key, TreeValue::Text(value))) = obj.iter().next() {
-            if key.trim().is_empty() {
-                return format!("{LAST_BRANCH} {value}");
-            }
-        }
+    if obj.len() == 1
+        && let Some((key, TreeValue::Text(value))) = obj.iter().next()
+        && key.trim().is_empty()
+    {
+        return format!("{LAST_BRANCH} {value}");
     }
 
     let mut lines = Vec::new();

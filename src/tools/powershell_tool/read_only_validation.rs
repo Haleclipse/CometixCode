@@ -746,10 +746,11 @@ pub fn arg_leaks_value(element: Option<&ParsedCommandElement>) -> bool {
                 None => {
                     // Fallback for parsers that do not populate children.
                     let arg = args.get(index).map(String::as_str).unwrap_or_default();
-                    if let Some(colon_index) = arg.find(':') {
-                        if colon_index > 0 && has_expression_metachar(&arg[colon_index + 1..]) {
-                            return true;
-                        }
+                    if let Some(colon_index) = arg.find(':')
+                        && colon_index > 0
+                        && has_expression_metachar(&arg[colon_index + 1..])
+                    {
+                        return true;
                     }
                 }
             }
@@ -767,13 +768,13 @@ pub fn arg_leaks_value(element: Option<&ParsedCommandElement>) -> bool {
 /// script, not PATH-resolved git, and must NOT canonicalise to `git`.
 pub fn resolve_to_canonical(name: &str) -> String {
     let mut lower = name.to_lowercase();
-    if !lower.contains('\\') && !lower.contains('/') {
-        if let Some(extension) = WINDOWS_PATHEXT
+    if !lower.contains('\\')
+        && !lower.contains('/')
+        && let Some(extension) = WINDOWS_PATHEXT
             .into_iter()
             .find(|extension| lower.ends_with(extension))
-        {
-            lower.truncate(lower.len() - extension.len());
-        }
+    {
+        lower.truncate(lower.len() - extension.len());
     }
     crate::utils::powershell::parser::COMMON_ALIASES
         .get(lower.as_str())
@@ -1035,10 +1036,10 @@ pub fn is_allowlisted_command(cmd: &ParsedCommandElement, original_command: &str
         return false;
     };
 
-    if let Some(check) = config.additional_check {
-        if additional_check_is_dangerous(check, cmd) {
-            return false;
-        }
+    if let Some(check) = config.additional_check
+        && additional_check_is_dangerous(check, cmd)
+    {
+        return false;
     }
 
     // SECURITY: whitelist arg elementTypes — only StringConstant and Parameter
@@ -1091,10 +1092,11 @@ pub fn is_allowlisted_command(cmd: &ParsedCommandElement, original_command: &str
                     }
                 }
                 None => {
-                    if let Some(colon_index) = arg.find(':') {
-                        if colon_index > 0 && has_expression_metachar(&arg[colon_index + 1..]) {
-                            return false;
-                        }
+                    if let Some(colon_index) = arg.find(':')
+                        && colon_index > 0
+                        && has_expression_metachar(&arg[colon_index + 1..])
+                    {
+                        return false;
                     }
                 }
             }
@@ -1136,10 +1138,10 @@ pub fn is_allowlisted_command(cmd: &ParsedCommandElement, original_command: &str
         } else {
             arg.clone()
         };
-        if let Some(colon_index) = param_name.find(':') {
-            if colon_index > 0 {
-                param_name.truncate(colon_index);
-            }
+        if let Some(colon_index) = param_name.find(':')
+            && colon_index > 0
+        {
+            param_name.truncate(colon_index);
         }
 
         // -ErrorAction/-Verbose/-Debug and friends are accepted by every cmdlet

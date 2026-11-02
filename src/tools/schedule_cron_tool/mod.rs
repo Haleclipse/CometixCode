@@ -260,13 +260,13 @@ pub(crate) fn cron_delete_validate(input: &serde_json::Value) -> crate::tool::Va
         return crate::tool::ValidationResult::error(format!("No scheduled job with id '{id}'"), 1);
     };
     // Teammates may only delete their own crons.
-    if let Some(agent_id) = teammate_agent_id() {
-        if task.agent_id.as_deref() != Some(agent_id.as_str()) {
-            return crate::tool::ValidationResult::error(
-                format!("Cannot delete cron job '{id}': owned by another agent"),
-                2,
-            );
-        }
+    if let Some(agent_id) = teammate_agent_id()
+        && task.agent_id.as_deref() != Some(agent_id.as_str())
+    {
+        return crate::tool::ValidationResult::error(
+            format!("Cannot delete cron job '{id}': owned by another agent"),
+            2,
+        );
     }
     crate::tool::ValidationResult::Ok
 }
@@ -278,7 +278,7 @@ pub(crate) fn cron_delete_output(input: &serde_json::Value) -> Result<DeleteOutp
     use crate::utils::cron_tasks::remove_cron_tasks;
 
     let id = cron_input_string(input, "id");
-    remove_cron_tasks(&[id.clone()])?;
+    remove_cron_tasks(std::slice::from_ref(&id))?;
     Ok(DeleteOutput { id })
 }
 

@@ -93,21 +93,22 @@ pub fn get_syntax_theme_with_env(
     claude_code_syntax_highlight: Option<&str>,
     bat_theme: Option<&str>,
 ) -> SyntaxTheme {
-    if let Some(value) = claude_code_syntax_highlight {
-        if !is_defined_falsy_value(value) && !value.is_empty() {
-            return SyntaxTheme {
-                theme: value.to_string(),
-                source: Some("CLAUDE_CODE_SYNTAX_HIGHLIGHT"),
-            };
-        }
+    if let Some(value) = claude_code_syntax_highlight
+        && !is_defined_falsy_value(value)
+        && !value.is_empty()
+    {
+        return SyntaxTheme {
+            theme: value.to_string(),
+            source: Some("CLAUDE_CODE_SYNTAX_HIGHLIGHT"),
+        };
     }
-    if let Some(value) = bat_theme {
-        if !value.is_empty() {
-            return SyntaxTheme {
-                theme: value.to_string(),
-                source: Some("BAT_THEME"),
-            };
-        }
+    if let Some(value) = bat_theme
+        && !value.is_empty()
+    {
+        return SyntaxTheme {
+            theme: value.to_string(),
+            source: Some("BAT_THEME"),
+        };
     }
     SyntaxTheme {
         theme: default_syntax_theme_name(theme_name).to_string(),
@@ -143,7 +144,7 @@ fn intern_syntax_theme_name(name: &str) -> &'static str {
         .lock()
         .expect("syntax theme intern cache mutex should not be poisoned");
     if let Some(value) = interned.get(name) {
-        return *value;
+        return value;
     }
     let leaked = Box::leak(name.to_string().into_boxed_str());
     interned.insert(name.to_string(), leaked);

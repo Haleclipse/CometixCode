@@ -281,12 +281,11 @@ impl NotificationsState {
         let previous_current = self.current.take();
         let mut next_queue = Vec::new();
 
-        if let Some(current) = previous_current {
-            if current.priority != NotificationPriority::Immediate
-                && !invalidates.iter().any(|key| key == &current.key)
-            {
-                next_queue.push(current);
-            }
+        if let Some(current) = previous_current
+            && current.priority != NotificationPriority::Immediate
+            && !invalidates.iter().any(|key| key == &current.key)
+        {
+            next_queue.push(current);
         }
 
         next_queue.extend(self.queue.drain(..).filter(|queued| {

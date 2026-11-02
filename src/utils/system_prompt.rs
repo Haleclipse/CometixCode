@@ -79,10 +79,10 @@ fn maybe_log_agent_memory_loaded(agent: &AgentDefinition) {
 }
 
 fn with_optional_append(mut parts: SystemPrompt, append: Option<&str>) -> SystemPrompt {
-    if let Some(append) = append {
-        if !append.is_empty() {
-            parts.push(append.to_string());
-        }
+    if let Some(append) = append
+        && !append.is_empty()
+    {
+        parts.push(append.to_string());
     }
     as_system_prompt(parts)
 }
@@ -98,10 +98,10 @@ fn with_optional_append(mut parts: SystemPrompt, append: Option<&str>) -> System
 ///
 /// Maps to: CC `utils/systemPrompt.ts#buildEffectiveSystemPrompt`.
 pub fn build_effective_system_prompt(args: BuildEffectiveSystemPromptArgs<'_>) -> SystemPrompt {
-    if let Some(override_prompt) = args.override_system_prompt {
-        if !override_prompt.is_empty() {
-            return as_system_prompt(vec![override_prompt.to_string()]);
-        }
+    if let Some(override_prompt) = args.override_system_prompt
+        && !override_prompt.is_empty()
+    {
+        return as_system_prompt(vec![override_prompt.to_string()]);
     }
 
     // Inline env + build-feature check (CC avoids importing coordinatorModule
@@ -126,12 +126,13 @@ pub fn build_effective_system_prompt(args: BuildEffectiveSystemPromptArgs<'_>) -
         })
         .filter(|prompt| !prompt.is_empty());
 
-    if let Some(agent_prompt) = agent_system_prompt.as_deref() {
-        if proactive_or_kairos_build_feature() && is_proactive_active_safe_to_call_anywhere() {
-            let mut parts = args.default_system_prompt;
-            parts.push(format!("\n# Custom Agent Instructions\n{agent_prompt}"));
-            return with_optional_append(parts, args.append_system_prompt);
-        }
+    if let Some(agent_prompt) = agent_system_prompt.as_deref()
+        && proactive_or_kairos_build_feature()
+        && is_proactive_active_safe_to_call_anywhere()
+    {
+        let mut parts = args.default_system_prompt;
+        parts.push(format!("\n# Custom Agent Instructions\n{agent_prompt}"));
+        return with_optional_append(parts, args.append_system_prompt);
     }
 
     let base: SystemPrompt = if let Some(agent_prompt) = agent_system_prompt {
@@ -349,10 +350,8 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let custom_path =
-            std::env::temp_dir().join(format!("nyan-sysprompt-custom-{stamp}.txt"));
-        let append_path =
-            std::env::temp_dir().join(format!("nyan-sysprompt-append-{stamp}.txt"));
+        let custom_path = std::env::temp_dir().join(format!("nyan-sysprompt-custom-{stamp}.txt"));
+        let append_path = std::env::temp_dir().join(format!("nyan-sysprompt-append-{stamp}.txt"));
         std::fs::write(&custom_path, "FROM_FILE").unwrap();
         std::fs::write(&append_path, "APPEND_FILE").unwrap();
 

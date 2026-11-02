@@ -153,10 +153,10 @@ pub fn get_pane_backend_executor_for_type(
     backend_type: PaneBackendType,
 ) -> Result<PaneBackendExecutor, String> {
     let mut state = BACKEND_REGISTRY.lock().unwrap();
-    if let Some(executor) = state.cached_pane_executor.as_ref() {
-        if executor.backend_type() == backend_type.as_backend_type() {
-            return Ok(executor.clone());
-        }
+    if let Some(executor) = state.cached_pane_executor.as_ref()
+        && executor.backend_type() == backend_type.as_backend_type()
+    {
+        return Ok(executor.clone());
     }
     let executor = create_pane_backend_executor(backend_type)?;
     state.cached_pane_executor = Some(executor.clone());
@@ -172,19 +172,19 @@ pub fn spawn_kill_pane_for_shutdown(backend_type: Option<&str>, pane_id: String,
         let use_external_session = !detection::is_inside_tmux_sync();
         match backend_type.as_str() {
             "tmux" => {
-                if let Ok(executor) = get_pane_backend_executor_for_type(PaneBackendType::Tmux) {
-                    if executor.kill(&agent_id).await {
-                        return;
-                    }
+                if let Ok(executor) = get_pane_backend_executor_for_type(PaneBackendType::Tmux)
+                    && executor.kill(&agent_id).await
+                {
+                    return;
                 }
                 let backend = super::tmux_backend::TmuxBackend::new();
                 let _ = backend.kill_pane(&pane_id, use_external_session).await;
             }
             "iterm2" => {
-                if let Ok(executor) = get_pane_backend_executor_for_type(PaneBackendType::ITerm2) {
-                    if executor.kill(&agent_id).await {
-                        return;
-                    }
+                if let Ok(executor) = get_pane_backend_executor_for_type(PaneBackendType::ITerm2)
+                    && executor.kill(&agent_id).await
+                {
+                    return;
                 }
                 let backend = super::iterm_backend::ITermBackend::new();
                 let _ = backend.kill_pane(&pane_id, use_external_session).await;

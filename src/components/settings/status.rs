@@ -307,7 +307,7 @@ fn ide_display_name(ide_type: Option<&str>) -> String {
         "rider" => "Rider".to_string(),
         "androidstudio" | "android-studio" => "Android Studio".to_string(),
         other => other
-            .split(|ch: char| matches!(ch, '-' | '_' | '.'))
+            .split(['-', '_', '.'])
             .filter(|part| !part.is_empty())
             .map(|part| {
                 let mut chars = part.chars();

@@ -124,11 +124,10 @@ mod tests {
                     None
                 })
                 .await
+                    && frame.to_string().contains("NEXT STEP")
                 {
-                    if frame.to_string().contains("NEXT STEP") {
-                        reached = true;
-                        break;
-                    }
+                    reached = true;
+                    break;
                 }
             }
             assert!(reached);

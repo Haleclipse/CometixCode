@@ -41,10 +41,10 @@ fn format_uri(uri: Option<&str>, cwd: Option<&str>) -> String {
         file_path = decoded;
     }
 
-    if let Some(cwd) = cwd {
-        if let Some(relative) = relative_path_if_shorter(&file_path, cwd) {
-            return relative.replace('\\', "/");
-        }
+    if let Some(cwd) = cwd
+        && let Some(relative) = relative_path_if_shorter(&file_path, cwd)
+    {
+        return relative.replace('\\', "/");
     }
 
     file_path.replace('\\', "/")
@@ -76,7 +76,10 @@ fn node_like_relative_path(from: &Path, to: &Path) -> Option<String> {
         .take_while(|(left, right)| left == right)
         .count();
     let mut relative = Vec::new();
-    relative.extend(std::iter::repeat("..".to_string()).take(from_parts.len() - common));
+    relative.extend(std::iter::repeat_n(
+        "..".to_string(),
+        from_parts.len() - common,
+    ));
     relative.extend(to_parts[common..].iter().cloned());
     Some(relative.join("/"))
 }
@@ -372,11 +375,11 @@ fn format_document_symbol_node(symbol: &Value, indent: usize, lines: &mut Vec<St
         .unwrap_or_default();
     let kind = symbol_kind_to_string(symbol.get("kind").and_then(Value::as_u64).unwrap_or(0));
     let mut line = format!("{prefix}{name} ({kind})");
-    if let Some(detail) = symbol.get("detail").and_then(Value::as_str) {
-        if !detail.is_empty() {
-            line.push(' ');
-            line.push_str(detail);
-        }
+    if let Some(detail) = symbol.get("detail").and_then(Value::as_str)
+        && !detail.is_empty()
+    {
+        line.push(' ');
+        line.push_str(detail);
     }
     let symbol_line = symbol
         .get("range")
@@ -459,11 +462,11 @@ pub fn format_workspace_symbol_result(result: &Value, cwd: Option<&str>) -> Stri
                 .unwrap_or(0)
                 + 1;
             let mut symbol_line = format!("  {name} ({kind}) - Line {line}");
-            if let Some(container_name) = symbol.get("containerName").and_then(Value::as_str) {
-                if !container_name.is_empty() {
-                    symbol_line.push_str(" in ");
-                    symbol_line.push_str(container_name);
-                }
+            if let Some(container_name) = symbol.get("containerName").and_then(Value::as_str)
+                && !container_name.is_empty()
+            {
+                symbol_line.push_str(" in ");
+                symbol_line.push_str(container_name);
             }
             lines.push(symbol_line);
         }
@@ -487,12 +490,12 @@ fn format_call_hierarchy_item(item: &Value, cwd: Option<&str>) -> String {
         .unwrap_or(0)
         + 1;
     let mut result = format!("{name} ({kind}) - {file_path}:{line}");
-    if let Some(detail) = item.get("detail").and_then(Value::as_str) {
-        if !detail.is_empty() {
-            result.push_str(" [");
-            result.push_str(detail);
-            result.push(']');
-        }
+    if let Some(detail) = item.get("detail").and_then(Value::as_str)
+        && !detail.is_empty()
+    {
+        result.push_str(" [");
+        result.push_str(detail);
+        result.push(']');
     }
     result
 }
@@ -550,18 +553,18 @@ pub fn format_incoming_calls_result(result: &Value, cwd: Option<&str>) -> String
                 .unwrap_or(0)
                 + 1;
             let mut call_line = format!("  {name} ({kind}) - Line {line}");
-            if let Some(ranges) = call.get("fromRanges").and_then(Value::as_array) {
-                if !ranges.is_empty() {
-                    let call_sites = ranges
-                        .iter()
-                        .map(|range| {
-                            let (line, character) = range_start_line_character(Some(range));
-                            format!("{}:{}", line + 1, character + 1)
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    call_line.push_str(&format!(" [calls at: {call_sites}]"));
-                }
+            if let Some(ranges) = call.get("fromRanges").and_then(Value::as_array)
+                && !ranges.is_empty()
+            {
+                let call_sites = ranges
+                    .iter()
+                    .map(|range| {
+                        let (line, character) = range_start_line_character(Some(range));
+                        format!("{}:{}", line + 1, character + 1)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                call_line.push_str(&format!(" [calls at: {call_sites}]"));
             }
             lines.push(call_line);
         }
@@ -602,18 +605,18 @@ pub fn format_outgoing_calls_result(result: &Value, cwd: Option<&str>) -> String
                 .unwrap_or(0)
                 + 1;
             let mut call_line = format!("  {name} ({kind}) - Line {line}");
-            if let Some(ranges) = call.get("fromRanges").and_then(Value::as_array) {
-                if !ranges.is_empty() {
-                    let call_sites = ranges
-                        .iter()
-                        .map(|range| {
-                            let (line, character) = range_start_line_character(Some(range));
-                            format!("{}:{}", line + 1, character + 1)
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    call_line.push_str(&format!(" [called from: {call_sites}]"));
-                }
+            if let Some(ranges) = call.get("fromRanges").and_then(Value::as_array)
+                && !ranges.is_empty()
+            {
+                let call_sites = ranges
+                    .iter()
+                    .map(|range| {
+                        let (line, character) = range_start_line_character(Some(range));
+                        format!("{}:{}", line + 1, character + 1)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                call_line.push_str(&format!(" [called from: {call_sites}]"));
             }
             lines.push(call_line);
         }
@@ -842,16 +845,15 @@ async fn filter_git_ignored_location_uris(locations: Vec<&Value>, cwd: &str) -> 
         crate::utils::subprocess_env::apply_process_env(&mut command);
         command.arg("check-ignore").args(batch).current_dir(cwd);
         if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), command.output()).await
+            && output.status.code() == Some(0)
         {
-            if output.status.code() == Some(0) {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                {
-                    ignored_paths.insert(line.to_string());
-                }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout
+                .lines()
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+            {
+                ignored_paths.insert(line.to_string());
             }
         }
     }

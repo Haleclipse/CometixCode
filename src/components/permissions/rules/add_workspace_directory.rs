@@ -346,18 +346,15 @@ pub fn AddWorkspaceDirectory<'a>(
             ..Default::default()
         },
     );
-    if let Some(value) = events.take_accepted() {
-        if let Some(path) = props.directory_path.as_ref() {
-            match value.as_str() {
-                "no" => pending_cancel.set(true),
-                "yes-session" | "yes-remember" => {
-                    pending_add.set(Some(add_workspace_directory_selection(
-                        path,
-                        RememberDirectoryOption::from_str(&value),
-                    )))
-                }
-                _ => {}
-            }
+    if let Some(value) = events.take_accepted()
+        && let Some(path) = props.directory_path.as_ref()
+    {
+        match value.as_str() {
+            "no" => pending_cancel.set(true),
+            "yes-session" | "yes-remember" => pending_add.set(Some(
+                add_workspace_directory_selection(path, RememberDirectoryOption::from_str(&value)),
+            )),
+            _ => {}
         }
     }
     if events.take_cancelled() {

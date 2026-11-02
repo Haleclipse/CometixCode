@@ -137,7 +137,7 @@ fn schema_for(name: &str) -> Schema {
         ]),
         "any_passthrough" => any(),
         "refine_ok" | "refine_fail" => {
-            string().refine(|v| v.as_str().map_or(false, |s| s.len() > 3), "too short")
+            string().refine(|v| v.as_str().is_some_and(|s| s.len() > 3), "too short")
         }
         "transform_data" => string().transform(|v| json!(v.as_str().unwrap().len())),
         "nullable_null" | "nullable_wrong_type" => string().nullable(),
@@ -191,7 +191,7 @@ fn json_content_eq(a: &Value, b: &Value) -> bool {
         (Value::Object(x), Value::Object(y)) => {
             x.len() == y.len()
                 && x.iter()
-                    .all(|(k, v)| y.get(k).map_or(false, |w| json_content_eq(v, w)))
+                    .all(|(k, v)| y.get(k).is_some_and(|w| json_content_eq(v, w)))
         }
         (Value::Array(x), Value::Array(y)) => {
             x.len() == y.len() && x.iter().zip(y).all(|(v, w)| json_content_eq(v, w))
@@ -282,7 +282,7 @@ fn missing_required_param_marks_received_undefined() {
 #[test]
 fn refine_fails_with_a_custom_issue_like_official() {
     // zod oracle: `{"code":"custom","message":"too short"}`.
-    let schema = string().refine(|v| v.as_str().map_or(false, |s| s.len() > 3), "too short");
+    let schema = string().refine(|v| v.as_str().is_some_and(|s| s.len() > 3), "too short");
     let err = safe_parse(&schema, &json!("ab")).unwrap_err();
     assert_eq!(err.issues[0].code, IssueCode::Custom);
     assert_eq!(err.issues[0].message, "too short");

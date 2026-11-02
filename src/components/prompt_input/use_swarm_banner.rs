@@ -42,13 +42,13 @@ fn color(value: Option<&str>, fallback: ThemeColorKey) -> ThemeColorKey {
 }
 
 pub fn swarm_banner(input: &SwarmBannerInput) -> Option<SwarmBannerInfo> {
-    if input.is_external_teammate {
-        if let (Some(name), Some(_team)) = (&input.teammate_name, &input.teammate_team_name) {
-            return Some(SwarmBannerInfo {
-                text: format!("@{name}"),
-                bg_color: color(input.teammate_color.as_deref(), ThemeColorKey::AgentCyan),
-            });
-        }
+    if input.is_external_teammate
+        && let (Some(name), Some(_team)) = (&input.teammate_name, &input.teammate_team_name)
+    {
+        return Some(SwarmBannerInfo {
+            text: format!("@{name}"),
+            bg_color: color(input.teammate_color.as_deref(), ThemeColorKey::AgentCyan),
+        });
     }
     if input.has_teammates {
         let viewed_color = color(

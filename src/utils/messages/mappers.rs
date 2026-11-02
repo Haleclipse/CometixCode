@@ -148,31 +148,28 @@ pub(crate) fn to_sdk_messages(messages: &[Value]) -> Vec<Value> {
                     Some(sdk)
                 }
                 Some("system") => {
-                    if message["subtype"] == "compact_boundary" {
-                        if let Some(meta) = message
+                    if message["subtype"] == "compact_boundary"
+                        && let Some(meta) = message
                             .get("compactMetadata")
                             .filter(|value| value.is_object())
-                        {
-                            return Some(json!({
-                                "type": "system",
-                                "subtype": "compact_boundary",
-                                "session_id": crate::bootstrap::state::get_session_id(),
-                                "uuid": message["uuid"],
-                                "compact_metadata": to_sdk_compact_metadata(meta),
-                            }));
-                        }
+                    {
+                        return Some(json!({
+                            "type": "system",
+                            "subtype": "compact_boundary",
+                            "session_id": crate::bootstrap::state::get_session_id(),
+                            "uuid": message["uuid"],
+                            "compact_metadata": to_sdk_compact_metadata(meta),
+                        }));
                     }
-                    if message["subtype"] == "local_command" {
-                        if let Some(content) = message.get("content").and_then(Value::as_str) {
-                            if content.contains(&format!("<{LOCAL_COMMAND_STDOUT_TAG}>"))
-                                || content.contains(&format!("<{LOCAL_COMMAND_STDERR_TAG}>"))
-                            {
-                                return Some(local_command_output_to_sdk_assistant_message(
-                                    content,
-                                    message["uuid"].as_str().unwrap_or_default(),
-                                ));
-                            }
-                        }
+                    if message["subtype"] == "local_command"
+                        && let Some(content) = message.get("content").and_then(Value::as_str)
+                        && (content.contains(&format!("<{LOCAL_COMMAND_STDOUT_TAG}>"))
+                            || content.contains(&format!("<{LOCAL_COMMAND_STDERR_TAG}>")))
+                    {
+                        return Some(local_command_output_to_sdk_assistant_message(
+                            content,
+                            message["uuid"].as_str().unwrap_or_default(),
+                        ));
                     }
                     None
                 }
@@ -271,17 +268,15 @@ fn normalize_assistant_message_for_sdk(message: &Value) -> Value {
         }
         if block["name"]
             == crate::tools::exit_plan_mode_tool::constants::EXIT_PLAN_MODE_V2_TOOL_NAME
+            && let Some(plan) = crate::utils::plans::get_plan(None).filter(|plan| !plan.is_empty())
         {
-            if let Some(plan) = crate::utils::plans::get_plan(None).filter(|plan| !plan.is_empty())
-            {
-                let mut input = block
-                    .get("input")
-                    .and_then(Value::as_object)
-                    .cloned()
-                    .unwrap_or_default();
-                input.insert("plan".to_string(), json!(plan));
-                block["input"] = input.into();
-            }
+            let mut input = block
+                .get("input")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            input.insert("plan".to_string(), json!(plan));
+            block["input"] = input.into();
         }
     }
     api_message

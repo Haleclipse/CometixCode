@@ -24,7 +24,7 @@ pub struct ThemedBoxProps {
 
 #[component]
 pub fn ThemedBox(props: &mut ThemedBoxProps) -> impl Into<AnyElement<'static>> {
-    let children = props.children.drain(..).collect::<Vec<_>>();
+    let children = std::mem::take(&mut props.children);
 
     element! {
         View(

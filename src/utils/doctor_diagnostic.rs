@@ -126,7 +126,9 @@ pub fn get_current_installation_type() -> InstallationType {
     {
         return InstallationType::NpmGlobal;
     }
-    if crate::utils::process_env::var("NYAN_INSTALLATION_TYPE").as_deref() == Some("package-manager") {
+    if crate::utils::process_env::var("NYAN_INSTALLATION_TYPE").as_deref()
+        == Some("package-manager")
+    {
         return InstallationType::PackageManager;
     }
     if crate::utils::process_env::var("NYAN_BUNDLED")
@@ -314,7 +316,8 @@ pub fn get_doctor_diagnostic() -> DiagnosticInfo {
         .unwrap_or_else(|| "not set".to_string());
     let ripgrep_status = get_ripgrep_status();
     let package_manager = (installation_type == InstallationType::PackageManager).then(|| {
-        crate::utils::process_env::var("NYAN_PACKAGE_MANAGER").unwrap_or_else(|| "unknown".to_string())
+        crate::utils::process_env::var("NYAN_PACKAGE_MANAGER")
+            .unwrap_or_else(|| "unknown".to_string())
     });
 
     DiagnosticInfo {

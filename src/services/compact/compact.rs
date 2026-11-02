@@ -235,24 +235,22 @@ pub fn attach_nyan_receipt(
         crate::utils::settings::nyan::SummaryStyle::Legacy => "legacy",
         crate::utils::settings::nyan::SummaryStyle::Cc => "cc",
     };
-    let tokens_after_estimate = crate::utils::tokens::token_count_with_estimation(
-        &build_post_compact_messages(result),
-    );
+    let tokens_after_estimate =
+        crate::utils::tokens::token_count_with_estimation(&build_post_compact_messages(result));
     if let SystemMessage::CompactBoundary {
         compact_metadata, ..
     } = &mut result.boundary_marker
     {
-        compact_metadata
-            .get_or_insert_default()
-            .nyan = Some(crate::types::message::NyanCompactReceipt {
-            masked_count,
-            masked_tokens,
-            summary_model: Some(summary_model),
-            summary_style: Some(summary_style.to_string()),
-            keep_recent_tokens: settings.keep_recent_tokens(),
-            tokens_after_estimate,
-            usage: result.compaction_usage.clone(),
-        });
+        compact_metadata.get_or_insert_default().nyan =
+            Some(crate::types::message::NyanCompactReceipt {
+                masked_count,
+                masked_tokens,
+                summary_model: Some(summary_model),
+                summary_style: Some(summary_style.to_string()),
+                keep_recent_tokens: settings.keep_recent_tokens(),
+                tokens_after_estimate,
+                usage: result.compaction_usage.clone(),
+            });
     }
 }
 
@@ -811,15 +809,14 @@ fn annotate_boundary_with_preserved_segment(
     anchor_uuid: &str,
     kept: &[Message],
 ) -> SystemMessage {
-    if let (Some(head), Some(tail)) = (kept.first(), kept.last()) {
-        if let SystemMessage::CompactBoundary {
+    if let (Some(head), Some(tail)) = (kept.first(), kept.last())
+        && let SystemMessage::CompactBoundary {
             compact_metadata, ..
         } = &mut boundary
-        {
-            compact_metadata.get_or_insert_default().preserved_segment = Some(serde_json::json!({
-                "headUuid": head.uuid(), "tailUuid": tail.uuid(), "anchorUuid": anchor_uuid,
-            }));
-        }
+    {
+        compact_metadata.get_or_insert_default().preserved_segment = Some(serde_json::json!({
+            "headUuid": head.uuid(), "tailUuid": tail.uuid(), "anchorUuid": anchor_uuid,
+        }));
     }
     boundary
 }
@@ -1080,9 +1077,9 @@ fn validate_compact_summary_assistant(
 ) -> Result<String, String> {
     // The synthetic prompt-too-long reply carries no stop_reason; hand it to
     // the caller's head-truncation retry instead of failing it here.
-    if let Some(text) = crate::utils::messages::get_assistant_message_text(&Message::Assistant(
-        assistant.clone(),
-    )) && text.starts_with(crate::services::api::errors::PROMPT_TOO_LONG_ERROR_MESSAGE)
+    if let Some(text) =
+        crate::utils::messages::get_assistant_message_text(&Message::Assistant(assistant.clone()))
+        && text.starts_with(crate::services::api::errors::PROMPT_TOO_LONG_ERROR_MESSAGE)
     {
         return Ok(text);
     }
@@ -1108,11 +1105,10 @@ fn validate_compact_summary_assistant(
     }) {
         return Err("summary_contains_tool_call".to_string());
     }
-    let summary = crate::utils::messages::get_assistant_message_text(&Message::Assistant(
-        assistant.clone(),
-    ))
-    .filter(|summary| !summary.trim().is_empty())
-    .ok_or_else(|| "summary_empty".to_string())?;
+    let summary =
+        crate::utils::messages::get_assistant_message_text(&Message::Assistant(assistant.clone()))
+            .filter(|summary| !summary.trim().is_empty())
+            .ok_or_else(|| "summary_empty".to_string())?;
     if summary.trim_start().starts_with("API Error:") {
         return Err(summary);
     }
@@ -2303,7 +2299,10 @@ mod tests {
     fn summary_validation_follows_the_stop_reason_table() {
         use crate::types::message::StopReason;
         let ok = summary_assistant(vec![summary_text("Goal: ship")], Some(StopReason::EndTurn));
-        assert_eq!(validate_compact_summary_assistant(&ok).unwrap(), "Goal: ship");
+        assert_eq!(
+            validate_compact_summary_assistant(&ok).unwrap(),
+            "Goal: ship"
+        );
         let stop_sequence = summary_assistant(
             vec![summary_text("Goal: ship")],
             Some(StopReason::StopSequence),
@@ -2329,7 +2328,10 @@ mod tests {
     fn summary_with_leading_text_and_a_tool_call_is_rejected() {
         use crate::types::message::StopReason;
         let assistant = summary_assistant(
-            vec![summary_text("I will read the file first."), summary_tool_use()],
+            vec![
+                summary_text("I will read the file first."),
+                summary_tool_use(),
+            ],
             Some(StopReason::EndTurn),
         );
         assert_eq!(
@@ -2350,9 +2352,11 @@ mod tests {
             vec![summary_text("API Error: 529 overloaded")],
             Some(StopReason::EndTurn),
         );
-        assert!(validate_compact_summary_assistant(&api_error)
-            .unwrap_err()
-            .starts_with("API Error:"));
+        assert!(
+            validate_compact_summary_assistant(&api_error)
+                .unwrap_err()
+                .starts_with("API Error:")
+        );
     }
 
     #[test]

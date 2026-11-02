@@ -117,7 +117,7 @@ pub fn LspRecommendationMenu<'a>(
         }
     });
 
-    let pending = { pending_response.read().clone() };
+    let pending = { *pending_response.read() };
     if let Some(response) = pending {
         pending_response.set(None);
         (props.on_response)(response);

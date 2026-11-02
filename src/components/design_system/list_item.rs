@@ -75,7 +75,7 @@ pub fn ListItem(props: &mut ListItemProps, mut hooks: Hooks) -> impl Into<AnyEle
                         Text(content: label, color: text_color, wrap: TextWrap::Wrap)
                     }.into_any()]
                 } else {
-                    props.children.drain(..).collect::<Vec<_>>()
+                    std::mem::take(&mut props.children)
                 })
                 #(if props.is_selected && !props.disabled {
                     Some(element! { Text(content: TICK, color: theme.success, wrap: TextWrap::Wrap) })

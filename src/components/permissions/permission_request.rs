@@ -1023,8 +1023,16 @@ mod tests {
     async fn a_prompt_dialog_leaves_the_interrupt_to_the_dispatcher_and_answers_esc() {
         for (event, cancels, answers) in [
             (key(KeyCode::F(6)), vec!["toolu".to_string()], vec![]),
-            (key(KeyCode::Esc), vec![], vec![PermissionPromptChoice::Deny]),
-            (modified_key(KeyCode::Char('c'), KeyModifiers::CONTROL), vec![], vec![]),
+            (
+                key(KeyCode::Esc),
+                vec![],
+                vec![PermissionPromptChoice::Deny],
+            ),
+            (
+                modified_key(KeyCode::Char('c'), KeyModifiers::CONTROL),
+                vec![],
+                vec![],
+            ),
         ] {
             let cancelled = Arc::new(Mutex::new(Vec::<String>::new()));
             let answered = Arc::new(Mutex::new(Vec::<PermissionPromptChoice>::new()));

@@ -37,19 +37,19 @@ fn model_options(initial_model: Option<&str>) -> Vec<SelectOptionData> {
             ..Default::default()
         },
     ];
-    if let Some(model) = initial_model {
-        if !options.iter().any(|option| option.value == model) {
-            options.insert(
-                0,
-                SelectOptionData {
-                    value: model.to_string(),
-                    label: model.to_string(),
-                    description: Some("Current model (custom ID)".to_string()),
-                    dim_description: true,
-                    ..Default::default()
-                },
-            );
-        }
+    if let Some(model) = initial_model
+        && !options.iter().any(|option| option.value == model)
+    {
+        options.insert(
+            0,
+            SelectOptionData {
+                value: model.to_string(),
+                label: model.to_string(),
+                description: Some("Current model (custom ID)".to_string()),
+                dim_description: true,
+                ..Default::default()
+            },
+        );
     }
     options
 }

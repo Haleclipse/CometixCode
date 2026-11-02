@@ -534,8 +534,8 @@ impl ToolCall for FileWriteTool {
                 return make_error_after_discovery(error.to_string(), dynamic_skill_dirs);
             }
 
-            if crate::utils::file_history::file_history_enabled() {
-                if let Some(store) = context.app_store.store.as_ref() {
+            if crate::utils::file_history::file_history_enabled()
+                && let Some(store) = context.app_store.store.as_ref() {
                     crate::utils::file_history::file_history_track_edit(
                         store,
                         &full_path.display().to_string(),
@@ -548,7 +548,6 @@ impl ToolCall for FileWriteTool {
                     )
                     .await;
                 }
-            }
 
             // File history is the final await before the atomic read/write
             // section. Re-resolve once more so a swap during backup fails
@@ -612,14 +611,12 @@ impl ToolCall for FileWriteTool {
 
             if context.agent_id.is_some()
                 && full_path == crate::memdir::paths::get_auto_mem_entrypoint()
-            {
-                if let Err(error) = crate::memdir::memdir::validate_agent_memory_index_update(
+                && let Err(error) = crate::memdir::memdir::validate_agent_memory_index_update(
                     old_content.as_deref().unwrap_or_default(),
                     &input.content,
                 ) {
                     return make_error_after_discovery(error, dynamic_skill_dirs);
                 }
-            }
             if let Err(error) = crate::memdir::write_guard::check_memory_content(
                 &full_path,
                 &input.content,
@@ -922,10 +919,8 @@ mod tests {
     fn validation_rejects_fifo_without_opening_or_blocking_on_it() {
         use std::os::unix::ffi::OsStrExt as _;
 
-        let root = std::env::temp_dir().join(format!(
-            "nyan-write-fifo-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-write-fifo-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("pipe");
         let path_c = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
@@ -1019,10 +1014,8 @@ mod tests {
     async fn existing_file_requires_full_read_and_rejects_content_race() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let root = std::env::temp_dir().join(format!(
-            "nyan-write-race-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-write-race-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("existing.txt");
         std::fs::write(&path, "old\n").unwrap();
@@ -1118,7 +1111,9 @@ mod tests {
         let bytes = std::fs::read(&path).unwrap();
         assert_ne!(bytes.get(..2), Some(&[0xff, 0xfe][..]));
         let units = bytes
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
             .collect::<Vec<_>>();
         assert_eq!(String::from_utf16(&units).unwrap(), "new\n");

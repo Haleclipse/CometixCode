@@ -273,11 +273,10 @@ pub fn BrowseMarketplace(
                         Ok(())
                     }
                     .await;
-                    if let Err(error) = answer {
-                        if !cancelled.load(std::sync::atomic::Ordering::SeqCst) {
+                    if let Err(error) = answer
+                        && !cancelled.load(std::sync::atomic::Ordering::SeqCst) {
                             set_error(Some(error.to_string()));
                         }
-                    }
                     loading.set(false);
                 });
         },
@@ -643,74 +642,73 @@ pub fn BrowseMarketplace(
             }}
         }}.into_any();
     }
-    if details_active {
-        if let Some(plugin) = selected_plugin.read().clone() {
-            let options = build_plugin_details_menu_options(
-                plugin.entry["homepage"].as_str(),
-                extract_git_hub_repo(&plugin),
-            );
-            let mut components = Vec::new();
-            for (key, label) in [
-                ("commands", "Commands"),
-                ("agents", "Agents"),
-                ("hooks", "Hooks"),
-                ("mcpServers", "MCP Servers"),
-            ] {
-                if let Some(value) = plugin
-                    .entry
-                    .get(key)
-                    .filter(|v| !v.is_null() && *v != &Value::Bool(false) && v.as_str() != Some(""))
-                {
-                    let detail = if key == "hooks" && value.is_array() {
-                        (0..value.as_array().unwrap().len())
-                            .map(|i| i.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    } else if let Some(array) = value.as_array() {
-                        array
-                            .iter()
-                            .map(|v| {
-                                v.as_str()
-                                    .map(str::to_string)
-                                    .unwrap_or_else(|| v.to_string())
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    } else if let Some(object) = value.as_object() {
-                        crate::utils::process_env::ecmascript_object_entries(object)
-                            .into_iter()
-                            .map(|(name, _)| name)
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    } else if key == "mcpServers" {
-                        "configured".to_string()
-                    } else {
-                        value
-                            .as_str()
-                            .unwrap_or("")
-                            .encode_utf16()
-                            .enumerate()
-                            .map(|(i, _)| i.to_string())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    };
-                    components.push(format!("· {label}: {detail}"));
+    if details_active && let Some(plugin) = selected_plugin.read().clone() {
+        let options = build_plugin_details_menu_options(
+            plugin.entry["homepage"].as_str(),
+            extract_git_hub_repo(&plugin),
+        );
+        let mut components = Vec::new();
+        for (key, label) in [
+            ("commands", "Commands"),
+            ("agents", "Agents"),
+            ("hooks", "Hooks"),
+            ("mcpServers", "MCP Servers"),
+        ] {
+            if let Some(value) = plugin
+                .entry
+                .get(key)
+                .filter(|v| !v.is_null() && *v != &Value::Bool(false) && v.as_str() != Some(""))
+            {
+                let detail = if key == "hooks" && value.is_array() {
+                    (0..value.as_array().unwrap().len())
+                        .map(|i| i.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else if let Some(array) = value.as_array() {
+                    array
+                        .iter()
+                        .map(|v| {
+                            v.as_str()
+                                .map(str::to_string)
+                                .unwrap_or_else(|| v.to_string())
+                        })
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else if let Some(object) = value.as_object() {
+                    crate::utils::process_env::ecmascript_object_entries(object)
+                        .into_iter()
+                        .map(|(name, _)| name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                } else if key == "mcpServers" {
+                    "configured".to_string()
+                } else {
+                    value
+                        .as_str()
+                        .unwrap_or("")
+                        .encode_utf16()
+                        .enumerate()
+                        .map(|(i, _)| i.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                components.push(format!("· {label}: {detail}"));
+            }
+        }
+        if components.is_empty() {
+            let remote = plugin.entry["source"]["source"]
+                .as_str()
+                .is_some_and(|s| matches!(s, "github" | "url" | "npm" | "pip"));
+            components.push(
+                if remote {
+                    "· Component summary not available for remote plugin"
+                } else {
+                    "· Components will be discovered at installation"
                 }
-            }
-            if components.is_empty() {
-                let remote = plugin.entry["source"]["source"]
-                    .as_str()
-                    .is_some_and(|s| matches!(s, "github" | "url" | "npm" | "pip"));
-                components.push(
-                    if remote {
-                        "· Component summary not available for remote plugin"
-                    } else {
-                        "· Components will be discovered at installation"
-                    }
-                    .to_string(),
-                );
-            }
-            return element!{View(flex_direction:FlexDirection::Column){
+                .to_string(),
+            );
+        }
+        return element!{View(flex_direction:FlexDirection::Column){
             View(margin_bottom:1u32){Text(content:"Plugin Details",weight:Weight::Bold)}
             View(flex_direction:FlexDirection::Column,margin_bottom:1u32){
                 Text(content:plugin.entry["name"].as_str().unwrap_or("").to_string(),weight:Weight::Bold)
@@ -724,7 +722,6 @@ pub fn BrowseMarketplace(
             View(flex_direction:FlexDirection::Column){#(options.iter().enumerate().map(|(i,o)|element!{View{Text(content:if details_menu_index.get()==i{"> "}else{"  "}) Text(content:if is_installing.get()&&o.action=="install"{ "Installing…" }else{o.label},weight:if details_menu_index.get()==i{Weight::Bold}else{Weight::Normal})}}))}
             View(margin_top:1u32,padding_left:1u32){Byline{ConfigurableShortcutHint(action:"select:accept".to_string(),context:"Select".to_string(),fallback:"Enter".to_string(),description:"select".to_string(),dim:true) ConfigurableShortcutHint(action:"confirm:no".to_string(),context:"Confirmation".to_string(),fallback:"Esc".to_string(),description:"back".to_string(),dim:true)}}
         }}.into_any();
-        }
     }
     if available_plugins.read().is_empty() {
         return element!{View(flex_direction:FlexDirection::Column){

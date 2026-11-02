@@ -155,7 +155,7 @@ pub fn register_hook_event_handler(handler: Option<HookEventHandler>) {
         let mut state = HOOK_EVENT_STATE.lock().expect("hook event state poisoned");
         state.event_handler = handler.clone();
         if handler.is_some() {
-            state.pending_events.drain(..).collect::<Vec<_>>()
+            std::mem::take(&mut state.pending_events)
         } else {
             Vec::new()
         }

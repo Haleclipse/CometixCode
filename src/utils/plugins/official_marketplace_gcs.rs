@@ -134,14 +134,15 @@ pub fn classify_gcs_error(error: &anyhow::Error) -> String {
         }
         return "network".into();
     }
-    if let Some(code) = crate::utils::errors::get_errno_code(error) {
-        if code.starts_with('E') && code[1..].bytes().all(|b| b.is_ascii_uppercase()) {
-            return if KNOWN_FS_CODES.contains(&code) {
-                format!("fs_{code}")
-            } else {
-                "fs_other".into()
-            };
-        }
+    if let Some(code) = crate::utils::errors::get_errno_code(error)
+        && code.starts_with('E')
+        && code[1..].bytes().all(|b| b.is_ascii_uppercase())
+    {
+        return if KNOWN_FS_CODES.contains(&code) {
+            format!("fs_{code}")
+        } else {
+            "fs_other".into()
+        };
     }
     if error.is::<crate::utils::dxt::zip::ZipParseError>() {
         return "zip_parse".into();

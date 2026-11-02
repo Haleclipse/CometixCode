@@ -355,9 +355,8 @@ mod tests {
                 let _ = std::fs::remove_dir_all(&self.0);
             }
         }
-        let root = TestDir(
-            std::env::temp_dir().join(format!("nyan-hook-swap-{}", uuid::Uuid::new_v4())),
-        );
+        let root =
+            TestDir(std::env::temp_dir().join(format!("nyan-hook-swap-{}", uuid::Uuid::new_v4())));
         std::fs::create_dir_all(root.path().join("config")).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.path().join("config"));
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");

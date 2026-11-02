@@ -89,8 +89,7 @@ pub fn add_to_history_with_pasted(
 ) {
     if !history_write_enabled()
         || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY")
-                .as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY").as_deref(),
         )
     {
         return;
@@ -256,7 +255,9 @@ fn pasted_contents_from_json(value: &serde_json::Value) -> BTreeMap<usize, Paste
 }
 
 fn history_write_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_WRITE_ENABLED").as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("NYAN_WRITE_ENABLED").as_deref(),
+    )
 }
 
 fn append_log_entry(entry: &LogEntry) -> anyhow::Result<()> {
@@ -367,7 +368,7 @@ mod tests {
 
     #[test]
     fn find_history_match_skips_seen_entries() {
-        let seen = vec!["hello world".to_string()];
+        let seen = ["hello world".to_string()];
         let entry = HistoryEntry {
             display: "hello world".to_string(),
             timestamp_ms: 0,

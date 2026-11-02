@@ -395,10 +395,8 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_cwd = crate::bootstrap::state::get_original_cwd();
         let previous_session_id = crate::bootstrap::state::get_session_id();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-read-mcp-resource-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-read-mcp-resource-{}", uuid::Uuid::new_v4()));
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(&root);
         crate::bootstrap::state::set_original_cwd("/tmp/nyan-project");
         crate::bootstrap::state::set_session_id("session-mcp-resource-binary-test");

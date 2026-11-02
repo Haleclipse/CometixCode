@@ -178,7 +178,6 @@ pub mod suggestions;
 pub mod swarm;
 // @nyan: strict encoding detection shared by Read / Grep / the retrieval
 // index (docs/nyan/tool-io.md T5).
-pub mod text_decode;
 pub mod system_prompt;
 pub mod system_prompt_type;
 pub mod system_theme;
@@ -194,6 +193,7 @@ pub mod terminal;
 pub mod terminal_notification;
 #[cfg(test)]
 pub mod test_env;
+pub mod text_decode;
 pub mod theme;
 pub mod thinking;
 pub mod timeouts;

@@ -427,7 +427,10 @@ mod tests {
     /// a line counting key presses (so each key produces a frame) and
     /// listing the `onComplete` results.
     #[component]
-    fn SandboxHarness(props: &SandboxHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn SandboxHarness(
+        props: &SandboxHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             KeybindingRuntime::with_default_bindings(),
@@ -452,7 +455,10 @@ mod tests {
     }
 
     #[component]
-    fn ResultsEcho(props: &SandboxHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn ResultsEcho(
+        props: &SandboxHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let mut keys = hooks.use_state(|| 0usize);
         hooks.use_terminal_events(move |event| {
             if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
@@ -485,9 +491,12 @@ mod tests {
                 let Some(code) = keys_in_order.get(frames.len() - 1) else {
                     break;
                 };
-                keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code)))
-                    .await
-                    .unwrap();
+                keys.send(TerminalEvent::Key(KeyEvent::new(
+                    KeyEventKind::Press,
+                    *code,
+                )))
+                .await
+                .unwrap();
             }
             frames
         });
@@ -551,7 +560,11 @@ mod tests {
 
     #[test]
     fn sandbox_mode_values_round_trip() {
-        for mode in [SandboxMode::AutoAllow, SandboxMode::Regular, SandboxMode::Disabled] {
+        for mode in [
+            SandboxMode::AutoAllow,
+            SandboxMode::Regular,
+            SandboxMode::Disabled,
+        ] {
             assert_eq!(SandboxMode::from_value(mode.value()), Some(mode));
         }
     }
@@ -580,7 +593,9 @@ mod tests {
         );
         assert_eq!(
             results,
-            vec![Some("✓ Sandbox enabled with regular bash permissions".to_string())]
+            vec![Some(
+                "✓ Sandbox enabled with regular bash permissions".to_string()
+            )]
         );
     }
 

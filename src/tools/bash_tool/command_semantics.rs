@@ -44,7 +44,6 @@ pub fn interpret_command_result(
 /// Maps to CC local `extractBaseCommand(command)`.
 pub fn extract_base_command(command: &str) -> String {
     command
-        .trim()
         .split_whitespace()
         .next()
         .unwrap_or_default()

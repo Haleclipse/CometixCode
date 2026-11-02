@@ -125,10 +125,8 @@ mod tests {
     #[test]
     fn keybindings_prepare_uses_exclusive_create_and_preserves_existing_file() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-keybindings-command-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-keybindings-command-{}", uuid::Uuid::new_v4()));
         let _restore = RestoreEnv {
             config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
             write_enabled: Some(EnvVarGuard::set("NYAN_WRITE_ENABLED", "1")),
@@ -286,10 +284,8 @@ mod tests {
             write_enabled: Some(EnvVarGuard::set("NYAN_WRITE_ENABLED", "1")),
             root: root.clone(),
         };
-        let script = std::env::temp_dir().join(format!(
-            "nyan-keybindings-editor-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let script =
+            std::env::temp_dir().join(format!("nyan-keybindings-editor-{}", uuid::Uuid::new_v4()));
         let _remove_script = RemoveScript(script.clone());
         crate::utils::config::clear_global_config_cache_for_testing();
         crate::keybindings::load_user_bindings::reset_keybinding_loader_for_testing();

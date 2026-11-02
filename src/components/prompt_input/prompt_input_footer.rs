@@ -935,10 +935,9 @@ mod tests {
         raw_selection: Option<crate::state::app_state_store::FooterItem>,
         tasks_selected: bool,
     ) -> Option<Color> {
-        let canvas = element!(FooterWithTasksPill(
-            raw_selection: raw_selection,
-            tasks_selected: tasks_selected,
-        ))
+        let canvas = element!(
+            FooterWithTasksPill(raw_selection: raw_selection, tasks_selected: tasks_selected)
+        )
         .render(Some(100));
         let text = canvas.to_string();
         let (y, line) = text

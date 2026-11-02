@@ -145,10 +145,11 @@ pub async fn load_plugins_from_marketplaces(
         allowlist.is_some() || blocklist.as_ref().is_some_and(|list| !list.is_empty());
     let mut names = Vec::new();
     for (id, _) in &entries {
-        if let Some(name) = super::plugin_identifier::parse_plugin_identifier(id).marketplace {
-            if !name.is_empty() && !names.contains(&name) {
-                names.push(name);
-            }
+        if let Some(name) = super::plugin_identifier::parse_plugin_identifier(id).marketplace
+            && !name.is_empty()
+            && !names.contains(&name)
+        {
+            names.push(name);
         }
     }
     let catalogs: std::collections::HashMap<_, _> =
@@ -193,29 +194,29 @@ pub async fn load_plugins_from_marketplaces(
                     });
                 return None;
             }
-            if let Some(config) = config {
-                if !is_source_allowed_by_policy(&config["source"]) {
-                    let blocked = is_source_in_blocklist(&config["source"]);
-                    errors
-                        .lock()
-                        .unwrap()
-                        .push(PluginError::MarketplaceBlockedByPolicy {
-                            source: id.clone(),
-                            plugin: Some(name),
-                            marketplace,
-                            blocked_by_blocklist: Some(blocked),
-                            allowed_sources: if blocked {
-                                vec![]
-                            } else {
-                                get_strict_known_marketplaces()
-                                    .into_iter()
-                                    .flatten()
-                                    .map(|s| format_source_for_display(&s))
-                                    .collect()
-                            },
-                        });
-                    return None;
-                }
+            if let Some(config) = config
+                && !is_source_allowed_by_policy(&config["source"])
+            {
+                let blocked = is_source_in_blocklist(&config["source"]);
+                errors
+                    .lock()
+                    .unwrap()
+                    .push(PluginError::MarketplaceBlockedByPolicy {
+                        source: id.clone(),
+                        plugin: Some(name),
+                        marketplace,
+                        blocked_by_blocklist: Some(blocked),
+                        allowed_sources: if blocked {
+                            vec![]
+                        } else {
+                            get_strict_known_marketplaces()
+                                .into_iter()
+                                .flatten()
+                                .map(|s| format_source_for_display(&s))
+                                .collect()
+                        },
+                    });
+                return None;
             }
             let result =
                 if let (Some(Some(catalog)), Some(config)) = (catalogs.get(&marketplace), config) {
@@ -404,10 +405,10 @@ pub fn get_versioned_zip_cache_path(plugin_id: &str, version: &str) -> PathBuf {
 async fn probe_seed_cache(plugin_id: &str, version: &str) -> Option<PathBuf> {
     for base in super::plugin_directories::get_plugin_seed_dirs() {
         let path = get_versioned_cache_path_in(&base, plugin_id, version);
-        if let Ok(mut entries) = tokio::fs::read_dir(&path).await {
-            if entries.next_entry().await.ok().flatten().is_some() {
-                return Some(path);
-            }
+        if let Ok(mut entries) = tokio::fs::read_dir(&path).await
+            && entries.next_entry().await.ok().flatten().is_some()
+        {
+            return Some(path);
         }
     }
     None
@@ -420,12 +421,11 @@ pub async fn probe_seed_cache_any_version(plugin_id: &str) -> Option<PathBuf> {
         if let Ok(mut entries) = tokio::fs::read_dir(parent).await {
             let first = entries.next_entry().await.ok().flatten();
             let next = entries.next_entry().await.ok().flatten();
-            if let (Some(first), None) = (first, next) {
-                if let Ok(mut children) = tokio::fs::read_dir(first.path()).await {
-                    if children.next_entry().await.ok().flatten().is_some() {
-                        return Some(first.path());
-                    }
-                }
+            if let (Some(first), None) = (first, next)
+                && let Ok(mut children) = tokio::fs::read_dir(first.path()).await
+                && children.next_entry().await.ok().flatten().is_some()
+            {
+                return Some(first.path());
             }
         }
     }
@@ -1024,12 +1024,12 @@ pub async fn cache_plugin(
     let sha = match install {
         Ok(sha) => sha,
         Err(error) => {
-            if tokio::fs::try_exists(&temp).await.unwrap_or(false) {
-                if let Err(cleanup) = remove_path_force(&temp).await {
-                    crate::utils::debug::log_for_debugging(&format!(
-                        "Failed to clean up installation: {cleanup}"
-                    ));
-                }
+            if tokio::fs::try_exists(&temp).await.unwrap_or(false)
+                && let Err(cleanup) = remove_path_force(&temp).await
+            {
+                crate::utils::debug::log_for_debugging(&format!(
+                    "Failed to clean up installation: {cleanup}"
+                ));
             }
             return Err(error);
         }
@@ -1178,7 +1178,7 @@ async fn validate_plugin_paths(
                 source: source.into(),
                 plugin: Some(name.into()),
                 path: path.display().to_string(),
-                component: component.clone(),
+                component,
             });
         }
     }
@@ -1734,8 +1734,7 @@ pub fn load_all_plugins_cache_only()
 {
     use futures::FutureExt;
     let promise = if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SYNC_PLUGIN_INSTALL")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_SYNC_PLUGIN_INSTALL").as_deref(),
     ) {
         return futures::future::Either::Left(load_all_plugins());
     } else {
@@ -2421,7 +2420,10 @@ mod tests {
 
     #[test]
     fn versioned_plugin_paths_match_official_bun_utf16_regex_and_join() {
-        let oracle:serde_json::Value=serde_json::from_str(include_str!("../../../tests/fixtures/oracles/plugin-installed-0914/bun-oracle.json")).unwrap();
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/plugin-installed-0914/bun-oracle.json"
+        ))
+        .unwrap();
         // Verbatim source getVersionedCachePathIn :139-165, including source
         // regex's UTF-16 code-unit replacement and Node lexical dot segments.
         for row in oracle["pathCases"].as_array().unwrap() {

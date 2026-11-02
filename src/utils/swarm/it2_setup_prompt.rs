@@ -70,8 +70,9 @@ impl It2SetupPromptRequest {
 }
 
 /// Maps to: CC `SetupStep` union in `It2SetupPrompt.tsx`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum It2SetupStep {
+    #[default]
     Initial,
     Installing,
     InstallFailed,
@@ -80,12 +81,6 @@ pub enum It2SetupStep {
     Verifying,
     Success,
     Failed,
-}
-
-impl Default for It2SetupStep {
-    fn default() -> Self {
-        Self::Initial
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -541,15 +536,12 @@ pub fn It2SetupPrompt<'a>(
                     if matches!(
                         current_step,
                         It2SetupStep::Initial | It2SetupStep::InstallFailed | It2SetupStep::Failed
-                    ) {
-                        if let Some(option) = options.get(focused_index.get()) {
-                            if let Some(action) =
-                                It2SetupAction::from_value(&option.value, current_step)
-                            {
-                                pending_action.set(Some(action));
-                                event.stop_propagation();
-                            }
-                        }
+                    ) && let Some(option) = options.get(focused_index.get())
+                        && let Some(action) =
+                            It2SetupAction::from_value(&option.value, current_step)
+                    {
+                        pending_action.set(Some(action));
+                        event.stop_propagation();
                     }
                 }
                 KeyCode::Up | KeyCode::Char('k')

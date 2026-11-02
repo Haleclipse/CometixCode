@@ -354,10 +354,7 @@ mod tests {
 
         let snapshot = crate::utils::process_env::snapshot();
         let (spelling, value) = snapshot.entry(key).unwrap();
-        assert_eq!(
-            spelling,
-            std::ffi::OsStr::new("Nyan_Env_Var_Guard_Windows")
-        );
+        assert_eq!(spelling, std::ffi::OsStr::new("Nyan_Env_Var_Guard_Windows"));
         assert_eq!(value, std::ffi::OsStr::new("before"));
         let keys = snapshot
             .iter()

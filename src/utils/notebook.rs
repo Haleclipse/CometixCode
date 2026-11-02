@@ -294,28 +294,27 @@ fn process_cell(
         outputs: None,
     };
 
-    if is_code {
-        if let Some(raw_outputs) = property(cell, "outputs").filter(|value| !value.is_null()) {
-            if has_truthy_length(raw_outputs) {
-                let Value::Array(raw_outputs) = raw_outputs else {
-                    return Err("cell.outputs.map is not a function".to_string());
-                };
-                let outputs = raw_outputs
-                    .iter()
-                    .map(process_output)
-                    .collect::<Result<Vec<_>, _>>()?;
-                if !include_large_outputs && is_large_outputs(&outputs)? {
-                    cell_data.outputs = Some(vec![Some(NotebookCellSourceOutput {
-                        output_type: Value::String("stream".to_string()),
-                        text: Some(Value::String(format!(
-                            "Outputs are too large to include. Use Bash with: cat <notebook_path> | jq '.cells[{index}].outputs'"
-                        ))),
-                        image: None,
-                    })]);
-                } else {
-                    cell_data.outputs = Some(outputs);
-                }
-            }
+    if is_code
+        && let Some(raw_outputs) = property(cell, "outputs").filter(|value| !value.is_null())
+        && has_truthy_length(raw_outputs)
+    {
+        let Value::Array(raw_outputs) = raw_outputs else {
+            return Err("cell.outputs.map is not a function".to_string());
+        };
+        let outputs = raw_outputs
+            .iter()
+            .map(process_output)
+            .collect::<Result<Vec<_>, _>>()?;
+        if !include_large_outputs && is_large_outputs(&outputs)? {
+            cell_data.outputs = Some(vec![Some(NotebookCellSourceOutput {
+                output_type: Value::String("stream".to_string()),
+                text: Some(Value::String(format!(
+                    "Outputs are too large to include. Use Bash with: cat <notebook_path> | jq '.cells[{index}].outputs'"
+                ))),
+                image: None,
+            })]);
+        } else {
+            cell_data.outputs = Some(outputs);
         }
     }
 
@@ -392,15 +391,13 @@ pub fn map_notebook_cells_to_tool_result(
         if let Some(previous) = blocks
             .last_mut()
             .filter(|block| block.get("type").and_then(Value::as_str) == Some("text"))
-        {
-            if let Some(previous_text) = previous
+            && let Some(previous_text) = previous
                 .get("text")
                 .and_then(Value::as_str)
                 .map(str::to_string)
-            {
-                previous["text"] = Value::String(format!("{previous_text}\n{text}"));
-                return;
-            }
+        {
+            previous["text"] = Value::String(format!("{previous_text}\n{text}"));
+            return;
         }
         blocks.push(serde_json::json!({"text": text, "type": "text"}));
     }

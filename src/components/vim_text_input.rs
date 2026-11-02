@@ -191,7 +191,7 @@ mod tests {
 
     #[component]
     fn VimTextInputHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let value = hooks.use_state(|| String::new());
+        let value = hooks.use_state(String::new);
         let cursor_offset = hooks.use_state(|| 0usize);
         element! {
             ContextProvider(value: Context::owned(*theme::current())) {

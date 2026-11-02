@@ -415,12 +415,12 @@ fn extract_find_paths(args: &[String]) -> Vec<String> {
                 continue;
             }
             found_non_global_flag = true;
-            if path_flags.contains(&arg.as_str()) || is_newer_variant(arg) {
-                if let Some(next) = args.get(index + 1) {
-                    paths.push(next.clone());
-                    index += 2;
-                    continue;
-                }
+            if (path_flags.contains(&arg.as_str()) || is_newer_variant(arg))
+                && let Some(next) = args.get(index + 1)
+            {
+                paths.push(next.clone());
+                index += 2;
+                continue;
             }
             index += 1;
             continue;
@@ -1382,10 +1382,8 @@ mod tests {
 
     #[test]
     fn ast_path_constraints_validate_redirects_and_wrapped_commands() {
-        let allowed = std::env::temp_dir().join(format!(
-            "nyan-ast-path-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let allowed =
+            std::env::temp_dir().join(format!("nyan-ast-path-{}", uuid::Uuid::new_v4().simple()));
         let outside = std::env::temp_dir().join(format!(
             "nyan-ast-path-outside-{}",
             uuid::Uuid::new_v4().simple()

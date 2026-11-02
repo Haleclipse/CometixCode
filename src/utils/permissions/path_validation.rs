@@ -172,13 +172,13 @@ pub fn is_path_allowed(
         };
     }
 
-    if operation_type != FileOperationType::Read {
-        if let Some(reason) = check_editable_internal_path(resolved_path, &cwd) {
-            return PathCheckResult {
-                allowed: true,
-                decision_reason: Some(reason),
-            };
-        }
+    if operation_type != FileOperationType::Read
+        && let Some(reason) = check_editable_internal_path(resolved_path, &cwd)
+    {
+        return PathCheckResult {
+            allowed: true,
+            decision_reason: Some(reason),
+        };
     }
 
     if operation_type != FileOperationType::Read {
@@ -201,23 +201,23 @@ pub fn is_path_allowed(
 
     let is_in_working_dir =
         path_in_allowed_working_path(resolved_path, context, precomputed_paths_to_check);
-    if is_in_working_dir {
-        if operation_type == FileOperationType::Read || context.mode == PermissionMode::AcceptEdits
-        {
-            return PathCheckResult {
-                allowed: true,
-                decision_reason: None,
-            };
-        }
+    if is_in_working_dir
+        && (operation_type == FileOperationType::Read
+            || context.mode == PermissionMode::AcceptEdits)
+    {
+        return PathCheckResult {
+            allowed: true,
+            decision_reason: None,
+        };
     }
 
-    if operation_type == FileOperationType::Read {
-        if let Some(reason) = check_readable_internal_path(resolved_path, &cwd) {
-            return PathCheckResult {
-                allowed: true,
-                decision_reason: Some(reason),
-            };
-        }
+    if operation_type == FileOperationType::Read
+        && let Some(reason) = check_readable_internal_path(resolved_path, &cwd)
+    {
+        return PathCheckResult {
+            allowed: true,
+            decision_reason: Some(reason),
+        };
     }
 
     if operation_type != FileOperationType::Read

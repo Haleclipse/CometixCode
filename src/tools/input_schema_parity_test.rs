@@ -566,9 +566,11 @@ fn web_tools_keep_exactly_the_documented_nyan_projections() {
 
     let search = crate::tools::web_search_tool::web_search_tool_schema().input_schema;
     assert_eq!(search["properties"]["max_results"]["maximum"], 20);
-    assert!(search["required"]
-        .as_array()
-        .is_some_and(|required| !required.iter().any(|key| key == "max_results")));
+    assert!(
+        search["required"]
+            .as_array()
+            .is_some_and(|required| !required.iter().any(|key| key == "max_results"))
+    );
     let stripped = strip_nyan_extensions("WebSearchTool", search.clone());
     assert_eq!(stripped, oracle_schema("WebSearchTool"));
 }

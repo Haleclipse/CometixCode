@@ -101,7 +101,7 @@ pub fn InvalidConfigDialog<'a>(
         }
     });
 
-    let choice = { pending_choice.read().clone() };
+    let choice = { *pending_choice.read() };
     if let Some(choice) = choice {
         pending_choice.set(None);
         match choice {

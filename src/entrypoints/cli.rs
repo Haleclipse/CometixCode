@@ -174,7 +174,10 @@ mod tests {
         let var = crate::utils::process_env::var;
         apply_cli_bootstrap_env();
         assert_eq!(var("COREPACK_ENABLE_AUTO_PIN").as_deref(), Some("0"));
-        assert_eq!(var("NoDefaultCurrentDirectoryInExePath").as_deref(), Some("1"));
+        assert_eq!(
+            var("NoDefaultCurrentDirectoryInExePath").as_deref(),
+            Some("1")
+        );
         assert_eq!(var("NODE_OPTIONS").as_deref(), Some("--trace-warnings"));
 
         crate::utils::process_env::set("CLAUDE_CODE_REMOTE", "true");

@@ -255,10 +255,10 @@ pub(crate) async fn get_url_markdown_content(
         anyhow::bail!("Invalid URL");
     }
 
-    if let Ok(mut cache) = url_cache().lock() {
-        if let Some(entry) = cache.get(url) {
-            return Ok(UrlMarkdownContent::Fetched(entry));
-        }
+    if let Ok(mut cache) = url_cache().lock()
+        && let Some(entry) = cache.get(url)
+    {
+        return Ok(UrlMarkdownContent::Fetched(entry));
     }
 
     let mut parsed = reqwest::Url::parse(url)?;

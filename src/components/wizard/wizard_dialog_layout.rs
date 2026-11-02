@@ -43,8 +43,8 @@ pub fn WizardDialogLayout(
             .or_else(|| Some(crate::utils::theme::current().suggestion))
     });
     let subtitle = props.subtitle.clone();
-    let body = props.children.drain(..).collect::<Vec<_>>();
-    let footer_instructions = props.footer_instructions.drain(..).collect::<Vec<_>>();
+    let body = std::mem::take(&mut props.children);
+    let footer_instructions = std::mem::take(&mut props.footer_instructions);
     let footer_text = props.footer_text.clone();
     let wizard_for_back = wizard.clone();
 

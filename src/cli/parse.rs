@@ -175,10 +175,10 @@ pub fn parse_cli_config(argv: &[String]) -> CliConfig {
             }
             other if other.starts_with("--debug=") => {
                 config.debug = true;
-                if let Some(v) = strip_eq("--debug", other) {
-                    if !v.is_empty() {
-                        config.debug_filter = Some(v);
-                    }
+                if let Some(v) = strip_eq("--debug", other)
+                    && !v.is_empty()
+                {
+                    config.debug_filter = Some(v);
                 }
             }
             other if other.starts_with("--output-format") => {

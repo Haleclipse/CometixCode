@@ -92,17 +92,21 @@ pub fn expand_path(path: &str, base_dir: Option<&Path>) -> Result<PathBuf, Strin
 pub fn get_directory_for_path(path: &str) -> String {
     let absolute = expand_path(path, None).unwrap_or_else(|_| PathBuf::from(path));
     let display = absolute.display().to_string();
-    if !(display.starts_with("\\\\") || display.starts_with("//")) {
-        if crate::utils::fs_operations::get_fs_implementation()
+    if !(display.starts_with("\\\\") || display.starts_with("//"))
+        && crate::utils::fs_operations::get_fs_implementation()
             .stat_sync(&absolute)
             .is_ok_and(|metadata| metadata.is_dir())
-        {
-            return display;
-        }
+    {
+        return display;
     }
     crate::utils::fs_operations::native::dirname(&absolute)
         .display()
         .to_string()
+}
+
+/// Maps to: CC `utils/path.ts:133-135#containsPathTraversal`.
+pub fn contains_path_traversal(path: &str) -> bool {
+    path.split(['/', '\\']).any(|segment| segment == "..")
 }
 
 #[cfg(test)]
@@ -212,9 +216,4 @@ mod tests {
             "../../a"
         );
     }
-}
-
-/// Maps to: CC `utils/path.ts:133-135#containsPathTraversal`.
-pub fn contains_path_traversal(path: &str) -> bool {
-    path.split(['/', '\\']).any(|segment| segment == "..")
 }

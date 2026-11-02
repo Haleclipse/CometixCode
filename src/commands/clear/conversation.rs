@@ -75,11 +75,12 @@ fn collect_running_local_agent_repoints(
         if should_kill_task(task) {
             continue;
         }
-        if let TaskState::Other(other) = task.as_ref() {
-            if other.task_type == "local_agent" && other.status == "running" && !other.id.is_empty()
-            {
-                out.push((other.id.clone(), other.id.clone()));
-            }
+        if let TaskState::Other(other) = task.as_ref()
+            && other.task_type == "local_agent"
+            && other.status == "running"
+            && !other.id.is_empty()
+        {
+            out.push((other.id.clone(), other.id.clone()));
         }
     }
     out

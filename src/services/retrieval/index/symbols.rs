@@ -79,21 +79,21 @@ impl Walker<'_> {
                 .get_or_insert_with(|| format!("syntax tree deeper than {MAX_DEPTH} levels"));
             return;
         }
-        if let Some((kind, name_node)) = definition(self.language, node, self.src) {
-            if let Some(name) = self.text_of(name_node) {
-                self.definition_names.insert(name_node.id());
-                self.out.symbols.push(SymbolRecord {
-                    name: name.clone(),
-                    kind: kind.to_string(),
-                    start_line: node.start_position().row + 1,
-                    end_line: end_line(node),
-                    parent: self.stack.last().map(|(parent, _)| parent.clone()),
-                });
-                self.stack.push((name, kind));
-                self.visit_children(node, depth);
-                self.stack.pop();
-                return;
-            }
+        if let Some((kind, name_node)) = definition(self.language, node, self.src)
+            && let Some(name) = self.text_of(name_node)
+        {
+            self.definition_names.insert(name_node.id());
+            self.out.symbols.push(SymbolRecord {
+                name: name.clone(),
+                kind: kind.to_string(),
+                start_line: node.start_position().row + 1,
+                end_line: end_line(node),
+                parent: self.stack.last().map(|(parent, _)| parent.clone()),
+            });
+            self.stack.push((name, kind));
+            self.visit_children(node, depth);
+            self.stack.pop();
+            return;
         }
         self.record_reference(node);
         self.visit_children(node, depth);
@@ -120,9 +120,9 @@ impl Walker<'_> {
             return;
         }
         if self.out.references.len() >= MAX_REFERENCES {
-            self.out
-                .partial
-                .get_or_insert_with(|| format!("more than {MAX_REFERENCES} identifier occurrences"));
+            self.out.partial.get_or_insert_with(|| {
+                format!("more than {MAX_REFERENCES} identifier occurrences")
+            });
             return;
         }
         let Some(name) = self.text_of(node) else {
@@ -167,9 +167,11 @@ fn end_line(node: Node) -> usize {
 fn definition<'t>(language: &str, node: Node<'t>, src: &[u8]) -> Option<(&'static str, Node<'t>)> {
     let named = |kind: &'static str| node.child_by_field_name("name").map(|name| (kind, name));
     match (language, node.kind()) {
-        ("rust", "function_item") => {
-            named(if inside_impl_or_trait(node) { "method" } else { "function" })
-        }
+        ("rust", "function_item") => named(if inside_impl_or_trait(node) {
+            "method"
+        } else {
+            "function"
+        }),
         ("rust", "struct_item") => named("struct"),
         ("rust", "union_item") => named("union"),
         ("rust", "enum_item") => named("enum"),
@@ -188,9 +190,10 @@ fn definition<'t>(language: &str, node: Node<'t>, src: &[u8]) -> Option<(&'stati
             Some(("impl", target))
         }
 
-        ("typescript" | "javascript", "function_declaration" | "generator_function_declaration") => {
-            named("function")
-        }
+        (
+            "typescript" | "javascript",
+            "function_declaration" | "generator_function_declaration",
+        ) => named("function"),
         ("typescript" | "javascript", "class_declaration" | "abstract_class_declaration") => {
             named("class")
         }
@@ -210,9 +213,11 @@ fn definition<'t>(language: &str, node: Node<'t>, src: &[u8]) -> Option<(&'stati
             .flatten()
         }
 
-        ("python", "function_definition") => {
-            named(if inside_kind(node, "class_definition") { "method" } else { "function" })
-        }
+        ("python", "function_definition") => named(if inside_kind(node, "class_definition") {
+            "method"
+        } else {
+            "function"
+        }),
         ("python", "class_definition") => named("class"),
 
         ("go", "function_declaration") => named("function"),
@@ -277,13 +282,16 @@ fn heading_content<'t>(section: Node<'t>, _src: &[u8]) -> Option<Node<'t>> {
         return Some(content);
     }
     let mut cursor = heading.walk();
-    heading.children(&mut cursor).find(|child| child.kind() == "inline")
+    heading
+        .children(&mut cursor)
+        .find(|child| child.kind() == "inline")
 }
 
 /// True when `node` is the called name of a call expression, either directly
 /// (`foo()`) or as the member of a callee (`value.foo()`, `pkg.foo()`).
 fn is_callee(node: Node) -> bool {
-    let is = |candidate: Option<Node>, target: Node| candidate.is_some_and(|c| c.id() == target.id());
+    let is =
+        |candidate: Option<Node>, target: Node| candidate.is_some_and(|c| c.id() == target.id());
     let Some(parent) = node.parent() else {
         return false;
     };
@@ -357,7 +365,11 @@ mod tests {
 
     #[test]
     fn python_methods_and_typescript_arrow_functions() {
-        let python = parse("class A:\n    def go(self):\n        pass\n\ndef top():\n    A().go()\n", "python").unwrap();
+        let python = parse(
+            "class A:\n    def go(self):\n        pass\n\ndef top():\n    A().go()\n",
+            "python",
+        )
+        .unwrap();
         assert_eq!(
             names(&python),
             vec![("class", "A"), ("method", "go"), ("function", "top")]
@@ -375,12 +387,20 @@ mod tests {
 
     #[test]
     fn go_cpp_java_bash_and_markdown() {
-        let go = parse("package p\ntype T struct{}\nfunc (t T) Do() {}\nfunc Free() {}\n", "go").unwrap();
+        let go = parse(
+            "package p\ntype T struct{}\nfunc (t T) Do() {}\nfunc Free() {}\n",
+            "go",
+        )
+        .unwrap();
         assert_eq!(
             names(&go),
             vec![("type", "T"), ("method", "Do"), ("function", "Free")]
         );
-        let cpp = parse("namespace n {\nclass K {};\nint K::run(int x) { return x; }\n}\n", "cpp").unwrap();
+        let cpp = parse(
+            "namespace n {\nclass K {};\nint K::run(int x) { return x; }\n}\n",
+            "cpp",
+        )
+        .unwrap();
         assert!(names(&cpp).contains(&("namespace", "n")));
         assert!(names(&cpp).contains(&("class", "K")));
         assert!(names(&cpp).contains(&("function", "run")));
@@ -392,7 +412,11 @@ mod tests {
         let markdown = parse("# Title\ntext\n## Sub\nmore\n# Next\n", "markdown").unwrap();
         assert_eq!(
             names(&markdown),
-            vec![("heading", "Title"), ("heading", "Sub"), ("heading", "Next")]
+            vec![
+                ("heading", "Title"),
+                ("heading", "Sub"),
+                ("heading", "Next")
+            ]
         );
         assert_eq!(
             (markdown.symbols[0].start_line, markdown.symbols[0].end_line),

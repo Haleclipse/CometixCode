@@ -472,22 +472,21 @@ mod tests {
                 break;
             }
             request.extend_from_slice(&chunk[..count]);
-            if expected_length.is_none() {
-                if let Some(header_end) =
+            if expected_length.is_none()
+                && let Some(header_end) =
                     request.windows(4).position(|window| window == b"\r\n\r\n")
-                {
-                    let headers = String::from_utf8_lossy(&request[..header_end]);
-                    let content_length = headers
-                        .lines()
-                        .find_map(|line| {
-                            let (name, value) = line.split_once(':')?;
-                            name.eq_ignore_ascii_case("content-length")
-                                .then(|| value.trim().parse::<usize>().ok())
-                                .flatten()
-                        })
-                        .unwrap_or_default();
-                    expected_length = Some(header_end + 4 + content_length);
-                }
+            {
+                let headers = String::from_utf8_lossy(&request[..header_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                    .unwrap_or_default();
+                expected_length = Some(header_end + 4 + content_length);
             }
             if expected_length.is_some_and(|length| request.len() >= length) {
                 break;
@@ -691,7 +690,7 @@ mod tests {
         let _foundry = EnvVarGuard::set("CLAUDE_CODE_USE_FOUNDRY", "1");
         let _base_url = EnvVarGuard::set(
             "ANTHROPIC_FOUNDRY_BASE_URL",
-            &format!("{endpoint}/anthropic/"),
+            format!("{endpoint}/anthropic/"),
         );
         let _api_key = EnvVarGuard::set("ANTHROPIC_FOUNDRY_API_KEY", "foundry-test-key");
         let _model = EnvVarGuard::set("ANTHROPIC_MODEL", "claude-sonnet-4-5");

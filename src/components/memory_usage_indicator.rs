@@ -84,10 +84,10 @@ pub fn memory_hint_visible_now() -> bool {
 /// Bump the scoped wake on visibility flips only (visible→visible sample
 /// changes must not wake the height owner).
 fn bump_memory_layout_if_needed(wake: Option<&FooterLayoutWake>, visible: bool, was_visible: bool) {
-    if visible != was_visible {
-        if let Some(wake) = wake {
-            wake.bump();
-        }
+    if visible != was_visible
+        && let Some(wake) = wake
+    {
+        wake.bump();
     }
 }
 

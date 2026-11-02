@@ -8,8 +8,8 @@
 use crate::commands::{
     Command, CommandKind, CommandSource, format_description_with_source, get_command_name,
 };
-use crate::utils::suggestions::skill_usage_tracking::get_skill_usage_score;
 use crate::utils::fuse::{BitapSearch, FuseKey, FuseOptions, KeyStore};
+use crate::utils::suggestions::skill_usage_tracking::get_skill_usage_score;
 use std::cmp::Ordering;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -143,7 +143,11 @@ impl CommandSuggestionIndex {
                     .collect::<Vec<_>>();
                 CommandSearchEntry {
                     command_index,
-                    parts: (parts.len() > 1).then_some(parts).unwrap_or_default(),
+                    parts: if parts.len() > 1 {
+                        parts
+                    } else {
+                        Default::default()
+                    },
                     command_name,
                     aliases: command
                         .aliases
@@ -499,15 +503,14 @@ fn command_id(command: &Command) -> String {
     let name = get_command_name(command);
     match command.kind {
         CommandKind::Prompt => {
-            if command.source == CommandSource::Plugin {
-                if let Some(repository) = command
+            if command.source == CommandSource::Plugin
+                && let Some(repository) = command
                     .plugin_info
                     .as_ref()
                     .map(|info| info.repository.as_str())
                     .filter(|repository| !repository.is_empty())
-                {
-                    return format!("{name}:plugin:{repository}");
-                }
+            {
+                return format!("{name}:plugin:{repository}");
             }
             format!("{name}:{:?}", command.source)
         }

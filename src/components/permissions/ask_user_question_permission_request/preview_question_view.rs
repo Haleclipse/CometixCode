@@ -93,7 +93,11 @@ pub fn PreviewQuestionView(
         focused_index.set(
             selected_value
                 .as_ref()
-                .and_then(|selected| all_options.iter().position(|option| &option.label == selected))
+                .and_then(|selected| {
+                    all_options
+                        .iter()
+                        .position(|option| &option.label == selected)
+                })
                 .unwrap_or(0),
         );
     }
@@ -305,9 +309,7 @@ pub fn PreviewQuestionView(
             } else if *code == KeyCode::Enter {
                 event.prevent_default();
                 handle_select_option(current);
-            } else if *code == KeyCode::Char('n')
-                && !ctrl
-                && !modifiers.contains(KeyModifiers::ALT)
+            } else if *code == KeyCode::Char('n') && !ctrl && !modifiers.contains(KeyModifiers::ALT)
             {
                 event.prevent_default();
                 notes_draft.set(notes_value.clone());

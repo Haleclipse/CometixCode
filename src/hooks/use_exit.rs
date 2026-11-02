@@ -132,7 +132,9 @@ pub fn use_exit_on_ctrl_cd_with_keybindings_on_exit(
         .map(|runtime| runtime.clone());
     let press = move |runtime: Option<KeybindingRuntime>, action_is_exit: bool| {
         move || {
-            let keys = runtime.as_ref().and_then(KeybindingRuntime::dispatching_keys);
+            let keys = runtime
+                .as_ref()
+                .and_then(KeybindingRuntime::dispatching_keys);
             let (counter, mut key) = if action_is_exit {
                 (ctrl_d, ctrl_d_key)
             } else {
@@ -148,7 +150,10 @@ pub fn use_exit_on_ctrl_cd_with_keybindings_on_exit(
             "app:interrupt".to_string(),
             Box::new(press(runtime.clone(), false)),
         ),
-        ("app:exit".to_string(), Box::new(press(runtime.clone(), true))),
+        (
+            "app:exit".to_string(),
+            Box::new(press(runtime.clone(), true)),
+        ),
     ];
     use_keybindings(hooks, runtime, handlers, ContextName::Global, move || {
         is_active
@@ -202,7 +207,9 @@ fn intern(text: String) -> &'static str {
     use std::sync::{LazyLock, Mutex};
     static TEXTS: LazyLock<Mutex<HashSet<&'static str>>> =
         LazyLock::new(|| Mutex::new(HashSet::new()));
-    let mut texts = TEXTS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut texts = TEXTS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(existing) = texts.get(text.as_str()) {
         return existing;
     }
@@ -233,7 +240,10 @@ mod tests {
         // Outside key dispatch: CC's name for the action.
         assert_eq!(exit_key_name(None, true), "Ctrl-D");
         assert_eq!(exit_key_name(None, false), "Ctrl-C");
-        assert_eq!(exit_hint_from_key_name(Some("f6")), Some("Press f6 again to exit"));
+        assert_eq!(
+            exit_hint_from_key_name(Some("f6")),
+            Some("Press f6 again to exit")
+        );
     }
 
     #[derive(Default, Props)]
@@ -283,11 +293,13 @@ mod tests {
                     ExitProbe(exits: Some(Arc::new(AtomicUsize::new(0))))
                 }
             };
-            let mut frames = Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(events)
-                    .with_size(80, 3)
-                    .with_ignore_ctrl_c(true),
-            ));
+            let mut frames = Box::pin(
+                app.mock_terminal_render_loop(
+                    MockTerminalConfig::with_events(events)
+                        .with_size(80, 3)
+                        .with_ignore_ctrl_c(true),
+                ),
+            );
             let mut sent = 0;
             let mut last = String::new();
             loop {

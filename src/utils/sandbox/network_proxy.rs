@@ -848,10 +848,10 @@ fn parse_no_proxy(raw: &str) -> NoProxyRules {
                 !prefix.is_empty() && prefix.bytes().all(|byte| byte.is_ascii_digit()),
             ) {
                 let max = if ip.is_ipv6() { 128 } else { 32 };
-                if let Ok(prefix) = prefix.parse::<u8>() {
-                    if prefix <= max {
-                        rules.cidr.push((ip, prefix));
-                    }
+                if let Ok(prefix) = prefix.parse::<u8>()
+                    && prefix <= max
+                {
+                    rules.cidr.push((ip, prefix));
                 }
             }
             continue;
@@ -879,10 +879,11 @@ fn parse_no_proxy(raw: &str) -> NoProxyRules {
                 continue;
             }
             Err(_) => {
-                if let Some((host, port)) = value.rsplit_once(':') {
-                    if !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) {
-                        value = host.to_owned();
-                    }
+                if let Some((host, port)) = value.rsplit_once(':')
+                    && !port.is_empty()
+                    && port.bytes().all(|byte| byte.is_ascii_digit())
+                {
+                    value = host.to_owned();
                 }
             }
         }
@@ -906,15 +907,14 @@ fn should_bypass_parent_proxy(parent: &ParentProxy, host: &str) -> bool {
     if parent.no_proxy.all {
         return true;
     }
-    if let Some(ip) = ip {
-        if parent
+    if let Some(ip) = ip
+        && parent
             .no_proxy
             .cidr
             .iter()
             .any(|(network, prefix)| in_subnet(ip, *network, *prefix))
-        {
-            return true;
-        }
+    {
+        return true;
     }
     parent.no_proxy.suffixes.iter().any(|suffix| {
         if let Some(domain) = suffix.strip_prefix('.') {
@@ -1238,10 +1238,10 @@ fn start_linux_bridges(
 
 #[cfg(test)]
 pub fn reset_network_proxy_for_test() {
-    if let Ok(mut slot) = NETWORK_RUNTIME.lock() {
-        if let Some(runtime) = slot.take() {
-            runtime.stop();
-        }
+    if let Ok(mut slot) = NETWORK_RUNTIME.lock()
+        && let Some(runtime) = slot.take()
+    {
+        runtime.stop();
     }
     if let Ok(mut policy) = NETWORK_POLICY.lock() {
         *policy = NetworkPolicy::default();

@@ -252,10 +252,10 @@ fn find_latest_on_disk(normalized: &str) -> Option<Snapshot> {
 /// Test seam: make an index entry look `age` old.
 #[cfg(test)]
 pub fn age_index_entry_for_tests(url: &str, age: chrono::Duration) {
-    if let Ok(mut entries) = index().lock() {
-        if let Some(entry) = entries.get_mut(&normalize_index_url(url)) {
-            entry.fetched_at = Utc::now() - age;
-        }
+    if let Ok(mut entries) = index().lock()
+        && let Some(entry) = entries.get_mut(&normalize_index_url(url))
+    {
+        entry.fetched_at = Utc::now() - age;
     }
 }
 
@@ -577,7 +577,10 @@ mod tests {
 
     fn with_config_home<T>(name: &str, run: impl FnOnce(&std::path::Path) -> T) -> T {
         let _lock = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
-        let dir = std::env::temp_dir().join(format!("nyan-snapshot-{name}-{}", uuid::Uuid::new_v4().simple()));
+        let dir = std::env::temp_dir().join(format!(
+            "nyan-snapshot-{name}-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let guard = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
         clear_index();
@@ -608,7 +611,10 @@ mod tests {
             let second = save_nyan(&page("version two")).unwrap();
             assert_eq!(first.hash, same.hash, "same bytes, same snapshot");
             assert_ne!(first.hash, second.hash);
-            assert!(first.path.exists() && second.path.exists(), "old versions stay readable");
+            assert!(
+                first.path.exists() && second.path.exists(),
+                "old versions stay readable"
+            );
             let reread = read(&first.hash).unwrap();
             assert_eq!(reread.text, "version one");
             assert_eq!(reread.metadata.fetched_by, "nyan");
@@ -618,9 +624,12 @@ mod tests {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let dir_mode = std::fs::metadata(root.join("web-snapshots")).unwrap().permissions().mode();
+                let dir_mode = std::fs::metadata(root.join("web-snapshots"))
+                    .unwrap()
+                    .permissions()
+                    .mode();
                 assert_eq!(dir_mode & 0o777, 0o700, "snapshot root must be private");
-                let file_mode = std::fs::metadata(&hash_dir.join(format!("{}.md", first.hash)))
+                let file_mode = std::fs::metadata(hash_dir.join(format!("{}.md", first.hash)))
                     .unwrap()
                     .permissions()
                     .mode();
@@ -633,9 +642,15 @@ mod tests {
     fn the_url_index_expires_after_fifteen_minutes_but_range_reads_do_not() {
         with_config_home("ttl", |_root| {
             let snapshot = save_nyan(&page("body")).unwrap();
-            assert_eq!(lookup_latest("https://example.com/doc").unwrap().hash, snapshot.hash);
+            assert_eq!(
+                lookup_latest("https://example.com/doc").unwrap().hash,
+                snapshot.hash
+            );
             age_index_entry_for_tests("https://example.com/doc", chrono::Duration::minutes(16));
-            assert!(lookup_latest("https://example.com/doc").is_none(), "the fast cache expires");
+            assert!(
+                lookup_latest("https://example.com/doc").is_none(),
+                "the fast cache expires"
+            );
             assert_eq!(
                 lookup_any("https://example.com/doc").unwrap().hash,
                 snapshot.hash,
@@ -686,7 +701,10 @@ mod tests {
         with_config_home("retention", |root| {
             let snapshot = save_nyan(&page("old")).unwrap();
             let old = std::time::SystemTime::now() - Duration::from_secs(40 * 24 * 60 * 60);
-            let file = std::fs::File::options().write(true).open(&snapshot.path).unwrap();
+            let file = std::fs::File::options()
+                .write(true)
+                .open(&snapshot.path)
+                .unwrap();
             file.set_modified(old).unwrap();
             drop(file);
             let fresh = save_nyan(&page("new")).unwrap();

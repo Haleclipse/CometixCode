@@ -65,7 +65,11 @@ impl KeyStore {
     pub fn new(weights: &[f64]) -> Self {
         let total_weight = weights.iter().sum::<f64>();
         Self {
-            total_weight: if total_weight > 0.0 { total_weight } else { 1.0 },
+            total_weight: if total_weight > 0.0 {
+                total_weight
+            } else {
+                1.0
+            },
         }
     }
 
@@ -477,7 +481,10 @@ mod tests {
         };
         let mut search = BitapSearch::new("alpha", configured);
         let literal_on_light = search
-            .compute_score(&[FuseKey::new("nothing", 3.0), FuseKey::new("alpha here", 1.0)])
+            .compute_score(&[
+                FuseKey::new("nothing", 3.0),
+                FuseKey::new("alpha here", 1.0),
+            ])
             .expect("light key matches literally");
         let fuzzy_on_heavy = search
             .compute_score(&[FuseKey::new("a-l-p-h-a", 3.0), FuseKey::new("nothing", 1.0)])
@@ -498,7 +505,10 @@ mod tests {
         };
         let mut search = BitapSearch::new("alpha", configured);
         let one_key = search
-            .compute_score(&[FuseKey::new("nothing here", 1.0), FuseKey::new("alpha", 1.0)])
+            .compute_score(&[
+                FuseKey::new("nothing here", 1.0),
+                FuseKey::new("alpha", 1.0),
+            ])
             .expect("one key matches");
         let both_keys = search
             .compute_score(&[FuseKey::new("alpha", 1.0), FuseKey::new("alpha", 1.0)])
@@ -520,7 +530,11 @@ mod tests {
         assert_eq!(field_norm("one"), 1.0);
         assert_eq!(field_norm("one two"), 0.707);
         assert_eq!(field_norm("one two three four"), 0.5);
-        assert_eq!(field_norm(""), 1.0, "an empty field does not divide by zero");
+        assert_eq!(
+            field_norm(""),
+            1.0,
+            "an empty field does not divide by zero"
+        );
 
         let mut search = BitapSearch::new("alpha", FuseOptions::default());
         let short = search

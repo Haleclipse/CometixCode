@@ -268,13 +268,13 @@ pub fn compute_sticky_prompt_snapshot(
     let mut first_visible_top = -1i64;
     let clamped_end = end.min(messages.len()).min(item_tops.len());
     for i in (start..clamped_end).rev() {
-        if let Some(top) = item_tops[i] {
-            if top >= 0 {
-                if top < target {
-                    break;
-                }
-                first_visible_top = top;
+        if let Some(top) = item_tops[i]
+            && top >= 0
+        {
+            if top < target {
+                break;
             }
+            first_visible_top = top;
         }
         first_visible = i;
     }
@@ -286,10 +286,11 @@ pub fn compute_sticky_prompt_snapshot(
             let Some(candidate) = compute_sticky_prompt_text(&messages[i]) else {
                 continue;
             };
-            if let Some(top) = item_tops.get(i).and_then(|top| *top) {
-                if top >= 0 && top + 1 >= target {
-                    continue;
-                }
+            if let Some(top) = item_tops.get(i).and_then(|top| *top)
+                && top >= 0
+                && top + 1 >= target
+            {
+                continue;
             }
             idx = Some(i);
             text = collapse_sticky_text(&candidate);

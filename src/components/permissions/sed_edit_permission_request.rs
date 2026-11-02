@@ -195,11 +195,10 @@ pub fn SedEditPermissionRequest(
                     Err(_) => break,
                 },
                 completed = pending.next(), if !pending.is_empty() => {
-                    if let Some((generation, result)) = completed {
-                        if requested.read().1 == generation {
+                    if let Some((generation, result)) = completed
+                        && requested.read().1 == generation {
                             snapshot.set(Some(result.map_err(std::sync::Arc::new)));
                         }
-                    }
                 }
             }
         }

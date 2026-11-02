@@ -198,10 +198,8 @@ impl RmcpTransport<RoleClient> for SdkControlClientTransport {
         self.is_closed = true;
         let on_close = self.on_close.clone();
         async move {
-            if !already_closed {
-                if let Some(on_close) = on_close {
-                    on_close();
-                }
+            if !already_closed && let Some(on_close) = on_close {
+                on_close();
             }
             Ok(())
         }

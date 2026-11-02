@@ -393,8 +393,7 @@ mod tests {
     #[test]
     fn compatible_newer_stats_cache_is_read_without_being_downgraded() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-stats-cache-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-stats-cache-{}", uuid::Uuid::new_v4()));
         let path = root.join("stats-cache.json");
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(

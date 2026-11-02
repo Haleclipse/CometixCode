@@ -173,10 +173,10 @@ impl KeybindingBlockSchema {
             return Err(format!("Unknown context \"{}\"", block.context));
         }
         for (key, action) in &block.bindings {
-            if let Some(action) = action {
-                if !is_valid_action(action) {
-                    return Err(format!("Invalid action \"{action}\" for \"{key}\""));
-                }
+            if let Some(action) = action
+                && !is_valid_action(action)
+            {
+                return Err(format!("Invalid action \"{action}\" for \"{key}\""));
             }
         }
         Ok(block)

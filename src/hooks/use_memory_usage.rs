@@ -60,15 +60,15 @@ pub fn sample_memory_usage() -> MemoryUsageInfo {
 pub fn process_rss_bytes() -> u64 {
     #[cfg(target_os = "linux")]
     {
-        if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
-            if let Some(kib) = parse_linux_vm_rss_kib(&status) {
-                return kib.saturating_mul(1024);
-            }
+        if let Ok(status) = std::fs::read_to_string("/proc/self/status")
+            && let Some(kib) = parse_linux_vm_rss_kib(&status)
+        {
+            return kib.saturating_mul(1024);
         }
-        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm") {
-            if let Some(pages) = parse_linux_statm_rss_pages(&statm) {
-                return pages.saturating_mul(linux_page_size_bytes());
-            }
+        if let Ok(statm) = std::fs::read_to_string("/proc/self/statm")
+            && let Some(pages) = parse_linux_statm_rss_pages(&statm)
+        {
+            return pages.saturating_mul(linux_page_size_bytes());
         }
     }
     #[cfg(target_os = "macos")]

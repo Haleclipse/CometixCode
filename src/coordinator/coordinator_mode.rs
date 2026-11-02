@@ -75,10 +75,7 @@ pub fn match_session_mode(session_mode: Option<&str>) -> Option<String> {
     let mut update = crate::utils::process_env::begin_update();
     let current_is_coordinator = coordinator_enabled
         && crate::utils::env_utils::is_env_truthy(
-            update
-                .snapshot()
-                .var("CLAUDE_CODE_COORDINATOR_MODE")
-                .as_deref(),
+            update.snapshot().var("CLAUDE_CODE_COORDINATOR_MODE"),
         );
     if current_is_coordinator == session_is_coordinator {
         return None;
@@ -111,29 +108,26 @@ pub fn get_coordinator_user_context(
 ) -> BTreeMap<String, String> {
     let env = crate::utils::process_env::snapshot();
     if !feature_enabled(FeatureFlag::CoordinatorMode)
-        || !crate::utils::env_utils::is_env_truthy(
-            env.var("CLAUDE_CODE_COORDINATOR_MODE").as_deref(),
-        )
+        || !crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_COORDINATOR_MODE"))
     {
         return BTreeMap::new();
     }
 
-    let worker_tools =
-        if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SIMPLE").as_deref()) {
-            let mut names = vec![
-                BASH_TOOL_NAME,
-                FILE_READ_TOOL_NAME,
-                crate::tools::file_edit_tool::constants::FILE_EDIT_TOOL_NAME,
-            ];
-            names.sort_unstable();
-            names.join(", ")
-        } else {
-            async_agent_allowed_tool_names()
-                .into_iter()
-                .filter(|name| !INTERNAL_WORKER_TOOLS.contains(name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
+    let worker_tools = if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SIMPLE")) {
+        let mut names = [
+            BASH_TOOL_NAME,
+            FILE_READ_TOOL_NAME,
+            crate::tools::file_edit_tool::constants::FILE_EDIT_TOOL_NAME,
+        ];
+        names.sort_unstable();
+        names.join(", ")
+    } else {
+        async_agent_allowed_tool_names()
+            .into_iter()
+            .filter(|name| !INTERNAL_WORKER_TOOLS.contains(name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
 
     let mut content = format!(
         "Workers spawned via the {AGENT_TOOL_NAME} tool have access to these tools: {worker_tools}"
@@ -146,13 +140,13 @@ pub fn get_coordinator_user_context(
         ));
     }
 
-    if let Some(scratchpad_dir) = scratchpad_dir {
-        if crate::utils::permissions::filesystem::is_scratchpad_enabled() {
-            content.push_str(&format!(
+    if let Some(scratchpad_dir) = scratchpad_dir
+        && crate::utils::permissions::filesystem::is_scratchpad_enabled()
+    {
+        content.push_str(&format!(
                 "\n\nScratchpad directory: {}\nWorkers can read and write here without permission prompts. Use this for durable cross-worker knowledge — structure files however fits the work.",
                 scratchpad_dir.display()
             ));
-        }
     }
 
     BTreeMap::from([("workerToolsContext".to_string(), content)])

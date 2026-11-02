@@ -187,7 +187,7 @@ pub fn TrustDialog<'a>(
         }
     });
 
-    let pending = { pending_choice.read().clone() };
+    let pending = { *pending_choice.read() };
     if let Some(choice) = pending {
         pending_choice.set(None);
         match choice {
@@ -298,9 +298,9 @@ mod tests {
             allowed_tools: vec!["Bash(rm -rf /)".to_string()],
         };
 
-        assert!(has_slash_command_bash(&[slash.clone()]));
-        assert!(has_skills_bash(&[skill.clone()]));
-        assert!(!has_slash_command_bash(&[ignored.clone()]));
+        assert!(has_slash_command_bash(std::slice::from_ref(&slash)));
+        assert!(has_skills_bash(std::slice::from_ref(&skill)));
+        assert!(!has_slash_command_bash(std::slice::from_ref(&ignored)));
         assert!(!has_skills_bash(&[ignored]));
         assert!(has_any_bash_execution(&[], &[slash]));
         assert!(has_any_bash_execution(

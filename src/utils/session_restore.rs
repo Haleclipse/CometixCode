@@ -203,17 +203,15 @@ impl ProcessedResume {
                 None | Some(None) => true,
                 Some(Some(model)) => model.is_empty(),
             }
-        {
-            if let Some(model) = self
+            && let Some(model) = self
                 .restored_agent_def
                 .as_ref()
                 .and_then(|agent| agent.model.as_deref())
                 .filter(|model| *model != "inherit")
-            {
-                let resolved = crate::utils::model::model::parse_user_specified_model(model);
-                crate::bootstrap::state::set_main_loop_model_override(Some(Some(resolved)));
-                state.main_loop_model = Some(model.to_string());
-            }
+        {
+            let resolved = crate::utils::model::model::parse_user_specified_model(model);
+            crate::bootstrap::state::set_main_loop_model_override(Some(Some(resolved)));
+            state.main_loop_model = Some(model.to_string());
         }
     }
 }

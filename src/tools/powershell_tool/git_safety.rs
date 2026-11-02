@@ -106,14 +106,12 @@ fn normalize_git_path_arg(arg: &str) -> String {
         .chars()
         .next()
         .is_some_and(|first| PS_TOKENIZER_DASH_CHARS.contains(&first) || first == '/')
-    {
-        if let Some(colon) = value
+        && let Some(colon) = value
             .char_indices()
             .skip(1)
             .find_map(|(index, character)| (character == ':').then_some(index))
-        {
-            value = value[colon + 1..].to_string();
-        }
+    {
+        value = value[colon + 1..].to_string();
     }
 
     value = value
@@ -227,10 +225,10 @@ pub fn is_git_internal_path_ps(arg: &str) -> bool {
     if matches_git_internal_prefix(&normalized) {
         return true;
     }
-    if escapes_cwd(&normalized) {
-        if let Some(relative) = resolve_escaping_path_to_cwd_relative(&normalized) {
-            return matches_git_internal_prefix(&relative);
-        }
+    if escapes_cwd(&normalized)
+        && let Some(relative) = resolve_escaping_path_to_cwd_relative(&normalized)
+    {
+        return matches_git_internal_prefix(&relative);
     }
     false
 }
@@ -241,10 +239,10 @@ pub fn is_dot_git_path_ps(arg: &str) -> bool {
     if matches_dot_git_prefix(&normalized) {
         return true;
     }
-    if escapes_cwd(&normalized) {
-        if let Some(relative) = resolve_escaping_path_to_cwd_relative(&normalized) {
-            return matches_dot_git_prefix(&relative);
-        }
+    if escapes_cwd(&normalized)
+        && let Some(relative) = resolve_escaping_path_to_cwd_relative(&normalized)
+    {
+        return matches_dot_git_prefix(&relative);
     }
     false
 }

@@ -178,23 +178,22 @@ pub fn delete_plugin_options(plugin_id: &str) {
         }
     }
     let storage = crate::utils::secure_storage::get_secure_storage();
-    if let Some(mut existing) = storage.read() {
-        if let Some(secrets) = existing
+    if let Some(mut existing) = storage.read()
+        && let Some(secrets) = existing
             .get_mut("pluginSecrets")
             .and_then(Value::as_object_mut)
-        {
-            let prefix = format!("{plugin_id}/");
-            let old_len = secrets.len();
-            secrets.retain(|k, _| k != plugin_id && !k.starts_with(&prefix));
-            if old_len != secrets.len() {
-                if secrets.is_empty() {
-                    existing.as_object_mut().unwrap().remove("pluginSecrets");
-                }
-                if !storage.update(&existing).is_ok_and(|r| r.success) {
-                    crate::utils::debug::log_for_debugging(&format!(
-                        "deletePluginOptions: failed to clear pluginSecrets for {plugin_id} from keychain"
-                    ));
-                }
+    {
+        let prefix = format!("{plugin_id}/");
+        let old_len = secrets.len();
+        secrets.retain(|k, _| k != plugin_id && !k.starts_with(&prefix));
+        if old_len != secrets.len() {
+            if secrets.is_empty() {
+                existing.as_object_mut().unwrap().remove("pluginSecrets");
+            }
+            if !storage.update(&existing).is_ok_and(|r| r.success) {
+                crate::utils::debug::log_for_debugging(&format!(
+                    "deletePluginOptions: failed to clear pluginSecrets for {plugin_id} from keychain"
+                ));
             }
         }
     }

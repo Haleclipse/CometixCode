@@ -161,15 +161,13 @@ pub async fn fetch_git_diff_from(cwd: &Path) -> Option<GitDiffResult> {
 
     if let Some((0, shortstat)) =
         git_output(cwd, &["--no-optional-locks", "diff", "HEAD", "--shortstat"]).await
+        && let Some(stats) = parse_shortstat(&shortstat)
+        && stats.files_count > MAX_FILES_FOR_DETAILS
     {
-        if let Some(stats) = parse_shortstat(&shortstat) {
-            if stats.files_count > MAX_FILES_FOR_DETAILS {
-                return Some(GitDiffResult {
-                    stats,
-                    ..GitDiffResult::default()
-                });
-            }
-        }
+        return Some(GitDiffResult {
+            stats,
+            ..GitDiffResult::default()
+        });
     }
 
     let (code, numstat) =
@@ -183,11 +181,11 @@ pub async fn fetch_git_diff_from(cwd: &Path) -> Option<GitDiffResult> {
     } = parse_git_numstat(&numstat);
 
     let remaining_slots = MAX_FILES.saturating_sub(per_file_stats.len());
-    if remaining_slots > 0 {
-        if let Some(untracked) = fetch_untracked_files(cwd, remaining_slots).await {
-            stats.files_count += untracked.len();
-            per_file_stats.extend(untracked);
-        }
+    if remaining_slots > 0
+        && let Some(untracked) = fetch_untracked_files(cwd, remaining_slots).await
+    {
+        stats.files_count += untracked.len();
+        per_file_stats.extend(untracked);
     }
 
     Some(GitDiffResult {
@@ -330,16 +328,15 @@ pub fn parse_git_diff(stdout: &str) -> BTreeMap<String, Vec<StructuredDiffHunk>>
             if is_diff_metadata(line) {
                 continue;
             }
-            if let Some(hunk) = current_hunk.as_mut() {
-                if line_count < MAX_LINES_PER_FILE
-                    && (line.starts_with('+')
-                        || line.starts_with('-')
-                        || line.starts_with(' ')
-                        || line.is_empty())
-                {
-                    hunk.lines.push(line.to_string());
-                    line_count += 1;
-                }
+            if let Some(hunk) = current_hunk.as_mut()
+                && line_count < MAX_LINES_PER_FILE
+                && (line.starts_with('+')
+                    || line.starts_with('-')
+                    || line.starts_with(' ')
+                    || line.is_empty())
+            {
+                hunk.lines.push(line.to_string());
+                line_count += 1;
             }
         }
         if let Some(hunk) = current_hunk {
@@ -491,49 +488,48 @@ fn parse_raw_single_file_diff(
 }
 
 async fn get_single_file_diff_ref(root: &Path) -> String {
-    let base_branch = if let Some(base_ref) =
-        crate::utils::process_env::var("CLAUDE_CODE_BASE_REF").truthy()
-    {
-        base_ref
-    } else {
-        // Maps to cached `getDefaultBranch()`: origin/HEAD, then remote
-        // main/master existence, then the official `main` fallback.
-        let symbolic = run_single_file_git(
-            root,
-            &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
-        )
-        .await
-        .and_then(|(success, output)| success.then_some(output))
-        .map(|output| {
-            output
-                .trim()
-                .strip_prefix("origin/")
-                .unwrap_or(output.trim())
-                .to_string()
-        });
-        if let Some(branch) = symbolic.filter(|branch| !branch.is_empty()) {
-            branch
+    let base_branch =
+        if let Some(base_ref) = crate::utils::process_env::var("CLAUDE_CODE_BASE_REF").truthy() {
+            base_ref
         } else {
-            let mut branch = None;
-            for candidate in ["main", "master"] {
-                if run_single_file_git(
-                    root,
-                    &[
-                        "rev-parse",
-                        "--verify",
-                        &format!("refs/remotes/origin/{candidate}"),
-                    ],
-                )
-                .await
-                .is_some_and(|(success, _)| success)
-                {
-                    branch = Some(candidate.to_string());
-                    break;
+            // Maps to cached `getDefaultBranch()`: origin/HEAD, then remote
+            // main/master existence, then the official `main` fallback.
+            let symbolic = run_single_file_git(
+                root,
+                &["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+            )
+            .await
+            .and_then(|(success, output)| success.then_some(output))
+            .map(|output| {
+                output
+                    .trim()
+                    .strip_prefix("origin/")
+                    .unwrap_or(output.trim())
+                    .to_string()
+            });
+            if let Some(branch) = symbolic.filter(|branch| !branch.is_empty()) {
+                branch
+            } else {
+                let mut branch = None;
+                for candidate in ["main", "master"] {
+                    if run_single_file_git(
+                        root,
+                        &[
+                            "rev-parse",
+                            "--verify",
+                            &format!("refs/remotes/origin/{candidate}"),
+                        ],
+                    )
+                    .await
+                    .is_some_and(|(success, _)| success)
+                    {
+                        branch = Some(candidate.to_string());
+                        break;
+                    }
                 }
+                branch.unwrap_or_else(|| "main".to_string())
             }
-            branch.unwrap_or_else(|| "main".to_string())
-        }
-    };
+        };
     let Some((success, stdout)) =
         run_single_file_git(root, &["merge-base", "HEAD", &base_branch]).await
     else {

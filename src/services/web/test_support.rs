@@ -110,7 +110,8 @@ pub(crate) fn only_mocked_providers(partial: Value) -> Value {
 pub(crate) fn key_file() -> String {
     static PATH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
     PATH.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("nyan-test-keys-{}", uuid::Uuid::new_v4().simple()));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-test-keys-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("key");
         std::fs::write(&path, "test-key-not-real\n").unwrap();
@@ -156,7 +157,10 @@ impl ScriptedBackend {
         (Self::wrap(|_| {}, &backend), backend)
     }
 
-    fn wrap(configure: impl FnOnce(&mut DecisionSettings), backend: &Arc<Self>) -> DecisionProvider {
+    fn wrap(
+        configure: impl FnOnce(&mut DecisionSettings),
+        backend: &Arc<Self>,
+    ) -> DecisionProvider {
         let mut settings = DecisionSettings::default();
         configure(&mut settings);
         DecisionProvider::with_backend(settings, Arc::clone(backend) as Arc<dyn DecisionBackend>)
@@ -246,7 +250,9 @@ impl Route {
 
     pub fn redirect(status: u16, location: &str) -> Self {
         let mut route = Self::new(status, "text/plain", "");
-        route.headers.push(("location".to_string(), location.to_string()));
+        route
+            .headers
+            .push(("location".to_string(), location.to_string()));
         route
     }
 

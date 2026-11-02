@@ -80,13 +80,13 @@ pub fn Dialog<'a>(props: &mut DialogProps<'a>, mut hooks: Hooks) -> impl Into<An
             .or_else(|| Some(crate::utils::theme::current().permission))
     });
     let title = props.title.clone();
-    let title_children = props.title_children.drain(..).collect::<Vec<_>>();
+    let title_children = std::mem::take(&mut props.title_children);
     let subtitle = props.subtitle.clone();
     let hide_input_guide = props.hide_input_guide;
     let input_guide = props.input_guide.clone();
-    let input_guide_children = props.input_guide_children.drain(..).collect::<Vec<_>>();
+    let input_guide_children = std::mem::take(&mut props.input_guide_children);
     let exit_hint = exit_state.hint().map(str::to_string);
-    let body = props.children.drain(..).collect::<Vec<_>>();
+    let body = std::mem::take(&mut props.children);
     let input_guide_element: Option<AnyElement<'static>> = if hide_input_guide {
         None
     } else if let Some(render_input_guide) = props.input_guide_renderer.as_ref() {
@@ -343,8 +343,7 @@ mod tests {
             }
         });
 
-        let count = *cancel_count.lock().expect("cancel mutex");
-        count
+        *cancel_count.lock().expect("cancel mutex")
     }
 
     #[test]

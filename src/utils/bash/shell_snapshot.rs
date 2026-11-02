@@ -170,7 +170,7 @@ fn get_claude_code_snapshot_content(env: &crate::utils::process_env::EnvSnapshot
     let path = env.var("PATH").unwrap_or_default();
     content.push_str(&format!(
         "      echo \"export PATH={}\" >> \"$SNAPSHOT_FILE\"\n",
-        crate::utils::bash::shell_quote::quote(&[&path])
+        crate::utils::bash::shell_quote::quote(&[path])
     ));
     content
 }

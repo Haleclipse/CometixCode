@@ -73,10 +73,11 @@ pub fn export_final_filename(filename: &str) -> String {
     if filename.ends_with(".txt") {
         return filename.to_string();
     }
-    if let Some(dot_index) = filename.rfind('.') {
-        if dot_index + 1 < filename.len() && !filename[dot_index + 1..].contains('.') {
-            return format!("{}.txt", &filename[..dot_index]);
-        }
+    if let Some(dot_index) = filename.rfind('.')
+        && dot_index + 1 < filename.len()
+        && !filename[dot_index + 1..].contains('.')
+    {
+        return format!("{}.txt", &filename[..dot_index]);
     }
     format!("{filename}.txt")
 }
@@ -182,11 +183,11 @@ pub fn ExportDialog(
                 .spawn(async move {
                     // CC :47-49 awaits setClipboard, writes its raw result, then onDone.
                     let raw = copy.await;
-                    if !raw.is_empty() {
-                        if let Err(error) = stdout.write_control_sequence_and_wait(raw).await {
-                            crate::utils::debug::log_for_debugging(&error.to_string());
-                            return;
-                        }
+                    if !raw.is_empty()
+                        && let Err(error) = stdout.write_control_sequence_and_wait(raw).await
+                    {
+                        crate::utils::debug::log_for_debugging(&error.to_string());
+                        return;
                     }
                     // The source still invokes its captured onDone after unmount.
                     // The command's outer Promise owns first-settlement gating.

@@ -363,7 +363,7 @@ mod tests {
             &result.messages[1].kind,
             crate::types::message::RenderableMessageKind::User { message } if matches!(
                 message.first_content_block(),
-                Some(crate::types::message::UserContent::MetaText(text)) if text == &expected_prompt
+                Some(crate::types::message::UserContent::MetaText(text)) if text == expected_prompt
             )
         ));
     }

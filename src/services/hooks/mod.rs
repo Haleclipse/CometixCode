@@ -162,17 +162,15 @@ pub use crate::schemas::hooks::{
 /// sources. Session-derived hooks remain scoped and merged by their callers.
 pub fn load_hooks_config() -> hooks_config_snapshot::LoadedHooksConfig {
     let mut loaded = hooks_config_snapshot::load_hooks_config_from_settings_sources();
-    if !loaded.disable_all_hooks {
-        if let Some(registered) = crate::bootstrap::state::get_registered_hooks() {
-            for (event, entries) in registered {
-                loaded
-                    .config
-                    .entry(event)
-                    .or_default()
-                    .extend(entries.into_iter().filter(|entry| {
-                        !loaded.allow_managed_hooks_only || entry.plugin_root.is_none()
-                    }));
-            }
+    if !loaded.disable_all_hooks
+        && let Some(registered) = crate::bootstrap::state::get_registered_hooks()
+    {
+        for (event, entries) in registered {
+            loaded.config.entry(event).or_default().extend(
+                entries.into_iter().filter(|entry| {
+                    !loaded.allow_managed_hooks_only || entry.plugin_root.is_none()
+                }),
+            );
         }
     }
     loaded

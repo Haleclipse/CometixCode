@@ -837,19 +837,19 @@ fn remove_extra_marketplace(
             known[name] = Value::Null;
             updates.insert("extraKnownMarketplaces".into(), known);
         }
-        if let Some(mut enabled) = settings.enabled_plugins {
-            if let Some(map) = enabled.as_object_mut() {
-                let suffix = format!("@{name}");
-                let mut removed = false;
-                for (key, value) in map {
-                    if key.ends_with(&suffix) {
-                        *value = Value::Null;
-                        removed = true;
-                    }
+        if let Some(mut enabled) = settings.enabled_plugins
+            && let Some(map) = enabled.as_object_mut()
+        {
+            let suffix = format!("@{name}");
+            let mut removed = false;
+            for (key, value) in map {
+                if key.ends_with(&suffix) {
+                    *value = Value::Null;
+                    removed = true;
                 }
-                if removed {
-                    updates.insert("enabledPlugins".into(), enabled);
-                }
+            }
+            if removed {
+                updates.insert("enabledPlugins".into(), enabled);
             }
         }
         if !updates.is_empty() {
@@ -1099,8 +1099,7 @@ mod tests {
         };
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env = TEST_ENV_LOCK.lock().unwrap();
-        let home =
-            std::env::temp_dir().join(format!("nyan-plugin-burst-{}", uuid::Uuid::new_v4()));
+        let home = std::env::temp_dir().join(format!("nyan-plugin-burst-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &home);
         for (paste, query) in [
@@ -1347,7 +1346,10 @@ mod tests {
     fn error_rows_and_navigation_matches_official_bun() {
         use crate::types::plugin::PluginError;
         use serde_json::{Value, json};
-        let oracle:Value=serde_json::from_str(include_str!("../../../tests/fixtures/oracles/plugin-ui-complete-0914/errors-oracle.json")).unwrap();
+        let oracle: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/plugin-ui-complete-0914/errors-oracle.json"
+        ))
+        .unwrap();
         let failed = oracle["failed"]
             .as_array()
             .unwrap()

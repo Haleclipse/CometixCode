@@ -213,7 +213,7 @@ fn named_syntect_theme(name: &'static str) -> &'static SyntectTheme {
         .lock()
         .expect("syntax theme cache mutex should not be poisoned");
     if let Some(theme) = themes.get(name) {
-        return *theme;
+        return theme;
     }
     let assets = HighlightingAssets::from_binary();
     let theme = Box::leak(Box::new(assets.get_theme(name).clone()));
@@ -230,18 +230,18 @@ fn detect_syntax(
         if let Ok(Some(syntax)) = syntax_set.find_syntax_for_file(Path::new(path)) {
             return Some(syntax);
         }
-        if let Some(extension) = Path::new(path).extension().and_then(|value| value.to_str()) {
-            if let Some(syntax) = syntax_set.find_syntax_by_extension(extension) {
-                return Some(syntax);
-            }
+        if let Some(extension) = Path::new(path).extension().and_then(|value| value.to_str())
+            && let Some(syntax) = syntax_set.find_syntax_by_extension(extension)
+        {
+            return Some(syntax);
         }
     }
     if let Some(line) = first_line {
         let line = line.trim_start_matches('\u{feff}');
-        if line.starts_with("#!") {
-            if let Some(syntax) = syntax_set.find_syntax_by_first_line(line) {
-                return Some(syntax);
-            }
+        if line.starts_with("#!")
+            && let Some(syntax) = syntax_set.find_syntax_by_first_line(line)
+        {
+            return Some(syntax);
         }
     }
     None
@@ -676,16 +676,17 @@ fn render_numbered_line(
     highlighter: &mut Option<SyntaxHighlighter>,
     ansi_delete_content_dim: bool,
 ) -> Vec<ToolRenderLine> {
-    if !dim && line.matched_original_code.is_some() {
-        if let Some(lines) = render_word_diff_line(
+    if !dim
+        && line.matched_original_code.is_some()
+        && let Some(lines) = render_word_diff_line(
             &line,
             max_width,
             width,
             highlighter,
             ansi_delete_content_dim,
-        ) {
-            return lines;
-        }
+        )
+    {
+        return lines;
     }
 
     render_standard_line(
@@ -731,11 +732,11 @@ fn render_word_diff_line(
         .into_iter()
         .filter_map(|part| segment_for_line_kind(part, line.kind))
         .collect::<Vec<_>>();
-    if line.kind == DiffLineKind::Add {
-        if let Some(highlighter) = highlighter.as_mut() {
-            let syntax_segments = highlighter.highlight_line(&line.original_code);
-            content_segments = apply_syntax_foreground(content_segments, &syntax_segments);
-        }
+    if line.kind == DiffLineKind::Add
+        && let Some(highlighter) = highlighter.as_mut()
+    {
+        let syntax_segments = highlighter.highlight_line(&line.original_code);
+        content_segments = apply_syntax_foreground(content_segments, &syntax_segments);
     }
     let wrapped = wrap_segments(&content_segments, content_width);
 
@@ -867,11 +868,11 @@ fn push_word_part(parts: &mut Vec<WordDiffPart>, kind: WordDiffKind, value: &str
     if value.is_empty() {
         return;
     }
-    if let Some(last) = parts.last_mut() {
-        if last.kind == kind {
-            last.value.push_str(value);
-            return;
-        }
+    if let Some(last) = parts.last_mut()
+        && last.kind == kind
+    {
+        last.value.push_str(value);
+        return;
     }
     parts.push(WordDiffPart {
         kind,
@@ -981,11 +982,12 @@ fn push_segment_with_style(
     if text.is_empty() {
         return;
     }
-    if let Some(last) = line.last_mut() {
-        if last.background == background && last.foreground == foreground {
-            last.text.push_str(text);
-            return;
-        }
+    if let Some(last) = line.last_mut()
+        && last.background == background
+        && last.foreground == foreground
+    {
+        last.text.push_str(text);
+        return;
     }
     let mut segment = ToolRenderSegment::new(text.to_string());
     segment.background = background;
@@ -1068,11 +1070,7 @@ fn line_background(kind: DiffLineKind) -> Option<ToolRenderBackground> {
 }
 
 fn dimmed_background(background: ToolRenderBackground) -> ToolRenderBackground {
-    match background {
-        ToolRenderBackground::DiffAdded => ToolRenderBackground::DiffAdded,
-        ToolRenderBackground::DiffRemoved => ToolRenderBackground::DiffRemoved,
-        other => other,
-    }
+    background
 }
 
 fn split_diff_line(line: &str) -> (DiffLineKind, &str) {

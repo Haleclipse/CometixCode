@@ -190,19 +190,19 @@ pub(crate) fn process_session_files(paths: &[PathBuf], options: ProcessOptions) 
     let mut stats = ProcessedStats::default();
 
     for path in paths {
-        if let Some(from_date) = options.from_date {
-            if let Ok(metadata) = std::fs::metadata(path) {
-                if let Ok(modified) = metadata.modified() {
-                    let modified_date = DateTime::<Utc>::from(modified).date_naive();
-                    if modified_date < from_date {
-                        continue;
-                    }
-                }
-                if metadata.len() > 65_536
-                    && read_session_start_date(path).is_some_and(|date| date < from_date)
-                {
+        if let Some(from_date) = options.from_date
+            && let Ok(metadata) = std::fs::metadata(path)
+        {
+            if let Ok(modified) = metadata.modified() {
+                let modified_date = DateTime::<Utc>::from(modified).date_naive();
+                if modified_date < from_date {
                     continue;
                 }
+            }
+            if metadata.len() > 65_536
+                && read_session_start_date(path).is_some_and(|date| date < from_date)
+            {
+                continue;
             }
         }
         let entries = match crate::utils::json::read_jsonl_file(path) {
@@ -319,11 +319,10 @@ pub(crate) fn process_session_files(paths: &[PathBuf], options: ProcessOptions) 
                     .iter()
                     .filter(|block| block.get("type").and_then(Value::as_str) == Some("tool_use"))
                     .count() as u64;
-                if tool_calls > 0 {
-                    if let Some(activity) = stats.daily_activity.get_mut(&key) {
-                        activity.tool_call_count =
-                            activity.tool_call_count.saturating_add(tool_calls);
-                    }
+                if tool_calls > 0
+                    && let Some(activity) = stats.daily_activity.get_mut(&key)
+                {
+                    activity.tool_call_count = activity.tool_call_count.saturating_add(tool_calls);
                 }
             }
 

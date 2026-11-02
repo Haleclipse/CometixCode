@@ -39,8 +39,9 @@ pub(crate) fn forced_method_message(method: Option<ForceLoginMethod>) -> Option<
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub(crate) enum OAuthStatus {
+    #[default]
     Idle,
     PlatformSetup,
     ReadyToStart,
@@ -57,12 +58,6 @@ pub(crate) enum OAuthStatus {
         message: String,
         can_retry: bool,
     },
-}
-
-impl Default for OAuthStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 #[derive(Default, Props)]

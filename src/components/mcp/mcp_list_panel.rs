@@ -193,12 +193,11 @@ fn status_icon(status: McpServerConnectionType) -> &'static str {
 }
 
 fn server_status_text(server: &ServerInfo) -> String {
-    if server.official_client_type() == McpServerConnectionType::Pending {
-        if let (Some(attempt), Some(max)) =
+    if server.official_client_type() == McpServerConnectionType::Pending
+        && let (Some(attempt), Some(max)) =
             (server.reconnect_attempt, server.max_reconnect_attempts)
-        {
-            return format!("reconnecting ({attempt}/{max})…");
-        }
+    {
+        return format!("reconnecting ({attempt}/{max})…");
     }
     status_text(server.official_client_type(), None).to_string()
 }
@@ -427,9 +426,7 @@ pub fn MCPListPanel<'a>(
                             View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
                                 View(padding_left: 2u32) { Text(content: "Agent MCPs".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap) }
                                 #(source_agents.into_iter().map(|agent_name| {
-                                    let rows = agent_servers.iter().enumerate().filter_map(|(offset, agent_server)| {
-                                        agent_server.source_agents.contains(&agent_name).then(|| (offset, agent_server.clone()))
-                                    }).collect::<Vec<_>>();
+                                    let rows = agent_servers.iter().enumerate().filter(|&(_, agent_server)| agent_server.source_agents.contains(&agent_name)).map(|(offset, agent_server)| (offset, agent_server.clone())).collect::<Vec<_>>();
                                     element! {
                                         View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
                                             View(padding_left: 2u32) { Text(content: format!("@{agent_name}"), dim: true, wrap: TextWrap::NoWrap) }

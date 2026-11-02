@@ -210,10 +210,10 @@ pub fn alacritty_config_paths_for(
         );
     }
 
-    if platform == Platform::Windows {
-        if let Some(app_data) = app_data {
-            config_paths.push(app_data.join("alacritty").join("alacritty.toml"));
-        }
+    if platform == Platform::Windows
+        && let Some(app_data) = app_data
+    {
+        config_paths.push(app_data.join("alacritty").join("alacritty.toml"));
     }
     config_paths
 }
@@ -973,8 +973,8 @@ mod tests {
     impl InstallerFixture {
         fn new() -> Self {
             let lock = TEST_ENV_LOCK.lock().unwrap();
-            let root = std::env::temp_dir()
-                .join(format!("nyan-terminal-setup-{}", uuid::Uuid::new_v4()));
+            let root =
+                std::env::temp_dir().join(format!("nyan-terminal-setup-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
             let vars = vec![
                 EnvVarGuard::set("HOME", &root),
@@ -1406,7 +1406,11 @@ mod tests {
         async fn terminal_setup_apple_installer_matches_official_bun_argv_effects_and_errors() {
             let _guard = Guard(chalk::stdout_level());
             chalk::set_stdout_level(0);
-            let rows:Vec<Value>=serde_json::from_str(include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/tests/fixtures/oracles/terminal-setup-0913/apple/installer-oracle.json"))).unwrap();
+            let rows: Vec<Value> = serde_json::from_str(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/oracles/terminal-setup-0913/apple/installer-oracle.json"
+            )))
+            .unwrap();
             for row in rows {
                 let input = &row["input"];
                 let integers = |key: &str| {

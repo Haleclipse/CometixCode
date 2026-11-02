@@ -107,14 +107,12 @@ pub fn truncate_to_width_no_ellipsis(text: &str, max_width: usize) -> String {
 /// Maps to: CC `utils/truncate.ts:134-160` `truncate`.
 pub fn truncate(str_value: &str, max_width: usize, single_line: bool) -> String {
     let mut result = str_value;
-    if single_line {
-        if let Some(first_newline) = str_value.find('\n') {
-            result = &str_value[..first_newline];
-            if UnicodeWidthStr::width(result) + 1 > max_width {
-                return truncate_to_width(result, max_width);
-            }
-            return format!("{result}…");
+    if single_line && let Some(first_newline) = str_value.find('\n') {
+        result = &str_value[..first_newline];
+        if UnicodeWidthStr::width(result) + 1 > max_width {
+            return truncate_to_width(result, max_width);
         }
+        return format!("{result}…");
     }
 
     if UnicodeWidthStr::width(result) <= max_width {

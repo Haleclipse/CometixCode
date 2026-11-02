@@ -91,12 +91,12 @@ where
             index += 1;
             continue;
         }
-        if arg == flag_name {
-            if let Some(value) = args.get(index + 1).filter(|value| !value.starts_with('-')) {
-                values.push(value.clone());
-                index += 2;
-                continue;
-            }
+        if arg == flag_name
+            && let Some(value) = args.get(index + 1).filter(|value| !value.starts_with('-'))
+        {
+            values.push(value.clone());
+            index += 2;
+            continue;
         }
         index += 1;
     }
@@ -109,10 +109,8 @@ mod tests {
 
     #[test]
     fn eager_parse_cli_flag_supports_space_separated_value() {
-        let value = eager_parse_cli_flag(
-            "--settings",
-            ["nyan", "--settings", "settings.test.json"],
-        );
+        let value =
+            eager_parse_cli_flag("--settings", ["nyan", "--settings", "settings.test.json"]);
         assert_eq!(value.as_deref(), Some("settings.test.json"));
     }
 

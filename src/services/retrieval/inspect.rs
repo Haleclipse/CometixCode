@@ -57,8 +57,13 @@ pub fn inspect_candidate(root: &Path, candidate: &Candidate) -> Result<VerifiedC
         && let Some(symbol) = candidate.symbol.as_deref()
     {
         let language = language_for(&candidate.path);
-        match symbols::symbol_covers(&text, &language, symbol, candidate.start_line, candidate.end_line)
-        {
+        match symbols::symbol_covers(
+            &text,
+            &language,
+            symbol,
+            candidate.start_line,
+            candidate.end_line,
+        ) {
             Ok(true) => {}
             Ok(false) => return Err(format!("symbol {symbol} no longer at this range")),
             // No grammar (or a grammar failure): the caller renders
@@ -120,7 +125,8 @@ mod tests {
 
     #[test]
     fn symbol_candidates_are_checked_against_a_fresh_parse() {
-        let root = std::env::temp_dir().join(format!("nyan-inspect-{}", uuid::Uuid::new_v4().simple()));
+        let root =
+            std::env::temp_dir().join(format!("nyan-inspect-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         let source = "fn alpha() {\n    1;\n}\n";
         std::fs::write(root.join("a.rs"), source).unwrap();
@@ -154,7 +160,8 @@ mod tests {
 
     #[test]
     fn unsupported_language_marks_no_symbol_check_instead_of_failing() {
-        let root = std::env::temp_dir().join(format!("nyan-inspect-{}", uuid::Uuid::new_v4().simple()));
+        let root =
+            std::env::temp_dir().join(format!("nyan-inspect-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         let source = "some opaque config\nmore\n";
         std::fs::write(root.join("a.xyz"), source).unwrap();
@@ -174,7 +181,8 @@ mod tests {
 
     #[test]
     fn non_utf8_sources_inspect_without_being_dropped() {
-        let root = std::env::temp_dir().join(format!("nyan-inspect-{}", uuid::Uuid::new_v4().simple()));
+        let root =
+            std::env::temp_dir().join(format!("nyan-inspect-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         // UTF-16LE with a BOM: valid text, invalid UTF-8. The index decodes it
         // through tool-io T5, so Inspect must decode it the same way or every

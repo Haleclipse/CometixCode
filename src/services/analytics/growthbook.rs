@@ -76,17 +76,16 @@ pub fn get_feature_value_cached_may_be_stale<T>(feature: &str, default_value: T)
 where
     T: Clone + DeserializeOwned,
 {
-    if let Some(value) = get_env_overrides().and_then(|overrides| overrides.get(feature).cloned()) {
-        if let Ok(value) = serde_json::from_value(value) {
-            return value;
-        }
+    if let Some(value) = get_env_overrides().and_then(|overrides| overrides.get(feature).cloned())
+        && let Ok(value) = serde_json::from_value(value)
+    {
+        return value;
     }
     if let Some(value) =
         get_config_overrides().and_then(|overrides| overrides.get(feature).cloned())
+        && let Ok(value) = serde_json::from_value(value)
     {
-        if let Ok(value) = serde_json::from_value(value) {
-            return value;
-        }
+        return value;
     }
 
     if crate::services::analytics::config::is_analytics_disabled() {

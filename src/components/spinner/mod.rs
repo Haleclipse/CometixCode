@@ -55,11 +55,11 @@ pub fn Spinner(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     // startup screens (main.rs's "Resuming conversation…", "Loading
     // commands…") mount outside `AppStateProvider` (Contract B), so the
     // setting is read provider-optionally and defaults to animated there.
-    let reduced_motion = crate::state::app_state::use_app_state_maybe_outside_of_provider(
-        &mut hooks,
-        |state| state.settings.prefers_reduced_motion.unwrap_or(false),
-    )
-    .unwrap_or(false);
+    let reduced_motion =
+        crate::state::app_state::use_app_state_maybe_outside_of_provider(&mut hooks, |state| {
+            state.settings.prefers_reduced_motion.unwrap_or(false)
+        })
+        .unwrap_or(false);
     let frame = hooks.use_animation_frame(if reduced_motion {
         None
     } else {
@@ -79,20 +79,14 @@ pub fn Spinner(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum SpinnerMode {
     Requesting,
+    #[default]
     Responding,
     ToolInput,
     ToolUse,
     Thinking,
-}
-
-impl Default for SpinnerMode {
-    fn default() -> Self {
-        // Maps to CC `REPL.tsx`: `streamMode` starts as `'responding'`.
-        Self::Responding
-    }
 }
 
 #[derive(Default, Props)]
@@ -387,7 +381,7 @@ fn next_displayed_response_length(
     let increment = if gap < 70 {
         3
     } else if gap < 200 {
-        8.max((gap.saturating_mul(15) + 99) / 100)
+        8.max(gap.saturating_mul(15).div_ceil(100))
     } else {
         50
     };
@@ -617,9 +611,9 @@ fn task_spinner_verb(task: &crate::utils::tasks::TaskRecord) -> Option<String> {
         .or_else(|| non_empty_task_text(Some(task.subject.as_str())))
 }
 
-fn find_next_pending_task<'a>(
-    tasks: &'a [crate::utils::tasks::TaskRecord],
-) -> Option<&'a crate::utils::tasks::TaskRecord> {
+fn find_next_pending_task(
+    tasks: &[crate::utils::tasks::TaskRecord],
+) -> Option<&crate::utils::tasks::TaskRecord> {
     let pending = tasks
         .iter()
         .filter(|task| task.status == "pending")
@@ -803,7 +797,7 @@ pub fn SpinnerWithVerb(
         props.time_ms_override.is_some() || props.disable_animation,
     );
     let frame = hooks.use_animation_frame(frame_interval);
-    let loading_start = hooks.use_const(|| Instant::now());
+    let loading_start = hooks.use_const(Instant::now);
     // Depend on the frame tick so each interval re-samples wall time.
     let _frame_tick = frame.time_ms;
     let elapsed_ms = props
@@ -1013,15 +1007,13 @@ pub fn SpinnerWithVerb(
         .thinking_text
         .clone()
         .or_else(|| thinking_status_text(next_thinking_status));
-    if active_thinking_status {
-        if let Some(text) = effective_thinking_text.as_mut() {
-            if let Some(suffix) = effective_effort_suffix
-                .as_deref()
-                .filter(|suffix| !suffix.is_empty())
-            {
-                text.push_str(suffix);
-            }
-        }
+    if active_thinking_status
+        && let Some(text) = effective_thinking_text.as_mut()
+        && let Some(suffix) = effective_effort_suffix
+            .as_deref()
+            .filter(|suffix| !suffix.is_empty())
+    {
+        text.push_str(suffix);
     }
     let mut thinking_width = effective_thinking_text
         .as_deref()
@@ -1071,10 +1063,8 @@ pub fn SpinnerWithVerb(
             has_running_teammates,
         });
     }
-    if show_thinking {
-        if let Some(thinking_text) = &effective_thinking_text {
-            status_parts.push(SpinnerStatusPart::Thinking(thinking_text.clone()));
-        }
+    if show_thinking && let Some(thinking_text) = &effective_thinking_text {
+        status_parts.push(SpinnerStatusPart::Thinking(thinking_text.clone()));
     }
 
     if effective_thinking_text.is_some() {
@@ -1284,7 +1274,11 @@ mod tests {
             spinner_row_interval(SpinnerMode::Requesting, false, false),
             Some(Duration::from_millis(50))
         );
-        for mode in [SpinnerMode::Responding, SpinnerMode::Thinking, SpinnerMode::ToolUse] {
+        for mode in [
+            SpinnerMode::Responding,
+            SpinnerMode::Thinking,
+            SpinnerMode::ToolUse,
+        ] {
             assert_eq!(
                 spinner_row_interval(mode, false, false),
                 Some(Duration::from_millis(100)),
@@ -1295,7 +1289,10 @@ mod tests {
             spinner_row_interval(SpinnerMode::Responding, true, false),
             Some(Duration::from_millis(1_000))
         );
-        assert_eq!(spinner_row_interval(SpinnerMode::Requesting, false, true), None);
+        assert_eq!(
+            spinner_row_interval(SpinnerMode::Requesting, false, true),
+            None
+        );
     }
 
     fn render_text(element: impl Into<AnyElement<'static>>) -> String {

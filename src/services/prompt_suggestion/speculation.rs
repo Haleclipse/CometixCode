@@ -643,11 +643,11 @@ async fn copy_overlay_to_main(
     for relative in paths {
         let source = overlay.join(&relative);
         let destination = cwd.join(&relative);
-        if let Some(parent) = destination.parent() {
-            if tokio::fs::create_dir_all(parent).await.is_err() {
-                copied = false;
-                continue;
-            }
+        if let Some(parent) = destination.parent()
+            && tokio::fs::create_dir_all(parent).await.is_err()
+        {
+            copied = false;
+            continue;
         }
         if tokio::fs::copy(source, destination).await.is_err() {
             copied = false;

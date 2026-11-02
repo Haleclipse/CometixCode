@@ -86,7 +86,10 @@ mod tests {
     #[test]
     fn details_menus_and_repo_matches_official_bun() {
         // Actual source oracle: research/proof/plugin-ui-complete-0914/helpers-oracle.json.
-        let oracle:Value=serde_json::from_str(include_str!("../../../tests/fixtures/oracles/plugin-ui-complete-0914/helpers-oracle.json")).unwrap();
+        let oracle: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/plugin-ui-complete-0914/helpers-oracle.json"
+        ))
+        .unwrap();
         for (index, (homepage, repo)) in [
             (None, None),
             (Some(""), None),

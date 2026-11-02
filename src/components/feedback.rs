@@ -136,10 +136,10 @@ pub fn encode_uri_component(input: &str) -> String {
 }
 
 fn trim_encoded_percent_sequence(encoded: &mut String) {
-    if let Some(last_percent) = encoded.rfind('%') {
-        if last_percent >= encoded.len().saturating_sub(2) {
-            encoded.truncate(last_percent);
-        }
+    if let Some(last_percent) = encoded.rfind('%')
+        && last_percent >= encoded.len().saturating_sub(2)
+    {
+        encoded.truncate(last_percent);
     }
 }
 
@@ -154,7 +154,8 @@ impl Default for FeedbackIssueEnvironment {
     fn default() -> Self {
         Self {
             platform: std::env::consts::OS.to_string(),
-            terminal: crate::utils::process_env::var("TERM").unwrap_or_else(|| "unknown".to_string()),
+            terminal: crate::utils::process_env::var("TERM")
+                .unwrap_or_else(|| "unknown".to_string()),
             version: option_env!("CARGO_PKG_VERSION").map(ToOwned::to_owned),
         }
     }
@@ -255,10 +256,10 @@ pub fn create_fallback_title(description: &str) -> String {
 
     let mut truncated = first_line.chars().take(60).collect::<String>();
     if first_line.chars().count() > 60 {
-        if let Some(last_space) = truncated.rfind(' ') {
-            if last_space > 30 {
-                truncated.truncate(last_space);
-            }
+        if let Some(last_space) = truncated.rfind(' ')
+            && last_space > 30
+        {
+            truncated.truncate(last_space);
         }
         truncated.push_str("...");
     }

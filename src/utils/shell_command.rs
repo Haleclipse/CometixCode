@@ -42,7 +42,7 @@ fn size_watchdog_interval() -> Duration {
     SIZE_WATCHDOG_INTERVAL
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct ExecResult {
     pub stdout: String,
     pub stderr: String,
@@ -63,26 +63,6 @@ pub struct ExecResult {
     /// Physical cwd captured by Shell.ts's `pwd -P` trailer.
     pub cwd_after: Option<std::path::PathBuf>,
     pub pre_spawn_error: Option<String>,
-}
-
-impl Default for ExecResult {
-    fn default() -> Self {
-        Self {
-            stdout: String::new(),
-            stderr: String::new(),
-            pipe_stderr: None,
-            code: 0,
-            interrupted: false,
-            background_task_id: None,
-            backgrounded_by_user: false,
-            assistant_auto_backgrounded: false,
-            output_file_path: None,
-            output_file_size: None,
-            output_task_id: None,
-            cwd_after: None,
-            pre_spawn_error: None,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -498,13 +478,13 @@ fn finish_result(
         finalize(&mut result);
     }
 
-    if let Ok(mut status) = inner.status.lock() {
-        if matches!(
+    if let Ok(mut status) = inner.status.lock()
+        && matches!(
             *status,
             ShellCommandStatus::Running | ShellCommandStatus::Backgrounded
-        ) {
-            *status = ShellCommandStatus::Completed;
-        }
+        )
+    {
+        *status = ShellCommandStatus::Completed;
     }
     if let Ok(mut state) = inner.result.lock() {
         state.value = Some(result);
@@ -516,9 +496,11 @@ fn finish_result(
 fn process_exit_code(status: ExitStatus) -> i32 {
     use std::os::unix::process::ExitStatusExt as _;
     status.code().unwrap_or_else(|| {
-        (status.signal() == Some(libc::SIGTERM))
-            .then_some(144)
-            .unwrap_or(1)
+        if status.signal() == Some(libc::SIGTERM) {
+            144
+        } else {
+            1
+        }
     })
 }
 
@@ -537,9 +519,9 @@ fn prepend_stderr(prefix: &str, stderr: &str) -> String {
 
 fn format_duration(duration: Duration) -> String {
     let milliseconds = duration.as_millis();
-    if milliseconds >= 60_000 && milliseconds % 60_000 == 0 {
+    if milliseconds >= 60_000 && milliseconds.is_multiple_of(60_000) {
         format!("{}m", milliseconds / 60_000)
-    } else if milliseconds >= 1_000 && milliseconds % 1_000 == 0 {
+    } else if milliseconds >= 1_000 && milliseconds.is_multiple_of(1_000) {
         format!("{}s", milliseconds / 1_000)
     } else {
         format!("{milliseconds}ms")

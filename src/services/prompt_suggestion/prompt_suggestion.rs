@@ -105,8 +105,7 @@ pub fn should_enable_prompt_suggestion() -> bool {
         settings.prompt_suggestion_enabled,
         crate::bootstrap::state::get_is_non_interactive_session(),
         swarm_teammate,
-        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION").as_deref(),
     )
 }
 
@@ -442,12 +441,12 @@ pub async fn execute_prompt_suggestion(cache_safe_params: CacheSafeParams) {
         cache_safe_params.clone(),
     )
     .await;
-    if let Err(error) = &result {
-        if !abort_controller.is_aborted() {
-            crate::utils::debug::log_for_debugging(&format!(
-                "Prompt suggestion generation failed: {error}"
-            ));
-        }
+    if let Err(error) = &result
+        && !abort_controller.is_aborted()
+    {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Prompt suggestion generation failed: {error}"
+        ));
     }
     if let Ok(Some(generated)) = result {
         let suggestion = generated.suggestion.clone();

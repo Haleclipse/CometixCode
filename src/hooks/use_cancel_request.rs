@@ -233,7 +233,10 @@ pub fn CancelRequestHandler(
         .can_cancel_running_task
         .clone()
         .expect("CancelRequestHandler can_cancel_running_task");
-    let on_cancel = props.on_cancel.clone().expect("CancelRequestHandler on_cancel");
+    let on_cancel = props
+        .on_cancel
+        .clone()
+        .expect("CancelRequestHandler on_cancel");
     use_cancel_request(
         &mut hooks,
         UseCancelRequestOptions {

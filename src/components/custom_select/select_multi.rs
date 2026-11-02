@@ -123,13 +123,15 @@ pub fn SelectMulti<'a>(
     let app_store = hooks.try_use_context::<crate::state::store::AppStore>();
     let mut overlay =
         hooks.use_state(|| Option::<crate::context::overlay_context::OverlayRegistration>::None);
-    if overlay.read().is_none() {
-        if let Some(store) = app_store.as_deref() {
-            overlay.set(Some(crate::context::overlay_context::OverlayRegistration::register(
+    if overlay.read().is_none()
+        && let Some(store) = app_store.as_deref()
+    {
+        overlay.set(Some(
+            crate::context::overlay_context::OverlayRegistration::register(
                 store.clone(),
                 "multi-select",
-            )));
-        }
+            ),
+        ));
     }
 
     let pending = pending_actions.read().clone();

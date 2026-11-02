@@ -495,10 +495,9 @@ mod tests {
                 kind,
                 ..
             }) = event
+                && kind != KeyEventKind::Release
             {
-                if kind != KeyEventKind::Release {
-                    search.handle_edit_key(&code, &modifiers);
-                }
+                search.handle_edit_key(&code, &modifiers);
             }
         });
         element! { Text(content: format!("{}|{}", search.text().replace('\n', "↵"), search.offset())) }
@@ -570,11 +569,12 @@ mod tests {
                 processed.set(processed.get() + 1);
                 event.stop_propagation();
             }
-            TerminalEvent::Key(key) if key.kind != KeyEventKind::Release => {
-                if search.handle_edit_key(&key.code, &key.modifiers) {
-                    processed.set(processed.get() + 1);
-                    event.stop_propagation();
-                }
+            TerminalEvent::Key(key)
+                if key.kind != KeyEventKind::Release
+                    && search.handle_edit_key(&key.code, &key.modifiers) =>
+            {
+                processed.set(processed.get() + 1);
+                event.stop_propagation();
             }
             _ => {}
         });

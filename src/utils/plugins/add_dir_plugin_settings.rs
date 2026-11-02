@@ -22,10 +22,10 @@ pub fn get_add_dir_enabled_plugins() -> Map<String, Value> {
                     c => path.push(c.as_os_str()),
                 }
             }
-            if let (Some(settings), _) = crate::utils::settings::parse_settings_file(&path) {
-                if let Some(Value::Object(entries)) = settings.enabled_plugins {
-                    result.extend(entries);
-                }
+            if let (Some(settings), _) = crate::utils::settings::parse_settings_file(&path)
+                && let Some(Value::Object(entries)) = settings.enabled_plugins
+            {
+                result.extend(entries);
             }
         }
     }
@@ -51,10 +51,10 @@ pub fn get_add_dir_extra_marketplaces() -> Map<String, Value> {
                     c => path.push(c.as_os_str()),
                 }
             }
-            if let (Some(settings), _) = crate::utils::settings::parse_settings_file(&path) {
-                if let Some(Value::Object(entries)) = settings.extra_known_marketplaces {
-                    result.extend(entries);
-                }
+            if let (Some(settings), _) = crate::utils::settings::parse_settings_file(&path)
+                && let Some(Value::Object(entries)) = settings.extra_known_marketplaces
+            {
+                result.extend(entries);
             }
         }
     }

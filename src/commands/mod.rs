@@ -514,26 +514,33 @@ fn is_internal_non_demo() -> bool {
 }
 
 fn compact_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_COMPACT").as_deref())
+    !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_COMPACT").as_deref(),
+    )
 }
 
 fn doctor_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_DOCTOR_COMMAND").as_deref())
+    !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_DOCTOR_COMMAND").as_deref(),
+    )
 }
 
 fn install_github_app_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_INSTALL_GITHUB_APP_COMMAND")
-            .as_deref(),
+        crate::utils::process_env::var("DISABLE_INSTALL_GITHUB_APP_COMMAND").as_deref(),
     )
 }
 
 fn login_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_LOGIN_COMMAND").as_deref())
+    !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_LOGIN_COMMAND").as_deref(),
+    )
 }
 
 fn logout_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_LOGOUT_COMMAND").as_deref())
+    !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_LOGOUT_COMMAND").as_deref(),
+    )
 }
 
 fn is_using_3p_services() -> bool {
@@ -543,7 +550,9 @@ fn is_using_3p_services() -> bool {
         "CLAUDE_CODE_USE_FOUNDRY",
     ]
     .into_iter()
-    .any(|key| crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref()))
+    .any(|key| {
+        crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref())
+    })
 }
 
 fn is_console_user() -> bool {
@@ -580,7 +589,9 @@ fn terminal_setup_hidden() -> bool {
 }
 
 fn session_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+    )
 }
 
 fn feedback_enabled() -> bool {
@@ -1461,8 +1472,7 @@ mod tests {
 
         let model = command_description(find("model"));
         assert!(
-            model.starts_with("Set the AI model for nyan (currently ")
-                && model.ends_with(')'),
+            model.starts_with("Set the AI model for nyan (currently ") && model.ends_with(')'),
             "model={model}"
         );
 

@@ -250,7 +250,7 @@ fn validate(raw_url: &str, config: &FetchConfig) -> Result<ValidatedUrl, FetchEr
     {
         let mut guard = config.host_guard.clone();
         guard.allow_private_for_tests |= config.allow_private_for_tests;
-        return host_guard::validate_url(raw_url, &guard).map_err(map_guard_error);
+        host_guard::validate_url(raw_url, &guard).map_err(map_guard_error)
     }
     #[cfg(not(test))]
     host_guard::validate_url(raw_url, &config.host_guard).map_err(map_guard_error)
@@ -553,7 +553,10 @@ mod network_tests {
                 .iter()
                 .map(|hop| (hop.status, hop.to.as_str()))
                 .collect::<Vec<_>>(),
-            vec![(301, server.url("/b").as_str()), (302, server.url("/c").as_str())]
+            vec![
+                (301, server.url("/b").as_str()),
+                (302, server.url("/c").as_str())
+            ]
         );
     }
 
@@ -632,16 +635,31 @@ mod network_tests {
             ("/forbidden", Route::new(403, "text/html", "no")),
             ("/limited", Route::new(429, "text/html", "slow down")),
             ("/gone", Route::new(404, "text/html", "gone")),
-            ("/image", Route::new(200, "image/png", vec![0x89, b'P', b'N', b'G'])),
+            (
+                "/image",
+                Route::new(200, "image/png", vec![0x89, b'P', b'N', b'G']),
+            ),
             ("/blob", Route::new(200, "application/octet-stream", "x")),
             ("/none", Route::new(200, "", "x")),
-            ("/json", Route::new(200, "application/json; charset=utf-8", r#"{"a":1}"#)),
+            (
+                "/json",
+                Route::new(200, "application/json; charset=utf-8", r#"{"a":1}"#),
+            ),
         ])
         .await;
         let cfg = config();
-        assert_eq!(fetch(&server.url("/forbidden"), &cfg).await.unwrap_err(), FetchError::HttpStatus(403));
-        assert_eq!(fetch(&server.url("/limited"), &cfg).await.unwrap_err(), FetchError::HttpStatus(429));
-        assert_eq!(fetch(&server.url("/gone"), &cfg).await.unwrap_err(), FetchError::HttpStatus(404));
+        assert_eq!(
+            fetch(&server.url("/forbidden"), &cfg).await.unwrap_err(),
+            FetchError::HttpStatus(403)
+        );
+        assert_eq!(
+            fetch(&server.url("/limited"), &cfg).await.unwrap_err(),
+            FetchError::HttpStatus(429)
+        );
+        assert_eq!(
+            fetch(&server.url("/gone"), &cfg).await.unwrap_err(),
+            FetchError::HttpStatus(404)
+        );
         assert!(matches!(
             fetch(&server.url("/image"), &cfg).await.unwrap_err(),
             FetchError::ContentTypeDenied(kind) if kind == "image/png"
@@ -654,7 +672,10 @@ mod network_tests {
             fetch(&server.url("/none"), &cfg).await.unwrap_err(),
             FetchError::ContentTypeDenied(_)
         ));
-        assert_eq!(fetch(&server.url("/json"), &cfg).await.unwrap().text, r#"{"a":1}"#);
+        assert_eq!(
+            fetch(&server.url("/json"), &cfg).await.unwrap().text,
+            r#"{"a":1}"#
+        );
     }
 
     #[tokio::test]
@@ -667,7 +688,14 @@ mod network_tests {
             FetchError::TooLarge
         );
         small.max_bytes = 4096;
-        assert_eq!(fetch(&server.url("/big"), &small).await.unwrap().raw_body.len(), 2048);
+        assert_eq!(
+            fetch(&server.url("/big"), &small)
+                .await
+                .unwrap()
+                .raw_body
+                .len(),
+            2048
+        );
     }
 
     #[tokio::test]
@@ -691,7 +719,9 @@ mod network_tests {
         let abort = AbortController::default();
         abort.abort();
         assert_eq!(
-            fetch_url(&server.url("/x"), &abort, &config()).await.unwrap_err(),
+            fetch_url(&server.url("/x"), &abort, &config())
+                .await
+                .unwrap_err(),
             FetchError::Cancelled
         );
         assert!(server.seen().is_empty());
@@ -704,7 +734,11 @@ mod network_tests {
         std::fs::create_dir_all(&home).unwrap();
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &home);
-        let server = serve(vec![("/doc.pdf", Route::new(200, "application/pdf", pdf.clone()))]).await;
+        let server = serve(vec![(
+            "/doc.pdf",
+            Route::new(200, "application/pdf", pdf.clone()),
+        )])
+        .await;
         let result = fetch(&server.url("/doc.pdf"), &config()).await;
         let leftovers = std::fs::read_dir(home.join("web-snapshots/tmp"))
             .map(|entries| entries.count())
@@ -714,7 +748,11 @@ mod network_tests {
             Ok(page) => {
                 assert_eq!(page.content_type, "application/pdf");
                 assert_eq!(page.raw_body, pdf);
-                assert!(page.text.contains("Hello from the PDF fixture"), "{}", page.text);
+                assert!(
+                    page.text.contains("Hello from the PDF fixture"),
+                    "{}",
+                    page.text
+                );
             }
             Err(FetchError::PdfConversionUnavailable) => {
                 eprintln!("skipped: pdftotext is not installed");
@@ -741,13 +779,18 @@ mod network_tests {
             out.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", index + 1).as_bytes());
         }
         let xref = out.len();
-        out.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+        out.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
         for offset in offsets {
             out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
         }
         out.extend_from_slice(
-            format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1)
-                .as_bytes(),
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
         );
         out
     }
@@ -765,11 +808,17 @@ mod network_tests {
         let _no_proxy_upper = EnvVarGuard::set("NO_PROXY", "example.test,127.0.0.1");
         let mut proxied = config();
         proxied.via = FetchVia::Proxy;
-        let page = fetch("http://example.test/via-proxy", &proxied).await.unwrap();
+        let page = fetch("http://example.test/via-proxy", &proxied)
+            .await
+            .unwrap();
         assert_eq!(page.text, "served by the proxy");
         let seen = proxy.seen();
         assert_eq!(seen.len(), 1, "the proxy must have received the request");
-        assert!(seen[0].target.contains("example.test"), "{}", seen[0].target);
+        assert!(
+            seen[0].target.contains("example.test"),
+            "{}",
+            seen[0].target
+        );
     }
 
     #[tokio::test]

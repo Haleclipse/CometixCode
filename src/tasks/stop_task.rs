@@ -157,10 +157,10 @@ pub async fn stop_task(
     };
 
     if !killed {
-        if let Some(current) = lookup_task(task_id, app_store) {
-            if current.status != "running" {
-                return Err(not_running(task_id, &current.status));
-            }
+        if let Some(current) = lookup_task(task_id, app_store)
+            && current.status != "running"
+        {
+            return Err(not_running(task_id, &current.status));
         }
         return Err(StopTaskError::new(
             format!("Unsupported task type: {}", task.task_type),

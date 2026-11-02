@@ -180,16 +180,16 @@ pub fn resolve_deepest_existing_ancestor_sync(
                 }));
             }
             Ok(_) => {
-                if let Ok(resolved) = fs.realpath_sync(&current) {
-                    if resolved.as_os_str() != current.as_os_str() {
-                        return Ok(Some(if tail.is_empty() {
-                            resolved
-                        } else {
-                            let mut segments = vec![resolved.as_path()];
-                            segments.extend(tail.iter().rev().map(Path::new));
-                            native::join_paths(&segments)
-                        }));
-                    }
+                if let Ok(resolved) = fs.realpath_sync(&current)
+                    && resolved.as_os_str() != current.as_os_str()
+                {
+                    return Ok(Some(if tail.is_empty() {
+                        resolved
+                    } else {
+                        let mut segments = vec![resolved.as_path()];
+                        segments.extend(tail.iter().rev().map(Path::new));
+                        native::join_paths(&segments)
+                    }));
                 }
                 return Ok(None);
             }
@@ -244,12 +244,11 @@ pub fn get_paths_for_permission_check(input_path: &Path) -> Vec<PathBuf> {
         }
         visited.push(current.clone());
         if !fs.exists_sync(&current) {
-            if current.as_os_str() == path.as_os_str() {
-                if let Ok(Some(resolved)) =
+            if current.as_os_str() == path.as_os_str()
+                && let Ok(Some(resolved)) =
                     resolve_deepest_existing_ancestor_sync(fs.as_ref(), &path)
-                {
-                    push_unique_path(&mut paths, resolved);
-                }
+            {
+                push_unique_path(&mut paths, resolved);
             }
             break;
         }
@@ -416,7 +415,7 @@ pub(crate) fn force_next_replace_file_atomic_failure_for_test() {
 fn take_forced_replace_failure() -> bool {
     #[cfg(test)]
     {
-        return FORCE_REPLACE_FILE_ATOMIC_FAILURE.replace(false);
+        FORCE_REPLACE_FILE_ATOMIC_FAILURE.replace(false)
     }
     #[cfg(not(test))]
     {

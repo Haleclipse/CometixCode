@@ -96,15 +96,15 @@ pub(crate) fn context_cache_presence_for_test() -> (bool, bool) {
 /// are enabled, plus `currentDate` on every production query.
 #[cfg(not(test))]
 pub fn get_user_context() -> BTreeMap<String, String> {
-    if let Ok(cache) = USER_CONTEXT_CACHE.read() {
-        if let Some(context) = cache.as_ref() {
-            return context.clone();
-        }
+    if let Ok(cache) = USER_CONTEXT_CACHE.read()
+        && let Some(context) = cache.as_ref()
+    {
+        return context.clone();
     }
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let context = build_user_context(
         |key| crate::utils::process_env::var(key),
-        || crate::utils::claudemd::build_claude_md_context(),
+        crate::utils::claudemd::build_claude_md_context,
         crate::constants::common::get_local_iso_date,
         !additional_dirs.is_empty(),
     );
@@ -128,10 +128,10 @@ pub fn get_user_context() -> BTreeMap<String, String> {
 /// Maps to: CC `context.ts` `getSystemContext()`.
 #[cfg(not(test))]
 pub fn get_system_context() -> BTreeMap<String, String> {
-    if let Ok(cache) = SYSTEM_CONTEXT_CACHE.read() {
-        if let Some(context) = cache.as_ref() {
-            return context.clone();
-        }
+    if let Ok(cache) = SYSTEM_CONTEXT_CACHE.read()
+        && let Some(context) = cache.as_ref()
+    {
+        return context.clone();
     }
     let settings = crate::utils::settings::get_initial_settings();
     let context = build_system_context(
@@ -211,24 +211,22 @@ fn build_system_context_with_cache_breaker(
     // `utils/gitSettings.ts#shouldIncludeGitInstructions()` returns false.
     if !crate::utils::env_utils::is_env_truthy(get_env("CLAUDE_CODE_REMOTE").as_deref())
         && should_include_git_instructions(&get_env, include_git_instructions_setting)
+        && let Some(git_status) = get_git_status()
     {
-        if let Some(git_status) = get_git_status() {
-            context.insert("gitStatus".to_string(), git_status);
-        }
+        context.insert("gitStatus".to_string(), git_status);
     }
 
     // Maps to CC `context.ts` `feature('BREAK_CACHE_COMMAND')` gated
     // `cacheBreaker: [CACHE_BREAKER: ...]` system-context injection.
-    if break_cache_command_enabled {
-        if let Some(injection) = system_prompt_injection
+    if break_cache_command_enabled
+        && let Some(injection) = system_prompt_injection
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-        {
-            context.insert(
-                "cacheBreaker".to_string(),
-                format!("[CACHE_BREAKER: {injection}]"),
-            );
-        }
+    {
+        context.insert(
+            "cacheBreaker".to_string(),
+            format!("[CACHE_BREAKER: {injection}]"),
+        );
     }
 
     context

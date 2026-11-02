@@ -44,10 +44,10 @@ pub fn parse_changelog(content: &str) -> HashMap<String, Vec<String>> {
 
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("## ") {
-            if let Some(version) = current_version.take() {
-                if !current_notes.is_empty() {
-                    release_notes.insert(version, std::mem::take(&mut current_notes));
-                }
+            if let Some(version) = current_version.take()
+                && !current_notes.is_empty()
+            {
+                release_notes.insert(version, std::mem::take(&mut current_notes));
             }
 
             let version = rest
@@ -69,10 +69,10 @@ pub fn parse_changelog(content: &str) -> HashMap<String, Vec<String>> {
         }
     }
 
-    if let Some(version) = current_version {
-        if !current_notes.is_empty() {
-            release_notes.insert(version, current_notes);
-        }
+    if let Some(version) = current_version
+        && !current_notes.is_empty()
+    {
+        release_notes.insert(version, current_notes);
     }
 
     release_notes

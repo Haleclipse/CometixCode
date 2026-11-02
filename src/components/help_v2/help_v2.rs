@@ -284,7 +284,9 @@ mod tests {
                 for event in batch {
                     keys.send(TerminalEvent::Key(event.clone()))
                         .await
-                        .unwrap_or_else(|_| panic!("the app exited before batch {next_batch}; last:\n{last}"));
+                        .unwrap_or_else(|_| {
+                            panic!("the app exited before batch {next_batch}; last:\n{last}")
+                        });
                 }
                 sent += batch.len();
                 next_batch += 1;
@@ -301,8 +303,10 @@ mod tests {
 
     /// The option label under the pointer.
     fn pointed(text: &str) -> Option<String> {
-        text.lines()
-            .find_map(|line| line.split_once('❯').map(|(_, rest)| rest.trim().to_string()))
+        text.lines().find_map(|line| {
+            line.split_once('❯')
+                .map(|(_, rest)| rest.trim().to_string())
+        })
     }
 
     #[test]
@@ -315,7 +319,10 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(text.contains("Shortcuts"), "canvas=\n{text}");
-        assert!(text.contains("For more help: https://code.claude.com/docs/en/overview"), "canvas=\n{text}");
+        assert!(
+            text.contains("For more help: https://code.claude.com/docs/en/overview"),
+            "canvas=\n{text}"
+        );
         assert!(text.contains("Esc to cancel"), "canvas=\n{text}");
     }
 
@@ -324,7 +331,10 @@ mod tests {
         let (text, _) = drive(keys(&[KeyCode::Tab]));
         assert!(text.contains("Browse default commands:"), "canvas=\n{text}");
         assert!(text.contains("/add-dir"), "canvas=\n{text}");
-        assert!(text.contains("Add a new working directory"), "canvas=\n{text}");
+        assert!(
+            text.contains("Add a new working directory"),
+            "canvas=\n{text}"
+        );
         // CC Commands.tsx:28: `(maxHeight - 10) / 2` rows of the half-height
         // cap; 32 rows give 3.
         let listed = text
@@ -342,17 +352,29 @@ mod tests {
         // ↓ from the tab row focuses the list (Tabs.tsx:163-172); the list
         // then moves with the Select bindings, j included.
         let (text, _) = drive(keys(&[KeyCode::Tab, KeyCode::Down]));
-        assert_eq!(pointed(&text).as_deref(), Some("/add-dir"), "canvas=\n{text}");
+        assert_eq!(
+            pointed(&text).as_deref(),
+            Some("/add-dir"),
+            "canvas=\n{text}"
+        );
         let (text, _) = drive(keys(&[KeyCode::Tab, KeyCode::Down, KeyCode::Char('j')]));
         let second = pointed(&text).unwrap_or_default();
-        assert!(second.starts_with('/') && second != "/add-dir", "canvas=\n{text}");
+        assert!(
+            second.starts_with('/') && second != "/add-dir",
+            "canvas=\n{text}"
+        );
     }
 
     #[test]
     fn help_v2_up_from_the_first_command_hands_focus_back_to_the_tab_row() {
         // CC Commands.tsx:63 `onUpFromFirstItem={focusHeader}`: the tab key
         // then switches tabs again.
-        let (text, _) = drive(keys(&[KeyCode::Tab, KeyCode::Down, KeyCode::Up, KeyCode::Tab]));
+        let (text, _) = drive(keys(&[
+            KeyCode::Tab,
+            KeyCode::Down,
+            KeyCode::Up,
+            KeyCode::Tab,
+        ]));
         assert!(text.contains("No custom commands found"), "canvas=\n{text}");
         // While the list has focus the tab key does not switch.
         let (text, _) = drive(keys(&[KeyCode::Tab, KeyCode::Down, KeyCode::Tab]));
@@ -377,7 +399,10 @@ mod tests {
         // window.
         let (frames, closes) = drive_frames(vec![vec![ctrl('c')]]);
         let text = &frames[0];
-        assert!(text.contains("Press Ctrl-C again to exit"), "canvas=\n{text}");
+        assert!(
+            text.contains("Press Ctrl-C again to exit"),
+            "canvas=\n{text}"
+        );
         assert!(!text.contains("to cancel"), "canvas=\n{text}");
         assert_eq!(closes, 0);
     }
@@ -396,7 +421,12 @@ mod tests {
         // CC Commands.tsx:26 calls useTabHeaderFocus above its empty-message
         // branch: ↓ blurs the tab row with no list to hand it back, so the
         // tab key no longer switches.
-        let (text, _) = drive(keys(&[KeyCode::Tab, KeyCode::Tab, KeyCode::Down, KeyCode::Tab]));
+        let (text, _) = drive(keys(&[
+            KeyCode::Tab,
+            KeyCode::Tab,
+            KeyCode::Down,
+            KeyCode::Tab,
+        ]));
         assert!(text.contains("No custom commands found"), "canvas=\n{text}");
     }
 }

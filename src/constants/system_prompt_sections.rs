@@ -53,12 +53,11 @@ pub fn resolve_system_prompt_sections(
     sections
         .into_iter()
         .map(|section| {
-            if !section.cache_break {
-                if let Some(cached) =
+            if !section.cache_break
+                && let Some(cached) =
                     crate::bootstrap::state::get_system_prompt_section_cache_entry(section.name)
-                {
-                    return cached;
-                }
+            {
+                return cached;
             }
             let value = (section.compute)();
             crate::bootstrap::state::set_system_prompt_section_cache_entry(

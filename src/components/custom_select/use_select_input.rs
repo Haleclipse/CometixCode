@@ -200,11 +200,11 @@ pub fn use_select_input(
     let mut overlay = hooks.use_state(|| Option::<OverlayRegistration>::None);
     let app_store = hooks.try_use_context::<crate::state::store::AppStore>();
     if options.has_on_cancel {
-        if overlay.read().is_none() {
-            if let Some(store) = app_store.as_deref() {
-                let registration = OverlayRegistration::register(store.clone(), "select");
-                overlay.set(Some(registration));
-            }
+        if overlay.read().is_none()
+            && let Some(store) = app_store.as_deref()
+        {
+            let registration = OverlayRegistration::register(store.clone(), "select");
+            overlay.set(Some(registration));
         }
     } else if overlay.read().is_some() {
         overlay.set(None);
@@ -340,12 +340,11 @@ pub fn use_select_input(
             // input mode; the key is not stopped.
             if has_on_input_mode_toggle
                 && matches!(key_event.code, KeyCode::Tab | KeyCode::BackTab)
+                && let Some(value) = state.focused_value()
             {
-                if let Some(value) = state.focused_value() {
-                    let mut toggled = input_mode_toggled;
-                    toggled.set(Some(value));
-                    return;
-                }
+                let mut toggled = input_mode_toggled;
+                toggled.set(Some(value));
+                return;
             }
             let in_input = focused_meta(&state, &metas).is_some_and(|meta| meta.is_input);
             // CC use-select-input.ts:197-225: raw arrows/Ctrl-N/P still
@@ -404,11 +403,11 @@ pub fn use_select_input(
                         && is_multi_select
                         && disable_selection != DisableSelection::Yes =>
                 {
-                    if let Some(meta) = focused_meta(&state, &metas) {
-                        if !meta.disabled {
-                            state.select_focused_option();
-                            toggled.set(Some(meta.value));
-                        }
+                    if let Some(meta) = focused_meta(&state, &metas)
+                        && !meta.disabled
+                    {
+                        state.select_focused_option();
+                        toggled.set(Some(meta.value));
                     }
                     event.stop_propagation();
                 }

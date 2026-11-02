@@ -1352,14 +1352,13 @@ impl RenderableMessage {
     /// [`Self::user_tool_result`]. Maps to: CC recording the tool's typed
     /// output beside the model-facing block; no-op on other message shapes.
     pub fn with_tool_use_result(mut self, tool_use_result: Option<serde_json::Value>) -> Self {
-        if let RenderableMessageKind::User { message } = &mut self.kind {
-            if let Some(UserContent::ToolResult(result)) = message
+        if let RenderableMessageKind::User { message } = &mut self.kind
+            && let Some(UserContent::ToolResult(result)) = message
                 .content
                 .iter_mut()
                 .find(|content| matches!(content, UserContent::ToolResult(_)))
-            {
-                result.tool_use_result = tool_use_result;
-            }
+        {
+            result.tool_use_result = tool_use_result;
         }
         self
     }

@@ -4,18 +4,15 @@ use serde::{Deserialize, Serialize};
 
 /// The four retrieval branches. The order is part of the deterministic wire
 /// contract and must not be changed without changing the generation version.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, Serialize, PartialOrd)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, Serialize, PartialOrd, Default,
+)]
 pub enum Branch {
+    #[default]
     Exact,
     Symbol,
     Text,
     Semantic,
-}
-
-impl Default for Branch {
-    fn default() -> Self {
-        Self::Exact
-    }
 }
 
 impl Branch {
@@ -41,22 +38,21 @@ impl Branch {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, Default)]
 pub enum BranchStatus {
+    #[default]
     Ok,
-    Partial { pending: usize },
-    Unavailable { reason: String },
+    Partial {
+        pending: usize,
+    },
+    Unavailable {
+        reason: String,
+    },
     Building,
     Rebuilding,
     TimedOut,
     Cancelled,
     Stale,
-}
-
-impl Default for BranchStatus {
-    fn default() -> Self {
-        Self::Ok
-    }
 }
 
 impl BranchStatus {

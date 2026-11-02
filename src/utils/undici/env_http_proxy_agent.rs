@@ -45,9 +45,8 @@ impl EnvHttpProxyAgent {
         no_proxy: Option<String>,
     ) -> Self {
         let env = crate::utils::process_env::snapshot();
-        let from_env = |lower: &str, upper: &str| {
-            env.var(lower).or_else(|| env.var(upper)).map(str::to_owned)
-        };
+        let from_env =
+            |lower: &str, upper: &str| env.var(lower).or_else(|| env.var(upper)).map(str::to_owned);
         let http_proxy = http_proxy
             .or_else(|| from_env("http_proxy", "HTTP_PROXY"))
             .truthy();
@@ -174,20 +173,32 @@ mod tests {
         // A bare name matches itself and its subdomains, unlike CC's own
         // `shouldBypassProxy`; `.x` and `*.x` are the same.
         for entry in ["anthropic.com", ".anthropic.com", "*.anthropic.com"] {
-            assert!(!proxied(&agent(entry), "https://api.anthropic.com"), "{entry}");
+            assert!(
+                !proxied(&agent(entry), "https://api.anthropic.com"),
+                "{entry}"
+            );
             assert!(!proxied(&agent(entry), "https://anthropic.com"), "{entry}");
-            assert!(proxied(&agent(entry), "https://notanthropic.com"), "{entry}");
+            assert!(
+                proxied(&agent(entry), "https://notanthropic.com"),
+                "{entry}"
+            );
         }
 
         // Ports filter first; the default port comes from the scheme.
         assert!(!proxied(&agent("example.com:443"), "https://example.com"));
         assert!(proxied(&agent("example.com:443"), "http://example.com"));
-        assert!(!proxied(&agent("example.com:8080"), "http://sub.example.com:8080"));
+        assert!(!proxied(
+            &agent("example.com:8080"),
+            "http://sub.example.com:8080"
+        ));
         // Port 0 is `parseInt('0') || 80`.
         assert!(!proxied(&agent("example.com:80"), "http://example.com:0"));
 
         // Separators are commas or single whitespace; case is ignored.
-        assert!(!proxied(&agent("a.test  EXAMPLE.com"), "https://example.com"));
+        assert!(!proxied(
+            &agent("a.test  EXAMPLE.com"),
+            "https://example.com"
+        ));
 
         // IPv6 keeps its brackets.
         assert!(!proxied(&agent("[::1]"), "http://[::1]:8080"));

@@ -136,20 +136,20 @@ pub fn RecentDenialsTab<'a>(
         },
     );
     // Maps to: CC RecentDenialsTab.tsx:44-52#handleSelect.
-    if let Some(value) = events.take_accepted() {
-        if let Ok(idx) = value.parse::<usize>() {
-            let mut next = (**denial_state.read()).clone();
-            if !next.approved.shift_remove(&idx) {
-                next.approved.insert(idx);
-            }
-            denial_state.set(Arc::new(next));
+    if let Some(value) = events.take_accepted()
+        && let Ok(idx) = value.parse::<usize>()
+    {
+        let mut next = (**denial_state.read()).clone();
+        if !next.approved.shift_remove(&idx) {
+            next.approved.insert(idx);
         }
+        denial_state.set(Arc::new(next));
     }
     // Maps to: CC RecentDenialsTab.tsx:54-56#handleFocus.
-    if let Some(value) = state.navigation.take_focus_change() {
-        if let Ok(idx) = value.parse::<usize>() {
-            focused_idx.set(idx);
-        }
+    if let Some(value) = state.navigation.take_focus_change()
+        && let Ok(idx) = value.parse::<usize>()
+    {
+        focused_idx.set(idx);
     }
     if events.take_up_from_first_item() {
         (props.on_focus_header)(());
@@ -446,14 +446,14 @@ mod tests {
                     let mut retry_cells = Vec::new();
                     for y in row..canvas.height() {
                         for x in 0..canvas.width() {
-                            if let Some(text) = canvas.cell(x, y).and_then(|cell| cell.text()) {
-                                if canvas.resolved_text_style(x, y).is_some_and(|style| {
+                            if let Some(text) = canvas.cell(x, y).and_then(|cell| cell.text())
+                                && canvas.resolved_text_style(x, y).is_some_and(|style| {
                                     style.color == Some(current_theme.inactive)
                                         && !style.dim
                                         && style.weight == Weight::Normal
-                                }) {
-                                    retry_cells.push(text.to_owned());
-                                }
+                                })
+                            {
+                                retry_cells.push(text.to_owned());
                             }
                         }
                     }

@@ -181,7 +181,9 @@ mod tests {
                 if r == 0 { f64::NAN } else { r as f64 }
             })
             .collect();
-        sort_by(&mut numbers, |a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+        sort_by(&mut numbers, |a, b| {
+            a.partial_cmp(b).unwrap_or(Ordering::Equal)
+        });
         assert_eq!(numbers.len(), 64);
     }
 

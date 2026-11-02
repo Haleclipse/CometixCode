@@ -231,12 +231,7 @@ pub fn WebFetchPermissionRequest<'a>(
         let mut pending_select = pending_select;
         let options = options.clone();
         move |event| {
-            let TerminalEvent::Key(KeyEvent {
-                code,
-                kind,
-                ..
-            }) = event
-            else {
+            let TerminalEvent::Key(KeyEvent { code, kind, .. }) = event else {
                 return;
             };
             if kind == KeyEventKind::Release {
@@ -267,7 +262,7 @@ pub fn WebFetchPermissionRequest<'a>(
         }
     });
 
-    let selected = { pending_select.read().clone() };
+    let selected = { *pending_select.read() };
     if let Some(value) = selected {
         pending_select.set(None);
         (props.on_select)(value);

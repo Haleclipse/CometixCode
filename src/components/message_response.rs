@@ -38,7 +38,7 @@ pub fn MessageResponse(
     // branch skips.
     let is_nested = hooks.try_use_context::<MessageResponseContext>().is_some();
     let color = props.color;
-    let children = props.children.drain(..).collect::<Vec<_>>();
+    let children = std::mem::take(&mut props.children);
     let has_children = !children.is_empty();
     let body = if has_children {
         element! { Fragment { #(children) } }.into_any()

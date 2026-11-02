@@ -323,7 +323,7 @@ pub fn one_shot_jittered_next_cron_run_ms(
         .single()
         .map(|d| d.minute())
         .unwrap_or(0);
-    if cfg.one_shot_minute_mod == 0 || minute % cfg.one_shot_minute_mod != 0 {
+    if cfg.one_shot_minute_mod == 0 || !minute.is_multiple_of(cfg.one_shot_minute_mod) {
         return Some(t1);
     }
     let lead = cfg.one_shot_floor_ms

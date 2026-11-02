@@ -1173,10 +1173,10 @@ fn extract_paths_from_command(cmd: &ParsedCommandElement) -> ExtractedPaths {
         element_types.and_then(|types| types.get(arg_index + 1).copied())
     };
     let check_arg_element_type = |arg_index: usize, flag: &mut bool| {
-        if let Some(element_type) = element_type_at(arg_index) {
-            if !is_safe_path_element_type(element_type) {
-                *flag = true;
-            }
+        if let Some(element_type) = element_type_at(arg_index)
+            && !is_safe_path_element_type(element_type)
+        {
+            *flag = true;
         }
     };
 
@@ -1224,12 +1224,12 @@ fn extract_paths_from_command(cmd: &ParsedCommandElement) -> ExtractedPaths {
                     } else {
                         value = Some(raw_value.clone());
                     }
-                } else if let Some(next_value) = args.get(index + 1) {
-                    if !is_powershell_parameter(next_value, element_type_at(index + 1)) {
-                        value = Some(next_value.clone());
-                        check_arg_element_type(index + 1, &mut has_unvalidatable_path_arg);
-                        index += 1;
-                    }
+                } else if let Some(next_value) = args.get(index + 1)
+                    && !is_powershell_parameter(next_value, element_type_at(index + 1))
+                {
+                    value = Some(next_value.clone());
+                    check_arg_element_type(index + 1, &mut has_unvalidatable_path_arg);
+                    index += 1;
                 }
                 if let Some(value) = value.filter(|value| !value.is_empty()) {
                     paths.push(value);
@@ -1245,12 +1245,12 @@ fn extract_paths_from_command(cmd: &ParsedCommandElement) -> ExtractedPaths {
                     } else {
                         value = Some(raw_value.clone());
                     }
-                } else if let Some(next_value) = args.get(index + 1) {
-                    if !is_powershell_parameter(next_value, element_type_at(index + 1)) {
-                        value = Some(next_value.clone());
-                        check_arg_element_type(index + 1, &mut has_unvalidatable_path_arg);
-                        index += 1;
-                    }
+                } else if let Some(next_value) = args.get(index + 1)
+                    && !is_powershell_parameter(next_value, element_type_at(index + 1))
+                {
+                    value = Some(next_value.clone());
+                    check_arg_element_type(index + 1, &mut has_unvalidatable_path_arg);
+                    index += 1;
                 }
                 if let Some(value) = value {
                     if value.contains('/') || value.contains('\\') || value == "." || value == ".."
@@ -1272,11 +1272,11 @@ fn extract_paths_from_command(cmd: &ParsedCommandElement) -> ExtractedPaths {
                     if has_complex_colon_value(raw_value) {
                         has_unvalidatable_path_arg = true;
                     }
-                } else if let Some(next_value) = args.get(index + 1) {
-                    if !is_powershell_parameter(next_value, element_type_at(index + 1)) {
-                        check_arg_element_type(index + 1, &mut has_unvalidatable_path_arg);
-                        index += 1;
-                    }
+                } else if let Some(next_value) = args.get(index + 1)
+                    && !is_powershell_parameter(next_value, element_type_at(index + 1))
+                {
+                    check_arg_element_type(index + 1, &mut has_unvalidatable_path_arg);
+                    index += 1;
                 }
             } else {
                 // Unknown parameter: rather than guess whether it is a switch
@@ -1287,10 +1287,10 @@ fn extract_paths_from_command(cmd: &ParsedCommandElement) -> ExtractedPaths {
                 // be a filesystem path, so it is extracted for deny-rule
                 // matching; without this the value stays trapped in the single
                 // token and a deny silently downgrades to an ask.
-                if let Some(raw_value) = colon_value.as_ref() {
-                    if !has_complex_colon_value(raw_value) {
-                        paths.push(raw_value.clone());
-                    }
+                if let Some(raw_value) = colon_value.as_ref()
+                    && !has_complex_colon_value(raw_value)
+                {
+                    paths.push(raw_value.clone());
                 }
             }
             index += 1;
@@ -1445,21 +1445,21 @@ fn check_path_constraints_for_statement(
             // Before falling back to ask, check whether the pipeline-source
             // text matches a deny rule, so `'.git/hooks/pre-commit' |
             // Remove-Item` denies rather than asks under `Edit(.git/**)`.
-            if let Some(source_text) = pipeline_source_text.as_ref() {
-                if let Some((resolved_path, rule)) = check_deny_rule_for_guessed_path(
+            if let Some(source_text) = pipeline_source_text.as_ref()
+                && let Some((resolved_path, rule)) = check_deny_rule_for_guessed_path(
                     &strip_edge_quotes(source_text),
                     &cwd,
                     tool_permission_context,
                     extracted.operation_type,
-                ) {
-                    return PermissionResult::Deny {
-                        message: format!(
-                            "{canonical} targeting '{resolved_path}' was blocked by a deny rule"
-                        ),
-                        decision_reason: PermissionDecisionReason::Rule { rule },
-                        tool_use_id: None,
-                    };
-                }
+                )
+            {
+                return PermissionResult::Deny {
+                    message: format!(
+                        "{canonical} targeting '{resolved_path}' was blocked by a deny rule"
+                    ),
+                    decision_reason: PermissionDecisionReason::Rule { rule },
+                    tool_use_id: None,
+                };
             }
             first_ask.get_or_insert_with(|| {
                 ask(

@@ -196,10 +196,10 @@ mod tests {
         assert_eq!(seen.1.as_deref(), Some("worker@team"));
 
         // Outside any scope the carry is a no-op, not a panic.
-        assert_eq!(
-            with_teammate_context_sync(capture_teammate_context(), is_in_process_teammate),
-            false
-        );
+        assert!(!with_teammate_context_sync(
+            capture_teammate_context(),
+            is_in_process_teammate
+        ));
     }
 
     #[tokio::test]

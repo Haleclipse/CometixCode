@@ -146,10 +146,10 @@ impl McpAuthTool {
         let background_app_store = context.app_store.clone();
         tokio::spawn(async move {
             let on_authorization_url = std::sync::Arc::new(move |url: String| {
-                if let Ok(mut sender) = url_sender.lock() {
-                    if let Some(sender) = sender.take() {
-                        let _ = sender.send(Ok(Some(url)));
-                    }
+                if let Ok(mut sender) = url_sender.lock()
+                    && let Some(sender) = sender.take()
+                {
+                    let _ = sender.send(Ok(Some(url)));
                 }
             });
             let result = crate::services::mcp::auth::perform_mcp_oauth_flow(
@@ -164,10 +164,10 @@ impl McpAuthTool {
             .await;
             match result {
                 Ok(_) => {
-                    if let Ok(mut sender) = completion_sender.lock() {
-                        if let Some(sender) = sender.take() {
-                            let _ = sender.send(Ok(None));
-                        }
+                    if let Ok(mut sender) = completion_sender.lock()
+                        && let Some(sender) = sender.take()
+                    {
+                        let _ = sender.send(Ok(None));
                     }
                     // Background continuation: once OAuth completes, reconnect
                     // and swap the real tools into appState. Prefix-based
@@ -180,39 +180,39 @@ impl McpAuthTool {
                     )
                     .await;
                     let tool_count = result.tools.len();
-                    if background_app_store.writable {
-                        if let Some(store) = background_app_store.store.as_ref() {
-                            store.replace_with(|app| {
-                                let mut mcp = (*app.mcp).clone();
-                                // Maps to: CC McpAuthTool.ts:146-168, whose
-                                // updater intentionally differs from the hook:
-                                // map existing clients only; use prefix-only
-                                // command removal; retain absent resources.
-                                let prefix = format!(
-                                    "mcp__{}__",
-                                    crate::services::mcp::normalization::normalize_name_for_mcp(
-                                        &background_server_name
-                                    )
-                                );
-                                if let Some(existing) = mcp
-                                    .clients
-                                    .iter_mut()
-                                    .find(|client| client.name() == background_server_name)
-                                {
-                                    *existing = result.server;
-                                }
-                                mcp.tools.retain(|tool| !tool.name.starts_with(&prefix));
-                                mcp.tools.extend(result.tools);
-                                mcp.commands
-                                    .retain(|command| !command.name.starts_with(&prefix));
-                                mcp.commands.extend(result.commands);
-                                if let Some(resources) = result.resources {
-                                    mcp.resources
-                                        .insert(background_server_name.clone(), resources);
-                                }
-                                app.mcp = std::sync::Arc::new(mcp);
-                            });
-                        }
+                    if background_app_store.writable
+                        && let Some(store) = background_app_store.store.as_ref()
+                    {
+                        store.replace_with(|app| {
+                            let mut mcp = (*app.mcp).clone();
+                            // Maps to: CC McpAuthTool.ts:146-168, whose
+                            // updater intentionally differs from the hook:
+                            // map existing clients only; use prefix-only
+                            // command removal; retain absent resources.
+                            let prefix = format!(
+                                "mcp__{}__",
+                                crate::services::mcp::normalization::normalize_name_for_mcp(
+                                    &background_server_name
+                                )
+                            );
+                            if let Some(existing) = mcp
+                                .clients
+                                .iter_mut()
+                                .find(|client| client.name() == background_server_name)
+                            {
+                                *existing = result.server;
+                            }
+                            mcp.tools.retain(|tool| !tool.name.starts_with(&prefix));
+                            mcp.tools.extend(result.tools);
+                            mcp.commands
+                                .retain(|command| !command.name.starts_with(&prefix));
+                            mcp.commands.extend(result.commands);
+                            if let Some(resources) = result.resources {
+                                mcp.resources
+                                    .insert(background_server_name.clone(), resources);
+                            }
+                            app.mcp = std::sync::Arc::new(mcp);
+                        });
                     }
                     tracing::debug!(
                         server = %background_server_name,
@@ -220,10 +220,10 @@ impl McpAuthTool {
                     );
                 }
                 Err(error) => {
-                    if let Ok(mut sender) = completion_sender.lock() {
-                        if let Some(sender) = sender.take() {
-                            let _ = sender.send(Err(error.to_string()));
-                        }
+                    if let Ok(mut sender) = completion_sender.lock()
+                        && let Some(sender) = sender.take()
+                    {
+                        let _ = sender.send(Err(error.to_string()));
                     }
                     tracing::warn!(server = %background_server_name, error = %error, "MCP auth pseudo-tool flow failed");
                 }

@@ -268,7 +268,7 @@ pub fn is_media_size_error_message(msg: &ApiAssistantMessage) -> bool {
         && msg
             .error_details
             .as_deref()
-            .map_or(false, is_media_size_error)
+            .is_some_and(is_media_size_error)
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +354,9 @@ pub fn get_oauth_org_not_allowed_error_message() -> &'static str {
 ///
 /// Maps to: CC services/api/errors.ts:217-219
 fn is_ccr_mode() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -370,9 +372,9 @@ fn is_ccr_mode() -> bool {
 /// Maps to: CC services/api/errors.ts:387-398
 pub fn is_valid_api_message(value: &serde_json::Value) -> bool {
     value.is_object()
-        && value.get("content").map_or(false, |c| c.is_array())
-        && value.get("model").map_or(false, |m| m.is_string())
-        && value.get("usage").map_or(false, |u| u.is_object())
+        && value.get("content").is_some_and(|c| c.is_array())
+        && value.get("model").is_some_and(|m| m.is_string())
+        && value.get("usage").is_some_and(|u| u.is_object())
 }
 
 /// Given a response that doesn't look quite right, see if it contains any
@@ -681,7 +683,7 @@ pub fn classify_api_error(error: &ApiErrorInfo) -> ApiErrorClass {
 
     // Connection errors
     if let ApiErrorInfo::Connection { details, .. } = error {
-        if details.as_ref().map_or(false, |d| d.is_ssl_error) {
+        if details.as_ref().is_some_and(|d| d.is_ssl_error) {
             return ApiErrorClass::SslCertError;
         }
         return ApiErrorClass::ConnectionError;
@@ -770,77 +772,74 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
     }
 
     // --- 429 Rate limit ---
-    if let Some(status) = error.status() {
-        if status == 429 {
-            // Maps to CC `errors.ts:463-537`: unified quota headers use the
-            // centralized limits message formatter (including active internal
-            // mocks) before the generic 429/entitlement path.
-            let config = crate::utils::config::load_global_config();
-            let is_subscriber = crate::utils::auth::is_claude_ai_subscriber();
-            if crate::services::rate_limit_mocking::should_process_rate_limits(is_subscriber) {
-                let has_unified_headers = error
-                    .header("anthropic-ratelimit-unified-representative-claim")
-                    .is_some()
-                    || error
-                        .header("anthropic-ratelimit-unified-overage-status")
-                        .is_some();
-                if has_unified_headers {
-                    let limits = crate::services::claude_ai_limits::limits_from_error_headers(
-                        error.headers().expect("HTTP 429 carries a header map"),
+    if let Some(status) = error.status()
+        && status == 429
+    {
+        // Maps to CC `errors.ts:463-537`: unified quota headers use the
+        // centralized limits message formatter (including active internal
+        // mocks) before the generic 429/entitlement path.
+        let config = crate::utils::config::load_global_config();
+        let is_subscriber = crate::utils::auth::is_claude_ai_subscriber();
+        if crate::services::rate_limit_mocking::should_process_rate_limits(is_subscriber) {
+            let has_unified_headers = error
+                .header("anthropic-ratelimit-unified-representative-claim")
+                .is_some()
+                || error
+                    .header("anthropic-ratelimit-unified-overage-status")
+                    .is_some();
+            if has_unified_headers {
+                let limits = crate::services::claude_ai_limits::limits_from_error_headers(
+                    error.headers().expect("HTTP 429 carries a header map"),
+                );
+                let context =
+                    crate::services::rate_limit_messages::RateLimitUiContext::from_global_config(
+                        &config,
                     );
-                    let context =
-                        crate::services::rate_limit_messages::RateLimitUiContext::from_global_config(
-                            &config,
-                        );
-                    let content =
-                        crate::services::rate_limit_messages::get_rate_limit_error_message(
-                            &limits, &context,
-                        )
-                        .unwrap_or_else(|| {
-                            crate::utils::messages::NO_RESPONSE_REQUESTED.to_string()
-                        });
-                    return create_assistant_api_error_message(
-                        &content,
-                        Some(SdkAssistantMessageError::RateLimit),
-                        None,
-                    );
-                }
-            }
-
-            // Check for "Extra usage is required for long context"
-            if msg.contains("Extra usage is required for long context") {
-                let hint = if get_is_non_interactive_session() {
-                    "enable extra usage at claude.ai/settings/usage, or use --model to switch to standard context"
-                } else {
-                    "run /extra-usage to enable, or /model to switch to standard context"
-                };
+                let content = crate::services::rate_limit_messages::get_rate_limit_error_message(
+                    &limits, &context,
+                )
+                .unwrap_or_else(|| crate::utils::messages::NO_RESPONSE_REQUESTED.to_string());
                 return create_assistant_api_error_message(
-                    &format!(
-                        "{API_ERROR_MESSAGE_PREFIX}: Extra usage is required for 1M context \u{00b7} {hint}"
-                    ),
+                    &content,
                     Some(SdkAssistantMessageError::RateLimit),
                     None,
                 );
             }
+        }
 
-            // Strip SDK prefix "429 " and try to extract inner message
-            let stripped = msg.strip_prefix("429 ").unwrap_or(msg);
-            let inner_re = Regex::new(r#""message"\s*:\s*"([^"]*)""#).unwrap();
-            let inner_message = inner_re
-                .captures(stripped)
-                .and_then(|c| c.get(1).map(|m| m.as_str().to_string()));
-            let detail = inner_message.as_deref().unwrap_or(stripped);
-            let detail = if detail.is_empty() {
-                "this may be a temporary capacity issue \u{2014} check status.anthropic.com"
+        // Check for "Extra usage is required for long context"
+        if msg.contains("Extra usage is required for long context") {
+            let hint = if get_is_non_interactive_session() {
+                "enable extra usage at claude.ai/settings/usage, or use --model to switch to standard context"
             } else {
-                detail
+                "run /extra-usage to enable, or /model to switch to standard context"
             };
             return create_assistant_api_error_message(
-                &format!("{API_ERROR_MESSAGE_PREFIX}: Request rejected (429) \u{00b7} {detail}"),
+                &format!(
+                    "{API_ERROR_MESSAGE_PREFIX}: Extra usage is required for 1M context \u{00b7} {hint}"
+                ),
                 Some(SdkAssistantMessageError::RateLimit),
                 None,
             );
         }
+
+        // Strip SDK prefix "429 " and try to extract inner message
+        let stripped = msg.strip_prefix("429 ").unwrap_or(msg);
+        let inner_re = Regex::new(r#""message"\s*:\s*"([^"]*)""#).unwrap();
+        let inner_message = inner_re
+            .captures(stripped)
+            .and_then(|c| c.get(1).map(|m| m.as_str().to_string()));
+        let detail = inner_message.as_deref().unwrap_or(stripped);
+        let detail = if detail.is_empty() {
+            "this may be a temporary capacity issue \u{2014} check status.anthropic.com"
+        } else {
+            detail
+        };
+        return create_assistant_api_error_message(
+            &format!("{API_ERROR_MESSAGE_PREFIX}: Request rejected (429) \u{00b7} {detail}"),
+            Some(SdkAssistantMessageError::RateLimit),
+            None,
+        );
     }
 
     // --- Prompt too long (Vertex 413, direct API 400) ---

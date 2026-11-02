@@ -19,12 +19,15 @@ pub mod question_view;
 pub mod submit_questions_view;
 pub mod use_multiple_choice_state;
 
-use question_view::{AnswerLabel, OTHER_VALUE, QuestionAnswer, QuestionStateUpdateCall, QuestionView};
+use question_view::{
+    AnswerLabel, OTHER_VALUE, QuestionAnswer, QuestionStateUpdateCall, QuestionView,
+};
 use submit_questions_view::{SubmitQuestionsResponse, SubmitQuestionsView};
 use use_multiple_choice_state::{
-    AnswerValue, Question, QuestionState, all_questions_answered, answer_for, build_updated_input_with_answers,
-    hide_submit_tab, next_question, prev_question, question_has_preview, questions_from_input,
-    set_answer, set_text_input_mode, update_question_state, use_multiple_choice_state,
+    AnswerValue, Question, QuestionState, all_questions_answered, answer_for,
+    build_updated_input_with_answers, hide_submit_tab, next_question, prev_question,
+    question_has_preview, questions_from_input, set_answer, set_text_input_mode,
+    update_question_state, use_multiple_choice_state,
 };
 
 use crate::components::permissions::worker_badge::WorkerBadgeProps;
@@ -287,8 +290,11 @@ pub fn AskUserQuestionPermissionRequest(
 
     // CC :224-228.
     let is_in_plan_mode = request.mode == PermissionMode::Plan;
-    let plan_file_path = is_in_plan_mode
-        .then(|| crate::utils::plans::get_plan_file_path(None).display().to_string());
+    let plan_file_path = is_in_plan_mode.then(|| {
+        crate::utils::plans::get_plan_file_path(None)
+            .display()
+            .to_string()
+    });
 
     // CC :230-254.
     let state = use_multiple_choice_state(&mut hooks);
@@ -440,7 +446,10 @@ pub fn AskUserQuestionPermissionRequest(
 
     if let Some(question) = current_question {
         let question_text = question.question.clone();
-        let pasted_contents = pasted_snapshot.get(&question_text).cloned().unwrap_or_default();
+        let pasted_contents = pasted_snapshot
+            .get(&question_text)
+            .cloned()
+            .unwrap_or_default();
         // CC :187-210 `onImagePaste`, for this question.
         let on_image_paste = {
             let question_text = question_text.clone();
@@ -715,11 +724,13 @@ mod tests {
                 responses: harness.responses,
             ));
             // Ctrl+C is a dialog key here, not iocraft's default exit.
-            let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(events)
-                    .with_size(110, 40)
-                    .with_ignore_ctrl_c(true),
-            ));
+            let mut render_loop = Box::pin(
+                app.mock_terminal_render_loop(
+                    MockTerminalConfig::with_events(events)
+                        .with_size(110, 40)
+                        .with_ignore_ctrl_c(true),
+                ),
+            );
             let mut batches = batches;
             batches.push((vec![key(KeyCode::F(12))], ""));
             let mut next_batch = 0;
@@ -795,7 +806,10 @@ mod tests {
         assert!(text.contains("Which layout?"), "canvas=\n{text}");
         assert!(text.contains("List"), "canvas=\n{text}");
         assert!(text.contains("┌"), "canvas=\n{text}");
-        assert!(!text.contains("Type something"), "preview questions have no Other; canvas=\n{text}");
+        assert!(
+            !text.contains("Type something"),
+            "preview questions have no Other; canvas=\n{text}"
+        );
         assert!(text.contains("press n to add notes"), "canvas=\n{text}");
     }
 
@@ -808,10 +822,16 @@ mod tests {
         batches.extend(steps(vec![key(KeyCode::Esc), key(KeyCode::Enter)]));
         let run = drive(harness(preview_question_input()), batches);
         assert_eq!(run.responses.len(), 1, "{}", run.last);
-        let input = run.responses[0].updated_input.as_ref().expect("updated input");
+        let input = run.responses[0]
+            .updated_input
+            .as_ref()
+            .expect("updated input");
         assert_eq!(input["answers"]["Which layout?"], "List");
         assert_eq!(input["annotations"]["Which layout?"]["notes"], "ok");
-        assert_eq!(input["annotations"]["Which layout?"]["preview"], "line 1\nline 2");
+        assert_eq!(
+            input["annotations"]["Which layout?"]["preview"],
+            "line 1\nline 2"
+        );
     }
 
     #[test]
@@ -820,15 +840,18 @@ mod tests {
         // the last option focuses the footer; Enter there asks to clarify.
         let run = drive(
             harness(preview_question_input()),
-            steps(vec![key(KeyCode::Char('2')), key(KeyCode::Down), key(KeyCode::Enter)]),
+            steps(vec![
+                key(KeyCode::Char('2')),
+                key(KeyCode::Down),
+                key(KeyCode::Enter),
+            ]),
         );
         assert_eq!(run.responses.len(), 1, "{}", run.last);
         assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
         assert!(
-            run.responses[0]
-                .feedback
-                .as_deref()
-                .is_some_and(|feedback| feedback.starts_with("The user wants to clarify these questions.")),
+            run.responses[0].feedback.as_deref().is_some_and(
+                |feedback| feedback.starts_with("The user wants to clarify these questions.")
+            ),
             "{:?}",
             run.responses[0].feedback
         );
@@ -836,7 +859,10 @@ mod tests {
 
     #[test]
     fn single_select_enter_submits_updated_input() {
-        let run = drive(harness(single_question_input()), steps(vec![key(KeyCode::Enter)]));
+        let run = drive(
+            harness(single_question_input()),
+            steps(vec![key(KeyCode::Enter)]),
+        );
         assert_eq!(run.responses.len(), 1);
         assert_eq!(run.responses[0].choice, PermissionPromptChoice::AllowOnce);
         assert_eq!(
@@ -852,7 +878,10 @@ mod tests {
         batches.extend(steps(vec![key(KeyCode::Enter)]));
         let run = drive(harness(single_question_input()), batches);
         assert_eq!(run.responses.len(), 1, "{}", run.last);
-        let input = run.responses[0].updated_input.as_ref().expect("updated input");
+        let input = run.responses[0]
+            .updated_input
+            .as_ref()
+            .expect("updated input");
         assert_eq!(input["answers"]["Proceed?"], "custom");
         assert_eq!(input["annotations"]["Proceed?"]["notes"], "custom");
     }
@@ -863,7 +892,11 @@ mod tests {
         // cancels, which rejects the question.
         let run = drive(
             harness(single_question_input()),
-            steps(vec![key(KeyCode::Down), key(KeyCode::Down), key(KeyCode::Enter)]),
+            steps(vec![
+                key(KeyCode::Down),
+                key(KeyCode::Down),
+                key(KeyCode::Enter),
+            ]),
         );
         assert_eq!(run.responses.len(), 1, "{}", run.last);
         assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
@@ -897,7 +930,10 @@ mod tests {
             vec![
                 (vec![key(KeyCode::Down)], ""),
                 (vec![key(KeyCode::Down)], ""),
-                (vec![modified_key(KeyCode::Char('v'), KeyModifiers::CONTROL)], ""),
+                (
+                    vec![modified_key(KeyCode::Char('v'), KeyModifiers::CONTROL)],
+                    "",
+                ),
                 (vec![key(KeyCode::F(4))], "[Image #0]"),
                 (vec![key(KeyCode::Enter)], ""),
             ],
@@ -931,7 +967,10 @@ mod tests {
             ]),
         );
         assert_eq!(run.responses.len(), 1, "{}", run.last);
-        let input = run.responses[0].updated_input.as_ref().expect("updated input");
+        let input = run.responses[0]
+            .updated_input
+            .as_ref()
+            .expect("updated input");
         assert_eq!(input["answers"]["Library?"], "Serde");
         assert_eq!(input["answers"]["Features?"], "Cache");
     }
@@ -939,25 +978,40 @@ mod tests {
     #[test]
     fn tab_keys_switch_questions_up_to_the_review() {
         // CC :494-523: tab/→ move on up to the review, ←/shift+tab back.
-        let run = drive(harness(multi_question_input()), steps(vec![key(KeyCode::Tab)]));
+        let run = drive(
+            harness(multi_question_input()),
+            steps(vec![key(KeyCode::Tab)]),
+        );
         assert!(run.last.contains("Features?"), "{}", run.last);
         let run = drive(
             harness(multi_question_input()),
-            steps(vec![key(KeyCode::Right), key(KeyCode::Right), key(KeyCode::Right)]),
+            steps(vec![
+                key(KeyCode::Right),
+                key(KeyCode::Right),
+                key(KeyCode::Right),
+            ]),
         );
         assert!(run.last.contains("Review your answers"), "{}", run.last);
         let run = drive(
             harness(multi_question_input()),
             steps(vec![key(KeyCode::Tab), key(KeyCode::Left)]),
         );
-        assert!(run.last.contains("Library?") && !run.last.contains("Features?\n"), "{}", run.last);
+        assert!(
+            run.last.contains("Library?") && !run.last.contains("Features?\n"),
+            "{}",
+            run.last
+        );
     }
 
     #[test]
     fn typing_in_a_multi_select_other_keeps_the_arrows_in_the_question() {
         // CC use-multiple-choice-state.ts:70-88: the toggle that typing
         // makes does not leave text-input mode, so ← stays in the question.
-        let mut batches = steps(vec![key(KeyCode::Tab), key(KeyCode::Down), key(KeyCode::Down)]);
+        let mut batches = steps(vec![
+            key(KeyCode::Tab),
+            key(KeyCode::Down),
+            key(KeyCode::Down),
+        ]);
         batches.extend(steps(chars("x")));
         batches.extend(steps(vec![key(KeyCode::Left)]));
         let run = drive(harness(multi_question_input()), batches);
@@ -974,7 +1028,10 @@ mod tests {
         // app:interrupt to the question.
         let run = drive(harness(multi_question_input()), Vec::new());
         assert!(run.last.contains("overlays=[select]"), "{}", run.last);
-        let run = drive(harness(multi_question_input()), steps(vec![key(KeyCode::Tab)]));
+        let run = drive(
+            harness(multi_question_input()),
+            steps(vec![key(KeyCode::Tab)]),
+        );
         assert!(run.last.contains("overlays=[multi-select]"), "{}", run.last);
     }
 
@@ -1005,7 +1062,11 @@ mod tests {
             ]),
         );
         assert!(run.last.contains("Review your answers"), "{}", run.last);
-        assert!(run.last.contains("You have not answered all questions"), "{}", run.last);
+        assert!(
+            run.last.contains("You have not answered all questions"),
+            "{}",
+            run.last
+        );
     }
 
     #[test]
@@ -1043,7 +1104,10 @@ mod tests {
                 }
             ]
         });
-        let run = drive(harness(input), vec![(vec![key(KeyCode::Enter), key(KeyCode::Enter)], "")]);
+        let run = drive(
+            harness(input),
+            vec![(vec![key(KeyCode::Enter), key(KeyCode::Enter)], "")],
+        );
         assert!(run.last.contains("Library?"), "{}", run.last);
         assert!(!run.last.contains("Review your answers"), "{}", run.last);
     }
@@ -1060,7 +1124,10 @@ mod tests {
         batches.push((vec![key(KeyCode::Enter)], ""));
         let run = drive(harness(preview_question_input()), batches);
         assert_eq!(run.responses.len(), 1, "{}", run.last);
-        let input = run.responses[0].updated_input.as_ref().expect("updated input");
+        let input = run.responses[0]
+            .updated_input
+            .as_ref()
+            .expect("updated input");
         assert_eq!(input["answers"]["Which layout?"], "List");
     }
 
@@ -1078,8 +1145,14 @@ mod tests {
             source_path: None,
         };
         let mut pasted = PastedByQuestion::new();
-        pasted.insert("Second?".to_string(), BTreeMap::from([(5, image(5, "BBBB"))]));
-        pasted.insert("First?".to_string(), BTreeMap::from([(3, image(3, "AAAA"))]));
+        pasted.insert(
+            "Second?".to_string(),
+            BTreeMap::from([(5, image(5, "BBBB"))]),
+        );
+        pasted.insert(
+            "First?".to_string(),
+            BTreeMap::from([(3, image(3, "AAAA"))]),
+        );
         let blocks = convert_images_to_blocks(&pasted).expect("blocks");
         let data = blocks
             .iter()
@@ -1104,21 +1177,29 @@ mod tests {
         let PermissionContentBlock::Image { source } = &blocks[0] else {
             panic!("{:?}", blocks[0]);
         };
-        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &source.data).unwrap();
+        let bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &source.data)
+                .unwrap();
         let decoded = image::load_from_memory(&bytes).unwrap();
         assert_eq!(image::GenericImageView::dimensions(&decoded), (2000, 400));
     }
 
     #[test]
     fn escape_rejects_once_and_ctrl_c_answers_nothing() {
-        let run = drive(harness(single_question_input()), steps(vec![key(KeyCode::Esc)]));
+        let run = drive(
+            harness(single_question_input()),
+            steps(vec![key(KeyCode::Esc)]),
+        );
         assert_eq!(run.responses.len(), 1);
         assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
         // The dialog takes no interrupt of its own: CC's is PermissionRequest's
         // app:interrupt (:206-214), and Nyan binds Ctrl+C to app:exit.
         let run = drive(
             harness(single_question_input()),
-            steps(vec![modified_key(KeyCode::Char('c'), KeyModifiers::CONTROL)]),
+            steps(vec![modified_key(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+            )]),
         );
         assert!(run.responses.is_empty());
     }
@@ -1129,7 +1210,11 @@ mod tests {
         // this"; ↑ gives it back; Enter there sends the clarify feedback.
         let run = drive(
             harness(single_question_input()),
-            steps(vec![key(KeyCode::Down), key(KeyCode::Down), key(KeyCode::Down)]),
+            steps(vec![
+                key(KeyCode::Down),
+                key(KeyCode::Down),
+                key(KeyCode::Down),
+            ]),
         );
         assert!(run.last.contains("❯ 4. Chat about this"), "{}", run.last);
         let run = drive(
@@ -1146,7 +1231,10 @@ mod tests {
         assert_eq!(run.responses.len(), 1, "{}", run.last);
         assert_eq!(run.responses[0].choice, PermissionPromptChoice::Deny);
         let feedback = run.responses[0].feedback.as_deref().unwrap_or_default();
-        assert!(feedback.contains("- \"Proceed?\"\n  (No answer provided)"), "{feedback}");
+        assert!(
+            feedback.contains("- \"Proceed?\"\n  (No answer provided)"),
+            "{feedback}"
+        );
     }
 
     #[test]

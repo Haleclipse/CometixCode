@@ -638,7 +638,10 @@ mod tests {
     #[test]
     fn cloned_plugin_load_result_matches_official_partial_refresh_visibility() {
         use super::*;
-        let oracle: serde_json::Value = serde_json::from_str(include_str!("../../tests/fixtures/oracles/mcp-contract-review-0915/refresh-oracle.json")).unwrap();
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/oracles/mcp-contract-review-0915/refresh-oracle.json"
+        ))
+        .unwrap();
         let loaded = PluginLoadResult {
             enabled: vec![LoadedPlugin::default(), LoadedPlugin::default()],
             errors: vec![PluginError::GenericError {

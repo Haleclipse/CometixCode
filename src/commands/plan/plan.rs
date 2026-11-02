@@ -113,7 +113,6 @@ pub fn inspect_plan(request: &PlanInspectionRequest) -> PlanInspectionResult {
 
     if request
         .args
-        .trim()
         .split_whitespace()
         .next()
         .is_some_and(|arg| arg == "open")

@@ -124,35 +124,35 @@ pub fn FileEditToolUseRejectedMessage(
         };
     }
 
-    if props.operation == "write" {
-        if let Some(content) = props.content.as_ref() {
-            let preview = file_edit_rejected_content_preview(content, props.verbose);
-            return element! {
-                MessageResponse {
-                    View(flex_direction: FlexDirection::Column) {
-                        Text(content: heading, color: theme.subtle, wrap: TextWrap::Wrap)
-                        HighlightedCode(
-                            code: preview.truncated_content,
-                            file_path: props.file_path.clone(),
-                            width: Some(width),
-                            dim: true,
-                        )
-                        #(if preview.hidden_lines > 0 {
-                            Some(element! {
-                                Text(
-                                    content: format!("… +{} lines", preview.hidden_lines),
-                                    color: theme.inactive,
-                                    dim: true,
-                                    wrap: TextWrap::NoWrap,
-                                )
-                            })
-                        } else {
-                            None
+    if props.operation == "write"
+        && let Some(content) = props.content.as_ref()
+    {
+        let preview = file_edit_rejected_content_preview(content, props.verbose);
+        return element! {
+            MessageResponse {
+                View(flex_direction: FlexDirection::Column) {
+                    Text(content: heading, color: theme.subtle, wrap: TextWrap::Wrap)
+                    HighlightedCode(
+                        code: preview.truncated_content,
+                        file_path: props.file_path.clone(),
+                        width: Some(width),
+                        dim: true,
+                    )
+                    #(if preview.hidden_lines > 0 {
+                        Some(element! {
+                            Text(
+                                content: format!("… +{} lines", preview.hidden_lines),
+                                color: theme.inactive,
+                                dim: true,
+                                wrap: TextWrap::NoWrap,
+                            )
                         })
-                    }
+                    } else {
+                        None
+                    })
                 }
-            };
-        }
+            }
+        };
     }
 
     let patch = props.patch.clone().unwrap_or_default();

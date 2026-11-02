@@ -495,6 +495,50 @@ pub async fn detect_empty_marketplace_reason(
     EmptyMarketplaceReason::AllPluginsInstalled
 }
 
+/// Maps to: CC `utils/plugins/marketplaceHelpers.ts:73-89` load result entries.
+pub struct LoadedMarketplace {
+    pub name: String,
+    pub config: Value,
+    pub data: Option<std::sync::Arc<Value>>,
+}
+/// Maps to: CC `utils/plugins/marketplaceHelpers.ts:73-89` load result.
+pub struct LoadedMarketplacesWithGracefulDegradation {
+    pub marketplaces: Vec<LoadedMarketplace>,
+    pub failures: Vec<MarketplaceLoadingFailure>,
+}
+/// Maps to: CC `utils/plugins/marketplaceHelpers.ts:71-114#loadMarketplacesWithGracefulDegradation`.
+pub async fn load_marketplaces_with_graceful_degradation(
+    config: &super::marketplace_manager::KnownMarketplacesConfig,
+) -> LoadedMarketplacesWithGracefulDegradation {
+    let mut marketplaces = Vec::new();
+    let mut failures = Vec::new();
+    for (name, entry) in crate::utils::process_env::ecmascript_object_entries(config.iter()) {
+        if !is_source_allowed_by_policy(&entry["source"]) {
+            continue;
+        }
+        let data = match super::marketplace_manager::get_marketplace(name).await {
+            Ok(data) => Some(data),
+            Err(error) => {
+                failures.push(MarketplaceLoadingFailure {
+                    name: name.to_owned(),
+                    error: error.to_string(),
+                });
+                crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
+                None
+            }
+        };
+        marketplaces.push(LoadedMarketplace {
+            name: name.to_owned(),
+            config: entry.clone(),
+            data,
+        });
+    }
+    LoadedMarketplacesWithGracefulDegradation {
+        marketplaces,
+        failures,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -941,49 +985,5 @@ mod tests {
         }
         super::super::git_availability::clear_git_availability_cache();
         settings_cache::reset_settings_cache();
-    }
-}
-
-/// Maps to: CC `utils/plugins/marketplaceHelpers.ts:73-89` load result entries.
-pub struct LoadedMarketplace {
-    pub name: String,
-    pub config: Value,
-    pub data: Option<std::sync::Arc<Value>>,
-}
-/// Maps to: CC `utils/plugins/marketplaceHelpers.ts:73-89` load result.
-pub struct LoadedMarketplacesWithGracefulDegradation {
-    pub marketplaces: Vec<LoadedMarketplace>,
-    pub failures: Vec<MarketplaceLoadingFailure>,
-}
-/// Maps to: CC `utils/plugins/marketplaceHelpers.ts:71-114#loadMarketplacesWithGracefulDegradation`.
-pub async fn load_marketplaces_with_graceful_degradation(
-    config: &super::marketplace_manager::KnownMarketplacesConfig,
-) -> LoadedMarketplacesWithGracefulDegradation {
-    let mut marketplaces = Vec::new();
-    let mut failures = Vec::new();
-    for (name, entry) in crate::utils::process_env::ecmascript_object_entries(config.iter()) {
-        if !is_source_allowed_by_policy(&entry["source"]) {
-            continue;
-        }
-        let data = match super::marketplace_manager::get_marketplace(name).await {
-            Ok(data) => Some(data),
-            Err(error) => {
-                failures.push(MarketplaceLoadingFailure {
-                    name: name.to_owned(),
-                    error: error.to_string(),
-                });
-                crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
-                None
-            }
-        };
-        marketplaces.push(LoadedMarketplace {
-            name: name.to_owned(),
-            config: entry.clone(),
-            data,
-        });
-    }
-    LoadedMarketplacesWithGracefulDegradation {
-        marketplaces,
-        failures,
     }
 }

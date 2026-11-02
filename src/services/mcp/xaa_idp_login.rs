@@ -64,7 +64,9 @@ pub struct OidcMetadata {
 
 /// Maps to: CC `services/mcp/xaaIdpLogin.ts#isXaaEnabled`.
 pub fn is_xaa_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(CLAUDE_CODE_ENABLE_XAA).as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var(CLAUDE_CODE_ENABLE_XAA).as_deref(),
+    )
 }
 
 /// Maps to: CC `services/mcp/xaaIdpLogin.ts#getXaaIdpSettings`.
@@ -497,7 +499,7 @@ mod runtime {
     fn html_response(status: &str, body: &str) -> String {
         format!(
             "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
-            body.as_bytes().len()
+            body.len()
         )
     }
 

@@ -50,25 +50,24 @@ pub fn get_environment_selection_info_from_snapshot(
     let mut selected_environment_source = None;
 
     if let Some(default_environment_id) = merged_default_environment_id.filter(|id| !id.is_empty())
-    {
-        if let Some(matching_environment) = environments
+        && let Some(matching_environment) = environments
             .iter()
             .find(|environment| environment.environment_id == default_environment_id)
             .cloned()
-        {
-            selected_environment = matching_environment;
+    {
+        selected_environment = matching_environment;
 
-            for source in source_priority_high_to_low() {
-                let source_matches = source_default_environment_ids.iter().any(
-                    |(candidate_source, candidate_id)| {
+        for source in source_priority_high_to_low() {
+            let source_matches =
+                source_default_environment_ids
+                    .iter()
+                    .any(|(candidate_source, candidate_id)| {
                         *candidate_source == source
                             && candidate_id.as_deref() == Some(default_environment_id)
-                    },
-                );
-                if source_matches {
-                    selected_environment_source = Some(source);
-                    break;
-                }
+                    });
+            if source_matches {
+                selected_environment_source = Some(source);
+                break;
             }
         }
     }

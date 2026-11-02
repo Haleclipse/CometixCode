@@ -27,7 +27,7 @@ pub fn command_config(
     let first = words.first()?.as_str();
     match first {
         "git" => {
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("stash")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -53,7 +53,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("config")
                 && words.get(2).map(String::as_str) == Some("--get")
             {
@@ -83,7 +83,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("remote")
                 && words.get(2).map(String::as_str) == Some("show")
             {
@@ -96,7 +96,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("stash")
                 && words.get(2).map(String::as_str) == Some("show")
             {
@@ -126,7 +126,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("worktree")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -144,7 +144,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("diff")
             {
                 return Some((
@@ -213,7 +213,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("log")
             {
                 return Some((
@@ -290,7 +290,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("show")
             {
                 return Some((
@@ -332,7 +332,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("shortlog")
             {
                 return Some((
@@ -365,7 +365,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("reflog")
             {
                 return Some((
@@ -397,7 +397,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("ls-remote")
             {
                 return Some((
@@ -423,7 +423,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("status")
             {
                 return Some((
@@ -456,7 +456,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("blame")
             {
                 return Some((
@@ -495,7 +495,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("ls-files")
             {
                 return Some((
@@ -542,7 +542,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("remote")
             {
                 return Some((
@@ -554,7 +554,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("merge-base")
             {
                 return Some((
@@ -572,7 +572,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("rev-parse")
             {
                 return Some((
@@ -603,7 +603,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("rev-list")
             {
                 return Some((
@@ -653,7 +653,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("describe")
             {
                 return Some((
@@ -678,7 +678,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("cat-file")
             {
                 return Some((
@@ -697,7 +697,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("for-each-ref")
             {
                 return Some((
@@ -718,7 +718,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("grep")
             {
                 return Some((
@@ -780,7 +780,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("tag")
             {
                 return Some((
@@ -807,7 +807,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("git")
+            if words.first().map(String::as_str) == Some("git")
                 && words.get(1).map(String::as_str) == Some("branch")
             {
                 return Some((
@@ -848,7 +848,7 @@ pub fn command_config(
         }
         "gh" => {
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("pr")
                 && words.get(2).map(String::as_str) == Some("view")
             {
@@ -867,7 +867,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("pr")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -897,7 +897,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("pr")
                 && words.get(2).map(String::as_str) == Some("diff")
             {
@@ -917,7 +917,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("pr")
                 && words.get(2).map(String::as_str) == Some("checks")
             {
@@ -939,7 +939,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("issue")
                 && words.get(2).map(String::as_str) == Some("view")
             {
@@ -958,7 +958,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("issue")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -986,7 +986,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("repo")
                 && words.get(2).map(String::as_str) == Some("view")
             {
@@ -1000,7 +1000,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("run")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -1033,7 +1033,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("run")
                 && words.get(2).map(String::as_str) == Some("view")
             {
@@ -1060,7 +1060,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("auth")
                 && words.get(2).map(String::as_str) == Some("status")
             {
@@ -1080,7 +1080,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("pr")
                 && words.get(2).map(String::as_str) == Some("status")
             {
@@ -1100,7 +1100,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("issue")
                 && words.get(2).map(String::as_str) == Some("status")
             {
@@ -1118,7 +1118,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("release")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -1142,7 +1142,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("release")
                 && words.get(2).map(String::as_str) == Some("view")
             {
@@ -1160,7 +1160,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("workflow")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -1182,7 +1182,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("workflow")
                 && words.get(2).map(String::as_str) == Some("view")
             {
@@ -1203,7 +1203,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("label")
                 && words.get(2).map(String::as_str) == Some("list")
             {
@@ -1227,7 +1227,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("search")
                 && words.get(2).map(String::as_str) == Some("repos")
             {
@@ -1264,7 +1264,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("search")
                 && words.get(2).map(String::as_str) == Some("issues")
             {
@@ -1313,7 +1313,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("search")
                 && words.get(2).map(String::as_str) == Some("prs")
             {
@@ -1372,7 +1372,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("search")
                 && words.get(2).map(String::as_str) == Some("commits")
             {
@@ -1408,7 +1408,7 @@ pub fn command_config(
                 ));
             }
             if internal
-                && words.get(0).map(String::as_str) == Some("gh")
+                && words.first().map(String::as_str) == Some("gh")
                 && words.get(1).map(String::as_str) == Some("search")
                 && words.get(2).map(String::as_str) == Some("code")
             {
@@ -1436,7 +1436,7 @@ pub fn command_config(
             None
         }
         "docker" => {
-            if words.get(0).map(String::as_str) == Some("docker")
+            if words.first().map(String::as_str) == Some("docker")
                 && words.get(1).map(String::as_str) == Some("logs")
             {
                 return Some((
@@ -1458,7 +1458,7 @@ pub fn command_config(
                     },
                 ));
             }
-            if words.get(0).map(String::as_str) == Some("docker")
+            if words.first().map(String::as_str) == Some("docker")
                 && words.get(1).map(String::as_str) == Some("inspect")
             {
                 return Some((
@@ -1479,7 +1479,7 @@ pub fn command_config(
             None
         }
         "rg" => {
-            if words.get(0).map(String::as_str) == Some("rg") {
+            if words.first().map(String::as_str) == Some("rg") {
                 return Some((
                     "rg",
                     1,
@@ -1554,7 +1554,7 @@ pub fn command_config(
             None
         }
         "pyright" => {
-            if words.get(0).map(String::as_str) == Some("pyright") {
+            if words.first().map(String::as_str) == Some("pyright") {
                 return Some((
                     "pyright",
                     1,
@@ -1695,17 +1695,18 @@ pub fn validate_flags(
             continue;
         }
 
-        if let Some(targets) = options.xargs_target_commands {
-            if options.command_name == Some("xargs") && (!token.starts_with('-') || token == "--") {
-                if token == "--" && index + 1 < tokens.len() {
-                    index += 1;
-                    token = tokens[index].as_str();
-                }
-                if targets.contains(&token) {
-                    break;
-                }
-                return false;
+        if let Some(targets) = options.xargs_target_commands
+            && options.command_name == Some("xargs")
+            && (!token.starts_with('-') || token == "--")
+        {
+            if token == "--" && index + 1 < tokens.len() {
+                index += 1;
+                token = tokens[index].as_str();
             }
+            if targets.contains(&token) {
+                break;
+            }
+            return false;
         }
 
         if token == "--" {
@@ -1745,15 +1746,12 @@ pub fn validate_flags(
                     let potential_value = &flag[2..];
                     if potential_value.bytes().all(|byte| byte.is_ascii_digit())
                         && !potential_value.is_empty()
+                        && let Some(attached_type) = flag_arg_type(config, potential_flag)
+                        && matches!(attached_type, FlagArgType::Number | FlagArgType::String)
+                        && validate_flag_argument(potential_value, attached_type)
                     {
-                        if let Some(attached_type) = flag_arg_type(config, potential_flag) {
-                            if matches!(attached_type, FlagArgType::Number | FlagArgType::String)
-                                && validate_flag_argument(potential_value, attached_type)
-                            {
-                                index += 1;
-                                continue;
-                            }
-                        }
+                        index += 1;
+                        continue;
                     }
                 }
 

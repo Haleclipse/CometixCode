@@ -19,20 +19,15 @@ pub const DEFAULT_MESSAGE: &str = "How is Claude doing this session? (optional)"
 pub const TRANSCRIPT_LEARN_MORE_URL: &str =
     "https://code.claude.com/docs/en/data-usage#session-quality-surveys";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum FeedbackSurveyState {
+    #[default]
     Closed,
     Open,
     Thanks,
     TranscriptPrompt,
     Submitting,
     Submitted,
-}
-
-impl Default for FeedbackSurveyState {
-    fn default() -> Self {
-        Self::Closed
-    }
 }
 
 /// Maps to: CC `FeedbackSurveyView.tsx#isValidResponseInput`.

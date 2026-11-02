@@ -151,9 +151,9 @@ fn parse_proxy_url(proxy_url: &str) -> anyhow::Result<reqwest::Url> {
             let rest = &proxy_url[proxy_url.find("://").map_or(0, |index| index + 3)..];
             url = reqwest::Url::parse(&format!("socks5h://{rest}")).map_err(invalid)?;
         }
-        scheme => anyhow::bail!(
-            "Unsupported proxy URL scheme {scheme:?}: use http, https or socks5"
-        ),
+        scheme => {
+            anyhow::bail!("Unsupported proxy URL scheme {scheme:?}: use http, https or socks5")
+        }
     }
     Ok(url)
 }
@@ -234,9 +234,9 @@ pub fn get_proxy_agent(uri: &str) -> anyhow::Result<reqwest::ClientBuilder> {
     if let Some(mtls_agent) = crate::utils::mtls::get_mtls_agent() {
         builder = mtls_agent.apply(builder);
     }
-    Ok(fetch_builder(builder.proxy(reqwest::Proxy::custom(move |url| {
-        agent.get_proxy_for_url(url).map(str::to_owned)
-    }))))
+    Ok(fetch_builder(builder.proxy(reqwest::Proxy::custom(
+        move |url| agent.get_proxy_for_url(url).map(str::to_owned),
+    ))))
 }
 
 /// Maps to: CC `utils/proxy.ts:288-319` `getProxyFetchOptions`: the transport
@@ -256,17 +256,17 @@ pub fn get_proxy_agent(uri: &str) -> anyhow::Result<reqwest::ClientBuilder> {
 pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwest::ClientBuilder> {
     let env = crate::utils::process_env::snapshot();
 
-    if for_anthropic_api {
-        if let Some(unix_socket) = env.var("ANTHROPIC_UNIX_SOCKET").truthy() {
-            // `.no_proxy()`: reqwest ignores proxies on a socket but would
-            // still attach a system proxy's credentials to the request.
-            #[cfg(unix)]
-            return Ok(fetch_builder(client_builder().no_proxy().unix_socket(unix_socket)));
-            #[cfg(not(unix))]
-            log_for_debugging(&format!(
-                "ANTHROPIC_UNIX_SOCKET={unix_socket} is not supported on this platform; ignored"
-            ));
-        }
+    if for_anthropic_api && let Some(unix_socket) = env.var("ANTHROPIC_UNIX_SOCKET").truthy() {
+        // `.no_proxy()`: reqwest ignores proxies on a socket but would
+        // still attach a system proxy's credentials to the request.
+        #[cfg(unix)]
+        return Ok(fetch_builder(
+            client_builder().no_proxy().unix_socket(unix_socket),
+        ));
+        #[cfg(not(unix))]
+        log_for_debugging(&format!(
+            "ANTHROPIC_UNIX_SOCKET={unix_socket} is not supported on this platform; ignored"
+        ));
     }
 
     if let Some(proxy_url) = get_proxy_url(&env) {
@@ -292,13 +292,13 @@ pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwes
 pub fn configure_global_agents() {
     let proxy_url = get_proxy_url(&crate::utils::process_env::snapshot());
     let _mtls_agent = crate::utils::mtls::get_mtls_agent();
-    if let Some(proxy_url) = proxy_url {
-        if let Err(error) = parse_proxy_url(&proxy_url) {
-            crate::utils::debug::log_for_debugging_with_level(
-                &format!("Proxy: {error:#}"),
-                crate::utils::debug::DebugLogLevel::Error,
-            );
-        }
+    if let Some(proxy_url) = proxy_url
+        && let Err(error) = parse_proxy_url(&proxy_url)
+    {
+        crate::utils::debug::log_for_debugging_with_level(
+            &format!("Proxy: {error:#}"),
+            crate::utils::debug::DebugLogLevel::Error,
+        );
     }
 }
 
@@ -342,11 +342,20 @@ mod tests {
 
         crate::utils::process_env::set("HTTP_PROXY", "http://upper-http:1");
         crate::utils::process_env::set("http_proxy", "http://lower-http:1");
-        assert_eq!(get_proxy_url(&snapshot()).as_deref(), Some("http://lower-http:1"));
+        assert_eq!(
+            get_proxy_url(&snapshot()).as_deref(),
+            Some("http://lower-http:1")
+        );
         crate::utils::process_env::set("HTTPS_PROXY", "http://upper-https:1");
-        assert_eq!(get_proxy_url(&snapshot()).as_deref(), Some("http://upper-https:1"));
+        assert_eq!(
+            get_proxy_url(&snapshot()).as_deref(),
+            Some("http://upper-https:1")
+        );
         crate::utils::process_env::set("https_proxy", "");
-        assert_eq!(get_proxy_url(&snapshot()).as_deref(), Some("http://upper-https:1"));
+        assert_eq!(
+            get_proxy_url(&snapshot()).as_deref(),
+            Some("http://upper-https:1")
+        );
 
         crate::utils::process_env::set("NO_PROXY", "upper");
         crate::utils::process_env::set("no_proxy", "");
@@ -389,13 +398,24 @@ mod tests {
 
     #[test]
     fn proxy_urls_take_a_default_scheme_and_socks_resolves_remotely() {
-        assert_eq!(parse_proxy_url("127.0.0.1:7890").unwrap().as_str(), "http://127.0.0.1:7890/");
         assert_eq!(
-            parse_proxy_url("socks5://user:p%40ss@proxy:1080").unwrap().as_str(),
+            parse_proxy_url("127.0.0.1:7890").unwrap().as_str(),
+            "http://127.0.0.1:7890/"
+        );
+        assert_eq!(
+            parse_proxy_url("socks5://user:p%40ss@proxy:1080")
+                .unwrap()
+                .as_str(),
             "socks5h://user:p%40ss@proxy:1080"
         );
-        assert_eq!(parse_proxy_url("socks://proxy:1080").unwrap().scheme(), "socks5h");
-        assert_eq!(parse_proxy_url("https://proxy:443").unwrap().scheme(), "https");
+        assert_eq!(
+            parse_proxy_url("socks://proxy:1080").unwrap().scheme(),
+            "socks5h"
+        );
+        assert_eq!(
+            parse_proxy_url("https://proxy:443").unwrap().scheme(),
+            "https"
+        );
         assert!(parse_proxy_url("ftp://proxy:21").is_err());
     }
 
@@ -442,7 +462,11 @@ mod tests {
         crate::utils::process_env::set("HTTPS_PROXY", format!("http://{proxy_address}"));
         let seen = tokio::spawn(accept_one(proxy));
         let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
-        let response = client.get("http://origin.invalid/v1/models").send().await.unwrap();
+        let response = client
+            .get("http://origin.invalid/v1/models")
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 204);
         let request = seen.await.unwrap();
         assert!(
@@ -494,7 +518,11 @@ mod tests {
         });
         let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
         for _ in 0..requests {
-            let response = client.get(format!("http://{address}/")).send().await.unwrap();
+            let response = client
+                .get(format!("http://{address}/"))
+                .send()
+                .await
+                .unwrap();
             assert_eq!(response.status(), 204);
         }
         server.abort();
@@ -529,8 +557,10 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();
         // Socket paths are capped near 104 bytes on macOS.
-        let path = std::env::temp_dir()
-            .join(format!("cx-{}.sock", &uuid::Uuid::new_v4().simple().to_string()[..8]));
+        let path = std::env::temp_dir().join(format!(
+            "cx-{}.sock",
+            &uuid::Uuid::new_v4().simple().to_string()[..8]
+        ));
         let listener = tokio::net::UnixListener::bind(&path).unwrap();
         let _socket = EnvVarGuard::set("ANTHROPIC_UNIX_SOCKET", &path);
         let _proxy = EnvVarGuard::set("HTTP_PROXY", "http://user:secret@127.0.0.1:9");
@@ -550,7 +580,11 @@ mod tests {
             String::from_utf8_lossy(&request).to_ascii_lowercase()
         });
         let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
-        let response = client.get("http://localhost/v1/models").send().await.unwrap();
+        let response = client
+            .get("http://localhost/v1/models")
+            .send()
+            .await
+            .unwrap();
         assert_eq!(response.status(), 204);
         let request = server.await.unwrap();
         assert!(request.starts_with("get /v1/models http/1.1"), "{request}");

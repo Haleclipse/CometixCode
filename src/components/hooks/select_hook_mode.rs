@@ -12,13 +12,13 @@ use iocraft::prelude::*;
 
 /// Maps to the plugin-name suffix branch in the official option projection.
 pub fn hook_source_description(hook: &IndividualHookConfig) -> String {
-    if hook.source == HookSource::PluginHook {
-        if let Some(plugin_name) = hook.plugin_name.as_deref() {
-            return format!(
-                "{} ({plugin_name})",
-                hook_source_header_display_string(hook.source)
-            );
-        }
+    if hook.source == HookSource::PluginHook
+        && let Some(plugin_name) = hook.plugin_name.as_deref()
+    {
+        return format!(
+            "{} ({plugin_name})",
+            hook_source_header_display_string(hook.source)
+        );
     }
     hook_source_header_display_string(hook.source).to_string()
 }

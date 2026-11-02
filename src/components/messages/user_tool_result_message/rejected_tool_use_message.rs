@@ -36,7 +36,9 @@ mod tests {
         let canvas = render(80);
         let text = canvas.to_string();
         let line = text.lines().next().unwrap_or_default();
-        let x = line[..line.find("Tool use rejected").expect("copy")].chars().count();
+        let x = line[..line.find("Tool use rejected").expect("copy")]
+            .chars()
+            .count();
         let style = canvas.resolved_text_style(x, 0).expect("style");
         assert_eq!(style.color, Some(crate::utils::theme::current().inactive));
         // CC `height={1}`: a narrow terminal clips the copy instead of

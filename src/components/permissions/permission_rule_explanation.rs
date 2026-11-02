@@ -95,26 +95,26 @@ pub fn strings_for_decision_reason(
     // an external stub whose own gate is a hardcoded `false`
     // (`utils/permissions/bash_classifier.rs:47-49`), so the disjunction reduces
     // to the transcript gate.
-    if crate::utils::permissions::permission_setup::is_transcript_classifier_feature_enabled() {
-        if let PermissionDecisionReason::Classifier { classifier, reason } = reason {
-            if classifier == "auto-mode" {
-                return Some(PermissionRuleExplanationStrings {
-                    reason_string: format!(
-                        "Auto mode classifier requires confirmation for this {tool_type}.\n{reason}"
-                    ),
-                    config_string: None,
-                    theme_color: Some(ThemeColorKey::Error),
-                });
-            }
+    if crate::utils::permissions::permission_setup::is_transcript_classifier_feature_enabled()
+        && let PermissionDecisionReason::Classifier { classifier, reason } = reason
+    {
+        if classifier == "auto-mode" {
             return Some(PermissionRuleExplanationStrings {
-                // CC `:45` `chalk.bold(reason.classifier)`.
                 reason_string: format!(
-                    "Classifier {BOLD}{classifier}{BOLD_OFF} requires confirmation for this {tool_type}.\n{reason}"
+                    "Auto mode classifier requires confirmation for this {tool_type}.\n{reason}"
                 ),
                 config_string: None,
-                theme_color: None,
+                theme_color: Some(ThemeColorKey::Error),
             });
         }
+        return Some(PermissionRuleExplanationStrings {
+            // CC `:45` `chalk.bold(reason.classifier)`.
+            reason_string: format!(
+                "Classifier {BOLD}{classifier}{BOLD_OFF} requires confirmation for this {tool_type}.\n{reason}"
+            ),
+            config_string: None,
+            theme_color: None,
+        });
     }
 
     match reason {

@@ -92,10 +92,9 @@ pub fn is_allow_rule_shadowed_by_ask_rule(
 
     if tool_name == crate::tools::bash_tool::tool_name::BASH_TOOL_NAME
         && options.sandbox_auto_allow_enabled
+        && !is_shared_setting_source(shadowing_ask_rule.source)
     {
-        if !is_shared_setting_source(shadowing_ask_rule.source) {
-            return ShadowResult::NotShadowed;
-        }
+        return ShadowResult::NotShadowed;
     }
 
     ShadowResult::Shadowed {

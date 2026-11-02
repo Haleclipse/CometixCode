@@ -243,7 +243,7 @@ async fn evaluate(
                 latency_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
                 state_sha256: String::new(),
                 state_bytes: 0,
-            })
+            });
         }
     };
     let latency_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
@@ -954,7 +954,8 @@ mod tests {
         use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
         let lock = TEST_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-        let root = crate::utils::node_os::tmpdir().join(format!("nyan-memdp-{}", uuid::Uuid::new_v4()));
+        let root =
+            crate::utils::node_os::tmpdir().join(format!("nyan-memdp-{}", uuid::Uuid::new_v4()));
         let memory_dir = root.join("memory");
         std::fs::create_dir_all(&memory_dir).unwrap();
         let config_dir = root.join("config");
@@ -1053,14 +1054,18 @@ mod tests {
                 summarize_metadata: None,
             }));
         }
-        messages.push(Message::Assistant(crate::types::message::AssistantMessage {
-            uuid: uuid::Uuid::new_v4().to_string(),
-            timestamp: chrono::Utc::now(),
-            content: vec![crate::types::message::AssistantContent::Text("OK".to_string())],
-            model: None,
-            stop_reason: None,
-            usage: None,
-        }));
+        messages.push(Message::Assistant(
+            crate::types::message::AssistantMessage {
+                uuid: uuid::Uuid::new_v4().to_string(),
+                timestamp: chrono::Utc::now(),
+                content: vec![crate::types::message::AssistantContent::Text(
+                    "OK".to_string(),
+                )],
+                model: None,
+                stop_reason: None,
+                usage: None,
+            },
+        ));
         let excerpt = turn_excerpt(&messages, 6_000);
         assert!(excerpt.contains("fish shell"), "{excerpt}");
         assert!(excerpt.contains("assistant: OK"), "{excerpt}");
@@ -1101,24 +1106,30 @@ mod tests {
         let fixture = fixture(Default::default());
         let backend = MockBackend::new(0.95, None);
         install(backend.clone());
-        assert!(evaluate_extract_now(&[message("x")], true, 8, 30_000)
-            .await
-            .is_none());
-        assert!(evaluate_extract_skip(&[message("x")], 8, 30_000)
-            .await
-            .is_none());
+        assert!(
+            evaluate_extract_now(&[message("x")], true, 8, 30_000)
+                .await
+                .is_none()
+        );
+        assert!(
+            evaluate_extract_skip(&[message("x")], 8, 30_000)
+                .await
+                .is_none()
+        );
         assert!(evaluate_types(&[], 30).await.is_none());
-        assert!(evaluate_consolidate(ConsolidationContext {
-            last_start_ms: None,
-            newest_file_ms: None,
-            new_file_count: 9,
-            min_hours: 24,
-            min_new_files: 5,
-            now_ms: 1,
-            deterministic_due: true,
-        })
-        .await
-        .is_none());
+        assert!(
+            evaluate_consolidate(ConsolidationContext {
+                last_start_ms: None,
+                newest_file_ms: None,
+                new_file_count: 9,
+                min_hours: 24,
+                min_new_files: 5,
+                now_ms: 1,
+                deterministic_due: true,
+            })
+            .await
+            .is_none()
+        );
         assert!(backend.requests.lock().unwrap().is_empty());
         assert!(!fixture.config_dir.join("decision").exists());
     }

@@ -37,10 +37,11 @@ const MAX_JUDGED: usize = 30;
 /// enough that 30 candidates stay inside one fast-model request.
 const JUDGED_SNIPPET_CHARS: usize = 1_200;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Intent {
     Definition,
     Callers,
+    #[default]
     Concept,
     Literal,
 }
@@ -86,12 +87,6 @@ pub struct IntentDecision {
     pub intent: Intent,
     pub symbol_weight: f64,
     pub relation: bool,
-}
-
-impl Default for Intent {
-    fn default() -> Self {
-        Intent::Concept
-    }
 }
 
 impl IntentDecision {
@@ -502,11 +497,23 @@ mod tests {
     #[test]
     fn deterministic_intent_matches_the_documented_rules() {
         assert_eq!(deterministic_intent("AuthMiddleware"), Intent::Definition);
-        assert_eq!(deterministic_intent("who calls parse_config"), Intent::Callers);
-        assert_eq!(deterministic_intent("how does compaction work"), Intent::Concept);
+        assert_eq!(
+            deterministic_intent("who calls parse_config"),
+            Intent::Callers
+        );
+        assert_eq!(
+            deterministic_intent("how does compaction work"),
+            Intent::Concept
+        );
         assert_eq!(deterministic_intent("\"exact text\""), Intent::Literal);
-        assert_eq!(IntentDecision::deterministic("AuthMiddleware").symbol_weight, 2.0);
-        assert_eq!(IntentDecision::deterministic("how does it work").symbol_weight, 1.0);
+        assert_eq!(
+            IntentDecision::deterministic("AuthMiddleware").symbol_weight,
+            2.0
+        );
+        assert_eq!(
+            IntentDecision::deterministic("how does it work").symbol_weight,
+            1.0
+        );
     }
 
     #[tokio::test]
@@ -564,7 +571,7 @@ mod tests {
         let (provider, backend) = provider(Box::new(|request| {
             let mut answers = BTreeMap::new();
             // Candidate 2 answers the query.
-            for (key, _) in request.questions.iter() {
+            for key in request.questions.keys() {
                 answers.insert(
                     key.clone(),
                     Answer::Noul {
@@ -589,7 +596,11 @@ mod tests {
         assert_eq!(candidates.len(), 4);
         assert_eq!(candidates[0].path, "src/2.rs");
         assert!(candidates[0].answers_query);
-        assert!(candidates[1..].iter().all(|candidate| !candidate.answers_query));
+        assert!(
+            candidates[1..]
+                .iter()
+                .all(|candidate| !candidate.answers_query)
+        );
         let sent = &backend.requests()[0];
         assert_eq!(sent.questions.len(), 4);
     }
@@ -598,10 +609,7 @@ mod tests {
     async fn sufficient_only_triggers_when_the_model_says_no() {
         let (provider, _) = provider(Box::new(|_| {
             let mut answers = BTreeMap::new();
-            answers.insert(
-                "sufficient".to_string(),
-                Answer::Noul { probability: 0.05 },
-            );
+            answers.insert("sufficient".to_string(), Answer::Noul { probability: 0.05 });
             answered(answers)
         }));
         let candidates = (0..3).map(candidate).collect::<Vec<_>>();

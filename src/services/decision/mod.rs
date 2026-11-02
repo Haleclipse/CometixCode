@@ -787,10 +787,10 @@ impl DecisionProvider {
         }
         // Only the concrete emrank backend knows how to warm itself; custom
         // backends (tests) have nothing to warm.
-        if self.backend_override.is_none() {
-            if let Some(backend) = global_backend(&self.settings) {
-                backend.spawn_prewarm();
-            }
+        if self.backend_override.is_none()
+            && let Some(backend) = global_backend(&self.settings)
+        {
+            backend.spawn_prewarm();
         }
     }
 }

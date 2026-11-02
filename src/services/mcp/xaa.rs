@@ -248,10 +248,10 @@ mod runtime {
                 )
             })?;
         let mut authorization_servers = prm.authorization_servers.unwrap_or_default();
-        if let Some(single) = prm.authorization_server {
-            if !authorization_servers.iter().any(|value| value == &single) {
-                authorization_servers.insert(0, single);
-            }
+        if let Some(single) = prm.authorization_server
+            && !authorization_servers.iter().any(|value| value == &single)
+        {
+            authorization_servers.insert(0, single);
         }
         authorization_servers.retain(|value| !value.trim().is_empty());
         if authorization_servers.is_empty() {
@@ -277,10 +277,9 @@ mod runtime {
         let client = http_client()?;
         if let Some(resource_metadata_url) =
             fetch_resource_metadata_url_from_challenge(&client, server_url).await?
+            && let Some(prm) = fetch_prm_from_url(&client, &resource_metadata_url).await?
         {
-            if let Some(prm) = fetch_prm_from_url(&client, &resource_metadata_url).await? {
-                return normalize_prm(server_url, prm);
-            }
+            return normalize_prm(server_url, prm);
         }
         for url in protected_resource_well_known_urls(server_url)? {
             if let Some(prm) = fetch_prm_from_url(&client, &url).await? {

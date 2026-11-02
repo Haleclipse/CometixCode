@@ -134,7 +134,7 @@ pub fn IdeAutoConnectDialog<'a>(
 
     handle_select_events(&mut hooks, options.clone(), focused_index, pending_choice);
 
-    let choice = { pending_choice.read().clone() };
+    let choice = { *pending_choice.read() };
     if let Some(choice) = choice {
         pending_choice.set(None);
         (props.on_complete)(Some(choice.auto_connect()));
@@ -183,7 +183,7 @@ pub fn IdeDisableAutoConnectDialog<'a>(
 
     handle_select_events(&mut hooks, options.clone(), focused_index, pending_choice);
 
-    let choice = { pending_choice.read().clone() };
+    let choice = { *pending_choice.read() };
     if let Some(choice) = choice {
         pending_choice.set(None);
         (props.on_complete)(choice.auto_connect());

@@ -32,9 +32,18 @@ const CHALLENGE_CHARS: usize = 3000;
 const GUARD_SLACK: Duration = Duration::from_millis(100);
 
 const KIND_OPTIONS: [(&str, &str); 4] = [
-    ("chinese", "The query is written in Chinese or targets Chinese-language sources"),
-    ("tech_docs", "The query asks for software documentation, an API, or a code-level answer"),
-    ("news", "The query asks for recent events or time-sensitive information"),
+    (
+        "chinese",
+        "The query is written in Chinese or targets Chinese-language sources",
+    ),
+    (
+        "tech_docs",
+        "The query asks for software documentation, an API, or a code-level answer",
+    ),
+    (
+        "news",
+        "The query asks for recent events or time-sensitive information",
+    ),
     ("general", "None of the above"),
 ];
 
@@ -99,9 +108,9 @@ impl<'a> WebDecisions<'a> {
     ) -> DecisionOutcome {
         let limit = self.provider.settings().deadline(true) + GUARD_SLACK;
         let deterministic = BTreeMap::new();
-        let request = self
-            .provider
-            .decide(point, state, questions, &deterministic, &safe, self.abort);
+        let request =
+            self.provider
+                .decide(point, state, questions, &deterministic, &safe, self.abort);
         match tokio::time::timeout(limit, request).await {
             Ok(outcome) => outcome,
             Err(_) => {
@@ -123,10 +132,7 @@ impl<'a> WebDecisions<'a> {
     /// `web.query_kind`: only adds provider parameters. Every provider is still
     /// queried regardless of the answer.
     pub async fn query_kind(&self, query: &str) -> Option<QueryKind> {
-        let question = Question::choice(
-            "Classify the search query in state.query.",
-            &KIND_OPTIONS,
-        );
+        let question = Question::choice("Classify the search query in state.query.", &KIND_OPTIONS);
         let outcome = self
             .ask(
                 DecisionPoint::WebQueryKind,
@@ -180,12 +186,17 @@ impl<'a> WebDecisions<'a> {
             .ask(DecisionPoint::WebPrune, state, questions, SafeSet::any())
             .await;
         let prune = self.provider.settings().resolved_point("web.prune");
-        let max_prob = prune.as_ref().and_then(|point| point.max_prob).unwrap_or(0.05);
+        let max_prob = prune
+            .as_ref()
+            .and_then(|point| point.max_prob)
+            .unwrap_or(0.05);
         let would_drop = outcome
             .receipt()
             .answers
             .values()
-            .filter(|answer| matches!(answer, Answer::Noul { probability } if *probability < max_prob))
+            .filter(
+                |answer| matches!(answer, Answer::Noul { probability } if *probability < max_prob),
+            )
             .count();
         crate::utils::debug::log_for_debugging(&format!(
             "web.prune (shadow, not applied): {} {would_drop} of {count} candidate(s) below P={max_prob}",
@@ -267,7 +278,11 @@ impl<'a> WebDecisions<'a> {
                 )
             })
             .collect();
-        (json!({"query": query, "candidates": candidates}), questions, count)
+        (
+            json!({"query": query, "candidates": candidates}),
+            questions,
+            count,
+        )
     }
 }
 
@@ -326,7 +341,10 @@ mod tests {
         let (provider, _) =
             ScriptedBackend::provider(|_| BTreeMap::from([("kind".to_string(), choice("sports"))]));
         let abort = AbortController::default();
-        assert_eq!(WebDecisions::new(&provider, &abort).query_kind("q").await, None);
+        assert_eq!(
+            WebDecisions::new(&provider, &abort).query_kind("q").await,
+            None
+        );
     }
 
     #[tokio::test]
@@ -337,7 +355,12 @@ mod tests {
                 .keys()
                 .map(|id| {
                     let yes = id == "c1" || id == "c3";
-                    (id.clone(), Answer::Noul { probability: if yes { 0.97 } else { 0.03 } })
+                    (
+                        id.clone(),
+                        Answer::Noul {
+                            probability: if yes { 0.97 } else { 0.03 },
+                        },
+                    )
                 })
                 .collect()
         });
@@ -351,7 +374,10 @@ mod tests {
         let seen = backend.requests();
         assert_eq!(seen.len(), 1, "one request for the whole batch");
         assert_eq!(seen[0].questions.len(), 5);
-        assert_eq!(seen[0].state["candidates"][1]["url"], "https://example.com/1");
+        assert_eq!(
+            seen[0].state["candidates"][1]["url"],
+            "https://example.com/1"
+        );
     }
 
     #[tokio::test]
@@ -396,7 +422,11 @@ mod tests {
         let decisions = WebDecisions::new(&provider, &abort);
         assert!(decisions.page_lacks_answer("q", &"a".repeat(20_000)).await);
         assert_eq!(
-            backend.requests()[0].state["page"].as_str().unwrap().chars().count(),
+            backend.requests()[0].state["page"]
+                .as_str()
+                .unwrap()
+                .chars()
+                .count(),
             8000
         );
         assert!(!decisions.page_lacks_answer("  ", "page").await);
@@ -416,7 +446,11 @@ mod tests {
                 .await;
             assert_eq!(challenge, expected, "p={probability}");
             assert_eq!(
-                backend.requests()[0].state["page"].as_str().unwrap().chars().count(),
+                backend.requests()[0].state["page"]
+                    .as_str()
+                    .unwrap()
+                    .chars()
+                    .count(),
                 3000
             );
         }
@@ -462,7 +496,10 @@ mod tests {
         let (provider, backend) = ScriptedBackend::provider(|_| BTreeMap::new());
         let abort = AbortController::default();
         abort.abort();
-        assert_eq!(WebDecisions::new(&provider, &abort).query_kind("q").await, None);
+        assert_eq!(
+            WebDecisions::new(&provider, &abort).query_kind("q").await,
+            None
+        );
         assert!(backend.requests().is_empty());
     }
 }

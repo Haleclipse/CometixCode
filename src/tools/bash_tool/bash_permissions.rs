@@ -215,15 +215,14 @@ pub fn suggestion_for_exact_command(command: &str) -> Vec<PermissionUpdate> {
     if let Some(prefix) = extract_prefix_before_heredoc(command) {
         return shared_suggestion_for_prefix(super::tool_name::BASH_TOOL_NAME, &prefix);
     }
-    if command.contains('\n') {
-        if let Some(first_line) = command
+    if command.contains('\n')
+        && let Some(first_line) = command
             .lines()
             .next()
             .map(str::trim)
             .filter(|s| !s.is_empty())
-        {
-            return shared_suggestion_for_prefix(super::tool_name::BASH_TOOL_NAME, first_line);
-        }
+    {
+        return shared_suggestion_for_prefix(super::tool_name::BASH_TOOL_NAME, first_line);
     }
     if let Some(prefix) = get_simple_command_prefix(command) {
         return shared_suggestion_for_prefix(super::tool_name::BASH_TOOL_NAME, &prefix);
@@ -389,20 +388,20 @@ pub fn is_normalized_git_command(command: &str) -> bool {
         return true;
     }
     let stripped = strip_safe_wrappers(command);
-    if let Ok(tokens) = crate::utils::bash::shell_quote::try_parse_shell_command(&stripped) {
-        if let Some(crate::utils::bash::shell_quote::ParseEntry::String(first)) = tokens.first() {
-            if first == "git" {
-                return true;
-            }
-            if first == "xargs"
+    if let Ok(tokens) = crate::utils::bash::shell_quote::try_parse_shell_command(&stripped)
+        && let Some(crate::utils::bash::shell_quote::ParseEntry::String(first)) = tokens.first()
+    {
+        if first == "git" {
+            return true;
+        }
+        if first == "xargs"
                 && tokens.iter().any(|token| {
                     matches!(token, crate::utils::bash::shell_quote::ParseEntry::String(value) if value == "git")
                 })
             {
                 return true;
             }
-            return false;
-        }
+        return false;
     }
     stripped == "git" || stripped.starts_with("git ")
 }
@@ -410,10 +409,10 @@ pub fn is_normalized_git_command(command: &str) -> bool {
 /// Maps to: CC `isNormalizedCdCommand(command)`.
 pub fn is_normalized_cd_command(command: &str) -> bool {
     let stripped = strip_safe_wrappers(command);
-    if let Ok(tokens) = crate::utils::bash::shell_quote::try_parse_shell_command(&stripped) {
-        if let Some(crate::utils::bash::shell_quote::ParseEntry::String(first)) = tokens.first() {
-            return matches!(first.as_str(), "cd" | "pushd" | "popd");
-        }
+    if let Ok(tokens) = crate::utils::bash::shell_quote::try_parse_shell_command(&stripped)
+        && let Some(crate::utils::bash::shell_quote::ParseEntry::String(first)) = tokens.first()
+    {
+        return matches!(first.as_str(), "cd" | "pushd" | "popd");
     }
     matches!(
         stripped.split_whitespace().next(),
@@ -592,7 +591,7 @@ fn bash_rule_matches_candidate(
                 }
                 candidate == prefix
                     || candidate.starts_with(&format!("{prefix} "))
-                    || candidate == &format!("xargs {prefix}")
+                    || candidate == format!("xargs {prefix}")
                     || candidate.starts_with(&format!("xargs {prefix} "))
             }
         },

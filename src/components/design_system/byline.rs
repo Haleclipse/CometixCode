@@ -14,7 +14,7 @@ pub fn Byline(props: &mut BylineProps, hooks: Hooks) -> impl Into<AnyElement<'st
         .try_use_context::<super::keyboard_shortcut_hint::KeyboardShortcutHintStyleContext>()
         .map(|context| *context)
         .unwrap_or_default();
-    let children = props.children.drain(..).collect::<Vec<_>>();
+    let children = std::mem::take(&mut props.children);
 
     element! {
         View(flex_direction: FlexDirection::Row, flex_shrink: 0.0f32) {

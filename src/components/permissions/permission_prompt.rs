@@ -132,30 +132,26 @@ pub fn PermissionPrompt(
 
     // CC :71-78: the Tab hint while a feedback option is focused outside its
     // input mode.
-    let focused_feedback_type = focused_value
-        .read()
-        .as_deref()
-        .and_then(|value| feedback_type_of(value));
-    let show_tab_hint = focused_feedback_type.is_some_and(|feedback_type| !input_mode(feedback_type));
+    let focused_feedback_type = focused_value.read().as_deref().and_then(&feedback_type_of);
+    let show_tab_hint =
+        focused_feedback_type.is_some_and(|feedback_type| !input_mode(feedback_type));
 
     // CC :80-116: an option in input mode is an input option.
     let select_options = options
         .iter()
         .map(|option| {
-            let input = option
-                .feedback_config
-                .as_ref()
-                .filter(|config| input_mode(config.feedback_type))
-                .map(|config| SelectInputOptionData {
-                    placeholder: Some(
-                        config
-                            .placeholder
-                            .clone()
-                            .unwrap_or_else(|| config.feedback_type.default_placeholder().to_string()),
-                    ),
-                    value: feedback_of(config.feedback_type),
-                    ..SelectInputOptionData::default()
-                });
+            let input =
+                option
+                    .feedback_config
+                    .as_ref()
+                    .filter(|config| input_mode(config.feedback_type))
+                    .map(|config| SelectInputOptionData {
+                        placeholder: Some(config.placeholder.clone().unwrap_or_else(|| {
+                            config.feedback_type.default_placeholder().to_string()
+                        })),
+                        value: feedback_of(config.feedback_type),
+                        ..SelectInputOptionData::default()
+                    });
             SelectOptionData {
                 label: option.label.clone(),
                 value: option.value.clone(),
@@ -180,7 +176,10 @@ pub fn PermissionPrompt(
         &mut hooks,
         UseSelectStateProps {
             visible_option_count: Some(5),
-            values: select_options.iter().map(|option| option.value.clone()).collect(),
+            values: select_options
+                .iter()
+                .map(|option| option.value.clone())
+                .collect(),
             default_value: None,
             focus_value: None,
         },
@@ -248,7 +247,11 @@ pub fn PermissionPrompt(
         .map(|runtime| runtime.clone());
     let keybinding_handlers = options
         .iter()
-        .filter_map(|option| option.keybinding.map(|action| (action, option.value.clone())))
+        .filter_map(|option| {
+            option
+                .keybinding
+                .map(|action| (action, option.value.clone()))
+        })
         .map(|(action, value)| {
             let handle_select = handle_select.clone();
             (
@@ -395,7 +398,10 @@ mod tests {
     /// The prompt under the runtime, theme and AppState it mounts with, and a
     /// line with the key count, escape count and registered overlays.
     #[component]
-    fn PromptHarness(props: &PromptHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn PromptHarness(
+        props: &PromptHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             KeybindingRuntime::with_default_bindings(),
@@ -464,7 +470,8 @@ mod tests {
         let (recorded, counted) = (selections.clone(), cancels.clone());
         let frames = futures::executor::block_on(async move {
             let (keys, events) = async_channel::unbounded();
-            let mut app = element!(PromptHarness(selections: Some(recorded), cancels: Some(counted)));
+            let mut app =
+                element!(PromptHarness(selections: Some(recorded), cancels: Some(counted)));
             let mut render_loop = Box::pin(app.mock_terminal_render_loop(
                 MockTerminalConfig::with_events(events).with_size(100, 20),
             ));
@@ -535,7 +542,11 @@ mod tests {
         let run = drive(vec![press(KeyCode::Esc)]);
         assert_eq!(run.cancels, 1);
         assert!(run.selections.is_empty());
-        assert!(run.frames.last().unwrap().contains("escapes=1"), "{}", run.frames.last().unwrap());
+        assert!(
+            run.frames.last().unwrap().contains("escapes=1"),
+            "{}",
+            run.frames.last().unwrap()
+        );
     }
 
     #[test]
@@ -559,10 +570,19 @@ mod tests {
     fn permission_prompt_empty_amend_still_answers_and_leaving_collapses() {
         // CC :106 `allowEmptySubmitToCancel: true`: an empty input answers
         // without feedback.
-        let run = drive(vec![press(KeyCode::Down), press(KeyCode::Down), press(KeyCode::Tab), press(KeyCode::Enter)]);
+        let run = drive(vec![
+            press(KeyCode::Down),
+            press(KeyCode::Down),
+            press(KeyCode::Tab),
+            press(KeyCode::Enter),
+        ]);
         assert_eq!(run.selections, vec![("no".to_string(), None)]);
         // CC :241-259: leaving an empty open input collapses it again.
-        let run = drive(vec![press(KeyCode::Tab), press(KeyCode::Down), press(KeyCode::Up)]);
+        let run = drive(vec![
+            press(KeyCode::Tab),
+            press(KeyCode::Down),
+            press(KeyCode::Up),
+        ]);
         let back = run.frames.last().unwrap();
         assert!(back.contains("Tab to amend"), "{back}");
     }
@@ -584,7 +604,10 @@ mod tests {
         let from_yes = settled(vec![vec![tab.clone(), down.clone()]]);
         assert!(from_yes.contains("❯ 2. Yes, always"), "{from_yes}");
         assert!(!from_yes.contains("tell Claude"), "{from_yes}");
-        for group in [vec![tab.clone(), down.clone()], vec![down.clone(), tab.clone()]] {
+        for group in [
+            vec![tab.clone(), down.clone()],
+            vec![down.clone(), tab.clone()],
+        ] {
             let from_always = settled(vec![vec![down.clone()], group]);
             assert!(
                 from_always.contains("❯ 3. No, tell Claude what to do differently"),

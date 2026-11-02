@@ -967,12 +967,12 @@ impl EmbeddingClient {
         static LAST_CHECK: std::sync::Mutex<Option<(String, std::time::Instant)>> =
             std::sync::Mutex::new(None);
         let key = format!("{}|{}|{}", self.url, self.model, self.dim);
-        if let Ok(guard) = LAST_CHECK.lock() {
-            if let Some((last_key, at)) = guard.as_ref() {
-                if last_key == &key && at.elapsed() < Duration::from_secs(600) {
-                    return Ok(());
-                }
-            }
+        if let Ok(guard) = LAST_CHECK.lock()
+            && let Some((last_key, at)) = guard.as_ref()
+            && last_key == &key
+            && at.elapsed() < Duration::from_secs(600)
+        {
+            return Ok(());
         }
         match self.health.call_permit() {
             CallPermit::Skipped => return Err("embedding service unreachable".to_string()),
@@ -993,7 +993,7 @@ impl EmbeddingClient {
                 } else {
                     FailureKind::Unreachable
                 });
-                format!("embedding service unreachable")
+                "embedding service unreachable".to_string()
             })?;
         if !response.status().is_success() {
             self.health.record_failure(FailureKind::Unreachable);
@@ -1138,7 +1138,9 @@ impl EmbeddingClient {
             ));
         }
         let values = bytes
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
             .collect::<Vec<_>>();
         let norm = values
@@ -1242,9 +1244,8 @@ impl QdrantClient {
                 .json(&json!({"points": points.as_ref()}))
             })
             .await
-            .map_err(|error| {
+            .inspect_err(|_error| {
                 self.health.record_failure(FailureKind::Unreachable);
-                error
             })?;
         if !response.status().is_success() {
             self.health.record_failure(FailureKind::Unreachable);
@@ -1348,9 +1349,8 @@ impl QdrantClient {
                 }))
             })
             .await
-            .map_err(|error| {
+            .inspect_err(|_error| {
                 self.health.record_failure(FailureKind::Unreachable);
-                error
             })?;
         if response.status().as_u16() == 404 {
             // The collection does not exist yet: first sync has not finished.

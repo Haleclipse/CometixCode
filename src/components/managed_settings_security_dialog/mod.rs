@@ -108,7 +108,7 @@ pub fn ManagedSettingsSecurityDialog<'a>(
         }
     });
 
-    let pending = { pending_choice.read().clone() };
+    let pending = { *pending_choice.read() };
     if let Some(choice) = pending {
         pending_choice.set(None);
         match choice {

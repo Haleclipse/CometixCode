@@ -428,9 +428,7 @@ impl QdrantSettings {
         self.url.as_deref().unwrap_or("http://10.144.0.3:6333")
     }
     pub fn api_key_file(&self) -> Option<&str> {
-        self.api_key_file
-            .as_deref()
-            .or(Some("~/.nyan/keys/qdrant"))
+        self.api_key_file.as_deref().or(Some("~/.nyan/keys/qdrant"))
     }
 }
 

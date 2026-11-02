@@ -104,7 +104,13 @@ mod tests {
                 }),
             ),
         ];
-        use_keybindings(&mut hooks, runtime, handlers, ContextName::HistorySearch, || true);
+        use_keybindings(
+            &mut hooks,
+            runtime,
+            handlers,
+            ContextName::HistorySearch,
+            || true,
+        );
         element! {
             View(flex_direction: FlexDirection::Column) {
                 Text(content: format!(
@@ -160,13 +166,23 @@ mod tests {
         }
         .render(Some(80));
         let row: String = (0..canvas.width())
-            .map(|x| canvas.cell(x, 0).and_then(|cell| cell.text()).unwrap_or(" ").to_string())
+            .map(|x| {
+                canvas
+                    .cell(x, 0)
+                    .and_then(|cell| cell.text())
+                    .unwrap_or(" ")
+                    .to_string()
+            })
             .collect();
         let label_x = row.find("search").expect("label");
         let query_x = row.find("abc").expect("query");
         for x in [label_x, query_x] {
             let style = canvas.resolved_text_style(x, 0).expect("styled cell");
-            assert_eq!(style.color, Some(current_theme.inactive), "row={row:?} x={x}");
+            assert_eq!(
+                style.color,
+                Some(current_theme.inactive),
+                "row={row:?} x={x}"
+            );
         }
     }
 

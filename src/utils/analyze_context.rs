@@ -498,7 +498,7 @@ fn create_grid(
         }
     }
 
-    let reserved_squares = reserved.map(&make_squares).unwrap_or_default();
+    let reserved_squares = reserved.map(make_squares).unwrap_or_default();
     let free_target = total_squares.saturating_sub(reserved_squares.len());
     let free = categories
         .iter()

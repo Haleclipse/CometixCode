@@ -50,7 +50,8 @@ pub fn get_hooks_sources_from_settings(
 ) -> Vec<String> {
     source_pair(project_settings, local_settings)
         .into_iter()
-        .filter_map(|(settings, label)| has_hooks(settings).then(|| label.to_string()))
+        .filter(|&(settings, _)| has_hooks(settings))
+        .map(|(_, label)| label.to_string())
         .collect()
 }
 
@@ -71,12 +72,12 @@ pub fn get_bash_permission_sources_from_settings(
 ) -> Vec<String> {
     source_pair(project_settings, local_settings)
         .into_iter()
-        .filter_map(|(settings, label)| {
+        .filter(|&(settings, _)| {
             has_bash_permission_settings(
                 settings.and_then(|settings| settings.permissions.as_ref()),
             )
-            .then(|| label.to_string())
         })
+        .map(|(_, label)| label.to_string())
         .collect()
 }
 
@@ -93,9 +94,8 @@ pub fn get_otel_headers_helper_sources_from_settings(
 ) -> Vec<String> {
     source_pair(project_settings, local_settings)
         .into_iter()
-        .filter_map(|(settings, label)| {
-            has_otel_headers_helper(settings).then(|| label.to_string())
-        })
+        .filter(|&(settings, _)| has_otel_headers_helper(settings))
+        .map(|(_, label)| label.to_string())
         .collect()
 }
 
@@ -112,7 +112,8 @@ pub fn get_api_key_helper_sources_from_settings(
 ) -> Vec<String> {
     source_pair(project_settings, local_settings)
         .into_iter()
-        .filter_map(|(settings, label)| has_api_key_helper(settings).then(|| label.to_string()))
+        .filter(|&(settings, _)| has_api_key_helper(settings))
+        .map(|(_, label)| label.to_string())
         .collect()
 }
 
@@ -136,7 +137,8 @@ pub fn get_aws_commands_sources_from_settings(
 ) -> Vec<String> {
     source_pair(project_settings, local_settings)
         .into_iter()
-        .filter_map(|(settings, label)| has_aws_commands(settings).then(|| label.to_string()))
+        .filter(|&(settings, _)| has_aws_commands(settings))
+        .map(|(_, label)| label.to_string())
         .collect()
 }
 
@@ -153,7 +155,8 @@ pub fn get_gcp_commands_sources_from_settings(
 ) -> Vec<String> {
     source_pair(project_settings, local_settings)
         .into_iter()
-        .filter_map(|(settings, label)| has_gcp_commands(settings).then(|| label.to_string()))
+        .filter(|&(settings, _)| has_gcp_commands(settings))
+        .map(|(_, label)| label.to_string())
         .collect()
 }
 
@@ -170,7 +173,8 @@ pub fn get_dangerous_env_vars_sources_from_settings(
 ) -> Vec<String> {
     source_pair(project_settings, local_settings)
         .into_iter()
-        .filter_map(|(settings, label)| has_dangerous_env_vars(settings).then(|| label.to_string()))
+        .filter(|&(settings, _)| has_dangerous_env_vars(settings))
+        .map(|(_, label)| label.to_string())
         .collect()
 }
 

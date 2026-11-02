@@ -418,16 +418,15 @@ fn send_message_output_for_context(
             if let (Some(team), Some(agent_id)) = (team_name.as_deref(), agent_id.as_deref()) {
                 // CC :320 `readTeamFileAsync` — a pure disk read; teammate
                 // processes update their member rows there.
-                if let Some(record) = crate::utils::swarm::team_helpers::read_team_file(team) {
-                    if let Some(member) = record
+                if let Some(record) = crate::utils::swarm::team_helpers::read_team_file(team)
+                    && let Some(member) = record
                         .members
                         .iter()
                         .find(|member| member.agent_id == agent_id)
-                    {
-                        own_pane_id =
-                            (!member.tmux_pane_id.is_empty()).then(|| member.tmux_pane_id.clone());
-                        own_backend_type = member.backend_type.clone();
-                    }
+                {
+                    own_pane_id =
+                        (!member.tmux_pane_id.is_empty()).then(|| member.tmux_pane_id.clone());
+                    own_backend_type = member.backend_type.clone();
                 }
             }
             let message = if approved {
@@ -457,27 +456,23 @@ fn send_message_output_for_context(
             }
             if approved {
                 if own_backend_type.as_deref() == Some("in-process") {
-                    if let Some(agent_id) = agent_id.as_deref() {
-                        if let Some(task) =
+                    if let Some(agent_id) = agent_id.as_deref()
+                        && let Some(task) =
                             crate::tasks::in_process_teammate_task::find_teammate_task_by_agent_id(
                                 agent_id,
                             )
-                        {
-                            if let Some(abort) = task.abort_controller {
-                                abort.abort();
-                            }
-                        }
+                        && let Some(abort) = task.abort_controller
+                    {
+                        abort.abort();
                     }
-                } else if let Some(agent_id) = agent_id.as_deref() {
-                    if let Some(task) =
+                } else if let Some(agent_id) = agent_id.as_deref()
+                    && let Some(task) =
                         crate::tasks::in_process_teammate_task::find_teammate_task_by_agent_id(
                             agent_id,
                         )
-                    {
-                        if let Some(abort) = task.abort_controller {
-                            abort.abort();
-                        }
-                    }
+                    && let Some(abort) = task.abort_controller
+                {
+                    abort.abort();
                 }
             }
             SendMessageOutput {

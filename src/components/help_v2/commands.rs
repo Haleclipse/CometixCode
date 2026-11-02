@@ -35,7 +35,10 @@ pub struct CommandsProps<'a> {
 /// its keys off and no `onCancel` keeps it from registering the `select`
 /// overlay (use-select-input.ts:101).
 #[component]
-pub fn Commands<'a>(props: &mut CommandsProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+pub fn Commands<'a>(
+    props: &mut CommandsProps<'a>,
+    mut hooks: Hooks,
+) -> impl Into<AnyElement<'static>> {
     let theme = *hooks.use_context::<Theme>();
     let focus = use_tab_header_focus(&mut hooks);
     let max_width = usize::from(props.columns).saturating_sub(10).max(1);

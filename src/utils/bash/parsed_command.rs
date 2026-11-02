@@ -236,12 +236,11 @@ impl ParsedCommand {
         if command.is_empty() {
             return None;
         }
-        if crate::utils::build_profile::build_audience().is_internal() {
-            if let super::parser::ParseCommandRawResult::Parsed(tree) =
+        if crate::utils::build_profile::build_audience().is_internal()
+            && let super::parser::ParseCommandRawResult::Parsed(tree) =
                 super::parser::parse_command_raw(command)
-            {
-                return Some(build_parsed_command_from_root(command, tree.root_node()));
-            }
+        {
+            return Some(build_parsed_command_from_root(command, tree.root_node()));
         }
         Some(Box::new(RegexParsedCommandDeprecated::new(command)))
     }

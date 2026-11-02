@@ -188,10 +188,10 @@ pub fn get_oauth_config_for_audience(
         config.oauth_file_suffix = "-custom-oauth".to_string();
     }
 
-    if let Some(client_id) = get_env("CLAUDE_CODE_OAUTH_CLIENT_ID") {
-        if !client_id.is_empty() {
-            config.client_id = client_id;
-        }
+    if let Some(client_id) = get_env("CLAUDE_CODE_OAUTH_CLIENT_ID")
+        && !client_id.is_empty()
+    {
+        config.client_id = client_id;
     }
 
     Ok(config)

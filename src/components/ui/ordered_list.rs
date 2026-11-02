@@ -19,7 +19,7 @@ pub fn OrderedList(props: &mut OrderedListProps, hooks: Hooks) -> impl Into<AnyE
         .try_use_context::<OrderedListContext>()
         .map(|context| context.marker.clone())
         .unwrap_or_default();
-    let children = props.children.drain(..).collect::<Vec<_>>();
+    let children = std::mem::take(&mut props.children);
     let max_marker_width = children.len().max(1).to_string().len();
 
     element! {

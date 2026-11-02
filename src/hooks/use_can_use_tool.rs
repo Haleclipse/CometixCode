@@ -504,75 +504,67 @@ pub fn can_use_tool(params: CanUseToolParams<'_>) -> CanUseToolResult {
     // Maps to: CC useCanUseTool.tsx:138-185, deny / auto-mode classifier.
     // This is the interactive canUseTool owner, not the lower permission
     // policy: forced decisions pass through the same recording branch.
-    if crate::utils::permissions::permission_setup::is_transcript_classifier_feature_enabled() {
-        if let CanUseToolResult::Deny(request) = &result {
-            if let Some(crate::types::permissions::PermissionDecisionReason::Classifier {
-                classifier,
-                reason,
-            }) = &request.decision_reason
+    if crate::utils::permissions::permission_setup::is_transcript_classifier_feature_enabled()
+        && let CanUseToolResult::Deny(request) = &result
+        && let Some(crate::types::permissions::PermissionDecisionReason::Classifier {
+            classifier,
+            reason,
+        }) = &request.decision_reason
+        && classifier == "auto-mode"
+    {
+        // An MCP tool answers `description()` and
+        // `userFacingName()` from its own server tool.
+        let description_and_name = if let Some(tool) = params.tool
+            && let Some(user_facing_name) = tool.mcp_user_facing_name()
+        {
+            Some((tool.mcp_description.clone(), user_facing_name))
+        } else {
+            crate::services::tools::tool_execution::find_tool_call(tool_name).map(|tool| {
+                (
+                    tool.description(&params.tool_use.input),
+                    tool.user_facing_name(Some(&params.tool_use.input)),
+                )
+            })
+        };
+        // Source rechecks abort after awaiting description before
+        // recording or notifying. The current synchronous ToolCall
+        // description carrier resolves at this same boundary.
+        if let Some(context) =
+            interactive_context().filter(|context| context.abort_controller.is_aborted())
+        {
+            return cancel(context);
+        }
+        // An unregistered non-MCP tool has no description callback
+        // in this port. Do not substitute the model prompt or input
+        // summary for that missing owner.
+        if let Some((description, user_facing_name)) = description_and_name {
+            crate::utils::auto_mode_denials::record_auto_mode_denial(
+                crate::utils::auto_mode_denials::AutoModeDenial {
+                    tool_name: tool_name.to_string(),
+                    display: description,
+                    reason: reason.clone(),
+                    timestamp: chrono::Utc::now().timestamp_millis() as f64,
+                },
+            );
+            if let Some(callback) = params
+                .tool_use_context
+                .and_then(|context| context.add_notification.0.as_ref())
             {
-                if classifier == "auto-mode" {
-                    // An MCP tool answers `description()` and
-                    // `userFacingName()` from its own server tool.
-                    let description_and_name = if let Some(tool) = params.tool
-                        && let Some(user_facing_name) = tool.mcp_user_facing_name()
-                    {
-                        Some((tool.mcp_description.clone(), user_facing_name))
-                    } else {
-                        crate::services::tools::tool_execution::find_tool_call(tool_name).map(
-                            |tool| {
-                                (
-                                    tool.description(&params.tool_use.input),
-                                    tool.user_facing_name(Some(&params.tool_use.input)),
-                                )
-                            },
-                        )
-                    };
-                    // Source rechecks abort after awaiting description before
-                    // recording or notifying. The current synchronous ToolCall
-                    // description carrier resolves at this same boundary.
-                    if let Some(context) = interactive_context()
-                        .filter(|context| context.abort_controller.is_aborted())
-                    {
-                        return cancel(context);
-                    }
-                    // An unregistered non-MCP tool has no description callback
-                    // in this port. Do not substitute the model prompt or input
-                    // summary for that missing owner.
-                    if let Some((description, user_facing_name)) = description_and_name {
-                        crate::utils::auto_mode_denials::record_auto_mode_denial(
-                            crate::utils::auto_mode_denials::AutoModeDenial {
-                                tool_name: tool_name.to_string(),
-                                display: description,
-                                reason: reason.clone(),
-                                timestamp: chrono::Utc::now().timestamp_millis() as f64,
-                            },
-                        );
-                        if let Some(callback) = params
-                            .tool_use_context
-                            .and_then(|context| context.add_notification.0.as_ref())
-                        {
-                            use crate::context::notifications::{
-                                Notification, NotificationColor, NotificationPriority,
-                                NotificationSegment,
-                            };
-                            let denied =
-                                format!("{} denied by auto mode", user_facing_name.to_lowercase());
-                            callback(
-                                Notification::text(
-                                    "auto-mode-denied",
-                                    format!("{denied} · /permissions"),
-                                    NotificationPriority::Immediate,
-                                )
-                                .with_segments(vec![
-                                    NotificationSegment::text(denied)
-                                        .with_color(NotificationColor::Error),
-                                    NotificationSegment::text(" · /permissions").with_dim(true),
-                                ]),
-                            );
-                        }
-                    }
-                }
+                use crate::context::notifications::{
+                    Notification, NotificationColor, NotificationPriority, NotificationSegment,
+                };
+                let denied = format!("{} denied by auto mode", user_facing_name.to_lowercase());
+                callback(
+                    Notification::text(
+                        "auto-mode-denied",
+                        format!("{denied} · /permissions"),
+                        NotificationPriority::Immediate,
+                    )
+                    .with_segments(vec![
+                        NotificationSegment::text(denied).with_color(NotificationColor::Error),
+                        NotificationSegment::text(" · /permissions").with_dim(true),
+                    ]),
+                );
             }
         }
     }
@@ -919,14 +911,12 @@ pub fn can_use_tool_or_queue_permission_for_params_with_store(
         // ctx.input; description was already computed from that original input.
         if !crate::utils::teammate_context::get_teammate_context()
             .is_some_and(|identity| identity.is_in_process)
-        {
-            if let Some(PermissionDecision::Ask {
+            && let Some(PermissionDecision::Ask {
                 updated_input: Some(input),
                 ..
             }) = &request.permission_result
-            {
-                request.input = input.clone();
-            }
+        {
+            request.input = input.clone();
         }
         handle_interactive_permission(queue, request.clone());
         return CanUseToolResult::Ask(request);

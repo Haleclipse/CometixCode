@@ -453,11 +453,11 @@ pub(crate) fn set_multiple_member_modes(team_name: &str, updates: &[(&str, &str)
         .collect::<std::collections::HashMap<_, _>>();
     let mut changed = false;
     for member in &mut record.members {
-        if let Some(mode) = update_map.get(member.name.as_str()) {
-            if member.mode.as_deref() != Some(*mode) {
-                member.mode = Some((*mode).to_string());
-                changed = true;
-            }
+        if let Some(mode) = update_map.get(member.name.as_str())
+            && member.mode.as_deref() != Some(*mode)
+        {
+            member.mode = Some((*mode).to_string());
+            changed = true;
         }
     }
     if changed {
@@ -575,10 +575,9 @@ async fn kill_orphaned_teammate_panes(team_name: &str) {
                     crate::utils::swarm::backends::registry::get_pane_backend_executor_for_type(
                         crate::utils::swarm::backends::types::PaneBackendType::Tmux,
                     )
+                    && executor.kill(&member.agent_id).await
                 {
-                    if executor.kill(&member.agent_id).await {
-                        continue;
-                    }
+                    continue;
                 }
                 let backend = crate::utils::swarm::backends::tmux_backend::TmuxBackend::new();
                 let _ = backend
@@ -590,10 +589,9 @@ async fn kill_orphaned_teammate_panes(team_name: &str) {
                     crate::utils::swarm::backends::registry::get_pane_backend_executor_for_type(
                         crate::utils::swarm::backends::types::PaneBackendType::ITerm2,
                     )
+                    && executor.kill(&member.agent_id).await
                 {
-                    if executor.kill(&member.agent_id).await {
-                        continue;
-                    }
+                    continue;
                 }
                 let backend = crate::utils::swarm::backends::iterm_backend::ITermBackend::new();
                 let _ = backend
@@ -686,10 +684,7 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn unique_config_dir(prefix: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "nyan-{prefix}-{}",
-            uuid::Uuid::new_v4().simple()
-        ))
+        std::env::temp_dir().join(format!("nyan-{prefix}-{}", uuid::Uuid::new_v4().simple()))
     }
 
     /// Every mutator in this file reads through `read_team_file` (CC

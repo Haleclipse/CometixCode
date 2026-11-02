@@ -157,13 +157,16 @@ fn use_keybinding_setup_instance(hooks: &mut Hooks) -> KeybindingRuntime {
     // subscription). A reload replaces this mount's bindings and re-renders
     // the subtree, as CC's `setLoadResult` does.
     let changes = hooks.use_const(|| {
-        let (subscription, receiver) =
-            super::load_user_bindings::subscribe_to_keybinding_changes();
+        let (subscription, receiver) = super::load_user_bindings::subscribe_to_keybinding_changes();
         Arc::new((subscription, Mutex::new(Some(receiver))))
     });
     let mut reloads = hooks.use_state(|| 0u64);
     hooks.use_future({
-        let receiver = changes.1.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+        let receiver = changes
+            .1
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
         let runtime = runtime.clone();
         let store = store.clone();
         async move {
@@ -193,10 +196,10 @@ fn use_chord_interceptor(hooks: &mut Hooks, runtime: &KeybindingRuntime) {
     hooks.use_terminal_events({
         let runtime = runtime.clone();
         move |event| {
-            if let TerminalEvent::Key(key_event) = &event {
-                if let Some(keystroke) = key_event_to_keystroke(key_event) {
-                    runtime.observe_keystroke(&keystroke);
-                }
+            if let TerminalEvent::Key(key_event) = &event
+                && let Some(keystroke) = key_event_to_keystroke(key_event)
+            {
+                runtime.observe_keystroke(&keystroke);
             }
         }
     });
@@ -267,7 +270,8 @@ mod setup_mount_tests {
                     ShortcutProbe
                 }
             };
-            let frames = app.mock_terminal_render_loop(MockTerminalConfig::default().with_size(40, 3));
+            let frames =
+                app.mock_terminal_render_loop(MockTerminalConfig::default().with_size(40, 3));
             futures::pin_mut!(frames);
             let mounted = frames.next().await.expect("mount frame").to_string();
             let subscribed = keybinding_change_subscriber_count_for_testing();
@@ -281,12 +285,19 @@ mod setup_mount_tests {
                 bindings,
                 warnings: Vec::new(),
             });
-            let reloaded = frames.next().await.expect("frame after the reload").to_string();
+            let reloaded = frames
+                .next()
+                .await
+                .expect("frame after the reload")
+                .to_string();
             (mounted, subscribed, reloaded)
         });
         assert!(mounted.contains("toggle=ctrl+o"), "mount frame:\n{mounted}");
         assert_eq!(subscribed, before + 1, "the mount subscribes to reloads");
-        assert!(reloaded.contains("toggle=ctrl+t"), "frame after the reload:\n{reloaded}");
+        assert!(
+            reloaded.contains("toggle=ctrl+t"),
+            "frame after the reload:\n{reloaded}"
+        );
     }
 
     #[test]
@@ -301,7 +312,10 @@ mod setup_mount_tests {
         .render(Some(40))
         .to_string();
         assert!(text.contains("toggle="), "canvas=\n{text}");
-        assert!(!text.contains("no runtime"), "the mount provides a runtime; canvas=\n{text}");
+        assert!(
+            !text.contains("no runtime"),
+            "the mount provides a runtime; canvas=\n{text}"
+        );
         assert_eq!(keybinding_change_subscriber_count_for_testing(), before);
     }
 }

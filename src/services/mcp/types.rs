@@ -381,7 +381,7 @@ pub fn mcp_stdio_server_config_schema() -> &'static Schema {
 /// Maps to: CC `services/mcp/types.ts:41-41#McpXaaConfigSchema`.
 fn mcp_xaa_config_schema() -> &'static Schema {
     static S: OnceLock<Schema> = OnceLock::new();
-    S.get_or_init(|| zod::boolean())
+    S.get_or_init(zod::boolean)
 }
 
 /// Maps to: CC `services/mcp/types.ts:43-56#McpOAuthConfigSchema`.
@@ -605,7 +605,8 @@ mod tests {
         let cases: serde_json::Value = serde_json::from_str(include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/oracles/mcp-config-fields-0915/oracle.json"
-        ))).unwrap();
+        )))
+        .unwrap();
         for case in cases.as_array().unwrap() {
             let validated = zod::safe_parse(mcp_server_config_schema(), &case["input"]).unwrap();
             assert_eq!(validated, case["parsed"]);

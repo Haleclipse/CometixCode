@@ -76,12 +76,11 @@ pub fn get_effective_context_window_size(model: &str) -> i64 {
             .min(MAX_OUTPUT_TOKENS_FOR_SUMMARY);
     let mut context_window = crate::utils::context::get_context_window_for_model(model, &[]);
 
-    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_COMPACT_WINDOW").truthy() {
-        if let Ok(parsed) = value.parse::<i64>() {
-            if parsed > 0 {
-                context_window = context_window.min(parsed);
-            }
-        }
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_COMPACT_WINDOW").truthy()
+        && let Ok(parsed) = value.parse::<i64>()
+        && parsed > 0
+    {
+        context_window = context_window.min(parsed);
     }
 
     context_window - reserved_tokens_for_summary
@@ -92,14 +91,14 @@ pub fn get_auto_compact_threshold(model: &str) -> i64 {
     let effective_context_window = get_effective_context_window_size(model);
     let autocompact_threshold = effective_context_window - AUTOCOMPACT_BUFFER_TOKENS;
 
-    if let Some(value) = crate::utils::process_env::var("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE").truthy() {
-        if let Ok(parsed) = value.parse::<f64>() {
-            if parsed > 0.0 && parsed <= 100.0 {
-                let percentage_threshold =
-                    (effective_context_window as f64 * (parsed / 100.0)).floor() as i64;
-                return percentage_threshold.min(autocompact_threshold);
-            }
-        }
+    if let Some(value) = crate::utils::process_env::var("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE").truthy()
+        && let Ok(parsed) = value.parse::<f64>()
+        && parsed > 0.0
+        && parsed <= 100.0
+    {
+        let percentage_threshold =
+            (effective_context_window as f64 * (parsed / 100.0)).floor() as i64;
+        return percentage_threshold.min(autocompact_threshold);
     }
 
     autocompact_threshold
@@ -111,11 +110,11 @@ pub fn is_auto_compact_enabled() -> bool {
 }
 
 pub fn is_auto_compact_enabled_with_config(config: &crate::utils::config::GlobalConfig) -> bool {
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_COMPACT").as_deref())
-        || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("DISABLE_AUTO_COMPACT").as_deref(),
-        )
-    {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_COMPACT").as_deref(),
+    ) || crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_AUTO_COMPACT").as_deref(),
+    ) {
         return false;
     }
     config.auto_compact_enabled.unwrap_or(true)
@@ -245,7 +244,9 @@ pub async fn auto_compact_if_needed(
     tracking: Option<AutoCompactTrackingState>,
     snip_tokens_freed: i64,
 ) -> AutocompactResult {
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_COMPACT").as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_COMPACT").as_deref(),
+    ) {
         return AutocompactResult {
             messages: messages_for_query,
             compacted: false,
@@ -294,8 +295,7 @@ pub async fn auto_compact_if_needed(
                     .nyan
                     .map(|settings| settings.compaction().keep_recent_tokens())
                     .unwrap_or(20_000),
-            )
-        {
+            ) {
             crate::services::compact::compact::partial_compact_conversation_with_trigger(
                 messages_for_query,
                 pivot_index,
@@ -649,7 +649,9 @@ mod tests {
     }
 
     fn pivot_text_user(text: &str) -> Message {
-        Message::User(crate::utils::messages::create_user_message(text.to_string()))
+        Message::User(crate::utils::messages::create_user_message(
+            text.to_string(),
+        ))
     }
 
     fn pivot_assistant_text(text: &str) -> Message {

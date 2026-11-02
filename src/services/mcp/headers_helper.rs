@@ -207,10 +207,8 @@ mod tests {
     #[tokio::test]
     async fn get_mcp_headers_from_helper_blocks_untrusted_project_scope_like_official() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let temp_dir = std::env::temp_dir().join(format!(
-            "nyan-mcp-headers-helper-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("nyan-mcp-headers-helper-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp_dir.join("config"));
         let previous_original_cwd = crate::bootstrap::state::get_original_cwd();

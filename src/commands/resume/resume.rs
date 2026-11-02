@@ -119,11 +119,11 @@ pub fn ResumeCommand<'a>(
             .expect("clipboard requires the initialized process runtime")
             .spawn(async move {
                 let raw = copy.await;
-                if !raw.is_empty() {
-                    if let Err(error) = stdout.write_control_sequence_and_wait(raw).await {
-                        crate::utils::debug::log_for_debugging(&error.to_string());
-                        return;
-                    }
+                if !raw.is_empty()
+                    && let Err(error) = stdout.write_control_sequence_and_wait(raw).await
+                {
+                    crate::utils::debug::log_for_debugging(&error.to_string());
+                    return;
                 }
                 on_result(cross_project_message(&command));
             });

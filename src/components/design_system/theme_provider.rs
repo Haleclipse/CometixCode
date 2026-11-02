@@ -55,9 +55,7 @@ pub type ThemeSaveHandler = Arc<dyn Fn(ThemeSetting) + Send + Sync>;
 /// root every frame.
 fn default_save_handler() -> ThemeSaveHandler {
     static HANDLER: std::sync::OnceLock<ThemeSaveHandler> = std::sync::OnceLock::new();
-    HANDLER
-        .get_or_init(|| Arc::new(default_save_theme))
-        .clone()
+    HANDLER.get_or_init(|| Arc::new(default_save_theme)).clone()
 }
 
 /// React's state setter bails out on an unchanged value (`Object.is`), while
@@ -219,8 +217,7 @@ impl Component for ThemeProvider {
         let mut hooks = hooks.with_context_stack(updater.component_context_stack());
         let initial_state = props.initial_state;
         // CC :59-62.
-        let theme_setting =
-            hooks.use_state(|| initial_state.unwrap_or_else(default_initial_theme));
+        let theme_setting = hooks.use_state(|| initial_state.unwrap_or_else(default_initial_theme));
         let preview_theme = hooks.use_state(|| None::<ThemeSetting>);
         // CC :64-68: track the terminal theme for 'auto'. Seeds from
         // $COLORFGBG (or 'dark'), corrected by the watcher.
@@ -337,7 +334,10 @@ mod tests {
     /// light-daltonized then cancels it, `t` sets dark-daltonized. Every key
     /// also bumps a visible count, so each one is followed by a frame.
     #[component]
-    fn PreviewDriver(props: &PreviewDriverProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn PreviewDriver(
+        props: &PreviewDriverProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let value = use_preview_theme(&hooks);
         let handle = value.clone();
         let mut presses = hooks.use_state(|| 0usize);
@@ -403,7 +403,8 @@ mod tests {
                 let mut render_loop = Box::pin(app.mock_terminal_render_loop(
                     MockTerminalConfig::with_events(events).with_size(80, 4),
                 ));
-                let press = |c| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char(c)));
+                let press =
+                    |c| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char(c)));
                 let keys_in_order = ['p', 's', 'c', 't'];
                 let mut frames = Vec::new();
                 while let Some(canvas) = render_loop.next().await {
@@ -439,7 +440,10 @@ mod tests {
         ];
         assert_eq!(frames.len(), expected.len(), "frames={frames:#?}");
         for (frame, expected) in frames.iter().zip(expected) {
-            assert!(frame.contains(expected), "expected {expected:?} in\n{frame}");
+            assert!(
+                frame.contains(expected),
+                "expected {expected:?} in\n{frame}"
+            );
         }
         assert_eq!(
             *saves.lock().unwrap(),

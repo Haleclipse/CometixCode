@@ -134,7 +134,9 @@ fn skill_prompt_options(
             options.push(
                 PermissionPromptOption::new(
                     SkillPermissionOptionValue::YesPrefix.as_str(),
-                    format!("Yes, and don't ask again for {command_prefix} commands in {original_cwd}"),
+                    format!(
+                        "Yes, and don't ask again for {command_prefix} commands in {original_cwd}"
+                    ),
                 )
                 .with_label_segments(vec![
                     StyledSegment::new("Yes, and don't ask again for "),
@@ -321,9 +323,17 @@ mod tests {
         assert_eq!(
             options
                 .iter()
-                .map(|option| option.feedback_config.as_ref().map(|config| config.feedback_type))
+                .map(|option| option
+                    .feedback_config
+                    .as_ref()
+                    .map(|config| config.feedback_type))
                 .collect::<Vec<_>>(),
-            vec![Some(FeedbackType::Accept), None, None, Some(FeedbackType::Reject)]
+            vec![
+                Some(FeedbackType::Accept),
+                None,
+                None,
+                Some(FeedbackType::Reject)
+            ]
         );
         // CC :90-91: no prefix option without an argument.
         assert_eq!(

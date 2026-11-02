@@ -240,10 +240,10 @@ impl StringFormat {
 
 impl Schema {
     fn record_string_check(&mut self, check: StringCheck) {
-        if let Schema::String { check_order, .. } = self {
-            if !check_order.contains(&check) {
-                check_order.push(check);
-            }
+        if let Schema::String { check_order, .. } = self
+            && !check_order.contains(&check)
+        {
+            check_order.push(check);
         }
     }
 

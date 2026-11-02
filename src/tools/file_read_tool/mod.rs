@@ -1080,19 +1080,18 @@ pub(crate) fn read_image_with_token_budget(
     // anything else thrown in this block (`FileReadTool.ts:1118-1134`). The
     // Rust resizer only produces `ImageResizeError`, so the degrade arm is a
     // structural mirror rather than a reachable branch today.
-    let (encoded, resized_media_type, resized_dimensions) =
-        match maybe_resize_and_downsample_image_buffer(
+    let (encoded, resized_media_type, resized_dimensions) = {
+        let resized = maybe_resize_and_downsample_image_buffer(
             &image_buffer,
             original_size,
             detected_format,
-        ) {
-            Ok(resized) => (
-                base64::engine::general_purpose::STANDARD.encode(&resized.buffer),
-                resized.media_type,
-                resized.dimensions,
-            ),
-            Err(error) => return Err(error.into()),
-        };
+        )?;
+        (
+            base64::engine::general_purpose::STANDARD.encode(&resized.buffer),
+            resized.media_type,
+            resized.dimensions,
+        )
+    };
     let estimated_tokens = ((encoded.len() as f64) * 0.125).ceil();
     let (base64, media_type, dimensions) = if estimated_tokens > max_tokens {
         // CC next tries token-budget compression from the same original buffer,
@@ -1320,37 +1319,38 @@ impl FileReadTool {
         let existing = (!dedup_killswitch)
             .then(|| sink.cache_get(&full_file_path))
             .flatten();
-        if let Some(existing) = existing {
-            if !existing.is_partial_view && existing.offset.is_some() {
-                let range_match = existing
-                    .offset
-                    .as_ref()
-                    .is_some_and(|offset| javascript_strict_equal(offset, &input.offset))
-                    && match (&existing.limit, &input.limit) {
-                        (None, None) => true,
-                        (Some(existing), Some(input)) => javascript_strict_equal(existing, input),
-                        _ => false,
-                    };
-                let unchanged = range_match
-                    && crate::utils::file::get_file_modification_time_result(&full_file_path)
-                        .ok()
-                        .is_some_and(|mtime| existing.timestamp_ms == Some(mtime));
-                let still_in_context = unchanged
-                    && dedup_target_is_still_in_context(
-                        context,
-                        &full_file_path,
-                        &input.offset,
-                        &input.limit,
-                    );
-                if still_in_context {
-                    return Ok(FileReadToolResult {
-                        data: ReadOutput::FileUnchanged(ReadFileUnchangedOutput {
-                            file_path: input.file_path.clone(),
-                        }),
-                        new_messages: Vec::new(),
-                        memory_file_mtime_ms: None,
-                    });
-                }
+        if let Some(existing) = existing
+            && !existing.is_partial_view
+            && existing.offset.is_some()
+        {
+            let range_match = existing
+                .offset
+                .as_ref()
+                .is_some_and(|offset| javascript_strict_equal(offset, &input.offset))
+                && match (&existing.limit, &input.limit) {
+                    (None, None) => true,
+                    (Some(existing), Some(input)) => javascript_strict_equal(existing, input),
+                    _ => false,
+                };
+            let unchanged = range_match
+                && crate::utils::file::get_file_modification_time_result(&full_file_path)
+                    .ok()
+                    .is_some_and(|mtime| existing.timestamp_ms == Some(mtime));
+            let still_in_context = unchanged
+                && dedup_target_is_still_in_context(
+                    context,
+                    &full_file_path,
+                    &input.offset,
+                    &input.limit,
+                );
+            if still_in_context {
+                return Ok(FileReadToolResult {
+                    data: ReadOutput::FileUnchanged(ReadFileUnchangedOutput {
+                        file_path: input.file_path.clone(),
+                    }),
+                    new_messages: Vec::new(),
+                    memory_file_mtime_ms: None,
+                });
             }
         }
 
@@ -1596,19 +1596,17 @@ impl FileReadTool {
                         &content,
                         &extension,
                     ) as f64;
-                    if estimate > remaining_tokens {
-                        match crate::tools::file_read_tool::text_io::trim_to_token_budget(
-                            &content,
-                            &extension,
-                            remaining_tokens,
-                        ) {
-                            Some((kept, kept_lines)) => {
-                                content = kept;
-                                shown_lines = kept_lines;
-                                truncated = true;
-                            }
-                            None => {}
-                        }
+                    if estimate > remaining_tokens
+                        && let Some((kept, kept_lines)) =
+                            crate::tools::file_read_tool::text_io::trim_to_token_budget(
+                                &content,
+                                &extension,
+                                remaining_tokens,
+                            )
+                    {
+                        content = kept;
+                        shown_lines = kept_lines;
+                        truncated = true;
                     }
                     // Charge the budget for what was actually returned, not
                     // for the full member.
@@ -1908,13 +1906,12 @@ impl FileReadTool {
                         page_paths,
                     });
                 }
-                if let Some(page_count) = get_pdf_page_count(resolved_file_path) {
-                    if page_count > PDF_AT_MENTION_INLINE_THRESHOLD {
+                if let Some(page_count) = get_pdf_page_count(resolved_file_path)
+                    && page_count > PDF_AT_MENTION_INLINE_THRESHOLD {
                         return Err(anyhow::anyhow!(
                             "This PDF has {page_count} pages, which is too many to read at once. Use the pages parameter to read specific page ranges (e.g., pages: \"1-5\"). Maximum {PDF_MAX_PAGES_PER_READ} pages per request."
                         ));
                     }
-                }
                 let opened_metadata = futures::executor::block_on(
                     crate::utils::fs_operations::get_fs_implementation().stat(resolved_file_path),
                 )?;
@@ -3052,10 +3049,8 @@ mod tests {
     /// @nyan: T5 — a GBK file decodes with a note instead of mojibake.
     #[tokio::test]
     async fn gbk_file_decodes_with_a_note() {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-read-gbk-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-read-gbk-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("gbk.txt");
         let text =
@@ -3216,10 +3211,8 @@ mod tests {
     /// @nyan: T4 — batch Read keeps members independent and shares one budget.
     #[tokio::test]
     async fn batch_read_reports_each_member_and_shares_the_budget() {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-read-batch-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-read-batch-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         let first = dir.join("a.txt");
         let second = dir.join("b.txt");
@@ -4556,8 +4549,7 @@ trailer<< /Size 4 /Root 1 0 R >>\nstartxref\n190\n%%EOF\n";
         if !crate::utils::pdf::is_pdftoppm_available() {
             return;
         }
-        let dir =
-            std::env::temp_dir().join(format!("nyan-read-pdf-pages-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("nyan-read-pdf-pages-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("mkdir");
         let path = dir.join("doc.pdf");

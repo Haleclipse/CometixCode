@@ -238,23 +238,22 @@ fn extract_nested_error_message(error: &ApiErrorInfo) -> Option<String> {
     // Try standard Anthropic API shape: { error: { error: { message } } }
     if let Some(outer_error) = body.get("error") {
         // Deep path: error.error.message
-        if let Some(inner_error) = outer_error.get("error") {
-            if let Some(deep_msg) = inner_error.get("message").and_then(|v| v.as_str()) {
-                if !deep_msg.is_empty() {
-                    let sanitized = sanitize_message_html(deep_msg);
-                    if !sanitized.is_empty() {
-                        return Some(sanitized);
-                    }
-                }
+        if let Some(inner_error) = outer_error.get("error")
+            && let Some(deep_msg) = inner_error.get("message").and_then(|v| v.as_str())
+            && !deep_msg.is_empty()
+        {
+            let sanitized = sanitize_message_html(deep_msg);
+            if !sanitized.is_empty() {
+                return Some(sanitized);
             }
         }
         // Bedrock shape: error.message
-        if let Some(msg) = outer_error.get("message").and_then(|v| v.as_str()) {
-            if !msg.is_empty() {
-                let sanitized = sanitize_message_html(msg);
-                if !sanitized.is_empty() {
-                    return Some(sanitized);
-                }
+        if let Some(msg) = outer_error.get("message").and_then(|v| v.as_str())
+            && !msg.is_empty()
+        {
+            let sanitized = sanitize_message_html(msg);
+            if !sanitized.is_empty() {
+                return Some(sanitized);
             }
         }
     }

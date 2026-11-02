@@ -51,19 +51,17 @@ impl ActiveContextRegistrationHook {
         self.unregister();
         self.runtime = runtime;
         self.context = Some(context.clone());
-        if is_active {
-            if let Some(runtime) = self.runtime.as_ref() {
-                runtime.register_context(context);
-                self.registered = true;
-            }
+        if is_active && let Some(runtime) = self.runtime.as_ref() {
+            runtime.register_context(context);
+            self.registered = true;
         }
     }
 
     fn unregister(&mut self) {
-        if self.registered {
-            if let (Some(runtime), Some(context)) = (&self.runtime, &self.context) {
-                runtime.unregister_context(context);
-            }
+        if self.registered
+            && let (Some(runtime), Some(context)) = (&self.runtime, &self.context)
+        {
+            runtime.unregister_context(context);
         }
         self.registered = false;
     }
@@ -355,10 +353,9 @@ pub fn use_keybindings<IsActive>(
                     .lock()
                     .expect("keybinding handlers lock")
                     .get_mut(&action)
+                    && runtime.dispatch(vec![keystroke.clone()], handler)
                 {
-                    if runtime.dispatch(vec![keystroke.clone()], || handler()) {
-                        event.stop_propagation();
-                    }
+                    event.stop_propagation();
                 }
             }
             ChordResolveResult::Unbound => event.stop_propagation(),

@@ -95,9 +95,11 @@ pub fn model_supports_auto_mode(model: &str) -> bool {
     let auto_mode_config_enabled = crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::AutoModeConfig,
     );
-    let allow_models = (transcript_classifier_enabled && auto_mode_config_enabled)
-        .then(|| AutoModeConfig::default().allow_models)
-        .unwrap_or_default();
+    let allow_models = if transcript_classifier_enabled && auto_mode_config_enabled {
+        AutoModeConfig::default().allow_models
+    } else {
+        Default::default()
+    };
     model_supports_auto_mode_for(
         model,
         get_api_provider(),
@@ -109,8 +111,7 @@ pub fn model_supports_auto_mode(model: &str) -> bool {
 
 fn has_1m_context(model: &str) -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_1M_CONTEXT")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_1M_CONTEXT").as_deref(),
     ) && model.to_ascii_lowercase().contains("[1m]")
 }
 
@@ -154,8 +155,7 @@ pub fn should_include_first_party_only_betas() -> bool {
         get_api_provider(),
         ApiProvider::FirstParty | ApiProvider::Foundry
     ) && !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
     )
 }
 
@@ -163,8 +163,7 @@ pub fn should_include_first_party_only_betas() -> bool {
 pub fn should_use_global_cache_scope() -> bool {
     get_api_provider() == ApiProvider::FirstParty
         && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
-                .as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
         )
 }
 
@@ -239,8 +238,7 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
     }
 
     if !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_INTERLEAVED_THINKING")
-            .as_deref(),
+        crate::utils::process_env::var("DISABLE_INTERLEAVED_THINKING").as_deref(),
     ) && model_supports_isp(model)
     {
         beta_headers.push(INTERLEAVED_THINKING_BETA_HEADER.to_string());

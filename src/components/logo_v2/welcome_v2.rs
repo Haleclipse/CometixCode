@@ -172,10 +172,7 @@ mod tests {
     #[test]
     fn welcome_v2_dark_branch_matches_official_ascii_shape() {
         let text = render_welcome(ThemeName::Dark, false);
-        assert!(
-            text.contains("Welcome to nyan v1.2.3"),
-            "canvas=\n{text}"
-        );
+        assert!(text.contains("Welcome to nyan v1.2.3"), "canvas=\n{text}");
         assert!(text.contains("█████▓▓░"), "canvas=\n{text}");
         assert!(text.contains("██▄█████▄██"), "canvas=\n{text}");
         assert!(text.contains("█ █   █ █"), "canvas=\n{text}");

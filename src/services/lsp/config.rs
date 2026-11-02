@@ -56,10 +56,8 @@ mod tests {
     #[test]
     fn get_all_lsp_servers_reads_enabled_inline_plugin_lsp_configs() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-lsp-config-plugin-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-lsp-config-plugin-{}", uuid::Uuid::new_v4()));
         let config_home =
             std::env::temp_dir().join(format!("nyan-lsp-config-home-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join(".claude-plugin")).expect("plugin dir");

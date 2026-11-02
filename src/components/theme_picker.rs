@@ -90,7 +90,10 @@ pub fn theme_picker_syntax_footer(
             syntax_theme.theme
         )
     } else {
-        format!("Syntax theme: {} ({shortcut} to disable)", syntax_theme.theme)
+        format!(
+            "Syntax theme: {} ({shortcut} to disable)",
+            syntax_theme.theme
+        )
     }
 }
 
@@ -166,10 +169,11 @@ pub fn ThemePicker<'a>(
     // CC :52-54 `getColorModuleUnavailableReason() === 'env'`.
     let syntax_disabled_env_value = syntax_highlighting_disabled_by_env();
     // CC :56-58.
-    let syntax_highlighting_disabled = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.settings.syntax_highlighting_disabled
-    })
-    .unwrap_or(false);
+    let syntax_highlighting_disabled =
+        crate::state::app_state::use_app_state(&mut hooks, |state| {
+            state.settings.syntax_highlighting_disabled
+        })
+        .unwrap_or(false);
     let store = hooks
         .try_use_context::<crate::state::store::AppStore>()
         .map(|store| store.clone());
@@ -270,10 +274,10 @@ pub fn ThemePicker<'a>(
         },
     );
     // CC :132-134 `onFocus` — Select also fires it for the default focus.
-    if let Some(value) = state.navigation.take_focus_change() {
-        if let Some(setting) = ThemeSetting::from_setting_value(&value) {
-            theme_control.set_preview_theme(setting);
-        }
+    if let Some(value) = state.navigation.take_focus_change()
+        && let Some(setting) = ThemeSetting::from_setting_value(&value)
+    {
+        theme_control.set_preview_theme(setting);
     }
     // CC :135-138 `onChange`.
     if let Some(value) = events.take_accepted() {
@@ -504,7 +508,10 @@ mod tests {
     /// The picker under the providers it reads in production, with a line
     /// showing what the provider resolves and what the callbacks received.
     #[component]
-    fn PickerHarness(props: &PickerHarnessProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn PickerHarness(
+        props: &PickerHarnessProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
             &mut hooks,
             crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
@@ -595,14 +602,20 @@ mod tests {
             text.contains("Syntax theme: Monokai Extended (ctrl+t to disable)"),
             "canvas=\n{text}"
         );
-        assert!(text.contains("Enter to select · Esc to cancel"), "canvas=\n{text}");
+        assert!(
+            text.contains("Enter to select · Esc to cancel"),
+            "canvas=\n{text}"
+        );
     }
 
     #[test]
     fn theme_picker_intro_mode_matches_onboarding_shape_without_footer() {
         let text = render_harness(true);
         assert!(text.contains("Let's get started."), "canvas=\n{text}");
-        assert!(text.contains("To change this later, run /theme"), "canvas=\n{text}");
+        assert!(
+            text.contains("To change this later, run /theme"),
+            "canvas=\n{text}"
+        );
         assert!(!text.contains("Enter to select"), "canvas=\n{text}");
         assert!(!text.contains("Theme\n"), "canvas=\n{text}");
     }
@@ -622,7 +635,10 @@ mod tests {
             let mut frames = Vec::new();
             while let Some(canvas) = render_loop.next().await {
                 let text = canvas.to_string();
-                assert!(text.contains("keys="), "the harness stopped rendering:\n{text}");
+                assert!(
+                    text.contains("keys="),
+                    "the harness stopped rendering:\n{text}"
+                );
                 if !text.contains(&format!("keys={sent} ")) {
                     continue;
                 }
@@ -667,7 +683,10 @@ mod tests {
         ];
         assert_eq!(frames.len(), expected.len(), "frames={frames:#?}");
         for (frame, expected) in frames.iter().zip(expected) {
-            assert!(frame.contains(expected), "expected {expected:?} in\n{frame}");
+            assert!(
+                frame.contains(expected),
+                "expected {expected:?} in\n{frame}"
+            );
         }
     }
 
@@ -701,7 +720,10 @@ mod tests {
             frames[1]
         );
         let written = std::fs::read_to_string(dir.join("settings.json")).unwrap_or_default();
-        assert!(written.contains("\"syntaxHighlightingDisabled\": true"), "{written}");
+        assert!(
+            written.contains("\"syntaxHighlightingDisabled\": true"),
+            "{written}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

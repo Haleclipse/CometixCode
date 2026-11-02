@@ -162,14 +162,11 @@ pub fn evict_terminal_task(task_id: &str, app_store: &AppStore) {
         // Date.now()`. `retain` only exists on LocalAgentTaskState; in the
         // Rust union that is the `Other` stub with `retain: Some(_)`
         // (`None` = field absent → CC's `in` narrowing is false).
-        if let TaskState::Other(other) = task.as_ref() {
-            if other.retain.is_some()
-                && other
-                    .evict_after
-                    .map_or(true, |deadline| deadline > now_ms())
-            {
-                return UpdateDecision::Same(());
-            }
+        if let TaskState::Other(other) = task.as_ref()
+            && other.retain.is_some()
+            && other.evict_after.is_none_or(|deadline| deadline > now_ms())
+        {
+            return UpdateDecision::Same(());
         }
         // CC :141-142 — `const {[taskId]: _, ...remainingTasks} = prev.tasks`.
         let mut next = (**prev).clone();
@@ -257,7 +254,7 @@ mod tests {
         // the SAME reference; a fresh value-equal object would NOT be caught.
         let store = store_with(vec![("t1", other_task("t1", "running", false))]);
         let revision_before = store.revision();
-        update_task_state("t1", &store, |task| Arc::clone(task));
+        update_task_state("t1", &store, Arc::clone);
         assert_eq!(
             store.revision(),
             revision_before,
@@ -278,7 +275,7 @@ mod tests {
     fn update_task_state_missing_task_is_same_like_cc_55() {
         let store = store_with(vec![]);
         let revision_before = store.revision();
-        update_task_state("missing", &store, |task| Arc::clone(task));
+        update_task_state("missing", &store, Arc::clone);
         assert_eq!(store.revision(), revision_before);
     }
 

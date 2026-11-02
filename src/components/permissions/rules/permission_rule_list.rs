@@ -86,9 +86,7 @@ impl RulesTabType {
     pub fn subtitle(self) -> Option<&'static str> {
         match self {
             Self::Allow => Some("nyan won't ask before using allowed tools."),
-            Self::Ask => {
-                Some("nyan will always ask for confirmation before using these tools.")
-            }
+            Self::Ask => Some("nyan will always ask for confirmation before using these tools."),
             Self::Deny => Some("nyan will always reject requests to use denied tools."),
             Self::Recent | Self::Workspace => None,
         }
@@ -953,35 +951,33 @@ pub fn PermissionRuleList<'a>(
                 modifiers,
                 kind,
                 ..
-            }) if *kind != KeyEventKind::Release => {
-                if search_active {
-                    search.reset_key_state(code, modifiers);
-                    match code {
-                        KeyCode::Esc => {
-                            if search.is_empty() {
-                                is_search_mode.set(false);
-                            } else {
-                                search.clear();
-                            }
-                        }
-                        KeyCode::Enter | KeyCode::Down => is_search_mode.set(false),
-                        KeyCode::Up => {} // source onExitUp absent
-                        KeyCode::Backspace
-                            if search.is_empty() && !modifiers.contains(KeyModifiers::ALT) =>
-                        {
-                            is_search_mode.set(false)
-                        }
-                        KeyCode::Char('h' | 'H' | 'd' | 'D')
-                            if search.is_empty() && modifiers.contains(KeyModifiers::CONTROL) =>
-                        {
-                            is_search_mode.set(false)
-                        }
-                        _ => {
-                            search.handle_edit_key(code, modifiers);
+            }) if *kind != KeyEventKind::Release && search_active => {
+                search.reset_key_state(code, modifiers);
+                match code {
+                    KeyCode::Esc => {
+                        if search.is_empty() {
+                            is_search_mode.set(false);
+                        } else {
+                            search.clear();
                         }
                     }
-                    event.stop_propagation();
+                    KeyCode::Enter | KeyCode::Down => is_search_mode.set(false),
+                    KeyCode::Up => {} // source onExitUp absent
+                    KeyCode::Backspace
+                        if search.is_empty() && !modifiers.contains(KeyModifiers::ALT) =>
+                    {
+                        is_search_mode.set(false)
+                    }
+                    KeyCode::Char('h' | 'H' | 'd' | 'D')
+                        if search.is_empty() && modifiers.contains(KeyModifiers::CONTROL) =>
+                    {
+                        is_search_mode.set(false)
+                    }
+                    _ => {
+                        search.handle_edit_key(code, modifiers);
+                    }
                 }
+                event.stop_propagation();
             }
             _ => {}
         }
@@ -1632,8 +1628,8 @@ mod tests {
                     canvas = renders.next() => {
                         let Some(canvas) = canvas else { break; };
                         last_canvas = canvas.to_string();
-                        if let Some((needle, code)) = steps.get(step) {
-                            if last_canvas.contains(needle) {
+                        if let Some((needle, code)) = steps.get(step)
+                            && last_canvas.contains(needle) {
                                 if step == 4 {
                                     assert_eq!(get_allow_rules(&store.get().tool_permission_context).is_empty(), source == PermissionRuleSource::Session,
                                         "live setter must precede remount; source={source:?}; canvas=\n{last_canvas}");
@@ -1641,7 +1637,6 @@ mod tests {
                                 sender.send(key(*code)).await.unwrap();
                                 step += 1;
                             }
-                        }
                         if !exits.lock().unwrap().is_empty() { break; }
                     }
                 }
@@ -1696,8 +1691,8 @@ mod tests {
                 canvas = renders.next() => {
                     let Some(canvas) = canvas else { break; };
                     last_canvas = canvas.to_string();
-                    if let Some((needle, code)) = steps.get(step) {
-                        if last_canvas.contains(needle) {
+                    if let Some((needle, code)) = steps.get(step)
+                        && last_canvas.contains(needle) {
                             if step == 3 {
                                 assert!(last_canvas.contains("⌕ 2"), "source numeric DOM query must survive details; canvas=\n{last_canvas}");
                                 assert!(!last_canvas.contains("Add a new rule…"), "nonempty search filters add option");
@@ -1707,7 +1702,6 @@ mod tests {
                             sender.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, *code))).await.unwrap();
                             step += 1;
                         }
-                    }
                     if !exits.lock().unwrap().is_empty() { break; }
                 }
             }

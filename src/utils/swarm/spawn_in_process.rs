@@ -93,10 +93,7 @@ pub async fn spawn_in_process_teammate(
         tool_use_id: context.tool_use_id,
     });
 
-    let abort_controller = task_state
-        .abort_controller
-        .clone()
-        .unwrap_or_else(AbortController::default);
+    let abort_controller = task_state.abort_controller.clone().unwrap_or_default();
     let teammate_context = create_teammate_context(CreateTeammateContextConfig {
         agent_id: agent_id.clone(),
         agent_name: config.name,

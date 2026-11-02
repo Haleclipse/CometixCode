@@ -522,10 +522,10 @@ pub async fn run_permission_request_hooks_with_config(
             }
             crate::types::hooks::PermissionRequestResult::Deny { interrupt, .. } => {
                 output.permission_behavior = Some(crate::services::hooks::PermissionBehavior::Deny);
-                if *interrupt == Some(true) {
-                    if let Some(abort) = abort_controller {
-                        abort.abort();
-                    }
+                if *interrupt == Some(true)
+                    && let Some(abort) = abort_controller
+                {
+                    abort.abort();
                 }
             }
         }
@@ -580,14 +580,13 @@ fn render_tool_hook_results(
                 .as_deref()
                 .is_some_and(|stderr| !stderr.trim().is_empty())
             || result.outcome == crate::services::hooks::HookOutcome::Cancelled;
-        if result.outcome == crate::services::hooks::HookOutcome::NonBlockingError {
-            if let Some(stderr) = result
+        if result.outcome == crate::services::hooks::HookOutcome::NonBlockingError
+            && let Some(stderr) = result
                 .stderr
                 .as_ref()
                 .filter(|stderr| !stderr.trim().is_empty())
-            {
-                hook_errors.push(stderr.clone());
-            }
+        {
+            hook_errors.push(stderr.clone());
         }
         if let Some(message) = result.system_message.clone() {
             has_output = true;

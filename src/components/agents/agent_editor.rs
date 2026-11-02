@@ -261,11 +261,10 @@ mod tests {
                     None
                 })
                 .await
+                    && frame.to_string().contains("External editor is unavailable")
                 {
-                    if frame.to_string().contains("External editor is unavailable") {
-                        shown = true;
-                        break;
-                    }
+                    shown = true;
+                    break;
                 }
             }
             assert!(shown);

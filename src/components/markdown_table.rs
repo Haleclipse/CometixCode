@@ -748,10 +748,10 @@ fn ansi_escape_end(input: &str, start: usize) -> Option<usize> {
     let mut end = start + 1;
     if let Some(next) = input[end..].chars().next() {
         end += next.len_utf8();
-        if matches!(next, '(' | ')' | '*' | '+') {
-            if let Some(designator) = input[end..].chars().next() {
-                end += designator.len_utf8();
-            }
+        if matches!(next, '(' | ')' | '*' | '+')
+            && let Some(designator) = input[end..].chars().next()
+        {
+            end += designator.len_utf8();
         }
     }
     Some(end)

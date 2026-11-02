@@ -20,14 +20,16 @@ pub fn render_outcome(outcome: &SearchOutcome, max_results: usize) -> String {
             .map(Branch::as_str)
             .collect::<Vec<_>>()
             .join(", ");
-        let symbol_check = candidate
-            .no_symbol_check
-            .then_some(" (no symbol check)")
-            .unwrap_or("");
-        let answers = candidate
-            .answers_query
-            .then_some(" (answers query)")
-            .unwrap_or("");
+        let symbol_check = if candidate.no_symbol_check {
+            " (no symbol check)"
+        } else {
+            ""
+        };
+        let answers = if candidate.answers_query {
+            " (answers query)"
+        } else {
+            ""
+        };
         lines.push(format!(
             "{}:{}-{}{}  ({sources}){symbol_check}{answers}",
             candidate.path, candidate.start_line, candidate.end_line, symbol
@@ -75,10 +77,10 @@ pub fn render_outcome(outcome: &SearchOutcome, max_results: usize) -> String {
         .join(", ");
     let mut notes = Vec::new();
     for branch in outcome.searched_branches() {
-        if let Some(status) = outcome.branch_status(branch) {
-            if let Some(explanation) = status.explanation() {
-                notes.push(format!("{} {explanation}", branch.as_str()));
-            }
+        if let Some(status) = outcome.branch_status(branch)
+            && let Some(explanation) = status.explanation()
+        {
+            notes.push(format!("{} {explanation}", branch.as_str()));
         }
     }
     let searched_note = if notes.is_empty() {
@@ -88,7 +90,10 @@ pub fn render_outcome(outcome: &SearchOutcome, max_results: usize) -> String {
     };
     lines.push(searched_note);
     if outcome.extra_round {
-        lines.push("[retrieval: one extra round ran because the first results were judged insufficient]".to_string());
+        lines.push(
+            "[retrieval: one extra round ran because the first results were judged insufficient]"
+                .to_string(),
+        );
     }
     if !outcome.dropped.is_empty() {
         let mut reasons = std::collections::BTreeMap::<String, usize>::new();

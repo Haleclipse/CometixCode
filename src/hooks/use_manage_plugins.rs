@@ -3,8 +3,8 @@ use crate::context::notifications::{
     Notification, NotificationColor, NotificationPriority, NotificationsWriter,
 };
 use crate::state::store::{AppStore, UpdateDecision};
-use crate::utils::process_env::JsTruthy;
 use crate::types::plugin::PluginError;
+use crate::utils::process_env::JsTruthy;
 use iocraft::prelude::*;
 use serde_json::{Value, json};
 use std::sync::Arc;

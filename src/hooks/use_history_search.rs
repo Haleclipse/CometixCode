@@ -147,10 +147,10 @@ pub fn use_history_search(
             kind,
             ..
         }) = event
+            && kind != KeyEventKind::Release
+            && query_at_render.is_empty()
         {
-            if kind != KeyEventKind::Release && query_at_render.is_empty() {
-                cancel(cells, options);
-            }
+            cancel(cells, options);
         }
     });
 

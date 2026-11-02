@@ -790,7 +790,7 @@ mod tests {
         let (_, body) = text.split_once("\r\n\r\n").unwrap();
         assert_eq!(
             parse_content_length(text.split("\r\n\r\n").next().unwrap()).unwrap(),
-            body.as_bytes().len()
+            body.len()
         );
     }
 

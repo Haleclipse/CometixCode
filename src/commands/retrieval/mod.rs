@@ -54,8 +54,8 @@ fn run(args: &str, context: &crate::tool::ToolUseContext) -> Result<String, Stri
     let flags = parts.collect::<Vec<_>>();
     match subcommand {
         "status" => status(context),
-        "sync" => sync(context, flags.iter().any(|flag| *flag == "--wait")),
-        "prune" => prune(context, flags.iter().any(|flag| *flag == "--dry-run")),
+        "sync" => sync(context, flags.contains(&"--wait")),
+        "prune" => prune(context, flags.contains(&"--dry-run")),
         other => Err(format!(
             "unknown /retrieval subcommand {other}; use status, sync [--wait], or prune"
         )),

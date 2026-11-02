@@ -143,7 +143,7 @@ pub fn MCPToolListView<'a>(
         pending_back.set(false);
         (props.on_back)(());
     }
-    let pending_select_value = { pending_select.read().clone() };
+    let pending_select_value = { *pending_select.read() };
     if let Some(index) = pending_select_value {
         pending_select.set(None);
         (props.on_select_tool)(index);

@@ -55,10 +55,8 @@ mod tests {
         }
 
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-concurrent-session-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-concurrent-session-{}", uuid::Uuid::new_v4()));
         let sessions = root.join("sessions");
         std::fs::create_dir_all(&sessions).unwrap();
         let path = sessions.join(format!("{}.json", std::process::id()));

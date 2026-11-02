@@ -19,7 +19,7 @@ fn is_executable_file(path: &Path) -> bool {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;
-        return metadata.permissions().mode() & 0o111 != 0;
+        metadata.permissions().mode() & 0o111 != 0
     }
     #[cfg(not(unix))]
     true
@@ -69,14 +69,13 @@ pub fn find_powershell() -> Option<String> {
         // `getPlatform() === 'linux'`: not WSL.
         if crate::utils::platform::get_platform() == crate::utils::platform::Platform::Linux {
             let resolved = real_path_or_self(&pwsh_path);
-            if pwsh_path.starts_with("/snap/") || resolved.starts_with("/snap/") {
-                if let Some(direct) = probe_path("/opt/microsoft/powershell/7/pwsh")
+            if (pwsh_path.starts_with("/snap/") || resolved.starts_with("/snap/"))
+                && let Some(direct) = probe_path("/opt/microsoft/powershell/7/pwsh")
                     .or_else(|| probe_path("/usr/bin/pwsh"))
-                {
-                    let direct_resolved = real_path_or_self(&direct);
-                    if !direct.starts_with("/snap/") && !direct_resolved.starts_with("/snap/") {
-                        return Some(direct);
-                    }
+            {
+                let direct_resolved = real_path_or_self(&direct);
+                if !direct.starts_with("/snap/") && !direct_resolved.starts_with("/snap/") {
+                    return Some(direct);
                 }
             }
         }

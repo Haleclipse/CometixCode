@@ -469,7 +469,7 @@ pub fn FilePermissionDialog(
         },
     );
 
-    let selected = { pending_select.read().clone() };
+    let selected = { *pending_select.read() };
     if let Some(value) = selected {
         pending_select.set(None);
         (props.on_select)(value);
@@ -484,7 +484,7 @@ pub fn FilePermissionDialog(
         .clone()
         .unwrap_or_else(|| "Do you want to proceed?".to_string());
     let warning = symlink_warning(&props.path, props.operation_type);
-    let content_children = props.content_children.drain(..).collect::<Vec<_>>();
+    let content_children = std::mem::take(&mut props.content_children);
 
     element! {
         View(flex_direction: FlexDirection::Column) {

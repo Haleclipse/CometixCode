@@ -251,7 +251,11 @@ pub fn is_search_or_read_bash_command(command: &str) -> BashSearchReadKind {
         result.is_read |= read;
         result.is_list |= list;
     }
-    non_neutral.then_some(result).unwrap_or_default()
+    if non_neutral {
+        result
+    } else {
+        Default::default()
+    }
 }
 
 fn is_silent_bash_command(command: &str) -> bool {
@@ -527,20 +531,20 @@ async fn apply_simulated_sed_edit(
         Err(error) => return Err(format!("Error running command: {error}")),
     };
 
-    if let (Some(parent), Some(store)) = (parent_message, context.app_store.store.as_ref()) {
-        if crate::utils::file_history::file_history_enabled() {
-            crate::utils::file_history::file_history_track_edit(
-                store,
-                &path.display().to_string(),
-                // The ENVELOPE uuid. CC passes `parentMessage.uuid`
-                // (`FileWriteTool.ts:261`, `NotebookEditTool.ts:315`), and
-                // `fileHistoryRewind` looks the snapshot up by that same value
-                // (`fileHistory.ts:367`). This used to pass the identity
-                // block's own uuid, which no other consumer holds.
-                &parent.uuid,
-            )
-            .await;
-        }
+    if let (Some(parent), Some(store)) = (parent_message, context.app_store.store.as_ref())
+        && crate::utils::file_history::file_history_enabled()
+    {
+        crate::utils::file_history::file_history_track_edit(
+            store,
+            &path.display().to_string(),
+            // The ENVELOPE uuid. CC passes `parentMessage.uuid`
+            // (`FileWriteTool.ts:261`, `NotebookEditTool.ts:315`), and
+            // `fileHistoryRewind` looks the snapshot up by that same value
+            // (`fileHistory.ts:367`). This used to pass the identity
+            // block's own uuid, which no other consumer holds.
+            &parent.uuid,
+        )
+        .await;
     }
     let endings = crate::utils::file::detect_line_endings(&path, encoding);
     crate::utils::file::write_text_content(&path, &simulated.new_content, encoding, endings)
@@ -836,22 +840,21 @@ fn run_shell_command(
                 && !background_disabled
                 && crate::utils::session_storage::is_session_write_enabled()
                 && foreground_task_id.lock().is_ok_and(|id| id.is_none())
+                && let Some(store) = task_store(context)
             {
-                if let Some(store) = task_store(context) {
-                    let id = crate::tasks::local_shell_task::register_foreground(
-                        crate::tasks::local_shell_task::LocalShellSpawnInput {
-                            command: command.to_string(),
-                            description: description.to_string(),
-                            shell_command: shell_command.clone(),
-                            tool_use_id: tool_use_id.map(ToOwned::to_owned),
-                            agent_id: context.agent_id.clone(),
-                            kind: None,
-                        },
-                        &store,
-                    );
-                    if let Ok(mut slot) = foreground_task_id.lock() {
-                        *slot = Some(id);
-                    }
+                let id = crate::tasks::local_shell_task::register_foreground(
+                    crate::tasks::local_shell_task::LocalShellSpawnInput {
+                        command: command.to_string(),
+                        description: description.to_string(),
+                        shell_command: shell_command.clone(),
+                        tool_use_id: tool_use_id.map(ToOwned::to_owned),
+                        agent_id: context.agent_id.clone(),
+                        kind: None,
+                    },
+                    &store,
+                );
+                if let Ok(mut slot) = foreground_task_id.lock() {
+                    *slot = Some(id);
                 }
             }
             let progress = shell_command.task_output().poll_progress();
@@ -1359,20 +1362,19 @@ impl crate::tool::ToolCall for BashTool {
                 // CC: isImage → image content block for Claude. Transcript UI
                 // keeps this label (display stdout is cleared); model path
                 // clears content and attaches the image block.
-                if output.is_image {
-                    if crate::tools::bash_tool::utils::build_image_tool_result(
+                if output.is_image
+                    && crate::tools::bash_tool::utils::build_image_tool_result(
                         &output.stdout,
                         _tool_use_id,
                     )
                     .is_some()
-                    {
-                        return (
-                            "[Image data detected and sent to Claude]".to_string(),
-                            status,
-                        );
-                    }
-                    // Parse failed — fall through to text like CC's defensive path.
+                {
+                    return (
+                        "[Image data detected and sent to Claude]".to_string(),
+                        status,
+                    );
                 }
+                // Parse failed — fall through to text like CC's defensive path.
 
                 let mut processed_stdout = output.stdout.clone();
                 if !processed_stdout.is_empty() {
@@ -2352,10 +2354,8 @@ mod tests {
 
     #[test]
     fn bash_output_uses_cwd_override_like_official_run_with_cwd_override() {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-bash-cwd-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-bash-cwd-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         let args = serde_json::json!({"command": "pwd -P"});
 

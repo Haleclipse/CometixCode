@@ -84,7 +84,9 @@ pub fn override_header_if_configured(headers: &mut HashMap<String, Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::settings::settings_cache::{reset_settings_cache, set_session_settings_cache};
+    use crate::utils::settings::settings_cache::{
+        reset_settings_cache, set_session_settings_cache,
+    };
     use crate::utils::settings::types::SettingsJson;
     use crate::utils::settings::validation::SettingsWithErrors;
     use indexmap::IndexMap;
@@ -103,10 +105,7 @@ mod tests {
             headers.get("User-Agent").and_then(Option::as_deref),
             Some(crate::utils::http::user_agent()).as_deref()
         );
-        assert_eq!(
-            headers.get("x-app").and_then(Option::as_deref),
-            Some("cli")
-        );
+        assert_eq!(headers.get("x-app").and_then(Option::as_deref), Some("cli"));
         assert!(!headers.contains_key("anthropic-beta"));
         assert!(!headers.contains_key("X-Nyan-Session-Id"));
     }
@@ -154,15 +153,11 @@ mod tests {
             errors: Vec::new(),
             policy_settings: None,
         });
-        let mut headers = HashMap::from([(
-            "anthropic-beta".to_string(),
-            Some("computed".to_string()),
-        )]);
+        let mut headers =
+            HashMap::from([("anthropic-beta".to_string(), Some("computed".to_string()))]);
         override_header_if_configured(&mut headers, "anthropic-beta");
         assert_eq!(
-            headers
-                .get("anthropic-beta")
-                .and_then(Option::as_deref),
+            headers.get("anthropic-beta").and_then(Option::as_deref),
             Some("from-settings")
         );
     }

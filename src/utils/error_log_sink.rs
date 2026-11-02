@@ -148,22 +148,22 @@ fn log_error_impl(error: LogError) -> io::Result<()> {
         .filter(|stack| !stack.is_empty())
         .unwrap_or(&error.message);
     let mut context = String::new();
-    if let Some(axios) = &error.axios {
-        if let Some(url) = axios.url.as_deref().filter(|url| !url.is_empty()) {
-            let mut parts = vec![format!("url={url}")];
-            if let Some(status) = axios.status {
-                parts.push(format!("status={status}"));
-            }
-            if let Some(message) = axios
-                .data
-                .as_ref()
-                .and_then(extract_server_message)
-                .filter(|message| !message.is_empty())
-            {
-                parts.push(format!("body={message}"));
-            }
-            context = format!("[{}] ", parts.join(","));
+    if let Some(axios) = &error.axios
+        && let Some(url) = axios.url.as_deref().filter(|url| !url.is_empty())
+    {
+        let mut parts = vec![format!("url={url}")];
+        if let Some(status) = axios.status {
+            parts.push(format!("status={status}"));
         }
+        if let Some(message) = axios
+            .data
+            .as_ref()
+            .and_then(extract_server_message)
+            .filter(|message| !message.is_empty())
+        {
+            parts.push(format!("body={message}"));
+        }
+        context = format!("[{}] ", parts.join(","));
     }
     log_for_debugging_with_level(
         &format!("{}: {context}{error_str}", error.name),
@@ -178,7 +178,7 @@ fn log_error_impl(error: LogError) -> io::Result<()> {
 /// Maps to: CC `utils/errorLogSink.ts:179-195` `logMCPErrorImpl`.
 fn log_mcp_error_impl(server_name: &str, error: McpLogError) -> io::Result<()> {
     log_for_debugging_with_level(
-        &format!("MCP server \"{server_name}\" {}", error.to_string()),
+        &format!("MCP server \"{server_name}\" {}", error),
         DebugLogLevel::Error,
     );
     let path = get_mcp_logs_path(server_name)?;
@@ -260,8 +260,7 @@ mod tests {
     struct TempDir(PathBuf);
     impl TempDir {
         fn new() -> Self {
-            let path =
-                std::env::temp_dir().join(format!("nyan-mcp-log-{}", uuid::Uuid::new_v4()));
+            let path = std::env::temp_dir().join(format!("nyan-mcp-log-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }

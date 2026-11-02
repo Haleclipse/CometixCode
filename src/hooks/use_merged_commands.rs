@@ -86,10 +86,10 @@ mod tests {
         let mut version = hooks.use_state(|| 0usize);
         let merged = use_merged_commands(&mut hooks, initial, versions[version.get()].clone());
         hooks.use_terminal_events(move |event| {
-            if let TerminalEvent::Key(event) = event {
-                if event.code == KeyCode::F(2) {
-                    version.set(1);
-                }
+            if let TerminalEvent::Key(event) = event
+                && event.code == KeyCode::F(2)
+            {
+                version.set(1);
             }
         });
         let body = merged[0].get_prompt_for_command.unwrap()(

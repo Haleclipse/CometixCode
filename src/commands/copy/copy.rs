@@ -168,7 +168,7 @@ fn parse_js_integer(text: &str) -> Option<usize> {
 
     let number = text.parse::<f64>().ok()?;
     (number.is_finite() && number >= 0.0 && number.fract() == 0.0 && number <= usize::MAX as f64)
-        .then(|| number as usize)
+        .then_some(number as usize)
 }
 
 /// Maps to: CC `commands/copy/copy.tsx:103-120` `truncateLine`, using
@@ -553,14 +553,13 @@ pub fn CopyPicker(props: &mut CopyPickerProps, mut hooks: Hooks) -> impl Into<An
                         && !crate::utils::config::load_global_config()
                             .copy_full_response
                             .unwrap_or(false)
-                    {
-                        if let Err(error) = crate::utils::config::save_global_config(|config| {
+                        && let Err(error) = crate::utils::config::save_global_config(|config| {
                             config.copy_full_response = Some(true);
-                        }) {
-                            crate::utils::debug::log_for_debugging(&format!(
-                                "Failed to save copyFullResponse preference: {error}"
-                            ));
-                        }
+                        })
+                    {
+                        crate::utils::debug::log_for_debugging(&format!(
+                            "Failed to save copyFullResponse preference: {error}"
+                        ));
                     }
                     // CC :180-209 executes its pre-await prefix on the event
                     // stack. The eager clipboard future starts native/tmux now.
@@ -613,17 +612,17 @@ pub fn CopyPicker(props: &mut CopyPickerProps, mut hooks: Hooks) -> impl Into<An
         },
     );
 
-    if let Some(value) = select_events.take_accepted() {
-        if let Some(selection) = PickerSelection::from_value(&value) {
-            action(CopyPickerAction::Copy(selection));
-        }
+    if let Some(value) = select_events.take_accepted()
+        && let Some(selection) = PickerSelection::from_value(&value)
+    {
+        action(CopyPickerAction::Copy(selection));
     }
     if write_requested.get() {
         write_requested.set(false);
-        if let Some(value) = select_state.focused_value() {
-            if let Some(selection) = PickerSelection::from_value(&value) {
-                action(CopyPickerAction::Write(selection));
-            }
+        if let Some(value) = select_state.focused_value()
+            && let Some(selection) = PickerSelection::from_value(&value)
+        {
+            action(CopyPickerAction::Write(selection));
         }
     }
     if select_events.take_cancelled() {
@@ -695,8 +694,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn write_refuses_a_symlinked_target() {
-        let root =
-            std::env::temp_dir().join(format!("nyan-copy-target-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-copy-target-{}", uuid::Uuid::new_v4()));
         let dir = root.join("dir");
         std::fs::create_dir_all(&dir).unwrap();
         let outside = root.join("outside");
@@ -735,8 +733,7 @@ mod tests {
     fn copy_dir_rechecks_the_root_on_every_call() {
         use std::os::unix::fs::PermissionsExt as _;
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-copy-again-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-copy-again-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", format!(" {} ", root.display()));
         let dir = copy_dir().unwrap();
@@ -765,8 +762,7 @@ mod tests {
             return; // root opens it anyway
         }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-copy-unread-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-copy-unread-{}", uuid::Uuid::new_v4()));
         let dir = root.join(format!(
             "claude-{}",
             crate::utils::permissions::filesystem::current_uid()

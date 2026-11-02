@@ -224,16 +224,16 @@ pub async fn validate_plugin_manifest(file_path: &str) -> anyhow::Result<Validat
     };
     if let Some(obj) = parsed.as_object() {
         for field in ["commands", "agents", "skills"] {
-            if truthy(obj.get(field)) {
-                if let Some(value) = obj.get(field) {
-                    let values = value
-                        .as_array()
-                        .map(Vec::as_slice)
-                        .unwrap_or(std::slice::from_ref(value));
-                    for (i, value) in values.iter().enumerate() {
-                        if let Some(p) = value.as_str() {
-                            check_path_traversal(p, &format!("{field}[{i}]"), &mut errors, None);
-                        }
+            if truthy(obj.get(field))
+                && let Some(value) = obj.get(field)
+            {
+                let values = value
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or(std::slice::from_ref(value));
+                for (i, value) in values.iter().enumerate() {
+                    if let Some(p) = value.as_str() {
+                        check_path_traversal(p, &format!("{field}[{i}]"), &mut errors, None);
                     }
                 }
             }
@@ -792,14 +792,13 @@ pub async fn validate_manifest(file_path: &str) -> anyhow::Result<ValidationResu
         _ => {
             match fs::read(&absolute_path).await {
                 Ok(content) => {
-                    if let Ok(parsed) = json_parse(&String::from_utf8_lossy(&content)) {
-                        if parsed
+                    if let Ok(parsed) = json_parse(&String::from_utf8_lossy(&content))
+                        && parsed
                             .get_property("plugins")
                             .and_then(|v| v.as_array())
                             .is_some()
-                        {
-                            return validate_marketplace_manifest(file_path).await;
-                        }
+                    {
+                        return validate_marketplace_manifest(file_path).await;
                     }
                 }
                 Err(error) if io_errno_code(&error) == Some("ENOENT") => {

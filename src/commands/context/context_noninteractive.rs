@@ -207,52 +207,50 @@ pub fn format_context_as_markdown_table(data: &ContextData) -> String {
         output.push('\n');
     }
 
-    if internal_context {
-        if let Some(breakdown) = &data.message_breakdown {
-            output.push_str("### [ANT-ONLY] Message Breakdown\n\n");
-            output.push_str("| Category | Tokens |\n|----------|--------|\n");
-            for (label, tokens) in [
-                ("Tool calls", breakdown.tool_call_tokens),
-                ("Tool results", breakdown.tool_result_tokens),
-                ("Attachments", breakdown.attachment_tokens),
-                (
-                    "Assistant messages (non-tool)",
-                    breakdown.assistant_message_tokens,
-                ),
-                (
-                    "User messages (non-tool-result)",
-                    breakdown.user_message_tokens,
-                ),
-            ] {
-                output.push_str(&format!("| {label} | {} |\n", format_tokens(tokens)));
+    if internal_context && let Some(breakdown) = &data.message_breakdown {
+        output.push_str("### [ANT-ONLY] Message Breakdown\n\n");
+        output.push_str("| Category | Tokens |\n|----------|--------|\n");
+        for (label, tokens) in [
+            ("Tool calls", breakdown.tool_call_tokens),
+            ("Tool results", breakdown.tool_result_tokens),
+            ("Attachments", breakdown.attachment_tokens),
+            (
+                "Assistant messages (non-tool)",
+                breakdown.assistant_message_tokens,
+            ),
+            (
+                "User messages (non-tool-result)",
+                breakdown.user_message_tokens,
+            ),
+        ] {
+            output.push_str(&format!("| {label} | {} |\n", format_tokens(tokens)));
+        }
+        output.push('\n');
+        if !breakdown.tool_calls_by_type.is_empty() {
+            output.push_str("#### Top Tools\n\n");
+            output.push_str("| Tool | Call Tokens | Result Tokens |\n");
+            output.push_str("|------|-------------|---------------|\n");
+            for tool in &breakdown.tool_calls_by_type {
+                output.push_str(&format!(
+                    "| {} | {} | {} |\n",
+                    tool.name,
+                    format_tokens(tool.call_tokens),
+                    format_tokens(tool.result_tokens)
+                ));
             }
             output.push('\n');
-            if !breakdown.tool_calls_by_type.is_empty() {
-                output.push_str("#### Top Tools\n\n");
-                output.push_str("| Tool | Call Tokens | Result Tokens |\n");
-                output.push_str("|------|-------------|---------------|\n");
-                for tool in &breakdown.tool_calls_by_type {
-                    output.push_str(&format!(
-                        "| {} | {} | {} |\n",
-                        tool.name,
-                        format_tokens(tool.call_tokens),
-                        format_tokens(tool.result_tokens)
-                    ));
-                }
-                output.push('\n');
+        }
+        if !breakdown.attachments_by_type.is_empty() {
+            output.push_str("#### Top Attachments\n\n");
+            output.push_str("| Attachment | Tokens |\n|------------|--------|\n");
+            for attachment in &breakdown.attachments_by_type {
+                output.push_str(&format!(
+                    "| {} | {} |\n",
+                    attachment.name,
+                    format_tokens(attachment.tokens)
+                ));
             }
-            if !breakdown.attachments_by_type.is_empty() {
-                output.push_str("#### Top Attachments\n\n");
-                output.push_str("| Attachment | Tokens |\n|------------|--------|\n");
-                for attachment in &breakdown.attachments_by_type {
-                    output.push_str(&format!(
-                        "| {} | {} |\n",
-                        attachment.name,
-                        format_tokens(attachment.tokens)
-                    ));
-                }
-                output.push('\n');
-            }
+            output.push('\n');
         }
     }
     output

@@ -1043,10 +1043,10 @@ impl McpPendingUpdates {
         let _turn = crate::state::store::enter_store_turn_segment();
         let updates = {
             let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
-            if let Some(expected) = expected_timer {
-                if state.timer.as_ref().map(|(generation, _)| *generation) != Some(expected) {
-                    return;
-                }
+            if let Some(expected) = expected_timer
+                && state.timer.as_ref().map(|(generation, _)| *generation) != Some(expected)
+            {
+                return;
             }
             state.timer = None;
             std::mem::take(&mut state.updates)
@@ -1405,17 +1405,19 @@ fn log_discovered_mcp_server_counts(
         if let Some(scope) = scope {
             counts[scope] = serde_json::json!(counts[scope].as_u64().unwrap() + 1);
         }
-        if ant && !is_mcp_server_disabled(name) && config.transport == Transport::Stdio {
-            if let Some(command) = &config.command {
-                stdio_commands.push(
-                    command
-                        .trim_end_matches('/')
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or_default()
-                        .to_owned(),
-                );
-            }
+        if ant
+            && !is_mcp_server_disabled(name)
+            && config.transport == Transport::Stdio
+            && let Some(command) = &config.command
+        {
+            stdio_commands.push(
+                command
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned(),
+            );
         }
     }
     if !stdio_commands.is_empty() {
@@ -1807,7 +1809,10 @@ mod tests {
     #[test]
     fn discovery_effect_cleanup_matches_source_independent_cancel_and_identity_oracle() {
         use std::sync::Arc;
-        let oracle: serde_json::Value = serde_json::from_str(include_str!("../../../tests/fixtures/oracles/mcp-contract-review-0915/oracle.json")).unwrap();
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/mcp-contract-review-0915/oracle.json"
+        ))
+        .unwrap();
         let base = McpDiscoveryDependencies {
             store: crate::state::store::AppStore::new(
                 crate::state::app_state_store::AppState::default(),
@@ -1860,7 +1865,10 @@ mod tests {
 
     #[test]
     fn optional_resource_updates_match_actual_bun_flush_oracle() {
-        let oracle: serde_json::Value = serde_json::from_str(include_str!("../../../tests/fixtures/oracles/mcp-contract-review-0915/oracle.json")).unwrap();
+        let oracle: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/oracles/mcp-contract-review-0915/oracle.json"
+        ))
+        .unwrap();
         let resource = |server: &str, uri: &str| super::super::types::ServerResource {
             server: server.into(),
             uri: uri.into(),

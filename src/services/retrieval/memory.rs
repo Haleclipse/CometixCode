@@ -64,11 +64,12 @@ pub fn search_memory_directory(
     if let Err(error) = index.refresh(&root) {
         // A failed refresh leaves the previous generation in place; log and
         // search it rather than pretending there are no memories.
-        crate::utils::debug::log_for_debugging(&format!(
-            "memory index refresh failed: {error}"
-        ));
+        crate::utils::debug::log_for_debugging(&format!("memory index refresh failed: {error}"));
     }
-    let hits = match index.text.search(query, max_results.clamp(1, MEMORY_MAX_RESULTS)) {
+    let hits = match index
+        .text
+        .search(query, max_results.clamp(1, MEMORY_MAX_RESULTS))
+    {
         Ok(hits) => hits,
         Err(error) => {
             crate::utils::debug::log_for_debugging(&format!("memory index search failed: {error}"));
@@ -254,7 +255,8 @@ fn chunk_memory(content: &str) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut current = String::new();
     for line in content.lines() {
-        if current.chars().count() + line.chars().count() > MEMORY_CHUNK_CHARS && !current.is_empty()
+        if current.chars().count() + line.chars().count() > MEMORY_CHUNK_CHARS
+            && !current.is_empty()
         {
             chunks.push(std::mem::take(&mut current));
         }
@@ -289,9 +291,7 @@ mod tests {
 
     #[test]
     fn empty_queries_do_not_read_memory() {
-        assert!(
-            search_memory_directory("", 10, &MemorySettings::default()).is_empty()
-        );
+        assert!(search_memory_directory("", 10, &MemorySettings::default()).is_empty());
     }
 
     #[test]
@@ -300,7 +300,9 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("MEMORY.md"), "- short index\n").unwrap();
         assert!(!memory_index_over_budget(&root));
-        let long = (0..200).map(|line| format!("- line {line}\n")).collect::<String>();
+        let long = (0..200)
+            .map(|line| format!("- line {line}\n"))
+            .collect::<String>();
         std::fs::write(root.join("MEMORY.md"), long).unwrap();
         assert!(memory_index_over_budget(&root));
         let _ = std::fs::remove_dir_all(root);
@@ -315,7 +317,9 @@ mod tests {
         std::fs::create_dir_all(&memory).unwrap();
         std::fs::write(
             memory.join("MEMORY.md"),
-            (0..200).map(|line| format!("- line {line}\n")).collect::<String>(),
+            (0..200)
+                .map(|line| format!("- line {line}\n"))
+                .collect::<String>(),
         )
         .unwrap();
         std::fs::write(
@@ -325,10 +329,13 @@ mod tests {
         .unwrap();
         std::fs::write(memory.join("unrelated.md"), "bananas and oranges\n").unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
-        let _override =
-            EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", memory.to_str().unwrap());
+        let _override = EnvVarGuard::set(
+            "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+            memory.to_str().unwrap(),
+        );
         let _cwd = EnvVarGuard::set("PWD", root.to_str().unwrap());
-        let hits = search_memory_directory("prompt cache compaction", 5, &MemorySettings::default());
+        let hits =
+            search_memory_directory("prompt cache compaction", 5, &MemorySettings::default());
         assert!(
             !hits.is_empty(),
             "expected a memory hit; memory path {}",

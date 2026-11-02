@@ -199,14 +199,12 @@ pub fn use_text_input(hooks: &mut Hooks, mut options: UseTextInputOptions) -> Te
                                         runtime.bindings().as_slice(),
                                         None,
                                     )
-                                {
-                                    if runtime.has_registered_handler(
+                                    && runtime.has_registered_handler(
                                         &action,
                                         &HashSet::from([preceding.clone()]),
                                     ) {
                                         return;
                                     }
-                                }
                             }
                             let mut contexts: HashSet<ContextName> = runtime.active_contexts();
                             contexts.insert(ContextName::Chat);
@@ -456,7 +454,7 @@ pub fn use_text_input(hooks: &mut Hooks, mut options: UseTextInputOptions) -> Te
                         }
                         KeyCode::Char(c) if ctrl && matches!(c.to_ascii_lowercase(), 'n' | 'p') => {
                             exit.clear();
-                            let is_down = c.to_ascii_lowercase() == 'n';
+                            let is_down = c.eq_ignore_ascii_case(&'n');
                             if options.disable_cursor_movement_for_up_down_keys {
                                 history = Some(if is_down {
                                     HistoryDirection::Down
@@ -602,7 +600,7 @@ fn modified_enter_inserts_newline(modifiers: &KeyModifiers) -> bool {
 
 fn ctrl_j_inserts_newline(c: char, modifiers: &KeyModifiers, multiline: bool) -> bool {
     multiline
-        && c.to_ascii_lowercase() == 'j'
+        && c.eq_ignore_ascii_case(&'j')
         && modifiers.contains(KeyModifiers::CONTROL)
         && !modifiers.intersects(KeyModifiers::ALT | KeyModifiers::SHIFT)
 }
@@ -680,7 +678,7 @@ fn is_kill_key(code: &KeyCode, modifiers: &KeyModifiers) -> bool {
 
 fn is_yank_key(code: &KeyCode, modifiers: &KeyModifiers) -> bool {
     let ctrl_or_alt = modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
-    matches!(code, KeyCode::Char(c) if ctrl_or_alt && c.to_ascii_lowercase() == 'y')
+    matches!(code, KeyCode::Char(c) if ctrl_or_alt && c.eq_ignore_ascii_case(&'y'))
 }
 
 #[cfg(test)]
@@ -877,11 +875,13 @@ mod tests {
                     }
                 };
                 let events = stream::iter(events).chain(stream::pending());
-                let mut frames = Box::pin(app.mock_terminal_render_loop(
-                    MockTerminalConfig::with_events(events)
-                        .with_size(90, 3)
-                        .with_ignore_ctrl_c(true),
-                ));
+                let mut frames = Box::pin(
+                    app.mock_terminal_render_loop(
+                        MockTerminalConfig::with_events(events)
+                            .with_size(90, 3)
+                            .with_ignore_ctrl_c(true),
+                    ),
+                );
                 let mut last = String::new();
                 for _ in 0..10 {
                     let Some(frame) = crate::utils::race(frames.next(), async {
@@ -1010,7 +1010,11 @@ mod tests {
                 last = canvas.to_string();
                 match stage {
                     0 if last.contains("mark=0") => {
-                        for event in [press(KeyCode::F(6)), press(KeyCode::F(6)), press(KeyCode::F(24))] {
+                        for event in [
+                            press(KeyCode::F(6)),
+                            press(KeyCode::F(6)),
+                            press(KeyCode::F(24)),
+                        ] {
                             keys.send(event).await.unwrap();
                         }
                         stage = 1;

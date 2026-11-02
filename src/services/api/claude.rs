@@ -26,9 +26,9 @@ use crate::utils::betas::{
     model_supports_structured_outputs, should_include_first_party_only_betas,
     should_use_global_cache_scope,
 };
+use crate::utils::content_array::insert_block_after_tool_results;
 use crate::utils::context::{CAPPED_DEFAULT_MAX_TOKENS, get_model_max_output_tokens};
 use crate::utils::effort::{EffortValue, model_supports_effort, resolve_applied_effort};
-use crate::utils::content_array::insert_block_after_tool_results;
 use crate::utils::model::model::{
     get_default_opus_model, get_default_sonnet_model, get_main_loop_model, get_small_fast_model,
     normalize_model_string_for_api,
@@ -309,8 +309,7 @@ fn should_1h_cache_ttl(query_source: Option<&str>) -> bool {
     // Maps to CC `services/api/claude.ts:393-434` `should1hCacheTTL(...)`.
     let provider = crate::utils::model::providers::get_api_provider();
     let bedrock_opt_in = crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("ENABLE_PROMPT_CACHING_1H_BEDROCK")
-            .as_deref(),
+        crate::utils::process_env::var("ENABLE_PROMPT_CACHING_1H_BEDROCK").as_deref(),
     );
     should_1h_cache_ttl_with_inputs(
         provider,
@@ -630,29 +629,29 @@ pub fn get_extra_body_params(
     // (first-party internal feature). See CC claude.ts:301-313.
 
     // Handle beta headers if provided
-    if let Some(headers) = beta_headers {
-        if !headers.is_empty() {
-            if let Some(JsonValue::Array(existing)) = result.get("anthropic_beta") {
-                // Add to existing array, avoiding duplicates
-                let existing_strs: Vec<String> = existing
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
-                let mut merged = existing.clone();
-                for h in headers {
-                    if !existing_strs.contains(h) {
-                        merged.push(JsonValue::String(h.clone()));
-                    }
+    if let Some(headers) = beta_headers
+        && !headers.is_empty()
+    {
+        if let Some(JsonValue::Array(existing)) = result.get("anthropic_beta") {
+            // Add to existing array, avoiding duplicates
+            let existing_strs: Vec<String> = existing
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            let mut merged = existing.clone();
+            for h in headers {
+                if !existing_strs.contains(h) {
+                    merged.push(JsonValue::String(h.clone()));
                 }
-                result.insert("anthropic_beta".to_string(), JsonValue::Array(merged));
-            } else {
-                // Create new array with the beta headers
-                let arr: Vec<JsonValue> = headers
-                    .iter()
-                    .map(|h| JsonValue::String(h.clone()))
-                    .collect();
-                result.insert("anthropic_beta".to_string(), JsonValue::Array(arr));
             }
+            result.insert("anthropic_beta".to_string(), JsonValue::Array(merged));
+        } else {
+            // Create new array with the beta headers
+            let arr: Vec<JsonValue> = headers
+                .iter()
+                .map(|h| JsonValue::String(h.clone()))
+                .collect();
+            result.insert("anthropic_beta".to_string(), JsonValue::Array(arr));
         }
     }
 
@@ -678,8 +677,7 @@ pub fn get_prompt_caching_enabled(model: &str) -> bool {
 
     // Check if we should disable for small/fast model
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_PROMPT_CACHING_HAIKU")
-            .as_deref(),
+        crate::utils::process_env::var("DISABLE_PROMPT_CACHING_HAIKU").as_deref(),
     ) {
         let small_fast_model = get_small_fast_model();
         if model == small_fast_model {
@@ -689,8 +687,7 @@ pub fn get_prompt_caching_enabled(model: &str) -> bool {
 
     // Check if we should disable for default Sonnet
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_PROMPT_CACHING_SONNET")
-            .as_deref(),
+        crate::utils::process_env::var("DISABLE_PROMPT_CACHING_SONNET").as_deref(),
     ) {
         let default_sonnet = get_default_sonnet_model();
         if model == default_sonnet {
@@ -975,14 +972,15 @@ pub fn user_message_to_message_param(
                 };
 
                 // Add cache_control to the last block
-                if i == message.content.len() - 1 && enable_prompt_caching {
-                    if let Some(obj) = block.as_object_mut() {
-                        let cc = get_cache_control(None, query_source);
-                        obj.insert(
-                            "cache_control".to_string(),
-                            serde_json::to_value(&cc).unwrap_or_default(),
-                        );
-                    }
+                if i == message.content.len() - 1
+                    && enable_prompt_caching
+                    && let Some(obj) = block.as_object_mut()
+                {
+                    let cc = get_cache_control(None, query_source);
+                    obj.insert(
+                        "cache_control".to_string(),
+                        serde_json::to_value(&cc).unwrap_or_default(),
+                    );
                 }
 
                 block
@@ -1185,14 +1183,13 @@ pub fn assistant_message_to_message_param(
                     content,
                     AssistantContent::Thinking { .. } | AssistantContent::RedactedThinking { .. }
                 )
+                && let Some(obj) = block.as_object_mut()
             {
-                if let Some(obj) = block.as_object_mut() {
-                    let cc = get_cache_control(None, query_source);
-                    obj.insert(
-                        "cache_control".to_string(),
-                        serde_json::to_value(&cc).unwrap_or_default(),
-                    );
-                }
+                let cc = get_cache_control(None, query_source);
+                obj.insert(
+                    "cache_control".to_string(),
+                    serde_json::to_value(&cc).unwrap_or_default(),
+                );
             }
 
             block
@@ -1296,14 +1293,14 @@ pub fn strip_excess_media_items_typed(
                     if block_type == "image" || block_type == "document" {
                         media_count += 1;
                     }
-                    if block_type == "tool_result" {
-                        if let Some(JsonValue::Array(nested)) = block.get("content") {
-                            for n in nested {
-                                if let Some(nt) = n.get("type").and_then(|t| t.as_str()) {
-                                    if nt == "image" || nt == "document" {
-                                        media_count += 1;
-                                    }
-                                }
+                    if block_type == "tool_result"
+                        && let Some(JsonValue::Array(nested)) = block.get("content")
+                    {
+                        for n in nested {
+                            if let Some(nt) = n.get("type").and_then(|t| t.as_str())
+                                && (nt == "image" || nt == "document")
+                            {
+                                media_count += 1;
                             }
                         }
                     }
@@ -1602,26 +1599,25 @@ pub fn add_cache_breakpoints(
 
     if let Some(new_cache_edits) = new_cache_edits {
         let deduped = deduplicate_cached_mc_edits(new_cache_edits, &mut seen_delete_refs);
-        if !deduped.edits.is_empty() {
-            if let Some(message) = result
+        if !deduped.edits.is_empty()
+            && let Some(message) = result
                 .iter_mut()
                 .rev()
                 .find(|message| message.role == "user")
-            {
-                let content = ensure_message_param_content_blocks(message);
-                insert_block_after_tool_results(
-                    content,
-                    serde_json::to_value(&deduped).unwrap_or_default(),
-                );
-                crate::utils::debug::log_for_debugging(&format!(
-                    "Added cache_edits block with {} edits",
-                    deduped.edits.len()
-                ));
-                // TODO: Wire official `pinCacheEdits(...)` state once cached
-                // microcompact production state is fully ported. The typed
-                // `pinned_edits` parameter above preserves the re-insertion
-                // behavior without mutating hidden API adapter state.
-            }
+        {
+            let content = ensure_message_param_content_blocks(message);
+            insert_block_after_tool_results(
+                content,
+                serde_json::to_value(&deduped).unwrap_or_default(),
+            );
+            crate::utils::debug::log_for_debugging(&format!(
+                "Added cache_edits block with {} edits",
+                deduped.edits.len()
+            ));
+            // TODO: Wire official `pinCacheEdits(...)` state once cached
+            // microcompact production state is fully ported. The typed
+            // `pinned_edits` parameter above preserves the re-insertion
+            // behavior without mutating hidden API adapter state.
         }
     }
 
@@ -1697,13 +1693,13 @@ fn add_cache_references_before_last_cache_control(messages: &mut [MessageParam])
                 .and_then(|obj| obj.get("tool_use_id"))
                 .and_then(|value| value.as_str())
                 .map(str::to_string);
-            if let Some(tool_use_id) = tool_use_id {
-                if let Some(obj) = block.as_object_mut() {
-                    obj.insert(
-                        "cache_reference".to_string(),
-                        serde_json::Value::String(tool_use_id),
-                    );
-                }
+            if let Some(tool_use_id) = tool_use_id
+                && let Some(obj) = block.as_object_mut()
+            {
+                obj.insert(
+                    "cache_reference".to_string(),
+                    serde_json::Value::String(tool_use_id),
+                );
             }
         }
     }
@@ -1822,8 +1818,7 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
     // Env var override: CLAUDE_CODE_MAX_OUTPUT_TOKENS
     crate::utils::env_validation::validate_bounded_int_env_var(
         "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
-        crate::utils::process_env::var("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_MAX_OUTPUT_TOKENS").as_deref(),
         default_tokens as usize,
         max_output.upper_limit as usize,
     )
@@ -1840,14 +1835,15 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
 /// Reads API_TIMEOUT_MS when set. Remote sessions default to 120s.
 /// Otherwise defaults to 300s.
 pub fn get_nonstreaming_fallback_timeout_ms() -> u64 {
-    if let Some(override_str) = crate::utils::process_env::var("API_TIMEOUT_MS") {
-        if let Ok(ms) = override_str.parse::<u64>() {
-            if ms > 0 {
-                return ms;
-            }
-        }
+    if let Some(override_str) = crate::utils::process_env::var("API_TIMEOUT_MS")
+        && let Ok(ms) = override_str.parse::<u64>()
+        && ms > 0
+    {
+        return ms;
     }
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref()) {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+    ) {
         120_000
     } else {
         300_000
@@ -2575,12 +2571,12 @@ fn build_sdk_message_request_options(
     // cache-sharing forks omit it so they hit the main thread's cache.
     if crate::utils::forked_agent::is_agent_api_source(&options.query_source)
         && !crate::utils::forked_agent::is_cache_sharing_api_source(&options.query_source)
+        && let Some(agent_id) = options.agent_id.as_ref()
     {
-        if let Some(agent_id) = options.agent_id.as_ref() {
-            base.headers
-                .get_or_insert_with(Default::default)
-                .insert("X-Claude-Code-Agent-Id".to_string(), Some(agent_id.0.clone()));
-        }
+        base.headers.get_or_insert_with(Default::default).insert(
+            "X-Claude-Code-Agent-Id".to_string(),
+            Some(agent_id.0.clone()),
+        );
     }
 
     for (key, value) in plan.extra_body_params {
@@ -2647,12 +2643,11 @@ fn sdk_request_beta_capture_for_testing(
     } else {
         None
     };
-    if let Some(tool_search_header) = tool_search_header.as_ref() {
-        if provider != crate::utils::model::providers::ApiProvider::Bedrock
-            && !betas.contains(tool_search_header)
-        {
-            betas.push(tool_search_header.clone());
-        }
+    if let Some(tool_search_header) = tool_search_header.as_ref()
+        && provider != crate::utils::model::providers::ApiProvider::Bedrock
+        && !betas.contains(tool_search_header)
+    {
+        betas.push(tool_search_header.clone());
     }
     if should_use_global_cache_scope()
         && !betas.contains(&PROMPT_CACHING_SCOPE_BETA_HEADER.to_string())
@@ -2723,14 +2718,14 @@ fn params_from_context(
     );
     configure_task_budget_params(options.task_budget.as_ref(), &mut output_config, &mut betas);
 
-    if let Some(output_format) = options.output_format.as_ref() {
-        if !output_config.contains_key("format") {
-            output_config.insert("format".to_string(), output_format.clone());
-            if model_supports_structured_outputs(&capture.original_model)
-                && !betas.contains(&STRUCTURED_OUTPUTS_BETA_HEADER.to_string())
-            {
-                betas.push(STRUCTURED_OUTPUTS_BETA_HEADER.to_string());
-            }
+    if let Some(output_format) = options.output_format.as_ref()
+        && !output_config.contains_key("format")
+    {
+        output_config.insert("format".to_string(), output_format.clone());
+        if model_supports_structured_outputs(&capture.original_model)
+            && !betas.contains(&STRUCTURED_OUTPUTS_BETA_HEADER.to_string())
+        {
+            betas.push(STRUCTURED_OUTPUTS_BETA_HEADER.to_string());
         }
     }
 
@@ -2742,8 +2737,7 @@ fn params_from_context(
         sdk_thinking,
         anthropic_sdk::resources::messages::ThinkingConfig::Disabled
     ) && !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_THINKING")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_THINKING").as_deref(),
     );
     let context_management = if betas.contains(&CONTEXT_MANAGEMENT_BETA_HEADER.to_string()) {
         crate::services::compact::api_microcompact::get_api_context_management(
@@ -2934,13 +2928,12 @@ pub async fn query_model_streaming_items(
         }
         let tool_search_header =
             tool_search_enabled.then(|| get_tool_search_beta_header().to_string());
-        if let Some(header) = tool_search_header.as_ref() {
-            if crate::utils::model::providers::get_api_provider()
+        if let Some(header) = tool_search_header.as_ref()
+            && crate::utils::model::providers::get_api_provider()
                 != crate::utils::model::providers::ApiProvider::Bedrock
-                && !betas.contains(header)
-            {
-                betas.push(header.clone());
-            }
+            && !betas.contains(header)
+        {
+            betas.push(header.clone());
         }
         if should_use_global_cache_scope()
             && !betas.contains(&PROMPT_CACHING_SCOPE_BETA_HEADER.to_string())
@@ -3437,13 +3430,12 @@ pub async fn query_model_with_streaming(
         }
         let tool_search_header =
             tool_search_enabled.then(|| get_tool_search_beta_header().to_string());
-        if let Some(header) = tool_search_header.as_ref() {
-            if crate::utils::model::providers::get_api_provider()
+        if let Some(header) = tool_search_header.as_ref()
+            && crate::utils::model::providers::get_api_provider()
                 != crate::utils::model::providers::ApiProvider::Bedrock
-                && !betas.contains(header)
-            {
-                betas.push(header.clone());
-            }
+            && !betas.contains(header)
+        {
+            betas.push(header.clone());
         }
         if should_use_global_cache_scope()
             && !betas.contains(&PROMPT_CACHING_SCOPE_BETA_HEADER.to_string())
@@ -3787,8 +3779,7 @@ fn streaming_attempt_options_from_retry_context(
 /// Maps to CC `CLAUDE_ENABLE_STREAM_WATCHDOG` gate around the idle timers.
 fn stream_watchdog_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_ENABLE_STREAM_WATCHDOG")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_ENABLE_STREAM_WATCHDOG").as_deref(),
     )
 }
 
@@ -4037,13 +4028,13 @@ async fn drain_sdk_message_stream_to_channel(
         // The SDK deliberately skips `_request_id` when serializing Message;
         // preserve the response-header metadata on the typed stream envelope
         // so forked suggestion consumers can join generation outcomes.
-        if let Some(object) = raw_event.as_object_mut() {
-            if let Some(request_id) = event_request_id {
-                object.insert(
-                    "request_id".to_string(),
-                    serde_json::Value::String(request_id),
-                );
-            }
+        if let Some(object) = raw_event.as_object_mut()
+            && let Some(request_id) = event_request_id
+        {
+            object.insert(
+                "request_id".to_string(),
+                serde_json::Value::String(request_id),
+            );
         }
         if tx
             .send(QueryModelStreamItem::Stream(StreamEvent::ApiEvent {
@@ -4112,10 +4103,10 @@ async fn drain_sdk_message_stream_to_channel(
                 if let Some(block) = blocks.get_mut(&index) {
                     block.push_delta(delta);
                 }
-                if let Some(item) = delta_item {
-                    if tx.send(QueryModelStreamItem::Content(item)).await.is_err() {
-                        return Ok(());
-                    }
+                if let Some(item) = delta_item
+                    && tx.send(QueryModelStreamItem::Content(item)).await.is_err()
+                {
+                    return Ok(());
                 }
             }
             anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockStop { index } => {
@@ -4212,14 +4203,13 @@ async fn drain_sdk_message_stream_to_channel(
     );
     if assistant_stop_reason == Some(crate::types::message::StopReason::Refusal) {
         let model = assistant_model.as_deref().unwrap_or(&options.model);
-        if let Some(error) = refusal_system_api_error_message(model) {
-            if tx
+        if let Some(error) = refusal_system_api_error_message(model)
+            && tx
                 .send(QueryModelStreamItem::SystemError(error))
                 .await
                 .is_err()
-            {
-                return Ok(());
-            }
+        {
+            return Ok(());
         }
     }
     if let Some(error) = deferred_api_error {
@@ -4529,8 +4519,7 @@ fn is_non_streaming_fallback_disabled() -> bool {
     // are not available in Nyan's direct API adapter, so only the explicit
     // env kill switch is honored here.
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK").as_deref(),
     )
 }
 
@@ -5177,9 +5166,13 @@ mod tests {
                 anthropic_sdk::RequestOptions::default(),
             )
             .unwrap();
-            assert!(!request.headers.as_ref().is_some_and(|headers| {
-                headers.contains_key("X-Claude-Code-Agent-Id")
-            }), "source {source} must share the main cache identity");
+            assert!(
+                !request
+                    .headers
+                    .as_ref()
+                    .is_some_and(|headers| { headers.contains_key("X-Claude-Code-Agent-Id") }),
+                "source {source} must share the main cache identity"
+            );
         }
     }
 

@@ -41,15 +41,14 @@ pub fn get_agent_model(
     let parent_region_prefix =
         crate::utils::model::bedrock::get_bedrock_region_prefix(parent_model);
     let apply_parent_region_prefix = |resolved_model: String, original_spec: &str| -> String {
-        if let Some(prefix) = parent_region_prefix {
-            if get_api_provider() == ApiProvider::Bedrock
-                && crate::utils::model::bedrock::get_bedrock_region_prefix(original_spec).is_none()
-            {
-                return crate::utils::model::bedrock::apply_bedrock_region_prefix(
-                    &resolved_model,
-                    prefix,
-                );
-            }
+        if let Some(prefix) = parent_region_prefix
+            && get_api_provider() == ApiProvider::Bedrock
+            && crate::utils::model::bedrock::get_bedrock_region_prefix(original_spec).is_none()
+        {
+            return crate::utils::model::bedrock::apply_bedrock_region_prefix(
+                &resolved_model,
+                prefix,
+            );
         }
         resolved_model
     };

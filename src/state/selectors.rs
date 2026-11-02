@@ -28,13 +28,11 @@ pub fn get_active_agent_for_input(app_state: &AppState) -> ActiveAgentForInput<'
         return ActiveAgentForInput::Viewed { task };
     }
 
-    if let Some(task_id) = app_state.viewing_agent_task_id.as_deref() {
-        if let Some(TaskState::Other(task)) = app_state.tasks.get(task_id).map(|task| task.as_ref())
-        {
-            if task.task_type == "local_agent" {
-                return ActiveAgentForInput::NamedAgent { task };
-            }
-        }
+    if let Some(task_id) = app_state.viewing_agent_task_id.as_deref()
+        && let Some(TaskState::Other(task)) = app_state.tasks.get(task_id).map(|task| task.as_ref())
+        && task.task_type == "local_agent"
+    {
+        return ActiveAgentForInput::NamedAgent { task };
     }
 
     ActiveAgentForInput::Leader

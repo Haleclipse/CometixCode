@@ -144,10 +144,10 @@ fn acquire_mailbox_lock(inbox_path: &Path) -> Result<MailboxFileLock, String> {
 
 /// Maps to: CC `teammateMailbox.ts#readMailbox`.
 pub fn read_mailbox(agent_name: &str, team_name: Option<&str>) -> Vec<TeammateMessage> {
-    if !maybe_skip_disk_io_in_tests() {
-        if let Some(messages) = read_mailbox_from_disk(agent_name, team_name) {
-            return messages;
-        }
+    if !maybe_skip_disk_io_in_tests()
+        && let Some(messages) = read_mailbox_from_disk(agent_name, team_name)
+    {
+        return messages;
     }
     let team = default_team_name(team_name);
     MAILBOXES
@@ -261,11 +261,11 @@ pub fn mark_message_as_read_by_index(
     let mut changed = false;
     {
         let mut mailboxes = MAILBOXES.lock().unwrap();
-        if let Some(messages) = mailboxes.get_mut(&(team.clone(), agent_name.to_string())) {
-            if let Some(message) = messages.get_mut(index) {
-                message.read = true;
-                changed = true;
-            }
+        if let Some(messages) = mailboxes.get_mut(&(team.clone(), agent_name.to_string()))
+            && let Some(message) = messages.get_mut(index)
+        {
+            message.read = true;
+            changed = true;
         }
     }
 
@@ -834,10 +834,7 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn unique_config_dir(prefix: &str) -> PathBuf {
-        std::env::temp_dir().join(format!(
-            "nyan-{prefix}-{}",
-            uuid::Uuid::new_v4().simple()
-        ))
+        std::env::temp_dir().join(format!("nyan-{prefix}-{}", uuid::Uuid::new_v4().simple()))
     }
 
     #[test]

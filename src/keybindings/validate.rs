@@ -291,17 +291,17 @@ pub fn validate_user_bindings(content: &str, blocks: &[Value]) -> Vec<Keybinding
                             Some("Move this binding to a block with \"context\": \"Chat\"".to_string()),
                         ));
                     }
-                } else if action == "voice:pushToTalk" {
-                    if let Some(stroke) = parse_chord(key).first() {
-                        if !stroke.ctrl
-                            && !stroke.alt
-                            && !stroke.shift
-                            && !stroke.meta
-                            && !stroke.super_key
-                            && stroke.key.len() == 1
-                            && stroke.key.as_bytes()[0].is_ascii_lowercase()
-                        {
-                            warnings.push(warning_with_action(
+                } else if action == "voice:pushToTalk"
+                    && let Some(stroke) = parse_chord(key).first()
+                    && !stroke.ctrl
+                    && !stroke.alt
+                    && !stroke.shift
+                    && !stroke.meta
+                    && !stroke.super_key
+                    && stroke.key.len() == 1
+                    && stroke.key.as_bytes()[0].is_ascii_lowercase()
+                {
+                    warnings.push(warning_with_action(
                                 "invalid_action",
                                 KeybindingWarningSeverity::Warning,
                                 format!("Binding \"{key}\" to voice:pushToTalk prints into the input during warmup; use space or a modifier combo like meta+k"),
@@ -310,25 +310,25 @@ pub fn validate_user_bindings(content: &str, blocks: &[Value]) -> Vec<Keybinding
                                 Some(action),
                                 None,
                             ));
-                        }
-                    }
                 }
             }
 
             let normalized = normalize_key(key);
             let action_for_duplicate = action.unwrap_or("null").to_string();
-            if let Some(previous) = context_map.get(&normalized) {
-                if previous != &action_for_duplicate {
-                    warnings.push(warning_with_action(
-                        "duplicate",
-                        KeybindingWarningSeverity::Warning,
-                        format!("Duplicate binding \"{key}\" in {context_for_duplicates} context"),
-                        Some(key),
-                        raw_context,
-                        Some(action.unwrap_or("null (unbind)")),
-                        Some(format!("Previously bound to \"{previous}\". Only the last binding will be used.")),
-                    ));
-                }
+            if let Some(previous) = context_map.get(&normalized)
+                && previous != &action_for_duplicate
+            {
+                warnings.push(warning_with_action(
+                    "duplicate",
+                    KeybindingWarningSeverity::Warning,
+                    format!("Duplicate binding \"{key}\" in {context_for_duplicates} context"),
+                    Some(key),
+                    raw_context,
+                    Some(action.unwrap_or("null (unbind)")),
+                    Some(format!(
+                        "Previously bound to \"{previous}\". Only the last binding will be used."
+                    )),
+                ));
             }
             context_map.insert(normalized.clone(), action_for_duplicate);
 
@@ -397,24 +397,25 @@ pub fn check_duplicates(user_blocks: &[KeybindingBlock]) -> Vec<KeybindingWarnin
         for (key, action) in &block.bindings {
             let normalized = normalize_key(key);
             let current_action = action.as_deref().unwrap_or("null");
-            if let Some(existing) = context_map.get(&normalized) {
-                if !existing.is_empty() && existing != current_action {
-                    warnings.push(KeybindingWarning {
-                        warning_type: KeybindingWarningType::Duplicate,
-                        severity: KeybindingWarningSeverity::Warning,
-                        message: format!("Duplicate binding \"{key}\" in {context} context"),
-                        key: Some(key.clone()),
-                        context: Some(context.clone()),
-                        action: Some(
-                            action
-                                .clone()
-                                .unwrap_or_else(|| "null (unbind)".to_string()),
-                        ),
-                        suggestion: Some(format!(
-                            "Previously bound to \"{existing}\". Only the last binding will be used."
-                        )),
-                    });
-                }
+            if let Some(existing) = context_map.get(&normalized)
+                && !existing.is_empty()
+                && existing != current_action
+            {
+                warnings.push(KeybindingWarning {
+                    warning_type: KeybindingWarningType::Duplicate,
+                    severity: KeybindingWarningSeverity::Warning,
+                    message: format!("Duplicate binding \"{key}\" in {context} context"),
+                    key: Some(key.clone()),
+                    context: Some(context.clone()),
+                    action: Some(
+                        action
+                            .clone()
+                            .unwrap_or_else(|| "null (unbind)".to_string()),
+                    ),
+                    suggestion: Some(format!(
+                        "Previously bound to \"{existing}\". Only the last binding will be used."
+                    )),
+                });
             }
             context_map.insert(normalized, current_action.to_string());
         }

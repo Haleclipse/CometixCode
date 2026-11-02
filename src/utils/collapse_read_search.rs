@@ -439,12 +439,11 @@ pub(crate) fn collapse_read_search_groups(
 
     fn tool_hint(tool_info: &ToolCollapseInfo, description: &str) -> String {
         if tool_info.is_bash_command {
-            if tool_info.kind == "bash" {
-                if let Some(label) =
+            if tool_info.kind == "bash"
+                && let Some(label) =
                     crate::tools::bash_tool::comment_label::extract_bash_comment_label(description)
-                {
-                    return label;
-                }
+            {
+                return label;
             }
             return command_as_hint(description);
         }
@@ -691,110 +690,109 @@ pub(crate) fn collapse_read_search_groups(
         }
 
         if let Some(active_group) = group.as_mut() {
-            if let Some(tool_use_id) = user_tool_result_id(&message).map(str::to_string) {
-                if active_group.tool_use_ids.contains(tool_use_id.as_str()) {
-                    if let Some(tool_result) = user_tool_result_block(&message) {
-                        let status = derive_tool_result_status(tool_result);
-                        // Maps to CC `CollapsedReadSearchContent.tsx:66-108`:
-                        // the expanded row follows the tool use, marks its
-                        // loader from the resolved result, and renders a result
-                        // summary only for a non-error use with valid output.
-                        // The tool name comes from the matched ToolUse entry —
-                        // the result row does not store it.
-                        let mut tool_name = String::new();
-                        for verbose_entry in &mut active_group.verbose_entries {
-                            if let CollapsedReadSearchEntry::ToolUse {
-                                tool_use_id: Some(entry_id),
-                                tool_name: entry_tool_name,
-                                status: tool_status,
-                                ..
-                            } = verbose_entry
-                            {
-                                if *entry_id == tool_use_id {
-                                    tool_name = entry_tool_name.clone();
-                                    *tool_status = if status == ToolResultStatus::Success {
-                                        crate::types::message::ToolUseStatus::Succeeded
-                                    } else {
-                                        crate::types::message::ToolUseStatus::Failed
-                                    };
-                                    break;
-                                }
-                            }
-                        }
-                        // Validity is the raw parsing under the tool's
-                        // own output schema — CC's single rule for every tool
-                        // (`CollapsedReadSearchContent.tsx:117-119` gates the
-                        // result render on `outputSchema.safeParse` success);
-                        // there is no display shape to probe for migrated
-                        // tools (Read, Grep).
-                        let valid_tool_output = if tool_name.eq_ignore_ascii_case("Read") {
-                            tool_result.tool_use_result.as_ref().is_some_and(|raw| {
-                                crate::tools::file_read_tool::parse_output(
-                                    &crate::tools::file_read_tool::javascript_runtime_value(raw),
-                                )
-                                .is_some()
-                            })
-                        } else if tool_name.eq_ignore_ascii_case("Grep") {
-                            tool_result.tool_use_result.as_ref().is_some_and(|raw| {
-                                crate::tools::grep_tool::ui::parse_output(raw).is_some()
-                            })
-                        } else if tool_name.eq_ignore_ascii_case("Glob") {
-                            tool_result.tool_use_result.as_ref().is_some_and(|raw| {
-                                crate::tools::glob_tool::ui::parse_output(raw).is_some()
-                            })
-                        } else {
-                            true
-                        };
-                        if status == ToolResultStatus::Success && valid_tool_output {
-                            active_group.verbose_entries.push(
-                                CollapsedReadSearchEntry::ToolResult {
-                                    tool_name,
-                                    status,
-                                    content: tool_result.content.clone(),
-                                    tool_use_result: tool_result.tool_use_result.clone(),
-                                },
-                            );
-                        }
-                        if status != ToolResultStatus::Success {
-                            active_group.errored = true;
-                        }
-                    }
-                    if let Some(command) = active_group.bash_commands.get(tool_use_id.as_str()) {
-                        // Bash carries no display shape — read the raw
-                        // `toolUseResult` with the tool's own output schema.
-                        if let Some(output) = user_tool_result_block(&message)
-                            .and_then(|tool_result| tool_result.tool_use_result.as_ref())
-                            .and_then(crate::tools::bash_tool::ui::parse_output)
+            if let Some(tool_use_id) = user_tool_result_id(&message).map(str::to_string)
+                && active_group.tool_use_ids.contains(tool_use_id.as_str())
+            {
+                if let Some(tool_result) = user_tool_result_block(&message) {
+                    let status = derive_tool_result_status(tool_result);
+                    // Maps to CC `CollapsedReadSearchContent.tsx:66-108`:
+                    // the expanded row follows the tool use, marks its
+                    // loader from the resolved result, and renders a result
+                    // summary only for a non-error use with valid output.
+                    // The tool name comes from the matched ToolUse entry —
+                    // the result row does not store it.
+                    let mut tool_name = String::new();
+                    for verbose_entry in &mut active_group.verbose_entries {
+                        if let CollapsedReadSearchEntry::ToolUse {
+                            tool_use_id: Some(entry_id),
+                            tool_name: entry_tool_name,
+                            status: tool_status,
+                            ..
+                        } = verbose_entry
+                            && *entry_id == tool_use_id
                         {
-                            let output = format!("{}\n{}", output.stdout, output.stderr);
-                            let detected =
-                                crate::tools::shared::git_operation_tracking::detect_git_operation(
-                                    command, &output,
-                                );
-                            let mut found = false;
-                            if let Some(commit) = detected.commit {
-                                active_group.commits.push(commit);
-                                found = true;
-                            }
-                            if let Some(push) = detected.push {
-                                active_group.pushes.push(push);
-                                found = true;
-                            }
-                            if let Some(branch) = detected.branch {
-                                active_group.branches.push(branch);
-                                found = true;
-                            }
-                            if let Some(pr) = detected.pr {
-                                active_group.prs.push(pr);
-                                found = true;
-                            }
-                            if found {
-                                active_group.git_op_bash_count += 1;
-                            }
+                            tool_name = entry_tool_name.clone();
+                            *tool_status = if status == ToolResultStatus::Success {
+                                crate::types::message::ToolUseStatus::Succeeded
+                            } else {
+                                crate::types::message::ToolUseStatus::Failed
+                            };
+                            break;
                         }
                     }
-                    continue;
+                    // Validity is the raw parsing under the tool's
+                    // own output schema — CC's single rule for every tool
+                    // (`CollapsedReadSearchContent.tsx:117-119` gates the
+                    // result render on `outputSchema.safeParse` success);
+                    // there is no display shape to probe for migrated
+                    // tools (Read, Grep).
+                    let valid_tool_output = if tool_name.eq_ignore_ascii_case("Read") {
+                        tool_result.tool_use_result.as_ref().is_some_and(|raw| {
+                            crate::tools::file_read_tool::parse_output(
+                                &crate::tools::file_read_tool::javascript_runtime_value(raw),
+                            )
+                            .is_some()
+                        })
+                    } else if tool_name.eq_ignore_ascii_case("Grep") {
+                        tool_result.tool_use_result.as_ref().is_some_and(|raw| {
+                            crate::tools::grep_tool::ui::parse_output(raw).is_some()
+                        })
+                    } else if tool_name.eq_ignore_ascii_case("Glob") {
+                        tool_result.tool_use_result.as_ref().is_some_and(|raw| {
+                            crate::tools::glob_tool::ui::parse_output(raw).is_some()
+                        })
+                    } else {
+                        true
+                    };
+                    if status == ToolResultStatus::Success && valid_tool_output {
+                        active_group
+                            .verbose_entries
+                            .push(CollapsedReadSearchEntry::ToolResult {
+                                tool_name,
+                                status,
+                                content: tool_result.content.clone(),
+                                tool_use_result: tool_result.tool_use_result.clone(),
+                            });
+                    }
+                    if status != ToolResultStatus::Success {
+                        active_group.errored = true;
+                    }
                 }
+                if let Some(command) = active_group.bash_commands.get(tool_use_id.as_str()) {
+                    // Bash carries no display shape — read the raw
+                    // `toolUseResult` with the tool's own output schema.
+                    if let Some(output) = user_tool_result_block(&message)
+                        .and_then(|tool_result| tool_result.tool_use_result.as_ref())
+                        .and_then(crate::tools::bash_tool::ui::parse_output)
+                    {
+                        let output = format!("{}\n{}", output.stdout, output.stderr);
+                        let detected =
+                            crate::tools::shared::git_operation_tracking::detect_git_operation(
+                                command, &output,
+                            );
+                        let mut found = false;
+                        if let Some(commit) = detected.commit {
+                            active_group.commits.push(commit);
+                            found = true;
+                        }
+                        if let Some(push) = detected.push {
+                            active_group.pushes.push(push);
+                            found = true;
+                        }
+                        if let Some(branch) = detected.branch {
+                            active_group.branches.push(branch);
+                            found = true;
+                        }
+                        if let Some(pr) = detected.pr {
+                            active_group.prs.push(pr);
+                            found = true;
+                        }
+                        if found {
+                            active_group.git_op_bash_count += 1;
+                        }
+                    }
+                }
+                continue;
             }
 
             if let Some((hook_count, hook_total_ms, hook_infos)) = pre_tool_hook_summary(&message) {

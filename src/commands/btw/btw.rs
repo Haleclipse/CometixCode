@@ -30,10 +30,10 @@ pub fn strip_in_progress_assistant_message(messages: &[Message]) -> Vec<Message>
     let Some(last) = messages.last() else {
         return messages.to_vec();
     };
-    if let Message::Assistant(assistant) = last {
-        if assistant.stop_reason.is_none() {
-            return messages[..messages.len().saturating_sub(1)].to_vec();
-        }
+    if let Message::Assistant(assistant) = last
+        && assistant.stop_reason.is_none()
+    {
+        return messages[..messages.len().saturating_sub(1)].to_vec();
     }
     messages.to_vec()
 }

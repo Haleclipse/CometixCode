@@ -26,13 +26,13 @@ pub fn read_lines_reverse(path: &Path) -> impl Stream<Item = io::Result<String>>
     };
     futures::stream::unfold(state, |mut state| async move {
         if state.done {
-            if let Some(file) = state.file.take() {
-                if let Err(error) = super::handle::close(file.into_std().await) {
-                    return Some((
-                        Err(super::error::native(error, "close", &state.path, None)),
-                        state,
-                    ));
-                }
+            if let Some(file) = state.file.take()
+                && let Err(error) = super::handle::close(file.into_std().await)
+            {
+                return Some((
+                    Err(super::error::native(error, "close", &state.path, None)),
+                    state,
+                ));
             }
             return None;
         }
@@ -88,14 +88,14 @@ pub fn read_lines_reverse(path: &Path) -> impl Stream<Item = io::Result<String>>
         match result {
             Ok(Some(line)) => Some((Ok(line), state)),
             Ok(None) => {
-                if let Some(file) = state.file.take() {
-                    if let Err(error) = super::handle::close(file.into_std().await) {
-                        state.done = true;
-                        return Some((
-                            Err(super::error::native(error, "close", &state.path, None)),
-                            state,
-                        ));
-                    }
+                if let Some(file) = state.file.take()
+                    && let Err(error) = super::handle::close(file.into_std().await)
+                {
+                    state.done = true;
+                    return Some((
+                        Err(super::error::native(error, "close", &state.path, None)),
+                        state,
+                    ));
                 }
                 None
             }

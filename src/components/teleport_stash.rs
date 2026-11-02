@@ -25,8 +25,9 @@ impl TeleportGitFileStatus {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum TeleportStashState {
+    #[default]
     Loading,
     Error(String),
     Ready {
@@ -34,12 +35,6 @@ pub enum TeleportStashState {
         stashing: bool,
         focused_index: usize,
     },
-}
-
-impl Default for TeleportStashState {
-    fn default() -> Self {
-        Self::Loading
-    }
 }
 
 #[derive(Default, Props)]

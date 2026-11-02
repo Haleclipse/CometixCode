@@ -245,18 +245,14 @@ pub(crate) fn exec_file_no_throw_with_cwd_options(
         if preserve {
             let code = crate::utils::errors::io_errno_code(error).unwrap_or("EIO");
             let mut original = String::new();
-            if let Some(cwd) = options.cwd {
-                if let Err(cwd_error) = std::fs::metadata(cwd) {
-                    original = format!(
-                        "The \"cwd\" option is invalid: {}.\n{}\n",
-                        cwd.display(),
-                        crate::utils::errors::format_native_file_error(
-                            &cwd_error,
-                            "stat",
-                            Some(cwd)
-                        )
-                    );
-                }
+            if let Some(cwd) = options.cwd
+                && let Err(cwd_error) = std::fs::metadata(cwd)
+            {
+                original = format!(
+                    "The \"cwd\" option is invalid: {}.\n{}\n",
+                    cwd.display(),
+                    crate::utils::errors::format_native_file_error(&cwd_error, "stat", Some(cwd))
+                );
             }
             original.push_str(&crate::utils::errors::format_native_file_error(
                 error,
@@ -299,11 +295,10 @@ pub(crate) fn exec_file_no_throw_with_cwd_options(
                     let _ = sender.send(output);
                 })
                 .is_err()
+                && let Some(mut process) = pending.lock().unwrap().take()
             {
-                if let Some(mut process) = pending.lock().unwrap().take() {
-                    let _ = process.child.kill();
-                    let _ = process.child.wait();
-                }
+                let _ = process.child.kill();
+                let _ = process.child.wait();
             }
         }
         Err(_) => {

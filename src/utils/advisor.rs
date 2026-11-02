@@ -27,8 +27,7 @@ fn get_advisor_config() -> AdvisorConfig {
 /// Maps to CC `isAdvisorEnabled()` (`utils/advisor.ts:60-69`).
 pub fn is_advisor_enabled() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_ADVISOR_TOOL")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_ADVISOR_TOOL").as_deref(),
     ) {
         return false;
     }

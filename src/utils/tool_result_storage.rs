@@ -545,8 +545,8 @@ pub fn apply_tool_result_budget_with_state_and_skip_tool_names_result(
             let mut remaining = frozen_size + fresh_size;
             let mut clearable = eligible_fresh
                 .iter()
+                .filter(|&candidate| candidate.clearable)
                 .cloned()
-                .filter(|candidate| candidate.clearable)
                 .collect::<Vec<_>>();
             clearable.sort_by(|left, right| right.len.cmp(&left.len));
             for candidate in clearable {
@@ -564,8 +564,8 @@ pub fn apply_tool_result_budget_with_state_and_skip_tool_names_result(
             .collect::<std::collections::HashSet<_>>();
         for candidate in frozen
             .into_iter()
-            .chain(skipped_fresh.into_iter())
-            .chain(eligible_fresh.into_iter())
+            .chain(skipped_fresh)
+            .chain(eligible_fresh)
             .filter(|candidate| !selected_ids.contains(&candidate.tool_use_id))
         {
             state.seen_ids.insert(candidate.tool_use_id);
@@ -920,9 +920,11 @@ mod tests {
         assert_eq!(result.newly_replaced.len(), 1);
         assert_eq!(result.newly_replaced[0].kind, "tool-result");
         assert_eq!(result.newly_replaced[0].tool_use_id, "toolu_large_a");
-        assert!(result.newly_replaced[0]
-            .replacement
-            .starts_with("[tool result cleared: "));
+        assert!(
+            result.newly_replaced[0]
+                .replacement
+                .starts_with("[tool result cleared: ")
+        );
         let wire = serde_json::to_value(&result.newly_replaced[0]).unwrap();
         assert_eq!(wire["kind"], "tool-result");
         assert_eq!(wire["toolUseId"], "toolu_large_a");
@@ -988,10 +990,12 @@ mod tests {
         assert!(!old_cleared);
         assert!(new_cleared);
         assert!(!state.replacements.contains_key("toolu_old"));
-        assert!(state
-            .replacements
-            .get("toolu_new")
-            .is_some_and(|replacement| is_tool_result_cleared(replacement)));
+        assert!(
+            state
+                .replacements
+                .get("toolu_new")
+                .is_some_and(|replacement| is_tool_result_cleared(replacement))
+        );
     }
 
     #[test]
@@ -1132,10 +1136,8 @@ mod tests {
             MAX_TOOL_RESULTS_PER_MESSAGE_CHARS
         );
 
-        let root = std::env::temp_dir().join(format!(
-            "nyan-tool-result-window-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-tool-result-window-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).expect("create temp config dir");
         std::fs::write(
             root.join(".claude.json"),
@@ -1399,7 +1401,9 @@ mod tests {
         assert_eq!(new, "[tool result cleared: Read 4096 bytes, id toolu_x]");
         assert!(is_tool_result_cleared(&new));
         assert!(is_tool_result_cleared(TOOL_RESULT_CLEARED_MESSAGE));
-        assert!(!is_tool_result_cleared("[tool result cleared: unterminated"));
+        assert!(!is_tool_result_cleared(
+            "[tool result cleared: unterminated"
+        ));
         assert!(!is_tool_result_cleared("ordinary output"));
         assert_eq!(tool_result_cleared_bytes(&new), Some(4096));
         assert_eq!(tool_result_cleared_bytes(TOOL_RESULT_CLEARED_MESSAGE), None);
@@ -1407,7 +1411,10 @@ mod tests {
 
     #[test]
     fn resume_replays_legacy_placeholder_verbatim() {
-        let loaded = vec![tool_result_message("toolu_old", "original body".to_string())];
+        let loaded = vec![tool_result_message(
+            "toolu_old",
+            "original body".to_string(),
+        )];
         let records = vec![ContentReplacementRecord::tool_result(
             "toolu_old".to_string(),
             TOOL_RESULT_CLEARED_MESSAGE.to_string(),

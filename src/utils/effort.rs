@@ -143,8 +143,7 @@ pub fn model_supports_effort(model: &str) -> bool {
         return false;
     }
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT").as_deref(),
     ) {
         return true;
     }

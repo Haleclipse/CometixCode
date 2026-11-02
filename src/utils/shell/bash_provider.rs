@@ -18,10 +18,10 @@ impl BashShellProvider {
     /// Maps to the cleanup registered by `createAndSaveSnapshot` after a
     /// successful snapshot creation.
     pub fn cleanup_snapshot(&self) {
-        if let Ok(mut snapshot) = self.snapshot_file_path.lock() {
-            if let Some(path) = snapshot.take() {
-                let _ = std::fs::remove_file(path);
-            }
+        if let Ok(mut snapshot) = self.snapshot_file_path.lock()
+            && let Some(path) = snapshot.take()
+        {
+            let _ = std::fs::remove_file(path);
         }
     }
 }
@@ -193,19 +193,17 @@ impl ShellProvider for BashShellProvider {
     /// Maps to CC `bashProvider.getEnvironmentOverrides(command)`.
     fn get_environment_overrides(&self, _command: &str) -> Vec<(String, String)> {
         let mut env = Vec::new();
-        if let Ok(current) = self.current_sandbox_tmp_dir.lock() {
-            if let Some(path) = current.as_ref() {
-                let path = if cfg!(windows) {
-                    crate::utils::windows_paths::windows_path_to_posix_path(
-                        &path.display().to_string(),
-                    )
-                } else {
-                    path.display().to_string()
-                };
-                env.push(("TMPDIR".to_string(), path.clone()));
-                env.push(("CLAUDE_CODE_TMPDIR".to_string(), path.clone()));
-                env.push(("TMPPREFIX".to_string(), format!("{path}/zsh")));
-            }
+        if let Ok(current) = self.current_sandbox_tmp_dir.lock()
+            && let Some(path) = current.as_ref()
+        {
+            let path = if cfg!(windows) {
+                crate::utils::windows_paths::windows_path_to_posix_path(&path.display().to_string())
+            } else {
+                path.display().to_string()
+            };
+            env.push(("TMPDIR".to_string(), path.clone()));
+            env.push(("CLAUDE_CODE_TMPDIR".to_string(), path.clone()));
+            env.push(("TMPPREFIX".to_string(), format!("{path}/zsh")));
         }
         env.extend(crate::utils::session_env_vars::get_session_env_vars());
         env

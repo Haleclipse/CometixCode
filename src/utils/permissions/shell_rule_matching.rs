@@ -31,7 +31,7 @@ pub fn has_wildcards(pattern: &str) -> bool {
             backslash_count += 1;
             cursor -= 1;
         }
-        if backslash_count % 2 == 0 {
+        if backslash_count.is_multiple_of(2) {
             return true;
         }
     }

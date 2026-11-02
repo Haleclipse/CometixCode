@@ -31,7 +31,7 @@ fn StaticKeybindingProvider(
 ) -> impl Into<AnyElement<'static>> {
     let runtime =
         hooks.use_state(|| KeybindingRuntime::new(load_keybindings_sync_with_warnings().bindings));
-    let children = props.children.drain(..).collect::<Vec<_>>();
+    let children = std::mem::take(&mut props.children);
     element! {
         ContextProvider(value: Context::owned(runtime.read().clone())) {
             #(children)

@@ -122,10 +122,7 @@ mod tests {
         ))];
         assert_eq!(
             compute_fingerprint_from_messages(&messages),
-            compute_fingerprint(
-                "hello world from nyan",
-                crate::constants::product::VERSION
-            )
+            compute_fingerprint("hello world from nyan", crate::constants::product::VERSION)
         );
         // No user text → CC fingerprints the empty string ("0" at every index).
         assert_eq!(

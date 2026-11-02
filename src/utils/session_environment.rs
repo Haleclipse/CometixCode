@@ -103,12 +103,11 @@ pub fn get_session_environment_script() -> Option<String> {
     if let Some(env_file) = crate::utils::process_env::var_os("CLAUDE_ENV_FILE")
         .as_deref()
         .truthy()
+        && let Ok(content) = std::fs::read_to_string(env_file)
     {
-        if let Ok(content) = std::fs::read_to_string(env_file) {
-            let content = content.trim();
-            if !content.is_empty() {
-                scripts.push(content.to_string());
-            }
+        let content = content.trim();
+        if !content.is_empty() {
+            scripts.push(content.to_string());
         }
     }
 

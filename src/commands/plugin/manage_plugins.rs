@@ -486,17 +486,16 @@ async fn handle_single_operation(
                 let is_last = load_installed_plugins_v2().lock().unwrap()["plugins"][&id]
                     .as_array()
                     .is_none_or(|i| i.len() <= 1);
-                if is_last {
-                    if let Some(size) =
+                if is_last
+                    && let Some(size) =
                         crate::utils::plugins::plugin_directories::get_plugin_data_dir_size(&id)
                             .await?
-                    {
-                        change(&state, |s| {
-                            s.processing = false;
-                            s.view = ViewState::ConfirmDataCleanup(size.human);
-                        });
-                        return Ok(());
-                    }
+                {
+                    change(&state, |s| {
+                        s.processing = false;
+                        s.view = ViewState::ConfirmDataCleanup(size.human);
+                    });
+                    return Ok(());
                 }
                 let result = uninstall_plugin_op(
                     &id,
@@ -871,31 +870,26 @@ pub fn ManagePlugins(
                                     .plugin
                                     .path
                                     .join("../.claude-plugin/marketplace.json");
-                                if let Ok(text) = tokio::fs::read_to_string(path).await {
-                                    if let Ok(raw) = serde_json::from_str::<Value>(&text) {
-                                        if let Some(spec) = raw["plugins"]
-                                            .as_array()
-                                            .and_then(|v| {
-                                                v.iter().find(|e| {
-                                                    e["name"].as_str()
-                                                        == Some(&selected.plugin.name)
-                                                })
+                                if let Ok(text) = tokio::fs::read_to_string(path).await
+                                    && let Ok(raw) = serde_json::from_str::<Value>(&text)
+                                    && let Some(spec) = raw["plugins"]
+                                        .as_array()
+                                        .and_then(|v| {
+                                            v.iter().find(|e| {
+                                                e["name"].as_str() == Some(&selected.plugin.name)
                                             })
-                                            .and_then(|e| e.get("mcpServers"))
-                                        {
-                                            has = if let Some(s) = spec.as_str() {
-                                                crate::utils::plugins::mcpb_handler::is_mcpb_source(
-                                                    s,
-                                                )
-                                            } else {
-                                                spec.as_array().is_some_and(|v| {
-                                                    v.iter().filter_map(Value::as_str).any(
+                                        })
+                                        .and_then(|e| e.get("mcpServers"))
+                                {
+                                    has = if let Some(s) = spec.as_str() {
+                                        crate::utils::plugins::mcpb_handler::is_mcpb_source(s)
+                                    } else {
+                                        spec.as_array().is_some_and(|v| {
+                                            v.iter().filter_map(Value::as_str).any(
                                                 crate::utils::plugins::mcpb_handler::is_mcpb_source,
                                             )
-                                                })
-                                            };
-                                        }
-                                    }
+                                        })
+                                    };
                                 }
                             }
                             change(&state, |s| s.selected_has_mcpb = has);
@@ -1276,7 +1270,7 @@ pub fn ManagePlugins(
                                         Ok(answer) => {
                                             let mut success = answer.success;
                                             if !success {
-                                                for source in [crate::utils::settings::constants::SettingSource::User,crate::utils::settings::constants::SettingSource::Project,crate::utils::settings::constants::SettingSource::Local]{if let Some(mut entries)=crate::utils::settings::get_settings_for_source(source).and_then(|s|s.enabled_plugins).and_then(|v|v.as_object().cloned()){if entries.contains_key(&item.id){entries.insert(item.id.clone(),Value::Null);let _=crate::utils::settings::update_settings_for_source(source,&Map::from_iter([("enabledPlugins".into(),Value::Object(entries))]));success=true;}}}
+                                                for source in [crate::utils::settings::constants::SettingSource::User,crate::utils::settings::constants::SettingSource::Project,crate::utils::settings::constants::SettingSource::Local]{if let Some(mut entries)=crate::utils::settings::get_settings_for_source(source).and_then(|s|s.enabled_plugins).and_then(|v|v.as_object().cloned())&& entries.contains_key(&item.id){entries.insert(item.id.clone(),Value::Null);let _=crate::utils::settings::update_settings_for_source(source,&Map::from_iter([("enabledPlugins".into(),Value::Object(entries))]));success=true;}}
                                                 crate::utils::plugins::cache_utils::clear_all_caches();
                                             }
                                             if success {
@@ -1566,15 +1560,12 @@ pub fn ManagePlugins(
                 } else if !key
                     .modifiers
                     .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
-                {
-                    if let KeyCode::Char(c) = key.code {
-                        if let Some(query) = search_entry_query(&c.to_string()) {
+                    && let KeyCode::Char(c) = key.code
+                        && let Some(query) = search_entry_query(&c.to_string()) {
                             search_toggle(true);
                             search.set(query);
                             change(&state, |s| s.selected_index = 0);
                         }
-                    }
-                }
             }
             TerminalEvent::Paste(text) if plugin_list => {
                 if search_active {

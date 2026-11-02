@@ -5,20 +5,15 @@ use crate::constants::figures::MAIN_SYMBOLS;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum StatusIconStatus {
     Success,
     Error,
     Warning,
     Info,
+    #[default]
     Pending,
     Loading,
-}
-
-impl Default for StatusIconStatus {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 pub(crate) fn status_icon_config(
@@ -71,10 +66,7 @@ mod tests {
         }
         .render(Some(20));
 
-        assert_eq!(
-            canvas.to_string().trim_end(),
-            format!("{}", MAIN_SYMBOLS.tick)
-        );
+        assert_eq!(canvas.to_string().trim_end(), MAIN_SYMBOLS.tick.to_string());
         assert_eq!(
             canvas
                 .cell(0, 0)

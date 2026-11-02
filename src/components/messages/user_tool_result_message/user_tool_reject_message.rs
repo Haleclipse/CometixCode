@@ -151,26 +151,26 @@ pub fn UserToolRejectMessage(
 
     // CC `NotebookEditTool/UI.tsx:56-79` renders its rejected leaf entirely
     // from the input via a dedicated component.
-    if props.tool_name.eq_ignore_ascii_case("NotebookEdit") {
-        if let Some(input) = props.tool_input.as_ref() {
-            let string = |key: &str| {
-                input
-                    .get(key)
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_string)
-            };
-            return element! {
-                NotebookEditToolUseRejectedMessage(
-                    notebook_path: string("notebook_path").unwrap_or_default(),
-                    cell_id: string("cell_id"),
-                    new_source: string("new_source").unwrap_or_default(),
-                    cell_type: string("cell_type"),
-                    edit_mode: string("edit_mode"),
-                    verbose: props.verbose,
-                )
-            }
-            .into_any();
+    if props.tool_name.eq_ignore_ascii_case("NotebookEdit")
+        && let Some(input) = props.tool_input.as_ref()
+    {
+        let string = |key: &str| {
+            input
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string)
+        };
+        return element! {
+            NotebookEditToolUseRejectedMessage(
+                notebook_path: string("notebook_path").unwrap_or_default(),
+                cell_id: string("cell_id"),
+                new_source: string("new_source").unwrap_or_default(),
+                cell_type: string("cell_type"),
+                edit_mode: string("edit_mode"),
+                verbose: props.verbose,
+            )
         }
+        .into_any();
     }
 
     // CC `UserToolRejectMessage.tsx:46-58`: the tool's own rejected renderer

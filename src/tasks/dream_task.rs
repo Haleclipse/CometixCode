@@ -407,7 +407,13 @@ mod tests {
             start_mtime_ms: lease.start_mtime_ms(),
         };
         let store = store();
-        let id = register_dream_task(&store, 1, 0, AbortController::default(), Some(lease.clone()));
+        let id = register_dream_task(
+            &store,
+            1,
+            0,
+            AbortController::default(),
+            Some(lease.clone()),
+        );
         assert!(kill_dream_task(&id, &store));
         assert!(!lock_path.exists(), "kill restores the pre-run state");
         // Idempotent: the producer's own rollback after the kill is a no-op.
@@ -438,7 +444,10 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        assert!(restored.abs_diff(prior_ms) <= 1_000, "{restored} vs {prior_ms}");
+        assert!(
+            restored.abs_diff(prior_ms) <= 1_000,
+            "{restored} vs {prior_ms}"
+        );
         let _ = std::fs::remove_dir_all(dir);
     }
 

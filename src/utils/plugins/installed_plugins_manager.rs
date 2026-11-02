@@ -456,14 +456,12 @@ pub fn remove_all_plugins_for_marketplace(
                 .get("installPath")
                 .and_then(Value::as_str)
                 .filter(|path| !path.is_empty())
-            {
-                if !result
+                && !result
                     .orphaned_paths
                     .iter()
                     .any(|existing| existing == path)
-                {
-                    result.orphaned_paths.push(path.into());
-                }
+            {
+                result.orphaned_paths.push(path.into());
             }
         }
         plugins.remove(&id);

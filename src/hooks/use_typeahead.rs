@@ -297,7 +297,7 @@ pub fn extract_completion_token(
                     .is_some_and(char::is_whitespace);
             if boundary_ok {
                 let end = extend_token_end(text, cursor);
-                if end >= at_idx + 1 && text[at_idx + 1..end].chars().all(is_completion_char) {
+                if end > at_idx && text[at_idx + 1..end].chars().all(is_completion_char) {
                     return Some(CompletionToken {
                         token: text[at_idx..end].to_string(),
                         start_pos: at_idx,
@@ -1349,10 +1349,10 @@ fn visible_async_suggestions(
 /// only. The function is kept for parity with the source file but has no
 /// live call site.
 pub async fn generate_bash_suggestions(input: &str, cursor_offset: usize) -> Vec<SuggestionItem> {
-    if let Ok(mut current) = CURRENT_SHELL_COMPLETION_ABORT_CONTROLLER.lock() {
-        if let Some(abort) = current.take() {
-            abort.abort();
-        }
+    if let Ok(mut current) = CURRENT_SHELL_COMPLETION_ABORT_CONTROLLER.lock()
+        && let Some(abort) = current.take()
+    {
+        abort.abort();
     }
     let abort = crate::tool::AbortController::default();
     if let Ok(mut current) = CURRENT_SHELL_COMPLETION_ABORT_CONTROLLER.lock() {
@@ -1364,13 +1364,12 @@ pub async fn generate_bash_suggestions(input: &str, cursor_offset: usize) -> Vec
         abort.clone(),
     )
     .await;
-    if let Ok(mut current) = CURRENT_SHELL_COMPLETION_ABORT_CONTROLLER.lock() {
-        if current
+    if let Ok(mut current) = CURRENT_SHELL_COMPLETION_ABORT_CONTROLLER.lock()
+        && current
             .as_ref()
             .is_some_and(|active| active.same_identity(&abort))
-        {
-            current.take();
-        }
+    {
+        current.take();
     }
     result
 }
@@ -1470,7 +1469,7 @@ pub fn use_typeahead(
     // A ref: only the suggestion memo reads it, to preserve the selected item
     // across producer refreshes. As a `State` it was written on every
     // recompute — a render-phase write that forced a second update pass.
-    let previous_suggestions = hooks.use_ref(|| Arc::<Vec<SuggestionItem>>::default());
+    let previous_suggestions = hooks.use_ref(Arc::<Vec<SuggestionItem>>::default);
     let selection_reset = hooks.use_ref(|| false);
     let file_requests =
         hooks.use_const(|| Arc::new(async_channel::unbounded::<FileSuggestionRequest>()));
@@ -2021,10 +2020,17 @@ mod tests {
             .suggestions
             .get(selected.get().max(0) as usize)
             .map(|item| format!("{} ", item.command_text));
-        element!(Text(content: format!(
-            "suppressed={} count={} selected={} accept={:?}",
-            suppressed.get(), typeahead.suggestions.len(), selected.get(), accept,
-        )))
+        element!(
+            Text(
+                content: format!(
+                    "suppressed={} count={} selected={} accept={:?}",
+                    suppressed.get(),
+                    typeahead.suggestions.len(),
+                    selected.get(),
+                    accept,
+                ),
+            )
+        )
     }
 
     #[test]
@@ -2168,16 +2174,20 @@ mod tests {
             false,
         );
         hooks.use_terminal_events(move |event| {
-            if let TerminalEvent::Key(event) = event {
-                if event.code == KeyCode::F(2) {
-                    is_command.set(false);
-                }
+            if let TerminalEvent::Key(event) = event
+                && event.code == KeyCode::F(2)
+            {
+                is_command.set(false);
             }
         });
-        element!(Text(content: format!(
-            "kind={:?} width={:?}",
-            typeahead.kind, typeahead.max_column_width,
-        )))
+        element!(
+            Text(
+                content: format!(
+                    "kind={:?} width={:?}",
+                    typeahead.kind, typeahead.max_column_width,
+                ),
+            )
+        )
     }
 
     #[test]
@@ -2243,21 +2253,25 @@ mod tests {
             source_key: "src".into(),
         });
         hooks.use_terminal_events(move |event| {
-            if let TerminalEvent::Key(event) = event {
-                if event.code == KeyCode::F(2) {
-                    clear_suggestions(file_result);
-                    // Already-empty state must be a no-op (no revision bump).
-                    clear_suggestions(file_result);
-                }
+            if let TerminalEvent::Key(event) = event
+                && event.code == KeyCode::F(2)
+            {
+                clear_suggestions(file_result);
+                // Already-empty state must be a no-op (no revision bump).
+                clear_suggestions(file_result);
             }
         });
         let current = file_result.read().clone();
-        element!(Text(content: format!(
-            "kind={:?} items={} revision={}",
-            current.kind,
-            current.items.len(),
-            current.revision,
-        )))
+        element!(
+            Text(
+                content: format!(
+                    "kind={:?} items={} revision={}",
+                    current.kind,
+                    current.items.len(),
+                    current.revision,
+                ),
+            )
+        )
     }
 
     #[test]
@@ -2625,7 +2639,7 @@ mod tests {
     fn command_argument_hint_matches_static_and_progressive_source_branches() {
         let command = crate::commands::color::command();
         assert_eq!(
-            command_argument_hint_for_input("/color ", 7, &[command.clone()]),
+            command_argument_hint_for_input("/color ", 7, std::slice::from_ref(&command)),
             Some("<color|default>".into())
         );
         assert_eq!(

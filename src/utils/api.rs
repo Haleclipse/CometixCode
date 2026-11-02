@@ -213,8 +213,10 @@ pub fn tool_to_api_schema(
                     && (crate::utils::feature_flags::feature_enabled(
                         crate::utils::feature_flags::FeatureFlag::FineGrainedToolStreaming,
                     ) || crate::utils::env_utils::is_env_truthy(
-                        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING")
-                            .as_deref(),
+                        crate::utils::process_env::var(
+                            "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING",
+                        )
+                        .as_deref(),
                     )))
                 .then_some(true),
             };
@@ -224,8 +226,7 @@ pub fn tool_to_api_schema(
     };
 
     let disable_experimental_betas = crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
     );
     let strict = (!disable_experimental_betas)
         .then_some(base.strict)
@@ -333,65 +334,64 @@ pub fn split_sys_prompt_prefix(
         return result;
     }
 
-    if use_global_cache_feature {
-        if let Some(boundary_index) = system_prompt
+    if use_global_cache_feature
+        && let Some(boundary_index) = system_prompt
             .iter()
             .position(|block| block == SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
-        {
-            let mut attribution_header: Option<&str> = None;
-            let mut system_prompt_prefix: Option<&str> = None;
-            let mut static_blocks: Vec<&str> = Vec::new();
-            let mut dynamic_blocks: Vec<&str> = Vec::new();
+    {
+        let mut attribution_header: Option<&str> = None;
+        let mut system_prompt_prefix: Option<&str> = None;
+        let mut static_blocks: Vec<&str> = Vec::new();
+        let mut dynamic_blocks: Vec<&str> = Vec::new();
 
-            for (i, block) in system_prompt.iter().enumerate() {
-                if block.is_empty() || block == SYSTEM_PROMPT_DYNAMIC_BOUNDARY {
-                    continue;
-                }
-                if block.starts_with("x-anthropic-billing-header") {
-                    attribution_header = Some(block);
-                } else if CLI_SYSPROMPT_PREFIXES.contains(block.as_str()) {
-                    system_prompt_prefix = Some(block);
-                } else if i < boundary_index {
-                    static_blocks.push(block);
-                } else {
-                    dynamic_blocks.push(block);
-                }
+        for (i, block) in system_prompt.iter().enumerate() {
+            if block.is_empty() || block == SYSTEM_PROMPT_DYNAMIC_BOUNDARY {
+                continue;
             }
-
-            let mut result = Vec::new();
-            if let Some(attribution_header) = attribution_header {
-                result.push(SystemPromptBlock {
-                    text: attribution_header.to_string(),
-                    cache_scope: None,
-                });
+            if block.starts_with("x-anthropic-billing-header") {
+                attribution_header = Some(block);
+            } else if CLI_SYSPROMPT_PREFIXES.contains(block.as_str()) {
+                system_prompt_prefix = Some(block);
+            } else if i < boundary_index {
+                static_blocks.push(block);
+            } else {
+                dynamic_blocks.push(block);
             }
-            if let Some(system_prompt_prefix) = system_prompt_prefix {
-                result.push(SystemPromptBlock {
-                    text: system_prompt_prefix.to_string(),
-                    cache_scope: None,
-                });
-            }
-            let static_joined = static_blocks.join("\n\n");
-            if !static_joined.is_empty() {
-                result.push(SystemPromptBlock {
-                    text: static_joined,
-                    cache_scope: Some(CacheScope::Global),
-                });
-            }
-            let dynamic_joined = dynamic_blocks.join("\n\n");
-            if !dynamic_joined.is_empty() {
-                result.push(SystemPromptBlock {
-                    text: dynamic_joined,
-                    cache_scope: None,
-                });
-            }
-            // CC: logEvent('tengu_sysprompt_boundary_found', …) — joins with
-            // analytics.
-            return result;
         }
-        // CC: logEvent('tengu_sysprompt_missing_boundary_marker', …) — joins
-        // with analytics.
+
+        let mut result = Vec::new();
+        if let Some(attribution_header) = attribution_header {
+            result.push(SystemPromptBlock {
+                text: attribution_header.to_string(),
+                cache_scope: None,
+            });
+        }
+        if let Some(system_prompt_prefix) = system_prompt_prefix {
+            result.push(SystemPromptBlock {
+                text: system_prompt_prefix.to_string(),
+                cache_scope: None,
+            });
+        }
+        let static_joined = static_blocks.join("\n\n");
+        if !static_joined.is_empty() {
+            result.push(SystemPromptBlock {
+                text: static_joined,
+                cache_scope: Some(CacheScope::Global),
+            });
+        }
+        let dynamic_joined = dynamic_blocks.join("\n\n");
+        if !dynamic_joined.is_empty() {
+            result.push(SystemPromptBlock {
+                text: dynamic_joined,
+                cache_scope: None,
+            });
+        }
+        // CC: logEvent('tengu_sysprompt_boundary_found', …) — joins with
+        // analytics.
+        return result;
     }
+    // CC: logEvent('tengu_sysprompt_missing_boundary_marker', …) — joins
+    // with analytics.
 
     let mut attribution_header: Option<&str> = None;
     let mut system_prompt_prefix: Option<&str> = None;
@@ -477,15 +477,14 @@ pub fn normalize_tool_input_for_api(
     tool: &crate::types::tools::Tool,
     input: &serde_json::Value,
 ) -> serde_json::Value {
-    if tool.name == crate::tools::exit_plan_mode_tool::constants::EXIT_PLAN_MODE_V2_TOOL_NAME {
-        if let Some(input) = input.as_object() {
-            if input.contains_key("plan") || input.contains_key("planFilePath") {
-                let mut rest = input.clone();
-                rest.remove("plan");
-                rest.remove("planFilePath");
-                return rest.into();
-            }
-        }
+    if tool.name == crate::tools::exit_plan_mode_tool::constants::EXIT_PLAN_MODE_V2_TOOL_NAME
+        && let Some(input) = input.as_object()
+        && (input.contains_key("plan") || input.contains_key("planFilePath"))
+    {
+        let mut rest = input.clone();
+        rest.remove("plan");
+        rest.remove("planFilePath");
+        return rest.into();
     }
     input.clone()
 }

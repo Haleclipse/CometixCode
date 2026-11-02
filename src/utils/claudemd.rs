@@ -118,10 +118,10 @@ const AGENTS_MEMORY_FILE: &str = "AGENTS.md";
 
 pub fn discover_claude_md_files() -> Vec<ClaudeMdFile> {
     #[cfg(not(test))]
-    if let Ok(cache) = MEMORY_FILES_CACHE.read() {
-        if let Some(files) = cache.as_ref() {
-            return files.clone();
-        }
+    if let Ok(cache) = MEMORY_FILES_CACHE.read()
+        && let Some(files) = cache.as_ref()
+    {
+        return files.clone();
     }
 
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
@@ -1357,12 +1357,12 @@ mod tests {
         let extra = temp_dir("additional-gate");
         std::fs::write(extra.join("AGENTS.md"), "explicit memory").unwrap();
 
-        let disabled = discover_claude_md_files_with_options(false, &[extra.clone()]);
+        let disabled = discover_claude_md_files_with_options(false, std::slice::from_ref(&extra));
         assert!(disabled.is_empty());
 
         let enabled = {
             let _enabled = EnvVarGuard::set("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
-            discover_claude_md_files_with_options(false, &[extra.clone()])
+            discover_claude_md_files_with_options(false, std::slice::from_ref(&extra))
         };
 
         assert_eq!(enabled.len(), 1);
@@ -1386,7 +1386,7 @@ mod tests {
         std::fs::write(extra.join(".claude/rules/a.md"), "rule a").unwrap();
         std::fs::write(extra.join(".claude/rules/b.md"), "rule b").unwrap();
 
-        let files = discover_claude_md_files_with_options(false, &[extra.clone()]);
+        let files = discover_claude_md_files_with_options(false, std::slice::from_ref(&extra));
 
         let normalized_extra = normalize_for_dedup(&extra);
         let relative_paths = files
@@ -1619,11 +1619,11 @@ mod tests {
         let cwd = parent.join("project");
         let nested = cwd.join("submodule");
 
-        std::fs::create_dir_all(&managed.join(".claude/rules")).unwrap();
-        std::fs::create_dir_all(&config_home.join("rules")).unwrap();
-        std::fs::create_dir_all(&parent.join(".claude/rules")).unwrap();
-        std::fs::create_dir_all(&cwd.join(".claude/rules")).unwrap();
-        std::fs::create_dir_all(&nested.join(".claude/rules")).unwrap();
+        std::fs::create_dir_all(managed.join(".claude/rules")).unwrap();
+        std::fs::create_dir_all(config_home.join("rules")).unwrap();
+        std::fs::create_dir_all(parent.join(".claude/rules")).unwrap();
+        std::fs::create_dir_all(cwd.join(".claude/rules")).unwrap();
+        std::fs::create_dir_all(nested.join(".claude/rules")).unwrap();
 
         // 1. Managed level
         std::fs::write(managed.join("AGENTS.md"), "managed agents").unwrap();

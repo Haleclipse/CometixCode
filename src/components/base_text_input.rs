@@ -391,7 +391,9 @@ mod tests {
             "cursor cell must not be inverted while the terminal is blurred"
         );
         assert!(
-            canvas.cursor_declaration().is_none_or(|declaration| !declaration.visible),
+            canvas
+                .cursor_declaration()
+                .is_none_or(|declaration| !declaration.visible),
             "no visible physical cursor while blurred"
         );
     }

@@ -342,26 +342,26 @@ fn is_mcp_server_denied_with_settings(
     }
 
     if let Some(config) = config {
-        if let Some(server_command) = scoped_server_command_array(config) {
-            if denied.iter().any(|entry| {
+        if let Some(server_command) = scoped_server_command_array(config)
+            && denied.iter().any(|entry| {
                 entry
                     .server_command
                     .as_ref()
                     .is_some_and(|command| command_arrays_match(command, &server_command))
-            }) {
-                return true;
-            }
+            })
+        {
+            return true;
         }
 
-        if let Some(server_url) = scoped_server_url(config) {
-            if denied.iter().any(|entry| {
+        if let Some(server_url) = scoped_server_url(config)
+            && denied.iter().any(|entry| {
                 entry
                     .server_url
                     .as_ref()
                     .is_some_and(|pattern| url_matches_pattern(server_url, pattern))
-            }) {
-                return true;
-            }
+            })
+        {
+            return true;
         }
     }
 
@@ -916,13 +916,13 @@ async fn plugin_mcp_servers() -> anyhow::Result<McpConfigs> {
     }
     let errors = errors.into_inner().unwrap();
     for error in &errors {
-        let encoded = serde_json::to_value(&error).expect("plugin error serializes");
+        let encoded = serde_json::to_value(error).expect("plugin error serializes");
         crate::utils::log::log_error(crate::utils::log::LogError::new(format!(
             "Plugin MCP server error - {}: {}",
             encoded["type"]
                 .as_str()
                 .expect("plugin error discriminator"),
-            crate::types::plugin::get_plugin_error_message(&error)
+            crate::types::plugin::get_plugin_error_message(error)
         )));
     }
     Ok(McpConfigs { servers, errors })
@@ -2242,10 +2242,8 @@ mod tests {
     #[test]
     fn get_mcp_config_by_name_reads_user_snapshot_like_official_lookup() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let temp_dir = std::env::temp_dir().join(format!(
-            "nyan-mcp-config-by-name-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("nyan-mcp-config-by-name-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
         std::fs::write(
@@ -2562,10 +2560,8 @@ mod tests {
                 crate::utils::settings::settings_cache::reset_settings_cache();
             }
         }
-        let root = std::env::temp_dir().join(format!(
-            "nyan-mcp-startup-errors-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-mcp-startup-errors-{}", uuid::Uuid::new_v4()));
         let config = root.join("config");
         let managed = root.join("managed");
         let plugin = root.join("plugin");

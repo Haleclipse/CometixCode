@@ -301,10 +301,10 @@ fn contains_dangerous_operations(expression: &str) -> bool {
     if cmd.contains('{') || cmd.contains('}') || cmd.contains('\n') {
         return true;
     }
-    if let Some(hash_index) = cmd.find('#') {
-        if hash_index == 0 || cmd.as_bytes().get(hash_index - 1) != Some(&b's') {
-            return true;
-        }
+    if let Some(hash_index) = cmd.find('#')
+        && (hash_index == 0 || cmd.as_bytes().get(hash_index - 1) != Some(&b's'))
+    {
+        return true;
     }
 
     if cmd.starts_with('!') || regex_is_match(&NEGATION_RE, cmd) {
@@ -339,10 +339,10 @@ fn contains_dangerous_operations(expression: &str) -> bool {
     {
         return true;
     }
-    if let Some(flags) = parse_substitution_flags_any_delimiter(cmd) {
-        if flags.chars().any(|ch| matches!(ch, 'w' | 'W' | 'e' | 'E')) {
-            return true;
-        }
+    if let Some(flags) = parse_substitution_flags_any_delimiter(cmd)
+        && flags.chars().any(|ch| matches!(ch, 'w' | 'W' | 'e' | 'E'))
+    {
+        return true;
     }
     if parse_y_command_delimiter(cmd).is_some()
         && cmd.chars().any(|ch| matches!(ch, 'w' | 'W' | 'e' | 'E'))

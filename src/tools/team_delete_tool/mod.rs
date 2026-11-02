@@ -87,18 +87,18 @@ pub(crate) fn team_delete_output(
         // memory-first helper would hand back the leader's stale copy; only
         // `read_team_file` (CC `readTeamFile`) sees a teammate's
         // `isActive=false`.
-        if let Some(team) = crate::utils::swarm::team_helpers::read_team_file(team_name) {
-            if let Some(active_members) = active_non_lead_members(&team) {
-                return Ok(TeamDeleteOutput {
-                    success: false,
-                    message: format!(
-                        "Cannot cleanup team with {} active member(s): {}. Use requestShutdown to gracefully terminate teammates first.",
-                        active_members.len(),
-                        active_members.join(", ")
-                    ),
-                    team_name: Some(team_name.to_string()),
-                });
-            }
+        if let Some(team) = crate::utils::swarm::team_helpers::read_team_file(team_name)
+            && let Some(active_members) = active_non_lead_members(&team)
+        {
+            return Ok(TeamDeleteOutput {
+                success: false,
+                message: format!(
+                    "Cannot cleanup team with {} active member(s): {}. Use requestShutdown to gracefully terminate teammates first.",
+                    active_members.len(),
+                    active_members.join(", ")
+                ),
+                team_name: Some(team_name.to_string()),
+            });
         }
         // CC `await cleanupTeamDirectories(teamName)` (:101) — a failure
         // throws into the generic tool error path, no soft-failure data.

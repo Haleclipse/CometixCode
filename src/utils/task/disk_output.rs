@@ -22,10 +22,10 @@ static INTENTIONAL_OUTPUT_SYMLINKS: LazyLock<Mutex<HashMap<PathBuf, PathBuf>>> =
 
 /// Maps to CC `diskOutput.ts#getTaskOutputDir`.
 pub fn get_task_output_dir() -> PathBuf {
-    if let Ok(read) = TASK_OUTPUT_DIR.read() {
-        if let Some(path) = read.as_ref() {
-            return path.clone();
-        }
+    if let Ok(read) = TASK_OUTPUT_DIR.read()
+        && let Some(path) = read.as_ref()
+    {
+        return path.clone();
     }
 
     let path = crate::utils::permissions::filesystem::get_project_temp_dir()

@@ -263,10 +263,10 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
         }
 
         let Some(file_path) = get_settings_file_path_for_source(source) else {
-            if source == SettingSource::Flag {
-                if let Some(inline_settings) = parse_flag_settings_inline() {
-                    merge_settings_deep(&mut merged, &inline_settings);
-                }
+            if source == SettingSource::Flag
+                && let Some(inline_settings) = parse_flag_settings_inline()
+            {
+                merge_settings_deep(&mut merged, &inline_settings);
             }
             continue;
         };
@@ -286,10 +286,10 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
             merge_settings_deep(&mut merged, &s);
         }
 
-        if source == SettingSource::Flag {
-            if let Some(inline_settings) = parse_flag_settings_inline() {
-                merge_settings_deep(&mut merged, &inline_settings);
-            }
+        if source == SettingSource::Flag
+            && let Some(inline_settings) = parse_flag_settings_inline()
+        {
+            merge_settings_deep(&mut merged, &inline_settings);
         }
     }
 
@@ -408,11 +408,11 @@ fn load_settings_for_source_uncached(source: SettingSource) -> Option<SettingsJs
         SettingSource::Flag => {
             let mut merged = SettingsJson::default();
             let mut found = false;
-            if let Some(path) = get_settings_file_path_for_source(source) {
-                if let Some(settings) = parse_settings_file(&path).0 {
-                    merge_settings_deep(&mut merged, &settings);
-                    found = true;
-                }
+            if let Some(path) = get_settings_file_path_for_source(source)
+                && let Some(settings) = parse_settings_file(&path).0
+            {
+                merge_settings_deep(&mut merged, &settings);
+                found = true;
             }
             if let Some(inline_settings) = parse_flag_settings_inline() {
                 merge_settings_deep(&mut merged, &inline_settings);

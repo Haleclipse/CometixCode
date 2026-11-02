@@ -289,10 +289,10 @@ fn compute_new_limits_from_headers(
     let fallback_available =
         header(headers, "anthropic-ratelimit-unified-fallback") == Some("available");
 
-    if matches!(status, QuotaStatus::Allowed | QuotaStatus::AllowedWarning) {
-        if let Some(warning) = early_warning(headers, fallback_available, now_seconds) {
-            return warning;
-        }
+    if matches!(status, QuotaStatus::Allowed | QuotaStatus::AllowedWarning)
+        && let Some(warning) = early_warning(headers, fallback_available, now_seconds)
+    {
+        return warning;
     }
 
     let overage_status = header(headers, "anthropic-ratelimit-unified-overage-status")
@@ -352,14 +352,14 @@ fn cache_extra_usage_disabled_reason(headers: &HashMap<String, String>) {
         "anthropic-ratelimit-unified-overage-disabled-reason",
     ));
     let current = crate::utils::config::load_global_config().cached_extra_usage_disabled_reason;
-    if current != reason {
-        if let Err(error) = crate::utils::config::save_global_config(|config| {
+    if current != reason
+        && let Err(error) = crate::utils::config::save_global_config(|config| {
             config.cached_extra_usage_disabled_reason = reason;
-        }) {
-            crate::utils::debug::log_for_debugging(&format!(
-                "Failed to cache extra usage disabled reason: {error}"
-            ));
-        }
+        })
+    {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Failed to cache extra usage disabled reason: {error}"
+        ));
     }
 }
 
@@ -404,10 +404,8 @@ pub fn extract_quota_status_from_error(
     let processed_headers =
         headers.map(crate::services::rate_limit_mocking::process_rate_limit_headers);
     let should_process = should_process_rate_limits();
-    if should_process {
-        if let Some(headers) = processed_headers.as_ref() {
-            cache_extra_usage_disabled_reason(headers);
-        }
+    if should_process && let Some(headers) = processed_headers.as_ref() {
+        cache_extra_usage_disabled_reason(headers);
     }
     extract_quota_status_from_error_with(
         status,
@@ -564,10 +562,10 @@ fn apply_limits_to_store(
                 warning.as_deref(),
                 ui_state.shown_warning.as_deref(),
             );
-        if let Some(warning) = warning {
-            if warning_notification.is_some() {
-                ui_state.shown_warning = Some(warning);
-            }
+        if let Some(warning) = warning
+            && warning_notification.is_some()
+        {
+            ui_state.shown_warning = Some(warning);
         }
         overage_notification = crate::hooks::notifs::rate_limit_warning::overage_mode_notification(
             limits.is_using_overage,

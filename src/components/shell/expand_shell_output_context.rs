@@ -14,7 +14,7 @@ pub struct ExpandShellOutputProviderProps {
 pub fn ExpandShellOutputProvider(
     props: &mut ExpandShellOutputProviderProps,
 ) -> impl Into<AnyElement<'static>> {
-    let children = props.children.drain(..).collect::<Vec<_>>();
+    let children = std::mem::take(&mut props.children);
     element! {
         ContextProvider(value: Context::owned(ExpandShellOutputContext(true))) {
             #(children)
