@@ -127,39 +127,31 @@
 
 ### 实际 workflow
 
-`.github/workflows/ci.yml:233-251` 的 job：
+`.github/workflows/ci.yml:233-299` 的 job 在 `windows-latest` 上执行：
 
 ```yaml
-runs-on: windows-2025
-
-rustup target add x86_64-pc-windows-gnu
-cargo check --locked --lib --tests --target x86_64-pc-windows-gnu
+cargo build --release --locked --bin nyan
+nyan.exe --version
+nyan.exe --help
+nyan.exe doctor
+cargo test --locked --lib windows_smoke -- --nocapture
 ```
 
-`windows_required` 由 `scripts/ci/impact.mjs:116-148` 根据改动路径和新增/删除的 Windows/cfg 模式条件触发；docs-only PR 会跳过该 job。Windows 检查不是 MSVC 矩阵，也不是 release 构建。
+Job 会下载固定版本的 MSVC `ripgrep`，校验 SHA256，运行 `vendor/ripgrep/x64-win32/rg.exe --version`，并把同一二进制放入 release 目录后再次验证。`windows_required` 由 `scripts/ci/impact.mjs:116-148` 根据改动路径和新增/删除的 Windows/cfg 模式条件触发；docs-only PR 会跳过该 job。
 
-截至 2026-11-02，最近 master CI run `41446115178` 的 `windows-check` 成功，日志显示 `cargo check --locked --lib --tests --target x86_64-pc-windows-gnu` 完成，编译阶段约 5 分钟。该结果证明当前测试目标**能被 GNU target 编译**，不证明下面项目：
-
-- 没有 `cargo test` / nextest Windows 执行；
-- 没有 `cargo build --release --bin nyan`；
-- 没有启动 `nyan.exe --version` / `--help`；
-- 没有验证 Git Bash、PowerShell、ConPTY、taskkill 进程树；
-- 没有验证 vendored `rg.exe` 或 Global Search；
-- 没有验证 Windows ACL、Credential Manager/DPAPI；
-- 没有验证更新器、安装器、zip 归档或代码签名；
-- 没有覆盖 Windows-specific runtime behavior。
+这组定向 smoke 覆盖 Git Bash 基本命令、PowerShell tool 基本命令、Global Search 通过统一 resolver 执行 vendored ripgrep、超时后的 `taskkill /T` 进程树清理，以及盘符/UNC 路径转换。它仍不覆盖 Windows ACL、Credential Manager/DPAPI、更新器/安装器、zip 归档或代码签名。
 
 ## 让 Windows 版“能用”的最小清单
 
 ### P0：发布前必须完成
 
-- [ ] 发布包提供并验证 `vendor/ripgrep/x64-win32/rg.exe`；修复 Global Search 的直接 `rg` 调用，使其复用统一 resolver。
+- [x] 发布包提供并验证 `vendor/ripgrep/x64-win32/rg.exe`；修复 Global Search 的直接 `rg` 调用，使其复用统一 resolver。
 - [ ] 发布说明和启动诊断明确要求 Git for Windows/Git Bash；验证 `CLAUDE_CODE_GIT_BASH_PATH`、盘符、UNC、worktree 和基本 Bash 命令。
-- [ ] Windows `--version`、`--help`、一次无模型启动冒烟通过；release 构建实际产出并可执行，而不只是 `cargo check`。
+- [x] Windows `--version`、`--help`、一次无模型启动冒烟通过；release 构建实际产出并可执行，而不只是 `cargo check`。
 - [ ] Windows sandbox 默认明确显示 unavailable；不能把普通 Bash 执行宣称为 sandboxed。涉及不可信代码时给出降级提示。
 - [ ] 凭据方案至少做出明确选择：首发若暂时使用 plaintext，必须限制 config 目录 ACL、显示 warning，并在发布说明中明确风险；更好的最小方案是 Credential Manager/DPAPI。
 - [ ] 自动更新/安装器 UI 不得显示“可更新但实际 no-op”；首发改为手动下载提示，或完成一个可验证的 Windows installer/update path。
-- [ ] 在 Windows runner 至少运行一组定向 runtime smoke：Git Bash shell、PowerShell tool、`rg.exe --version`、Global Search、超时/杀进程树、路径转换。
+- [x] 在 Windows runner 至少运行一组定向 runtime smoke：Git Bash shell、PowerShell tool、`rg.exe --version`、Global Search、超时/杀进程树、路径转换。
 
 ### P1：首发后尽快补齐
 

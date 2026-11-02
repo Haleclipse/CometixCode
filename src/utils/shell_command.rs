@@ -663,6 +663,70 @@ mod tests {
         assert!(result.stderr.contains("Command timed out after 50ms"));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_timeout_kills_process_tree_without_orphan() {
+        let powershell = crate::utils::shell::powershell_detection::get_cached_powershell_path()
+            .unwrap_or_else(|| panic!("PowerShell is unavailable on the Windows runner"));
+        let marker = std::env::temp_dir().join(format!(
+            "nyan-windows-child-pid-{}.txt",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let _env = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        let _marker = crate::utils::test_env::EnvVarGuard::set(
+            "NYAN_WINDOWS_CHILD_PID_FILE",
+            marker.as_os_str(),
+        );
+        let command = concat!(
+            "$child = Start-Process -FilePath (Join-Path $env:SystemRoot '",
+            "System32\\ping.exe",
+            "') -ArgumentList @('-n','30','127.0.0.1') -WindowStyle Hidden -PassThru; ",
+            "Set-Content -Path $env:NYAN_WINDOWS_CHILD_PID_FILE -Value $child.Id; ",
+            "Wait-Process -Id $child.Id"
+        );
+        let run = crate::utils::shell::run_command_streaming(
+            &powershell,
+            &["-NoProfile", "-NonInteractive", "-Command", command],
+            Duration::from_secs(5),
+            None,
+            &crate::tool::AbortController::default(),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("process-tree smoke failed to start: {error}"));
+        assert!(run.timed_out, "process-tree smoke did not time out");
+
+        let pid = std::fs::read_to_string(&marker)
+            .unwrap_or_else(|error| panic!("process-tree smoke did not record child PID: {error}"))
+            .trim()
+            .parse::<u32>()
+            .unwrap_or_else(|error| {
+                panic!("process-tree smoke recorded invalid child PID: {error}")
+            });
+        let tasklist = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .expect("tasklist must be available on Windows");
+        assert!(
+            tasklist.status.success(),
+            "tasklist failed: {}",
+            String::from_utf8_lossy(&tasklist.stderr)
+        );
+        let tasklist_stdout = String::from_utf8_lossy(&tasklist.stdout);
+        let child_running = tasklist_stdout
+            .lines()
+            .any(|line| line.contains(&pid.to_string()));
+        if child_running {
+            let _ = Command::new("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .status();
+        }
+        let _ = std::fs::remove_file(marker);
+        assert!(
+            !child_running,
+            "taskkill /T left the child process running: {tasklist_stdout}"
+        );
+    }
+
     #[test]
     fn background_disables_foreground_timeout() {
         let command = spawned("sleep .1; printf done", Duration::from_millis(20), true);

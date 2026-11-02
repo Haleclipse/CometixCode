@@ -500,6 +500,41 @@ mod tests {
         TerminalEvent::Key(event)
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_global_search_executes_packaged_ripgrep() {
+        let expected = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("vendor")
+            .join("ripgrep")
+            .join("x64-win32")
+            .join("rg.exe");
+        assert!(
+            expected.is_file(),
+            "Windows smoke requires the packaged ripgrep at {}",
+            expected.display()
+        );
+        let command = crate::utils::ripgrep::ripgrep_command();
+        assert_eq!(Path::new(&command.rg_path), expected.as_path());
+
+        let root = std::env::temp_dir().join(format!(
+            "nyan-windows-global-search-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("smoke.txt");
+        std::fs::write(&file, "nyan-windows-global-search-smoke\n").unwrap();
+        let (matches, truncated) = run_project_search(&root, "nyan-windows-global-search-smoke");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(!truncated);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].file.replace('\\', "/").trim_start_matches("./"),
+            "smoke.txt"
+        );
+        assert_eq!(matches[0].line, 1);
+    }
+
     #[test]
     fn global_search_helpers_match_official_parse_filter_and_labels() {
         assert_eq!(

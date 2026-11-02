@@ -761,6 +761,24 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_powershell_tool_executes_basic_command() {
+        let powershell = crate::utils::shell::powershell_detection::get_cached_powershell_path()
+            .unwrap_or_else(|| panic!("PowerShell is unavailable on the Windows runner"));
+        let output = powershell_output(
+            &serde_json::json!({
+                "command": "Write-Output nyan-windows-powershell-smoke",
+                "timeout": 5_000
+            }),
+            &crate::tool::AbortController::default(),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("PowerShell tool smoke failed: {}", error.content()));
+        assert!(!output.interrupted, "PowerShell tool smoke was interrupted");
+        assert_eq!(output.stdout.trim(), "nyan-windows-powershell-smoke");
+    }
+
     #[test]
     fn powershell_result_budget_matches_official_max_result_size() {
         assert_eq!(

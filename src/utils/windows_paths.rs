@@ -134,4 +134,46 @@ mod tests {
         assert_eq!(posix_path_to_windows_path("/c/Users/foo"), r"C:\Users\foo");
         assert_eq!(posix_path_to_windows_path("/cygdrive/d/work"), r"D:\work");
     }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_path_conversion_covers_drive_and_unc() {
+        assert_eq!(windows_path_to_posix_path(r"E:\work\repo"), "/e/work/repo");
+        assert_eq!(
+            windows_path_to_posix_path(r"\\server\share\repo"),
+            "//server/share/repo"
+        );
+        assert_eq!(posix_path_to_windows_path("/e/work/repo"), r"E:\work\repo");
+        assert_eq!(
+            posix_path_to_windows_path("//server/share/repo"),
+            r"\\server\share\repo"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_git_bash_executes_basic_command() {
+        let bash = find_git_bash_path().unwrap_or_else(|error| {
+            panic!("Git Bash is unavailable on the Windows runner: {error}")
+        });
+        let run = crate::utils::shell::run_command_streaming(
+            &bash.display().to_string(),
+            &["-lc", "printf 'nyan-windows-git-bash-smoke\\n'"],
+            std::time::Duration::from_secs(5),
+            None,
+            &crate::tool::AbortController::default(),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("Git Bash smoke command failed to start: {error}"));
+        assert!(!run.timed_out, "Git Bash smoke command timed out");
+        assert!(
+            run.output.status.success(),
+            "Git Bash smoke command failed: {}",
+            String::from_utf8_lossy(&run.output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&run.output.stdout).trim(),
+            "nyan-windows-git-bash-smoke"
+        );
+    }
 }
