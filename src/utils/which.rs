@@ -32,6 +32,20 @@ fn windows_command_has_extension(command: &str) -> bool {
         .is_some_and(|index| index > 0)
 }
 
+fn windows_command_has_pathext_extension(command: &str, pathext: &str) -> bool {
+    let Some(extension) = command.rsplit(['\\', '/']).next().and_then(|name| {
+        name.rfind('.')
+            .filter(|index| *index > 0)
+            .map(|index| &name[index..])
+    }) else {
+        return false;
+    };
+    pathext
+        .split(';')
+        .filter(|candidate| !candidate.is_empty())
+        .any(|candidate| candidate.eq_ignore_ascii_case(extension))
+}
+
 fn windows_command_candidates(
     command: &str,
     path_dirs: &[PathBuf],
@@ -41,22 +55,36 @@ fn windows_command_candidates(
     if command.is_empty() {
         return Vec::new();
     }
+
+    let extensions = pathext
+        .split(';')
+        .filter(|extension| !extension.is_empty())
+        .collect::<Vec<_>>();
+    let has_extension = windows_command_has_extension(command);
+    let has_pathext_extension = windows_command_has_pathext_extension(command, pathext);
+
     if is_windows_absolute(command) || command.contains('/') || command.contains('\\') {
-        let candidate = if is_windows_absolute(command) {
-            PathBuf::from(command)
-        } else {
-            current_dir.join(command)
+        let candidate = |extension: &str| {
+            let command = format!("{command}{extension}");
+            if is_windows_absolute(&command) {
+                PathBuf::from(command)
+            } else {
+                current_dir.join(command)
+            }
         };
-        return vec![candidate];
+        let mut candidates = vec![candidate("")];
+        if !has_pathext_extension {
+            candidates.extend(extensions.into_iter().map(candidate));
+        }
+        return candidates;
     }
 
-    let extensions = if windows_command_has_extension(command) {
+    let extensions = if has_pathext_extension {
         vec![""]
+    } else if has_extension {
+        std::iter::once("").chain(extensions).collect::<Vec<_>>()
     } else {
-        pathext
-            .split(';')
-            .filter(|extension| !extension.is_empty())
-            .collect()
+        extensions
     };
     path_dirs
         .iter()
@@ -168,7 +196,7 @@ mod windows_logic_tests {
     }
 
     #[test]
-    fn windows_candidates_check_paths_and_extensions_without_expansion() {
+    fn windows_candidates_check_paths_and_expand_pathext() {
         let path_dirs = [PathBuf::from("/bin")];
         assert_eq!(
             windows_command_candidates("rg.exe", &path_dirs, ".EXE;.CMD", Path::new("/work")),
@@ -185,7 +213,32 @@ mod windows_logic_tests {
         );
         assert_eq!(
             windows_command_candidates(r"tools\rg", &path_dirs, ".EXE;.CMD", Path::new("/work"),),
-            vec![PathBuf::from("/work/tools\\rg")]
+            vec![
+                PathBuf::from("/work/tools\\rg"),
+                PathBuf::from("/work/tools\\rg.EXE"),
+                PathBuf::from("/work/tools\\rg.CMD"),
+            ]
+        );
+        assert_eq!(
+            windows_command_candidates("foo.cli", &path_dirs, ".EXE;.CMD", Path::new("/work")),
+            vec![
+                PathBuf::from("/bin/foo.cli"),
+                PathBuf::from("/bin/foo.cli.EXE"),
+                PathBuf::from("/bin/foo.cli.CMD"),
+            ]
+        );
+        assert_eq!(
+            windows_command_candidates(
+                r"tools\foo.cli",
+                &path_dirs,
+                ".EXE;.CMD",
+                Path::new("/work"),
+            ),
+            vec![
+                PathBuf::from("/work/tools\\foo.cli"),
+                PathBuf::from("/work/tools\\foo.cli.EXE"),
+                PathBuf::from("/work/tools\\foo.cli.CMD"),
+            ]
         );
     }
 }

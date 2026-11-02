@@ -88,6 +88,7 @@ pub struct DiagnosticInfo {
     pub recommendation: Option<String>,
     pub package_manager: Option<String>,
     pub ripgrep_status: RipgrepStatus,
+    pub git_bash: Option<String>,
 }
 
 /// Maps to CC local `getNormalizedPaths()`.
@@ -319,6 +320,7 @@ pub fn get_doctor_diagnostic() -> DiagnosticInfo {
         crate::utils::process_env::var("NYAN_PACKAGE_MANAGER")
             .unwrap_or_else(|| "unknown".to_string())
     });
+    let git_bash = git_bash_display();
 
     DiagnosticInfo {
         installation_type,
@@ -333,6 +335,23 @@ pub fn get_doctor_diagnostic() -> DiagnosticInfo {
         recommendation: None,
         package_manager,
         ripgrep_status,
+        git_bash,
+    }
+}
+
+fn git_bash_display() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let source = crate::utils::windows_paths::git_bash_discovery_source();
+        Some(match crate::utils::windows_paths::find_git_bash_path() {
+            Ok(path) => format!("Found at {} (source: {source})", path.display()),
+            Err(_) => format!("Not found (source: {source})"),
+        })
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
     }
 }
 

@@ -65,6 +65,22 @@ cargo run --release
 
 The binary is `nyan`.
 
+## Installation
+
+### Windows
+
+Windows releases require [Git for Windows](https://git-scm.com/downloads/win), because nyan's general shell execution uses Git Bash rather than native PowerShell. Install with `install.ps1`; it does not install Git for Windows and only prints a warning if Git Bash is not detected.
+
+```powershell
+.\install.ps1
+```
+
+If Git Bash is installed outside the usual locations, set `CLAUDE_CODE_GIT_BASH_PATH` to the full path of `bash.exe` before starting nyan, for example:
+
+```powershell
+$env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
+```
+
 ### Cross-compiling for Windows
 
 ```sh

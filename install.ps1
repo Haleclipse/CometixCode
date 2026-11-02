@@ -84,6 +84,29 @@ try {
         Write-Host "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$InstallDir', 'User')"
         Write-Host 'Open a new PowerShell session after changing PATH.'
     }
+
+    $gitBashCandidates = @(
+        'C:\Program Files\Git\bin\bash.exe',
+        'C:\Program Files (x86)\Git\bin\bash.exe'
+    )
+    if ($env:CLAUDE_CODE_GIT_BASH_PATH) {
+        $gitBashCandidates += $env:CLAUDE_CODE_GIT_BASH_PATH
+    }
+    $gitCommand = Get-Command git.exe -All -ErrorAction SilentlyContinue
+    if ($null -ne $gitCommand) {
+        foreach ($command in @($gitCommand)) {
+            if ($command.Source) {
+                $gitRoot = Split-Path (Split-Path $command.Source -Parent) -Parent
+                $gitBashCandidates += Join-Path $gitRoot 'bin\bash.exe'
+            }
+        }
+    }
+    $gitBash = $gitBashCandidates |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf -ErrorAction SilentlyContinue } |
+        Select-Object -First 1
+    if (-not $gitBash) {
+        Write-Warning 'Git for Windows (Git Bash) was not detected. Install Git for Windows, or set CLAUDE_CODE_GIT_BASH_PATH to the full path of bash.exe before starting nyan.'
+    }
 } finally {
     if (Test-Path $tempDir) {
         Remove-Item -Recurse -Force $tempDir
