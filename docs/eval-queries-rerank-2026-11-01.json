@@ -1,0 +1,226 @@
+[
+  {
+    "id": 1,
+    "category": "symbol",
+    "query": "DecisionPoint::CompactionKeep",
+    "expected_paths": ["src/services/decision/mod.rs", "docs/nyan/decision-provider.md"],
+    "description": "CompactionKeep decision point enum variant"
+  },
+  {
+    "id": 2,
+    "category": "symbol",
+    "query": "spawn_idle_consolidation_if_due",
+    "expected_paths": ["src/services/auto_dream/mod.rs", "src/query/stop_hooks.rs"],
+    "description": "Memory auto-dream consolidation spawn function"
+  },
+  {
+    "id": 3,
+    "category": "symbol",
+    "query": "warm_eligibility_with_ttl",
+    "expected_paths": ["src/services/cache_warmer.rs"],
+    "description": "Prompt cache warmer eligibility check with TTL"
+  },
+  {
+    "id": 4,
+    "category": "symbol",
+    "query": "CODE_INSTRUCT",
+    "expected_paths": ["src/services/rerank.rs"],
+    "description": "Official Qwen3-Reranker code instruction prompt constant"
+  },
+  {
+    "id": 5,
+    "category": "symbol",
+    "query": "INDEX_SCHEMA_VERSION",
+    "expected_paths": ["src/services/retrieval/index/mod.rs"],
+    "description": "Local retrieval index schema version string"
+  },
+  {
+    "id": 6,
+    "category": "symbol",
+    "query": "read_deny_rg_globs",
+    "expected_paths": ["src/utils/permissions/filesystem.rs"],
+    "description": "Permission deny ripgrep glob filter loader"
+  },
+  {
+    "id": 7,
+    "category": "symbol",
+    "query": "struct ToolResultMask",
+    "expected_paths": ["src/services/compact/tool_result_mask.rs"],
+    "description": "Tool result masking struct for compaction"
+  },
+  {
+    "id": 8,
+    "category": "symbol",
+    "query": "fn rrf_fuse",
+    "expected_paths": ["src/services/retrieval/fusion.rs"],
+    "description": "Reciprocal rank fusion core implementation"
+  },
+  {
+    "id": 9,
+    "category": "natural_language",
+    "query": "configured_providers fetch fallback",
+    "expected_paths": ["src/services/web/providers/mod.rs", "src/services/web/providers/tests.rs"],
+    "description": "Web search provider fallback chain when fetch fails"
+  },
+  {
+    "id": 10,
+    "category": "natural_language",
+    "query": "auto compact token budget calculation keep recent",
+    "expected_paths": ["src/services/compact/auto_compact.rs"],
+    "description": "Auto compact token budgeting preserving recent tokens"
+  },
+  {
+    "id": 11,
+    "category": "natural_language",
+    "query": "secret guard detect sensitive keys in memory write",
+    "expected_paths": ["src/services/memory/secret_guard.rs"],
+    "description": "Detecting and guarding sensitive keys during memory save"
+  },
+  {
+    "id": 12,
+    "category": "natural_language",
+    "query": "prompt cache warmer ephemeral ttl eligibility",
+    "expected_paths": ["src/services/cache_warmer.rs"],
+    "description": "Checking cache warmer eligibility under ephemeral TTL"
+  },
+  {
+    "id": 13,
+    "category": "natural_language",
+    "query": "retry on http 429 rate limit backoff",
+    "expected_paths": ["src/services/service_health.rs"],
+    "description": "Service health state machine 429 rate limit backoff handling"
+  },
+  {
+    "id": 14,
+    "category": "natural_language",
+    "query": "chunking source file by tree-sitter symbols with max bytes",
+    "expected_paths": ["src/services/retrieval/index/symbols.rs"],
+    "description": "Splitting source code by tree-sitter symbols bounded by byte size"
+  },
+  {
+    "id": 15,
+    "category": "natural_language",
+    "query": "web search fetch markdown conversion readability",
+    "expected_paths": ["src/services/web/fetch.rs"],
+    "description": "Converting fetched HTML to readable Markdown"
+  },
+  {
+    "id": 16,
+    "category": "natural_language",
+    "query": "prevent multiple consolidation tasks running concurrently with lock",
+    "expected_paths": ["src/services/auto_dream/lock.rs"],
+    "description": "File lock preventing concurrent memory consolidation"
+  },
+  {
+    "id": 17,
+    "category": "cross_module",
+    "query": "Qdrant numeric point id semantic sync",
+    "expected_paths": ["src/services/retrieval/semantic/mod.rs", "docs/nyan/retrieval.md"],
+    "description": "Stable numeric Qdrant point IDs generation and batch sync"
+  },
+  {
+    "id": 18,
+    "category": "cross_module",
+    "query": "Decision Provider emrank shadow mode logging",
+    "expected_paths": ["src/services/decision/mod.rs", "docs/nyan/decision-provider.md"],
+    "description": "EMRank decision provider shadow invocation and logging"
+  },
+  {
+    "id": 19,
+    "category": "cross_module",
+    "query": "memory consolidation dream loop lock lifecycle",
+    "expected_paths": ["src/services/auto_dream/mod.rs", "src/services/auto_dream/lock.rs", "src/services/memory/mod.rs"],
+    "description": "Auto-dream idle loop triggering memory consolidation with lock"
+  },
+  {
+    "id": 20,
+    "category": "cross_module",
+    "query": "tool result mask replacement token subtraction",
+    "expected_paths": ["src/services/compact/tool_result_mask.rs", "src/services/compact/micro_compact.rs"],
+    "description": "Tool result masking with content replacement and token deduction"
+  },
+  {
+    "id": 21,
+    "category": "cross_module",
+    "query": "external search provider session budget limits",
+    "expected_paths": ["src/services/web/mod.rs", "src/services/web/providers/mod.rs"],
+    "description": "Session-level budget cap enforcement across external search providers"
+  },
+  {
+    "id": 22,
+    "category": "cross_module",
+    "query": "rerank official instruction template and generation invalidation",
+    "expected_paths": ["src/services/rerank.rs", "docs/nyan/retrieval.md"],
+    "description": "Qwen3 reranker prompt template and index generation invalidation"
+  },
+  {
+    "id": 23,
+    "category": "cross_module",
+    "query": "semantic collection pruning ledger last sync",
+    "expected_paths": ["src/services/retrieval/semantic/mod.rs"],
+    "description": "Pruning stale semantic collections tracked by local ledger"
+  },
+  {
+    "id": 24,
+    "category": "cross_module",
+    "query": "code search tool adapter zod schema and max results",
+    "expected_paths": ["src/tools/code_search_tool/mod.rs"],
+    "description": "CodeSearch tool registration, zod schema and result limit"
+  },
+  {
+    "id": 25,
+    "category": "documentation",
+    "query": "compaction replacement state lifecycle specification",
+    "expected_paths": ["docs/nyan/compaction.md"],
+    "description": "Design specification for compaction replacement states"
+  },
+  {
+    "id": 26,
+    "category": "documentation",
+    "query": "retrieval branch latency budget and timeout rules",
+    "expected_paths": ["docs/nyan/retrieval.md"],
+    "description": "Specification of retrieval branch deadlines and fallback rules"
+  },
+  {
+    "id": 27,
+    "category": "documentation",
+    "query": "memory extraction cursor pre-compact guarantee",
+    "expected_paths": ["docs/nyan/memory.md"],
+    "description": "Specification of memory extraction cursor before context compaction"
+  },
+  {
+    "id": 28,
+    "category": "documentation",
+    "query": "web search ssrf host guard local ip blocking policy",
+    "expected_paths": ["docs/nyan/external-search.md"],
+    "description": "SSRF protection policy for external web search and fetch"
+  },
+  {
+    "id": 29,
+    "category": "documentation",
+    "query": "decision provider census host runtime and latency target",
+    "expected_paths": ["docs/nyan/decision-provider.md"],
+    "description": "Decision provider architecture census and latency budget specs"
+  },
+  {
+    "id": 30,
+    "category": "documentation",
+    "query": "tool io streaming protocol and fastctx improvements",
+    "expected_paths": ["docs/nyan/tool-io.md"],
+    "description": "Tool I/O streaming protocol and fastctx improvements design"
+  },
+  {
+    "id": 31,
+    "category": "documentation",
+    "query": "cicd governance workflow test matrix and lane",
+    "expected_paths": ["docs/nyan/cicd.md"],
+    "description": "CI/CD governance rules, test matrix shards and remote lane"
+  },
+  {
+    "id": 32,
+    "category": "documentation",
+    "query": "nyan architecture overview and core module roadmap",
+    "expected_paths": ["docs/nyan/README.md"],
+    "description": "Overview and architecture roadmap of nyan fork"
+  }
+]

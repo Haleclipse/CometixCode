@@ -1,0 +1,2185 @@
+{
+  "timestamp": "2026-11-01T20:00:00+08:00",
+  "sample_count": 32,
+  "query_results": [
+    {
+      "id": 1,
+      "category": "symbol",
+      "query": "DecisionPoint::CompactionKeep",
+      "expected_paths": [
+        "src/services/decision/mod.rs",
+        "docs/nyan/decision-provider.md"
+      ],
+      "description": "CompactionKeep decision point enum variant",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4383,
+      "off_rank": 4,
+      "off_hit1": false,
+      "off_hit5": true,
+      "off_rr": 0.25,
+      "off_top3_paths": [
+        "docs/SMOKE-EVAL-2026-11-01.md",
+        "docs/nyan/compaction.md",
+        "src/services/compact/auto_compact.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/decision/mod.rs",
+        "docs/nyan/decision-provider.md",
+        "src/services/decision/mod.rs"
+      ],
+      "rerank_rpc_latency_ms": 193,
+      "total_latency_ms": 4576,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 48,
+        "20": 193,
+        "30": 172
+      },
+      "positive_scores": [
+        0.999653458595276,
+        0.9996531009674072,
+        0.9998262524604796
+      ],
+      "negative_scores": [
+        0.9995073080062866,
+        0.9994762539863586,
+        0.028379810974001884,
+        0.9990978240966796,
+        0.0004292295197956264,
+        0.2659209966659546,
+        0.1007983386516571,
+        0.9831597208976746,
+        0.001855857321061194,
+        0.9987508058547974,
+        0.004917530808597803,
+        0.0037971804849803448,
+        0.7869848012924194,
+        0.3030218780040741,
+        0.00032501196255907416,
+        0.1011202558875084,
+        0.16788427531719208
+      ]
+    },
+    {
+      "id": 2,
+      "category": "symbol",
+      "query": "spawn_idle_consolidation_if_due",
+      "expected_paths": [
+        "src/services/auto_dream/mod.rs",
+        "src/query/stop_hooks.rs"
+      ],
+      "description": "Memory auto-dream consolidation spawn function",
+      "candidates_count": 30,
+      "upstream_latency_ms": 5848,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/auto_dream/mod.rs",
+        "docs/smoke-artifacts/c6-rerank-ab-summary.txt",
+        "src/services/auto_dream/mod.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/auto_dream/mod.rs",
+        "src/services/auto_dream/mod.rs",
+        "src/services/auto_dream/mod.rs"
+      ],
+      "rerank_rpc_latency_ms": 192,
+      "total_latency_ms": 6040,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 44,
+        "10": 60,
+        "20": 192,
+        "30": 202
+      },
+      "positive_scores": [
+        0.999992609024048,
+        0.9999891519546508,
+        0.9798446893692015,
+        0.9998998641967772,
+        0.9998512268066406,
+        0.06755062192678452,
+        0.9999953508377076,
+        0.990007758140564,
+        0.9086651802062988
+      ],
+      "negative_scores": [
+        0.9985761642456056,
+        0.11451758444309236,
+        0.0008907188312150538,
+        0.0006771774496883154,
+        0.008986970409750938,
+        0.000018481643564882688,
+        0.00013982673408463597,
+        0.0010655573569238186,
+        0.008517042733728886,
+        0.011065744794905186,
+        0.00042471024789847434
+      ]
+    },
+    {
+      "id": 3,
+      "category": "symbol",
+      "query": "warm_eligibility_with_ttl",
+      "expected_paths": [
+        "src/services/cache_warmer.rs"
+      ],
+      "description": "Prompt cache warmer eligibility check with TTL",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4826,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/cache_warmer.rs",
+        "docs/smoke-artifacts/c6-rerank-ab-summary.txt",
+        "src/services/cache_warmer.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/cache_warmer.rs",
+        "src/services/cache_warmer.rs",
+        "src/services/cache_warmer.rs"
+      ],
+      "rerank_rpc_latency_ms": 215,
+      "total_latency_ms": 5041,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 42,
+        "10": 59,
+        "20": 215,
+        "30": 176
+      },
+      "positive_scores": [
+        0.9999885559082032,
+        0.9998015761375428,
+        0.9999570846557616,
+        0.9999895095825196,
+        0.9999747276306152,
+        0.999996304512024,
+        0.9983121156692504,
+        0.9999665021896362,
+        0.9989769458770752
+      ],
+      "negative_scores": [
+        0.999362289905548,
+        0.0025981017388403416,
+        3.792746838371386e-6,
+        0.00003587566607166082,
+        0.00002797637171170209,
+        7.304915470740525e-6,
+        0.00003409754572203383,
+        0.000025969860871555284,
+        0.00008882805559551343,
+        0.5432693362236023,
+        0.10363048315048218
+      ]
+    },
+    {
+      "id": 4,
+      "category": "symbol",
+      "query": "CODE_INSTRUCT",
+      "expected_paths": [
+        "src/services/rerank.rs"
+      ],
+      "description": "Official Qwen3-Reranker code instruction prompt constant",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4847,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/rerank.rs",
+        "src/services/hooks/instructions_loaded.rs",
+        "src/tools/file_read_tool/prompt.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/rerank.rs",
+        "src/services/hooks/instructions_loaded.rs",
+        "src/tools/file_read_tool/prompt.rs"
+      ],
+      "rerank_rpc_latency_ms": 114,
+      "total_latency_ms": 4961,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 49,
+        "10": 55,
+        "20": 114,
+        "30": 165
+      },
+      "positive_scores": [
+        0.9999475479125975
+      ],
+      "negative_scores": [
+        0.03738238289952278,
+        0.03125862032175064,
+        0.003631330793723464,
+        0.004102147649973631,
+        0.003463936736807227,
+        0.007232034113258123,
+        0.0190107524394989,
+        0.011767330579459667,
+        0.003813867224380374,
+        0.02553297020494938,
+        0.01570950448513031,
+        0.0068642194382846355,
+        0.007846781052649021,
+        0.0004694953677244485,
+        0.015319223515689371,
+        0.0022890609689056873,
+        0.017147602513432503,
+        0.010500138625502586,
+        0.005439344793558121
+      ]
+    },
+    {
+      "id": 5,
+      "category": "symbol",
+      "query": "INDEX_SCHEMA_VERSION",
+      "expected_paths": [
+        "src/services/retrieval/index/mod.rs"
+      ],
+      "description": "Local retrieval index schema version string",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4305,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/retrieval/index/mod.rs",
+        "Cargo.lock",
+        "docs/nyan/retrieval.md"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/retrieval/index/mod.rs",
+        "Cargo.lock",
+        "docs/nyan/retrieval.md"
+      ],
+      "rerank_rpc_latency_ms": 694,
+      "total_latency_ms": 4999,
+      "rerank_error": "Http",
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 699,
+        "10": 721,
+        "20": 694,
+        "30": 702
+      },
+      "positive_scores": [],
+      "negative_scores": []
+    },
+    {
+      "id": 6,
+      "category": "symbol",
+      "query": "read_deny_rg_globs",
+      "expected_paths": [
+        "src/utils/permissions/filesystem.rs"
+      ],
+      "description": "Permission deny ripgrep glob filter loader",
+      "candidates_count": 30,
+      "upstream_latency_ms": 5190,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/utils/permissions/filesystem.rs",
+        ".github/quality/tools.lock.json",
+        "docs/nyan/retrieval.md"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/utils/permissions/filesystem.rs",
+        "src/utils/permissions/filesystem.rs",
+        "src/services/retrieval/exact.rs"
+      ],
+      "rerank_rpc_latency_ms": 233,
+      "total_latency_ms": 5423,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 62,
+        "20": 233,
+        "30": 190
+      },
+      "positive_scores": [
+        0.9999903440475464,
+        0.9999972581863404
+      ],
+      "negative_scores": [
+        0.9590674638748168,
+        0.9999234676361084,
+        0.9999551773071288,
+        0.9990371465682985,
+        0.11524979025125504,
+        0.9999301433563232,
+        0.02107933722436428,
+        0.9981901049613952,
+        0.9999551773071288,
+        0.9975601434707642,
+        0.1916650682687759,
+        0.9998799562454224,
+        0.9971238970756532,
+        0.08521617203950882,
+        0.6722423434257507,
+        0.9997807145118712,
+        0.05439687520265579,
+        0.9839734435081482
+      ]
+    },
+    {
+      "id": 7,
+      "category": "symbol",
+      "query": "struct ToolResultMask",
+      "expected_paths": [
+        "src/services/compact/tool_result_mask.rs"
+      ],
+      "description": "Tool result masking struct for compaction",
+      "candidates_count": 30,
+      "upstream_latency_ms": 5551,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/components/messages/mod.rs",
+        "src/services/compact/micro_compact.rs",
+        "src/services/compact/micro_compact.rs"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "src/services/compact/micro_compact.rs",
+        "src/services/compact/micro_compact.rs",
+        "src/services/compact/micro_compact.rs"
+      ],
+      "rerank_rpc_latency_ms": 201,
+      "total_latency_ms": 5752,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 42,
+        "10": 48,
+        "20": 201,
+        "30": 156
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.020672457292675972,
+        0.412303239107132,
+        0.8750258088111877,
+        0.19353096187114716,
+        0.6560535430908203,
+        0.7730661630630493,
+        0.18736669421195984,
+        0.9956648945808412,
+        0.1664687693119049,
+        0.004349841270595789,
+        0.21995948255062103,
+        0.00446752505376935,
+        0.22517018020153048,
+        0.002251975703984499,
+        0.21235674619674683,
+        0.0020195001270622015,
+        0.013146376237273216,
+        0.015612135641276836,
+        0.06276271492242813,
+        0.9978942275047302
+      ]
+    },
+    {
+      "id": 8,
+      "category": "symbol",
+      "query": "fn rrf_fuse",
+      "expected_paths": [
+        "src/services/retrieval/fusion.rs"
+      ],
+      "description": "Reciprocal rank fusion core implementation",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4759,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/retrieval/fusion.rs",
+        "src/utils/fuse.rs",
+        "src/commands/add_dir/add_dir.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/retrieval/fusion.rs",
+        "src/utils/fuse.rs",
+        "src/services/web/search.rs"
+      ],
+      "rerank_rpc_latency_ms": 175,
+      "total_latency_ms": 4934,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 61,
+        "20": 175,
+        "30": 131
+      },
+      "positive_scores": [
+        0.9999845027923584
+      ],
+      "negative_scores": [
+        0.21509630978107452,
+        0.0006589841214008629,
+        0.09080298244953156,
+        0.0015924687031656504,
+        0.00039794936310499907,
+        0.0009357379167340696,
+        0.011925681494176388,
+        0.000510833109728992,
+        0.0005216952413320541,
+        0.009079454466700554,
+        0.00234599644318223,
+        0.002992103109136224,
+        0.001994237070903182,
+        0.002226195065304637,
+        0.01204423140734434,
+        0.0011925965081900358,
+        0.0034549154806882143,
+        0.004379574675112963,
+        0.004379574675112963
+      ]
+    },
+    {
+      "id": 9,
+      "category": "natural_language",
+      "query": "configured_providers fetch fallback",
+      "expected_paths": [
+        "src/services/web/providers/mod.rs",
+        "src/services/web/providers/tests.rs"
+      ],
+      "description": "Web search provider fallback chain when fetch fails",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3055,
+      "off_rank": 5,
+      "off_hit1": false,
+      "off_hit5": true,
+      "off_rr": 0.2,
+      "off_top3_paths": [
+        "docs/smoke-artifacts/c6-rerank-ab-summary.txt",
+        "src/utils/model/validate_model.rs",
+        "src/services/web/fetcher.rs"
+      ],
+      "on_rank": 6,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.16666666666666666,
+      "on_top3_paths": [
+        "docs/smoke-artifacts/c6-rerank-ab-summary.txt",
+        "src/utils/model/validate_model.rs",
+        "docs/nyan/external-search.md"
+      ],
+      "rerank_rpc_latency_ms": 203,
+      "total_latency_ms": 3258,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 4,
+        "10": 5,
+        "20": 6,
+        "30": 7
+      },
+      "top_n_latencies_ms": {
+        "5": 52,
+        "10": 59,
+        "20": 203,
+        "30": 186
+      },
+      "positive_scores": [
+        0.15943612158298492
+      ],
+      "negative_scores": [
+        0.9997738003730774,
+        0.9740551710128784,
+        0.217584490776062,
+        0.1237153559923172,
+        0.0022508916445076466,
+        0.3057234287261963,
+        0.00003219356221961789,
+        0.010267986916005611,
+        0.003021788317710161,
+        0.8026750683784485,
+        0.00017255790589842945,
+        0.0002787885023280978,
+        0.0008265418582595885,
+        0.0013434201246127486,
+        0.0004312311648391187,
+        0.0006634930614382029,
+        0.001369041157886386,
+        0.0020545432344079018,
+        0.0003217369958292693
+      ]
+    },
+    {
+      "id": 10,
+      "category": "natural_language",
+      "query": "auto compact token budget calculation keep recent",
+      "expected_paths": [
+        "src/services/compact/auto_compact.rs"
+      ],
+      "description": "Auto compact token budgeting preserving recent tokens",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3028,
+      "off_rank": 2,
+      "off_hit1": false,
+      "off_hit5": true,
+      "off_rr": 0.5,
+      "off_top3_paths": [
+        "src/utils/token_budget.rs",
+        "src/services/compact/auto_compact.rs",
+        "src/query/token_budget.rs"
+      ],
+      "on_rank": 8,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.125,
+      "on_top3_paths": [
+        "src/query/token_budget.rs",
+        "src/services/compact/micro_compact.rs",
+        "src/utils/image_resizer.rs"
+      ],
+      "rerank_rpc_latency_ms": 256,
+      "total_latency_ms": 3284,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 3,
+        "10": 4,
+        "20": 8,
+        "30": 10
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 48,
+        "20": 256,
+        "30": 172
+      },
+      "positive_scores": [
+        0.04456518217921257
+      ],
+      "negative_scores": [
+        0.27289560437202454,
+        0.9971747398376464,
+        0.024139929562807083,
+        0.0178053081035614,
+        0.011816761456429958,
+        0.003537622047588229,
+        0.010107161477208138,
+        0.00038086448330432177,
+        0.09794661402702332,
+        0.0009371564956381916,
+        0.936712384223938,
+        0.01989477686583996,
+        0.0005125783500261605,
+        0.0002850620658136904,
+        0.00011305311636533588,
+        0.061782605946063995,
+        0.04607982560992241,
+        0.5052909851074219,
+        0.00017165466852020472
+      ]
+    },
+    {
+      "id": 11,
+      "category": "natural_language",
+      "query": "secret guard detect sensitive keys in memory write",
+      "expected_paths": [
+        "src/services/memory/secret_guard.rs"
+      ],
+      "description": "Detecting and guarding sensitive keys during memory save",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3028,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/services/team_memory_sync/team_mem_secret_guard.rs",
+        "src/services/team_memory_sync/secret_scanner.rs",
+        "docs/nyan/memory.md"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "src/services/team_memory_sync/team_mem_secret_guard.rs",
+        "src/services/team_memory_sync/mod.rs",
+        "docs/nyan/memory.md"
+      ],
+      "rerank_rpc_latency_ms": 275,
+      "total_latency_ms": 3303,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 44,
+        "10": 62,
+        "20": 275,
+        "30": 211
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.999338924884796,
+        0.46842703223228455,
+        0.9804480075836182,
+        0.9902974963188172,
+        0.0020561276469379663,
+        0.023356230929493904,
+        0.07685653865337372,
+        0.0011796008329838514,
+        0.006311403587460518,
+        0.011713950894773006,
+        0.02632348984479904,
+        0.001682129455730319,
+        0.0788438692688942,
+        0.0028755287639796734,
+        0.00018944988551083952,
+        0.11578761786222458,
+        0.00213300040923059,
+        0.03966158628463745,
+        0.007187135983258486,
+        0.0004108990542590618
+      ]
+    },
+    {
+      "id": 12,
+      "category": "natural_language",
+      "query": "prompt cache warmer ephemeral ttl eligibility",
+      "expected_paths": [
+        "src/services/cache_warmer.rs"
+      ],
+      "description": "Checking cache warmer eligibility under ephemeral TTL",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3436,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/services/prompt_suggestion/prompt_suggestion.rs",
+        "src/screens/repl.rs",
+        "src/tools/sleep_tool/prompt.rs"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "src/tools/sleep_tool/prompt.rs",
+        "src/services/compact/reactive_compact.rs",
+        "src/constants/system_prompt_sections.rs"
+      ],
+      "rerank_rpc_latency_ms": 226,
+      "total_latency_ms": 3662,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 44,
+        "10": 62,
+        "20": 226,
+        "30": 233
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.03414824604988098,
+        0.0011310729896649718,
+        0.3449903726577759,
+        0.13429662585258484,
+        0.0971422791481018,
+        0.017693541944026947,
+        0.0002428613806841895,
+        0.00300224288366735,
+        0.0030107698403298855,
+        0.0005455781356431544,
+        0.0007438679458573461,
+        0.00098805979359895,
+        0.00215053278952837,
+        0.0025303312577307224,
+        0.004781381227076054,
+        0.002709914930164814,
+        0.0013357086572796106,
+        0.0008036588551476598,
+        0.0007973694591782987,
+        0.00041098269866779447
+      ]
+    },
+    {
+      "id": 13,
+      "category": "natural_language",
+      "query": "retry on http 429 rate limit backoff",
+      "expected_paths": [
+        "src/services/service_health.rs"
+      ],
+      "description": "Service health state machine 429 rate limit backoff handling",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3125,
+      "off_rank": 10,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.1,
+      "off_top3_paths": [
+        "src/services/mock_rate_limits.rs",
+        "src/services/rate_limit_messages.rs",
+        "src/services/api/with_retry.rs"
+      ],
+      "on_rank": 6,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.16666666666666666,
+      "on_top3_paths": [
+        "src/services/api/with_retry.rs",
+        "src/services/mock_rate_limits.rs",
+        "src/services/claude_ai_limits.rs"
+      ],
+      "rerank_rpc_latency_ms": 194,
+      "total_latency_ms": 3319,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 10,
+        "10": 6,
+        "20": 6,
+        "30": 6
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 50,
+        "20": 194,
+        "30": 205
+      },
+      "positive_scores": [
+        0.006708077620714903
+      ],
+      "negative_scores": [
+        0.662253201007843,
+        0.03542560338973999,
+        0.8498998880386353,
+        0.031902436167001724,
+        0.3460324704647064,
+        0.00044381964835338295,
+        0.000012160892765678,
+        0.0007616000948473811,
+        0.000010715632924984677,
+        0.0033709651324898005,
+        0.001172926975414157,
+        0.000270875811111182,
+        0.0003094005223829299,
+        0.0000722601980669424,
+        0.00014973428915254772,
+        0.00002208310797868762,
+        0.0000265015314653283,
+        0.00001917527333716862,
+        0.0011090781772509215
+      ]
+    },
+    {
+      "id": 14,
+      "category": "natural_language",
+      "query": "chunking source file by tree-sitter symbols with max bytes",
+      "expected_paths": [
+        "src/services/retrieval/index/symbols.rs"
+      ],
+      "description": "Splitting source code by tree-sitter symbols bounded by byte size",
+      "candidates_count": 30,
+      "upstream_latency_ms": 2924,
+      "off_rank": 6,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.16666666666666666,
+      "off_top3_paths": [
+        "src/tools/bash_tool/bash_security.rs",
+        "src/utils/bash/mod.rs",
+        "src/tools/lsp_tool/symbol_context.rs"
+      ],
+      "on_rank": 3,
+      "on_hit1": false,
+      "on_hit5": true,
+      "on_rr": 0.3333333333333333,
+      "on_top3_paths": [
+        "src/utils/read_edit_context.rs",
+        "src/tools/lsp_tool/symbol_context.rs",
+        "src/services/retrieval/index/symbols.rs"
+      ],
+      "rerank_rpc_latency_ms": 205,
+      "total_latency_ms": 3129,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 6,
+        "10": 3,
+        "20": 3,
+        "30": 3
+      },
+      "top_n_latencies_ms": {
+        "5": 42,
+        "10": 59,
+        "20": 205,
+        "30": 220
+      },
+      "positive_scores": [
+        0.08094286918640137
+      ],
+      "negative_scores": [
+        0.0020523054990917444,
+        0.03065979853272438,
+        0.9422289729118348,
+        0.0036351021844893694,
+        0.061751656234264374,
+        0.975033402442932,
+        0.000044383421482052654,
+        0.00003580549673642963,
+        0.0642833560705185,
+        4.610812993632862e-6,
+        0.0008799834758974612,
+        0.00006288134318310767,
+        0.001915390370413661,
+        0.00018607560195960104,
+        0.001383499475196004,
+        0.003549280110746622,
+        0.0011617463314905765,
+        0.0003456408157944679,
+        0.005873147863894701
+      ]
+    },
+    {
+      "id": 15,
+      "category": "natural_language",
+      "query": "web search fetch markdown conversion readability",
+      "expected_paths": [
+        "src/services/web/fetch.rs"
+      ],
+      "description": "Converting fetched HTML to readable Markdown",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3263,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/tools/tool_search_tool/mod.rs",
+        "src/tools/web_fetch_tool/utils.rs",
+        "docs/nyan/external-search.md"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "src/tools/web_fetch_tool/utils.rs",
+        "src/tools/agent_tool/load_agents_dir.rs",
+        "src/tools/tool_search_tool/mod.rs"
+      ],
+      "rerank_rpc_latency_ms": 274,
+      "total_latency_ms": 3537,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 62,
+        "20": 274,
+        "30": 231
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.2734798192977905,
+        0.8327556848526001,
+        0.00003897338319802657,
+        0.00003276091956649907,
+        0.038108862936496735,
+        0.00039036880480125546,
+        0.0001967421703739092,
+        0.0002261346817249432,
+        0.0005134061793796718,
+        0.0004668992187362164,
+        0.000041363633499713615,
+        0.003961143083870411,
+        0.0001760723243933171,
+        0.0000669087385176681,
+        0.0000838810155983083,
+        0.000374942144844681,
+        0.00018814962822943929,
+        0.000037339585105655715,
+        0.16894131898880005,
+        0.2780801057815552
+      ]
+    },
+    {
+      "id": 16,
+      "category": "natural_language",
+      "query": "prevent multiple consolidation tasks running concurrently with lock",
+      "expected_paths": [
+        "src/services/auto_dream/lock.rs"
+      ],
+      "description": "File lock preventing concurrent memory consolidation",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3210,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/auto_dream/lock.rs",
+        "src/hooks/notifs/teammate_lifecycle_notification.rs",
+        "src/components/messages/turn_duration_message.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/auto_dream/lock.rs",
+        "src/services/auto_dream/mod.rs",
+        "src/tasks/local_shell_task/kill_shell_tasks.rs"
+      ],
+      "rerank_rpc_latency_ms": 272,
+      "total_latency_ms": 3482,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 42,
+        "10": 50,
+        "20": 272,
+        "30": 179
+      },
+      "positive_scores": [
+        0.9937983155250548
+      ],
+      "negative_scores": [
+        0.000392929301597178,
+        0.010864614509046078,
+        0.0002930281625594944,
+        0.7321990728378296,
+        0.00043095354340039194,
+        0.0012291348539292812,
+        0.03892410919070244,
+        0.0376470722258091,
+        0.00004131734749535099,
+        0.006252451334148645,
+        0.00748462975025177,
+        0.0015741196693852544,
+        0.000021114696210133843,
+        0.0017661661840975285,
+        0.016304757446050644,
+        0.00041248949128203094,
+        0.0034717891830950975,
+        0.02335153706371784,
+        0.0002297580358572304
+      ]
+    },
+    {
+      "id": 17,
+      "category": "cross_module",
+      "query": "Qdrant numeric point id semantic sync",
+      "expected_paths": [
+        "src/services/retrieval/semantic/mod.rs",
+        "docs/nyan/retrieval.md"
+      ],
+      "description": "Stable numeric Qdrant point IDs generation and batch sync",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3396,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "docs/nyan/retrieval.md",
+        "docs/smoke-artifacts/c6-rerank-ab-summary.txt",
+        "docs/HANDOFF-2026-11-01.md"
+      ],
+      "on_rank": 2,
+      "on_hit1": false,
+      "on_hit5": true,
+      "on_rr": 0.5,
+      "on_top3_paths": [
+        "docs/smoke-artifacts/c6-rerank-ab-summary.txt",
+        "docs/nyan/retrieval.md",
+        "docs/HANDOFF-2026-11-01.md"
+      ],
+      "rerank_rpc_latency_ms": 242,
+      "total_latency_ms": 3638,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 2,
+        "10": 2,
+        "20": 2,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 51,
+        "10": 57,
+        "20": 242,
+        "30": 700
+      },
+      "positive_scores": [
+        0.9635700583457948
+      ],
+      "negative_scores": [
+        0.9998038411140442,
+        0.9231840372085572,
+        0.0001718529965728521,
+        0.006462800782173872,
+        0.04299783706665039,
+        0.12220504879951476,
+        0.00016425325884483757,
+        0.00014154936070553958,
+        0.0005079242982901633,
+        0.00051546172471717,
+        9.078474249690773e-6,
+        0.0002291863493155688,
+        0.00022523137158714235,
+        0.00004449212065082975,
+        0.0014164223102852702,
+        0.00004788611477124505,
+        0.001089336583390832,
+        0.00037203304236754775,
+        0.00004354232078185305
+      ]
+    },
+    {
+      "id": 18,
+      "category": "cross_module",
+      "query": "Decision Provider emrank shadow mode logging",
+      "expected_paths": [
+        "src/services/decision/mod.rs",
+        "docs/nyan/decision-provider.md"
+      ],
+      "description": "EMRank decision provider shadow invocation and logging",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4048,
+      "off_rank": 4,
+      "off_hit1": false,
+      "off_hit5": true,
+      "off_rr": 0.25,
+      "off_top3_paths": [
+        "src/components/permissions/hooks.rs",
+        "src/services/decision/backends/emrank.rs",
+        "src/utils/settings/nyan.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "docs/nyan/decision-provider.md",
+        "src/utils/settings/nyan.rs",
+        "docs/nyan/decision-provider.md"
+      ],
+      "rerank_rpc_latency_ms": 252,
+      "total_latency_ms": 4300,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 2,
+        "10": 2,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 53,
+        "10": 119,
+        "20": 252,
+        "30": 211
+      },
+      "positive_scores": [
+        0.9969375133514404,
+        0.06574027240276337,
+        0.5833497047424316,
+        0.9987536668777466
+      ],
+      "negative_scores": [
+        0.15375103056430817,
+        0.8927361965179443,
+        0.9974699020385742,
+        0.991609275341034,
+        0.990051805973053,
+        0.9330775737762452,
+        0.001406577997840941,
+        0.0026742289774119854,
+        0.8660603165626526,
+        0.0003256344352848828,
+        0.0014622394228354096,
+        0.09759199619293212,
+        0.9925690293312072,
+        0.9929594993591307,
+        0.0016179151134565473,
+        0.008542287163436413
+      ]
+    },
+    {
+      "id": 19,
+      "category": "cross_module",
+      "query": "memory consolidation dream loop lock lifecycle",
+      "expected_paths": [
+        "src/services/auto_dream/mod.rs",
+        "src/services/auto_dream/lock.rs",
+        "src/services/memory/mod.rs"
+      ],
+      "description": "Auto-dream idle loop triggering memory consolidation with lock",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4311,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/auto_dream/lock.rs",
+        "src/services/auto_dream/lock.rs",
+        "docs/HANDOFF-2026-11-01.md"
+      ],
+      "on_rank": 2,
+      "on_hit1": false,
+      "on_hit5": true,
+      "on_rr": 0.5,
+      "on_top3_paths": [
+        "docs/nyan/memory.md",
+        "src/services/auto_dream/mod.rs",
+        "docs/HANDOFF-2026-11-01.md"
+      ],
+      "rerank_rpc_latency_ms": 252,
+      "total_latency_ms": 4563,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 2,
+        "10": 3,
+        "20": 2,
+        "30": 2
+      },
+      "top_n_latencies_ms": {
+        "5": 42,
+        "10": 63,
+        "20": 252,
+        "30": 190
+      },
+      "positive_scores": [
+        0.98880273103714,
+        0.9930567741394044,
+        0.8090571761131287,
+        0.9957627654075624,
+        0.9993160963058472,
+        0.997562289237976
+      ],
+      "negative_scores": [
+        0.9992374181747437,
+        0.11172659695148468,
+        0.9989601373672484,
+        0.06471848487854004,
+        0.6960510015487671,
+        0.001304351375438273,
+        0.0022392983082681894,
+        0.2524440884590149,
+        0.01684189774096012,
+        0.9997881054878236,
+        0.0021379427053034306,
+        0.027723347768187523,
+        0.006153855472803116,
+        0.018474573269486427
+      ]
+    },
+    {
+      "id": 20,
+      "category": "cross_module",
+      "query": "tool result mask replacement token subtraction",
+      "expected_paths": [
+        "src/services/compact/tool_result_mask.rs",
+        "src/services/compact/micro_compact.rs"
+      ],
+      "description": "Tool result masking with content replacement and token deduction",
+      "candidates_count": 30,
+      "upstream_latency_ms": 5194,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/compact/micro_compact.rs",
+        "src/utils/tool_result_storage.rs",
+        "src/utils/tokens.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/compact/micro_compact.rs",
+        "src/utils/tool_result_storage.rs",
+        "src/utils/tokens.rs"
+      ],
+      "rerank_rpc_latency_ms": 252,
+      "total_latency_ms": 5446,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 46,
+        "10": 63,
+        "20": 252,
+        "30": 201
+      },
+      "positive_scores": [
+        0.9990332126617432
+      ],
+      "negative_scores": [
+        0.9584118723869324,
+        0.786230206489563,
+        0.6471260190010071,
+        0.5230768918991089,
+        0.03798746317625046,
+        0.015397186391055584,
+        0.00029489918961189687,
+        0.001166531234048307,
+        0.005269982852041721,
+        0.17453864216804504,
+        0.013869347050786018,
+        0.006481124088168144,
+        0.0033973227255046368,
+        0.0652979388833046,
+        0.016244525089859962,
+        0.2619916796684265,
+        0.13508954644203186,
+        0.0038805908989161257,
+        0.010128824971616268
+      ]
+    },
+    {
+      "id": 21,
+      "category": "cross_module",
+      "query": "external search provider session budget limits",
+      "expected_paths": [
+        "src/services/web/mod.rs",
+        "src/services/web/providers/mod.rs"
+      ],
+      "description": "Session-level budget cap enforcement across external search providers",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3007,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/components/prompt_input/voice_indicator.rs",
+        "src/services/web/providers/client.rs",
+        "src/components/interrupted_by_user.rs"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "docs/nyan/external-search.md",
+        "src/services/web/providers/parse.rs",
+        "src/services/web/providers/client.rs"
+      ],
+      "rerank_rpc_latency_ms": 220,
+      "total_latency_ms": 3227,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 62,
+        "20": 220,
+        "30": 210
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.0000861961452756077,
+        0.07260635495185852,
+        0.00012707187852356583,
+        0.00021440369891934097,
+        0.1550525724887848,
+        0.00009067424980457872,
+        0.0015688251005485654,
+        0.9417264461517334,
+        0.04627823084592819,
+        0.0001364216150250286,
+        0.0004918787162750959,
+        0.0003225210530217737,
+        0.000052082428737776354,
+        0.059479013085365295,
+        0.014779942110180857,
+        0.0001153880075435154,
+        0.00008545375021640211,
+        0.0021653694566339254,
+        0.0006513706757687032,
+        0.013583282008767128
+      ]
+    },
+    {
+      "id": 22,
+      "category": "cross_module",
+      "query": "rerank official instruction template and generation invalidation",
+      "expected_paths": [
+        "src/services/rerank.rs",
+        "docs/nyan/retrieval.md"
+      ],
+      "description": "Qwen3 reranker prompt template and index generation invalidation",
+      "candidates_count": 30,
+      "upstream_latency_ms": 2979,
+      "off_rank": 13,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.07692307692307693,
+      "off_top3_paths": [
+        "src/keybindings/template.rs",
+        "src/tools/file_read_tool/prompt.rs",
+        "src/tools/config_tool/prompt.rs"
+      ],
+      "on_rank": 8,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.125,
+      "on_top3_paths": [
+        "src/tools/config_tool/prompt.rs",
+        "src/services/cache_warmer.rs",
+        "src/keybindings/template.rs"
+      ],
+      "rerank_rpc_latency_ms": 252,
+      "total_latency_ms": 3231,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 13,
+        "10": 13,
+        "20": 8,
+        "30": 9
+      },
+      "top_n_latencies_ms": {
+        "5": 45,
+        "10": 52,
+        "20": 252,
+        "30": 173
+      },
+      "positive_scores": [
+        0.058403607457876205
+      ],
+      "negative_scores": [
+        0.7697891592979431,
+        0.3868583142757416,
+        0.9202271699905396,
+        0.14312216639518738,
+        0.0388842448592186,
+        0.001796771539375186,
+        0.9090567827224731,
+        0.014805578626692297,
+        0.0014681428438052535,
+        0.02713649347424507,
+        0.018341517075896263,
+        0.18054015934467316,
+        0.11748871952295303,
+        0.010391613468527794,
+        0.0008311198325827718,
+        0.0004879077896475792,
+        0.0006004963652230799,
+        0.029292145743966103,
+        0.028045229613780975
+      ]
+    },
+    {
+      "id": 23,
+      "category": "cross_module",
+      "query": "semantic collection pruning ledger last sync",
+      "expected_paths": [
+        "src/services/retrieval/semantic/mod.rs"
+      ],
+      "description": "Pruning stale semantic collections tracked by local ledger",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3300,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/services/retrieval/semantic/mod.rs",
+        "docs/nyan/retrieval.md",
+        "src/tool.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/services/retrieval/semantic/mod.rs",
+        "src/commands/retrieval/mod.rs",
+        "src/services/tips/tip_history.rs"
+      ],
+      "rerank_rpc_latency_ms": 254,
+      "total_latency_ms": 3554,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 44,
+        "10": 64,
+        "20": 254,
+        "30": 213
+      },
+      "positive_scores": [
+        0.9987061023712158
+      ],
+      "negative_scores": [
+        0.15028399229049683,
+        0.0002245556970592588,
+        0.9674610495567322,
+        0.0010421308688819408,
+        0.00036423743586055934,
+        0.0016204818384721875,
+        0.0001951420126715675,
+        0.00046208989806473255,
+        0.00017703152843751013,
+        0.00035610151826404035,
+        0.0006048688082955778,
+        0.29657691717147827,
+        0.000057817644119495526,
+        0.00030542927561327815,
+        0.001040662406012416,
+        0.00008890229219105095,
+        0.00922011397778988,
+        0.0020570270717144012,
+        0.00005907448576181196
+      ]
+    },
+    {
+      "id": 24,
+      "category": "cross_module",
+      "query": "code search tool adapter zod schema and max results",
+      "expected_paths": [
+        "src/tools/code_search_tool/mod.rs"
+      ],
+      "description": "CodeSearch tool registration, zod schema and result limit",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3120,
+      "off_rank": 1,
+      "off_hit1": true,
+      "off_hit5": true,
+      "off_rr": 1.0,
+      "off_top3_paths": [
+        "src/tools/code_search_tool/mod.rs",
+        "src/utils/zod/fixtures_test.rs",
+        "src/tools/schedule_cron_tool/mod.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "src/tools/code_search_tool/mod.rs",
+        "src/utils/zod_to_json_schema.rs",
+        "src/tools/web_search_tool/ui.rs"
+      ],
+      "rerank_rpc_latency_ms": 233,
+      "total_latency_ms": 3353,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 50,
+        "20": 233,
+        "30": 205
+      },
+      "positive_scores": [
+        0.9997584223747252
+      ],
+      "negative_scores": [
+        0.0017732699634507298,
+        0.025912966579198837,
+        0.04311623051762581,
+        0.005505633540451527,
+        0.009164161048829556,
+        0.011599947698414326,
+        0.00001711633740342222,
+        0.00007092127634678036,
+        0.009686239995062351,
+        0.0002739843330346048,
+        2.589897349025705e-6,
+        0.0004059143830090761,
+        0.03578602522611618,
+        0.0020957232918590307,
+        5.723464710172266e-6,
+        0.000015204852388706058,
+        0.002196261193603277,
+        0.0000879064537002705,
+        0.00007493006705772132
+      ]
+    },
+    {
+      "id": 25,
+      "category": "documentation",
+      "query": "compaction replacement state lifecycle specification",
+      "expected_paths": [
+        "docs/nyan/compaction.md"
+      ],
+      "description": "Design specification for compaction replacement states",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3098,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/hooks/notifs/teammate_lifecycle_notification.rs",
+        "src/utils/tool_result_storage.rs",
+        "src/utils/file_state_cache.rs"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "src/services/compact/micro_compact.rs",
+        "src/utils/tool_result_storage.rs",
+        "src/utils/file_state_cache.rs"
+      ],
+      "rerank_rpc_latency_ms": 215,
+      "total_latency_ms": 3313,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 35,
+        "10": 64,
+        "20": 215,
+        "30": 203
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.0017704650526866317,
+        0.9914655089378356,
+        0.9490728378295898,
+        0.9980273842811584,
+        0.0006533922860398889,
+        0.0015734992921352386,
+        0.1883824318647385,
+        0.0009950896492227912,
+        0.00394956162199378,
+        0.8736018538475037,
+        0.007985955104231834,
+        0.03734304755926132,
+        0.0022708617616444826,
+        0.005711198318749666,
+        0.000992602203041315,
+        0.0015355093637481332,
+        0.00006029300493537448,
+        0.00379201234318316,
+        0.00941928755491972,
+        0.0008903684210963547
+      ]
+    },
+    {
+      "id": 26,
+      "category": "documentation",
+      "query": "retrieval branch latency budget and timeout rules",
+      "expected_paths": [
+        "docs/nyan/retrieval.md"
+      ],
+      "description": "Specification of retrieval branch deadlines and fallback rules",
+      "candidates_count": 30,
+      "upstream_latency_ms": 2993,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/utils/shell_command.rs",
+        "src/utils/permissions/yolo_classifier_prompts/permissions_anthropic.txt",
+        "src/services/web/mod.rs"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "src/utils/shell_command.rs",
+        "src/services/web/mod.rs",
+        "docs/nyan/decision-provider.md"
+      ],
+      "rerank_rpc_latency_ms": 218,
+      "total_latency_ms": 3211,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 46,
+        "10": 50,
+        "20": 218,
+        "30": 201
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.5876774787902832,
+        0.0004176223883405328,
+        0.5328418016433716,
+        0.0003955393622163683,
+        0.035471074283123016,
+        0.002465606899932027,
+        0.04581721872091293,
+        0.0660909116268158,
+        0.13069424033164978,
+        0.10086281597614288,
+        0.001751124276779592,
+        0.00026818428887054324,
+        0.000961315061431378,
+        0.07976636290550232,
+        0.02950230799615383,
+        0.0041798935271799564,
+        0.0007570255547761917,
+        0.018025804311037064,
+        0.0010918440530076623,
+        0.07296646386384964
+      ]
+    },
+    {
+      "id": 27,
+      "category": "documentation",
+      "query": "memory extraction cursor pre-compact guarantee",
+      "expected_paths": [
+        "docs/nyan/memory.md"
+      ],
+      "description": "Specification of memory extraction cursor before context compaction",
+      "candidates_count": 30,
+      "upstream_latency_ms": 2997,
+      "off_rank": 5,
+      "off_hit1": false,
+      "off_hit5": true,
+      "off_rr": 0.2,
+      "off_top3_paths": [
+        "src/services/hooks/compaction.rs",
+        "src/services/compact/post_compact_cleanup.rs",
+        "src/utils/tool_search.rs"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "docs/nyan/memory.md",
+        "src/utils/tool_search.rs",
+        "src/services/extract_memories/driver.rs"
+      ],
+      "rerank_rpc_latency_ms": 218,
+      "total_latency_ms": 3215,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 1,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 53,
+        "10": 59,
+        "20": 218,
+        "30": 199
+      },
+      "positive_scores": [
+        0.9977269768714904
+      ],
+      "negative_scores": [
+        0.8923332691192627,
+        0.9613025784492492,
+        0.9956538677215576,
+        0.047728024423122406,
+        0.9943313598632812,
+        0.182472825050354,
+        0.07342738658189774,
+        0.017898868769407272,
+        0.00015214236918836832,
+        0.001237066346220672,
+        0.104854978621006,
+        0.24936100840568545,
+        0.009876769036054611,
+        0.003400819841772318,
+        0.16236630082130432,
+        0.02330954372882843,
+        0.03948212042450905,
+        0.2496437430381775,
+        0.00005286907617119141
+      ]
+    },
+    {
+      "id": 28,
+      "category": "documentation",
+      "query": "web search ssrf host guard local ip blocking policy",
+      "expected_paths": [
+        "docs/nyan/external-search.md"
+      ],
+      "description": "SSRF protection policy for external web search and fetch",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3060,
+      "off_rank": 7,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.14285714285714285,
+      "off_top3_paths": [
+        "src/services/hooks/env.rs",
+        "src/utils/hooks/ssrf_guard.rs",
+        "src/utils/hooks/mod.rs"
+      ],
+      "on_rank": 11,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.09090909090909091,
+      "on_top3_paths": [
+        "src/utils/hooks/ssrf_guard.rs",
+        "src/utils/hooks/mod.rs",
+        "src/services/hooks/env.rs"
+      ],
+      "rerank_rpc_latency_ms": 257,
+      "total_latency_ms": 3317,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 7,
+        "10": 8,
+        "20": 11,
+        "30": 15
+      },
+      "top_n_latencies_ms": {
+        "5": 43,
+        "10": 60,
+        "20": 257,
+        "30": 226
+      },
+      "positive_scores": [
+        0.0004019415646325797
+      ],
+      "negative_scores": [
+        0.009875047951936722,
+        0.9983983635902404,
+        0.792138397693634,
+        0.00044753719703294337,
+        0.002789377234876156,
+        0.00045814146869815886,
+        0.00002569241041783243,
+        0.0009077161084860564,
+        0.0003907472710125148,
+        0.0003332330088596791,
+        0.00009229069837601855,
+        0.00025438013835810125,
+        0.0020374341402202845,
+        0.00020376864995341748,
+        0.0018153423443436625,
+        0.00002830093035299797,
+        0.00005457282895804383,
+        0.00114784378092736,
+        0.00005676812361343764
+      ]
+    },
+    {
+      "id": 29,
+      "category": "documentation",
+      "query": "decision provider census host runtime and latency target",
+      "expected_paths": [
+        "docs/nyan/decision-provider.md"
+      ],
+      "description": "Decision provider architecture census and latency budget specs",
+      "candidates_count": 30,
+      "upstream_latency_ms": 3429,
+      "off_rank": 0,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.0,
+      "off_top3_paths": [
+        "src/services/web/providers/client.rs",
+        "src/utils/shell/read_only_command_validation.rs",
+        "src/services/web/fallback.rs"
+      ],
+      "on_rank": 0,
+      "on_hit1": false,
+      "on_hit5": false,
+      "on_rr": 0.0,
+      "on_top3_paths": [
+        "docs/nyan/README.md",
+        "src/services/web/fallback.rs",
+        "src/types/hooks.rs"
+      ],
+      "rerank_rpc_latency_ms": 274,
+      "total_latency_ms": 3703,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 0,
+        "10": 0,
+        "20": 0,
+        "30": 0
+      },
+      "top_n_latencies_ms": {
+        "5": 53,
+        "10": 60,
+        "20": 274,
+        "30": 231
+      },
+      "positive_scores": [],
+      "negative_scores": [
+        0.02443086914718151,
+        0.000677147414535284,
+        0.9598002433776855,
+        0.0006045569316484034,
+        0.0004731608205474913,
+        0.0016735577955842018,
+        0.0009156862506642938,
+        0.0003641742514446378,
+        0.0006916733691468835,
+        0.004104458726942539,
+        0.05362002179026604,
+        0.0014783666701987386,
+        0.0016401595203205943,
+        0.005490937735885382,
+        0.9980676770210266,
+        0.00032731363899074495,
+        0.001924753189086914,
+        0.013443094678223131,
+        0.0003066132194362581,
+        0.00026187452021986246
+      ]
+    },
+    {
+      "id": 30,
+      "category": "documentation",
+      "query": "tool io streaming protocol and fastctx improvements",
+      "expected_paths": [
+        "docs/nyan/tool-io.md"
+      ],
+      "description": "Tool I/O streaming protocol and fastctx improvements design",
+      "candidates_count": 30,
+      "upstream_latency_ms": 5079,
+      "off_rank": 3,
+      "off_hit1": false,
+      "off_hit5": true,
+      "off_rr": 0.3333333333333333,
+      "off_top3_paths": [
+        "src/utils/mcp_websocket_transport.rs",
+        "src/utils/mod.rs",
+        "docs/nyan/tool-io.md"
+      ],
+      "on_rank": 2,
+      "on_hit1": false,
+      "on_hit5": true,
+      "on_rr": 0.5,
+      "on_top3_paths": [
+        "src/utils/mod.rs",
+        "docs/nyan/tool-io.md",
+        "src/utils/tool_io.rs"
+      ],
+      "rerank_rpc_latency_ms": 214,
+      "total_latency_ms": 5293,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 2,
+        "10": 2,
+        "20": 2,
+        "30": 2
+      },
+      "top_n_latencies_ms": {
+        "5": 44,
+        "10": 51,
+        "20": 214,
+        "30": 193
+      },
+      "positive_scores": [
+        0.9644657969474792,
+        0.4465915560722351
+      ],
+      "negative_scores": [
+        0.021143244579434395,
+        0.9875112771987916,
+        0.7598274350166321,
+        0.004159707110375166,
+        0.9117927551269532,
+        0.721884548664093,
+        0.037196215242147446,
+        0.0035714032128453255,
+        0.8951777815818787,
+        0.012197171337902546,
+        0.12008731067180634,
+        0.8631567358970642,
+        0.20230121910572052,
+        0.002868587616831064,
+        0.02263835445046425,
+        0.03326725587248802,
+        0.01970682665705681,
+        0.0019204189302399757
+      ]
+    },
+    {
+      "id": 31,
+      "category": "documentation",
+      "query": "cicd governance workflow test matrix and lane",
+      "expected_paths": [
+        "docs/nyan/cicd.md"
+      ],
+      "description": "CI/CD governance rules, test matrix shards and remote lane",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4782,
+      "off_rank": 6,
+      "off_hit1": false,
+      "off_hit5": false,
+      "off_rr": 0.16666666666666666,
+      "off_top3_paths": [
+        "scripts/ci/impact.mjs",
+        "src/tools/task_list_tool/prompt.rs",
+        ".config/nextest.toml"
+      ],
+      "on_rank": 1,
+      "on_hit1": true,
+      "on_hit5": true,
+      "on_rr": 1.0,
+      "on_top3_paths": [
+        "docs/nyan/cicd.md",
+        ".github/workflows/ci.yml",
+        "docs/nyan/cicd.md"
+      ],
+      "rerank_rpc_latency_ms": 320,
+      "total_latency_ms": 5102,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 6,
+        "10": 1,
+        "20": 1,
+        "30": 1
+      },
+      "top_n_latencies_ms": {
+        "5": 56,
+        "10": 64,
+        "20": 320,
+        "30": 248
+      },
+      "positive_scores": [
+        0.9866841435432434,
+        0.48667144775390625,
+        0.1258082091808319,
+        0.5107542276382446
+      ],
+      "negative_scores": [
+        0.4651222825050354,
+        0.2510397434234619,
+        0.011639260686933994,
+        0.7677108645439148,
+        0.4403823912143707,
+        0.05408550798892975,
+        0.03004025481641293,
+        0.12532228231430054,
+        0.020406223833560944,
+        0.014459948055446148,
+        0.0013790078228339553,
+        0.014421490952372553,
+        0.00023940022219903767,
+        0.0024904643651098013,
+        0.08658875524997711,
+        0.000643373467028141
+      ]
+    },
+    {
+      "id": 32,
+      "category": "documentation",
+      "query": "nyan architecture overview and core module roadmap",
+      "expected_paths": [
+        "docs/nyan/README.md"
+      ],
+      "description": "Overview and architecture roadmap of nyan fork",
+      "candidates_count": 30,
+      "upstream_latency_ms": 4195,
+      "off_rank": 4,
+      "off_hit1": false,
+      "off_hit5": true,
+      "off_rr": 0.25,
+      "off_top3_paths": [
+        "src/services/compact/base_compact_prompt.txt",
+        "docs/nyan/external-search.md",
+        "docs/nyan/retrieval.md"
+      ],
+      "on_rank": 3,
+      "on_hit1": false,
+      "on_hit5": true,
+      "on_rr": 0.3333333333333333,
+      "on_top3_paths": [
+        ".github/actionlint.yaml",
+        "src/services/decision/backends/system_one.rs",
+        "docs/nyan/README.md"
+      ],
+      "rerank_rpc_latency_ms": 275,
+      "total_latency_ms": 4470,
+      "rerank_error": null,
+      "top_n_ranks": {
+        "5": 2,
+        "10": 1,
+        "20": 3,
+        "30": 5
+      },
+      "top_n_latencies_ms": {
+        "5": 45,
+        "10": 63,
+        "20": 275,
+        "30": 220
+      },
+      "positive_scores": [
+        0.30328017473220825,
+        0.7779878973960876
+      ],
+      "negative_scores": [
+        0.0015028214547783136,
+        0.07878230512142181,
+        0.6130933165550232,
+        0.0004606513539329171,
+        0.0001842300407588482,
+        0.0006583883077837527,
+        0.6853471398353577,
+        0.0006133316201157868,
+        0.9155523180961608,
+        0.002980346791446209,
+        0.0009844951564446092,
+        0.00935825053602457,
+        0.6790933609008789,
+        0.927370548248291,
+        0.002832176862284541,
+        0.03038710914552212,
+        0.0019758990965783596,
+        0.11964261531829834
+      ]
+    }
+  ],
+  "fallback_results": [
+    {
+      "test_name": "Service Unreachable (Invalid Port 18999)",
+      "expected_behavior": "Return Err(Http/Unavailable), fallback to RRF fusion order silently",
+      "observed_behavior": "Err(Http)",
+      "passed": true,
+      "latency_ms": 0
+    },
+    {
+      "test_name": "Service Timeout (1ms deadline)",
+      "expected_behavior": "Return Err(Timeout), fallback to RRF fusion order without panic",
+      "observed_behavior": "Ok(RerankOutcome { scores: [8.263399649877101e-5, 0.0001003899160423316, 0.00011661058670142666], latency: 49.404764ms })",
+      "passed": false,
+      "latency_ms": 49
+    },
+    {
+      "test_name": "Circuit Breaker Down (Fast rejection)",
+      "expected_behavior": "Return Err(Unavailable) in <1ms without network call",
+      "observed_behavior": "Err(Unavailable), elapsed 0ms",
+      "passed": true,
+      "latency_ms": 0
+    }
+  ]
+}
