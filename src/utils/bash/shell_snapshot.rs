@@ -222,26 +222,14 @@ fn run_snapshot_command(
     timeout: Duration,
 ) -> std::io::Result<std::process::ExitStatus> {
     let mut child = command.spawn()?;
+    let job = crate::utils::shell_command::assign_process_to_job(&child);
     let started = std::time::Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
             return Ok(status);
         }
         if started.elapsed() >= timeout {
-            #[cfg(unix)]
-            unsafe {
-                libc::kill(-(child.id() as i32), libc::SIGKILL);
-            }
-            #[cfg(windows)]
-            {
-                let mut taskkill = std::process::Command::new("taskkill");
-                // Rust-only tree kill; every child takes the carrier (process.env) as its base.
-                crate::utils::subprocess_env::apply_process_env_std(&mut taskkill);
-                let _ = taskkill
-                    .args(["/PID", &child.id().to_string(), "/T", "/F"])
-                    .status();
-            }
-            let _ = child.kill();
+            crate::utils::shell_command::terminate_process_tree(&mut child, job.as_ref());
             return child.wait();
         }
         std::thread::sleep(Duration::from_millis(10));

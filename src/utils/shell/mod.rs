@@ -451,6 +451,11 @@ pub fn run_command_streaming(
         use std::os::unix::process::CommandExt;
         process.process_group(0);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        process.creation_flags(0x0800_0000);
+    }
     let shell = crate::utils::shell_command::wrap_spawn(
         process.spawn()?,
         abort.clone(),
