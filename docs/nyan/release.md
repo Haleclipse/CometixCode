@@ -1,6 +1,6 @@
 # GitHub Releases 发布约定
 
-状态：设计与首版 workflow 一起落地。当前只发布 Linux 和 Windows；macOS 只保留 workflow matrix 占位。
+状态：设计与首版 workflow 一起落地。当前只发布 Linux 和 Windows；不发布 macOS。
 
 ## 版本与 tag
 
@@ -8,7 +8,7 @@
 - 正式版本使用 `nyan-vX.Y.Z`，例如 `Cargo.toml` 为 `0.2.0` 时使用 `nyan-v0.2.0`。
 - 预发布版本使用 `nyan-vX.Y.Z-alpha.N`、`nyan-vX.Y.Z-beta.N` 或 `nyan-vX.Y.Z-rc.N`，例如 `nyan-v0.2.1-rc.1`。
 - tag 的基础版本 `X.Y.Z` 必须等于 `Cargo.toml`；预发布后缀不写入 Cargo 版本。
-- 首个正式版本从哪个 `X.Y.Z` 开始需要 maintainer 拍板；当前 Cargo 版本是 `0.2.0`，因此 `nyan-v0.2.0` 可以作为首个 tag，也可以先 bump 再发布。
+- 首个正式版本确定为当前 Cargo 版本 `0.2.0`，正式 tag 为 `nyan-v0.2.0`。
 
 版本校验在构建前执行。tag 格式错误、tag 与 Cargo 版本不一致时，workflow 不构建、不上传、不创建 Release。
 
@@ -34,8 +34,6 @@
 Linux 使用 `cargo-zigbuild` + Zig 0.14.1，而不是 `cross`：两个 musl 目标都能用同一套 Zig C 链接器处理，省去 Docker/目标镜像和特权容器依赖；Linux hosted runner 也能原生构建 x86_64，arm64 使用原生 `ubuntu-24.04-arm`。Rust target 是 musl，产物按目标链接为静态 Linux 二进制。
 
 Windows 使用原生 MSVC runner 和 `x86_64-pc-windows-msvc`，归档内文件名固定为 `nyan.exe`。这不是功能适配：本阶段只要求编译、打包和 `--version` 冒烟成功。seccomp、Unix 专属功能若使 Windows 构建失败，只能在本次构建中用已有 cfg/feature 关闭；每一处都必须在 PR 描述和后续 Windows 审计中列出。本首版不修改 `src/`，因此不会静默改变 Windows 功能。
-
-macOS 目标（x86_64、aarch64）保留在 matrix 作为禁用占位，不构建、不上传，待单独设计签名和 runner 策略后启用。
 
 归档包含二进制和 `LICENSE`。每次发布另有 `SHA256SUMS`，格式严格为 GNU coreutils 兼容的：
 

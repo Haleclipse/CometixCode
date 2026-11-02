@@ -86,44 +86,27 @@ jobs:
       matrix:
         include:
           - name: Linux x86_64
-            enabled: true
             platform: linux
             runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
             archive: nyan-v${{ needs.version.outputs.version }}-linux-x86_64.tar.gz
           - name: Linux aarch64
-            enabled: true
             platform: linux
             runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             archive: nyan-v${{ needs.version.outputs.version }}-linux-aarch64.tar.gz
           - name: Windows x86_64
-            enabled: true
             platform: windows
             runner: windows-2025
             target: x86_64-pc-windows-msvc
             archive: nyan-v${{ needs.version.outputs.version }}-windows-x86_64.zip
-          - name: macOS x86_64 (future)
-            enabled: false
-            platform: macos
-            runner: macos-15-intel
-            target: x86_64-apple-darwin
-            archive: nyan-v${{ needs.version.outputs.version }}-macos-x86_64.tar.gz
-          - name: macOS aarch64 (future)
-            enabled: false
-            platform: macos
-            runner: macos-15
-            target: aarch64-apple-darwin
-            archive: nyan-v${{ needs.version.outputs.version }}-macos-aarch64.tar.gz
     steps:
       - name: Check out source
-        if: matrix.enabled
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
         with:
           fetch-depth: 1
           persist-credentials: false
       - name: Set up Rust
-        if: matrix.enabled
         id: rust
         uses: ./.github/actions/setup-rust
       - name: Set up Zig
@@ -182,7 +165,7 @@ jobs:
           $env:CLAUDE_CONFIG_DIR = "$env:RUNNER_TEMP/nyan-config"
           & .\smoke\nyan.exe --version
       - name: Save Cargo cache
-        if: matrix.enabled && steps.rust.outputs.cache-hit != 'true'
+        if: steps.rust.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
@@ -191,7 +174,6 @@ jobs:
             ~/.cargo/git
           key: ${{ steps.rust.outputs.cache-primary-key }}
       - name: Upload release asset
-        if: matrix.enabled
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-${{ matrix.name }}-${{ needs.version.outputs.version }}
