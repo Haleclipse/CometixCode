@@ -27,6 +27,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -91,9 +93,11 @@ pub struct CompactionKeepShadowRecord {
     pub point: String,
     pub model: String,
     pub latency_ms: u64,
+    pub mode: String,
     pub outcome: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fallback_reason: Option<String>,
+    pub timeout_ms: u64,
     pub measured_before: i64,
     pub threshold: i64,
     pub target: i64,
@@ -134,7 +138,8 @@ pub fn is_keep_shadow_enabled() -> bool {
             if let Some(points) = &decision.points {
                 if let Some(point_cfg) = points.get("compaction.keep") {
                     if point_cfg.mode == Some(crate::utils::settings::nyan::DecisionMode::Shadow)
-                        || point_cfg.mode == Some(crate::utils::settings::nyan::DecisionMode::Active)
+                        || point_cfg.mode
+                            == Some(crate::utils::settings::nyan::DecisionMode::Active)
                     {
                         return true;
                     }
@@ -315,6 +320,154 @@ pub fn write_shadow_record(record: &CompactionKeepShadowRecord) -> std::io::Resu
     Ok(())
 }
 
+/// Maximum concurrent compaction.keep shadow evaluations allowed in flight.
+pub const MAX_CONCURRENT_SHADOW_TASKS: usize = 1;
+
+static IN_FLIGHT_SHADOW_TASKS: AtomicUsize = AtomicUsize::new(0);
+static SKIPPED_SHADOW_TASKS: AtomicUsize = AtomicUsize::new(0);
+
+/// Current number of in-flight shadow evaluation tasks.
+pub fn in_flight_shadow_tasks_count() -> usize {
+    IN_FLIGHT_SHADOW_TASKS.load(Ordering::SeqCst)
+}
+
+/// Number of shadow evaluations skipped due to reaching the concurrency limit.
+pub fn skipped_shadow_tasks_count() -> usize {
+    SKIPPED_SHADOW_TASKS.load(Ordering::SeqCst)
+}
+
+#[cfg(test)]
+pub fn reset_shadow_task_counters_for_test() {
+    IN_FLIGHT_SHADOW_TASKS.store(0, Ordering::SeqCst);
+    SKIPPED_SHADOW_TASKS.store(0, Ordering::SeqCst);
+}
+
+fn get_or_init_shadow_runtime() -> Option<&'static tokio::runtime::Runtime> {
+    static RUNTIME: OnceLock<Option<tokio::runtime::Runtime>> = OnceLock::new();
+    RUNTIME
+        .get_or_init(|| {
+            match tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .thread_name("nyan-keep-shadow")
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => Some(rt),
+                Err(err) => {
+                    tracing::error!(
+                        target: "nyan::compact",
+                        error = %err,
+                        "failed to build compaction.keep shadow runtime"
+                    );
+                    crate::utils::debug::log_for_debugging(&format!(
+                        "compaction.keep: failed to build shadow runtime: {err}"
+                    ));
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+struct InFlightGuard;
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let _ = IN_FLIGHT_SHADOW_TASKS.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
+            Some(val.saturating_sub(1))
+        });
+    }
+}
+
+/// Spawns compaction.keep shadow evaluation onto a shared background runtime
+/// without blocking the caller or propagating panics. Bounds concurrency to
+/// [`MAX_CONCURRENT_SHADOW_TASKS`]; excess requests are skipped and counted.
+pub fn spawn_compaction_keep_shadow(
+    messages: Vec<Message>,
+    candidates: Vec<MaskCandidateInfo>,
+    target: i64,
+    measured_before: i64,
+    threshold: i64,
+    context: ToolUseContext,
+) {
+    if !is_keep_shadow_enabled() || candidates.is_empty() {
+        return;
+    }
+
+    if threshold <= 0 {
+        tracing::warn!(
+            target: "nyan::compact",
+            threshold,
+            "compaction.keep shadow skipped: threshold is 0 (degenerate configuration)"
+        );
+        crate::utils::debug::log_for_debugging(
+            "spawn_compaction_keep_shadow: threshold is 0 (degenerate configuration), skipping shadow task",
+        );
+        return;
+    }
+
+    let acquired = IN_FLIGHT_SHADOW_TASKS
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+            if current >= MAX_CONCURRENT_SHADOW_TASKS {
+                None
+            } else {
+                Some(current + 1)
+            }
+        })
+        .is_ok();
+
+    if !acquired {
+        SKIPPED_SHADOW_TASKS.fetch_add(1, Ordering::Relaxed);
+        tracing::debug!(
+            target: "nyan::compact",
+            "compaction.keep shadow task skipped: concurrency limit reached"
+        );
+        crate::utils::debug::log_for_debugging(
+            "spawn_compaction_keep_shadow: concurrency limit reached, skipping shadow evaluation",
+        );
+        return;
+    }
+
+    let Some(runtime) = get_or_init_shadow_runtime() else {
+        let _ = IN_FLIGHT_SHADOW_TASKS.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |val| {
+            Some(val.saturating_sub(1))
+        });
+        return;
+    };
+
+    runtime.spawn(async move {
+        let _guard = InFlightGuard;
+        let task = std::panic::AssertUnwindSafe(async move {
+            evaluate_compaction_keep_shadow_inner(
+                &messages,
+                &candidates,
+                target,
+                measured_before,
+                threshold,
+                &context,
+            )
+            .await;
+        });
+        if let Err(panic_payload) = futures::FutureExt::catch_unwind(task).await {
+            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                *s
+            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                s.as_str()
+            } else {
+                "unknown panic"
+            };
+            tracing::error!(
+                target: "nyan::compact",
+                panic = msg,
+                "compaction.keep shadow task panicked, caught safely"
+            );
+            crate::utils::debug::log_for_debugging(&format!(
+                "compaction.keep shadow task panicked: {msg}"
+            ));
+        }
+    });
+}
+
 /// Evaluates compaction.keep shadow mode in a boxed future so the query loop
 /// does not inline the decision provider's state machine into its own future.
 pub fn evaluate_compaction_keep_shadow<'a>(
@@ -349,6 +502,18 @@ async fn evaluate_compaction_keep_shadow_inner(
         return None;
     }
 
+    if threshold <= 0 {
+        tracing::warn!(
+            target: "nyan::compact",
+            threshold,
+            "compaction.keep shadow skipped: threshold is 0 (degenerate configuration)"
+        );
+        crate::utils::debug::log_for_debugging(
+            "evaluate_compaction_keep_shadow: threshold is 0 (degenerate configuration), skipping shadow record",
+        );
+        return None;
+    }
+
     let provider = {
         #[cfg(test)]
         if let Some(p) = test_override::get() {
@@ -367,6 +532,13 @@ async fn evaluate_compaction_keep_shadow_inner(
                 .unwrap_or_default(),
         ))
     };
+
+    let deadline = provider.settings().deadline(
+        crate::utils::settings::nyan::DecisionSettings::is_critical_point(
+            DecisionPoint::CompactionKeep.as_str(),
+        ),
+    );
+    let timeout_ms = deadline.as_millis() as u64;
 
     let start_time = Instant::now();
     let current_task = extract_current_task(messages);
@@ -453,7 +625,16 @@ async fn evaluate_compaction_keep_shadow_inner(
                     confidences.insert(id.clone(), answer.confidence());
                 }
             }
-            ("shadow", Some(reason.as_str().to_string()), receipt.model.clone())
+            let outcome_str = if !receipt.answers.is_empty() {
+                "answered"
+            } else {
+                "fallback"
+            };
+            (
+                outcome_str,
+                Some(reason.as_str().to_string()),
+                receipt.model.clone(),
+            )
         }
     };
 
@@ -470,14 +651,27 @@ async fn evaluate_compaction_keep_shadow_inner(
     let mut keep_would_clear_actual_preserved = Vec::new();
 
     for candidate in candidates {
-        let is_keep = keep_judgments.get(&candidate.tool_use_id).copied().unwrap_or(false);
-        let prob = probabilities.get(&candidate.tool_use_id).copied().unwrap_or(0.0);
-        let conf = confidences.get(&candidate.tool_use_id).copied().unwrap_or(0.0);
+        let is_keep = keep_judgments
+            .get(&candidate.tool_use_id)
+            .copied()
+            .unwrap_or(false);
+        let prob = probabilities
+            .get(&candidate.tool_use_id)
+            .copied()
+            .unwrap_or(0.0);
+        let conf = confidences
+            .get(&candidate.tool_use_id)
+            .copied()
+            .unwrap_or(0.0);
 
         let in_actual_cleared = actual_cleared_set.contains(&candidate.tool_use_id);
         let in_keep_cleared = keep_cleared_set.contains(&candidate.tool_use_id);
 
-        let action_actual = if in_actual_cleared { "clear" } else { "preserve" };
+        let action_actual = if in_actual_cleared {
+            "clear"
+        } else {
+            "preserve"
+        };
         let action_keep = if in_keep_cleared { "clear" } else { "preserve" };
 
         if in_actual_cleared == in_keep_cleared {
@@ -515,10 +709,16 @@ async fn evaluate_compaction_keep_shadow_inner(
     let record = CompactionKeepShadowRecord {
         timestamp: chrono::Utc::now().to_rfc3339(),
         point: DecisionPoint::CompactionKeep.as_str().to_string(),
-        model: if model_name.is_empty() { "typesafe/jev-1.14.0".to_string() } else { model_name },
+        model: if model_name.is_empty() {
+            "typesafe/jev-1.14.0".to_string()
+        } else {
+            model_name
+        },
         latency_ms,
+        mode: "shadow".to_string(),
         outcome: outcome_str.to_string(),
         fallback_reason,
+        timeout_ms,
         measured_before,
         threshold,
         target,
@@ -549,8 +749,8 @@ async fn evaluate_compaction_keep_shadow_inner(
 
 #[cfg(test)]
 pub(crate) mod test_override {
-    use std::sync::{Mutex, OnceLock};
     use crate::services::decision::DecisionProvider;
+    use std::sync::{Mutex, OnceLock};
 
     fn cell() -> &'static Mutex<Option<std::sync::Arc<DecisionProvider>>> {
         static CELL: OnceLock<Mutex<Option<std::sync::Arc<DecisionProvider>>>> = OnceLock::new();
@@ -665,8 +865,10 @@ mod tests {
             point: "compaction.keep".into(),
             model: "typesafe/jev-1.14.0".into(),
             latency_ms: 450,
-            outcome: "shadow".into(),
+            mode: "shadow".into(),
+            outcome: "answered".into(),
             fallback_reason: Some("shadow".into()),
+            timeout_ms: 800,
             measured_before: 10000,
             threshold: 8000,
             target: 6000,
@@ -712,6 +914,222 @@ mod tests {
         let json_line = serde_json::to_string(&record).unwrap();
         let parsed: CompactionKeepShadowRecord = serde_json::from_str(&json_line).unwrap();
         assert_eq!(record, parsed);
+        assert_eq!(parsed.mode, "shadow");
+        assert_eq!(parsed.outcome, "answered");
+        assert_eq!(parsed.timeout_ms, 800);
         assert_eq!(parsed.keep_would_preserve_actual_cleared, vec!["toolu_02"]);
+    }
+
+    #[tokio::test]
+    async fn outcome_reflects_actual_result_answered_vs_timeout() {
+        let _env_guard = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        use crate::services::decision::{
+            Answer, BackendFuture, DecisionBackend, DecisionOutcome, DecisionProvider,
+            DecisionRequest, FallbackReason, Receipt,
+        };
+        use std::sync::Arc;
+
+        struct MockAnsweredBackend;
+        impl DecisionBackend for MockAnsweredBackend {
+            fn decide<'a>(
+                &'a self,
+                req: &'a DecisionRequest,
+                _deadline: std::time::Duration,
+                _abort: &'a crate::tool::AbortController,
+            ) -> BackendFuture<'a> {
+                let mut answers = BTreeMap::new();
+                for q in req.questions.keys() {
+                    answers.insert(q.clone(), Answer::Noul { probability: 0.9 });
+                }
+                Box::pin(async move {
+                    DecisionOutcome::Fallback {
+                        reason: FallbackReason::Shadow,
+                        receipt: Receipt {
+                            point: "compaction.keep".into(),
+                            model: "typesafe/jev-1.14.0".into(),
+                            backend: "mock".into(),
+                            answers,
+                            ..Default::default()
+                        },
+                    }
+                })
+            }
+            fn name(&self) -> &'static str {
+                "mock-answered"
+            }
+        }
+
+        struct MockTimeoutBackend;
+        impl DecisionBackend for MockTimeoutBackend {
+            fn decide<'a>(
+                &'a self,
+                _req: &'a DecisionRequest,
+                _deadline: std::time::Duration,
+                _abort: &'a crate::tool::AbortController,
+            ) -> BackendFuture<'a> {
+                Box::pin(async move {
+                    DecisionOutcome::Fallback {
+                        reason: FallbackReason::Timeout,
+                        receipt: Receipt {
+                            point: "compaction.keep".into(),
+                            model: "typesafe/jev-1.14.0".into(),
+                            backend: "mock".into(),
+                            ..Default::default()
+                        },
+                    }
+                })
+            }
+            fn name(&self) -> &'static str {
+                "mock-timeout"
+            }
+        }
+
+        let candidates = sample_candidates();
+        let context = ToolUseContext::default();
+        let messages = vec![Message::User(crate::utils::messages::create_user_message(
+            "test task".to_string(),
+        ))];
+
+        // 1. Model answered in shadow mode -> outcome="answered", mode="shadow", fallbackReason="shadow"
+        let mut decision_settings = crate::utils::settings::nyan::DecisionSettings::default();
+        decision_settings.enabled = Some(true);
+        let answered_provider = Arc::new(DecisionProvider::with_backend(
+            decision_settings.clone(),
+            Arc::new(MockAnsweredBackend),
+        ));
+        test_override::set(answered_provider);
+        let record =
+            evaluate_compaction_keep_shadow(&messages, &candidates, 6000, 10000, 8000, &context)
+                .await
+                .expect("should produce record");
+        assert_eq!(record.mode, "shadow");
+        assert_eq!(record.outcome, "answered");
+        assert_eq!(record.fallback_reason, Some("shadow".into()));
+        assert_eq!(record.timeout_ms, 800);
+
+        // 2. Model timed out -> outcome="fallback", mode="shadow", fallbackReason="timeout"
+        let timeout_provider = Arc::new(DecisionProvider::with_backend(
+            decision_settings,
+            Arc::new(MockTimeoutBackend),
+        ));
+        test_override::set(timeout_provider);
+        let record =
+            evaluate_compaction_keep_shadow(&messages, &candidates, 6000, 10000, 8000, &context)
+                .await
+                .expect("should produce record");
+        assert_eq!(record.mode, "shadow");
+        assert_eq!(record.outcome, "fallback");
+        assert_eq!(record.fallback_reason, Some("timeout".into()));
+        assert_eq!(record.timeout_ms, 800);
+
+        test_override::clear();
+    }
+
+    #[tokio::test]
+    async fn degenerate_threshold_zero_is_skipped() {
+        let _env_guard = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        let candidates = sample_candidates();
+        let context = ToolUseContext::default();
+        let messages = vec![Message::User(crate::utils::messages::create_user_message(
+            "test task".to_string(),
+        ))];
+
+        let record_zero =
+            evaluate_compaction_keep_shadow(&messages, &candidates, 0, 10000, 0, &context).await;
+        assert!(record_zero.is_none(), "threshold = 0 must be skipped");
+
+        let record_neg =
+            evaluate_compaction_keep_shadow(&messages, &candidates, 0, 10000, -500, &context).await;
+        assert!(record_neg.is_none(), "threshold < 0 must be skipped");
+    }
+
+    #[test]
+    fn concurrency_limit_skips_and_increments_counter() {
+        let _env_guard = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        reset_shadow_task_counters_for_test();
+        assert_eq!(in_flight_shadow_tasks_count(), 0);
+        assert_eq!(skipped_shadow_tasks_count(), 0);
+
+        let mut decision_settings = crate::utils::settings::nyan::DecisionSettings::default();
+        decision_settings.enabled = Some(true);
+        test_override::set(std::sync::Arc::new(
+            crate::services::decision::DecisionProvider::new(decision_settings),
+        ));
+
+        // Simulate that maximum concurrent shadow tasks are already running
+        IN_FLIGHT_SHADOW_TASKS.store(MAX_CONCURRENT_SHADOW_TASKS, Ordering::SeqCst);
+
+        let candidates = sample_candidates();
+        let context = ToolUseContext::default();
+        let messages = vec![Message::User(crate::utils::messages::create_user_message(
+            "test task".to_string(),
+        ))];
+
+        // This call should be skipped immediately and increment skipped counter
+        spawn_compaction_keep_shadow(messages, candidates, 6000, 10000, 8000, context);
+
+        assert_eq!(skipped_shadow_tasks_count(), 1);
+        assert_eq!(in_flight_shadow_tasks_count(), MAX_CONCURRENT_SHADOW_TASKS);
+
+        // Reset
+        reset_shadow_task_counters_for_test();
+        test_override::clear();
+    }
+
+    #[tokio::test]
+    async fn panic_in_shadow_task_does_not_propagate_or_leave_counter_dirty() {
+        let _env_guard = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        use crate::services::decision::{
+            BackendFuture, DecisionBackend, DecisionProvider, DecisionRequest,
+        };
+        use std::sync::Arc;
+
+        struct PanicBackend;
+        impl DecisionBackend for PanicBackend {
+            fn decide<'a>(
+                &'a self,
+                _req: &'a DecisionRequest,
+                _deadline: std::time::Duration,
+                _abort: &'a crate::tool::AbortController,
+            ) -> BackendFuture<'a> {
+                panic!("deliberate panic inside decision backend");
+            }
+            fn name(&self) -> &'static str {
+                "panic-backend"
+            }
+        }
+
+        reset_shadow_task_counters_for_test();
+        let mut decision_settings = crate::utils::settings::nyan::DecisionSettings::default();
+        decision_settings.enabled = Some(true);
+        let panic_provider = Arc::new(DecisionProvider::with_backend(
+            decision_settings,
+            Arc::new(PanicBackend),
+        ));
+        test_override::set(panic_provider);
+
+        let candidates = sample_candidates();
+        let context = ToolUseContext::default();
+        let messages = vec![Message::User(crate::utils::messages::create_user_message(
+            "test task".to_string(),
+        ))];
+
+        // Should not panic the caller thread
+        spawn_compaction_keep_shadow(messages, candidates, 6000, 10000, 8000, context);
+
+        // Wait for background worker to catch the panic and run InFlightGuard drop
+        let start = std::time::Instant::now();
+        while in_flight_shadow_tasks_count() > 0
+            && start.elapsed() < std::time::Duration::from_secs(2)
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        assert_eq!(
+            in_flight_shadow_tasks_count(),
+            0,
+            "in-flight guard must clean up after panic"
+        );
+        test_override::clear();
     }
 }

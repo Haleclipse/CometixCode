@@ -345,7 +345,7 @@ legacy 的思想（`packages/coding-agent/src/core/cache-warmer.ts`）：在 cac
 - C2 的"最早被清位置之后的候选一并清"改为：只对"不再需要"的候选适用；"仍需要"的不因此被顺带清掉。
 - cache：前缀失效从"最早被清的位置"开始；把仍需要的旧结果留下，最早被清的位置不会更早，失效量相同或更小。
 - 决定随 `content-replacement` 条目持久化，之后字节稳定、不重复询问（C3）。cache 共享分叉不发起这个决策（README 第一节第 8 条）。
-- Decision Provider 不可用或超时（800 ms）：按 C2 原规则。默认 shadow：先观察"被留下的结果之后是否被模型引用"，再决定是否 active。
+- Decision Provider 不可用或超时（默认 800 ms，配置位于 `settings.nyan.decision.deadlineMs.critical`；因 `compaction.keep` 属于关键路径决策点，由 critical deadline 控制）：按 C2 原规则。默认 shadow：后台 fire-and-forget 异步评估（不阻塞主 query 循环），先观察"被留下的结果之后是否被模型引用"，再决定是否 active。
 
 ## 四、明确不做
 

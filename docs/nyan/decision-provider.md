@@ -183,6 +183,7 @@ pub trait DecisionBackend: Send + Sync {
 - 只改顺序、不改"清多少"，所以 C3 的 cache 约束（一次清到位、之后字节稳定）不受影响；但它改变"清哪些"，前缀变化的位置会不同
   （最早被清位置可能更靠后，cache 失效量**更小**），所以先 shadow 观察。决策在掩码发生的那一轮做一次，结果随 `content-replacement`
   持久化，之后字节稳定、不重复询问。
+- **超时与并发**：`compaction.keep` 属于关键路径决策点（`DecisionSettings::is_critical_point`），其超时预算由 `settings.nyan.decision.deadlineMs.critical` 控制（默认 800 ms）。Shadow 评估通过共享后台 worker 异步执行（fire-and-forget，不阻塞主 query 循环），限制并发数（超限跳过并计数），退化配置（`threshold <= 0`）记警告且不记录，每条 shadow 记录包含 `timeoutMs`、`mode="shadow"` 以及反映真实结果的 `outcome`（`"answered"` / `"fallback"`）。
 - 其余压缩决定（是否摘要、摘要切点、保活）仍是确定性的，见下表。
 
 ### 4.5 不交给 Decision Provider 的决定

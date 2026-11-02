@@ -133,8 +133,7 @@ pub fn cached_microcompact_config_from_env() -> CachedMicrocompactConfig {
     config.enabled = crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_CACHED_MICROCOMPACT").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_CACHED_MICROCOMPACT")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_CACHED_MICROCOMPACT").as_deref(),
     );
     if let Some(value) = crate::utils::process_env::var("NYAN_CACHED_MC_TRIGGER_THRESHOLD") {
         if let Ok(parsed) = value.parse::<usize>() {
@@ -239,12 +238,9 @@ pub fn mask_tool_results_if_needed(
         messages: messages.clone(),
         ..Default::default()
     };
-    if !content_mask_enabled()
-        || crate::utils::forked_agent::is_cache_sharing_fork(query_source)
-    {
-        result.messages = crate::utils::tool_result_storage::apply_tool_result_replacements_only(
-            messages, state,
-        );
+    if !content_mask_enabled() || crate::utils::forked_agent::is_cache_sharing_fork(query_source) {
+        result.messages =
+            crate::utils::tool_result_storage::apply_tool_result_replacements_only(messages, state);
         return result;
     }
 
@@ -252,22 +248,21 @@ pub fn mask_tool_results_if_needed(
         .main_loop_model
         .clone()
         .unwrap_or_else(crate::utils::model::model::get_main_loop_model);
-    let effective_window = crate::services::compact::auto_compact::get_effective_context_window_size(&model)
-        .max(1);
-    let threshold = crate::services::compact::auto_compact::get_auto_compact_threshold(&model)
-        .max(0);
+    let effective_window =
+        crate::services::compact::auto_compact::get_effective_context_window_size(&model).max(1);
+    let threshold =
+        crate::services::compact::auto_compact::get_auto_compact_threshold(&model).max(0);
     if measured_before <= threshold {
-        result.messages = crate::utils::tool_result_storage::apply_tool_result_replacements_only(
-            messages, state,
-        );
+        result.messages =
+            crate::utils::tool_result_storage::apply_tool_result_replacements_only(messages, state);
         return result;
     }
 
     let settings = compaction_settings();
-    let minimum_tokens = ((effective_window as f64) * settings.mask_min_fraction().clamp(0.0, 1.0))
-        .ceil() as i64;
-    let headroom = ((effective_window as f64) * settings.mask_headroom().clamp(0.0, 1.0))
-        .round() as i64;
+    let minimum_tokens =
+        ((effective_window as f64) * settings.mask_min_fraction().clamp(0.0, 1.0)).ceil() as i64;
+    let headroom =
+        ((effective_window as f64) * settings.mask_headroom().clamp(0.0, 1.0)).round() as i64;
     let target = threshold.saturating_sub(headroom);
     let current_round_boundary = messages
         .iter()
@@ -332,9 +327,8 @@ pub fn mask_tool_results_if_needed(
     }
 
     if candidates.is_empty() {
-        result.messages = crate::utils::tool_result_storage::apply_tool_result_replacements_only(
-            messages, state,
-        );
+        result.messages =
+            crate::utils::tool_result_storage::apply_tool_result_replacements_only(messages, state);
         return result;
     }
 
@@ -354,26 +348,14 @@ pub fn mask_tool_results_if_needed(
                 preview: c.preview.clone(),
             })
             .collect();
-        let shadow_messages = messages.clone();
-        let shadow_context = context.clone();
-        let _ = std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .unwrap();
-            runtime.block_on(async move {
-                let _ = crate::services::compact::decision::evaluate_compaction_keep_shadow(
-                    &shadow_messages,
-                    &candidate_infos,
-                    target,
-                    measured_before,
-                    threshold,
-                    &shadow_context,
-                )
-                .await;
-            });
-        })
-        .join();
+        crate::services::compact::decision::spawn_compaction_keep_shadow(
+            messages.clone(),
+            candidate_infos,
+            target,
+            measured_before,
+            threshold,
+            context.clone(),
+        );
     }
 
     // C2: accumulate oldest-first until `target` (threshold minus headroom) is
@@ -418,9 +400,8 @@ pub fn mask_tool_results_if_needed(
             ),
         );
     }
-    result.messages = crate::utils::tool_result_storage::apply_tool_result_replacements_only(
-        messages, state,
-    );
+    result.messages =
+        crate::utils::tool_result_storage::apply_tool_result_replacements_only(messages, state);
     result
 }
 
@@ -867,12 +848,8 @@ mod tests {
             ..Default::default()
         };
         let mut state = crate::utils::tool_result_storage::ContentReplacementState::new();
-        let result = mask_tool_results_if_needed(
-            messages,
-            &mut state,
-            &context,
-            &QuerySource::Prompt,
-        );
+        let result =
+            mask_tool_results_if_needed(messages, &mut state, &context, &QuerySource::Prompt);
         assert_eq!(result.masked_count, 1);
         assert!(result.masked_tokens > 0);
         assert!(state.replacements.contains_key("toolu_old"));
@@ -935,12 +912,8 @@ mod tests {
             ..Default::default()
         };
         let mut state = crate::utils::tool_result_storage::ContentReplacementState::new();
-        let result = mask_tool_results_if_needed(
-            messages,
-            &mut state,
-            &context,
-            &QuerySource::Compact,
-        );
+        let result =
+            mask_tool_results_if_needed(messages, &mut state, &context, &QuerySource::Compact);
         assert_eq!(result.masked_count, 0);
         assert!(result.newly_replaced.is_empty());
         assert!(state.replacements.is_empty());
@@ -949,12 +922,12 @@ mod tests {
 
     #[tokio::test]
     async fn keep_shadow_records_comparison_when_enabled_without_changing_actual_outcome() {
-        use std::collections::BTreeMap;
-        use std::sync::Arc;
         use crate::services::decision::{
             Answer, BackendFuture, DecisionBackend, DecisionOutcome, DecisionProvider,
             DecisionRequest, Receipt,
         };
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
 
         struct MockKeepBackend;
         impl DecisionBackend for MockKeepBackend {
@@ -992,7 +965,8 @@ mod tests {
         crate::utils::process_env::set("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "50000");
 
         // Temporary config dir so shadow log writes to an isolated file
-        let temp_dir = std::env::temp_dir().join(format!("nyan-keep-shadow-test-{}", uuid::Uuid::new_v4()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("nyan-keep-shadow-test-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&temp_dir);
         crate::utils::process_env::set("CLAUDE_CONFIG_DIR", temp_dir.to_str().unwrap());
 
@@ -1025,24 +999,32 @@ mod tests {
             ..Default::default()
         };
         let mut state = crate::utils::tool_result_storage::ContentReplacementState::new();
-        let result = mask_tool_results_if_needed(
-            messages,
-            &mut state,
-            &context,
-            &QuerySource::Prompt,
-        );
+        crate::services::compact::decision::reset_shadow_task_counters_for_test();
+        let result =
+            mask_tool_results_if_needed(messages, &mut state, &context, &QuerySource::Prompt);
 
         // Actual outcome should still have cleared candidates according to C2 status quo
         assert!(result.masked_count >= 1);
 
-        // Verify the shadow log file exists and contains a valid record
+        // Poll briefly until the background shadow task writes the log file
         let log_file = temp_dir.join("decision/compaction.keep.jsonl");
-        assert!(log_file.exists(), "shadow log file must be written");
+        let start = std::time::Instant::now();
+        while !log_file.exists() && start.elapsed() < std::time::Duration::from_secs(3) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            log_file.exists(),
+            "shadow log file must be written by background task"
+        );
         let content = std::fs::read_to_string(&log_file).unwrap();
         assert!(!content.trim().is_empty());
         let record: crate::services::compact::decision::CompactionKeepShadowRecord =
             serde_json::from_str(content.lines().next().unwrap()).unwrap();
         assert_eq!(record.point, "compaction.keep");
+        assert_eq!(record.mode, "shadow");
+        assert_eq!(record.outcome, "answered");
+        assert_eq!(record.fallback_reason, Some("shadow".to_string()));
+        assert_eq!(record.timeout_ms, 800);
         assert_eq!(record.candidates_count, 2);
 
         // Cleanup
