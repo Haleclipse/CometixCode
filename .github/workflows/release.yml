@@ -1,0 +1,267 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'nyan-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Cargo version to package during dry run (for example 0.2.0)
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: '0'
+
+jobs:
+  version:
+    name: Validate release version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Validate tag and Cargo version
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          cargo_version="$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+
+          if [ "$EVENT_NAME" = push ]; then
+            case "$REF_NAME" in
+              nyan-v*) version="${REF_NAME#nyan-v}" ;;
+              *) echo "::error::release workflow received an invalid tag: $REF_NAME"; exit 1 ;;
+            esac
+          else
+            version="${REQUESTED_VERSION:-$cargo_version}"
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+            echo "::error::invalid release version: $version"
+            exit 1
+          fi
+          base_version="${version%%-*}"
+          if [ "$base_version" != "$cargo_version" ]; then
+            echo "::error::release version $version does not match Cargo.toml version $cargo_version"
+            exit 1
+          fi
+
+          prerelease=false
+          if [[ "$version" == *-* ]]; then prerelease=true; fi
+          {
+            echo "version=$version"
+            echo "tag=nyan-v$version"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            enabled: true
+            platform: linux
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            archive: nyan-v${{ needs.version.outputs.version }}-linux-x86_64.tar.gz
+          - name: Linux aarch64
+            enabled: true
+            platform: linux
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            archive: nyan-v${{ needs.version.outputs.version }}-linux-aarch64.tar.gz
+          - name: Windows x86_64
+            enabled: true
+            platform: windows
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            archive: nyan-v${{ needs.version.outputs.version }}-windows-x86_64.zip
+          - name: macOS x86_64 (future)
+            enabled: false
+            platform: macos
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            archive: nyan-v${{ needs.version.outputs.version }}-macos-x86_64.tar.gz
+          - name: macOS aarch64 (future)
+            enabled: false
+            platform: macos
+            runner: macos-15
+            target: aarch64-apple-darwin
+            archive: nyan-v${{ needs.version.outputs.version }}-macos-aarch64.tar.gz
+    steps:
+      - name: Check out source
+        if: matrix.enabled
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Set up Rust
+        if: matrix.enabled
+        id: rust
+        uses: ./.github/actions/setup-rust
+      - name: Set up Zig
+        if: matrix.platform == 'linux'
+        uses: goto-bus-stop/setup-zig@abea47f85e598557f500fa1fd2ab7464fcb39406
+        with:
+          version: 0.14.1
+      - name: Build Linux musl binary
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          rustup target add "$TARGET"
+          cargo install cargo-zigbuild --locked --version 0.24.0
+          cargo zigbuild --release --locked --bin nyan --target "$TARGET"
+          mkdir -p package
+          install -m 0755 "target/$TARGET/release/nyan" package/nyan
+          install -m 0644 LICENSE package/LICENSE
+          tar -czf "$ARCHIVE" -C package nyan LICENSE
+      - name: Build Windows MSVC binary
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup target add $env:TARGET
+          cargo build --release --locked --bin nyan --target $env:TARGET
+          New-Item -ItemType Directory -Force package | Out-Null
+          Copy-Item "target/$env:TARGET/release/nyan.exe" package/nyan.exe
+          Copy-Item LICENSE package/LICENSE
+          Compress-Archive -Path package/nyan.exe, package/LICENSE -DestinationPath $env:ARCHIVE -CompressionLevel Optimal
+      - name: Smoke test Linux archive
+        if: matrix.platform == 'linux'
+        shell: bash
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          set -euo pipefail
+          mkdir smoke
+          tar -xzf "$ARCHIVE" -C smoke
+          CLAUDE_CONFIG_DIR="$RUNNER_TEMP/nyan-config" smoke/nyan --version
+      - name: Smoke test Windows archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          ARCHIVE: ${{ matrix.archive }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Expand-Archive -Path $env:ARCHIVE -DestinationPath smoke
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/nyan-config" | Out-Null
+          $env:CLAUDE_CONFIG_DIR = "$env:RUNNER_TEMP/nyan-config"
+          & .\smoke\nyan.exe --version
+      - name: Save Cargo cache
+        if: matrix.enabled && steps.rust.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.rust.outputs.cache-primary-key }}
+      - name: Upload release asset
+        if: matrix.enabled
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-${{ matrix.name }}-${{ needs.version.outputs.version }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  assemble:
+    name: Assemble checksums
+    needs: [version, build]
+    if: needs.version.result == 'success' && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: release-*-${{ needs.version.outputs.version }}
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+      - name: Generate SHA256SUMS
+        shell: bash
+        working-directory: ${{ runner.temp }}/release-assets
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(nyan-*.tar.gz nyan-*.zip)
+          [ "${#assets[@]}" -eq 3 ]
+          sha256sum "${assets[@]}" > SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 3
+          cat SHA256SUMS
+      - name: Upload assembled assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-assets-${{ needs.version.outputs.version }}
+          path: ${{ runner.temp }}/release-assets
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish:
+    name: Publish GitHub Release
+    needs: [version, assemble]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/nyan-v') && needs.assemble.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download assembled assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-assets-${{ needs.version.outputs.version }}
+          path: release-assets
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        working-directory: release-assets
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name 'SHA256SUMS' \) -printf '%f\n' | sort)
+          [ "${#assets[@]}" -eq 4 ]
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${assets[@]}" --clobber
+          elif [ "$PRERELEASE" = true ]; then
+            gh release create "$TAG" "${assets[@]}" --title "$TAG" --generate-notes --prerelease
+          else
+            gh release create "$TAG" "${assets[@]}" --title "$TAG" --generate-notes
+          fi
