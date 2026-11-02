@@ -1,7 +1,7 @@
 //! Maps to: CC `utils/which.ts:58-82` (the Bun runtime branch).
 //! Native filesystem calls carry Bun.which; they never execute the candidate.
 //! Node's execa fallback is not selected in the user-specified Bun baseline.
-//! Windows executable-extension lookup remains an explicit unported platform.
+//! Windows executable lookup follows PATH and PATHEXT without executing candidates.
 
 use std::path::{Path, PathBuf};
 
@@ -15,6 +15,57 @@ pub fn which(command: &str) -> std::future::Ready<Option<PathBuf>> {
 /// Maps to: CC `utils/which.ts:81-82#whichSync`, Bun-selected alias.
 pub fn which_sync(command: &str) -> Option<PathBuf> {
     bun_which(command)
+}
+
+fn is_windows_absolute(command: &str) -> bool {
+    let bytes = command.as_bytes();
+    Path::new(command).is_absolute()
+        || command.starts_with('\\')
+        || (bytes.len() >= 3 && bytes[1] == b':' && matches!(bytes[2], b'\\' | b'/'))
+}
+
+fn windows_command_has_extension(command: &str) -> bool {
+    command
+        .rsplit(['\\', '/'])
+        .next()
+        .and_then(|name| name.rfind('.'))
+        .is_some_and(|index| index > 0)
+}
+
+fn windows_command_candidates(
+    command: &str,
+    path_dirs: &[PathBuf],
+    pathext: &str,
+    current_dir: &Path,
+) -> Vec<PathBuf> {
+    if command.is_empty() {
+        return Vec::new();
+    }
+    if is_windows_absolute(command) || command.contains('/') || command.contains('\\') {
+        let candidate = if is_windows_absolute(command) {
+            PathBuf::from(command)
+        } else {
+            current_dir.join(command)
+        };
+        return vec![candidate];
+    }
+
+    let extensions = if windows_command_has_extension(command) {
+        vec![""]
+    } else {
+        pathext
+            .split(';')
+            .filter(|extension| !extension.is_empty())
+            .collect()
+    };
+    path_dirs
+        .iter()
+        .flat_map(|directory| {
+            extensions
+                .iter()
+                .map(move |extension| directory.join(format!("{command}{extension}")))
+        })
+        .collect()
 }
 
 // Native Bun.which boundary selected by CC which.ts:58-61. This is a runtime
@@ -72,11 +123,71 @@ fn bun_which(command: &str) -> Option<PathBuf> {
     None
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn bun_which(command: &str) -> Option<PathBuf> {
+    let startup = crate::utils::process_env::startup_snapshot();
+    let path = startup.var_os("PATH")?;
+    let pathext = startup.var("PATHEXT").unwrap_or(".COM;.EXE;.BAT;.CMD");
+    let current_dir = std::env::current_dir().ok()?;
+    let path_dirs = std::env::split_paths(&path).collect::<Vec<_>>();
+    windows_command_candidates(command, &path_dirs, &pathext, &current_dir)
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
+
+#[cfg(not(any(unix, windows)))]
 fn bun_which(_command: &str) -> Option<PathBuf> {
-    // CC delegates native Windows extension/search rules to Bun. This batch
-    // implements the macOS/Linux branch only, without guessing PATHEXT policy.
     None
+}
+
+#[cfg(test)]
+mod windows_logic_tests {
+    use super::*;
+
+    #[test]
+    fn windows_candidates_expand_pathext_in_path_order() {
+        let candidates = windows_command_candidates(
+            "git",
+            &[PathBuf::from("/first"), PathBuf::from("/second")],
+            ".EXE;.CMD;.BAT;.COM",
+            Path::new("/work"),
+        );
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/first/git.EXE"),
+                PathBuf::from("/first/git.CMD"),
+                PathBuf::from("/first/git.BAT"),
+                PathBuf::from("/first/git.COM"),
+                PathBuf::from("/second/git.EXE"),
+                PathBuf::from("/second/git.CMD"),
+                PathBuf::from("/second/git.BAT"),
+                PathBuf::from("/second/git.COM"),
+            ]
+        );
+    }
+
+    #[test]
+    fn windows_candidates_check_paths_and_extensions_without_expansion() {
+        let path_dirs = [PathBuf::from("/bin")];
+        assert_eq!(
+            windows_command_candidates("rg.exe", &path_dirs, ".EXE;.CMD", Path::new("/work")),
+            vec![PathBuf::from("/bin/rg.exe")]
+        );
+        assert_eq!(
+            windows_command_candidates(
+                r"C:\tools\rg.EXE",
+                &path_dirs,
+                ".EXE;.CMD",
+                Path::new("/work"),
+            ),
+            vec![PathBuf::from(r"C:\tools\rg.EXE")]
+        );
+        assert_eq!(
+            windows_command_candidates(r"tools\rg", &path_dirs, ".EXE;.CMD", Path::new("/work"),),
+            vec![PathBuf::from("/work/tools\\rg")]
+        );
+    }
 }
 
 #[cfg(all(test, unix))]

@@ -58,15 +58,23 @@ try {
     }
 
     Expand-Archive -Path $archive -DestinationPath $unpacked
-    New-Item -ItemType Directory -Force $InstallDir | Out-Null
-    Copy-Item (Join-Path $unpacked 'nyan.exe') (Join-Path $InstallDir 'nyan.exe') -Force
-    # Bundled ripgrep: src/utils/ripgrep.rs resolves vendor/ripgrep/x64-win32/rg.exe next to nyan.exe.
-    # Replace the whole directory so files from an older install do not linger.
-    $vendorDir = Join-Path $InstallDir 'vendor'
-    if (Test-Path $vendorDir) {
-        Remove-Item -Recurse -Force $vendorDir
+    $unpackedExe = Join-Path $unpacked 'nyan.exe'
+    if (-not (Test-Path $unpackedExe -PathType Leaf)) {
+        throw "Archive has no nyan.exe"
     }
-    Copy-Item (Join-Path $unpacked 'vendor') $vendorDir -Recurse
+    New-Item -ItemType Directory -Force $InstallDir | Out-Null
+    # Bundled ripgrep: src/utils/ripgrep.rs resolves vendor/ripgrep/x64-win32/rg.exe next to nyan.exe.
+    # Replace the whole directory only when the archive includes the newer layout.
+    $unpackedVendorDir = Join-Path $unpacked 'vendor'
+    if (Test-Path $unpackedVendorDir -PathType Container) {
+        $vendorDir = Join-Path $InstallDir 'vendor'
+        if (Test-Path $vendorDir) {
+            Remove-Item -Recurse -Force $vendorDir
+        }
+        Copy-Item $unpackedVendorDir $vendorDir -Recurse
+    }
+    # Keep the executable replacement last so validation and bundled files finish first.
+    Copy-Item $unpackedExe (Join-Path $InstallDir 'nyan.exe') -Force
     Write-Host "Installed nyan $($tag.Substring('nyan-v'.Length)) to $(Join-Path $InstallDir 'nyan.exe')"
 
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
