@@ -941,6 +941,62 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[cfg(windows)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn windows_smoke_write_reports_exclusive_handle_without_truncating() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let root = std::env::temp_dir().join(format!(
+            "nyan-write-exclusive-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("locked.txt");
+        std::fs::write(&path, "original\n").unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        let request = request(&path, "replacement\n");
+        assert!(
+            !matches!(
+                FileWriteTool.validate_input(&request.input, &ToolUseContext::default()),
+                ValidationResult::Ok
+            ),
+            "exclusive-handle validation unexpectedly succeeded"
+        );
+        let result = FileWriteTool
+            .call(
+                &request.input,
+                &request,
+                &ToolUseContext::default(),
+                None,
+                None,
+                None,
+            )
+            .await;
+        let ToolOutput::WriteError(output) = result.data else {
+            panic!("an exclusively open file must return a WriteError")
+        };
+        let message = output.content.to_ascii_lowercase();
+        assert!(
+            message.contains("permission denied")
+                || message.contains("sharing")
+                || message.contains("being used")
+                || message.contains("locked"),
+            "exclusive-handle error was not clear: {}",
+            output.content
+        );
+        drop(lock);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[tokio::test]
     async fn creates_file_and_parent_directories_through_shared_writer() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();

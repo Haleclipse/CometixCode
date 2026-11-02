@@ -1372,6 +1372,55 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    #[cfg(windows)]
+    #[tokio::test(flavor = "current_thread")]
+    async fn windows_smoke_edit_reports_exclusive_handle_without_truncating() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let root = temp_root("exclusive");
+        let path = root.join("locked.txt");
+        std::fs::write(&path, "original\n").unwrap();
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        let request = request(&path, "original", "replacement");
+        assert!(matches!(
+            FileEditTool.validate_input(&request.input, &ToolUseContext::default()),
+            crate::tool::ValidationResult::Error { ref message, .. } if !message.is_empty()
+        ));
+        let result = FileEditTool
+            .call(
+                &request.input,
+                &request,
+                &ToolUseContext::default(),
+                None,
+                None,
+                None,
+            )
+            .await;
+        let ToolOutput::EditError(output) = result.data else {
+            panic!("an exclusively open file must return an EditError")
+        };
+        let message = output.content.to_ascii_lowercase();
+        assert!(
+            message.contains("permission denied")
+                || message.contains("sharing")
+                || message.contains("being used")
+                || message.contains("locked"),
+            "exclusive-handle error was not clear: {}",
+            output.content
+        );
+        drop(lock);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "original\n");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     #[test]
     fn validation_reports_similar_file_and_rejects_sparse_oversize_file() {
         let root = temp_root("errors");

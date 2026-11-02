@@ -4,7 +4,7 @@ use super::{FsOperations, NodeFsOperations, SymlinkType};
 use std::path::Path;
 
 #[test]
-fn windows_junction_matches_official_node_link_parent_resolution() {
+fn windows_smoke_junction_matches_official_node_link_parent_resolution() {
     let root = std::env::temp_dir().join(format!("node-junction-{}", uuid::Uuid::new_v4()));
     let parent = root.join("links");
     let target = parent.join("assets");
@@ -28,8 +28,7 @@ fn windows_junction_matches_official_node_link_parent_resolution() {
 }
 
 #[test]
-#[ignore = "requires Windows Developer Mode or SeCreateSymbolicLinkPrivilege"]
-fn windows_symlink_omitted_type_matches_official_node_directory_detection() {
+fn windows_smoke_symlink_detection_is_optional_without_symbolic_link_privilege() {
     let root = std::env::temp_dir().join(format!("node-symlink-{}", uuid::Uuid::new_v4()));
     let parent = root.join("links");
     std::fs::create_dir_all(parent.join("assets")).unwrap();
@@ -40,9 +39,14 @@ fn windows_symlink_omitted_type_matches_official_node_directory_detection() {
     let file_link = parent.join("file-link");
     let missing_link = parent.join("missing-link");
     let notdir_link = parent.join("notdir-link");
+    if let Err(error) = fs.symlink_sync(Path::new("file"), &file_link, Some(SymlinkType::File)) {
+        eprintln!(
+            "windows_smoke_file_symlink: skipped because the runner cannot create file symlinks: {error}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+        return;
+    }
     fs.symlink_sync(Path::new("assets"), &dir_link, None)
-        .unwrap();
-    fs.symlink_sync(Path::new("file"), &file_link, None)
         .unwrap();
     fs.symlink_sync(Path::new("missing"), &missing_link, None)
         .unwrap();

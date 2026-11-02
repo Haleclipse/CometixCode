@@ -1876,6 +1876,66 @@ mod tests {
         ));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_junction_cannot_escape_allowed_working_directory() {
+        use crate::utils::fs_operations::{FsOperations, NodeFsOperations, SymlinkType};
+        use crate::utils::permissions::permission_result::PermissionResult;
+
+        let root = std::env::temp_dir().join(format!(
+            "nyan-junction-permission-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let workspace = root.join("workspace");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let secret = outside.join("secret.txt");
+        std::fs::write(&secret, "outside").unwrap();
+        let junction = workspace.join("linked");
+        NodeFsOperations
+            .symlink_sync(&outside, &junction, Some(SymlinkType::Junction))
+            .unwrap();
+        let escaped = junction.join("secret.txt");
+        let mut context = ToolPermissionContext::default();
+        context.additional_working_directories.insert(
+            workspace.display().to_string(),
+            crate::types::permissions::AdditionalWorkingDirectory {
+                path: workspace.display().to_string(),
+                source: PermissionRuleSource::Session,
+            },
+        );
+        let candidates = paths_to_check(&escaped.display().to_string(), &workspace);
+        let resolved_secret = NodeFsOperations.realpath_sync(&secret).unwrap();
+        assert!(
+            candidates
+                .iter()
+                .any(|candidate| candidate == &resolved_secret),
+            "junction target missing from permission candidates: {candidates:?}"
+        );
+        let input = serde_json::json!({"file_path": escaped});
+        assert!(matches!(
+            check_read_permission_for_tool(
+                input["file_path"].as_str().unwrap(),
+                &input,
+                &context,
+                &workspace,
+            ),
+            PermissionResult::Ask { .. }
+        ));
+        assert!(matches!(
+            check_write_permission_for_tool(
+                input["file_path"].as_str().unwrap(),
+                &input,
+                &context,
+                &workspace,
+            ),
+            PermissionResult::Ask { .. }
+        ));
+        std::fs::remove_dir(&junction).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[cfg(unix)]
     #[test]
     fn resolved_parent_symlink_destination_deny_rule_blocks_new_write() {

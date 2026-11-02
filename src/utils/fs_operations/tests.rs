@@ -186,6 +186,47 @@ fn atomic_replace_overwrites_existing_target() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[cfg(windows)]
+#[test]
+fn windows_smoke_shared_delete_makes_open_file_remove_and_rename_predictable() {
+    use std::os::windows::fs::OpenOptionsExt as _;
+
+    let root = std::env::temp_dir().join(format!(
+        "nyan-windows-shared-delete-{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let fs = NodeFsOperations;
+
+    let deleted = root.join("deleted.txt");
+    std::fs::write(&deleted, "delete me").unwrap();
+    let shared = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0x7)
+        .open(&deleted)
+        .unwrap();
+    fs.unlink_sync(&deleted).unwrap();
+    assert!(!deleted.exists());
+    drop(shared);
+
+    let source = root.join("source.txt");
+    let target = root.join("renamed.txt");
+    std::fs::write(&source, "rename me").unwrap();
+    let shared = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0x7)
+        .open(&source)
+        .unwrap();
+    fs.rename_sync(&source, &target).unwrap();
+    assert!(!source.exists());
+    assert!(target.exists());
+    drop(shared);
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "rename me");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[cfg(unix)]
 #[test]
 fn permission_paths_include_parent_symlink_destination_for_new_files() {
