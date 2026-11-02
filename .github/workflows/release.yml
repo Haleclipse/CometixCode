@@ -135,6 +135,8 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           ARCHIVE: ${{ matrix.archive }}
+          RIPGREP_VERSION: '15.2.0'
+          RIPGREP_SHA256: '71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5'
         run: |
           $ErrorActionPreference = 'Stop'
           rustup target add $env:TARGET
@@ -142,7 +144,23 @@ jobs:
           New-Item -ItemType Directory -Force package | Out-Null
           Copy-Item "target/$env:TARGET/release/nyan.exe" package/nyan.exe
           Copy-Item LICENSE package/LICENSE
-          Compress-Archive -Path package/nyan.exe, package/LICENSE -DestinationPath $env:ARCHIVE -CompressionLevel Optimal
+
+          # Pinned upstream ripgrep. The digest comes from the official .sha256 asset.
+          # rg.exe lands at vendor/ripgrep/x64-win32/rg.exe, where src/utils/ripgrep.rs looks next to nyan.exe.
+          $ripgrepName = "ripgrep-$($env:RIPGREP_VERSION)-x86_64-pc-windows-msvc"
+          $ripgrepZip = Join-Path $env:RUNNER_TEMP "$ripgrepName.zip"
+          $ripgrepDir = Join-Path $env:RUNNER_TEMP 'ripgrep-extract'
+          Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$($env:RIPGREP_VERSION)/$ripgrepName.zip" -OutFile $ripgrepZip
+          $actualSha = (Get-FileHash -Algorithm SHA256 -Path $ripgrepZip).Hash.ToLowerInvariant()
+          if ($actualSha -ne $env:RIPGREP_SHA256) {
+            throw "ripgrep SHA256 mismatch: $actualSha"
+          }
+          Expand-Archive -Path $ripgrepZip -DestinationPath $ripgrepDir
+          New-Item -ItemType Directory -Force package/vendor/ripgrep/x64-win32 | Out-Null
+          Copy-Item "$ripgrepDir/$ripgrepName/rg.exe" package/vendor/ripgrep/x64-win32/rg.exe
+          Copy-Item -Path "$ripgrepDir/$ripgrepName/COPYING", "$ripgrepDir/$ripgrepName/LICENSE-MIT", "$ripgrepDir/$ripgrepName/UNLICENSE" -Destination package/vendor/ripgrep/
+
+          Compress-Archive -Path package/nyan.exe, package/LICENSE, package/vendor -DestinationPath $env:ARCHIVE -CompressionLevel Optimal
       - name: Smoke test Linux archive
         if: matrix.platform == 'linux'
         shell: bash
@@ -164,6 +182,9 @@ jobs:
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/nyan-config" | Out-Null
           $env:CLAUDE_CONFIG_DIR = "$env:RUNNER_TEMP/nyan-config"
           & .\smoke\nyan.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "nyan.exe --version failed: $LASTEXITCODE" }
+          & .\smoke\vendor\ripgrep\x64-win32\rg.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "bundled rg.exe --version failed: $LASTEXITCODE" }
       - name: Save Cargo cache
         if: steps.rust.outputs.cache-hit != 'true'
         continue-on-error: true
@@ -241,7 +262,12 @@ jobs:
           mapfile -t assets < <(find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' -o -name 'SHA256SUMS' \) -printf '%f\n' | sort)
           [ "${#assets[@]}" -eq 4 ]
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "${assets[@]}" --clobber
+            existing="$(gh release view "$TAG" --json assets --jq '.assets | length')"
+            if [ "$existing" -gt 0 ]; then
+              echo "::error::GitHub Release $TAG already has $existing asset(s); refusing to overwrite them"
+              exit 1
+            fi
+            gh release upload "$TAG" "${assets[@]}"
           elif [ "$PRERELEASE" = true ]; then
             gh release create "$TAG" "${assets[@]}" --title "$TAG" --generate-notes --prerelease
           else

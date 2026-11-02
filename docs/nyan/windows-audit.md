@@ -86,7 +86,7 @@
 | `src/utils/auto_updater.rs:86-91`、`:146-190`、`:193-210` | **不可用**。网络检查与 npm/GCS/native install 仍是 short-circuit/no-op；安装结果是 `InstallFailed` 或空结果。 | Windows 首发采用手动下载/覆盖安装，UI 明确显示“自动更新不可用”；后续实现签名更新包和原子替换。 | L–XL |
 | `src/utils/native_installer/package_managers.rs:7-14`、`:62-70` | **不可用**。实际 package-manager detector 尚未实现，只读 `NYAN_PACKAGE_MANAGER`。Windows 的 winget 只是枚举值，不代表可安装。 | 选择并实现一种发行渠道（winget/MSIX/独立 installer），不要把环境变量 seam 当成生产更新能力。 | L |
 | `src/utils/local_installer.rs:1-8`、`:23-31` | **不可用**。只有 local npm 安装存在性 probe，安装/更新动作未移植；且 probe 只查 `.bin/claude`，Windows npm 常见的 `claude.cmd` 不在检查范围内。 | Windows 二进制不要依赖 Node/npm local install；用独立 zip/MSIX 安装器。若保留 npm 兼容路径，至少同时识别 `.cmd`/`.exe`。 | L |
-| `.github/workflows/ci.yml:233-251`、仓库当前 workflow 文件列表 | **不可用（发布）**。当前 CI 没有 release workflow，只验证 Windows target check；没有 Windows release 构建、zip 归档、签名或安装器。`docs/nyan/cicd.md:560-636` 只是设计，且明确记录未做代码签名。 | 增加单独 release workflow：构建一次、打 zip、放置 `vendor/ripgrep/x64-win32/rg.exe`、Windows runner 下载并运行冒烟；签名/SmartScreen 作为发布前置或明确限制。 | L–XL |
+| `.github/workflows/release.yml`（发布）、`.github/workflows/ci.yml:233-251`（windows-check） | **部分可用（发布）**。`release.yml` 已存在：tag 触发构建 `x86_64-pc-windows-msvc` zip，冒烟运行 `nyan.exe --version` 和内置 `rg.exe --version`；zip 内带 `vendor/ripgrep/x64-win32/rg.exe`（ripgrep 15.2.0，SHA256 固定）。`ci.yml` 的 windows-check 仍只做 GNU target 编译。剩余缺口：代码签名与 SmartScreen；Grep、Global Search、Git Bash 的运行时 smoke。 | 签名/SmartScreen 作为发布前置或明确限制；补 Grep、Global Search、Git Bash 的 Windows 运行时 smoke。 | 待重估 |
 
 ### 8. ripgrep 和其他外部二进制
 

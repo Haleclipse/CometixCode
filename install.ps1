@@ -60,7 +60,14 @@ try {
     Expand-Archive -Path $archive -DestinationPath $unpacked
     New-Item -ItemType Directory -Force $InstallDir | Out-Null
     Copy-Item (Join-Path $unpacked 'nyan.exe') (Join-Path $InstallDir 'nyan.exe') -Force
-    Write-Host "Installed nyan $($tag.Substring(5)) to $(Join-Path $InstallDir 'nyan.exe')"
+    # Bundled ripgrep: src/utils/ripgrep.rs resolves vendor/ripgrep/x64-win32/rg.exe next to nyan.exe.
+    # Replace the whole directory so files from an older install do not linger.
+    $vendorDir = Join-Path $InstallDir 'vendor'
+    if (Test-Path $vendorDir) {
+        Remove-Item -Recurse -Force $vendorDir
+    }
+    Copy-Item (Join-Path $unpacked 'vendor') $vendorDir -Recurse
+    Write-Host "Installed nyan $($tag.Substring('nyan-v'.Length)) to $(Join-Path $InstallDir 'nyan.exe')"
 
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $pathEntries = if ($userPath) { $userPath -split ';' } else { @() }

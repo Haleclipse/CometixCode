@@ -35,7 +35,22 @@ Linux 使用 `cargo-zigbuild` + Zig 0.14.1，而不是 `cross`：两个 musl 目
 
 Windows 使用原生 MSVC runner 和 `x86_64-pc-windows-msvc`，归档内文件名固定为 `nyan.exe`。这不是功能适配：本阶段只要求编译、打包和 `--version` 冒烟成功。seccomp、Unix 专属功能若使 Windows 构建失败，只能在本次构建中用已有 cfg/feature 关闭；每一处都必须在 PR 描述和后续 Windows 审计中列出。本首版不修改 `src/`，因此不会静默改变 Windows 功能。
 
-归档包含二进制和 `LICENSE`。每次发布另有 `SHA256SUMS`，格式严格为 GNU coreutils 兼容的：
+归档包含二进制和 `LICENSE`。Windows 归档另含 ripgrep，布局与 `src/utils/ripgrep.rs` 的查找路径一致：
+
+```text
+nyan-vX.Y.Z-windows-x86_64.zip
+├── nyan.exe
+├── LICENSE
+└── vendor/ripgrep/
+    ├── x64-win32/rg.exe      # ripgrep 15.2.0, x86_64-pc-windows-msvc
+    ├── COPYING
+    ├── LICENSE-MIT
+    └── UNLICENSE
+```
+
+`rg.exe` 由 workflow 从 BurntSushi/ripgrep 官方 release 下载，版本和 SHA256 固定在 `release.yml`。摘要来自官方 `.sha256` 文件，下载后不匹配即失败。升级 ripgrep 时同时更新版本与摘要。
+
+每次发布另有 `SHA256SUMS`，格式严格为 GNU coreutils 兼容的：
 
 ```text
 <64 位小写 sha256>  <资产文件名>
@@ -58,7 +73,7 @@ Windows 使用原生 MSVC runner 和 `x86_64-pc-windows-msvc`，归档内文件�
 1. 构建、冒烟或汇总失败：workflow 失败，不创建 Release；修复后重新 dispatch 或重新推送一个新 tag。
 2. 已创建 Release 但资产有误：先把 Release 标记为 draft 或删除错误资产，撤销对应 tag；不要复用已经公开给用户的版本号。
 3. 修复后递增 `X.Y.Z` 或预发布序号，重新走 PR、Merge gate 和新 tag。正式版本不覆盖、不 force-push、不把旧版本的 tag 指向新 commit。
-4. 如果只是同一 tag 的上传网络失败，允许重新运行 workflow；publish job 会对同名资产使用 `--clobber`，但不会在没有 Release 时跳过创建步骤。
+4. 如果只是同一 tag 的上传网络失败：Release 已存在但没有资产时，publish job 会补传，不带 `--clobber`。Release 已有任何资产时，publish job 直接失败，不覆盖。要替换资产，只能按第 2、3 条处理。
 
 ## Terminal-Bench 约定
 
