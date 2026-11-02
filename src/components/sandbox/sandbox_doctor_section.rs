@@ -7,13 +7,14 @@
 
 use crate::utils::sandbox::sandbox_adapter::{
     SandboxDependencyCheck, check_dependencies_readonly, get_sandbox_enabled_setting,
+    sandbox_unavailable_message_for_platform,
 };
 use crate::utils::settings::types::SettingsJson;
 use iocraft::prelude::*;
 
 /// Maps to CC `SandboxManager.isSupportedPlatform()` as consumed by Doctor.
 pub fn sandbox_doctor_is_supported_platform() -> bool {
-    cfg!(target_os = "macos") || cfg!(target_os = "linux")
+    crate::utils::sandbox::sandbox_adapter::is_supported_platform()
 }
 
 /// Maps to CC `SandboxDoctorSection` render gating.
@@ -36,6 +37,7 @@ pub struct SandboxDoctorSectionProps {
     /// merged settings at render time.
     pub settings: Option<SettingsJson>,
     pub supported_platform: Option<bool>,
+    pub platform: Option<String>,
 }
 
 #[component]
@@ -52,10 +54,21 @@ pub fn SandboxDoctorSection(
         .clone()
         .unwrap_or_else(crate::utils::settings::get_initial_settings);
     let sandbox_enabled = get_sandbox_enabled_setting(&settings);
+    let platform = props
+        .platform
+        .as_deref()
+        .unwrap_or_else(|| crate::utils::platform::get_platform().as_str());
     let dep_check = props
         .dependency_check
         .clone()
         .unwrap_or_else(check_dependencies_readonly);
+
+    if let Some(message) = sandbox_unavailable_message_for_platform(platform, sandbox_enabled) {
+        return element! {
+            Text(content: format!("└ Sandbox: {message}"), color: theme.warning, wrap: TextWrap::Wrap)
+        }
+        .into_any();
+    }
 
     if !sandbox_doctor_should_render(supported_platform, sandbox_enabled, &dep_check) {
         return element! { View {} }.into_any();
@@ -101,6 +114,14 @@ mod tests {
     use crate::utils::theme;
 
     fn render(dep_check: SandboxDependencyCheck, enabled: bool) -> String {
+        render_for_platform(dep_check, enabled, "linux")
+    }
+
+    fn render_for_platform(
+        dep_check: SandboxDependencyCheck,
+        enabled: bool,
+        platform: &str,
+    ) -> String {
         let mut settings = SettingsJson::default();
         settings.sandbox = Some(serde_json::json!({"enabled": enabled}));
         element! {
@@ -108,7 +129,8 @@ mod tests {
                 SandboxDoctorSection(
                     dependency_check: Some(dep_check),
                     settings: Some(settings),
-                    supported_platform: Some(true),
+                    supported_platform: Some(platform != "windows"),
+                    platform: Some(platform.to_string()),
                 )
             }
         }
@@ -144,6 +166,17 @@ mod tests {
                 warnings: vec!["warn".to_string()],
             }
         ));
+    }
+
+    #[test]
+    fn sandbox_doctor_reports_windows_unavailable_without_dependency_status() {
+        let text = render_for_platform(SandboxDependencyCheck::default(), true, "windows");
+        assert!(
+            text.contains("Windows sandbox unavailable，命令未隔离执行"),
+            "canvas=\n{text}"
+        );
+        assert!(!text.contains("Available"), "canvas=\n{text}");
+        assert!(!text.contains("dependencies"), "canvas=\n{text}");
     }
 
     #[test]

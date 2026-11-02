@@ -189,6 +189,12 @@ rmcp = { version = "3.5.1", default-features = false, features = [
 [target.'cfg(not(unix))'.dependencies]
 crossterm = "0.29"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }
+
 # ── Platform TLS backends ────────────────────────────────────────────────
 # Android/Termux: native-tls (OpenSSL). reqwest's rustls* features always
 # enable rustls-platform-verifier, which panics without JNI context.

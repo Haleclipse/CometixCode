@@ -23,6 +23,12 @@ use std::time::Duration;
 
 /// Official npm package URL (CC `MACRO.PACKAGE_URL`).
 pub const OFFICIAL_PACKAGE_URL: &str = "@anthropic-ai/claude-code";
+pub const WINDOWS_AUTO_UPDATE_MESSAGE: &str =
+    "Windows 暂不支持自动更新，请从 GitHub Releases 手动下载";
+
+pub fn auto_update_message_for_platform(platform: &str) -> Option<&'static str> {
+    (platform == "windows").then_some(WINDOWS_AUTO_UPDATE_MESSAGE)
+}
 
 /// Maps to: CC `utils/autoUpdater.ts:35-39` `InstallStatus`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -479,6 +485,16 @@ mod tests {
         assert!(!version_gte("1.2.2", "1.2.3"));
         assert!(version_gt("2.0.0", "1.9.9"));
         assert!(version_gte("1.2.3+sha", "1.2.3"));
+    }
+
+    #[test]
+    fn windows_auto_update_message_is_platform_specific() {
+        assert_eq!(
+            auto_update_message_for_platform("windows"),
+            Some(WINDOWS_AUTO_UPDATE_MESSAGE)
+        );
+        assert_eq!(auto_update_message_for_platform("linux"), None);
+        assert_eq!(auto_update_message_for_platform("macos"), None);
     }
 
     #[test]

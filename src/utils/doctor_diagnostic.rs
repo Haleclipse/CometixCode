@@ -337,6 +337,12 @@ pub fn get_doctor_diagnostic() -> DiagnosticInfo {
 }
 
 fn auto_updates_display() -> String {
+    if let Some(message) =
+        crate::utils::auto_updater::auto_update_message_for_platform(std::env::consts::OS)
+    {
+        return message.to_string();
+    }
+
     crate::utils::config::get_auto_updater_disabled_reason()
         .map(|reason| {
             format!(

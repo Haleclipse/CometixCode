@@ -7,6 +7,7 @@
 /// Maps to: CC `hooks/useMemoryUsage.ts#MemoryUsageStatus`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MemoryUsageStatus {
+    Unknown,
     #[default]
     Normal,
     High,
@@ -46,35 +47,49 @@ pub fn memory_usage_status_for_heap(heap_used: u64) -> MemoryUsageStatus {
 
 /// Sample current process memory for the indicator (RSS → `heap_used`).
 pub fn sample_memory_usage() -> MemoryUsageInfo {
-    let heap_used = process_rss_bytes();
+    memory_usage_info_for_sample(
+        try_process_rss_bytes(),
+        cfg!(any(target_os = "linux", target_os = "macos", windows)),
+    )
+}
+
+fn memory_usage_info_for_sample(sample: Option<u64>, provider_supported: bool) -> MemoryUsageInfo {
+    let Some(heap_used) = sample else {
+        return MemoryUsageInfo {
+            heap_used: 0,
+            status: if provider_supported {
+                MemoryUsageStatus::Unknown
+            } else {
+                MemoryUsageStatus::Normal
+            },
+        };
+    };
     MemoryUsageInfo {
         heap_used,
         status: memory_usage_status_for_bytes(heap_used),
     }
 }
 
-/// Process resident set size in bytes.
-///
-/// Maps to the *role* of CC `process.memoryUsage().heapUsed` for thresholding,
-/// not the V8 heap counter itself.
-pub fn process_rss_bytes() -> u64 {
+/// Process resident set size in bytes, returning `None` when the platform
+/// provider cannot read it.
+pub fn try_process_rss_bytes() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
         if let Ok(status) = std::fs::read_to_string("/proc/self/status")
             && let Some(kib) = parse_linux_vm_rss_kib(&status)
         {
-            return kib.saturating_mul(1024);
+            return Some(kib.saturating_mul(1024));
         }
         if let Ok(statm) = std::fs::read_to_string("/proc/self/statm")
             && let Some(pages) = parse_linux_statm_rss_pages(&statm)
         {
-            return pages.saturating_mul(linux_page_size_bytes());
+            return Some(pages.saturating_mul(linux_page_size_bytes()));
         }
     }
     #[cfg(target_os = "macos")]
     {
         if let Some(bytes) = macos_task_resident_size_bytes() {
-            return bytes;
+            return Some(bytes);
         }
         let mut command = std::process::Command::new("ps");
         // Rust-only fallback; every child takes the carrier (process.env) as its base.
@@ -84,14 +99,27 @@ pub fn process_rss_bytes() -> u64 {
             .arg(std::process::id().to_string())
             .output()
         {
-            if let Ok(text) = String::from_utf8(output.stdout) {
-                if let Ok(kb) = text.trim().parse::<u64>() {
-                    return kb.saturating_mul(1024);
-                }
+            if let Ok(text) = String::from_utf8(output.stdout)
+                && let Ok(kb) = text.trim().parse::<u64>()
+            {
+                return Some(kb.saturating_mul(1024));
             }
         }
     }
-    0
+    #[cfg(windows)]
+    {
+        return windows_process_rss_bytes();
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+/// Process resident set size in bytes, retaining the legacy zero fallback for
+/// callers that cannot represent an unavailable sample.
+pub fn process_rss_bytes() -> u64 {
+    try_process_rss_bytes().unwrap_or(0)
 }
 
 /// Alias kept for older call sites.
@@ -113,6 +141,22 @@ pub fn parse_linux_vm_rss_kib(status: &str) -> Option<u64> {
 /// Parse resident pages from `/proc/self/statm` (2nd field).
 pub fn parse_linux_statm_rss_pages(statm: &str) -> Option<u64> {
     statm.split_whitespace().nth(1)?.parse().ok()
+}
+
+#[cfg(windows)]
+fn windows_process_rss_bytes() -> Option<u64> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+    let mut counters = PROCESS_MEMORY_COUNTERS {
+        cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        ..Default::default()
+    };
+    let size = counters.cb;
+    let success = unsafe { GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) };
+    (success != 0).then_some(counters.WorkingSetSize as u64)
 }
 
 #[cfg(target_os = "linux")]
@@ -218,11 +262,26 @@ mod tests {
     }
 
     #[test]
+    fn failed_rss_samples_are_unknown_only_with_a_provider() {
+        assert_eq!(
+            memory_usage_info_for_sample(None, true).status,
+            MemoryUsageStatus::Unknown
+        );
+        assert_eq!(
+            memory_usage_info_for_sample(None, false).status,
+            MemoryUsageStatus::Normal
+        );
+    }
+
+    #[test]
     fn process_rss_bytes_returns_nonzero_on_supported_hosts() {
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "macos", windows))]
         {
-            let rss = process_rss_bytes();
-            assert!(rss > 0, "expected live RSS sample, got {rss}");
+            let rss = try_process_rss_bytes();
+            assert!(
+                rss.is_some_and(|rss| rss > 0),
+                "expected live RSS sample, got {rss:?}"
+            );
         }
     }
 }

@@ -15,7 +15,7 @@ use std::time::Duration;
 pub use crate::hooks::use_memory_usage::{
     CRITICAL_MEMORY_THRESHOLD_BYTES, HIGH_MEMORY_THRESHOLD_BYTES, MemoryUsageInfo,
     MemoryUsageStatus, approximate_process_memory_bytes, memory_usage_status_for_heap,
-    process_rss_bytes,
+    process_rss_bytes, try_process_rss_bytes,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +51,12 @@ pub fn memory_usage_indicator_text(
     let memory_usage = memory_usage?;
     if memory_usage.status == MemoryUsageStatus::Normal {
         return None;
+    }
+    if memory_usage.status == MemoryUsageStatus::Unknown {
+        return Some((
+            "Memory usage unknown".to_string(),
+            MemoryUsageIndicatorColor::Warning,
+        ));
     }
 
     let color = if memory_usage.status == MemoryUsageStatus::Critical {
@@ -190,6 +196,20 @@ mod tests {
             None
         );
         assert_eq!(render(false, Some(high)), "");
+    }
+
+    #[test]
+    fn memory_usage_indicator_renders_unknown_copy_without_zero_rss() {
+        let unknown = memory_usage_indicator_text(
+            true,
+            Some(&MemoryUsageInfo {
+                heap_used: 0,
+                status: MemoryUsageStatus::Unknown,
+            }),
+        )
+        .expect("unknown memory should render an explicit status");
+        assert_eq!(unknown.0, "Memory usage unknown");
+        assert_eq!(unknown.1, MemoryUsageIndicatorColor::Warning);
     }
 
     #[test]

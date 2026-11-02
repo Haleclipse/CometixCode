@@ -303,9 +303,24 @@ fn command_exists(command: &str) -> bool {
         .is_some_and(|path| std::env::split_paths(path).any(|dir| dir.join(command).is_file()))
 }
 
+pub const WINDOWS_SANDBOX_UNAVAILABLE_MESSAGE: &str = "Windows sandbox unavailable，命令未隔离执行";
+
+/// Platform-only projection of CC `isSupportedPlatform`, kept parameterized so
+/// platform behavior can be tested on a non-Windows host.
+pub fn is_supported_platform_for(platform: &str) -> bool {
+    matches!(platform, "macos" | "linux" | "wsl")
+}
+
+pub fn sandbox_unavailable_message_for_platform(
+    platform: &str,
+    sandbox_enabled: bool,
+) -> Option<&'static str> {
+    (sandbox_enabled && platform == "windows").then_some(WINDOWS_SANDBOX_UNAVAILABLE_MESSAGE)
+}
+
 /// Maps to: CC `utils/sandbox/sandbox-adapter.ts:491-493` `isSupportedPlatform`.
 pub fn is_supported_platform() -> bool {
-    cfg!(any(target_os = "macos", target_os = "linux"))
+    is_supported_platform_for(crate::utils::platform::get_platform().as_str())
 }
 
 /// Maps to: CC `utils/sandbox/sandbox-adapter.ts:505-526` `isPlatformInEnabledList`.
@@ -1969,6 +1984,26 @@ mod tests {
             Box::pin(async move { allow })
                 as std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>
         })
+    }
+
+    #[test]
+    fn sandbox_platform_support_and_unavailability_are_explicit() {
+        assert!(is_supported_platform_for("linux"));
+        assert!(is_supported_platform_for("wsl"));
+        assert!(is_supported_platform_for("macos"));
+        assert!(!is_supported_platform_for("windows"));
+        assert_eq!(
+            sandbox_unavailable_message_for_platform("windows", true),
+            Some(WINDOWS_SANDBOX_UNAVAILABLE_MESSAGE)
+        );
+        assert_eq!(
+            sandbox_unavailable_message_for_platform("windows", false),
+            None
+        );
+        assert_eq!(
+            sandbox_unavailable_message_for_platform("linux", true),
+            None
+        );
     }
 
     #[test]
