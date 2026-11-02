@@ -81,6 +81,32 @@ If Git Bash is installed outside the usual locations, set `CLAUDE_CODE_GIT_BASH_
 $env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
 ```
 
+#### Verifying the download
+
+Each release publishes `nyan-vX.Y.Z-windows-x86_64.zip` and `SHA256SUMS` on the same GitHub Release page. `SHA256SUMS` is in GNU coreutils format (`<sha256>  <filename>`). Before extracting the zip, compute its digest in PowerShell from the download directory (example for 0.2.0):
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\nyan-v0.2.0-windows-x86_64.zip
+Select-String -Path .\SHA256SUMS -Pattern 'windows-x86_64\.zip$'
+```
+
+Compare the `Hash` value with the digest on the `SHA256SUMS` line whose filename is that zip (case does not matter). If they differ, do not extract or run the file; download it again. `install.ps1` performs the same comparison before installing.
+
+#### SmartScreen warning
+
+The Windows binary is not code-signed yet. A signing certificate has not been provided, and whether to sign releases is undecided. Files downloaded from the internet carry a download mark, so Windows SmartScreen may show "Windows protected your PC" the first time you run `nyan.exe`. Continue only after the checksum above matches:
+
+1. Click **More info**.
+2. Click **Run anyway**.
+
+Alternatively, after extracting, remove the download mark from the two executables (this has no effect if the mark is absent):
+
+```powershell
+Unblock-File -Path .\nyan.exe, .\vendor\ripgrep\x64-win32\rg.exe
+```
+
+Button labels depend on the Windows display language.
+
 ### Cross-compiling for Windows
 
 ```sh

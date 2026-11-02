@@ -71,6 +71,32 @@ Windows 版需要预先安装 [Git for Windows](https://git-scm.com/downloads/wi
 $env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
 ```
 
+#### 校验下载文件
+
+每个 Release 在同一页面提供 `nyan-vX.Y.Z-windows-x86_64.zip` 和 `SHA256SUMS`。`SHA256SUMS` 为 GNU coreutils 格式（`<sha256>  <文件名>`）。解压前，在下载目录中用 PowerShell 计算摘要（以 0.2.0 为例）：
+
+```powershell
+Get-FileHash -Algorithm SHA256 .\nyan-v0.2.0-windows-x86_64.zip
+Select-String -Path .\SHA256SUMS -Pattern 'windows-x86_64\.zip$'
+```
+
+将输出的 `Hash` 与 `SHA256SUMS` 中文件名为该 zip 的那一行的摘要比对（大小写不影响结果）。不一致时不要解压或运行，重新下载。`install.ps1` 安装前会做同样的比对。
+
+#### SmartScreen 提示
+
+Windows 版二进制目前未做代码签名；签名证书尚未提供，是否签名待定。从网络下载的文件带有来源标记，因此首次运行 `nyan.exe` 时，Windows SmartScreen 可能显示“Windows 已保护你的电脑”。只有在上述校验通过后才继续：
+
+1. 点击“更多信息”。
+2. 点击“仍要运行”。
+
+或者在解压后，对两个可执行文件移除下载标记（若无标记则无影响）：
+
+```powershell
+Unblock-File -Path .\nyan.exe, .\vendor\ripgrep\x64-win32\rg.exe
+```
+
+按钮文字随 Windows 显示语言而不同（英文系统为 More info / Run anyway）。
+
 ### 交叉编译 Windows 版
 
 需要 mingw-w64 工具链。
