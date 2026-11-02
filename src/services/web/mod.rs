@@ -10,6 +10,7 @@ pub mod extract;
 pub mod fallback;
 pub mod fetcher;
 pub mod host_guard;
+pub mod provider_health;
 pub mod providers;
 pub mod redact;
 pub mod search;

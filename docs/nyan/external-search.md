@@ -243,6 +243,8 @@ Exa、Tavily、Firecrawl、DeepSeek、AnySearch 可以在搜索时一并返回�
   外加 Firecrawl 2 credits；40 次搜索 ≈ $0.5 + 80 credits / 会话。Firecrawl 每月仅 1000 credits，`maxCallsPerSession = 20`
   使单会话最多用掉 40 credits（search）+ 回退 scrape 若干；Exa 每月赠 $10，30 次 ≈ $0.21。
 - range 续读（4.4）读本地快照，不计次数、不计字节；命中 URL 索引（4.3）的 WebFetch 同样不计。
+- 因 provider 处于健康冷却（Down 窗口）而被跳过的调用**不发请求，也不占** `maxCallsPerSession`；只有真正发出去的调用才计数
+  （provider-health 3.3）。
 - 计数是进程内会话状态（随 `/clear` 与新会话清零，resume 不恢复——resume 后从零开始，接受）。子代理与主线程**共用**同一
   会话的计数（子代理也是在花同一个人的钱）。
 - 不做按日 / 按月的跨会话账本：provider 自己的额度错误（`quota_exhausted`，2.3）已经是跨会话的硬上限。
@@ -538,7 +540,10 @@ nyan 抓取器（4.2 全部 SSRF 检查）
 - provider 是 search 还是 fetch 由适配器能力决定（2.3），配置里只有一个 `enabled`；某家 `enabled = false` 时
   search 与 fetch 都不用它。
 - `providers` 里没写到的内置服务商保持内置默认并启用。只配 `searxng` 不会丢掉其余六家；要关掉某家，显式写 `enabled: false`。
-- 额度用尽的 provider（如当前的 Tavily）保持 `enabled`：每次返回具名 `quota_exhausted`，不影响其余；额度恢复后自动可用。
+- 额度用尽的 provider（如当前的 Tavily）保持 `enabled`：首次返回具名 `quota_exhausted` 后进入 Down 窗口（硬失败，
+  10 min 起翻倍、封顶 60 min），窗口内不再发请求，结果里仍渲染具名原因并带 `(cooling down)` 后缀；窗口到期后的下一次
+  真实调用即试探，额度恢复后自动可用。`/clear` 也会重置冷却。详见
+  [`external-search-provider-health.md`](external-search-provider-health.md)。
 - 没有任何 provider 配置时，WebSearch 不出现在工具列表（`is_enabled = false`），而不是调用时报错。
 - `nyan.web` 整体缺省或关闭时，WebFetch / WebSearch 回到 CC 实现（README 第一节第 3 条）；CC 路径的常量与缓存因此保留。
 

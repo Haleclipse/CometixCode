@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 
 use super::{ProviderError, ProviderKind, QueryKind, SearchRequest, errors, read_key};
 use crate::services::service_health::{self, CallPermit, FailureKind, ServiceHealth, ServiceKind};
+use crate::services::web::provider_health::Capability;
 use crate::utils::settings::nyan::ResolvedProvider;
 
 /// Provider responses are JSON search results or one converted page; anything
@@ -50,8 +51,8 @@ impl ProviderClient {
             .to_string();
         let api_key = read_key(resolved.api_key_file.as_deref())?;
         // SearXNG's availability is process state shared by every search.
-        let health = (kind == ProviderKind::Searxng)
-            .then(|| service_health::shared(ServiceKind::Searxng));
+        let health =
+            (kind == ProviderKind::Searxng).then(|| service_health::shared(ServiceKind::Searxng));
         Self::new(kind, base_url, api_key, health)
     }
 
@@ -65,6 +66,13 @@ impl ProviderClient {
         let health = (kind == ProviderKind::Searxng)
             .then(|| Arc::new(ServiceHealth::new(ServiceKind::Searxng)));
         Self::new(kind, base_url, api_key, health)
+    }
+
+    pub fn fingerprint(&self) -> String {
+        crate::services::web::provider_health::compute_fingerprint(
+            &self.base_url,
+            self.api_key.as_deref(),
+        )
     }
 
     fn new(
@@ -142,13 +150,9 @@ impl ProviderClient {
                 CallPermit::Allowed => {}
             }
         }
-        let result = match search_call(
-            self.kind,
-            &self.base_url,
-            request,
-            Utc::now().date_naive(),
-        ) {
-            Ok(call) => self.send(call, deadline).await,
+        let result = match search_call(self.kind, &self.base_url, request, Utc::now().date_naive())
+        {
+            Ok(call) => self.send(call, deadline, Capability::Search).await,
             Err(error) => Err(error),
         };
         if let Some(health) = &self.health {
@@ -162,10 +166,15 @@ impl ProviderClient {
 
     pub async fn fetch(&self, url: &str, deadline: Duration) -> Result<Value, ProviderError> {
         let call = fetch_call(self.kind, &self.base_url, url)?;
-        self.send(call, deadline).await
+        self.send(call, deadline, Capability::Fetch).await
     }
 
-    async fn send(&self, call: Call, deadline: Duration) -> Result<Value, ProviderError> {
+    async fn send(
+        &self,
+        call: Call,
+        deadline: Duration,
+        capability: Capability,
+    ) -> Result<Value, ProviderError> {
         // A provider that needs a key is never called without one: the query
         // would leave the machine for a guaranteed 401. AnySearch also serves
         // anonymous callers, so it is the exception.
@@ -189,18 +198,29 @@ impl ProviderClient {
             };
         }
         // One wall-clock bound for connect, headers and body.
-        tokio::time::timeout(deadline, self.exchange(request))
+        tokio::time::timeout(deadline, self.exchange(request, capability))
             .await
             .map_err(|_| ProviderError::Timeout)?
     }
 
-    async fn exchange(&self, request: reqwest::RequestBuilder) -> Result<Value, ProviderError> {
+    async fn exchange(
+        &self,
+        request: reqwest::RequestBuilder,
+        capability: Capability,
+    ) -> Result<Value, ProviderError> {
         let response = request.send().await.map_err(transport_error)?;
         let status = response.status();
         let headers = response.headers().clone();
         let body = read_capped(response).await?;
         if !status.is_success() {
             errors::log_failure(self.kind, status.as_u16(), &body, self.api_key.as_deref());
+            // On the fetch path a 403 means the target page is unavailable (blocked
+            // or forbidden), not a key problem; keep the raw status so provider
+            // health does not drop a whole provider for one unreadable page
+            // (provider-health 3.6). Search keeps the `Auth` mapping in `errors`.
+            if capability == Capability::Fetch && status.as_u16() == 403 {
+                return Err(ProviderError::Http(403));
+            }
             return Err(errors::classify(
                 self.kind,
                 status.as_u16(),

@@ -212,9 +212,20 @@ pub fn reset() {
 mod tests {
     use super::*;
 
+    /// The session budget is process-wide, and the `search` / `fallback`
+    /// suites drive real searches that charge it. Hold the same lock they do
+    /// so a parallel search cannot move the counters underneath these asserts.
+    fn test_lock() -> crate::utils::test_env::TestEnvGuard<'static> {
+        let guard = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reset();
+        guard
+    }
+
     #[tokio::test]
     async fn counts_calls_bytes_and_provider_limits() {
-        reset();
+        let _lock = test_lock();
         let mut search = WebSearchSettings::default();
         search.max_per_session = Some(1);
         let permit = begin_search(&search, Duration::from_secs(1)).await.unwrap();
@@ -242,7 +253,7 @@ mod tests {
 
     #[tokio::test]
     async fn third_search_waits_for_a_permit() {
-        reset();
+        let _lock = test_lock();
         let mut settings = WebSearchSettings::default();
         settings.max_concurrent_searches = Some(1);
         let first = begin_search(&settings, Duration::from_secs(1))

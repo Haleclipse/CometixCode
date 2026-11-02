@@ -17,6 +17,7 @@ use futures::future::join_all;
 use crate::services::rerank::{self, RerankClient, RerankKind, RerankRequest};
 use crate::services::web::budget;
 use crate::services::web::decision::{self, WebDecisions};
+use crate::services::web::provider_health::{self, Capability};
 use crate::services::web::providers::{self, Hit, ProviderError, SearchRequest};
 use crate::tool::AbortController;
 use crate::utils::settings::nyan::{WebSearchSettings, WebSettings};
@@ -25,6 +26,7 @@ use crate::utils::settings::nyan::{WebSearchSettings, WebSettings};
 pub struct SearchFailure {
     pub provider: String,
     pub reason: String,
+    pub cooling_down: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,7 +71,13 @@ impl std::fmt::Display for SearchError {
             Self::Unavailable(failures) => {
                 let details = failures
                     .iter()
-                    .map(|failure| format!("{} {}", failure.provider, failure.reason))
+                    .map(|failure| {
+                        if failure.cooling_down {
+                            format!("{} {} (cooling down)", failure.provider, failure.reason)
+                        } else {
+                            format!("{} {}", failure.provider, failure.reason)
+                        }
+                    })
                     .collect::<Vec<_>>()
                     .join(", ");
                 write!(f, "unavailable: {details}")
@@ -158,6 +166,7 @@ pub async fn search_with(
                     .map(|failure| SearchFailure {
                         provider: failure.provider.clone(),
                         reason: failure.error.code(),
+                        cooling_down: false,
                     })
                     .collect(),
             ));
@@ -201,14 +210,46 @@ pub async fn search_with(
     // (external-search 3.3 / 3.5).
     let per_provider_deadline = Duration::from_millis(search_settings.per_provider_deadline_ms())
         .min(total_deadline.saturating_sub(started.elapsed()));
+
+    // When all six commercial providers are in soft cooldown, release one to try (provider-health 3.3).
+    let all_commercial_soft_down =
+        provider_health::all_commercial_in_soft_cooldown(Capability::Search);
+    let released_commercial = if all_commercial_soft_down {
+        providers
+            .iter()
+            .find(|p| provider_health::is_commercial_provider(p.as_search().name()))
+            .map(|p| p.as_search().name().to_string())
+    } else {
+        None
+    };
+
     let calls = providers.iter().map(|provider| {
         let name = provider.as_search().name().to_string();
         let max_calls = web.provider(&name).max_calls_per_session;
         let request = request.clone();
+        let fingerprint = provider.fingerprint();
+        let is_released = released_commercial.as_deref() == Some(&name);
         async move {
+            let guard = if provider_health::is_commercial_provider(&name) {
+                let permit = provider_health::acquire_permit_opt_release(
+                    &name,
+                    Capability::Search,
+                    Some(&fingerprint),
+                    is_released,
+                );
+                match permit {
+                    provider_health::PermitOutcome::Allowed(guard) => Some(guard),
+                    provider_health::PermitOutcome::Probe(guard) => Some(guard),
+                    provider_health::PermitOutcome::Skipped { reason, .. } => {
+                        return (name, Err((reason, true)));
+                    }
+                }
+            } else {
+                None
+            };
             if let Err(error) = budget::reserve_provider(&name, max_calls) {
                 crate::utils::debug::log_for_debugging(&format!("web search: {error}"));
-                return (name, Err(ProviderError::BudgetExhausted), Vec::new());
+                return (name, Err(("budget_exhausted".to_string(), false)));
             }
             let deadline = per_provider_deadline;
             let response =
@@ -217,8 +258,19 @@ pub async fn search_with(
                     .map_err(|_| ProviderError::Timeout)
                     .and_then(|result| result);
             match response {
-                Ok(hits) => (name, Ok(()), hits),
-                Err(error) => (name, Err(error), Vec::new()),
+                Ok(hits) => {
+                    if let Some(guard) = guard {
+                        guard.record_success();
+                    }
+                    (name, Ok(hits))
+                }
+                Err(error) => {
+                    let code = error.code();
+                    if let Some(guard) = guard {
+                        guard.record_failure(&error);
+                    }
+                    (name, Err((code, false)))
+                }
             }
         }
     });
@@ -230,18 +282,20 @@ pub async fn search_with(
         .map(|failure| SearchFailure {
             provider: failure.provider.clone(),
             reason: failure.error.code(),
+            cooling_down: false,
         })
         .collect::<Vec<_>>();
     let mut all_hits = Vec::new();
-    for (name, result, hits) in responses {
+    for (name, result) in responses {
         match result {
-            Ok(()) => {
+            Ok(hits) => {
                 providers_used.push(name.clone());
                 all_hits.extend(hits.into_iter().map(|hit| (name.clone(), hit)));
             }
-            Err(error) => failures.push(SearchFailure {
+            Err((reason, cooling_down)) => failures.push(SearchFailure {
                 provider: name,
-                reason: error.code(),
+                reason,
+                cooling_down,
             }),
         }
     }
@@ -464,7 +518,10 @@ pub fn render_outcome(outcome: &SearchOutcome) -> String {
         if outcome.failures.is_empty() {
             return "No results found".to_string();
         }
-        return format!("No results found from: {}", render_failures(&outcome.failures));
+        return format!(
+            "No results found from: {}",
+            render_failures(&outcome.failures)
+        );
     }
     let mut output = String::new();
     for (index, hit) in outcome.hits.iter().enumerate() {
@@ -510,7 +567,11 @@ fn render_failures(failures: &[SearchFailure]) -> String {
                 "budget_exhausted" => "budget exhausted".to_string(),
                 reason => reason.to_string(),
             };
-            format!("{} {reason}", failure.provider)
+            if failure.cooling_down {
+                format!("{} {reason} (cooling down)", failure.provider)
+            } else {
+                format!("{} {reason}", failure.provider)
+            }
         })
         .collect::<Vec<_>>()
         .join(", ")
@@ -520,7 +581,7 @@ fn render_failures(failures: &[SearchFailure]) -> String {
 mod tests {
     use std::collections::BTreeMap;
 
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     use super::*;
     use crate::services::decision::{Answer, FallbackReason};
@@ -537,6 +598,22 @@ mod tests {
             }
         }
         serde_json::from_value(value).unwrap()
+    }
+
+    fn test_lock() -> (
+        crate::utils::test_env::TestEnvGuard<'static>,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let env = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        budget::reset();
+        let health = provider_health::test_lock();
+        crate::services::service_health::shared(
+            crate::services::service_health::ServiceKind::Searxng,
+        )
+        .record_success();
+        (env, health)
     }
 
     fn provider(origin: &str, max_calls: Option<u32>) -> Value {
@@ -597,6 +674,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_enabled_provider_is_queried_with_its_own_cap_and_duplicates_merge() {
+        let _lock = test_lock();
         let mut providers = serde_json::Map::new();
         let mut servers = Vec::new();
         // recallDepth defaults to 20; AnySearch's own ceiling is 10.
@@ -627,24 +705,43 @@ mod tests {
                 "firecrawl" => json!({"data": {"web": results}}),
                 _ => json!({"results": results}),
             };
-            let server = serve(vec![("/search", Route::new(200, "application/json", envelope.to_string()))]).await;
+            let server = serve(vec![(
+                "/search",
+                Route::new(200, "application/json", envelope.to_string()),
+            )])
+            .await;
             providers.insert(name.to_string(), provider(&server.origin, None));
             servers.push((name, server));
         }
         let settings = web(Value::Object(providers), json!({}));
         let outcome = search_web("q", &settings, None, None).await.unwrap();
         assert_eq!(outcome.providers_used.len(), 7);
-        assert_eq!(outcome.providers_used, ["anysearch", "brave", "deepseek", "exa", "firecrawl", "searxng", "tavily"]);
+        assert_eq!(
+            outcome.providers_used,
+            [
+                "anysearch",
+                "brave",
+                "deepseek",
+                "exa",
+                "firecrawl",
+                "searxng",
+                "tavily"
+            ]
+        );
         assert!(outcome.failures.is_empty());
         for (name, cap) in limits {
-            let (_, server) = servers.iter().find(|(server_name, _)| *server_name == name).unwrap();
+            let (_, server) = servers
+                .iter()
+                .find(|(server_name, _)| *server_name == name)
+                .unwrap();
             assert_eq!(server.hits("/search"), 1, "{name}");
             let seen = &server.seen()[0];
             let count = match name {
                 // SearXNG has no per-request count parameter; the client trims
                 // to its ceiling instead.
                 "searxng" => {
-                    let url = reqwest::Url::parse(&format!("{}{}", server.origin, seen.target)).unwrap();
+                    let url =
+                        reqwest::Url::parse(&format!("{}{}", server.origin, seen.target)).unwrap();
                     let pairs = url
                         .query_pairs()
                         .map(|(key, value)| (key.into_owned(), value.into_owned()))
@@ -654,7 +751,8 @@ mod tests {
                     Some(cap)
                 }
                 "brave" => {
-                    let url = reqwest::Url::parse(&format!("{}{}", server.origin, seen.target)).unwrap();
+                    let url =
+                        reqwest::Url::parse(&format!("{}{}", server.origin, seen.target)).unwrap();
                     url.query_pairs()
                         .find(|(key, _)| key == "count")
                         .map(|(_, value)| value.parse::<usize>().unwrap())
@@ -679,6 +777,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_page_hit_by_two_providers_is_marked_with_both() {
+        let _lock = test_lock();
         let one = serve(vec![("/search", Route::new(200, "application/json",
             json!({"results":[{"title":"Shared","url":"https://example.com/shared","content":"a"}]}).to_string()))]).await;
         let two = serve(vec![("/search", Route::new(200, "application/json",
@@ -698,9 +797,14 @@ mod tests {
 
     #[tokio::test]
     async fn one_provider_failing_is_named_and_the_rest_still_return() {
+        let _lock = test_lock();
         let ok = serve(vec![("/search", search_route())]).await;
         let broken = serve(vec![("/search", Route::new(402, "application/json", "{}"))]).await;
-        let slow = serve(vec![("/search", search_route().delayed(Duration::from_millis(800)))]).await;
+        let slow = serve(vec![(
+            "/search",
+            search_route().delayed(Duration::from_millis(800)),
+        )])
+        .await;
         let limited = serve(vec![("/search", Route::new(429, "application/json", "{}"))]).await;
         let settings = web(
             json!({
@@ -727,13 +831,15 @@ mod tests {
             ]
         );
         let rendered = render_outcome(&outcome);
-        assert!(rendered.contains("[searched: exa — firecrawl quota_exhausted, searxng timeout, tavily rate_limited]"));
+        assert!(rendered.contains(
+            "[searched: exa — firecrawl quota_exhausted, searxng timeout, tavily rate_limited]"
+        ));
         assert!(rendered.contains("https://example.com/a"));
     }
 
     #[tokio::test]
     async fn an_aborted_search_sends_nothing_and_reports_cancelled() {
-        budget::reset();
+        let _lock = test_lock();
         let server = serve(vec![("/search", search_route())]).await;
         let settings = web(json!({"exa": provider(&server.origin, None)}), json!({}));
         // The abort check runs before the permit and any provider call.
@@ -749,12 +855,11 @@ mod tests {
         assert_eq!(error, SearchError::Cancelled);
         assert!(server.seen().is_empty());
         assert_eq!(budget::snapshot().0, 0, "a cancelled search is not charged");
-        budget::reset();
     }
 
     #[tokio::test]
     async fn queue_time_counts_against_the_total_deadline() {
-        budget::reset();
+        let _lock = test_lock();
         let server = serve(vec![("/search", search_route())]).await;
         let settings = web(
             json!({"exa": provider(&server.origin, None)}),
@@ -779,13 +884,16 @@ mod tests {
             "{error}"
         );
         assert!(server.seen().is_empty());
-        budget::reset();
     }
 
     #[tokio::test]
     async fn zero_results_from_a_successful_provider_names_the_failed_ones() {
-        let empty = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results": []}).to_string()))]).await;
+        let _lock = test_lock();
+        let empty = serve(vec![(
+            "/search",
+            Route::new(200, "application/json", json!({"results": []}).to_string()),
+        )])
+        .await;
         let broken = serve(vec![("/search", Route::new(402, "application/json", "{}"))]).await;
         let settings = web(
             json!({"exa": provider(&empty.origin, None), "firecrawl": provider(&broken.origin, None)}),
@@ -806,6 +914,7 @@ mod tests {
             failures: vec![SearchFailure {
                 provider: "exa".into(),
                 reason: "budget_exhausted".into(),
+                cooling_down: false,
             }],
             providers_used: Vec::new(),
             all_failed: false,
@@ -838,6 +947,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_provider_failing_is_unavailable_not_empty_results() {
+        let _lock = test_lock();
         let auth = serve(vec![("/search", Route::new(401, "application/json", "{}"))]).await;
         let quota = serve(vec![("/search", Route::new(432, "application/json", "{}"))]).await;
         let settings = web(
@@ -851,15 +961,28 @@ mod tests {
         assert_eq!(
             error,
             SearchError::Unavailable(vec![
-                SearchFailure { provider: "exa".into(), reason: "auth_failed".into() },
-                SearchFailure { provider: "tavily".into(), reason: "quota_exhausted".into() },
+                SearchFailure {
+                    provider: "exa".into(),
+                    reason: "auth_failed".into(),
+                    cooling_down: false,
+                },
+                SearchFailure {
+                    provider: "tavily".into(),
+                    reason: "quota_exhausted".into(),
+                    cooling_down: false,
+                },
             ])
         );
-        assert!(error.to_string().starts_with("unavailable: exa auth_failed"));
+        assert!(
+            error
+                .to_string()
+                .starts_with("unavailable: exa auth_failed")
+        );
     }
 
     #[tokio::test]
     async fn no_providers_and_unbuildable_providers_are_distinguished() {
+        let _lock = test_lock();
         let settings = web(json!({}), json!({}));
         assert_eq!(
             search_web("q", &settings, None, None).await.unwrap_err(),
@@ -875,7 +998,8 @@ mod tests {
             error,
             SearchError::Unavailable(vec![SearchFailure {
                 provider: "exa".into(),
-                reason: "auth_failed".into()
+                reason: "auth_failed".into(),
+                cooling_down: false,
             }])
         );
     }
@@ -884,10 +1008,18 @@ mod tests {
 
     #[tokio::test]
     async fn a_spent_provider_is_skipped_and_rendered_as_budget_exhausted() {
-        budget::reset();
+        let _lock = test_lock();
         let spent = serve(vec![("/search", search_route())]).await;
-        let other = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results":[{"title":"B","url":"https://other.example/b","content":"s"}]}).to_string()))]).await;
+        let other = serve(vec![(
+            "/search",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results":[{"title":"B","url":"https://other.example/b","content":"s"}]})
+                    .to_string(),
+            ),
+        )])
+        .await;
         let settings = web(
             json!({
                 "exa": provider(&spent.origin, Some(1)),
@@ -898,18 +1030,25 @@ mod tests {
         let first = search_web("q", &settings, None, None).await.unwrap();
         assert!(first.failures.is_empty());
         let second = search_web("q", &settings, None, None).await.unwrap();
-        assert_eq!(spent.hits("/search"), 1, "the spent provider sent nothing more");
+        assert_eq!(
+            spent.hits("/search"),
+            1,
+            "the spent provider sent nothing more"
+        );
         assert_eq!(
             second.failures,
-            vec![SearchFailure { provider: "exa".into(), reason: "budget_exhausted".into() }]
+            vec![SearchFailure {
+                provider: "exa".into(),
+                reason: "budget_exhausted".into(),
+                cooling_down: false,
+            }]
         );
         assert!(render_outcome(&second).contains("exa budget exhausted"));
-        budget::reset();
     }
 
     #[tokio::test]
     async fn the_session_search_cap_stops_requests_with_a_named_error() {
-        budget::reset();
+        let _lock = test_lock();
         let server = serve(vec![("/search", search_route())]).await;
         let settings = web(
             json!({"exa": provider(&server.origin, None)}),
@@ -920,13 +1059,13 @@ mod tests {
         assert!(matches!(&error, SearchError::Budget(message)
             if message == "budget_exhausted: web search limit (1 per session) reached"));
         assert_eq!(server.hits("/search"), 1);
-        budget::reset();
     }
 
     // ── filters and caps ───────────────────────────────────────
 
     #[tokio::test]
     async fn domain_filters_and_the_domain_cap_apply_after_fusion() {
+        let _lock = test_lock();
         let results = vec![
             json!({"title":"A","url":"https://docs.example.com/a","content":"s"}),
             json!({"title":"B","url":"https://docs.example.com/b","content":"s"}),
@@ -934,8 +1073,15 @@ mod tests {
             json!({"title":"D","url":"https://blog.example.com/d","content":"s"}),
             json!({"title":"E","url":"https://blocked.example/e","content":"s"}),
         ];
-        let server = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results": results}).to_string()))]).await;
+        let server = serve(vec![(
+            "/search",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results": results}).to_string(),
+            ),
+        )])
+        .await;
         let settings = web(
             json!({"exa": provider(&server.origin, None)}),
             json!({"search": {"domainCap": 2}}),
@@ -952,7 +1098,11 @@ mod tests {
         )
         .await
         .unwrap();
-        let urls = outcome.hits.iter().map(|hit| hit.url.as_str()).collect::<Vec<_>>();
+        let urls = outcome
+            .hits
+            .iter()
+            .map(|hit| hit.url.as_str())
+            .collect::<Vec<_>>();
         assert_eq!(
             urls,
             [
@@ -975,7 +1125,11 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(
-            outcome.hits.iter().map(|hit| hit.url.as_str()).collect::<Vec<_>>(),
+            outcome
+                .hits
+                .iter()
+                .map(|hit| hit.url.as_str())
+                .collect::<Vec<_>>(),
             ["https://blog.example.com/d"]
         );
     }
@@ -984,36 +1138,72 @@ mod tests {
 
     #[tokio::test]
     async fn rerank_scores_set_the_final_order_and_ties_use_the_url() {
-        let server = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results":[
-                {"title":"A","url":"https://example.com/a","content":"alpha"},
-                {"title":"B","url":"https://example.com/b","content":"beta"}
-            ]}).to_string()))]).await;
-        let rerank = serve(vec![("/score", Route::new(200, "application/json",
-            json!({"data":[{"score":0.1},{"score":0.9}]}).to_string()))]).await;
+        let _lock = test_lock();
+        let server = serve(vec![(
+            "/search",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results":[
+                    {"title":"A","url":"https://example.com/a","content":"alpha"},
+                    {"title":"B","url":"https://example.com/b","content":"beta"}
+                ]})
+                .to_string(),
+            ),
+        )])
+        .await;
+        let rerank = serve(vec![(
+            "/score",
+            Route::new(
+                200,
+                "application/json",
+                json!({"data":[{"score":0.1},{"score":0.9}]}).to_string(),
+            ),
+        )])
+        .await;
         let settings = web(
             json!({"exa": provider(&server.origin, None)}),
             json!({"search": {"rerank": {"enabled": true}}}),
         );
         let client = rerank_client(&rerank.origin, fresh_health());
-        let outcome = search_web("q", &settings, Some(&client), None).await.unwrap();
+        let outcome = search_web("q", &settings, Some(&client), None)
+            .await
+            .unwrap();
         assert!(outcome.reranked);
         assert_eq!(
-            outcome.hits.iter().map(|hit| hit.url.as_str()).collect::<Vec<_>>(),
+            outcome
+                .hits
+                .iter()
+                .map(|hit| hit.url.as_str())
+                .collect::<Vec<_>>(),
             ["https://example.com/b", "https://example.com/a"]
         );
         let sent: Value = serde_json::from_str(&rerank.seen()[0].body).unwrap();
-        assert!(sent["text_1"].as_str().unwrap().contains("<Instruct>: Given a web search query"));
+        assert!(
+            sent["text_1"]
+                .as_str()
+                .unwrap()
+                .contains("<Instruct>: Given a web search query")
+        );
         assert_eq!(sent["text_2"].as_array().unwrap().len(), 2);
     }
 
     #[tokio::test]
     async fn rerank_failure_keeps_the_rrf_order_and_the_service_goes_down() {
-        let server = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results":[
-                {"title":"A","url":"https://example.com/a","content":"alpha"},
-                {"title":"B","url":"https://example.com/b","content":"beta"}
-            ]}).to_string()))]).await;
+        let _lock = test_lock();
+        let server = serve(vec![(
+            "/search",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results":[
+                    {"title":"A","url":"https://example.com/a","content":"alpha"},
+                    {"title":"B","url":"https://example.com/b","content":"beta"}
+                ]})
+                .to_string(),
+            ),
+        )])
+        .await;
         let rerank = serve(vec![("/score", Route::new(500, "application/json", "{}"))]).await;
         let settings = web(
             json!({"exa": provider(&server.origin, None)}),
@@ -1021,23 +1211,36 @@ mod tests {
         );
         let health = fresh_health();
         let client = rerank_client(&rerank.origin, std::sync::Arc::clone(&health));
-        let outcome = search_web("q", &settings, Some(&client), None).await.unwrap();
+        let outcome = search_web("q", &settings, Some(&client), None)
+            .await
+            .unwrap();
         assert!(!outcome.reranked);
-        assert!(outcome.failures.is_empty(), "rerank is not a provider failure");
+        assert!(
+            outcome.failures.is_empty(),
+            "rerank is not a provider failure"
+        );
         assert_eq!(
-            outcome.hits.iter().map(|hit| hit.url.as_str()).collect::<Vec<_>>(),
+            outcome
+                .hits
+                .iter()
+                .map(|hit| hit.url.as_str())
+                .collect::<Vec<_>>(),
             ["https://example.com/a", "https://example.com/b"]
         );
         assert!(health.is_down());
         // While Down the next search is not even sent.
-        let outcome = search_web("q", &settings, Some(&client), None).await.unwrap();
+        let outcome = search_web("q", &settings, Some(&client), None)
+            .await
+            .unwrap();
         assert!(!outcome.reranked);
         assert_eq!(rerank.hits("/score"), 1);
     }
 
     // ── Decision Provider ──────────────────────────────────────
 
-    fn flags(answer: impl Fn(&str) -> bool + Send + Sync + 'static) -> impl Fn(&crate::services::decision::DecisionRequest) -> BTreeMap<String, Answer> {
+    fn flags(
+        answer: impl Fn(&str) -> bool + Send + Sync + 'static,
+    ) -> impl Fn(&crate::services::decision::DecisionRequest) -> BTreeMap<String, Answer> {
         move |request| {
             request
                 .questions
@@ -1052,12 +1255,21 @@ mod tests {
 
     #[tokio::test]
     async fn web_answers_moves_flagged_candidates_to_the_front_without_dropping_any() {
-        let server = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results":[
-                {"title":"A","url":"https://example.com/a","content":"alpha"},
-                {"title":"B","url":"https://example.com/b","content":"beta"},
-                {"title":"C","url":"https://example.com/c","content":"gamma"}
-            ]}).to_string()))]).await;
+        let _lock = test_lock();
+        let server = serve(vec![(
+            "/search",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results":[
+                    {"title":"A","url":"https://example.com/a","content":"alpha"},
+                    {"title":"B","url":"https://example.com/b","content":"beta"},
+                    {"title":"C","url":"https://example.com/c","content":"gamma"}
+                ]})
+                .to_string(),
+            ),
+        )])
+        .await;
         let settings = web(
             json!({"exa": provider(&server.origin, None)}),
             json!({"search": {"domainCap": 9}}),
@@ -1065,11 +1277,21 @@ mod tests {
         let (provider, backend) = ScriptedBackend::provider(flags(|id| id == "c2"));
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&provider, &abort);
-        let outcome = search_web("q", &settings, None, Some(&decisions)).await.unwrap();
+        let outcome = search_web("q", &settings, None, Some(&decisions))
+            .await
+            .unwrap();
         assert_eq!(outcome.hits.len(), 3, "no candidate is removed");
         assert_eq!(
-            outcome.hits.iter().map(|hit| hit.url.as_str()).collect::<Vec<_>>(),
-            ["https://example.com/c", "https://example.com/a", "https://example.com/b"]
+            outcome
+                .hits
+                .iter()
+                .map(|hit| hit.url.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "https://example.com/c",
+                "https://example.com/a",
+                "https://example.com/b"
+            ]
         );
         assert!(outcome.hits[0].likely_answers);
         assert!(!outcome.hits[1].likely_answers);
@@ -1086,18 +1308,33 @@ mod tests {
 
     #[tokio::test]
     async fn web_answers_unavailable_leaves_the_order_untouched() {
-        let server = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results":[
-                {"title":"A","url":"https://example.com/a","content":"alpha"},
-                {"title":"B","url":"https://example.com/b","content":"beta"}
-            ]}).to_string()))]).await;
+        let _lock = test_lock();
+        let server = serve(vec![(
+            "/search",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results":[
+                    {"title":"A","url":"https://example.com/a","content":"alpha"},
+                    {"title":"B","url":"https://example.com/b","content":"beta"}
+                ]})
+                .to_string(),
+            ),
+        )])
+        .await;
         let settings = web(json!({"exa": provider(&server.origin, None)}), json!({}));
         let (provider, _) = ScriptedBackend::failing(FallbackReason::Timeout);
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&provider, &abort);
-        let outcome = search_web("q", &settings, None, Some(&decisions)).await.unwrap();
+        let outcome = search_web("q", &settings, None, Some(&decisions))
+            .await
+            .unwrap();
         assert_eq!(
-            outcome.hits.iter().map(|hit| hit.url.as_str()).collect::<Vec<_>>(),
+            outcome
+                .hits
+                .iter()
+                .map(|hit| hit.url.as_str())
+                .collect::<Vec<_>>(),
             ["https://example.com/a", "https://example.com/b"]
         );
         assert!(outcome.hits.iter().all(|hit| !hit.likely_answers));
@@ -1105,53 +1342,70 @@ mod tests {
 
     #[tokio::test]
     async fn web_query_kind_adds_provider_parameters_and_keeps_all_providers() {
+        let _lock = test_lock();
         let any = serve(vec![("/search", search_route())]).await;
         let exa = serve(vec![("/search", search_route())]).await;
         let settings = web(
             json!({"anysearch": provider(&any.origin, None), "exa": provider(&exa.origin, None)}),
             json!({}),
         );
-        let (provider, _) = ScriptedBackend::provider(|request| {
-            match request.point {
-                crate::services::decision::DecisionPoint::WebQueryKind => [(
-                    "kind".to_string(),
-                    Answer::Choice {
-                        choice: "chinese".to_string(),
-                        probabilities: BTreeMap::new(),
-                        confidence: 0.95,
-                    },
-                )]
-                .into_iter()
+        let (provider, _) = ScriptedBackend::provider(|request| match request.point {
+            crate::services::decision::DecisionPoint::WebQueryKind => [(
+                "kind".to_string(),
+                Answer::Choice {
+                    choice: "chinese".to_string(),
+                    probabilities: BTreeMap::new(),
+                    confidence: 0.95,
+                },
+            )]
+            .into_iter()
+            .collect(),
+            _ => request
+                .questions
+                .keys()
+                .map(|id| (id.clone(), Answer::Noul { probability: 0.03 }))
                 .collect(),
-                _ => request
-                    .questions
-                    .keys()
-                    .map(|id| (id.clone(), Answer::Noul { probability: 0.03 }))
-                    .collect(),
-            }
         });
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&provider, &abort);
-        let outcome = search_web("大模型 压缩", &settings, None, Some(&decisions)).await.unwrap();
+        let outcome = search_web("大模型 压缩", &settings, None, Some(&decisions))
+            .await
+            .unwrap();
         assert_eq!(outcome.query_kind, Some("chinese"));
-        assert_eq!(outcome.providers_used, ["anysearch", "exa"], "no provider was removed");
+        assert_eq!(
+            outcome.providers_used,
+            ["anysearch", "exa"],
+            "no provider was removed"
+        );
         let body: Value = serde_json::from_str(&any.seen()[0].body).unwrap();
         assert_eq!(body["zone"], "cn");
         let exa_body: Value = serde_json::from_str(&exa.seen()[0].body).unwrap();
-        assert_eq!(exa_body["query"], "大模型 压缩", "providers without a zone parameter are unchanged");
+        assert_eq!(
+            exa_body["query"], "大模型 压缩",
+            "providers without a zone parameter are unchanged"
+        );
     }
 
     #[tokio::test]
     async fn web_prune_stays_shadow_and_never_changes_the_results() {
-        let server = serve(vec![("/search", Route::new(200, "application/json",
-            json!({"results":[
-                {"title":"A","url":"https://example.com/a","content":"alpha"},
-                {"title":"B","url":"https://example.com/b","content":"beta"},
-                {"title":"C","url":"https://example.com/c","content":"gamma"},
-                {"title":"D","url":"https://example.com/d","content":"delta"},
-                {"title":"E","url":"https://example.com/e","content":"epsilon"},
-                {"title":"F","url":"https://example.com/f","content":"zeta"}
-            ]}).to_string()))]).await;
+        let _lock = test_lock();
+        let server = serve(vec![(
+            "/search",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results":[
+                    {"title":"A","url":"https://example.com/a","content":"alpha"},
+                    {"title":"B","url":"https://example.com/b","content":"beta"},
+                    {"title":"C","url":"https://example.com/c","content":"gamma"},
+                    {"title":"D","url":"https://example.com/d","content":"delta"},
+                    {"title":"E","url":"https://example.com/e","content":"epsilon"},
+                    {"title":"F","url":"https://example.com/f","content":"zeta"}
+                ]})
+                .to_string(),
+            ),
+        )])
+        .await;
         let settings = web(
             json!({"exa": provider(&server.origin, None)}),
             json!({"search": {"domainCap": 9}}),
@@ -1159,7 +1413,9 @@ mod tests {
         let (provider, backend) = ScriptedBackend::provider(flags(|_| false));
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&provider, &abort);
-        let outcome = search_web("q", &settings, None, Some(&decisions)).await.unwrap();
+        let outcome = search_web("q", &settings, None, Some(&decisions))
+            .await
+            .unwrap();
         assert_eq!(outcome.hits.len(), 6, "shadow prune removes nothing");
         let points = backend
             .requests()
@@ -1256,12 +1512,416 @@ mod tests {
             .collect::<Vec<_>>();
         reorder_and_mark(&mut hits, &[false, true, false, true]);
         assert_eq!(
-            hits.iter().map(|hit| hit.title.as_str()).collect::<Vec<_>>(),
+            hits.iter()
+                .map(|hit| hit.title.as_str())
+                .collect::<Vec<_>>(),
             ["1", "3", "0", "2"]
         );
         assert_eq!(
-            hits.iter().map(|hit| hit.likely_answers).collect::<Vec<_>>(),
+            hits.iter()
+                .map(|hit| hit.likely_answers)
+                .collect::<Vec<_>>(),
             [true, true, false, false]
         );
+    }
+
+    // ── Commercial Provider Health (H2) ────────────────────────
+
+    #[tokio::test]
+    async fn acceptance_1_soft_failure_timeout_enters_down_on_consecutive_two_and_resets_on_success()
+     {
+        let _lock = test_lock();
+        let timeout_server =
+            serve(vec![("/search", Route::new(500, "application/json", "{}"))]).await;
+        let settings = web(
+            json!({"exa": provider(&timeout_server.origin, None)}),
+            json!({}),
+        );
+
+        // Search 1: 1st 500 failure -> soft streak = 1, not Down
+        let err1 = search_web("q", &settings, None, None).await.unwrap_err();
+        assert!(matches!(err1, SearchError::Unavailable(_)));
+        assert_eq!(timeout_server.hits("/search"), 1);
+        assert!(!provider_health::is_soft_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // Search 2: 2nd consecutive 500 failure -> enters Down!
+        let err2 = search_web("q", &settings, None, None).await.unwrap_err();
+        assert!(matches!(err2, SearchError::Unavailable(_)));
+        assert_eq!(timeout_server.hits("/search"), 2);
+        assert!(provider_health::is_soft_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // Search 3: while Down, 0 requests sent, returns cooling down
+        let err3 = search_web("q", &settings, None, None).await.unwrap_err();
+        assert_eq!(
+            timeout_server.hits("/search"),
+            2,
+            "down provider receives 0 requests"
+        );
+        match err3 {
+            SearchError::Unavailable(failures) => {
+                assert_eq!(failures.len(), 1);
+                assert_eq!(failures[0].provider, "exa");
+                assert_eq!(failures[0].reason, "http_500");
+                assert!(failures[0].cooling_down);
+            }
+            other => panic!("expected Unavailable, got {other:?}"),
+        }
+
+        // Now test that a success in between resets streak
+        provider_health::reset();
+        let fail_server = serve(vec![("/search", Route::new(500, "application/json", "{}"))]).await;
+        let success_server = serve(vec![("/search", search_route())]).await;
+        let fail_settings = web(
+            json!({"exa": provider(&fail_server.origin, None)}),
+            json!({}),
+        );
+        let success_settings = web(
+            json!({"exa": provider(&success_server.origin, None)}),
+            json!({}),
+        );
+
+        // 1st failure (streak = 1)
+        let _ = search_web("q", &fail_settings, None, None).await;
+        assert_eq!(
+            provider_health::shared().soft_streak("exa", Capability::Search),
+            1
+        );
+        assert!(!provider_health::is_soft_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // 2nd call succeeds (resets streak = 0)
+        let _ = search_web("q", &success_settings, None, None).await;
+        assert_eq!(
+            provider_health::shared().soft_streak("exa", Capability::Search),
+            0
+        );
+        assert!(!provider_health::is_soft_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // 3rd call fails (streak = 1 again, not Down)
+        let _ = search_web("q", &fail_settings, None, None).await;
+        assert_eq!(
+            provider_health::shared().soft_streak("exa", Capability::Search),
+            1
+        );
+        assert!(!provider_health::is_soft_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+        assert_eq!(fail_server.hits("/search"), 2);
+        assert_eq!(success_server.hits("/search"), 1);
+    }
+
+    #[tokio::test]
+    async fn acceptance_2_rate_limit_enters_down_on_first_failure() {
+        let _lock = test_lock();
+        let server = serve(vec![("/search", Route::new(429, "application/json", "{}"))]).await;
+        let settings = web(json!({"brave": provider(&server.origin, None)}), json!({}));
+
+        // 1st 429 enters Down immediately
+        let _ = search_web("q", &settings, None, None).await;
+        assert_eq!(server.hits("/search"), 1);
+        assert!(provider_health::is_soft_cooling_down_at(
+            "brave",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // 2nd search is skipped
+        let err = search_web("q", &settings, None, None).await.unwrap_err();
+        assert_eq!(server.hits("/search"), 1, "0 requests in cooldown");
+        match err {
+            SearchError::Unavailable(failures) => {
+                assert_eq!(failures[0].provider, "brave");
+                assert_eq!(failures[0].reason, "rate_limited");
+                assert!(failures[0].cooling_down);
+            }
+            other => panic!("expected Unavailable, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn acceptance_3_quota_exhausted_enters_down_immediately_and_renders_suffix() {
+        let _lock = test_lock();
+        let server = serve(vec![("/search", Route::new(432, "application/json", "{}"))]).await;
+        let settings = web(json!({"tavily": provider(&server.origin, None)}), json!({}));
+
+        // 1st quota failure enters hard Down
+        let _ = search_web("q", &settings, None, None).await;
+        assert_eq!(server.hits("/search"), 1);
+        assert!(provider_health::is_hard_cooling_down_at(
+            "tavily",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // Next call is skipped, 0 requests sent
+        let err = search_web("q", &settings, None, None).await.unwrap_err();
+        assert_eq!(server.hits("/search"), 1);
+        assert_eq!(
+            err.to_string(),
+            "unavailable: tavily quota_exhausted (cooling down)"
+        );
+    }
+
+    #[tokio::test]
+    async fn acceptance_6_outer_timeout_records_failure_at_call_site() {
+        let _lock = test_lock();
+        // Server hangs for 500ms, perProviderDeadlineMs is 50ms
+        let mut delayed_route = Route::new(200, "application/json", "{}");
+        delayed_route.delay = Duration::from_millis(500);
+        let server = serve(vec![("/search", delayed_route)]).await;
+        let settings = web(
+            json!({"exa": provider(&server.origin, None)}),
+            json!({"search": {"perProviderDeadlineMs": 50, "deadlineMs": 500}}),
+        );
+
+        let err = search_web("q", &settings, None, None).await.unwrap_err();
+        assert!(matches!(err, SearchError::Unavailable(_)));
+        // Outer timeout fired, and health failure was recorded outside the timeout!
+        assert_eq!(
+            provider_health::shared().soft_streak("exa", Capability::Search),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn acceptance_8_all_commercial_in_soft_down_releases_one_and_all_hard_down_skips_all() {
+        let _lock = test_lock();
+
+        // 1. Put all 6 commercial providers into soft Down
+        let now = Instant::now();
+        for name in provider_health::COMMERCIAL_PROVIDERS {
+            provider_health::record_failure_at(
+                name,
+                Capability::Search,
+                &ProviderError::RateLimited,
+                now,
+            );
+            assert!(provider_health::is_soft_cooling_down_at(
+                name,
+                Capability::Search,
+                now
+            ));
+        }
+        assert!(provider_health::all_commercial_in_soft_cooldown(
+            Capability::Search
+        ));
+
+        // SearXNG is ready and commercial providers are all soft down
+        let searxng_server = serve(vec![("/search", Route::new(200, "application/json",
+            json!({"results": [{"title": "SearXNG Hit", "url": "https://example.com/sx", "content": "snippet"}]}).to_string()))]).await;
+        let commercial_server = serve(vec![("/search", search_route())]).await;
+
+        let mut providers_map = serde_json::Map::new();
+        providers_map.insert(
+            "searxng".to_string(),
+            json!({"enabled": true, "url": searxng_server.origin}),
+        );
+        for name in provider_health::COMMERCIAL_PROVIDERS {
+            providers_map.insert(name.to_string(), provider(&commercial_server.origin, None));
+        }
+        let settings = web(Value::Object(providers_map), json!({}));
+
+        let outcome = search_web("q", &settings, None, None).await.unwrap();
+        // SearXNG succeeded
+        assert!(outcome.providers_used.contains(&"searxng".to_string()));
+        // Exactly ONE commercial provider was released and probed (e.g. anysearch, the first in order)
+        let commercial_used = outcome
+            .providers_used
+            .iter()
+            .filter(|p| provider_health::is_commercial_provider(p))
+            .count();
+        assert_eq!(
+            commercial_used, 1,
+            "exactly one commercial provider is released when all are soft down"
+        );
+
+        // 2. Put all commercial providers into HARD Down
+        provider_health::reset();
+        let now = Instant::now();
+        for name in provider_health::COMMERCIAL_PROVIDERS {
+            provider_health::record_failure_at(
+                name,
+                Capability::Search,
+                &ProviderError::QuotaExhausted,
+                now,
+            );
+            assert!(provider_health::is_hard_cooling_down_at(
+                name,
+                Capability::Search,
+                now
+            ));
+        }
+
+        // When all are in hard Down, NO commercial provider is released!
+        let outcome2 = search_web("q", &settings, None, None).await.unwrap();
+        let commercial_used2 = outcome2
+            .providers_used
+            .iter()
+            .filter(|p| provider_health::is_commercial_provider(p))
+            .count();
+        assert_eq!(
+            commercial_used2, 0,
+            "no commercial provider is released when in hard Down"
+        );
+    }
+
+    #[tokio::test]
+    async fn acceptance_10_skipped_calls_do_not_consume_budget_but_failed_calls_do() {
+        let _lock = test_lock();
+
+        let server = serve(vec![("/search", Route::new(500, "application/json", "{}"))]).await;
+        let settings = web(json!({"exa": provider(&server.origin, Some(5))}), json!({}));
+
+        // Put exa into Down
+        provider_health::record_failure_at(
+            "exa",
+            Capability::Search,
+            &ProviderError::RateLimited,
+            Instant::now(),
+        );
+        assert!(provider_health::is_soft_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        let initial_calls = budget::snapshot().3.get("exa").copied().unwrap_or(0);
+        assert_eq!(initial_calls, 0);
+
+        // Call search: exa is skipped
+        let _ = search_web("q", &settings, None, None).await;
+        let skipped_calls = budget::snapshot().3.get("exa").copied().unwrap_or(0);
+        assert_eq!(skipped_calls, 0, "skipped calls do not increment budget");
+
+        // Clear health: now exa is attempted, fails with 500
+        provider_health::reset();
+        let _ = search_web("q", &settings, None, None).await;
+        let executed_calls = budget::snapshot().3.get("exa").copied().unwrap_or(0);
+        assert_eq!(
+            executed_calls, 1,
+            "executed failed calls do increment budget"
+        );
+    }
+
+    #[tokio::test]
+    async fn acceptance_7_key_change_clears_cooldown_immediately() {
+        let _lock = test_lock();
+        let server = serve(vec![("/search", search_route())]).await;
+        let dir =
+            std::env::temp_dir().join(format!("nyan-health-key-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key_path = dir.join("key");
+        std::fs::write(&key_path, "first-key\n").unwrap();
+
+        let mut provider_json = provider(&server.origin, None);
+        provider_json["apiKeyFile"] = json!(key_path.to_string_lossy());
+        let settings = web(json!({"exa": provider_json}), json!({}));
+
+        // Put exa into a hard Down window without waiting for it.
+        provider_health::record_failure_at(
+            "exa",
+            Capability::Search,
+            &ProviderError::QuotaExhausted,
+            Instant::now(),
+        );
+        assert!(provider_health::is_hard_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // Inside the window the provider is skipped: no request.
+        let _ = search_web("q", &settings, None, None).await;
+        assert_eq!(server.hits("/search"), 0);
+
+        // Rewrite the key file: the next search goes through immediately.
+        std::fs::write(&key_path, "second-key\n").unwrap();
+        let outcome = search_web("q", &settings, None, None).await.unwrap();
+        assert_eq!(outcome.providers_used, ["exa"]);
+        assert_eq!(server.hits("/search"), 1);
+        assert!(!provider_health::is_hard_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // The key itself never appears in the fingerprint.
+        let fingerprint = provider_health::compute_fingerprint(&server.origin, Some("second-key"));
+        assert!(!fingerprint.contains("second-key"));
+        assert_eq!(fingerprint.len(), 16);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn acceptance_13_searxng_not_in_provider_health_registry() {
+        let _lock = test_lock();
+
+        let sx_server = serve(vec![("/search", Route::new(500, "application/json", "{}"))]).await;
+        let settings = web(
+            json!({"searxng": {"enabled": true, "url": sx_server.origin}}),
+            json!({}),
+        );
+
+        let _ = search_web("q", &settings, None, None).await;
+        // Provider health registry must not track searxng
+        assert!(!provider_health::is_soft_cooling_down_at(
+            "searxng",
+            Capability::Search,
+            Instant::now()
+        ));
+        assert_eq!(
+            provider_health::shared().downs("searxng", Capability::Search),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn clear_resets_provider_health_cooldowns() {
+        let _lock = test_lock();
+
+        let server = serve(vec![("/search", search_route())]).await;
+        let settings = web(json!({"exa": provider(&server.origin, None)}), json!({}));
+
+        // Put exa in Down
+        provider_health::record_failure_at(
+            "exa",
+            Capability::Search,
+            &ProviderError::QuotaExhausted,
+            Instant::now(),
+        );
+        assert!(provider_health::is_hard_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // /clear resets provider health!
+        crate::commands::clear::caches::clear_session_caches(&std::collections::HashSet::new());
+        assert!(!provider_health::is_hard_cooling_down_at(
+            "exa",
+            Capability::Search,
+            Instant::now()
+        ));
+
+        // Immediately available
+        let outcome = search_web("q", &settings, None, None).await.unwrap();
+        assert_eq!(outcome.providers_used, ["exa"]);
     }
 }

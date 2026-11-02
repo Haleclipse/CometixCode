@@ -325,6 +325,18 @@ impl ConfiguredSearchProvider {
             Self::Tavily(value) => Ok(value),
         }
     }
+
+    pub fn fingerprint(&self) -> String {
+        match self {
+            Self::AnySearch(value) => value.inner.client.fingerprint(),
+            Self::Brave(value) => value.inner.client.fingerprint(),
+            Self::DeepSeek(value) => value.inner.client.fingerprint(),
+            Self::Exa(value) => value.inner.client.fingerprint(),
+            Self::Firecrawl(value) => value.inner.client.fingerprint(),
+            Self::Tavily(value) => value.inner.client.fingerprint(),
+            Self::Searxng(value) => value.inner.client.fingerprint(),
+        }
+    }
 }
 
 /// An enabled provider that could not be constructed (for example an

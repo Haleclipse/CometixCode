@@ -61,6 +61,9 @@ citationPointer、状态字段、回收站、远端协调器、按美元算的�
    Decision Provider（第 10 条）共用一份实现 `services/service_health.rs`：`Ready ⇄ Down(until)`、连接超时与请求超时
    分开、退避 30 s 起翻倍至 5 min、到期后由下一次使用触发一次后台探测、启动不探测。每个服务一个实例，进程内共享。
    是批次 1 的独立切片（"公共 H"），检索 F / G0、外部搜索 E / F / H、Decision Provider 都依赖它。
+   **范围**：本条只管自建服务与 Decision Provider。六家商业 provider（AnySearch、Brave、DeepSeek、Exa、Firecrawl、
+   Tavily）的健康状态另有一套按 `(provider, 能力)` 分键、软/硬失败分级、真实调用试探的机制，见
+   [external-search-provider-health.md](external-search-provider-health.md)。
 
 10. **Decision Provider**（[decision-provider.md](decision-provider.md)）：四个模块以及宿主运行时里需要"快速判断"的场景都可接入
     同一个分类后端（权限分流、建议 / speculation 门控、agent / plan / skill 路由、结果质量判断等）；统一接口、批量、超时、回退与评测接缝。

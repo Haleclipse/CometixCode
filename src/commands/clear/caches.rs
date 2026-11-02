@@ -70,9 +70,10 @@ pub fn clear_session_caches(preserved_agent_ids: &HashSet<String>) {
     crate::utils::session_env_vars::clear_session_env_vars();
     crate::tools::web_fetch_tool::utils::clear_web_fetch_cache();
     // @nyan: `/clear` also resets provider/fetch budgets, the snapshot URL
-    // index and the decision-provider session budget (external-search 3.5,
-    // decision-provider 5.3).
+    // index, provider health cooldowns, and the decision-provider session
+    // budget (external-search 3.5, decision-provider 5.3, provider-health H2).
     crate::services::web::budget::reset();
+    crate::services::web::provider_health::reset();
     crate::services::web::snapshot::clear_index();
     crate::services::web::search::clear_candidates();
     crate::services::decision::reset_session_budget();
@@ -141,10 +142,13 @@ mod tests {
         crate::services::web::budget::begin_fetch(&WebFetchSettings::default()).unwrap();
         crate::services::web::budget::add_fetch_bytes(&WebFetchSettings::default(), 10).unwrap();
         crate::services::web::budget::reserve_provider("exa", Some(3)).unwrap();
-        crate::services::web::search::remember_candidates(vec!["https://example.com/a".to_string()]);
+        crate::services::web::search::remember_candidates(vec![
+            "https://example.com/a".to_string(),
+        ]);
         crate::services::decision::charge_session_budget_for_tests(10);
         assert_eq!(
-            crate::services::web::budget::snapshot().0, 1,
+            crate::services::web::budget::snapshot().0,
+            1,
             "precondition: a search was counted"
         );
         assert_eq!(crate::services::decision::session_budget_used().0, 1);

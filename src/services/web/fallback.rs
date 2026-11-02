@@ -13,6 +13,7 @@ use chrono::Utc;
 use super::budget;
 use super::decision::WebDecisions;
 use super::fetcher::{FetchConfig, FetchError, FetchedPage, fetch_url};
+use super::provider_health::{self, Capability};
 use super::providers::{self, ProviderError, ProviderPage};
 use super::snapshot::{self, Snapshot};
 use crate::tool::AbortController;
@@ -154,6 +155,22 @@ async fn fallback(
                 continue;
             }
         };
+        // A cooling-down provider is skipped before it can spend a session slot
+        // (provider-health 3.3 / 3.6). The reason keeps its original code and
+        // gains the `(cooling down)` suffix.
+        let guard = if provider_health::is_commercial_provider(&name) {
+            let fingerprint = provider.fingerprint();
+            match provider_health::acquire_permit(&name, Capability::Fetch, Some(&fingerprint)) {
+                provider_health::PermitOutcome::Allowed(guard)
+                | provider_health::PermitOutcome::Probe(guard) => Some(guard),
+                provider_health::PermitOutcome::Skipped { reason, .. } => {
+                    attempts.push((name, format!("{reason} (cooling down)")));
+                    continue;
+                }
+            }
+        } else {
+            None
+        };
         let max_calls = web.provider(&name).max_calls_per_session;
         if let Err(error) = budget::reserve_provider(&name, max_calls) {
             crate::utils::debug::log_for_debugging(&format!("web fetch fallback: {error}"));
@@ -170,6 +187,9 @@ async fn fallback(
         .and_then(|result| result);
         match fetched {
             Ok(page) => {
+                if let Some(guard) = guard {
+                    guard.record_success();
+                }
                 let snapshot =
                     save_provider_page(page, name.clone()).map_err(|error| FetchChainFailure {
                         nyan: direct_reason.to_string(),
@@ -181,7 +201,13 @@ async fn fallback(
                     challenge_fallback_failed: false,
                 });
             }
-            Err(error) => attempts.push((name, error.code())),
+            Err(error) => {
+                let code = error.code();
+                if let Some(guard) = guard {
+                    guard.record_failure(&error);
+                }
+                attempts.push((name, code));
+            }
         }
     }
     if attempts.is_empty() {
@@ -232,7 +258,10 @@ mod tests {
     };
 
     fn long_page() -> String {
-        format!("<html><body><h1>Real page</h1><p>{}</p></body></html>", "content ".repeat(60))
+        format!(
+            "<html><body><h1>Real page</h1><p>{}</p></body></html>",
+            "content ".repeat(60)
+        )
     }
 
     /// `WebSettings` with the given providers pointed at mock base URLs.
@@ -247,6 +276,18 @@ mod tests {
 
     fn provider_json(origin: &str) -> Value {
         json!({"enabled": true, "baseUrl": origin, "apiKeyFile": key_file()})
+    }
+
+    fn test_lock() -> (
+        crate::utils::test_env::TestEnvGuard<'static>,
+        std::sync::MutexGuard<'static, ()>,
+    ) {
+        let env = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        budget::reset();
+        let health = provider_health::test_lock();
+        (env, health)
     }
 
     fn firecrawl_ok() -> Route {
@@ -298,9 +339,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_good_direct_page_never_touches_a_provider() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/ok", Route::html(&long_page()))]).await;
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         let result = chain(&site.url("/ok"), &settings, None).await.unwrap();
         assert_eq!(result.snapshot.metadata.fetched_by, "nyan");
         assert_eq!(result.direct_reason, None);
@@ -309,10 +354,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_403_falls_back_in_order_and_the_first_success_stops_the_chain() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/blocked", Route::new(403, "text/html", "denied"))]).await;
-        let first = serve(vec![("/extract", Route::new(500, "application/json", "{}"))]).await;
+        let first = serve(vec![(
+            "/extract",
+            Route::new(500, "application/json", "{}"),
+        )])
+        .await;
         let second = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let third = serve(vec![("/contents", Route::new(200, "application/json", "{}"))]).await;
+        let third = serve(vec![(
+            "/contents",
+            Route::new(200, "application/json", "{}"),
+        )])
+        .await;
         let settings = web(
             json!({
                 "anysearch": provider_json(&first.origin),
@@ -324,10 +378,16 @@ mod tests {
         let result = chain(&site.url("/blocked"), &settings, None).await.unwrap();
         assert_eq!(result.snapshot.metadata.fetched_by, "firecrawl");
         assert_eq!(result.direct_reason.as_deref(), Some("http_403"));
-        assert_eq!(result.snapshot.metadata.provider_format.as_deref(), Some("markdown"));
+        assert_eq!(
+            result.snapshot.metadata.provider_format.as_deref(),
+            Some("markdown")
+        );
         assert_eq!(first.seen().len(), 1);
         assert_eq!(second.seen().len(), 1);
-        assert!(third.seen().is_empty(), "the chain stops at the first success");
+        assert!(
+            third.seen().is_empty(),
+            "the chain stops at the first success"
+        );
         // The URL is sent as given, with a live-fetch flag.
         let sent: Value = serde_json::from_str(&second.seen()[0].body).unwrap();
         assert_eq!(sent["url"], site.url("/blocked"));
@@ -336,15 +396,25 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_429_451_and_short_bodies_all_fall_back() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![
             ("/limited", Route::new(429, "text/html", "slow")),
             ("/legal", Route::new(451, "text/html", "legal")),
-            ("/slow", Route::text("late").delayed(Duration::from_millis(900))),
-            ("/shell", Route::html("<html><body><div id=app></div></body></html>")),
+            (
+                "/slow",
+                Route::text("late").delayed(Duration::from_millis(900)),
+            ),
+            (
+                "/shell",
+                Route::html("<html><body><div id=app></div></body></html>"),
+            ),
         ])
         .await;
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         let mut config = FetchConfig::for_local_mock();
         config.timeout = Duration::from_millis(200);
         for (path, reason) in [
@@ -370,8 +440,12 @@ mod tests {
 
     #[tokio::test]
     async fn ssrf_and_config_denials_never_reach_a_provider() {
+        let (_env, _health) = test_lock();
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         // Production guard: no test seam.
         let production = FetchConfig::from_settings(&settings);
         for target in [
@@ -403,24 +477,43 @@ mod tests {
         let mut denied = FetchConfig::for_local_mock();
         denied.host_guard.deny_hosts = vec!["127.0.0.1".to_string()];
         let site = serve(vec![("/x", Route::new(403, "text/html", "no"))]).await;
-        let failure = fetch_chain(&site.url("/x"), &AbortController::default(), &settings, &denied, None)
-            .await
-            .unwrap_err();
+        let failure = fetch_chain(
+            &site.url("/x"),
+            &AbortController::default(),
+            &settings,
+            &denied,
+            None,
+        )
+        .await
+        .unwrap_err();
         assert_eq!(failure.nyan, "denied_host");
-        assert!(provider.seen().is_empty(), "no URL may be sent to a provider");
+        assert!(
+            provider.seen().is_empty(),
+            "no URL may be sent to a provider"
+        );
     }
 
     #[tokio::test]
     async fn proxy_unconfigured_does_not_fall_back() {
         let _lock = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        let _health_lock = provider_health::test_lock();
         let _guards = ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]
             .map(crate::utils::test_env::EnvVarGuard::unset);
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         let config = FetchConfig::from_settings(&settings);
-        let failure = fetch_chain("https://example.com/", &AbortController::default(), &settings, &config, None)
-            .await
-            .unwrap_err();
+        let failure = fetch_chain(
+            "https://example.com/",
+            &AbortController::default(),
+            &settings,
+            &config,
+            None,
+        )
+        .await
+        .unwrap_err();
         assert_eq!(failure.nyan, "proxy_unconfigured");
         assert!(failure.attempts.is_empty());
         assert!(provider.seen().is_empty());
@@ -428,6 +521,7 @@ mod tests {
 
     #[tokio::test]
     async fn non_retryable_http_errors_and_content_types_do_not_fall_back() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![
             ("/missing", Route::new(404, "text/html", "gone")),
             ("/boom", Route::new(500, "text/html", "boom")),
@@ -435,19 +529,35 @@ mod tests {
         ])
         .await;
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
-        for (path, expected) in [("/missing", "http_404"), ("/boom", "http_500"), ("/image", "content_type_denied")] {
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
+        for (path, expected) in [
+            ("/missing", "http_404"),
+            ("/boom", "http_500"),
+            ("/image", "content_type_denied"),
+        ] {
             let failure = chain(&site.url(path), &settings, None).await.unwrap_err();
-            assert!(failure.nyan.starts_with(expected), "{path}: {}", failure.nyan);
+            assert!(
+                failure.nyan.starts_with(expected),
+                "{path}: {}",
+                failure.nyan
+            );
         }
         assert!(provider.seen().is_empty());
     }
 
     #[tokio::test]
     async fn every_failure_is_named_in_order() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
         let quota = serve(vec![("/scrape", Route::new(402, "application/json", "{}"))]).await;
-        let limited = serve(vec![("/extract", Route::new(429, "application/json", "{}"))]).await;
+        let limited = serve(vec![(
+            "/extract",
+            Route::new(429, "application/json", "{}"),
+        )])
+        .await;
         let settings = web(
             json!({
                 "firecrawl": provider_json(&quota.origin),
@@ -456,7 +566,9 @@ mod tests {
             }),
             json!(["firecrawl", "brave", "anysearch", "exa"]),
         );
-        let failure = chain(&site.url("/blocked"), &settings, None).await.unwrap_err();
+        let failure = chain(&site.url("/blocked"), &settings, None)
+            .await
+            .unwrap_err();
         assert_eq!(failure.nyan, "http_403");
         assert_eq!(
             failure.attempts,
@@ -474,16 +586,21 @@ mod tests {
 
     #[tokio::test]
     async fn no_configured_provider_is_reported_not_silent() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
         let settings = web(json!({}), json!(["firecrawl"]));
-        let failure = chain(&site.url("/blocked"), &settings, None).await.unwrap_err();
+        let failure = chain(&site.url("/blocked"), &settings, None)
+            .await
+            .unwrap_err();
         assert_eq!(
             failure.attempts,
             vec![("providers".to_string(), "none_configured".to_string())]
         );
         // `fetchFallback: []` disables the provider step; the failure stays named.
         let settings = web(json!({}), json!([]));
-        let failure = chain(&site.url("/blocked"), &settings, None).await.unwrap_err();
+        let failure = chain(&site.url("/blocked"), &settings, None)
+            .await
+            .unwrap_err();
         assert_eq!(
             failure.attempts,
             vec![("providers".to_string(), "fallback_disabled".to_string())]
@@ -496,13 +613,23 @@ mod tests {
 
     #[tokio::test]
     async fn a_provider_with_an_unreadable_key_is_named_and_the_next_one_runs() {
-        let dir = std::env::temp_dir().join(format!("nyan-fallback-{}", uuid::Uuid::new_v4().simple()));
+        let (_env, _health) = test_lock();
+        let dir =
+            std::env::temp_dir().join(format!("nyan-fallback-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&dir).unwrap();
         let key = dir.join("empty");
         std::fs::write(&key, "\n").unwrap();
         let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
-        let good = serve(vec![("/extract", Route::new(200, "application/json",
-            json!({"results":[{"url":"u","raw_content":"tavily page ".repeat(40)}]}).to_string()))]).await;
+        let good = serve(vec![(
+            "/extract",
+            Route::new(
+                200,
+                "application/json",
+                json!({"results":[{"url":"u","raw_content":"tavily page ".repeat(40)}]})
+                    .to_string(),
+            ),
+        )])
+        .await;
         let settings = web(
             json!({
                 "firecrawl": {"enabled": true, "apiKeyFile": key.to_string_lossy()},
@@ -517,11 +644,19 @@ mod tests {
 
     #[tokio::test]
     async fn provider_session_budget_skips_a_spent_provider() {
+        let (_env, _health) = test_lock();
         budget::reset();
         let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
         let first = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let second = serve(vec![("/extract", Route::new(200, "application/json",
-            json!({"content": "anysearch page ".repeat(30)}).to_string()))]).await;
+        let second = serve(vec![(
+            "/extract",
+            Route::new(
+                200,
+                "application/json",
+                json!({"content": "anysearch page ".repeat(30)}).to_string(),
+            ),
+        )])
+        .await;
         let mut settings = web(
             json!({
                 "firecrawl": {"enabled": true, "baseUrl": first.origin, "apiKeyFile": key_file(), "maxCallsPerSession": 1},
@@ -541,21 +676,34 @@ mod tests {
 
     #[tokio::test]
     async fn an_aborted_chain_names_the_cancellation_and_sends_nothing() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         let abort = AbortController::default();
         abort.abort();
-        let failure = fetch_chain(&site.url("/blocked"), &abort, &settings, &FetchConfig::for_local_mock(), None)
-            .await
-            .unwrap_err();
+        let failure = fetch_chain(
+            &site.url("/blocked"),
+            &abort,
+            &settings,
+            &FetchConfig::for_local_mock(),
+            None,
+        )
+        .await
+        .unwrap_err();
         assert_eq!(failure.nyan, "cancelled");
         assert!(provider.seen().is_empty());
     }
 
     // ── web.fetch_fallback ─────────────────────────────────────
 
-    fn challenge_answer(probability: f64) -> impl Fn(&crate::services::decision::DecisionRequest) -> std::collections::BTreeMap<String, Answer> {
+    fn challenge_answer(
+        probability: f64,
+    ) -> impl Fn(&crate::services::decision::DecisionRequest) -> std::collections::BTreeMap<String, Answer>
+    {
         move |_| {
             [("challenge".to_string(), Answer::Noul { probability })]
                 .into_iter()
@@ -565,13 +713,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_confident_challenge_verdict_adds_a_provider_attempt() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/page", Route::html(&long_page()))]).await;
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         let (decision_provider, backend) = ScriptedBackend::provider(challenge_answer(0.99));
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&decision_provider, &abort);
-        let result = chain(&site.url("/page"), &settings, Some(&decisions)).await.unwrap();
+        let result = chain(&site.url("/page"), &settings, Some(&decisions))
+            .await
+            .unwrap();
         assert_eq!(result.snapshot.metadata.fetched_by, "firecrawl");
         assert_eq!(result.direct_reason.as_deref(), Some("challenge_page"));
         assert_eq!(backend.requests().len(), 1);
@@ -579,13 +733,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_challenge_fallback_still_serves_the_direct_page() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/page", Route::html(&long_page()))]).await;
         let provider = serve(vec![("/scrape", Route::new(500, "application/json", "{}"))]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         let (decision_provider, _) = ScriptedBackend::provider(challenge_answer(0.99));
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&decision_provider, &abort);
-        let result = chain(&site.url("/page"), &settings, Some(&decisions)).await.unwrap();
+        let result = chain(&site.url("/page"), &settings, Some(&decisions))
+            .await
+            .unwrap();
         assert_eq!(result.snapshot.metadata.fetched_by, "nyan");
         assert!(result.challenge_fallback_failed);
         assert_eq!(provider.seen().len(), 1, "the provider was tried");
@@ -593,35 +753,188 @@ mod tests {
 
     #[tokio::test]
     async fn a_negative_unsure_or_unavailable_verdict_changes_nothing() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/page", Route::html(&long_page()))]).await;
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         for probability in [0.01, 0.6] {
             let (decision_provider, _) = ScriptedBackend::provider(challenge_answer(probability));
             let abort = AbortController::default();
             let decisions = WebDecisions::new(&decision_provider, &abort);
-            let result = chain(&site.url("/page"), &settings, Some(&decisions)).await.unwrap();
-            assert_eq!(result.snapshot.metadata.fetched_by, "nyan", "p={probability}");
+            let result = chain(&site.url("/page"), &settings, Some(&decisions))
+                .await
+                .unwrap();
+            assert_eq!(
+                result.snapshot.metadata.fetched_by, "nyan",
+                "p={probability}"
+            );
         }
-        let (down, _) = ScriptedBackend::failing(crate::services::decision::FallbackReason::BackendDown);
+        let (down, _) =
+            ScriptedBackend::failing(crate::services::decision::FallbackReason::BackendDown);
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&down, &abort);
-        let result = chain(&site.url("/page"), &settings, Some(&decisions)).await.unwrap();
+        let result = chain(&site.url("/page"), &settings, Some(&decisions))
+            .await
+            .unwrap();
         assert_eq!(result.snapshot.metadata.fetched_by, "nyan");
         assert!(provider.seen().is_empty());
     }
 
     #[tokio::test]
     async fn the_decision_cannot_turn_a_failed_fetch_into_a_success() {
+        let (_env, _health) = test_lock();
         let site = serve(vec![("/missing", Route::new(404, "text/html", "gone"))]).await;
         let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
-        let settings = web(json!({"firecrawl": provider_json(&provider.origin)}), json!(["firecrawl"]));
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
         let (decision_provider, backend) = ScriptedBackend::provider(challenge_answer(0.99));
         let abort = AbortController::default();
         let decisions = WebDecisions::new(&decision_provider, &abort);
-        let failure = chain(&site.url("/missing"), &settings, Some(&decisions)).await.unwrap_err();
+        let failure = chain(&site.url("/missing"), &settings, Some(&decisions))
+            .await
+            .unwrap_err();
         assert_eq!(failure.nyan, "http_404");
-        assert!(backend.requests().is_empty(), "no page, nothing to classify");
+        assert!(
+            backend.requests().is_empty(),
+            "no page, nothing to classify"
+        );
         assert!(provider.seen().is_empty());
+    }
+
+    // ── Provider health on the fetch path (H3) ─────────────────
+
+    async fn fetch_only(
+        site: &crate::services::web::test_support::Server,
+        settings: &WebSettings,
+    ) -> Result<FetchChainResult, FetchChainFailure> {
+        chain(&site.url("/blocked"), settings, None).await
+    }
+
+    #[tokio::test]
+    async fn acceptance_12_fetch_403_and_404_do_not_cool_down_but_401_does() {
+        let (_env, _health) = test_lock();
+        let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
+
+        // Fetch 403: page-level, not a key problem → no Down.
+        let provider_403 =
+            serve(vec![("/scrape", Route::new(403, "application/json", "{}"))]).await;
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider_403.origin)}),
+            json!(["firecrawl"]),
+        );
+        let _ = fetch_only(&site, &settings).await.unwrap_err();
+        assert!(!provider_health::is_soft_cooling_down_at(
+            "firecrawl",
+            Capability::Fetch,
+            Instant::now()
+        ));
+        assert!(!provider_health::is_hard_cooling_down_at(
+            "firecrawl",
+            Capability::Fetch,
+            Instant::now()
+        ));
+
+        // Fetch 404: request issue → no Down.
+        let provider_404 =
+            serve(vec![("/scrape", Route::new(404, "application/json", "{}"))]).await;
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider_404.origin)}),
+            json!(["firecrawl"]),
+        );
+        let _ = fetch_only(&site, &settings).await.unwrap_err();
+        assert!(!provider_health::is_hard_cooling_down_at(
+            "firecrawl",
+            Capability::Fetch,
+            Instant::now()
+        ));
+
+        // Fetch 401: account-level → hard Down on both keys.
+        let provider_401 =
+            serve(vec![("/scrape", Route::new(401, "application/json", "{}"))]).await;
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider_401.origin)}),
+            json!(["firecrawl"]),
+        );
+        let _ = fetch_only(&site, &settings).await.unwrap_err();
+        assert!(provider_health::is_hard_cooling_down_at(
+            "firecrawl",
+            Capability::Fetch,
+            Instant::now()
+        ));
+        assert!(provider_health::is_hard_cooling_down_at(
+            "firecrawl",
+            Capability::Search,
+            Instant::now()
+        ));
+    }
+
+    #[tokio::test]
+    async fn acceptance_12_fetch_skips_a_cooling_down_provider_with_the_suffix() {
+        let (_env, _health) = test_lock();
+        let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
+        let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
+        // Quota exhaustion puts the provider into hard Down for Fetch.
+        provider_health::record_failure_at(
+            "firecrawl",
+            Capability::Fetch,
+            &ProviderError::QuotaExhausted,
+            Instant::now(),
+        );
+        let failure = fetch_only(&site, &settings).await.unwrap_err();
+        assert_eq!(
+            failure.attempts,
+            vec![(
+                "firecrawl".to_string(),
+                "quota_exhausted (cooling down)".to_string()
+            )]
+        );
+        assert!(
+            provider.seen().is_empty(),
+            "a cooling-down provider sends nothing"
+        );
+    }
+
+    #[tokio::test]
+    async fn acceptance_11_fetch_success_does_not_clear_the_search_key() {
+        let (_env, _health) = test_lock();
+        let site = serve(vec![("/blocked", Route::new(403, "text/html", "no"))]).await;
+        let provider = serve(vec![("/scrape", firecrawl_ok())]).await;
+        let settings = web(
+            json!({"firecrawl": provider_json(&provider.origin)}),
+            json!(["firecrawl"]),
+        );
+        provider_health::record_failure_at(
+            "firecrawl",
+            Capability::Search,
+            &ProviderError::RateLimited,
+            Instant::now(),
+        );
+        assert!(provider_health::is_soft_cooling_down_at(
+            "firecrawl",
+            Capability::Search,
+            Instant::now()
+        ));
+        let result = fetch_only(&site, &settings).await.unwrap();
+        assert_eq!(result.snapshot.metadata.fetched_by, "firecrawl");
+        // Fetch succeeded; the Search key is untouched.
+        assert!(provider_health::is_soft_cooling_down_at(
+            "firecrawl",
+            Capability::Search,
+            Instant::now()
+        ));
+        assert!(!provider_health::is_soft_cooling_down_at(
+            "firecrawl",
+            Capability::Fetch,
+            Instant::now()
+        ));
     }
 }
