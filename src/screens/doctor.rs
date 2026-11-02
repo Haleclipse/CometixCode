@@ -250,6 +250,9 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
                 Text(content: format!("└ Invoked: {}", diagnostic.invoked_binary))
                 Text(content: format!("└ Config install method: {}", diagnostic.config_install_method))
                 Text(content: format!("└ Search: {search_status}"))
+                #(diagnostic.git_bash.as_ref().map(|status| element! {
+                    Text(content: format!("└ Git Bash: {status}"))
+                }))
                 #(diagnostic.recommendation.as_ref().map(|recommendation| element! {
                     View(margin_top: 1u32, flex_direction: FlexDirection::Column) {
                         Text(content: format!("Recommendation: {}", recommendation.lines().next().unwrap_or(recommendation)), color: theme.warning)

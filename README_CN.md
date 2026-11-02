@@ -55,6 +55,22 @@ cargo run --release
 
 可执行文件名为 `nyan`。
 
+## 安装
+
+### Windows
+
+Windows 版需要预先安装 [Git for Windows](https://git-scm.com/downloads/win)，因为 nyan 的通用 shell 执行使用 Git Bash，而不是原生 PowerShell。使用 `install.ps1` 安装时，脚本不会安装 Git for Windows；检测不到 Git Bash 只会打印警告。
+
+```powershell
+.\install.ps1
+```
+
+如果 Git Bash 安装在常见位置之外，请在启动 nyan 前将 `CLAUDE_CODE_GIT_BASH_PATH` 设置为 `bash.exe` 的完整路径，例如：
+
+```powershell
+$env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
+```
+
 ### 交叉编译 Windows 版
 
 需要 mingw-w64 工具链。

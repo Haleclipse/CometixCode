@@ -59,6 +59,18 @@ fn executable_exists(path: &Path) -> bool {
     path.is_file()
 }
 
+pub fn git_bash_discovery_source() -> &'static str {
+    if crate::utils::process_env::var_os("CLAUDE_CODE_GIT_BASH_PATH")
+        .as_deref()
+        .truthy()
+        .is_some()
+    {
+        "CLAUDE_CODE_GIT_BASH_PATH"
+    } else {
+        "automatic discovery"
+    }
+}
+
 /// Maps to CC `findGitBashPath()` without process exit: callers surface the
 /// official installation message as an execution error.
 pub fn find_git_bash_path() -> Result<PathBuf, String> {
@@ -123,6 +135,16 @@ pub fn find_git_bash_path() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+
+    #[test]
+    fn git_bash_discovery_source_identifies_override_or_automatic_lookup() {
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _override = EnvVarGuard::unset("CLAUDE_CODE_GIT_BASH_PATH");
+        assert_eq!(git_bash_discovery_source(), "automatic discovery");
+        let _override = EnvVarGuard::set("CLAUDE_CODE_GIT_BASH_PATH", r"C:\Git\bin\bash.exe");
+        assert_eq!(git_bash_discovery_source(), "CLAUDE_CODE_GIT_BASH_PATH");
+    }
 
     #[test]
     fn windows_and_posix_path_conversions_match_official_examples() {

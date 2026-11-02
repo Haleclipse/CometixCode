@@ -58,6 +58,20 @@ fn auto_update_startup_notification_for_platform(
     })
 }
 
+fn git_bash_startup_notification_for_platform(
+    platform: &str,
+    available: bool,
+) -> Option<Notification> {
+    if platform != "windows" || available {
+        return None;
+    }
+    Some(Notification::text(
+        "windows-git-bash-unavailable",
+        "Windows requires Git for Windows (Git Bash). Install it or set CLAUDE_CODE_GIT_BASH_PATH to your bash.exe path.",
+        NotificationPriority::Low,
+    ))
+}
+
 pub fn startup_notifications_with_gate(
     settings: &SettingsJson,
     errors: &[ValidationError],
@@ -71,6 +85,15 @@ pub fn startup_notifications_with_gate(
     if platform == "windows"
         && let Some(notification) =
             auto_update_startup_notification_for_platform(platform, is_auto_updater_disabled())
+    {
+        notifications.push(notification);
+    }
+    #[cfg(target_os = "windows")]
+    let git_bash_available = crate::utils::windows_paths::find_git_bash_path().is_ok();
+    #[cfg(not(target_os = "windows"))]
+    let git_bash_available = true;
+    if let Some(notification) =
+        git_bash_startup_notification_for_platform(platform, git_bash_available)
     {
         notifications.push(notification);
     }
@@ -120,6 +143,20 @@ mod tests {
         assert_eq!(notification.priority, NotificationPriority::Low);
         assert!(auto_update_startup_notification_for_platform("windows", true).is_none());
         assert!(auto_update_startup_notification_for_platform("linux", false).is_none());
+    }
+
+    #[test]
+    fn windows_git_bash_startup_notification_is_low_priority_and_platform_gated() {
+        let notification = git_bash_startup_notification_for_platform("windows", false)
+            .expect("missing Git Bash should produce a startup notification");
+        assert_eq!(notification.key, "windows-git-bash-unavailable");
+        assert_eq!(
+            notification.text,
+            "Windows requires Git for Windows (Git Bash). Install it or set CLAUDE_CODE_GIT_BASH_PATH to your bash.exe path."
+        );
+        assert_eq!(notification.priority, NotificationPriority::Low);
+        assert!(git_bash_startup_notification_for_platform("windows", true).is_none());
+        assert!(git_bash_startup_notification_for_platform("linux", false).is_none());
     }
 
     #[test]
