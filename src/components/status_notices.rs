@@ -209,7 +209,7 @@ mod tests {
         let context = StatusNoticeContext {
             cwd: "/repo".to_string(),
             memory_files: vec![MemoryFileInfo {
-                path: "/repo/CLAUDE.md".to_string(),
+                path: "/repo/AGENTS.md".to_string(),
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
             }],
             agent_definitions: Some(AgentDefinitionsSnapshot {
@@ -224,7 +224,7 @@ mod tests {
         let text = render_context(context);
 
         assert!(
-            text.contains("Large CLAUDE.md will impact performance"),
+            text.contains("Large AGENTS.md will impact performance"),
             "canvas=\n{text}"
         );
         assert!(text.contains("/memory to edit"), "canvas=\n{text}");

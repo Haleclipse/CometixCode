@@ -738,8 +738,8 @@ mod tests {
             claude_md_warning: Some(ContextWarning {
                 warning_type: ContextWarningType::ClaudeMdFiles,
                 severity: ContextWarningSeverity::Warning,
-                message: "Large CLAUDE.md file detected".to_string(),
-                details: vec!["CLAUDE.md: 40,001 chars".to_string()],
+                message: "Large AGENTS.md file detected".to_string(),
+                details: vec!["AGENTS.md: 40,001 chars".to_string()],
                 current_value: 1,
                 threshold: 40_000,
             }),
@@ -781,7 +781,7 @@ mod tests {
         assert!(text.contains("Files:"), "canvas=\n{text}");
         assert!(text.contains("Top contributors:"), "canvas=\n{text}");
         assert!(text.contains("MCP servers:"), "canvas=\n{text}");
-        assert!(text.contains("CLAUDE.md: 40,001 chars"), "canvas=\n{text}");
+        assert!(text.contains("AGENTS.md: 40,001 chars"), "canvas=\n{text}");
         assert!(text.contains("reviewer: ~20,000 tokens"), "canvas=\n{text}");
         assert!(
             text.contains("github: 2 tools (~30,000 tokens)"),

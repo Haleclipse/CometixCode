@@ -351,7 +351,7 @@ mod tests {
                 .to_string()
         ));
         assert!(is_auto_managed_memory_pattern("agent-memory/**/*.md"));
-        assert!(!is_auto_managed_memory_pattern("CLAUDE.md"));
+        assert!(!is_auto_managed_memory_pattern("AGENTS.md"));
     }
 
     #[test]

@@ -24,12 +24,12 @@ use crate::components::logo_v2::overage_credit_upsell::{
     create_overage_credit_feed, should_show_overage_credit_upsell,
 };
 use crate::components::logo_v2::voice_mode_notice::VoiceModeNotice;
+use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::constants::product;
 use crate::project_onboarding_state;
 use crate::utils::file::get_display_path;
 use crate::utils::logo_v2_utils;
 use crate::utils::process_env::JsTruthy;
-use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::utils::release_notes as release_notes_utils;
 use iocraft::prelude::*;
 use std::collections::hash_map::DefaultHasher;
@@ -1041,7 +1041,7 @@ mod tests {
         let mut data = LogoDisplayData::fixture();
         data.show_project_onboarding = true;
         data.project_onboarding_steps = vec![ProjectOnboardingStep {
-            text: "Run /init to create a CLAUDE.md file with instructions for Claude".to_string(),
+            text: "Run /init to create an AGENTS.md file with instructions for agents".to_string(),
             is_enabled: true,
             is_complete: false,
         }];
@@ -1049,7 +1049,7 @@ mod tests {
         let text = render_variant_with_data(LogoLayoutMode::Horizontal, 100, data);
         assert!(text.contains("Tips for getting started"), "canvas=\n{text}");
         assert!(
-            text.contains("Run /init to create a CLAUDE.md"),
+            text.contains("Run /init to create an AGENTS.md"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Recent activity"), "canvas=\n{text}");
@@ -1063,10 +1063,7 @@ mod tests {
         guest.guest_passes_reward_text = Some("$5".to_string());
         let text = render_variant_with_data(LogoLayoutMode::Horizontal, 100, guest);
         assert!(text.contains("3 guest passes"), "canvas=\n{text}");
-        assert!(
-            text.contains("Share nyan and earn $5"),
-            "canvas=\n{text}"
-        );
+        assert!(text.contains("Share nyan and earn $5"), "canvas=\n{text}");
         assert!(!text.contains("What's new"), "canvas=\n{text}");
 
         let mut overage = LogoDisplayData::fixture();

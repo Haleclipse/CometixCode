@@ -1,7 +1,7 @@
 //! Maps to: CC `utils/doctorContextWarnings.ts`.
 //!
 //! Pure, snapshot-driven Doctor context warning checks. The official module
-//! reads CLAUDE.md files, AppState agent definitions, MCP tool metadata, and
+//! reads AGENTS.md files, AppState agent definitions, MCP tool metadata, and
 //! the live permission context. This Rust port keeps the same function/type
 //! boundaries while accepting explicit snapshots so the Doctor screen remains a
 //! safe local diagnostic surface: no network calls, no settings mutation, and no
@@ -111,13 +111,13 @@ pub fn check_claude_md_files(memory_files: &[MemoryFileInfo]) -> Option<ContextW
 
     let message = if large_files.len() == 1 {
         format!(
-            "Large CLAUDE.md file detected ({} chars > {})",
+            "Large AGENTS.md file detected ({} chars > {})",
             format_locale_number(large_files[0].content.chars().count() as u64),
             format_locale_number(MAX_MEMORY_CHARACTER_COUNT as u64)
         )
     } else {
         format!(
-            "{} large CLAUDE.md files detected (each > {} chars)",
+            "{} large AGENTS.md files detected (each > {} chars)",
             large_files.len(),
             format_locale_number(MAX_MEMORY_CHARACTER_COUNT as u64)
         )
@@ -328,15 +328,15 @@ mod tests {
     fn claude_md_warning_matches_official_message_and_sorted_details() {
         let warning = check_claude_md_files(&[
             MemoryFileInfo {
-                path: "small/CLAUDE.md".to_string(),
+                path: "small/AGENTS.md".to_string(),
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT),
             },
             MemoryFileInfo {
-                path: "large-a/CLAUDE.md".to_string(),
+                path: "large-a/AGENTS.md".to_string(),
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
             },
             MemoryFileInfo {
-                path: "large-b/CLAUDE.md".to_string(),
+                path: "large-b/AGENTS.md".to_string(),
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 20),
             },
         ])
@@ -345,9 +345,9 @@ mod tests {
         assert_eq!(warning.warning_type, ContextWarningType::ClaudeMdFiles);
         assert_eq!(
             warning.message,
-            "2 large CLAUDE.md files detected (each > 40,000 chars)"
+            "2 large AGENTS.md files detected (each > 40,000 chars)"
         );
-        assert!(warning.details[0].starts_with("large-b/CLAUDE.md"));
+        assert!(warning.details[0].starts_with("large-b/AGENTS.md"));
         assert!(warning.details[0].contains("40,020 chars"));
     }
 
@@ -436,7 +436,7 @@ mod tests {
     fn check_context_warnings_preserves_official_fields() {
         let input = DoctorContextWarningsInput {
             memory_files: vec![MemoryFileInfo {
-                path: "CLAUDE.md".to_string(),
+                path: "AGENTS.md".to_string(),
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
             }],
             agent_definitions: None,

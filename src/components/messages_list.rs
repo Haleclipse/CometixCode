@@ -10,12 +10,12 @@ use super::logo::Logo;
 use super::message_row::{MessageRow, message_row_static_memo_key};
 use super::messages::StreamingAssistantTextMessage;
 use super::status_notices::StatusNotices;
+use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::screens::repl::Screen;
 use crate::utils::classifier_approvals::{ClassifierApprovalsState, ClassifierChecking};
 use crate::utils::collapse_read_search::collapse_read_search_groups;
 use crate::utils::debug::component_profile_enabled;
 use crate::utils::status_notice_definitions::{StatusNoticeContext, get_active_notices};
-use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::utils::theme::ThemeName;
 use iocraft::prelude::*;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -2285,10 +2285,12 @@ mod tests {
     fn render_prompt_only_probe_frames(is_loading: bool, wait_for_events: bool) -> (String, usize) {
         futures::executor::block_on(async move {
             let (event_sender, events) = async_channel::unbounded();
-            let mut app = element!(MessagesPromptOnlyRerenderProbe(
-                is_loading: is_loading,
-                wait_for_events: wait_for_events,
-            ));
+            let mut app = element!(
+                MessagesPromptOnlyRerenderProbe(
+                    is_loading: is_loading,
+                    wait_for_events: wait_for_events,
+                )
+            );
             let mut render_loop = Box::pin(app.mock_terminal_render_loop(
                 MockTerminalConfig::with_events(events).with_size(80, 24),
             ));
@@ -2299,7 +2301,10 @@ mod tests {
                     .await
                     .expect("mock render should produce an initial canvas");
                 let initial_logo_count = logo_header_render_count();
-                assert!(initial_logo_count > 0, "initial render must mount LogoHeader");
+                assert!(
+                    initial_logo_count > 0,
+                    "initial render must mount LogoHeader"
+                );
                 // The first mock canvas includes terminal-size settling inside
                 // LogoV2. Reset after mount so the assertions cover only the
                 // explicit idle parent updates below.
@@ -2340,7 +2345,7 @@ mod tests {
         let status_notice_context = StatusNoticeContext {
             cwd: "/repo".to_string(),
             memory_files: vec![MemoryFileInfo {
-                path: "/repo/CLAUDE.md".to_string(),
+                path: "/repo/AGENTS.md".to_string(),
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
             }],
             ..StatusNoticeContext::default()
@@ -2363,7 +2368,7 @@ mod tests {
         .to_string();
 
         assert!(
-            rendered.contains("Large CLAUDE.md will impact performance"),
+            rendered.contains("Large AGENTS.md will impact performance"),
             "canvas=\n{rendered}"
         );
         assert!(rendered.contains("hello"), "canvas=\n{rendered}");
@@ -2419,8 +2424,7 @@ mod tests {
     /// row updates.
     #[component]
     fn VerboseEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let verbose =
-            crate::state::app_state::use_app_state(&mut hooks, |state| state.verbose);
+        let verbose = crate::state::app_state::use_app_state(&mut hooks, |state| state.verbose);
         element! { Text(content: format!("verbose={verbose}")) }
     }
 
@@ -2442,9 +2446,8 @@ mod tests {
                 "echo permission-gated",
             )])
         });
-        let in_progress = hooks.use_const(|| {
-            Arc::new(["toolu_1".to_string()].into_iter().collect::<HashSet<_>>())
-        });
+        let in_progress = hooks
+            .use_const(|| Arc::new(["toolu_1".to_string()].into_iter().collect::<HashSet<_>>()));
         let current_theme = *theme::current();
         element! {
             ContextProvider(value: Context::owned(current_theme)) {
@@ -2478,24 +2481,38 @@ mod tests {
         // flips `verbose` for the sibling echo, so a frame always follows.
         let (mounted, answered) = futures::executor::block_on(async {
             let mut probe = element!(PendingWorkerRequestFlipProbe(store: Some(store.clone())));
-            let frames = probe
-                .mock_terminal_render_loop(MockTerminalConfig::default().with_size(100, 24));
+            let frames =
+                probe.mock_terminal_render_loop(MockTerminalConfig::default().with_size(100, 24));
             futures::pin_mut!(frames);
             let mounted = frames.next().await.expect("mount frame").to_string();
             store.replace_with(|state| {
                 state.pending_worker_request = None;
                 state.verbose = true;
             });
-            let mut answered = frames.next().await.expect("frame after the write").to_string();
+            let mut answered = frames
+                .next()
+                .await
+                .expect("frame after the write")
+                .to_string();
             // Settle past any intermediate frame to the one showing the write.
             while !answered.contains("verbose=true") {
-                answered = frames.next().await.expect("frame showing the write").to_string();
+                answered = frames
+                    .next()
+                    .await
+                    .expect("frame showing the write")
+                    .to_string();
             }
             (mounted, answered)
         });
-        assert!(mounted.contains("Waiting for permission…"), "mount frame:\n{mounted}");
+        assert!(
+            mounted.contains("Waiting for permission…"),
+            "mount frame:\n{mounted}"
+        );
         assert!(mounted.contains("verbose=false"), "mount frame:\n{mounted}");
-        assert!(!answered.contains("Waiting for permission…"), "frame after the write:\n{answered}");
+        assert!(
+            !answered.contains("Waiting for permission…"),
+            "frame after the write:\n{answered}"
+        );
     }
 
     #[derive(Default, Props)]
@@ -2522,9 +2539,8 @@ mod tests {
             )])
         });
         let queued = hooks.use_const(|| Arc::new(HashSet::new()));
-        let running = hooks.use_const(|| {
-            Arc::new(["toolu_1".to_string()].into_iter().collect::<HashSet<_>>())
-        });
+        let running = hooks
+            .use_const(|| Arc::new(["toolu_1".to_string()].into_iter().collect::<HashSet<_>>()));
         let in_progress = if started { running } else { queued };
         element! {
             Messages(
@@ -2583,9 +2599,17 @@ mod tests {
                 futures::pin_mut!(frames);
                 let queued = frames.next().await.expect("mount frame").to_string();
                 store.replace_with(|state| state.verbose = true);
-                let mut started = frames.next().await.expect("frame after the write").to_string();
+                let mut started = frames
+                    .next()
+                    .await
+                    .expect("frame after the write")
+                    .to_string();
                 while !started.contains("verbose=true") {
-                    started = frames.next().await.expect("frame showing the write").to_string();
+                    started = frames
+                        .next()
+                        .await
+                        .expect("frame showing the write")
+                        .to_string();
                 }
                 (queued, started)
             });
@@ -2617,11 +2641,9 @@ mod tests {
             }
             presses.set(presses.get() + 1);
             match key.code {
-                KeyCode::Char('p') => {
-                    preview.set_preview_theme(crate::utils::theme::ThemeSetting::Named(
-                        crate::utils::theme::ThemeName::Light,
-                    ))
-                }
+                KeyCode::Char('p') => preview.set_preview_theme(
+                    crate::utils::theme::ThemeSetting::Named(crate::utils::theme::ThemeName::Light),
+                ),
                 KeyCode::Char('c') => preview.cancel_preview(),
                 _ => {}
             }
@@ -2636,9 +2658,13 @@ mod tests {
     }
 
     #[component]
-    fn ThemeFlipProbe(props: &ThemeFlipProbeProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn ThemeFlipProbe(
+        props: &ThemeFlipProbeProps,
+        mut hooks: Hooks,
+    ) -> impl Into<AnyElement<'static>> {
         use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
-        let messages = hooks.use_const(|| Arc::new(vec![RenderableMessage::user("u1", "hello theme")]));
+        let messages =
+            hooks.use_const(|| Arc::new(vec![RenderableMessage::user("u1", "hello theme")]));
         let is_loading = props.is_loading;
         let hide_logo = !props.show_logo;
         element! {
@@ -2661,7 +2687,10 @@ mod tests {
     fn background_at(canvas: &iocraft::Canvas, needle: &str) -> Option<iocraft::Color> {
         use unicode_width::UnicodeWidthStr;
         let text = canvas.to_string();
-        let (y, line) = text.lines().enumerate().find(|(_, line)| line.contains(needle))?;
+        let (y, line) = text
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains(needle))?;
         let x = line[..line.find(needle)?].width();
         canvas.cell(x, y).and_then(|cell| cell.background_color)
     }
@@ -2685,20 +2714,34 @@ mod tests {
                 let mut before = None;
                 while let Some(canvas) = render_loop.next().await {
                     let text = canvas.to_string();
-                    assert!(text.contains("presses="), "the probe stopped rendering:\n{text}");
+                    assert!(
+                        text.contains("presses="),
+                        "the probe stopped rendering:\n{text}"
+                    );
                     if before.is_none() && text.contains("presses=0") {
                         before = Some(background_at(&canvas, "hello theme"));
-                        keys.send(TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char('p'))))
-                            .await
-                            .unwrap();
+                        keys.send(TerminalEvent::Key(KeyEvent::new(
+                            KeyEventKind::Press,
+                            KeyCode::Char('p'),
+                        )))
+                        .await
+                        .unwrap();
                     } else if text.contains("presses=1") {
                         return (before.flatten(), background_at(&canvas, "hello theme"));
                     }
                 }
                 panic!("render loop ended early");
             });
-            assert_eq!(before, Some(theme::DARK.user_message_bg), "is_loading={is_loading}");
-            assert_eq!(after, Some(theme::LIGHT.user_message_bg), "is_loading={is_loading}");
+            assert_eq!(
+                before,
+                Some(theme::DARK.user_message_bg),
+                "is_loading={is_loading}"
+            );
+            assert_eq!(
+                after,
+                Some(theme::LIGHT.user_message_bg),
+                "is_loading={is_loading}"
+            );
         }
     }
 
@@ -2786,7 +2829,10 @@ mod tests {
                 let mut frames = Vec::new();
                 while let Some(canvas) = render_loop.next().await {
                     let text = canvas.to_string();
-                    assert!(text.contains("presses="), "the probe stopped rendering:\n{text}");
+                    assert!(
+                        text.contains("presses="),
+                        "the probe stopped rendering:\n{text}"
+                    );
                     if !text.contains(&format!("presses={}", frames.len())) {
                         continue;
                     }
@@ -2819,9 +2865,15 @@ mod tests {
     fn foreground_at(canvas: &iocraft::Canvas, needle: &str) -> Option<iocraft::Color> {
         use unicode_width::UnicodeWidthStr;
         let text = canvas.to_string();
-        let (y, line) = text.lines().enumerate().find(|(_, line)| line.contains(needle))?;
+        let (y, line) = text
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains(needle))?;
         let x = line[..line.find(needle)?].width();
-        canvas.cell(x, y).and_then(|cell| cell.text_style()).and_then(|style| style.color)
+        canvas
+            .cell(x, y)
+            .and_then(|cell| cell.text_style())
+            .and_then(|style| style.color)
     }
 
     #[test]
@@ -2837,11 +2889,15 @@ mod tests {
                 MockTerminalConfig::with_events(events).with_size(120, 40),
             ));
             let mut colors = Vec::new();
-            let press = |c| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char(c)));
+            let press =
+                |c| TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, KeyCode::Char(c)));
             let keys_in_order = ['p', 'c'];
             while let Some(canvas) = render_loop.next().await {
                 let text = canvas.to_string();
-                assert!(text.contains("presses="), "the probe stopped rendering:\n{text}");
+                assert!(
+                    text.contains("presses="),
+                    "the probe stopped rendering:\n{text}"
+                );
                 if !text.contains(&format!("presses={}", colors.len())) {
                     continue;
                 }
@@ -2853,7 +2909,11 @@ mod tests {
             }
             colors
         });
-        let expected = [theme::DARK.inactive, theme::LIGHT.inactive, theme::DARK.inactive];
+        let expected = [
+            theme::DARK.inactive,
+            theme::LIGHT.inactive,
+            theme::DARK.inactive,
+        ];
         assert_eq!(colors.len(), expected.len());
         for ((color, text), expected) in colors.iter().zip(expected) {
             assert_eq!(*color, Some(expected), "canvas:\n{text}");
@@ -3542,9 +3602,15 @@ mod tests {
         let baseline = key(&prepared, 0, false, None, false, &pool);
 
         assert_eq!(baseline, key(&same_prepared, 0, false, None, false, &pool));
-        assert_ne!(baseline, key(&rebuilt_prepared, 0, false, None, false, &pool));
+        assert_ne!(
+            baseline,
+            key(&rebuilt_prepared, 0, false, None, false, &pool)
+        );
         assert_ne!(baseline, key(&prepared, 0, true, None, false, &pool));
-        assert_ne!(baseline, key(&prepared, 0, false, Some("toolu_1"), true, &pool));
+        assert_ne!(
+            baseline,
+            key(&prepared, 0, false, Some("toolu_1"), true, &pool)
+        );
         // CC Messages.tsx:764-767: `canAnimate` flipping (a permission dialog
         // queued, the selector opening) must reach the rows.
         let mut blocked = key(&prepared, 0, false, None, false, &pool);
@@ -3557,8 +3623,14 @@ mod tests {
         // equal, a pool that lost a tool is not — the rows must re-render so a
         // narrowed-out tool stops reading its own members
         // (`AgentTool/UI.tsx:1096-1098`).
-        assert_eq!(baseline, key(&prepared, 0, false, None, false, &rebuilt_pool));
-        assert_ne!(baseline, key(&prepared, 0, false, None, false, &narrowed_pool));
+        assert_eq!(
+            baseline,
+            key(&prepared, 0, false, None, false, &rebuilt_pool)
+        );
+        assert_ne!(
+            baseline,
+            key(&prepared, 0, false, None, false, &narrowed_pool)
+        );
         // CC Messages.tsx:1030-1036,1064-1068: the in-progress set compares by
         // `setsEqual` — a rebuilt set with the same ids is equal whatever its
         // iteration order, a set that gained an id is not. The streaming set
@@ -3566,13 +3638,28 @@ mod tests {
         let ids = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<HashSet<_>>();
         let with_sets = |in_progress: &HashSet<String>, streaming: &HashSet<String>| {
             message_rows_memo_key(
-                &prepared, 0, false, false, false, true, true, 120, None, false, in_progress,
-                streaming, &pool, ThemeName::Dark,
+                &prepared,
+                0,
+                false,
+                false,
+                false,
+                true,
+                true,
+                120,
+                None,
+                false,
+                in_progress,
+                streaming,
+                &pool,
+                ThemeName::Dark,
             )
         };
         let running = with_sets(&ids(&["toolu_2", "toolu_1"]), &HashSet::new());
         assert_ne!(baseline, running);
-        assert_eq!(running, with_sets(&ids(&["toolu_1", "toolu_2"]), &HashSet::new()));
+        assert_eq!(
+            running,
+            with_sets(&ids(&["toolu_1", "toolu_2"]), &HashSet::new())
+        );
         assert_ne!(baseline, with_sets(&HashSet::new(), &ids(&["toolu_1"])));
         // A theme change alone reaches the rows (see `MessageRowsMemoKey::theme`).
         let mut light = key(&prepared, 0, false, None, false, &pool);

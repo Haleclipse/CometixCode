@@ -517,9 +517,9 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
         // condition: hasExternalClaudeMdIncludes()
         SettingItem {
             id: "showExternalIncludesDialog",
-            label: "External CLAUDE.md includes",
+            label: "External AGENTS.md includes",
             value: SettingValue::Display("true".to_string()),
-            search_text: "external claude md includes",
+            search_text: "external agents md includes",
             visible: false,
         },
         // condition: ANTHROPIC_API_KEY env var

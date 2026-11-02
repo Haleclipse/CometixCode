@@ -2332,16 +2332,17 @@ fn TranscriptModeFooter(
     let bindings = hooks
         .try_use_context::<crate::keybindings::keybinding_context::KeybindingRuntime>()
         .map(|runtime| runtime.bindings());
-    let shortcut = |action: &str, context: crate::keybindings::types::ContextName, fallback: &str| {
-        bindings.as_ref().map_or_else(
-            || fallback.to_string(),
-            |bindings| {
-                crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
-                    action, &context, fallback, bindings,
-                )
-            },
-        )
-    };
+    let shortcut =
+        |action: &str, context: crate::keybindings::types::ContextName, fallback: &str| {
+            bindings.as_ref().map_or_else(
+                || fallback.to_string(),
+                |bindings| {
+                    crate::keybindings::shortcut_format::get_shortcut_display_from_bindings(
+                        action, &context, fallback, bindings,
+                    )
+                },
+            )
+        };
     let toggle = shortcut(
         "app:toggleTranscript",
         crate::keybindings::types::ContextName::Global,
@@ -3896,8 +3897,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // Maps to: CC `REPL.tsx:939-942` mount-time env gate.
     let terminal_title_disabled = hooks.use_const(|| {
         crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_TERMINAL_TITLE")
-                .as_deref(),
+            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_TERMINAL_TITLE").as_deref(),
         )
     });
     // CC fires generateSessionTitle as a void promise from onQueryImpl. The
@@ -10292,8 +10292,7 @@ mod tests {
     struct BranchFixtureDirectory(std::path::PathBuf);
     impl BranchFixtureDirectory {
         fn new() -> Self {
-            let path =
-                std::env::temp_dir().join(format!("nyan-branch-{}", uuid::Uuid::new_v4()));
+            let path = std::env::temp_dir().join(format!("nyan-branch-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&path).unwrap();
             Self(path)
         }
@@ -12155,10 +12154,8 @@ mod tests {
     fn resume_runs_session_end_before_session_start_like_official_repl_callback() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
-        let marker_path = std::env::temp_dir().join(format!(
-            "nyan-repl-resume-hooks-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let marker_path =
+            std::env::temp_dir().join(format!("nyan-repl-resume-hooks-{}", uuid::Uuid::new_v4()));
         let settings = crate::utils::settings::SettingsJson {
             hooks: Some(json!({
                 "SessionEnd": [{
@@ -12332,7 +12329,7 @@ mod tests {
             ..ResumeRestoreStores::default()
         };
         let loaded_nested_memory_paths =
-            std::collections::HashSet::from(["/project/.claude/CLAUDE.md".to_string()]);
+            std::collections::HashSet::from(["/project/nested/AGENTS.md".to_string()]);
         let context = build_repl_process_user_input_context(
             ToolPermissionContext::default(),
             &store,
@@ -12516,7 +12513,7 @@ mod tests {
         seed_deferred_query_shell_context(
             &mut context,
             Some(&lead),
-            std::collections::HashSet::from(["/project/.claude/CLAUDE.md".to_string()]),
+            std::collections::HashSet::from(["/project/nested/AGENTS.md".to_string()]),
         );
         install_repl_prompt_tools(&mut context, &store_definitions, &[], Some(&lead));
 
@@ -12534,7 +12531,7 @@ mod tests {
         // (`build_repl_process_user_input_context` sets it too).
         assert_eq!(
             context.loaded_nested_memory_paths,
-            std::collections::HashSet::from(["/project/.claude/CLAUDE.md".to_string()])
+            std::collections::HashSet::from(["/project/nested/AGENTS.md".to_string()])
         );
         // Same `resolveAgentTools` call yields both halves (`REPL.tsx:1218-1219`),
         // so the installed pool reflects `lead`'s declaration.
@@ -12612,7 +12609,7 @@ mod tests {
         let store = crate::state::store::AppStore::new(app_state, None);
 
         let loaded_nested_memory_paths =
-            std::collections::HashSet::from(["/project/.claude/CLAUDE.md".to_string()]);
+            std::collections::HashSet::from(["/project/nested/AGENTS.md".to_string()]);
         let restore = ResumeRestoreStores::default();
         let overrides = crate::utils::system_prompt::CliSystemPromptOverrides::default();
         let thinking = crate::utils::thinking::ThinkingConfig::Adaptive;
@@ -12951,7 +12948,7 @@ mod tests {
         let has_interruptible_tool_in_progress =
             Arc::new(std::sync::atomic::AtomicBool::new(false));
         let loaded_nested_memory_paths =
-            std::collections::HashSet::from(["/project/.claude/CLAUDE.md".to_string()]);
+            std::collections::HashSet::from(["/project/nested/AGENTS.md".to_string()]);
         let make_params = |context: ToolUseContext| crate::query::QueryParams {
             turn_id: "turn-1".to_string(),
             input: "hello".to_string(),
@@ -13962,10 +13959,12 @@ mod tests {
             (ctrl_key('o'), 120),
         ]);
         let frames = futures::executor::block_on(async move {
-            let mut app = element!(ReplInitialMessagesHarness(
-                initial_messages: Arc::new(Vec::new()),
-                initial_renderable_messages: renderable,
-            ));
+            let mut app = element!(
+                ReplInitialMessagesHarness(
+                    initial_messages: Arc::new(Vec::new()),
+                    initial_renderable_messages: renderable,
+                )
+            );
             // Height 20 keeps the Edit row offscreen; width 200 must hold the
             // gate workdir's verbose absolute path on one row, because until
             // the text-flow port (#78) the flex header truncates the
@@ -14455,7 +14454,9 @@ mod tests {
                 let deadline = std::time::Instant::now() + STEP_BUDGET;
                 while !canvases[since..].iter().any(|canvas| {
                     let text = canvas_lines(canvas).join("\n");
-                    step.wait_for.iter().all(|needle| text.contains(needle.as_str()))
+                    step.wait_for
+                        .iter()
+                        .all(|needle| text.contains(needle.as_str()))
                 }) {
                     let remaining = deadline.saturating_duration_since(std::time::Instant::now());
                     let next = if remaining.is_zero() || canvases.len() >= MAX_FRAMES {
@@ -14836,7 +14837,7 @@ mod tests {
         let context = StatusNoticeContext {
             cwd: "/repo".to_string(),
             memory_files: vec![crate::utils::status_notice_definitions::MemoryFileInfo {
-                path: "/repo/CLAUDE.md".to_string(),
+                path: "/repo/AGENTS.md".to_string(),
                 content: "x".repeat(
                     crate::utils::status_notice_definitions::MAX_MEMORY_CHARACTER_COUNT + 1,
                 ),
@@ -14853,7 +14854,7 @@ mod tests {
 
         assert!(text.contains("nyan"), "canvas=\n{text}");
         assert!(
-            text.contains("Large CLAUDE.md will impact performance"),
+            text.contains("Large AGENTS.md will impact performance"),
             "canvas=\n{text}"
         );
         assert!(text.contains("/memory to edit"), "canvas=\n{text}");
@@ -15475,8 +15476,7 @@ mod tests {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-repl-stats-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-repl-stats-{}", uuid::Uuid::new_v4()));
         write_stats_fixture(&root);
         let _projects = crate::utils::session_storage::set_test_projects_dir_override(&root);
         let _cache =
@@ -15496,8 +15496,7 @@ mod tests {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-repl-stats-{}", uuid::Uuid::new_v4()));
+        let root = std::env::temp_dir().join(format!("nyan-repl-stats-{}", uuid::Uuid::new_v4()));
         write_stats_fixture(&root);
         let _projects = crate::utils::session_storage::set_test_projects_dir_override(&root);
         let _cache =
@@ -15940,7 +15939,9 @@ mod tests {
         assert_eq!(coalescer.flush(Some("one\n")), None);
         // A newline arrives and the next flush writes again.
         coalescer.push(base, "\n", StreamingTextDisplayMode::Line);
-        let flushed = coalescer.flush(Some("one\n")).expect("second line completed");
+        let flushed = coalescer
+            .flush(Some("one\n"))
+            .expect("second line completed");
         assert_eq!(flushed.raw, "one\ntwo more still\n");
         coalescer.clear();
         assert_eq!(coalescer.flush(None), None);
@@ -16058,9 +16059,15 @@ mod tests {
 
         // Exit states always take precedence, even over the message selector
         // (CC :2686 `if (isExiting || exitFlow) return undefined`).
-        let exit_flow = FocusedInputDialogInput { exit_flow: true, ..every_dialog };
+        let exit_flow = FocusedInputDialogInput {
+            exit_flow: true,
+            ..every_dialog
+        };
         assert_eq!(get_focused_input_dialog(&exit_flow), None);
-        let exiting = FocusedInputDialogInput { is_exiting: true, ..every_dialog };
+        let exiting = FocusedInputDialogInput {
+            is_exiting: true,
+            ..every_dialog
+        };
         assert_eq!(get_focused_input_dialog(&exiting), None);
 
         // Typing suppresses everything below the message selector.
@@ -16074,7 +16081,10 @@ mod tests {
             is_prompt_input_active: true,
             ..every_dialog
         };
-        assert_eq!(get_focused_input_dialog(&typing_with_selector), Some(MessageSelector));
+        assert_eq!(
+            get_focused_input_dialog(&typing_with_selector),
+            Some(MessageSelector)
+        );
 
         // A local command UI (CC toolJSX without shouldContinueAnimation)
         // blocks everything after the sandbox permission, which is not behind
@@ -16084,7 +16094,10 @@ mod tests {
             allow_dialogs_with_animation: false,
             ..every_dialog
         };
-        assert_eq!(get_focused_input_dialog(&local_command_ui), Some(SandboxPermission));
+        assert_eq!(
+            get_focused_input_dialog(&local_command_ui),
+            Some(SandboxPermission)
+        );
         let local_command_ui_no_sandbox = FocusedInputDialogInput {
             has_sandbox_permission_request: false,
             ..local_command_ui
@@ -16092,7 +16105,10 @@ mod tests {
         assert_eq!(get_focused_input_dialog(&local_command_ui_no_sandbox), None);
 
         assert_eq!(ToolPermission.as_str(), "tool-permission");
-        assert_eq!(WorkerSandboxPermission.as_str(), "worker-sandbox-permission");
+        assert_eq!(
+            WorkerSandboxPermission.as_str(),
+            "worker-sandbox-permission"
+        );
     }
 
     fn spinner_input() -> ShowSpinnerInput {
@@ -17715,7 +17731,10 @@ mod tests {
             vec![
                 script_step(&[], text_input_events("/resume")),
                 // Enter only once the loaded picker has the fixture focused.
-                script_step(&["Resume Session", &focused_fixture], vec![key(KeyCode::Enter)]),
+                script_step(
+                    &["Resume Session", &focused_fixture],
+                    vec![key(KeyCode::Enter)],
+                ),
                 script_step(&[assistant_text], Vec::new()),
             ],
         );
@@ -17767,10 +17786,8 @@ mod tests {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let _single_worktree = EnvVarGuard::set("NYAN_TEST_SINGLE_WORKTREE", "1");
-        let config_home = std::env::temp_dir().join(format!(
-            "nyan-repl-resume-select-error-{}",
-            Uuid::new_v4()
-        ));
+        let config_home =
+            std::env::temp_dir().join(format!("nyan-repl-resume-select-error-{}", Uuid::new_v4()));
         let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
@@ -18154,7 +18171,10 @@ mod tests {
             element!(ReplHarness).into_any(),
             vec![
                 script_step(&[], text_input_events("/resume")),
-                script_step(&["Resume Session", &focused_current], vec![key(KeyCode::Enter)]),
+                script_step(
+                    &["Resume Session", &focused_current],
+                    vec![key(KeyCode::Enter)],
+                ),
                 // Reopen only after the selection restored the transcript.
                 script_step(
                     &["restored current session assistant reply"],
@@ -18281,7 +18301,10 @@ mod tests {
                 // session is listed; only then type the search.
                 script_step(
                     &["Resume Session", &other_prompt],
-                    other_prompt.chars().map(|ch| key(KeyCode::Char(ch))).collect(),
+                    other_prompt
+                        .chars()
+                        .map(|ch| key(KeyCode::Char(ch)))
+                        .collect(),
                 ),
                 script_step(
                     &[&search_query],

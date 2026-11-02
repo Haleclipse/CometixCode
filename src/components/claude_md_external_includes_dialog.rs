@@ -108,7 +108,7 @@ pub fn ClaudeMdExternalIncludesDialog<'a>(
 
     element! {
         Dialog(
-            title: "Allow external CLAUDE.md file imports?".to_string(),
+            title: "Allow external AGENTS.md file imports?".to_string(),
             color: Some(theme.warning),
             hide_border: !props.is_standalone_dialog,
             hide_input_guide: !props.is_standalone_dialog,
@@ -117,7 +117,7 @@ pub fn ClaudeMdExternalIncludesDialog<'a>(
             },
         ) {
             Text(
-                content: "This project's CLAUDE.md imports files outside the current working\ndirectory. Never allow this for third-party repositories.".to_string(),
+                content: "This project's AGENTS.md imports files outside the current working\ndirectory. Never allow this for third-party repositories.".to_string(),
                 wrap: TextWrap::Wrap,
             )
 
@@ -181,8 +181,8 @@ mod tests {
                 ClaudeMdExternalIncludesDialog(
                     is_standalone_dialog: true,
                     external_includes: vec![
-                        ExternalClaudeMdInclude::new("/outside/CLAUDE.md", "/repo/CLAUDE.md"),
-                        ExternalClaudeMdInclude::new("/shared/rules.md", "/repo/.claude/CLAUDE.md"),
+                        ExternalClaudeMdInclude::new("/outside/AGENTS.md", "/repo/AGENTS.md"),
+                        ExternalClaudeMdInclude::new("/shared/rules.md", "/repo/AGENTS.md"),
                     ],
                 )
             }
@@ -191,11 +191,11 @@ mod tests {
         .to_string();
 
         assert!(
-            text.contains("Allow external CLAUDE.md file imports?"),
+            text.contains("Allow external AGENTS.md file imports?"),
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("This project's CLAUDE.md imports files outside the current working"),
+            text.contains("This project's AGENTS.md imports files outside the current working"),
             "canvas=\n{text}"
         );
         assert!(
@@ -203,7 +203,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(text.contains("External imports:"), "canvas=\n{text}");
-        assert!(text.contains("/outside/CLAUDE.md"), "canvas=\n{text}");
+        assert!(text.contains("/outside/AGENTS.md"), "canvas=\n{text}");
         assert!(text.contains("/shared/rules.md"), "canvas=\n{text}");
         assert!(
             text.contains("Important: Only use nyan with files you trust."),
@@ -238,7 +238,7 @@ mod tests {
         .to_string();
 
         assert!(
-            text.contains("Allow external CLAUDE.md file imports?"),
+            text.contains("Allow external AGENTS.md file imports?"),
             "canvas=\n{text}"
         );
         assert!(

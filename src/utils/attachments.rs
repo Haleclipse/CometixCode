@@ -1796,8 +1796,7 @@ pub async fn get_attachments(
     // silently drop them (Coworker runs with --bare and depends on
     // task-notification for mid-tool-call notifications).
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_ATTACHMENTS")
-            .as_deref(),
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_ATTACHMENTS").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
     ) {
@@ -2152,16 +2151,6 @@ fn get_directories_to_process(
     nested_dirs
 }
 
-fn get_cwd_level_directories(original_cwd: &std::path::Path) -> Vec<std::path::PathBuf> {
-    let mut directories = original_cwd
-        .ancestors()
-        .take_while(|directory| directory.parent().is_some())
-        .map(std::path::Path::to_path_buf)
-        .collect::<Vec<_>>();
-    directories.reverse();
-    directories
-}
-
 fn claude_md_kind_name(kind: crate::utils::claudemd::ClaudeMdKind) -> &'static str {
     match kind {
         crate::utils::claudemd::ClaudeMdKind::Managed => "Managed",
@@ -2316,33 +2305,9 @@ async fn get_nested_memory_attachments(
         // at CC's first awaited discovery boundary. This lets a changed-file
         // Read insertion join the live Set before the terminal iterator step.
         tokio::task::yield_now().await;
-        let managed_user_rules = crate::utils::claudemd::get_managed_and_user_conditional_rules(
-            &target,
-            &original_cwd,
-            &mut processed_paths,
-        );
-        attachments.extend(memory_files_to_attachments(
-            managed_user_rules,
-            tool_use_context,
-            Some(&target),
-        ));
         for directory in get_directories_to_process(&target, &original_cwd) {
             tokio::task::yield_now().await;
             let files = crate::utils::claudemd::get_memory_files_for_nested_directory(
-                &directory,
-                &target,
-                &original_cwd,
-                &mut processed_paths,
-            );
-            attachments.extend(memory_files_to_attachments(
-                files,
-                tool_use_context,
-                Some(&target),
-            ));
-        }
-        for directory in get_cwd_level_directories(&original_cwd) {
-            tokio::task::yield_now().await;
-            let files = crate::utils::claudemd::get_conditional_rules_for_cwd_level_directory(
                 &directory,
                 &target,
                 &original_cwd,
@@ -2787,10 +2752,10 @@ mod tests {
         // `nested_memory` → MemoryFileInfo (utils/claudemd.ts:229-243).
         let memory = serde_json::json!({
             "type": "nested_memory",
-            "path": "/repo/docs/CLAUDE.md",
-            "displayPath": "docs/CLAUDE.md",
+            "path": "/repo/docs/AGENTS.md",
+            "displayPath": "docs/AGENTS.md",
             "content": {
-                "path": "/repo/docs/CLAUDE.md",
+                "path": "/repo/docs/AGENTS.md",
                 "type": "Project",
                 "content": "notes",
                 "contentDiffersFromDisk": true,
@@ -3050,10 +3015,8 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn at_mention_file_and_directory_flow_through_read_attachment_owner() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-at-mention-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-at-mention-{}", uuid::Uuid::new_v4().simple()));
         let source = root.join("src");
         std::fs::create_dir_all(&source).unwrap();
         std::fs::write(source.join("main.rs"), "one\ntwo\nthree\nfour\n").unwrap();
@@ -3093,17 +3056,16 @@ mod tests {
             "nyan-nested-memory-partial-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let rules = root.join(".claude/rules");
-        let target = root.join("src/main.rs");
-        std::fs::create_dir_all(&rules).unwrap();
-        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let nested = root.join("src");
+        let target = nested.join("main.rs");
+        std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(&target, "fn main() {}\n").unwrap();
-        let rule = rules.join("rust.md");
+        let agents = nested.join("AGENTS.md");
         let raw = "---\npaths: src/**/*.rs\n---\nrust instruction";
-        std::fs::write(&rule, raw).unwrap();
+        std::fs::write(&agents, raw).unwrap();
         let mut processed = std::collections::HashSet::new();
         let files = crate::utils::claudemd::get_memory_files_for_nested_directory(
-            &root,
+            &nested,
             &target,
             &root,
             &mut processed,
@@ -3116,7 +3078,7 @@ mod tests {
 
         let attachments = memory_files_to_attachments(files, &mut context, Some(&target));
         assert_eq!(attachments.len(), 1);
-        let canonical_rule = std::fs::canonicalize(&rule).unwrap();
+        let canonical_rule = std::fs::canonicalize(&agents).unwrap();
         let state = context
             .read_file_state
             .snapshot()
@@ -3293,16 +3255,11 @@ mod tests {
             ".nyan-nested-race-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let rules = root.join(".claude/rules");
-        let joined_target = root.join("src/main.rs");
-        std::fs::create_dir_all(&rules).unwrap();
-        std::fs::create_dir_all(joined_target.parent().unwrap()).unwrap();
+        let nested = root.join("nested");
+        let joined_target = nested.join("main.rs");
+        std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(&joined_target, "fn main() {}\n").unwrap();
-        std::fs::write(
-            rules.join("joined.md"),
-            "---\npaths: src/**/*.rs\n---\njoined instruction",
-        )
-        .unwrap();
+        std::fs::write(nested.join("AGENTS.md"), "joined instruction").unwrap();
         let mut context = ToolUseContext {
             cwd_override: Some(cwd.clone()),
             ..ToolUseContext::default()

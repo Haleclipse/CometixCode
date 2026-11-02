@@ -299,7 +299,7 @@ pub fn get_hook_event_metadata(tool_names: &[String]) -> HashMap<HookEvent, Hook
         (
             HookEvent::InstructionsLoaded,
             HookEventMetadata {
-                summary: "When an instruction file (CLAUDE.md or rule) is loaded",
+                summary: "When an instruction file (AGENTS.md) is loaded",
                 description: "Input to command is JSON with file_path, memory_type (User, Project, Local, Managed), load_reason (session_start, nested_traversal, path_glob_match, include, compact), globs (optional — the paths: frontmatter patterns that matched), trigger_file_path (optional — the file Claude touched that caused the load), and parent_file_path (optional — the file that @-included this one).\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only\nThis hook is observability-only and does not support blocking.",
                 matcher_metadata: literal_matcher(
                     "load_reason",

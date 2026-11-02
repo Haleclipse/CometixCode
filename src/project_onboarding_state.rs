@@ -36,8 +36,8 @@ pub fn is_dir_empty(path: &Path) -> bool {
 }
 
 pub fn get_steps_for_path(cwd: &Path) -> Vec<Step> {
-    let has_claude_md =
-        crate::utils::fs_operations::get_fs_implementation().exists_sync(&cwd.join("CLAUDE.md"));
+    let has_agents_md =
+        crate::utils::fs_operations::get_fs_implementation().exists_sync(&cwd.join("AGENTS.md"));
     let is_workspace_dir_empty = is_dir_empty(cwd);
 
     vec![
@@ -49,9 +49,9 @@ pub fn get_steps_for_path(cwd: &Path) -> Vec<Step> {
             is_enabled: is_workspace_dir_empty,
         },
         Step {
-            key: "claudemd".to_string(),
-            text: "Run /init to create a CLAUDE.md file with instructions for Claude".to_string(),
-            is_complete: has_claude_md,
+            key: "agentsmd".to_string(),
+            text: "Run /init to create an AGENTS.md file with instructions for agents".to_string(),
+            is_complete: has_agents_md,
             is_completable: true,
             is_enabled: !is_workspace_dir_empty,
         },
@@ -140,10 +140,8 @@ pub fn feed_steps(steps: &[Step]) -> Vec<ProjectOnboardingStep> {
 mod tests {
     use super::*;
     fn temp_project_dir() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-project-onboarding-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("nyan-project-onboarding-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -155,7 +153,7 @@ mod tests {
         assert_eq!(steps[0].key, "workspace");
         assert!(steps[0].is_enabled);
         assert!(!steps[0].is_complete);
-        assert_eq!(steps[1].key, "claudemd");
+        assert_eq!(steps[1].key, "agentsmd");
         assert!(!steps[1].is_enabled);
 
         std::fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
@@ -164,7 +162,7 @@ mod tests {
         assert!(steps[1].is_enabled);
         assert!(!steps[1].is_complete);
 
-        std::fs::write(dir.join("CLAUDE.md"), "project notes\n").unwrap();
+        std::fs::write(dir.join("AGENTS.md"), "project notes\n").unwrap();
         let steps = get_steps_for_path(&dir);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(steps[1].is_complete);

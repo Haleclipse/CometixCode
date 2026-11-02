@@ -27,7 +27,7 @@ pub fn run_post_compact_cleanup(query_source: Option<&QuerySource>) {
             crate::services::context_collapse::reset_context_collapse();
         }
         // Clear both the memoized outer user-context layer and the underlying
-        // memory-file discovery cache. Clearing only one leaves stale CLAUDE.md
+        // memory-file discovery cache. Clearing only one leaves stale AGENTS.md
         // bytes reachable on the next turn.
         crate::context::clear_user_context_cache();
         crate::utils::claudemd::reset_get_memory_files_cache("compact");

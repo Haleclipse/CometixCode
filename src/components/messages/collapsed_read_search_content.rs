@@ -688,7 +688,7 @@ mod tests {
         message.relevant_memories = vec![crate::types::message::RelevantMemory {
             header: None,
             limit: None,
-            path: "/repo/CLAUDE.md".to_string(),
+            path: "/repo/AGENTS.md".to_string(),
             content: "\x1b[31mhot\x1b[0m plain".to_string(),
             mtime_ms: None,
         }];
@@ -710,7 +710,7 @@ mod tests {
         assert!(!rendered.contains("Read 1 file"));
         assert!(rendered.contains("Ran 1 PreToolUse hook (0.3s)"));
         assert!(rendered.contains("echo hook (0.1s)"));
-        assert!(rendered.contains("Recalled CLAUDE.md"));
+        assert!(rendered.contains("Recalled AGENTS.md"));
         assert!(rendered.contains("hot plain"));
         assert!((0..20).any(|x| {
             (0..10).any(|y| {

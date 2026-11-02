@@ -18,6 +18,7 @@ citationPointer、状态字段、回收站、远端协调器、按美元算的�
 | [tool-io.md](tool-io.md) | 工具 I/O：Read / Grep / Glob / Bash 的完整性尾行、确定性顺序、编码检测、批量读、Bash 头尾保留（借鉴 fastctx v0.2.6）；检索与搜索做内置工具、不做 MCP / Skill 的结论 | 定稿 |
 | [decision-provider.md](decision-provider.md) | 快速决策模型：四模块的决策点注册表、安全集合与确定性回退、看内容的判断（候选是否回答查询、结果是否足够、页面是否含答案、记忆类型与重复）、EMRank 后端（jev 关键路径、clef 后台，已实测） | 定稿 |
 | [cicd.md](cicd.md) | CI/CD：hosted-only、一次构建分片执行、fail-closed Merge gate、零 secret、tag 门禁 + 已验证字节发布；含 master 基线 26 个失败的实测清单 | 设计稿 |
+| [agents-md.md](agents-md.md) | 指令文件：彻底移除 CLAUDE.md 及其变体，统一采用通用 AGENTS.md 规范 | 定稿 |
 
 ## 一、通用约定
 

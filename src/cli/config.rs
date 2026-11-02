@@ -295,7 +295,7 @@ Live:
   -r, --resume [session]     Resume session (omit value to open picker)
       --from-pr [value]      Resume a PR-linked session by number/URL or picker
       --settings <path>      Settings file override
-      --add-dir <dirs...>    Extra CLAUDE.md directories
+      --add-dir <dirs...>    Extra AGENTS.md directories
       --agents <json>        Inline agents JSON
       --agent <name>         Main-thread agent type (--agent / settings.agent)
       --plugin-dir <path>    Inline plugin directory (repeatable)

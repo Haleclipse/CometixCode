@@ -1,4 +1,4 @@
-//! Maps to CC `src/context.ts` — session/CLAUDE.md/git context assembly.
+//! Maps to CC `src/context.ts` — session/AGENTS.md/git context assembly.
 //!
 //! Doubles as the module root for CC's `src/context/` directory (Rust 2018
 //! `context.rs` + `context/`), which is a DIFFERENT set of source files: the
@@ -109,7 +109,7 @@ pub fn get_user_context() -> BTreeMap<String, String> {
         !additional_dirs.is_empty(),
     );
     // Maps to: CC `context.ts:176` — publish only after the canonical context
-    // producer applies CLAUDE.md gates; the classifier must never load it again.
+    // producer applies AGENTS.md gates; the classifier must never load it again.
     crate::bootstrap::state::set_cached_claude_md_content(context.get("claudeMd").cloned());
     if let Ok(mut cache) = USER_CONTEXT_CACHE.write() {
         *cache = Some(context.clone());
@@ -118,7 +118,7 @@ pub fn get_user_context() -> BTreeMap<String, String> {
 }
 
 /// Cargo tests are the Rust counterpart of CC's `NODE_ENV === 'test'` path in
-/// `prependUserContext(...)`: do not read host CLAUDE.md files or perturb every
+/// `prependUserContext(...)`: do not read host AGENTS.md files or perturb every
 /// query request unless a focused unit test calls [`build_user_context`] directly.
 #[cfg(test)]
 pub fn get_user_context() -> BTreeMap<String, String> {
@@ -311,7 +311,7 @@ mod tests {
     fn get_user_context_shape_matches_official_current_date_and_claude_md() {
         let context = build_user_context(
             |_| None,
-            || "# Source: CLAUDE.md\n\nproject memory".to_string(),
+            || "# Source: AGENTS.md\n\nproject memory".to_string(),
             || "2026-07-03".to_string(),
             false,
         );
@@ -322,7 +322,7 @@ mod tests {
         );
         assert_eq!(
             context.get("claudeMd").map(String::as_str),
-            Some("# Source: CLAUDE.md\n\nproject memory")
+            Some("# Source: AGENTS.md\n\nproject memory")
         );
     }
 
@@ -348,14 +348,14 @@ mod tests {
     fn get_user_context_honors_explicit_add_dir_in_simple_mode_like_official() {
         let context = build_user_context(
             |requested| (requested == "CLAUDE_CODE_SIMPLE").then(|| "1".to_string()),
-            || "# Source: /extra/CLAUDE.md\n\nexplicit memory".to_string(),
+            || "# Source: /extra/AGENTS.md\n\nexplicit memory".to_string(),
             || "2026-07-03".to_string(),
             true,
         );
 
         assert_eq!(
             context.get("claudeMd").map(String::as_str),
-            Some("# Source: /extra/CLAUDE.md\n\nexplicit memory")
+            Some("# Source: /extra/AGENTS.md\n\nexplicit memory")
         );
     }
 

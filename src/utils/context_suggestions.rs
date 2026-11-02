@@ -224,7 +224,7 @@ mod tests {
             raw_max_tokens: 100_000,
             is_auto_compact_enabled: true,
             memory_files: vec![crate::utils::analyze_context::ContextMemoryFileInfo {
-                path: "/repo/CLAUDE.md".to_string(),
+                path: "/repo/AGENTS.md".to_string(),
                 file_type: "Project".to_string(),
                 tokens: 6_000,
             }],

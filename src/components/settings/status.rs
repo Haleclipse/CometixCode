@@ -648,7 +648,7 @@ mod tests {
     fn memory_diagnostics_match_official_large_file_message_readonly() {
         let diagnostics = memory_diagnostics_from_files(&[
             ClaudeMdFile {
-                path: std::path::PathBuf::from("/tmp/CLAUDE.md"),
+                path: std::path::PathBuf::from("/tmp/AGENTS.md"),
                 source: crate::utils::claudemd::ClaudeMdSource::Project,
                 kind: crate::utils::claudemd::ClaudeMdKind::Project,
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT),
@@ -656,7 +656,7 @@ mod tests {
                 is_nested: false,
             },
             ClaudeMdFile {
-                path: std::path::PathBuf::from("/tmp/large-CLAUDE.md"),
+                path: std::path::PathBuf::from("/tmp/large-AGENTS.md"),
                 source: crate::utils::claudemd::ClaudeMdSource::Project,
                 kind: crate::utils::claudemd::ClaudeMdKind::Project,
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
@@ -668,7 +668,7 @@ mod tests {
         assert_eq!(
             diagnostics,
             vec![
-                "Large /tmp/large-CLAUDE.md will impact performance (40.0k chars > 40.0k chars)"
+                "Large /tmp/large-AGENTS.md will impact performance (40.0k chars > 40.0k chars)"
                     .to_string()
             ]
         );

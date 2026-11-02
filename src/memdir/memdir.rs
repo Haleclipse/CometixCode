@@ -109,7 +109,7 @@ const WHAT_NOT_TO_SAVE_SECTION: &[&str] = &[
     "- Code patterns, conventions, architecture, file paths, or project structure — these can be derived by reading the current project state.",
     "- Git history, recent changes, or who-changed-what — `git log` / `git blame` are authoritative.",
     "- Debugging solutions or fix recipes — the fix is in the code; the commit message has the context.",
-    "- Anything already documented in CLAUDE.md files.",
+    "- Anything already documented in AGENTS.md files.",
     "- Ephemeral task details: in-progress work, temporary state, current conversation context.",
     "",
     "These exclusions apply even when the user explicitly asks you to save. If they ask you to save a PR list or activity summary, ask what was *surprising* or *non-obvious* about it — that is the part worth keeping.",
@@ -314,8 +314,8 @@ pub fn truncate_entrypoint_content(raw: &str) -> EntrypointTruncation {
 /// This builder is used by agent-memory style prompts where `MEMORY.md` content
 /// is included directly in the prompt. The default system prompt's
 /// `loadMemoryPrompt()` intentionally keeps matching upstream and injects only
-/// behavioral guidance; auto-memory index content is loaded through CLAUDE.md /
-/// user-context plumbing in the official app.
+/// behavioral guidance; auto-memory index content is loaded through AGENTS.md /
+/// user-context plumbing.
 pub fn build_memory_prompt(
     display_name: &str,
     memory_dir: &Path,
@@ -884,12 +884,12 @@ mod tests {
         );
         let prompt = lines.join("\n");
 
+        assert!(prompt.contains("grep -rn \"<search term>\" /tmp/nyan-memory/ --include=\"*.md\""));
         assert!(
-            prompt.contains("grep -rn \"<search term>\" /tmp/nyan-memory/ --include=\"*.md\"")
+            prompt.contains(
+                "grep -rn \"<search term>\" /tmp/nyan-project-logs/ --include=\"*.jsonl\""
+            )
         );
-        assert!(prompt.contains(
-            "grep -rn \"<search term>\" /tmp/nyan-project-logs/ --include=\"*.jsonl\""
-        ));
     }
 
     #[test]
@@ -991,8 +991,7 @@ mod tests {
     }
 
     fn temp_memory_dir(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("nyan-memdir-{name}-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("nyan-memdir-{name}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

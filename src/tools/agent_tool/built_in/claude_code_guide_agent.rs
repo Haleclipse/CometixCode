@@ -66,7 +66,7 @@ fn get_claude_code_guide_base_prompt() -> String {
 4. Fetch the specific documentation pages
 5. Provide clear, actionable guidance based on official documentation
 6. Use {web_search} if docs don't cover the topic
-7. Reference local project files (CLAUDE.md, .claude/ directory) when relevant using {read}, {glob}, and {grep}
+7. Reference local project files (AGENTS.md) when relevant using {read}, {glob}, and {grep}
 
 **Guidelines:**
 - Always prioritize official documentation over assumptions

@@ -150,30 +150,20 @@ fn get_project_path_for_config() -> PathBuf {
 /// Maps to CC `utils/config.ts#getMemoryPath`.
 pub fn get_memory_path(memory_type: &str) -> PathBuf {
     match memory_type {
-        "User" | "user" => crate::utils::env_utils::get_claude_config_home_dir().join("CLAUDE.md"),
-        "Local" | "local" => crate::bootstrap::state::get_original_cwd().join("CLAUDE.local.md"),
+        "User" | "user" => crate::utils::env_utils::get_claude_config_home_dir().join("AGENTS.md"),
+        "Local" | "local" => crate::bootstrap::state::get_original_cwd().join("AGENTS.md"),
         "Managed" | "managed" => {
-            crate::utils::settings::managed_path::get_managed_file_path().join("CLAUDE.md")
+            crate::utils::settings::managed_path::get_managed_file_path().join("AGENTS.md")
         }
         "AutoMem" | "autoMem" | "automem" => crate::memdir::paths::get_auto_mem_entrypoint(),
-        "Project" | "project" => crate::bootstrap::state::get_original_cwd().join("CLAUDE.md"),
+        "Project" | "project" => crate::bootstrap::state::get_original_cwd().join("AGENTS.md"),
         // `TeamMem` only joins `MemoryType` under CC's `feature('TEAMMEM')`
         // (`utils/memory/types.ts:9`); the provider itself is unconditional.
         "TeamMem" | "teamMem" | "teammem" => {
             crate::memdir::team_mem_paths::get_team_mem_entrypoint()
         }
-        _ => crate::bootstrap::state::get_original_cwd().join("CLAUDE.md"),
+        _ => crate::bootstrap::state::get_original_cwd().join("AGENTS.md"),
     }
-}
-
-pub fn get_managed_claude_rules_dir() -> PathBuf {
-    crate::utils::settings::managed_path::get_managed_file_path()
-        .join(".claude")
-        .join("rules")
-}
-
-pub fn get_user_claude_rules_dir() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir().join("rules")
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1764,7 +1754,9 @@ pub fn record_first_start_time() {
 }
 
 pub fn is_config_write_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_WRITE_ENABLED").as_deref())
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("NYAN_WRITE_ENABLED").as_deref(),
+    )
 }
 
 fn is_write_enabled() -> bool {
@@ -1785,19 +1777,17 @@ pub fn should_skip_plugin_autoupdate() -> bool {
 }
 
 pub fn get_auto_updater_disabled_reason() -> Option<&'static str> {
-    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref())
-        || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
-                .as_deref(),
-        )
-    {
+    if crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref(),
+    ) || crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER").as_deref(),
+    ) {
         return Some("environment");
     }
 
     if cfg!(debug_assertions)
         && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("ENABLE_AUTOUPDATER_IN_DEVELOPMENT")
-                .as_deref(),
+            crate::utils::process_env::var("ENABLE_AUTOUPDATER_IN_DEVELOPMENT").as_deref(),
         )
     {
         return Some("development");

@@ -181,13 +181,13 @@ mod tests {
     #[test]
     fn large_memory_files_use_official_threshold_and_relative_path() {
         let files = vec![MemoryFileInfo {
-            path: "/repo/CLAUDE.md".to_string(),
+            path: "/repo/AGENTS.md".to_string(),
             content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
         }];
         assert_eq!(get_large_memory_files(&files), files);
         assert_eq!(
-            status_notice_memory_display_path("/repo/CLAUDE.md", "/repo"),
-            "CLAUDE.md"
+            status_notice_memory_display_path("/repo/AGENTS.md", "/repo"),
+            "AGENTS.md"
         );
     }
 
@@ -195,7 +195,7 @@ mod tests {
     fn active_notices_preserve_official_order() {
         let mut context = StatusNoticeContext::default();
         context.memory_files.push(MemoryFileInfo {
-            path: "/repo/CLAUDE.md".to_string(),
+            path: "/repo/AGENTS.md".to_string(),
             content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
         });
         context.agent_definitions = Some(AgentDefinitionsSnapshot {

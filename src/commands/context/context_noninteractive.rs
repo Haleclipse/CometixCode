@@ -298,7 +298,7 @@ mod tests {
             percentage: 10,
             model: "sonnet".to_string(),
             memory_files: vec![ContextMemoryFileInfo {
-                path: "/repo/CLAUDE.md".to_string(),
+                path: "/repo/AGENTS.md".to_string(),
                 file_type: "Project".to_string(),
                 tokens: 200,
             }],
@@ -308,6 +308,6 @@ mod tests {
         assert!(output.starts_with("## Context Usage\n\n**Model:** sonnet  \n"));
         assert!(output.contains("| Messages | 1k | 10.0% |"));
         assert!(output.contains("| Free space | 9k | 90.0% |"));
-        assert!(output.contains("| Project | /repo/CLAUDE.md | 200 |"));
+        assert!(output.contains("| Project | /repo/AGENTS.md | 200 |"));
     }
 }

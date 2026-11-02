@@ -104,23 +104,23 @@ mod tests {
         let cwd = Path::new("/home/alice/work/repo");
         assert_eq!(
             get_relative_memory_path_with_roots(
-                Path::new("/home/alice/work/repo/CLAUDE.md"),
+                Path::new("/home/alice/work/repo/AGENTS.md"),
                 home,
                 cwd,
             ),
-            "./CLAUDE.md"
+            "./AGENTS.md"
         );
         assert_eq!(
             get_relative_memory_path_with_roots(
-                Path::new("/home/alice/.claude/CLAUDE.md"),
+                Path::new("/home/alice/.nyan/AGENTS.md"),
                 home,
                 cwd,
             ),
-            "~/.claude/CLAUDE.md"
+            "~/.nyan/AGENTS.md"
         );
         assert_eq!(
-            get_relative_memory_path_with_roots(Path::new("/etc/claude/CLAUDE.md"), home, cwd),
-            "/etc/claude/CLAUDE.md"
+            get_relative_memory_path_with_roots(Path::new("/etc/agents/AGENTS.md"), home, cwd),
+            "/etc/agents/AGENTS.md"
         );
     }
 
@@ -128,13 +128,13 @@ mod tests {
     fn memory_update_notification_matches_official_copy() {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
-                MemoryUpdateNotification(memory_path: "/etc/claude/CLAUDE.md".to_string())
+                MemoryUpdateNotification(memory_path: "/etc/agents/AGENTS.md".to_string())
             }
         }
         .render(Some(90))
         .to_string();
         assert!(
-            text.contains("Memory updated in /etc/claude/CLAUDE.md · /memory to edit"),
+            text.contains("Memory updated in /etc/agents/AGENTS.md · /memory to edit"),
             "canvas=\n{text}"
         );
     }

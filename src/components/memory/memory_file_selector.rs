@@ -1,7 +1,7 @@
 //! Maps to: CC `components/memory/MemoryFileSelector.tsx:1-324`.
 //!
 //! The selector owns file/folder options, toggle focus, settings writes, and
-//! local folder opening. Imported/nested CLAUDE.md metadata and live dream-task
+//! local folder opening. Imported/nested AGENTS.md metadata and live dream-task
 //! state remain explicit upstream-service seams because Rust's current
 //! `ClaudeMdFile`/`AppState` projections do not expose those fields yet.
 
@@ -57,11 +57,11 @@ fn project_is_in_git_repo(cwd: &Path) -> bool {
 }
 
 fn default_user_memory_path(config_home: &Path) -> PathBuf {
-    config_home.join("CLAUDE.md")
+    config_home.join("AGENTS.md")
 }
 
 fn default_project_memory_path(cwd: &Path) -> PathBuf {
-    cwd.join("CLAUDE.md")
+    cwd.join("AGENTS.md")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -94,12 +94,12 @@ fn memory_option_description(
     is_nested: bool,
 ) -> String {
     if source == ClaudeMdSource::UserGlobal && !is_nested && path == user_memory_path {
-        "Saved in ~/.claude/CLAUDE.md".to_string()
+        "Saved in ~/.nyan/AGENTS.md".to_string()
     } else if source == ClaudeMdSource::Project && !is_nested && path == project_memory_path {
         if project_is_in_git_repo(cwd) {
-            "Checked in at ./CLAUDE.md".to_string()
+            "Checked in at ./AGENTS.md".to_string()
         } else {
-            "Saved in ./CLAUDE.md".to_string()
+            "Saved in ./AGENTS.md".to_string()
         }
     } else if parent.is_some() {
         "@-imported".to_string()
@@ -731,12 +731,12 @@ mod tests {
         assert_eq!(options[0].label, "User memory");
         assert_eq!(
             options[0].description.as_deref(),
-            Some("Saved in ~/.claude/CLAUDE.md")
+            Some("Saved in ~/.nyan/AGENTS.md")
         );
         assert_eq!(options[1].label, "Project memory");
         assert_eq!(
             options[1].description.as_deref(),
-            Some("Saved in ./CLAUDE.md")
+            Some("Saved in ./AGENTS.md")
         );
         assert!(
             !config_home.exists(),
@@ -752,7 +752,7 @@ mod tests {
     fn imported_memory_options_render_depth_marker_and_description() {
         let cwd = temp_path("import-cwd");
         let config_home = temp_path("import-config");
-        let parent = cwd.join("CLAUDE.md");
+        let parent = cwd.join("AGENTS.md");
         let child = cwd.join("rules.md");
         let files = vec![
             ClaudeMdFile {

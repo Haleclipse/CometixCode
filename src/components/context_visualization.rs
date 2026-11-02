@@ -493,7 +493,7 @@ mod tests {
             ]],
             model: "opus".to_string(),
             memory_files: vec![ContextMemoryFileInfo {
-                path: "/repo/CLAUDE.md".to_string(),
+                path: "/repo/AGENTS.md".to_string(),
                 file_type: "Project".to_string(),
                 tokens: 6_000,
             }],

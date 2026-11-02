@@ -378,7 +378,7 @@ fn SetupScreensHost<'a>(
     // Maps to: CC `interactiveHelpers.tsx:248-252`. The full settings env,
     // potentially dangerous variables included, applies once trust is settled.
     // That is after the trust dialog, the `.mcp.json` approvals and the
-    // CLAUDE.md external-includes warning, and before the dialogs that follow,
+    // AGENTS.md external-includes warning, and before the dialogs that follow,
     // among them Claude in Chrome (:390-400). It applies whether or not the
     // trust dialog showed, as CC's call does, but not in demo mode, which
     // returns first.
@@ -560,7 +560,10 @@ fn SetupScreensHost<'a>(
         }
     };
     // Onboarding already carries its showSetupDialog wrappers.
-    if matches!(setup_gate, SetupScreenGate::Ready | SetupScreenGate::Onboarding) {
+    if matches!(
+        setup_gate,
+        SetupScreenGate::Ready | SetupScreenGate::Onboarding
+    ) {
         return gate_element;
     }
     // Maps to: CC `interactiveHelpers.tsx:121-131` `showSetupDialog` — every
@@ -598,7 +601,10 @@ mod setup_screens_snapshot_tests {
             api_key_needing_onboarding_approval(&config, &with_key("sk-ant-test-key\r")),
             Some(normalize_api_key_for_config("sk-ant-test-key\r"))
         );
-        assert_eq!(api_key_needing_onboarding_approval(&config, &with_key("")), None);
+        assert_eq!(
+            api_key_needing_onboarding_approval(&config, &with_key("")),
+            None
+        );
     }
 
     #[test]
@@ -747,7 +753,7 @@ mod setup_screens_snapshot_tests {
         global_config.primary_api_key = Some("sk-console".to_string());
         global_config.auto_install_ide_extension = Some(true);
         let memory_file = ClaudeMdFile {
-            path: Path::new("/repo/CLAUDE.md").to_path_buf(),
+            path: Path::new("/repo/AGENTS.md").to_path_buf(),
             source: crate::utils::claudemd::ClaudeMdSource::Project,
             kind: crate::utils::claudemd::ClaudeMdKind::Project,
             content: "project memory".to_string(),
@@ -776,7 +782,7 @@ mod setup_screens_snapshot_tests {
         crate::utils::config::set_test_global_config(None);
 
         assert_eq!(context.cwd, "/repo");
-        assert_eq!(context.memory_files[0].path, "/repo/CLAUDE.md");
+        assert_eq!(context.memory_files[0].path, "/repo/AGENTS.md");
         assert_eq!(context.auth_token_source, "ANTHROPIC_AUTH_TOKEN");
         assert_eq!(context.api_key_source, "/login managed key");
         assert!(context.has_console_api_key);
@@ -814,10 +820,9 @@ mod setup_screens_snapshot_tests {
         let mut global_config = GlobalConfig::default();
         let mut project_config = ProjectConfig::default();
         project_config.mcp_servers = Some(serde_json::json!({"alpha":{}}));
-        global_config.projects.insert(
-            normalize_project_path("/tmp/nyan-project"),
-            project_config,
-        );
+        global_config
+            .projects
+            .insert(normalize_project_path("/tmp/nyan-project"), project_config);
 
         let loaded = project_config_for_cwd(&global_config, Path::new("/tmp/nyan-project"));
         assert!(
@@ -1183,10 +1188,8 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let root = std::env::temp_dir().join(format!(
-            "nyan-setup-env-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nyan-setup-env-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join("settings.json"),
@@ -1199,7 +1202,7 @@ mod tests {
         let project = root.join("project");
         std::fs::create_dir_all(&project).unwrap();
         let _cwd = CwdGuard::set(&project);
-        // CLAUBBIT skips the trust dialog and the CLAUDE.md warning.
+        // CLAUBBIT skips the trust dialog and the AGENTS.md warning.
         let _claubbit = EnvVarGuard::set("CLAUBBIT", "1");
         let _demo = if demo {
             EnvVarGuard::set("IS_DEMO", "1")
@@ -1233,7 +1236,10 @@ mod tests {
     #[test]
     fn setup_applies_the_full_settings_env_before_completing() {
         let (done, applied) = render_setup_with_settings_env(false);
-        assert!(done, "setup with no step to show completes on the first frame");
+        assert!(
+            done,
+            "setup with no step to show completes on the first frame"
+        );
         assert_eq!(applied.as_deref(), Some("applied"));
     }
 

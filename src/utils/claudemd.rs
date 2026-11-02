@@ -1,5 +1,4 @@
-//!    - .claude/CLAUDE.md (dot-claude)
-//!    - AGENTS.md (cross-tool convention; `@nyan offset`)
+//!    - AGENTS.md (cross-tool convention; the only instruction file nyan reads)
 
 use crate::utils::config;
 use std::collections::HashSet;
@@ -112,9 +111,9 @@ static SHOULD_FIRE_INSTRUCTIONS_LOADED: std::sync::atomic::AtomicBool =
 static NEXT_EAGER_LOAD_REASON: LazyLock<RwLock<&'static str>> =
     LazyLock::new(|| RwLock::new("session_start"));
 
-/// @nyan offset: the agent-instructions filename shared by other coding
-/// CLIs. Official Claude Code only reads `CLAUDE.md`; this port also accepts
-/// `AGENTS.md` in each scope where `CLAUDE.md` is discovered.
+/// @nyan: nyan is provider-agnostic and only reads the cross-tool `AGENTS.md`
+/// convention. `CLAUDE.md`, `CLAUDE.local.md`, `.claude/CLAUDE.md`, and every
+/// rules directory are intentionally never discovered.
 const AGENTS_MEMORY_FILE: &str = "AGENTS.md";
 
 pub fn discover_claude_md_files() -> Vec<ClaudeMdFile> {
@@ -179,9 +178,8 @@ pub(crate) fn memory_files_cache_is_populated_for_test() -> bool {
 /// additional `--add-dir` discovery.
 ///
 /// `include_default_discovery=false` is the Rust equivalent of CC bare mode's
-/// "skip what I didn't ask for" behavior. Explicit add-dir CLAUDE.md loading
-/// remains controlled by `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`, just
-/// like upstream.
+/// "skip what I didn't ask for" behavior. Explicit add-dir AGENTS.md loading
+/// remains controlled by `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`.
 pub fn discover_claude_md_files_with_options(
     include_default_discovery: bool,
     additional_dirs: &[PathBuf],
@@ -225,44 +223,17 @@ pub fn discover_claude_md_files_with_external_policy(
             &mut processed,
             &mut files,
         );
-        load_rules_recursively(
-            &config::get_managed_claude_rules_dir(),
-            ClaudeMdSource::Managed,
-            include_project_external,
-            &cwd,
-            &mut processed,
-            &mut files,
-        );
 
         if crate::utils::settings::constants::is_setting_source_enabled(
             crate::utils::settings::constants::SettingSource::User,
         ) {
-            process_memory_file(
-                &config_home.join("CLAUDE.md"),
-                ClaudeMdSource::UserGlobal,
-                true,
-                0,
-                None,
-                &cwd,
-                &mut processed,
-                &mut files,
-            );
-            // @nyan offset: also honor the cross-tool `AGENTS.md` convention
-            // at the global scope, so one file can drive several CLIs.
+            // @nyan: only honor AGENTS.md; CLAUDE.md and rules variants are discarded
             process_memory_file(
                 &config_home.join(AGENTS_MEMORY_FILE),
                 ClaudeMdSource::UserGlobal,
                 true,
                 0,
                 None,
-                &cwd,
-                &mut processed,
-                &mut files,
-            );
-            load_rules_recursively(
-                &config_home.join("rules"),
-                ClaudeMdSource::UserGlobal,
-                true,
                 &cwd,
                 &mut processed,
                 &mut files,
@@ -296,20 +267,6 @@ pub fn discover_claude_md_files_with_external_policy(
                 load_project_claude_md_files(
                     &directory,
                     include_project_external,
-                    &cwd,
-                    &mut processed,
-                    &mut files,
-                );
-            }
-            if crate::utils::settings::constants::is_setting_source_enabled(
-                crate::utils::settings::constants::SettingSource::Local,
-            ) {
-                process_memory_file(
-                    &directory.join("CLAUDE.local.md"),
-                    ClaudeMdSource::Local,
-                    include_project_external,
-                    0,
-                    None,
                     &cwd,
                     &mut processed,
                     &mut files,
@@ -478,7 +435,7 @@ pub fn build_claude_md_context() -> String {
 /// `utils/attachments.rs`.
 pub fn get_memory_files_for_nested_directory(
     dir: &Path,
-    target_path: &Path,
+    _target_path: &Path,
     original_cwd: &Path,
     processed: &mut HashSet<PathBuf>,
 ) -> Vec<ClaudeMdFile> {
@@ -487,27 +444,6 @@ pub fn get_memory_files_for_nested_directory(
         crate::utils::settings::constants::SettingSource::Project,
     );
     if project_enabled {
-        process_memory_file(
-            &dir.join("CLAUDE.md"),
-            ClaudeMdSource::Project,
-            false,
-            0,
-            None,
-            original_cwd,
-            processed,
-            &mut files,
-        );
-        process_memory_file(
-            &dir.join(".claude").join("CLAUDE.md"),
-            ClaudeMdSource::Project,
-            false,
-            0,
-            None,
-            original_cwd,
-            processed,
-            &mut files,
-        );
-        // @nyan offset: nested directories honor `AGENTS.md` too.
         process_memory_file(
             &dir.join(AGENTS_MEMORY_FILE),
             ClaudeMdSource::Project,
@@ -519,111 +455,9 @@ pub fn get_memory_files_for_nested_directory(
             &mut files,
         );
     }
-    if crate::utils::settings::constants::is_setting_source_enabled(
-        crate::utils::settings::constants::SettingSource::Local,
-    ) {
-        process_memory_file(
-            &dir.join("CLAUDE.local.md"),
-            ClaudeMdSource::Local,
-            false,
-            0,
-            None,
-            original_cwd,
-            processed,
-            &mut files,
-        );
-    }
     for file in &mut files {
         file.is_nested = true;
     }
-
-    if project_enabled {
-        let rules_dir = dir.join(".claude").join("rules");
-        // CC uses a clone for the unconditional pass so conditional files remain
-        // eligible for the target-specific pass, then merges both processed sets.
-        let mut unconditional_processed = processed.clone();
-        load_rules_recursively(
-            &rules_dir,
-            ClaudeMdSource::Project,
-            false,
-            original_cwd,
-            &mut unconditional_processed,
-            &mut files,
-        );
-        let mut conditional = Vec::new();
-        load_rules_recursively_inner(
-            &rules_dir,
-            ClaudeMdSource::Project,
-            false,
-            original_cwd,
-            processed,
-            &mut conditional,
-            &mut HashSet::new(),
-            Some((dir, target_path)),
-        );
-        files.extend(conditional);
-        processed.extend(unconditional_processed);
-    }
-    files
-}
-
-/// Maps to CC `utils/claudemd.ts#getManagedAndUserConditionalRules`.
-pub fn get_managed_and_user_conditional_rules(
-    target_path: &Path,
-    original_cwd: &Path,
-    processed: &mut HashSet<PathBuf>,
-) -> Vec<ClaudeMdFile> {
-    let mut files = Vec::new();
-    load_rules_recursively_inner(
-        &crate::utils::config::get_managed_claude_rules_dir(),
-        ClaudeMdSource::Managed,
-        false,
-        original_cwd,
-        processed,
-        &mut files,
-        &mut HashSet::new(),
-        Some((original_cwd, target_path)),
-    );
-    if crate::utils::settings::constants::is_setting_source_enabled(
-        crate::utils::settings::constants::SettingSource::User,
-    ) {
-        load_rules_recursively_inner(
-            &crate::utils::config::get_user_claude_rules_dir(),
-            ClaudeMdSource::UserGlobal,
-            true,
-            original_cwd,
-            processed,
-            &mut files,
-            &mut HashSet::new(),
-            Some((original_cwd, target_path)),
-        );
-    }
-    files
-}
-
-/// Maps to CC `utils/claudemd.ts#getConditionalRulesForCwdLevelDirectory`.
-pub fn get_conditional_rules_for_cwd_level_directory(
-    dir: &Path,
-    target_path: &Path,
-    original_cwd: &Path,
-    processed: &mut HashSet<PathBuf>,
-) -> Vec<ClaudeMdFile> {
-    if !crate::utils::settings::constants::is_setting_source_enabled(
-        crate::utils::settings::constants::SettingSource::Project,
-    ) {
-        return Vec::new();
-    }
-    let mut files = Vec::new();
-    load_rules_recursively_inner(
-        &dir.join(".claude").join("rules"),
-        ClaudeMdSource::Project,
-        false,
-        original_cwd,
-        processed,
-        &mut files,
-        &mut HashSet::new(),
-        Some((dir, target_path)),
-    );
     files
 }
 
@@ -634,139 +468,16 @@ fn load_project_claude_md_files(
     processed: &mut HashSet<PathBuf>,
     files: &mut Vec<ClaudeMdFile>,
 ) {
-    for path in [
-        dir.join("CLAUDE.md"),
-        dir.join(".claude").join("CLAUDE.md"),
-        // @nyan offset: same cross-tool convention as the user-global scope.
-        dir.join(AGENTS_MEMORY_FILE),
-    ] {
-        process_memory_file(
-            &path,
-            ClaudeMdSource::Project,
-            include_external,
-            0,
-            None,
-            cwd,
-            processed,
-            files,
-        );
-    }
-    load_rules_recursively(
-        &dir.join(".claude").join("rules"),
+    process_memory_file(
+        &dir.join(AGENTS_MEMORY_FILE),
         ClaudeMdSource::Project,
         include_external,
-        cwd,
-        processed,
-        files,
-    );
-}
-
-fn load_rules_recursively(
-    directory: &Path,
-    source: ClaudeMdSource,
-    include_external: bool,
-    cwd: &Path,
-    processed: &mut HashSet<PathBuf>,
-    files: &mut Vec<ClaudeMdFile>,
-) {
-    load_rules_recursively_inner(
-        directory,
-        source,
-        include_external,
-        cwd,
-        processed,
-        files,
-        &mut HashSet::new(),
+        0,
         None,
+        cwd,
+        processed,
+        files,
     );
-}
-
-#[allow(clippy::too_many_arguments)]
-fn load_rules_recursively_inner(
-    directory: &Path,
-    source: ClaudeMdSource,
-    include_external: bool,
-    cwd: &Path,
-    processed: &mut HashSet<PathBuf>,
-    files: &mut Vec<ClaudeMdFile>,
-    visited_directories: &mut HashSet<PathBuf>,
-    conditional_target: Option<(&Path, &Path)>,
-) {
-    let normalized_directory = normalize_for_dedup(directory);
-    if !visited_directories.insert(normalized_directory) {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
-    let mut paths = entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .collect::<Vec<_>>();
-    paths.sort();
-    for path in paths {
-        let entry_is_markdown = path.extension().is_some_and(|extension| extension == "md");
-        let resolved_path = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-        let metadata = std::fs::metadata(&resolved_path).ok();
-        if metadata.as_ref().is_some_and(std::fs::Metadata::is_dir) {
-            load_rules_recursively_inner(
-                &resolved_path,
-                source,
-                include_external,
-                cwd,
-                processed,
-                files,
-                visited_directories,
-                conditional_target,
-            );
-        } else if entry_is_markdown && metadata.as_ref().is_some_and(std::fs::Metadata::is_file) {
-            let mut candidates = Vec::new();
-            process_memory_file(
-                &resolved_path,
-                source,
-                include_external,
-                0,
-                None,
-                cwd,
-                processed,
-                &mut candidates,
-            );
-            for mut candidate in candidates {
-                let projection = claude_md_disk_projection(&candidate);
-                let include = match (projection.globs.as_deref(), conditional_target) {
-                    (None, None) => true,
-                    (Some(globs), Some((base_dir, target_path))) => {
-                        memory_rule_globs_match(globs, base_dir, target_path)
-                    }
-                    _ => false,
-                };
-                if include {
-                    candidate.is_nested = conditional_target.is_some();
-                    files.push(candidate);
-                }
-            }
-        }
-    }
-}
-
-fn memory_rule_globs_match(globs: &[String], base_dir: &Path, target_path: &Path) -> bool {
-    let Ok(relative) = target_path.strip_prefix(base_dir) else {
-        return false;
-    };
-    if relative.as_os_str().is_empty() {
-        return false;
-    }
-    let mut builder = ignore::gitignore::GitignoreBuilder::new(base_dir);
-    for glob in globs {
-        if builder.add_line(None, glob).is_err() {
-            return false;
-        }
-    }
-    builder.build().is_ok_and(|matcher| {
-        matcher
-            .matched_path_or_any_parents(relative, false)
-            .is_ignore()
-    })
 }
 
 fn normalize_for_dedup(path: &Path) -> PathBuf {
@@ -1448,7 +1159,7 @@ mod tests {
     #[test]
     fn imported_memory_files_preserve_parent_depth_and_ignore_code_or_comments() {
         let root = temp_dir("imports");
-        let parent = root.join("CLAUDE.md");
+        let parent = root.join("AGENTS.md");
         let child = root.join("child.md");
         let ignored = root.join("ignored.md");
         std::fs::write(
@@ -1478,44 +1189,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_rules_split_unconditional_and_matching_frontmatter_paths() {
-        let root = temp_dir("nested-rules");
-        let rules = root.join(".claude/rules");
-        let target = root.join("src/main.rs");
-        std::fs::create_dir_all(&rules).unwrap();
-        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
-        std::fs::write(&target, "fn main() {}\n").unwrap();
-        std::fs::write(rules.join("always.md"), "always").unwrap();
-        std::fs::write(
-            rules.join("rust.md"),
-            "---\npaths: src/**/*.rs\n---\nrust only",
-        )
-        .unwrap();
-        std::fs::write(rules.join("docs.md"), "---\npaths: docs/**\n---\ndocs only").unwrap();
-        let mut processed = HashSet::new();
-
-        let files = get_memory_files_for_nested_directory(&root, &target, &root, &mut processed);
-        assert_eq!(
-            files
-                .iter()
-                .map(|file| file.path.file_name().unwrap().to_string_lossy().to_string())
-                .collect::<Vec<_>>(),
-            vec!["always.md", "rust.md"]
-        );
-        let rust = files
-            .iter()
-            .find(|file| file.path.ends_with("rust.md"))
-            .unwrap();
-        assert_eq!(rust.content, "rust only");
-        let projection = claude_md_disk_projection(rust);
-        assert!(projection.content_differs_from_disk);
-        assert_eq!(projection.globs, Some(vec!["src/**/*.rs".to_string()]));
-        assert!(projection.raw_content.starts_with("---\npaths:"));
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn nested_instructions_follow_project_and_local_setting_source_gates() {
+    fn nested_instructions_follow_project_setting_source_gate_and_ignore_claude_variants() {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -1524,7 +1198,8 @@ mod tests {
         let target = root.join("src/lib.rs");
         std::fs::create_dir_all(target.parent().unwrap()).unwrap();
         std::fs::create_dir_all(root.join(".claude/rules")).unwrap();
-        std::fs::write(root.join("CLAUDE.md"), "project root").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "project agents").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "project claude").unwrap();
         std::fs::write(root.join(".claude/CLAUDE.md"), "project dot").unwrap();
         std::fs::write(root.join("CLAUDE.local.md"), "local").unwrap();
         std::fs::write(root.join(".claude/rules/project.md"), "project rule").unwrap();
@@ -1538,64 +1213,23 @@ mod tests {
         crate::bootstrap::state::set_allowed_setting_sources(vec!["projectSettings".to_string()]);
         let project =
             get_memory_files_for_nested_directory(&root, &target, &root, &mut HashSet::new());
-        assert!(project.iter().any(|file| file.path.ends_with("CLAUDE.md")));
-        assert!(project.iter().any(|file| file.path.ends_with("project.md")));
+        assert_eq!(project.len(), 1);
+        assert!(project[0].path.ends_with("AGENTS.md"));
+        assert_eq!(project[0].content, "project agents");
+        assert!(project[0].is_nested);
+        assert!(!project.iter().any(|file| file.path.ends_with("CLAUDE.md")));
         assert!(
             !project
                 .iter()
                 .any(|file| file.path.ends_with("CLAUDE.local.md"))
         );
+        assert!(!project.iter().any(|file| file.path.ends_with("project.md")));
 
+        // Local settings should no longer load CLAUDE.local.md
         crate::bootstrap::state::set_allowed_setting_sources(vec!["localSettings".to_string()]);
         let local =
             get_memory_files_for_nested_directory(&root, &target, &root, &mut HashSet::new());
-        assert_eq!(local.len(), 1);
-        assert!(local[0].path.ends_with("CLAUDE.local.md"));
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn managed_rules_remain_enabled_while_user_rules_follow_source_gate() {
-        let _lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let _sources = AllowedSettingSourcesGuard::capture();
-        let root = temp_dir("managed-user-rules-gates");
-        let managed = root.join("managed");
-        let config_home = root.join("config");
-        let managed_rules = managed.join(".claude/rules");
-        let user_rules = config_home.join("rules");
-        std::fs::create_dir_all(&managed_rules).unwrap();
-        std::fs::create_dir_all(&user_rules).unwrap();
-        std::fs::write(
-            managed_rules.join("managed.md"),
-            "---\npaths: src/**\n---\nmanaged rule",
-        )
-        .unwrap();
-        std::fs::write(
-            user_rules.join("user.md"),
-            "---\npaths: src/**\n---\nuser rule",
-        )
-        .unwrap();
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
-        let target = root.join("src/lib.rs");
-
-        crate::bootstrap::state::set_allowed_setting_sources(Vec::new());
-        let managed_only =
-            get_managed_and_user_conditional_rules(&target, &root, &mut HashSet::new());
-        assert_eq!(managed_only.len(), 1);
-        assert!(managed_only[0].path.ends_with("managed.md"));
-
-        crate::bootstrap::state::set_allowed_setting_sources(vec!["userSettings".to_string()]);
-        let with_user = get_managed_and_user_conditional_rules(&target, &root, &mut HashSet::new());
-        assert!(
-            with_user
-                .iter()
-                .any(|file| file.path.ends_with("managed.md"))
-        );
-        assert!(with_user.iter().any(|file| file.path.ends_with("user.md")));
+        assert!(local.is_empty());
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1615,7 +1249,7 @@ mod tests {
         std::fs::create_dir_all(&config_home).unwrap();
         let external = root.join("external.md");
         std::fs::write(&external, "external managed include").unwrap();
-        std::fs::write(managed.join("CLAUDE.md"), "@../external.md\nmanaged root").unwrap();
+        std::fs::write(managed.join("AGENTS.md"), "@../external.md\nmanaged root").unwrap();
 
         {
             let _current_dir = CurrentDirGuard::set(&cwd);
@@ -1630,10 +1264,10 @@ mod tests {
             assert!(
                 unapproved.iter().any(|file| {
                     normalize_for_dedup(&file.path)
-                        == normalize_for_dedup(&managed.join("CLAUDE.md"))
+                        == normalize_for_dedup(&managed.join("AGENTS.md"))
                 }),
                 "managed={} files={unapproved:#?}",
-                managed.join("CLAUDE.md").display(),
+                managed.join("AGENTS.md").display(),
             );
             assert!(
                 !unapproved.iter().any(|file| {
@@ -1684,8 +1318,8 @@ mod tests {
             ])
             .success()
         );
-        std::fs::write(root.join("CLAUDE.md"), "parent instructions").unwrap();
-        std::fs::write(nested.join("CLAUDE.md"), "worktree instructions").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "parent instructions").unwrap();
+        std::fs::write(nested.join("AGENTS.md"), "worktree instructions").unwrap();
         let managed = root.join("managed");
         let config_home = root.join("config");
         std::fs::create_dir_all(&managed).unwrap();
@@ -1703,10 +1337,10 @@ mod tests {
             ]);
             let files = discover_claude_md_files_with_options(true, &[]);
             assert!(files.iter().any(|file| {
-                normalize_for_dedup(&file.path) == normalize_for_dedup(&nested.join("CLAUDE.md"))
+                normalize_for_dedup(&file.path) == normalize_for_dedup(&nested.join("AGENTS.md"))
             }));
             assert!(!files.iter().any(|file| {
-                normalize_for_dedup(&file.path) == normalize_for_dedup(&root.join("CLAUDE.md"))
+                normalize_for_dedup(&file.path) == normalize_for_dedup(&root.join("AGENTS.md"))
             }));
         }
 
@@ -1721,7 +1355,7 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let _unset = EnvVarGuard::unset("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
         let extra = temp_dir("additional-gate");
-        std::fs::write(extra.join("CLAUDE.md"), "explicit memory").unwrap();
+        std::fs::write(extra.join("AGENTS.md"), "explicit memory").unwrap();
 
         let disabled = discover_claude_md_files_with_options(false, &[extra.clone()]);
         assert!(disabled.is_empty());
@@ -1732,19 +1366,20 @@ mod tests {
         };
 
         assert_eq!(enabled.len(), 1);
-        assert_eq!(enabled[0].path, extra.join("CLAUDE.md"));
+        assert_eq!(enabled[0].path, extra.join("AGENTS.md"));
         assert_eq!(enabled[0].source, ClaudeMdSource::Project);
         assert_eq!(enabled[0].content, "explicit memory");
         let _ = std::fs::remove_dir_all(extra);
     }
 
     #[test]
-    fn bare_add_dir_discovery_reads_project_dot_claude_and_rules_without_default_walk() {
+    fn bare_add_dir_discovery_reads_only_agents_md_and_ignores_claude_variants() {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _enabled = EnvVarGuard::set("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
         let extra = temp_dir("additional-shape");
+        std::fs::write(extra.join("AGENTS.md"), "agents memory").unwrap();
         std::fs::write(extra.join("CLAUDE.md"), "root memory").unwrap();
         std::fs::create_dir_all(extra.join(".claude/rules")).unwrap();
         std::fs::write(extra.join(".claude/CLAUDE.md"), "dot memory").unwrap();
@@ -1764,20 +1399,9 @@ mod tests {
                     .to_string()
             })
             .collect::<Vec<_>>();
-        assert_eq!(
-            relative_paths,
-            vec![
-                "CLAUDE.md",
-                ".claude/CLAUDE.md",
-                ".claude/rules/a.md",
-                ".claude/rules/b.md",
-            ]
-        );
-        assert!(
-            files
-                .iter()
-                .all(|file| file.source == ClaudeMdSource::Project)
-        );
+        assert_eq!(relative_paths, vec!["AGENTS.md"]);
+        assert_eq!(files[0].content, "agents memory");
+        assert_eq!(files[0].source, ClaudeMdSource::Project);
         let _ = std::fs::remove_dir_all(extra);
     }
 
@@ -1817,7 +1441,14 @@ mod tests {
                 .collect::<Vec<_>>();
             assert!(contents.contains(&"global agents"), "files={files:#?}");
             assert!(contents.contains(&"project agents"), "files={files:#?}");
-            assert!(contents.contains(&"project claude"), "files={files:#?}");
+            assert!(
+                !contents.contains(&"project claude"),
+                "CLAUDE.md must not be loaded: files={files:#?}"
+            );
+            assert!(
+                !files.iter().any(|file| file.path.ends_with("CLAUDE.md")),
+                "CLAUDE.md path must not be loaded: files={files:#?}"
+            );
             assert!(
                 files
                     .iter()
@@ -1861,7 +1492,7 @@ mod tests {
         ));
         std::fs::write(&inside, "inside").unwrap();
         std::fs::write(&outside, "outside").unwrap();
-        let parent = root.join("CLAUDE.md");
+        let parent = root.join("AGENTS.md");
 
         let files = vec![
             ClaudeMdFile {
@@ -1901,13 +1532,13 @@ mod tests {
     #[test]
     fn claude_md_excludes_match_absolute_globs_and_real_paths() {
         let root = temp_dir("excludes");
-        let excluded = root.join("nested/.claude/rules/private.md");
+        let excluded = root.join("private/AGENTS.md");
         std::fs::create_dir_all(excluded.parent().unwrap()).unwrap();
         std::fs::write(&excluded, "private").unwrap();
-        let patterns = vec![format!("{}/**/private.md", root.display())];
+        let patterns = vec![format!("{}/**/private/AGENTS.md", root.display())];
         assert!(claude_md_path_matches_excludes(&excluded, &patterns));
         assert!(!claude_md_path_matches_excludes(
-            &root.join("nested/.claude/rules/public.md"),
+            &root.join("public/AGENTS.md"),
             &patterns
         ));
         let _ = std::fs::remove_dir_all(root);
@@ -1916,7 +1547,7 @@ mod tests {
     #[test]
     fn memory_includes_reject_unknown_binary_extensions() {
         let root = temp_dir("include-types");
-        let parent = root.join("CLAUDE.md");
+        let parent = root.join("AGENTS.md");
         let allowed = root.join("rules.rs");
         let rejected = root.join("payload.bin");
         std::fs::write(&parent, "@./rules.rs\n@./payload.bin\n").unwrap();
@@ -1945,32 +1576,6 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn symlinked_rule_entry_uses_resolved_target_path() {
-        use std::os::unix::fs::symlink;
-
-        let root = temp_dir("symlink-rule-entry");
-        let rules = root.join(".claude/rules");
-        let real = root.join("real-rule.md");
-        std::fs::create_dir_all(&rules).unwrap();
-        std::fs::write(&real, "real rule").unwrap();
-        symlink(&real, rules.join("alias.md")).unwrap();
-        let mut processed = HashSet::new();
-        let mut files = Vec::new();
-        load_rules_recursively(
-            &rules,
-            ClaudeMdSource::Project,
-            true,
-            &root,
-            &mut processed,
-            &mut files,
-        );
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].path, normalize_for_dedup(&real));
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[cfg(unix)]
-    #[test]
     fn symlinked_memory_resolves_includes_from_real_parent() {
         use std::os::unix::fs::symlink;
 
@@ -1978,9 +1583,9 @@ mod tests {
         let real = root.join("real");
         let linked = root.join("linked");
         std::fs::create_dir_all(&real).unwrap();
-        std::fs::write(real.join("CLAUDE.md"), "@./child.md\n").unwrap();
+        std::fs::write(real.join("AGENTS.md"), "@./child.md\n").unwrap();
         std::fs::write(real.join("child.md"), "child").unwrap();
-        symlink(real.join("CLAUDE.md"), &linked).unwrap();
+        symlink(real.join("AGENTS.md"), &linked).unwrap();
         let mut processed = HashSet::new();
         let mut files = Vec::new();
         process_memory_file(
@@ -1998,6 +1603,130 @@ mod tests {
                 .iter()
                 .any(|file| file.path == normalize_for_dedup(&real.join("child.md")))
         );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn agents_md_only_discovery_ignores_all_claude_variants_across_all_levels() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let _sources = AllowedSettingSourcesGuard::capture();
+        let root = temp_dir("agents-md-only-full");
+        let managed = root.join("managed");
+        let config_home = root.join("config");
+        let parent = root.join("workspace");
+        let cwd = parent.join("project");
+        let nested = cwd.join("submodule");
+
+        std::fs::create_dir_all(&managed.join(".claude/rules")).unwrap();
+        std::fs::create_dir_all(&config_home.join("rules")).unwrap();
+        std::fs::create_dir_all(&parent.join(".claude/rules")).unwrap();
+        std::fs::create_dir_all(&cwd.join(".claude/rules")).unwrap();
+        std::fs::create_dir_all(&nested.join(".claude/rules")).unwrap();
+
+        // 1. Managed level
+        std::fs::write(managed.join("AGENTS.md"), "managed agents").unwrap();
+        std::fs::write(managed.join("CLAUDE.md"), "managed claude").unwrap();
+        std::fs::write(managed.join(".claude/rules/m_rule.md"), "managed rule").unwrap();
+
+        // 2. UserGlobal level
+        std::fs::write(config_home.join("AGENTS.md"), "user agents").unwrap();
+        std::fs::write(config_home.join("CLAUDE.md"), "user claude").unwrap();
+        std::fs::write(config_home.join("rules/u_rule.md"), "user rule").unwrap();
+
+        // 3. Parent ancestor level
+        std::fs::write(parent.join("AGENTS.md"), "parent agents").unwrap();
+        std::fs::write(parent.join("CLAUDE.md"), "parent claude").unwrap();
+        std::fs::write(parent.join(".claude/CLAUDE.md"), "parent dot claude").unwrap();
+        std::fs::write(parent.join(".claude/rules/p_rule.md"), "parent rule").unwrap();
+
+        // 4. Project cwd level
+        std::fs::write(cwd.join("AGENTS.md"), "project agents").unwrap();
+        std::fs::write(cwd.join("CLAUDE.md"), "project claude").unwrap();
+        std::fs::write(cwd.join("CLAUDE.local.md"), "project local claude").unwrap();
+        std::fs::write(cwd.join(".claude/CLAUDE.md"), "project dot claude").unwrap();
+        std::fs::write(cwd.join(".claude/rules/c_rule.md"), "project rule").unwrap();
+
+        // 5. Nested directory level
+        std::fs::write(nested.join("AGENTS.md"), "nested agents").unwrap();
+        std::fs::write(nested.join("CLAUDE.md"), "nested claude").unwrap();
+        std::fs::write(nested.join("CLAUDE.local.md"), "nested local claude").unwrap();
+        std::fs::write(nested.join(".claude/CLAUDE.md"), "nested dot claude").unwrap();
+        std::fs::write(nested.join(".claude/rules/n_rule.md"), "nested rule").unwrap();
+
+        {
+            let _current_dir = CurrentDirGuard::set(&cwd);
+            let _original_cwd = OriginalCwdGuard::set(&cwd);
+            let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+            let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _global_config =
+                GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
+            crate::bootstrap::state::set_allowed_setting_sources(vec![
+                "userSettings".to_string(),
+                "projectSettings".to_string(),
+                "localSettings".to_string(),
+            ]);
+
+            // Test normal startup discovery
+            let files = discover_claude_md_files_with_options(true, &[]);
+            let contents = files
+                .iter()
+                .map(|file| file.content.as_str())
+                .collect::<Vec<_>>();
+
+            // Assert all AGENTS.md levels are loaded
+            assert!(
+                contents.contains(&"managed agents"),
+                "Managed AGENTS.md missing"
+            );
+            assert!(contents.contains(&"user agents"), "User AGENTS.md missing");
+            assert!(
+                contents.contains(&"parent agents"),
+                "Parent AGENTS.md missing"
+            );
+            assert!(
+                contents.contains(&"project agents"),
+                "Project AGENTS.md missing"
+            );
+
+            // Assert NO CLAUDE.md variants are loaded
+            assert!(!contents.contains(&"managed claude"));
+            assert!(!contents.contains(&"managed rule"));
+            assert!(!contents.contains(&"user claude"));
+            assert!(!contents.contains(&"user rule"));
+            assert!(!contents.contains(&"parent claude"));
+            assert!(!contents.contains(&"parent dot claude"));
+            assert!(!contents.contains(&"parent rule"));
+            assert!(!contents.contains(&"project claude"));
+            assert!(!contents.contains(&"project local claude"));
+            assert!(!contents.contains(&"project dot claude"));
+            assert!(!contents.contains(&"project rule"));
+
+            for file in &files {
+                let name = file.path.file_name().unwrap().to_string_lossy();
+                assert_eq!(name, "AGENTS.md", "Unexpected file loaded: {:?}", file.path);
+                assert!(
+                    !file.path.to_string_lossy().contains(".claude"),
+                    "File from .claude loaded: {:?}",
+                    file.path
+                );
+            }
+
+            // Test nested directory memory discovery
+            let mut processed = HashSet::new();
+            let target_file = nested.join("foo.rs");
+            let nested_files =
+                get_memory_files_for_nested_directory(&nested, &target_file, &cwd, &mut processed);
+            assert_eq!(nested_files.len(), 1);
+            assert_eq!(nested_files[0].content, "nested agents");
+            assert!(nested_files[0].is_nested);
+            assert_eq!(
+                nested_files[0].path.file_name().unwrap().to_string_lossy(),
+                "AGENTS.md"
+            );
+        }
+
         let _ = std::fs::remove_dir_all(root);
     }
 }

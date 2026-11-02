@@ -488,7 +488,7 @@ fn build_claude_md_message() -> Option<MessageParam> {
         role: "user".into(),
         content: MessageContent::Blocks(vec![ContentBlockParam::Text(classifier_text_block(
             format!(
-                "The following is the user's CLAUDE.md configuration. These are instructions the user provided to the agent and should be treated as part of the user's intent when evaluating actions.\n\n<user_claude_md>\n{claude_md}\n</user_claude_md>"
+                "The following is the user's AGENTS.md configuration. These are instructions the user provided to the agent and should be treated as part of the user's intent when evaluating actions.\n\n<user_claude_md>\n{claude_md}\n</user_claude_md>"
             ),
             true,
         ))]),
