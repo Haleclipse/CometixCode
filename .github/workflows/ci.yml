@@ -234,8 +234,8 @@ jobs:
     name: windows-check
     needs: policy
     if: needs.policy.result == 'success' && needs.policy.outputs.docs_only != 'true' && needs.policy.outputs.windows_required == 'true'
-    runs-on: windows-2025
-    timeout-minutes: 30
+    runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -244,11 +244,61 @@ jobs:
           persist-credentials: false
       - name: Set up Rust
         uses: ./.github/actions/setup-rust
-      - name: Check Windows GNU target
-        shell: bash
+      - name: Prepare pinned ripgrep
+        shell: pwsh
+        env:
+          RIPGREP_VERSION: '15.2.0'
+          RIPGREP_SHA256: '71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5'
         run: |
-          rustup target add x86_64-pc-windows-gnu
-          cargo check --locked --lib --tests --target x86_64-pc-windows-gnu
+          $ErrorActionPreference = 'Stop'
+          $ripgrepName = "ripgrep-$($env:RIPGREP_VERSION)-x86_64-pc-windows-msvc"
+          $ripgrepZip = Join-Path $env:RUNNER_TEMP "$ripgrepName.zip"
+          $ripgrepDir = Join-Path $env:RUNNER_TEMP 'ripgrep-extract'
+          Invoke-WebRequest -UseBasicParsing -Uri "https://github.com/BurntSushi/ripgrep/releases/download/$($env:RIPGREP_VERSION)/$ripgrepName.zip" -OutFile $ripgrepZip
+          $actualSha = (Get-FileHash -Algorithm SHA256 -Path $ripgrepZip).Hash.ToLowerInvariant()
+          if ($actualSha -ne $env:RIPGREP_SHA256) {
+            throw "ripgrep SHA256 mismatch: $actualSha"
+          }
+          Expand-Archive -Path $ripgrepZip -DestinationPath $ripgrepDir
+          $vendorDir = Join-Path $env:GITHUB_WORKSPACE 'vendor/ripgrep/x64-win32'
+          New-Item -ItemType Directory -Force $vendorDir | Out-Null
+          Copy-Item (Join-Path $ripgrepDir "$ripgrepName/rg.exe") (Join-Path $vendorDir 'rg.exe')
+          $rgOutput = & (Join-Path $vendorDir 'rg.exe') --version
+          if ($LASTEXITCODE -ne 0 -or "$rgOutput" -notmatch '^ripgrep ') {
+            throw "bundled rg.exe --version failed: $rgOutput"
+          }
+      - name: Build Windows release binary
+        shell: pwsh
+        run: cargo build --release --locked --bin nyan
+      - name: Run Windows release smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'target/release/nyan.exe'
+          $releaseVendor = Join-Path $env:GITHUB_WORKSPACE 'target/release/vendor/ripgrep/x64-win32'
+          New-Item -ItemType Directory -Force $releaseVendor | Out-Null
+          Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'vendor/ripgrep/x64-win32/rg.exe') (Join-Path $releaseVendor 'rg.exe')
+          $env:CLAUDE_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'nyan-config'
+          New-Item -ItemType Directory -Force $env:CLAUDE_CONFIG_DIR | Out-Null
+
+          $version = & $exe --version
+          if ($LASTEXITCODE -ne 0 -or "$version" -notmatch '^nyan ') { throw "nyan.exe --version failed: $version" }
+          $help = & $exe --help
+          if ($LASTEXITCODE -ne 0 -or "$help" -notmatch 'Usage: nyan') { throw "nyan.exe --help failed" }
+          $doctor = & $exe doctor 2>&1 | Out-String
+          $doctorExit = $LASTEXITCODE
+          if ($doctorExit -ne 1 -or $doctor -notmatch 'Unimplemented:.*doctor') {
+            throw "no-model startup smoke failed (exit $doctorExit): $doctor"
+          }
+
+          $rg = Join-Path $releaseVendor 'rg.exe'
+          $rgVersion = & $rg --version
+          if ($LASTEXITCODE -ne 0 -or "$rgVersion" -notmatch '^ripgrep ') { throw "release rg.exe --version failed: $rgVersion" }
+      - name: Run targeted Windows runtime smoke tests
+        shell: pwsh
+        env:
+          USE_BUILTIN_RIPGREP: '1'
+        run: cargo test --locked --lib windows_smoke -- --nocapture
 
   gate:
     name: Merge gate
