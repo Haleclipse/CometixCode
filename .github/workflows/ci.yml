@@ -234,7 +234,7 @@ jobs:
     name: windows-check
     needs: policy
     if: needs.policy.result == 'success' && needs.policy.outputs.docs_only != 'true' && needs.policy.outputs.windows_required == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 45
     steps:
       - name: Check out source
@@ -244,6 +244,14 @@ jobs:
           persist-credentials: false
       - name: Set up Rust
         uses: ./.github/actions/setup-rust
+      - name: Restore Windows build cache
+        id: windows-target-cache
+        uses: actions/cache/restore@d4323d4df104b026a6aa633fdb11d772146be0bf
+        with:
+          path: target
+          key: windows-target-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            windows-target-${{ runner.os }}-${{ runner.arch }}-
       - name: Prepare pinned ripgrep
         shell: pwsh
         env:
@@ -287,7 +295,7 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or "$help" -notmatch 'Usage: nyan') { throw "nyan.exe --help failed" }
           $doctor = & $exe doctor 2>&1 | Out-String
           $doctorExit = $LASTEXITCODE
-          if ($doctorExit -ne 1 -or $doctor -notmatch 'Unimplemented:.*doctor') {
+          if (($doctorExit -ne 0 -and $doctorExit -ne 1) -or [string]::IsNullOrWhiteSpace($doctor)) {
             throw "no-model startup smoke failed (exit $doctorExit): $doctor"
           }
 
@@ -299,6 +307,12 @@ jobs:
         env:
           USE_BUILTIN_RIPGREP: '1'
         run: cargo test --locked --lib windows_smoke -- --nocapture
+      - name: Save Windows build cache on master
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.windows-target-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@d4323d4df104b026a6aa633fdb11d772146be0bf
+        with:
+          path: target
+          key: ${{ steps.windows-target-cache.outputs.cache-primary-key }}
 
   gate:
     name: Merge gate

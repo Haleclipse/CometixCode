@@ -930,8 +930,9 @@ mod tests {
             ..crate::tool::ToolUseContext::default()
         };
         canceled_context.abort_controller.abort();
+        let cancel_args = serde_json::json!({"pattern": "__nyan-no-match-*.txt"});
         let canceled = GlobTool
-            .call(&args, &request, &canceled_context, None, None, None)
+            .call(&cancel_args, &request, &canceled_context, None, None, None)
             .await;
         assert!(matches!(
             canceled.data,

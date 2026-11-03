@@ -4,11 +4,23 @@
     "targetP95Minutes": 20,
     "testShards": 4,
     "impactAnalysisFailClosed": true,
-    "required": ["policy", "build", "static", "tests", "supply-chain"],
-    "conditionalRequired": { "windows-check": "windows_required" },
+    "required": [
+      "policy",
+      "build",
+      "static",
+      "tests",
+      "supply-chain"
+    ],
+    "conditionalRequired": {
+      "windows-check": "windows_required"
+    },
     "docsOnlyFastPath": true
   },
-  "toolchain": { "rust": "1.99.1", "nextest": "0.9.150", "ripgrep": "15.2.0" },
+  "toolchain": {
+    "rust": "1.99.1",
+    "nextest": "0.9.150",
+    "ripgrep": "15.2.0"
+  },
   "runners": {
     "ubuntu": "ubuntu-24.04",
     "ubuntuArm": "ubuntu-24.04-arm",
@@ -17,16 +29,40 @@
     "macosIntel": "macos-15-intel"
   },
   "docsOnly": {
-    "paths": ["docs/**", "**/*.md", "assets/**", "LICENSE", "README*"]
+    "paths": [
+      "docs/**",
+      "**/*.md",
+      "assets/**",
+      "LICENSE",
+      "README*"
+    ]
   },
   "windows": {
-    "paths": ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"],
-    "diffPatterns": ["cfg\\(.*windows", "target_os = \"windows\"", "not\\(unix\\)"]
+    "paths": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain.toml",
+      ".github/workflows/ci.yml"
+    ],
+    "diffPatterns": [
+      "cfg\\(.*windows",
+      "target_os = \"windows\"",
+      "not\\(unix\\)"
+    ]
   },
-  "cache": { "registryMaxBytes": 1000000000, "maxAgeDays": 14 },
+  "cache": {
+    "registryMaxBytes": 1000000000,
+    "maxAgeDays": 14
+  },
   "release": {
     "tagPrefix": "nyan-v",
     "requireSameCommitGate": true,
-    "platforms": ["linux-x64", "linux-arm64", "windows-x64", "darwin-arm64", "darwin-x64"]
+    "platforms": [
+      "linux-x64",
+      "linux-arm64",
+      "windows-x64",
+      "darwin-arm64",
+      "darwin-x64"
+    ]
   }
 }
