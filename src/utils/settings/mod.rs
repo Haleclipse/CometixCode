@@ -215,6 +215,110 @@ fn settings_file_has_fields(path: &Path) -> bool {
         .is_some_and(settings_has_fields)
 }
 
+fn add_profile_names(settings: &SettingsJson, names: &mut HashSet<String>) {
+    if let Some(models) = settings.nyan.as_ref().and_then(|nyan| nyan.models.as_ref()) {
+        names.extend(models.keys().cloned());
+    }
+}
+
+fn profile_scope_error(path: &Path, field: &str, message: impl Into<String>) -> ValidationError {
+    ValidationError {
+        file: Some(path.display().to_string()),
+        path: field.to_string(),
+        message: message.into(),
+        expected: None,
+        invalid_value: None,
+        doc_link: None,
+        suggestion: None,
+    }
+}
+
+fn strip_project_profile_definitions(
+    source: SettingSource,
+    path: &Path,
+    settings: &mut SettingsJson,
+) -> Vec<ValidationError> {
+    if !matches!(source, SettingSource::Project | SettingSource::Local) {
+        return Vec::new();
+    }
+    let Some(nyan) = settings.nyan.as_mut() else {
+        return Vec::new();
+    };
+    let mut errors = Vec::new();
+    if nyan.providers.take().is_some() {
+        errors.push(profile_scope_error(
+            path,
+            "nyan.providers",
+            "project and local settings may only reference provider profiles from user or managed settings",
+        ));
+    }
+    if nyan.models.take().is_some() {
+        errors.push(profile_scope_error(
+            path,
+            "nyan.models",
+            "project and local settings may only reference model profiles from user or managed settings",
+        ));
+    }
+    errors
+}
+
+fn selected_profile_names(settings: &SettingsJson) -> Vec<String> {
+    let Some(selection) = settings
+        .nyan
+        .as_ref()
+        .and_then(|nyan| nyan.selection.as_ref())
+    else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    if let Some(name) = selection.main.as_ref() {
+        names.push(name.clone());
+    }
+    if let Some(fallbacks) = selection.main_fallbacks.as_ref() {
+        names.extend(fallbacks.iter().cloned());
+    }
+    if let Some(name) = selection.subagent.as_ref()
+        && name != "inherit"
+    {
+        names.push(name.clone());
+    }
+    if let Some(subagents) = selection.subagents.as_ref() {
+        names.extend(
+            subagents
+                .values()
+                .filter(|name| name.as_str() != "inherit")
+                .cloned(),
+        );
+    }
+    if let Some(decision) = selection.decision.as_ref() {
+        if let Some(name) = decision.fast.as_ref() {
+            names.push(name.clone());
+        }
+        if let Some(name) = decision.accurate.as_ref() {
+            names.push(name.clone());
+        }
+    }
+    names
+}
+
+fn validate_project_profile_references(
+    path: &Path,
+    settings: &SettingsJson,
+    trusted_names: &HashSet<String>,
+) -> Vec<ValidationError> {
+    selected_profile_names(settings)
+        .into_iter()
+        .filter(|name| !trusted_names.contains(name))
+        .map(|name| {
+            profile_scope_error(
+                path,
+                "nyan.selection",
+                format!("model profile {name:?} is not defined by user or managed settings"),
+            )
+        })
+        .collect()
+}
+
 /// Maps to: CC `utils/settings/settings.ts#getManagedFileSettingsPresence`.
 pub fn get_managed_file_settings_presence() -> ManagedFileSettingsPresence {
     let has_base = settings_file_has_fields(&get_managed_settings_file_path());
@@ -249,6 +353,8 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
     let mut all_errors: Vec<ValidationError> = Vec::new();
     let mut seen_errors: HashSet<String> = HashSet::new();
     let mut seen_files: HashSet<PathBuf> = HashSet::new();
+    let mut trusted_profile_names = HashSet::new();
+    let mut project_profile_sources = Vec::new();
     let mut policy_settings_snapshot: Option<SettingsJson> = None;
 
     for source in get_enabled_setting_sources() {
@@ -256,6 +362,7 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
             let (policy_settings, policy_errors) = load_managed_file_settings();
             collect_errors(&policy_errors, &mut all_errors, &mut seen_errors);
             if let Some(ps) = policy_settings {
+                add_profile_names(&ps, &mut trusted_profile_names);
                 policy_settings_snapshot = Some(ps.clone());
                 merge_settings_deep(&mut merged, &ps);
             }
@@ -282,7 +389,15 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
         let (settings, errors) = parse_settings_file(&file_path);
         collect_errors(&errors, &mut all_errors, &mut seen_errors);
 
-        if let Some(s) = settings {
+        if let Some(mut s) = settings {
+            if source == SettingSource::User {
+                add_profile_names(&s, &mut trusted_profile_names);
+            }
+            let scope_errors = strip_project_profile_definitions(source, &file_path, &mut s);
+            collect_errors(&scope_errors, &mut all_errors, &mut seen_errors);
+            if matches!(source, SettingSource::Project | SettingSource::Local) {
+                project_profile_sources.push((file_path.clone(), s.clone()));
+            }
             merge_settings_deep(&mut merged, &s);
         }
 
@@ -291,6 +406,12 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
         {
             merge_settings_deep(&mut merged, &inline_settings);
         }
+    }
+
+    for (path, settings) in project_profile_sources {
+        let scope_errors =
+            validate_project_profile_references(&path, &settings, &trusted_profile_names);
+        collect_errors(&scope_errors, &mut all_errors, &mut seen_errors);
     }
 
     SettingsWithErrors {
@@ -420,9 +541,13 @@ fn load_settings_for_source_uncached(source: SettingSource) -> Option<SettingsJs
             }
             found.then_some(merged)
         }
-        _ => {
-            get_settings_file_path_for_source(source).and_then(|path| parse_settings_file(&path).0)
-        }
+        _ => get_settings_file_path_for_source(source).and_then(|path| {
+            let (mut settings, _) = parse_settings_file(&path);
+            if let Some(settings) = settings.as_mut() {
+                let _ = strip_project_profile_definitions(source, &path, settings);
+            }
+            settings
+        }),
     }
 }
 
@@ -771,7 +896,7 @@ mod tests {
         let path = root.join("settings.json");
         fs::write(
             &path,
-            r#"{"model":42,"permissions":{"allow":["Read","Bash()"]}}"#,
+            r#"{"language":42,"permissions":{"allow":["Read","Bash()"]}}"#,
         )
         .unwrap();
         settings_cache::reset_settings_cache();
@@ -782,7 +907,7 @@ mod tests {
                 .iter()
                 .map(|error| error.path.as_str())
                 .collect::<Vec<_>>(),
-            vec!["permissions.allow", "model"]
+            vec!["permissions.allow", "language"]
         );
         let (cached, errors) = parse_settings_file(&path);
         assert!(cached.is_none());
@@ -860,7 +985,7 @@ mod tests {
         );
         assert!(load_managed_file_settings().0.is_none());
 
-        fs::write(root.join("managed-settings.json"), r#"{"model":"opus"}"#).expect("write base");
+        fs::write(root.join("managed-settings.json"), r#"{"language":"zh"}"#).expect("write base");
         // Direct disk writes bypass both production invalidation paths
         // (`update_settings_for_source` and the change detector's fan-out),
         // so the test states the invariant itself.
@@ -884,7 +1009,6 @@ mod tests {
             }
         );
         let policy = load_managed_file_settings().0.expect("policy settings");
-        assert_eq!(policy.model.as_deref(), Some("opus"));
         assert_eq!(policy.language.as_deref(), Some("fr"));
 
         let _ = fs::remove_dir_all(root);
@@ -957,7 +1081,7 @@ mod tests {
         let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         settings_cache::reset_settings_cache();
 
-        fs::write(config_home.join("settings.json"), r#"{"model":"sonnet"}"#)
+        fs::write(config_home.join("settings.json"), r#"{"language":"en"}"#)
             .expect("write user settings");
         fs::write(
             managed.join("managed-settings.json"),
@@ -992,6 +1116,39 @@ mod tests {
         assert!(names.contains(&"Enterprise managed settings (file + drop-ins)".to_string()));
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn project_and_local_settings_cannot_define_or_invent_profiles() {
+        let path = Path::new("/tmp/project/.claude/settings.json");
+        let mut project: SettingsJson = serde_json::from_value(serde_json::json!({
+            "nyan": {
+                "providers": {"evil": {"kind": "anthropic"}},
+                "models": {"evil": {"provider": "evil", "model": "claude"}},
+                "selection": {"main": "missing"}
+            }
+        }))
+        .unwrap();
+        let errors = strip_project_profile_definitions(SettingSource::Project, path, &mut project);
+        assert_eq!(errors.len(), 2);
+        assert!(project.nyan.as_ref().unwrap().providers.is_none());
+        assert!(project.nyan.as_ref().unwrap().models.is_none());
+
+        let trusted = HashSet::from(["main".to_string()]);
+        let reference_errors = validate_project_profile_references(path, &project, &trusted);
+        assert_eq!(reference_errors.len(), 1);
+        assert!(reference_errors[0].message.contains("missing"));
+    }
+
+    #[test]
+    fn project_and_local_settings_can_select_trusted_profiles() {
+        let path = Path::new("/tmp/project/.claude/settings.local.json");
+        let local: SettingsJson = serde_json::from_value(serde_json::json!({
+            "nyan": {"selection": {"main": "main", "subagent": "inherit"}}
+        }))
+        .unwrap();
+        let trusted = HashSet::from(["main".to_string()]);
+        assert!(validate_project_profile_references(path, &local, &trusted).is_empty());
     }
 
     #[test]
@@ -1061,7 +1218,7 @@ mod tests {
         fs::write(
             root.join("settings.json"),
             serde_json::to_string_pretty(&serde_json::json!({
-                "model": "sonnet",
+                "language": "en",
                 "permissions": {
                     "allow": ["Bash(git status:*)", "Read(//tmp/**)"],
                     "deny": ["Bash(rm:*)"],
@@ -1105,7 +1262,7 @@ mod tests {
             written["permissions"]["additionalDirectories"],
             serde_json::json!(["/tmp/extra"])
         );
-        assert_eq!(written["model"], "sonnet");
+        assert_eq!(written["language"], "en");
         let _ = fs::remove_dir_all(root);
     }
 

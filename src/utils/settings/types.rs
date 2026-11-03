@@ -70,11 +70,6 @@ pub struct SettingsJson {
     pub gcp_auth_refresh: Option<String>,
     pub otel_headers_helper: Option<String>,
 
-    pub model: Option<String>,
-    pub available_models: Option<Vec<String>>,
-    /// JavaScript object insertion order is observable in
-    /// `modelStrings.ts#resolveOverriddenModel` when values collide.
-    pub model_overrides: Option<indexmap::IndexMap<String, String>>,
     pub advisor_model: Option<String>,
 
     #[serde(
@@ -220,7 +215,7 @@ pub struct SettingsJson {
     /// I/O). A single top-level key keeps the strict settings schema honest and
     /// gives each feature a shared off switch. See `settings/nyan.rs`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nyan: Option<super::nyan::NyanSettings>,
+    pub nyan: Option<Box<super::nyan::NyanSettings>>,
 }
 
 // ════════════════════════════════════════════════════════════
@@ -802,24 +797,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                     .clone()
                     .optional()
                     .describe("Tool usage permissions configuration"),
-            ),
-            (
-                "model",
-                zod::string()
-                    .optional()
-                    .describe("Override the default model used by nyan"),
-            ),
-            (
-                "availableModels",
-                zod::array(zod::string()).optional().describe(
-                    "Allowlist of models that users can select. Accepts family aliases (\"opus\" allows any opus version), version prefixes (\"opus-4-5\" allows only that version), and full model IDs. If undefined, all models are available. If empty array, only the default model is available. Typically set in managed settings by enterprise administrators.",
-                ),
-            ),
-            (
-                "modelOverrides",
-                zod::record(zod::string()).optional().describe(
-                    "Override mapping from Anthropic model ID (e.g. \"claude-opus-4-6\") to provider-specific model ID (e.g. a Bedrock inference profile ARN). Typically set in managed settings by enterprise administrators.",
-                ),
             ),
             (
                 "enableAllProjectMcpServers",
@@ -1603,7 +1580,7 @@ mod zod_schema_tests {
     #[test]
     fn strict_settings_schema_accepts_the_nyan_family() {
         let ok = serde_json::json!({
-            "model": "opus",
+            "language": "zh",
             "nyan": {
                 "compaction": {"mask": true, "summaryStyle": "legacy"},
                 "retrieval": {"rerank": {"enabled": false}},
@@ -1642,7 +1619,7 @@ mod zod_schema_tests {
     fn settings_schema_parses_a_realistic_file_end_to_end() {
         let ok = serde_json::json!({
             "$schema": "https://json.schemastore.org/claude-code-settings.json",
-            "model": "claude-opus-4-6",
+            "language": "zh",
             "env": {"PORT": 8080},
             "permissions": {"allow": ["Bash(npm run:*)"], "defaultMode": "plan"},
             "hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": "echo"}]}]},
@@ -1697,11 +1674,11 @@ mod zod_schema_tests {
 
         let swallowed = crate::utils::zod::safe_parse(
             settings_schema(),
-            &serde_json::json!({"strictPluginOnlyCustomization": "skills", "model": "opus"}),
+            &serde_json::json!({"strictPluginOnlyCustomization": "skills", "language": "zh"}),
         )
         .expect("invalid raw value swallowed by catch");
         assert!(swallowed.get("strictPluginOnlyCustomization").is_none());
-        assert_eq!(swallowed["model"], "opus");
+        assert_eq!(swallowed["language"], "zh");
 
         let effort = crate::utils::zod::safe_parse(
             settings_schema(),

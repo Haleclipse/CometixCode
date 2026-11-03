@@ -21,8 +21,9 @@ use crate::utils::fast_mode::{
     is_fast_mode_supported_by_model,
 };
 use crate::utils::model::model::{
-    get_default_main_loop_model_setting, get_main_loop_model, is_opus_1m_merge_enabled,
-    parse_user_specified_model, render_default_model_setting, render_model_name,
+    NO_MAIN_PROFILE_PROMPT, get_default_main_loop_model_setting, get_main_loop_model,
+    has_main_profile, is_opus_1m_merge_enabled, parse_user_specified_model,
+    render_default_model_setting, render_model_name,
 };
 use iocraft::prelude::*;
 
@@ -36,11 +37,13 @@ pub fn description() -> String {
 
 /// Maps to: CC `commands/model/model.tsx:332-337` `renderModelLabel`.
 pub fn render_model_label(model: Option<&str>) -> String {
-    let rendered =
-        render_default_model_setting(model.unwrap_or(&get_default_main_loop_model_setting()));
     match model {
-        None => format!("{rendered} (default)"),
-        Some(_) => rendered,
+        None if !has_main_profile() => NO_MAIN_PROFILE_PROMPT.to_string(),
+        None => format!(
+            "{} (default)",
+            render_default_model_setting(&get_default_main_loop_model_setting())
+        ),
+        Some(model) => render_default_model_setting(model),
     }
 }
 
@@ -130,7 +133,10 @@ fn handle_select_output_from_selection(
 }
 
 fn handle_cancel_output_for(model: Option<&str>) -> String {
-    format!("Kept model as {}", render_model_label(model))
+    match model {
+        None if !has_main_profile() => NO_MAIN_PROFILE_PROMPT.to_string(),
+        _ => format!("Kept model as {}", render_model_label(model)),
+    }
 }
 
 /// Maps to: CC `ModelPickerWrapper` `handleCancel` when AppState has no
@@ -370,7 +376,8 @@ mod tests {
         );
         assert_eq!(
             handle_cancel_output(),
-            format!("Kept model as {}", render_model_label(None))
+            NO_MAIN_PROFILE_PROMPT,
+            "with no main profile the cancel message is the prompt alone"
         );
     }
 

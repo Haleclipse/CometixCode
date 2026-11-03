@@ -270,7 +270,7 @@ fn settings_validated_read_matches_official_cached_json_and_write_mark() {
     let path = root.path().join("settings.json");
     std::fs::write(
         &path,
-        r#"{"model":"sonnet","unknownField":{"retained":true}}"#,
+        r#"{"language":"en","unknownField":{"retained":true}}"#,
     )
     .unwrap();
     let fs = Arc::new(RecordingFs::default());
@@ -292,7 +292,7 @@ fn settings_validated_read_matches_official_cached_json_and_write_mark() {
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(
         value,
-        serde_json::json!({"model":"sonnet","unknownField":{"retained":true},"language":"zh"})
+        serde_json::json!({"language":"zh","unknownField":{"retained":true}})
     );
     assert_eq!(
         fs.calls()
@@ -312,7 +312,7 @@ fn settings_validation_fallback_matches_official_raw_read_and_syntax_guard() {
     let path = root.path().join("settings.json");
     std::fs::write(&path, "{}").unwrap();
     let fs = Arc::new(RecordingFs::with_reads(&[
-        r#"{"model":17}"#,
+        r#"{"language":17}"#,
         r#"{"unknown":"second"}"#,
     ]));
     let _reset = ResetFs::install(fs.clone());

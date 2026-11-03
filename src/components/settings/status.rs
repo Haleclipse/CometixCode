@@ -5,7 +5,6 @@
 
 use crate::constants::figures::figures;
 use crate::constants::product;
-use crate::hooks::use_main_loop_model::use_main_loop_model;
 use crate::services::mcp::types::{McpServerConnection, McpServerConnectionType};
 use crate::utils::claudemd::{ClaudeMdFile, discover_claude_md_files};
 use crate::utils::file::get_display_path;
@@ -37,7 +36,7 @@ pub fn Status(props: &StatusProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
     let settings_snapshot =
         crate::state::app_state::use_app_state(&mut hooks, |state| state.settings.clone());
     let settings = settings_snapshot.as_ref();
-    let resolved_model = use_main_loop_model(settings.model.as_deref(), None);
+    let resolved_model = crate::utils::model::model::get_session_main_loop_model();
     let model_display_name = render_model_name(&resolved_model);
     let cwd = std::env::current_dir()
         .map(|path| path.display().to_string())
@@ -779,8 +778,9 @@ mod tests {
     #[test]
     fn status_reads_readonly_runtime_model_and_session_metadata() {
         crate::utils::config::set_test_global_config(Some(GlobalConfig::default()));
-        let mut settings = SettingsJson::default();
-        settings.model = Some("opus".to_string());
+        let settings = SettingsJson::default();
+        let previous_model = crate::bootstrap::state::get_initial_main_loop_model();
+        crate::bootstrap::state::set_initial_main_loop_model(Some("opus".to_string()));
         let mut initial = crate::state::app_state_store::AppState::default();
         initial.settings = Arc::new(settings);
         let test_store = crate::state::store::AppStore::new(initial, None);
@@ -807,6 +807,7 @@ mod tests {
         assert!(text.contains("session-123"), "canvas=\n{text}");
         assert!(text.contains("Model"), "canvas=\n{text}");
         assert!(text.contains("Opus"), "canvas=\n{text}");
+        crate::bootstrap::state::set_initial_main_loop_model(previous_model);
     }
 
     #[test]

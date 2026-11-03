@@ -1289,6 +1289,135 @@ impl MaxLineCharsSettings {
 }
 
 // ════════════════════════════════════════════════════════════
+// Provider / model profiles
+// ════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderKind {
+    Anthropic,
+    Openai,
+    Gemini,
+    Vllm,
+    Ollama,
+    Openrouter,
+    Gateway,
+}
+
+impl ProviderKind {
+    /// Commercial classification is fixed by the built-in provider kind.
+    pub fn is_commercial(self) -> bool {
+        matches!(
+            self,
+            Self::Anthropic | Self::Openai | Self::Gemini | Self::Openrouter | Self::Gateway
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProviderProtocol {
+    AnthropicMessages,
+    OpenaiChat,
+    OpenaiResponses,
+    Gemini,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct CredentialReference {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optional_env: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub none: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct ProviderSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ProviderKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<ProviderProtocol>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocols: Option<Vec<ProviderProtocol>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential: Option<CredentialReference>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct ModelCapabilities {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub images: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub structured_output: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub streaming: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct ModelProfileSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<ModelCapabilities>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct SelectionDecisionSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fast: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accurate: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct SelectionSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub main: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub main_fallbacks: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subagents: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decision: Option<SelectionDecisionSettings>,
+}
+
+// ════════════════════════════════════════════════════════════
 // Root
 // ════════════════════════════════════════════════════════════
 
@@ -1296,6 +1425,12 @@ impl MaxLineCharsSettings {
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct NyanSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub providers: Option<BTreeMap<String, ProviderSettings>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<BTreeMap<String, ModelProfileSettings>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection: Option<SelectionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compaction: Option<CompactionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1358,6 +1493,83 @@ impl NyanSettings {
 /// fails.
 pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
     use crate::utils::zod;
+
+    let credential = zod::union(vec![
+        zod::strict_object(vec![("env", zod::string().min(1))]),
+        zod::strict_object(vec![("file", zod::string().min(1))]),
+        zod::strict_object(vec![("optionalEnv", zod::string().min(1))]),
+        zod::strict_object(vec![("oauth", zod::string().min(1))]),
+        zod::strict_object(vec![("none", zod::literal(serde_json::json!(true)))]),
+    ]);
+    let provider = zod::strict_object(vec![
+        (
+            "kind",
+            zod::enumeration(vec![
+                "anthropic",
+                "openai",
+                "gemini",
+                "vllm",
+                "ollama",
+                "openrouter",
+                "gateway",
+            ]),
+        ),
+        (
+            "protocol",
+            zod::enumeration(vec![
+                "anthropicMessages",
+                "openaiChat",
+                "openaiResponses",
+                "gemini",
+            ])
+            .optional(),
+        ),
+        (
+            "protocols",
+            zod::array(zod::enumeration(vec![
+                "anthropicMessages",
+                "openaiChat",
+                "openaiResponses",
+                "gemini",
+            ]))
+            .optional(),
+        ),
+        ("baseUrl", zod::string().min(1).optional()),
+        ("credential", credential.optional()),
+    ]);
+    let capabilities = zod::strict_object(vec![
+        ("contextWindow", zod::number().int().positive().optional()),
+        ("maxOutputTokens", zod::number().int().positive().optional()),
+        ("tools", zod::enumeration(vec!["none", "native"]).optional()),
+        (
+            "thinking",
+            zod::enumeration(vec!["none", "adaptive", "budgeted"]).optional(),
+        ),
+        ("images", zod::enumeration(vec!["none", "input"]).optional()),
+        ("structuredOutput", zod::boolean().optional()),
+        ("streaming", zod::boolean().optional()),
+        (
+            "promptCache",
+            zod::enumeration(vec!["none", "native"]).optional(),
+        ),
+    ]);
+    let model = zod::strict_object(vec![
+        ("provider", zod::string().min(1)),
+        ("model", zod::string().min(1)),
+        ("displayName", zod::string().min(1).optional()),
+        ("capabilities", capabilities.optional()),
+    ]);
+    let decision_selection = zod::strict_object(vec![
+        ("fast", zod::string().min(1).optional()),
+        ("accurate", zod::string().min(1).optional()),
+    ]);
+    let selection = zod::strict_object(vec![
+        ("main", zod::string().min(1).optional()),
+        ("mainFallbacks", zod::array(zod::string().min(1)).optional()),
+        ("subagent", zod::string().min(1).optional()),
+        ("subagents", zod::record(zod::string().min(1)).optional()),
+        ("decision", decision_selection.optional()),
+    ]);
 
     let compaction = zod::object(vec![
         ("mask", zod::boolean().optional()),
@@ -1511,7 +1723,7 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ("sync", retrieval_sync.optional()),
     ]);
 
-    let provider = zod::object(vec![
+    let web_provider = zod::object(vec![
         ("enabled", zod::boolean().optional()),
         ("apiKeyFile", zod::string().optional()),
         ("baseUrl", zod::string().optional()),
@@ -1569,7 +1781,7 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
     let web = zod::object(vec![
         (
             "providers",
-            zod::partial_record(provider_names(), provider).optional(),
+            zod::partial_record(provider_names(), web_provider).optional(),
         ),
         ("search", web_search.optional()),
         ("fetch", web_fetch.optional()),
@@ -1662,6 +1874,9 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
     ]);
 
     zod::object(vec![
+        ("providers", zod::record(provider).optional()),
+        ("models", zod::record(model).optional()),
+        ("selection", selection.optional()),
         ("compaction", compaction.optional()),
         ("cache", cache.optional()),
         ("memory", memory.optional()),
@@ -1671,7 +1886,7 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ("toolIo", tool_io.optional()),
     ])
     .describe(
-        "nyan module settings: compaction / cache / memory / retrieval / web / decision / toolIo. Each key has an off switch that restores upstream behaviour.",
+        "nyan settings: provider/model profiles and module settings. Provider profiles are user/managed-only; project/local settings may only select existing profile names.",
     )
 }
 
@@ -1964,6 +2179,81 @@ mod tests {
         assert!(!brave.enabled);
         assert_eq!(brave.api_key_file.as_deref(), Some("~/.nyan/keys/brave"));
         assert_eq!(brave.max_calls_per_session, Some(40));
+    }
+
+    #[test]
+    fn provider_profiles_parse_with_capabilities_and_compatibility_credential_shapes() {
+        let value = json!({
+            "providers": {
+                "anthropic": {
+                    "kind": "anthropic",
+                    "protocol": "anthropicMessages",
+                    "credential": {"env": "ANTHROPIC_API_KEY"}
+                },
+                "local": {
+                    "kind": "vllm",
+                    "protocol": "openaiChat",
+                    "credential": {"optionalEnv": "VLLM_API_KEY"}
+                }
+            },
+            "models": {
+                "main": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-6",
+                    "capabilities": {
+                        "contextWindow": 200000,
+                        "maxOutputTokens": 128000,
+                        "tools": "native"
+                    }
+                }
+            },
+            "selection": {
+                "main": "main",
+                "mainFallbacks": ["local"],
+                "subagent": "inherit",
+                "decision": {"fast": "main"}
+            }
+        });
+        let parsed =
+            crate::utils::zod::safe_parse(&nyan_settings_schema(), &value).expect("valid profiles");
+        let settings: NyanSettings = serde_json::from_value(parsed).unwrap();
+        assert_eq!(
+            settings
+                .models
+                .as_ref()
+                .unwrap()
+                .get("main")
+                .unwrap()
+                .capabilities
+                .as_ref()
+                .unwrap()
+                .context_window,
+            Some(200000)
+        );
+        assert_eq!(
+            settings
+                .selection
+                .as_ref()
+                .unwrap()
+                .main_fallbacks
+                .as_deref(),
+            Some(["local".to_string()].as_slice())
+        );
+    }
+
+    #[test]
+    fn provider_schema_rejects_unknown_kind_commercial_and_credential_shapes() {
+        for bad in [
+            json!({"providers": {"x": {"kind": "custom", "protocol": "openaiChat"}}}),
+            json!({"providers": {"x": {"kind": "openai", "commercial": true}}}),
+            json!({"providers": {"x": {"kind": "openai", "credential": {"env": "A", "file": "B"}}}}),
+            json!({"models": {"x": {"provider": "p", "model": "m", "capabilities": {"tools": "guess"}}}}),
+        ] {
+            assert!(
+                crate::utils::zod::safe_parse(&nyan_settings_schema(), &bad).is_err(),
+                "should reject {bad}"
+            );
+        }
     }
 
     #[test]

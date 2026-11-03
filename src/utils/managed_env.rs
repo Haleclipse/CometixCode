@@ -60,7 +60,6 @@ const PROVIDER_MANAGED_ENV_VARS: &[&str] = &[
     "CLAUDE_CODE_SKIP_VERTEX_AUTH",
     "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
     // Model defaults — often set to provider-specific ID formats
-    "ANTHROPIC_MODEL",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
@@ -75,7 +74,6 @@ const PROVIDER_MANAGED_ENV_VARS: &[&str] = &[
     "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
     "ANTHROPIC_SMALL_FAST_MODEL",
     "ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION",
-    "CLAUDE_CODE_SUBAGENT_MODEL",
 ];
 
 /// Maps to CC `utils/managedEnvConstants.ts#PROVIDER_MANAGED_ENV_PREFIXES`.
@@ -109,7 +107,6 @@ pub const SAFE_ENV_VARS: &[&str] = &[
     "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
     "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
     "ANTHROPIC_FOUNDRY_API_KEY",
-    "ANTHROPIC_MODEL",
     "ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION",
     "ANTHROPIC_SMALL_FAST_MODEL",
     "AWS_DEFAULT_REGION",
@@ -130,7 +127,6 @@ pub const SAFE_ENV_VARS: &[&str] = &[
     "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
     "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
     "CLAUDE_CODE_SKIP_VERTEX_AUTH",
-    "CLAUDE_CODE_SUBAGENT_MODEL",
     "CLAUDE_CODE_USE_BEDROCK",
     "CLAUDE_CODE_USE_FOUNDRY",
     "CLAUDE_CODE_USE_VERTEX",
@@ -423,23 +419,25 @@ mod tests {
     fn host_managed_filter_strips_provider_vars_only_when_truthy() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
-        let env: IndexMap<String, String> =
-            [("ANTHROPIC_MODEL", "custom"), ("MAX_THINKING_TOKENS", "1")]
-                .into_iter()
-                .map(|(key, value)| (key.to_string(), value.to_string()))
-                .collect();
+        let env: IndexMap<String, String> = [
+            ("ANTHROPIC_API_KEY", "custom"),
+            ("MAX_THINKING_TOKENS", "1"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()))
+        .collect();
 
         let _no_socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
         {
             let _host = EnvVarGuard::set("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "1");
             let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
-            assert!(!filtered.iter().any(|(key, _)| key == "ANTHROPIC_MODEL"));
+            assert!(!filtered.iter().any(|(key, _)| key == "ANTHROPIC_API_KEY"));
             assert!(filtered.iter().any(|(key, _)| key == "MAX_THINKING_TOKENS"));
         }
         {
             let _host = EnvVarGuard::set("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "false");
             let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
-            assert!(filtered.iter().any(|(key, _)| key == "ANTHROPIC_MODEL"));
+            assert!(filtered.iter().any(|(key, _)| key == "ANTHROPIC_API_KEY"));
         }
     }
 

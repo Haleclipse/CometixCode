@@ -125,32 +125,12 @@ pub fn get_context_window_for_model_for_audience(
 
 /// Maps to CC `utils/context.ts#getContextWindowForModel`.
 pub fn get_context_window_for_model(model: &str, betas: &[String]) -> i64 {
-    // @nyan offset: nothing in CC's model tables describes a gateway's own
-    // models, so they all reported the 200k default. `modelContextWindows` in
-    // the global config corrects that per model id; the `[1m]` suffix still wins.
-    if !has_1m_context(model)
-        && let Some(window) = gateway_context_window(model)
-    {
-        return window;
-    }
     get_context_window_for_model_for_audience(
         model,
         betas,
         crate::utils::build_profile::build_audience(),
         &|key| crate::utils::process_env::var(key),
     )
-}
-
-/// `modelContextWindows[<id>]` from the global config, also tried with the
-/// `[1m]`-style suffix stripped so an alias entry can resolve.
-fn gateway_context_window(model: &str) -> Option<i64> {
-    let windows = crate::utils::config::load_global_config().model_context_windows?;
-    let bare = crate::utils::model::model::normalize_model_string_for_api(model);
-    windows
-        .get(model.trim())
-        .or_else(|| windows.get(bare.trim()))
-        .copied()
-        .filter(|tokens| *tokens > 0)
 }
 
 #[cfg(test)]

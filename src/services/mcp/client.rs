@@ -5113,10 +5113,10 @@ rl.on('line', line => {
         let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let _skip_auth = EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "1");
         let _endpoint = EnvVarGuard::set("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", &endpoint);
-        let _model = EnvVarGuard::set(
-            "ANTHROPIC_MODEL",
-            "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        );
+        let previous_model = crate::bootstrap::state::get_main_loop_model_override();
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
+        )));
 
         let result = process_mcp_result(
             &serde_json::json!({ "structuredContent": { "items": ["abcdef".repeat(80)] } }),
@@ -5157,6 +5157,7 @@ rl.on('line', line => {
 
         crate::bootstrap::state::set_original_cwd(previous_cwd);
         crate::bootstrap::state::set_session_id(previous_session_id);
+        crate::bootstrap::state::set_main_loop_model_override(previous_model);
         let _ = std::fs::remove_dir_all(root);
     }
 

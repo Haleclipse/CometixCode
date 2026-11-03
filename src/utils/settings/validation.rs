@@ -373,16 +373,16 @@ mod tests {
     #[test]
     fn settings_validation_matches_official_nullable_source_and_warning_order() {
         let (settings, errors) = validate_settings(
-            r#"{"model":42,"permissions":{"allow":["Read","Bash()"]}}"#,
+            r#"{"language":42,"permissions":{"allow":["Read","Bash()"]}}"#,
             Some("settings.json"),
         )
         .unwrap();
         assert!(settings.is_none());
         assert_eq!(errors.len(), 2);
         assert_eq!(errors[0].path, "permissions.allow");
-        assert_eq!(errors[1].path, "model");
+        assert_eq!(errors[1].path, "language");
         let (settings, errors) = validate_settings(
-            r#"{"model":"opus","permissions":{"allow":["Read","Bash()"]}}"#,
+            r#"{"language":"zh","permissions":{"allow":["Read","Bash()"]}}"#,
             Some("settings.json"),
         )
         .unwrap();
@@ -422,8 +422,8 @@ mod tests {
         );
 
         // invalid_type → "Expected X, but received Y".
-        let error = zod::safe_parse(settings_schema(), &json!({"model": 5}))
-            .expect_err("number model fails");
+        let error = zod::safe_parse(settings_schema(), &json!({"language": 5}))
+            .expect_err("number language fails");
         let formatted = format_zod_error(&error, "settings");
         assert_eq!(formatted[0].message, "Expected string, but received number");
         assert_eq!(formatted[0].invalid_value.as_deref(), Some("number"));
@@ -448,7 +448,7 @@ mod tests {
     fn validate_settings_file_content_is_strict_like_official() {
         // Valid content passes.
         assert!(matches!(
-            validate_settings_file_content(r#"{"model": "opus"}"#),
+            validate_settings_file_content(r#"{"language": "zh"}"#),
             SettingsFileValidation::Valid
         ));
         // The edit-time validator applies .strict(): unknown top-level keys

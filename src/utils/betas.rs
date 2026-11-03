@@ -640,29 +640,6 @@ mod tests {
             assert!(!model_supports_structured_outputs(model), "model={model}");
         }
 
-        let config_dir = std::env::temp_dir().join(format!(
-            "nyan-structured-output-model-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join("settings.json"),
-            r#"{"modelOverrides":{"claude-sonnet-4-6":"provider-deployment-id"}}"#,
-        )
-        .unwrap();
-        let config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        // `CLAUDE_CONFIG_DIR` selects the User settings file, so it is an INPUT
-        // to the merged-settings cache that `get_settings_with_errors`
-        // memoizes. CC reads it once during startup and never changes it, so
-        // the source has no invalidation for it; a test that repoints it
-        // mid-run must invalidate explicitly, both on the way in and on the way
-        // back out.
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        assert!(model_supports_structured_outputs("provider-deployment-id"));
-        drop(config);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        let _ = std::fs::remove_dir_all(config_dir);
-
         crate::utils::process_env::set("CLAUDE_CODE_USE_FOUNDRY", "1");
         for model in supported_models {
             assert!(model_supports_structured_outputs(model), "foundry={model}");

@@ -4,7 +4,7 @@
 use crate::utils::model::configs::{ALL_MODEL_CONFIGS, ModelKey};
 
 /// Maps to: CC `utils/model/modelStrings.ts:21` `ModelStrings` — each model
-/// version's ID for the active provider, after `modelOverrides` are layered on.
+/// version's ID for the active provider.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ModelStrings {
     pub haiku35: String,
@@ -59,81 +59,18 @@ fn builtin_model_strings(provider: crate::utils::model::providers::ApiProvider) 
     strings
 }
 
-/// Maps to: CC `utils/model/modelStrings.ts:63-76` `applyModelOverrides`.
-fn apply_model_overrides(mut strings: ModelStrings) -> ModelStrings {
-    let Some(overrides) = crate::utils::settings::get_initial_settings().model_overrides else {
-        return strings;
-    };
-    for (canonical_id, model_override) in overrides {
-        if model_override.is_empty() {
-            continue;
-        }
-        if let Some(key) = crate::utils::model::configs::canonical_id_to_key(&canonical_id) {
-            strings.set(key, model_override);
-        }
-    }
-    strings
-}
-
 /// Maps to: CC `utils/model/modelStrings.ts:136-145` `getModelStrings`.
 ///
-/// DEVIATION: CC memoizes the table in `bootstrap/state.ts` and, on Bedrock,
-/// replaces the hardcoded IDs with the caller's inference profiles via an
-/// awaited `ListInferenceProfiles` call (`modelStrings.ts:33-55, 102-116`).
-/// That refresh is network-bound and its cache lives in `bootstrap/state.rs`,
-/// so only the synchronous branch is ported: the builtin per-provider table
-/// with `modelOverrides` layered on. This is byte-for-byte what CC itself
-/// returns before the background fetch resolves (`modelStrings.ts:140-142`),
-/// so Bedrock users see the hardcoded `us.anthropic.*` IDs rather than a
-/// region-matched profile until the refresh is ported.
+/// PR 1 removes the old settings override entry. Provider-specific
+/// model ids now belong to the selected model profile; this table remains only
+/// for legacy UI helpers until the profile picker is completed.
 pub fn get_model_strings() -> ModelStrings {
-    apply_model_overrides(builtin_model_strings(
-        crate::utils::model::providers::get_api_provider(),
-    ))
-}
-
-/// Maps to: CC `utils/model/modelStrings.ts:84-99#resolveOverriddenModel`.
-///
-/// Resolves a configured provider-specific override back to the canonical
-/// first-party model ID whose key owns it. If no current override value matches,
-/// the input is returned unchanged.
-pub fn resolve_overridden_model(model_id: &str) -> String {
-    let settings = crate::utils::settings::get_initial_settings();
-    let Some(overrides) = settings.model_overrides else {
-        return model_id.to_string();
-    };
-    overrides
-        .into_iter()
-        .find_map(|(canonical_id, model_override)| {
-            (model_override == model_id).then_some(canonical_id)
-        })
-        .unwrap_or_else(|| model_id.to_string())
+    builtin_model_strings(crate::utils::model::providers::get_api_provider())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
-
-    #[test]
-    fn resolve_overridden_model_matches_official_first_object_entry_for_duplicate_values() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-model-overrides-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(
-            root.join("settings.json"),
-            r#"{"modelOverrides":{"claude-first":"provider-id","claude-second":"provider-id"}}"#,
-        )
-        .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-
-        assert_eq!(resolve_overridden_model("provider-id"), "claude-first");
-
-        let _ = std::fs::remove_dir_all(root);
-    }
 
     /// Maps to: CC `utils/model/modelStrings.ts:25-31` — the per-provider
     /// projection of `configs.ts`, which the 3P model option values read.
@@ -157,32 +94,5 @@ mod tests {
         let vertex = builtin_model_strings(ApiProvider::Vertex);
         assert_eq!(vertex.sonnet45, "claude-sonnet-4-5@20250929");
         assert_eq!(vertex.haiku35, "claude-3-5-haiku@20241022");
-    }
-
-    /// Maps to: CC `utils/model/modelStrings.ts:63-76` — overrides are keyed by
-    /// canonical first-party ID and replace the provider value in place.
-    #[test]
-    fn model_overrides_replace_the_provider_value_for_their_canonical_key() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-model-strings-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(
-            root.join("settings.json"),
-            r#"{"modelOverrides":{"claude-opus-4-6":"arn:aws:bedrock:us-east-1::opus","claude-not-a-model":"ignored"}}"#,
-        )
-        .unwrap();
-        let config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-
-        let strings = get_model_strings();
-        assert_eq!(strings.opus46, "arn:aws:bedrock:us-east-1::opus");
-        assert_eq!(strings.sonnet46, "claude-sonnet-4-6");
-
-        drop(config);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        let _ = std::fs::remove_dir_all(root);
     }
 }

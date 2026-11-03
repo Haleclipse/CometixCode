@@ -229,10 +229,6 @@ mod tests {
             aws_credential_export: Some("aws export".to_string()),
             gcp_auth_refresh: Some("gcloud auth".to_string()),
             otel_headers_helper: Some("otel".to_string()),
-            env: Some(std::sync::Arc::new(indexmap::IndexMap::from([(
-                "ANTHROPIC_MODEL".to_string(),
-                "sonnet".to_string(),
-            )]))),
             ..SettingsJson::default()
         };
 

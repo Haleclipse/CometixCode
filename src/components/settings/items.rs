@@ -423,13 +423,7 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
         SettingItem {
             id: "model",
             label: "Model",
-            value: SettingValue::Display(
-                settings
-                    .model
-                    .as_deref()
-                    .unwrap_or("Default (recommended)")
-                    .to_string(),
-            ),
+            value: SettingValue::Display(crate::utils::model::model::get_session_main_loop_model()),
             search_text: "model ai claude sonnet opus haiku",
             visible: true,
         },

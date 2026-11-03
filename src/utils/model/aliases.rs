@@ -18,7 +18,7 @@ pub fn is_model_alias(model_input: &str) -> bool {
 }
 
 /// Maps to: CC `utils/model/aliases.ts:21` `MODEL_FAMILY_ALIASES` — bare family
-/// names that act as wildcards in the `availableModels` allowlist.
+/// names retained only for legacy display helpers.
 pub const MODEL_FAMILY_ALIASES: &[&str] = &["sonnet", "opus", "haiku"];
 
 /// Maps to: CC `utils/model/aliases.ts:23-25` `isModelFamilyAlias`.

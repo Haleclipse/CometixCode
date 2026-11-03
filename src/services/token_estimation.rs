@@ -341,6 +341,9 @@ pub async fn count_messages_tokens_with_api(
     tools: Vec<anthropic_sdk::resources::beta::messages::BetaToolUnion>,
 ) -> Option<usize> {
     let model = crate::utils::model::model::get_main_loop_model();
+    if model.trim().is_empty() {
+        return None;
+    }
     let normalized_model = crate::utils::model::model::normalize_model_string_for_api(&model);
     let provider = crate::utils::model::providers::get_api_provider();
     let contains_thinking = has_thinking_blocks(&messages);
@@ -534,10 +537,10 @@ mod tests {
         let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let _skip_auth = EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "1");
         let _endpoint = EnvVarGuard::set("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", &endpoint);
-        let _model = EnvVarGuard::set(
-            "ANTHROPIC_MODEL",
-            "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        );
+        let previous_model = crate::bootstrap::state::get_main_loop_model_override();
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
+        )));
 
         assert_eq!(count_tokens_with_api("hello").await, Some(23));
         let request = server.join().unwrap();
@@ -557,15 +560,16 @@ mod tests {
         .unwrap();
         assert_eq!(invoke["anthropic_version"], "bedrock-2023-05-31");
         assert_eq!(invoke["messages"][0]["content"], "hello");
+        crate::bootstrap::state::set_main_loop_model_override(previous_model);
     }
 
     /// CC's side clients take `getAWSRegion()` (`utils/model/bedrock.ts:50-56,
     /// 96-100`): the inference-profile lookup and the count are signed for
-    /// `AWS_REGION` even when the handle, built for the small fast model,
-    /// carries `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION`. The lookup is
-    /// memoized (`:141`), so a second count sends only the count.
+    /// `AWS_REGION`. The removed `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION` is no
+    /// longer read. The lookup is memoized (`:141`), so a second count sends
+    /// only the count.
     #[tokio::test]
-    async fn bedrock_side_calls_sign_for_the_aws_region_not_the_small_fast_override() {
+    async fn bedrock_side_calls_sign_for_the_aws_region() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let endpoint = format!("http://{}", listener.local_addr().unwrap());
@@ -596,8 +600,6 @@ mod tests {
             EnvVarGuard::set("AWS_SECRET_ACCESS_KEY", "secret"),
             EnvVarGuard::set("AWS_REGION", "us-west-2"),
             EnvVarGuard::unset("AWS_DEFAULT_REGION"),
-            EnvVarGuard::set("ANTHROPIC_SMALL_FAST_MODEL", "us.anthropic.claude-test"),
-            EnvVarGuard::set("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION", "eu-west-3"),
             EnvVarGuard::set("ANTHROPIC_BEDROCK_BASE_URL", &endpoint),
         ];
         let handle = crate::services::api::client::get_anthropic_client(
@@ -608,12 +610,11 @@ mod tests {
         )
         .await
         .unwrap();
-        // The handle does carry the override, so the region below is not it.
         let crate::services::api::client::ProviderConfig::Bedrock { region, .. } = &handle.provider
         else {
             panic!("Bedrock expected: {:?}", handle.provider);
         };
-        assert_eq!(region, "eu-west-3");
+        assert_eq!(region, "us-west-2");
 
         let messages = [anthropic_sdk::resources::beta::messages::BetaMessageParam {
             role: "user".to_string(),
@@ -667,7 +668,10 @@ mod tests {
         let _endpoint = EnvVarGuard::set("ANTHROPIC_VERTEX_BASE_URL", &endpoint);
         let _project = EnvVarGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", "project-a");
         let _region = EnvVarGuard::set("CLOUD_ML_REGION", "us-east5");
-        let _model = EnvVarGuard::set("ANTHROPIC_MODEL", "claude-sonnet-4-5");
+        let previous_model = crate::bootstrap::state::get_main_loop_model_override();
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "claude-sonnet-4-5".to_string(),
+        )));
 
         assert_eq!(count_tokens_with_api("hello").await, Some(19));
         let request = server.join().unwrap();
@@ -679,6 +683,7 @@ mod tests {
         let body: Value = serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
         assert_eq!(body["anthropic_version"], "vertex-2023-10-16");
         assert_eq!(body["messages"][0]["content"], "hello");
+        crate::bootstrap::state::set_main_loop_model_override(previous_model);
     }
 
     #[tokio::test]
@@ -693,7 +698,10 @@ mod tests {
             format!("{endpoint}/anthropic/"),
         );
         let _api_key = EnvVarGuard::set("ANTHROPIC_FOUNDRY_API_KEY", "foundry-test-key");
-        let _model = EnvVarGuard::set("ANTHROPIC_MODEL", "claude-sonnet-4-5");
+        let previous_model = crate::bootstrap::state::get_main_loop_model_override();
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "claude-sonnet-4-5".to_string(),
+        )));
 
         assert_eq!(count_tokens_with_api("hello").await, Some(17));
         let request = server.join().unwrap();
@@ -703,5 +711,6 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("x-api-key: foundry-test-key")
         );
+        crate::bootstrap::state::set_main_loop_model_override(previous_model);
     }
 }

@@ -245,11 +245,10 @@ mod tests {
     #[test]
     fn status_line_input_serializes_official_shape_without_placeholder_zeros_for_usage() {
         let settings = SettingsJson {
-            model: Some("sonnet".to_string()),
             output_style: Some("explanatory".to_string()),
             ..Default::default()
         };
-        let model = use_main_loop_model(settings.model.as_deref(), None);
+        let model = use_main_loop_model(Some("sonnet"), None);
         let input = build_status_line_command_input(
             PermissionMode::AcceptEdits,
             false,

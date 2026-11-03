@@ -586,13 +586,11 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
         .max_budget_usd
         .as_deref()
         .and_then(|value| value.parse::<f64>().ok());
-    context.fallback_model = config.fallback_model.as_deref().map(|fallback| {
-        if fallback == "default" {
-            crate::utils::model::model::get_default_main_loop_model()
-        } else {
-            crate::utils::model::model::parse_user_specified_model(fallback)
-        }
-    });
+    context.fallback_model = config
+        .fallback_model
+        .as_deref()
+        .filter(|fallback| *fallback != "default")
+        .map(crate::utils::model::model::parse_user_specified_model);
     let structured_required = engine_schema.is_some();
     // The Rust engine derives from `CliConfig` what CC threads through three
     // layers, so the two upstream owners are called here rather than copied:
@@ -1315,7 +1313,7 @@ fn permission_denial_value(
 /// `activeUserSpecifiedModel`: the launch `effectiveModel`
 /// ([`QueryEngineConfig::user_specified_model`]), then what `set_model` and
 /// `apply_flag_settings` set. Parsed as given, it does not pass the
-/// `availableModels` check `getMainLoopModel()` applies, as in CC.
+/// Provider profile validation is applied before the request model is used.
 fn initial_main_loop_model(overrides: &QueryEngineOverrides) -> String {
     overrides
         .model
@@ -2131,7 +2129,6 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _model = EnvVarGuard::unset("ANTHROPIC_MODEL");
         let _opus = EnvVarGuard::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "custom-opus");
         let _sonnet = EnvVarGuard::set("ANTHROPIC_DEFAULT_SONNET_MODEL", "custom-sonnet");
         let original = crate::bootstrap::state::get_main_loop_model_override();

@@ -11114,7 +11114,6 @@ rl.on('line', line => {
     async fn local_tool_executor_reads_file_after_permission() {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _model = EnvVarGuard::set("ANTHROPIC_MODEL", "claude-sonnet-4-6");
         let path =
             std::env::temp_dir().join(format!("nyan-read-tool-{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&path, "line one\nline two\n").unwrap();
@@ -11782,7 +11781,6 @@ rl.on('line', line => {
     async fn local_tool_executor_read_honors_structured_offset_and_limit_input() {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _model = EnvVarGuard::set("ANTHROPIC_MODEL", "claude-sonnet-4-6");
         let path =
             std::env::temp_dir().join(format!("nyan-read-window-{}.txt", uuid::Uuid::new_v4()));
         std::fs::write(&path, "one\ntwo\nthree\nfour\n").unwrap();

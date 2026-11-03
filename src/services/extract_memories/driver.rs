@@ -544,10 +544,10 @@ mod tests {
         // Large token threshold so turns alone decide.
         memory.extract_every_tokens = Some(u32::MAX);
         memory.extract_before_compact_timeout_ms = Some(5_000);
-        settings.nyan = Some(crate::utils::settings::nyan::NyanSettings {
+        settings.nyan = Some(Box::new(crate::utils::settings::nyan::NyanSettings {
             memory: Some(memory),
             ..Default::default()
-        });
+        }));
         crate::memdir::paths::seed_settings(settings, None);
         reset_for_test();
         fixture

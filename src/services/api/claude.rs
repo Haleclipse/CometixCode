@@ -3354,6 +3354,15 @@ pub async fn open_model_stream_with_context(
     query_source: &str,
 ) -> anyhow::Result<tokio::sync::mpsc::Receiver<QueryModelStreamItem>> {
     let model = get_main_loop_model();
+    if model.trim().is_empty() {
+        let reason = match crate::utils::model::profile::resolve_main_profile(
+            &crate::utils::settings::get_initial_settings(),
+        ) {
+            Err(reason) => reason.to_string(),
+            Ok(_) => "No main model is selected for this request.".to_string(),
+        };
+        return Err(anyhow::anyhow!(reason));
+    }
     let mut options = Options::new(model, query_source.to_string());
     options.query_source = query_source.to_string();
     // CC `Options.getToolPermissionContext` (claude.ts:677) — resolved snapshot.
@@ -3389,6 +3398,11 @@ pub async fn query_model_with_streaming(
     tools: &[Tool],
     options: &Options,
 ) -> anyhow::Result<tokio::sync::mpsc::Receiver<QueryModelStreamItem>> {
+    if options.model.trim().is_empty() {
+        return Err(anyhow::anyhow!(
+            "No model profile is configured. Configure settings.nyan.providers, settings.nyan.models, and settings.nyan.selection.main, or pass an explicit temporary model."
+        ));
+    }
     let (tx, rx) = tokio::sync::mpsc::channel(32);
     // Maps to CC `services/api/claude.ts:1057-1230,1380`
     // `queryModelWithStreaming`: capture base betas/useBetas before Tool

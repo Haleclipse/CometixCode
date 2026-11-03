@@ -616,12 +616,6 @@ pub struct GlobalConfig {
     /// each fetch overwrites the whole list rather than invalidating entries.
     pub additional_model_options_cache:
         Option<Vec<crate::utils::model::model_options::ModelOption>>,
-    /// @nyan offset: not an official global-config key. Claude Code sizes
-    /// the context window from its own model tables, which know nothing about a
-    /// gateway's models; `utils::context::get_context_window_for_model` reads
-    /// this map (model id → tokens) so their real windows apply.
-    pub model_context_windows: Option<IndexMap<String, i64>>,
-
     pub s1m_access_cache: Option<serde_json::Value>,
     pub s1m_non_subscriber_access_cache: Option<serde_json::Value>,
     pub passes_eligibility_cache: Option<serde_json::Value>,
@@ -813,7 +807,6 @@ impl Default for GlobalConfig {
             cached_growth_book_features: None,
             growth_book_overrides: None,
             additional_model_options_cache: None,
-            model_context_windows: None,
             s1m_access_cache: None,
             s1m_non_subscriber_access_cache: None,
             passes_eligibility_cache: None,

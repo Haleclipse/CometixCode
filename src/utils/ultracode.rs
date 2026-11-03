@@ -277,14 +277,7 @@ pub(crate) fn catalog_entry(id: &str) -> Option<&'static CatalogEntry> {
 /// `utils/ultracode.ts#normalizeModelName` (`so`). Inference-profile
 /// backing-model session lookup remains unavailable, as in that reconstruction.
 pub(crate) fn normalize_model_name(model: &str) -> String {
-    let settings = crate::utils::settings::get_initial_settings();
-    let raw = settings
-        .model_overrides
-        .as_ref()
-        .and_then(|entries| entries.iter().find(|(_, value)| value.as_str() == model))
-        .map(|(key, _)| key.as_str())
-        .unwrap_or(model);
-    canonicalize_model_id(raw)
+    canonicalize_model_id(model)
 }
 
 /// Maps to: rebuild `workflow-reconstruction`

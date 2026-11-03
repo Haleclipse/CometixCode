@@ -311,12 +311,12 @@ mod tests {
         let store = AppStore::new(AppState::default(), Some(default_on_change()));
         store.replace_with(|state| {
             let mut settings = (*state.settings).clone();
-            settings.model = Some("claude-sonnet-4-6".to_string());
+            settings.output_style = Some("explanatory".to_string());
             state.settings = Arc::new(settings);
         });
         assert_eq!(
-            store.get().settings.model.as_deref(),
-            Some("claude-sonnet-4-6")
+            store.get().settings.output_style.as_deref(),
+            Some("explanatory")
         );
     }
 
@@ -352,7 +352,7 @@ mod tests {
 
         let mut spread = old.clone();
         let mut settings = (*spread.settings).clone();
-        settings.model = Some("claude-sonnet-4-6".to_string());
+        settings.output_style = Some("explanatory".to_string());
         spread.settings = Arc::new(settings);
         on_change_app_state(&spread, &old);
         assert_eq!(

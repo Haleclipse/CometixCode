@@ -10,12 +10,12 @@ use crate::bootstrap::state::get_initial_main_loop_model;
 use crate::utils::auth::{is_claude_ai_subscriber, is_max_subscriber, is_team_premium_subscriber};
 use crate::utils::model::check_1m_access::{check_opus_1m_access, check_sonnet_1m_access};
 use crate::utils::model::model::{
-    get_canonical_name, get_claude_ai_user_default_model_description, get_default_haiku_model,
-    get_default_opus_model, get_default_sonnet_model, get_marketing_name_for_model,
-    get_opus_46_pricing_suffix, get_user_specified_model_setting, is_opus_1m_merge_enabled,
-    render_default_model_setting,
+    NO_MAIN_PROFILE_PROMPT, get_canonical_name, get_claude_ai_user_default_model_description,
+    get_default_haiku_model, get_default_opus_model, get_default_sonnet_model,
+    get_marketing_name_for_model, get_opus_46_pricing_suffix, get_user_specified_model_setting,
+    has_main_profile, is_opus_1m_merge_enabled, render_default_model_setting,
+    render_default_model_setting_for_audience_display,
 };
-use crate::utils::model::model_allowlist::is_model_allowed;
 use crate::utils::model::model_strings::get_model_strings;
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
 use crate::utils::model_cost::{
@@ -88,6 +88,15 @@ pub fn get_default_option_for_user_for_audience(
     audience: crate::utils::build_profile::BuildAudience,
     fast_mode: bool,
 ) -> ModelOption {
+    // No main profile: name no model. The row tells the user what to configure.
+    if !has_main_profile() {
+        return ModelOption::new(
+            None,
+            "Default (recommended)",
+            NO_MAIN_PROFILE_PROMPT.to_string(),
+        );
+    }
+
     if crate::utils::build_profile::audience_has_internal_capability(
         audience,
         crate::utils::build_profile::InternalCapability::Models,
@@ -95,9 +104,7 @@ pub fn get_default_option_for_user_for_audience(
         // CC gates this branch and `getDefaultMainLoopModelSetting()`'s ant
         // branch on the same `USER_TYPE === 'ant'`, so they take the audience
         // together.
-        let current_model = render_default_model_setting(
-            &crate::utils::model::model::get_default_main_loop_model_setting_for_audience(audience),
-        );
+        let current_model = render_default_model_setting_for_audience_display(audience);
         return ModelOption::new(
             None,
             "Default (recommended)",
@@ -123,11 +130,7 @@ pub fn get_default_option_for_user_for_audience(
             // `get_default_main_loop_model_setting()` resolves the COMPILED
             // audience, so under `--features anthropic_internal` a caller
             // asking for the External option still saw the ant default model.
-            render_default_model_setting(
-                &crate::utils::model::model::get_default_main_loop_model_setting_for_audience(
-                    audience
-                )
-            ),
+            render_default_model_setting_for_audience_display(audience),
             tier_3_15_suffix()
         ),
     )
@@ -699,22 +702,9 @@ pub fn get_model_options_for_audience(
     filter_model_options_by_allowlist(options)
 }
 
-/// Maps to: CC `utils/model/modelOptions.ts:531-540`
-/// `filterModelOptionsByAllowlist` — always preserves the default option.
+/// Provider profile selection replaces the removed standalone model allowlist.
 fn filter_model_options_by_allowlist(options: Vec<ModelOption>) -> Vec<ModelOption> {
-    if crate::utils::settings::get_initial_settings()
-        .available_models
-        .is_none()
-    {
-        return options;
-    }
     options
-        .into_iter()
-        .filter(|option| match &option.value {
-            None => true,
-            Some(value) => is_model_allowed(value),
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -733,7 +723,6 @@ mod tests {
     }
 
     const CLEARED_ENV: &[&str] = &[
-        "ANTHROPIC_MODEL",
         "ANTHROPIC_DEFAULT_SONNET_MODEL",
         "ANTHROPIC_DEFAULT_OPUS_MODEL",
         "ANTHROPIC_DEFAULT_HAIKU_MODEL",
@@ -815,7 +804,7 @@ mod tests {
         );
         assert_eq!(
             options[0].description,
-            "Use the default model (currently Sonnet 4.6) · $3/$15 per Mtok"
+            "no model profile configured — set settings.nyan.selection.main"
         );
         assert_eq!(
             options[1].description,
@@ -1007,48 +996,19 @@ mod tests {
         assert_eq!(options[4].description, "From bootstrap");
     }
 
-    /// Maps to: CC `utils/model/modelOptions.ts:486-524` — a pinned model that
-    /// is not already in the list gets appended, with `opusplan` and the known
-    /// Anthropic IDs taking their own branches.
     #[test]
-    fn pinned_models_take_the_official_append_branches() {
+    fn session_model_override_is_appended_without_legacy_environment_selection() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = OptionsFixture::new(serde_json::json!({}));
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "some-internal-deployment".to_string(),
+        )));
 
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "opusplan");
-        let options = get_model_options_for_audience(BuildAudience::External, false);
-        let last = options.last().expect("opusplan option");
-        assert_eq!(last.value.as_deref(), Some("opusplan"));
-        assert_eq!(last.label, "Opus Plan Mode");
-        assert_eq!(
-            last.description,
-            "Use Opus 4.6 in plan mode, Sonnet 4.6 otherwise"
-        );
-
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "opus");
-        let options = get_model_options_for_audience(BuildAudience::External, false);
-        let last = options.last().expect("opus option");
-        assert_eq!(last.value.as_deref(), Some("opus"));
-        assert_eq!(last.description, "Opus 4.6 · Most capable for complex work");
-
-        // A pinned older version is labelled and flagged against the alias.
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "claude-opus-4-1-20250805");
-        let options = get_model_options_for_audience(BuildAudience::External, false);
-        let last = options.last().expect("known model option");
-        assert_eq!(last.label, "Opus 4.1");
-        assert_eq!(
-            last.description,
-            "Newer version available · select Opus for Opus 4.6"
-        );
-
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "some-internal-deployment");
         let options = get_model_options_for_audience(BuildAudience::External, false);
         let last = options.last().expect("custom model option");
         assert_eq!(last.value.as_deref(), Some("some-internal-deployment"));
         assert_eq!(last.label, "some-internal-deployment");
         assert_eq!(last.description, "Custom model");
-
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
     }
 
     /// Maps to: CC `utils/model/modelOptions.ts:486-495` — the startup model is
@@ -1067,34 +1027,6 @@ mod tests {
             last.description,
             "Newer version available · select Sonnet for Sonnet 4.6"
         );
-    }
-
-    /// Maps to: CC `utils/model/modelOptions.ts:531-540` — the allowlist filters
-    /// every entry except the default.
-    #[test]
-    fn allowlist_filters_options_but_always_keeps_the_default() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        {
-            let _fixture = OptionsFixture::new(serde_json::json!({ "availableModels": ["haiku"] }));
-            assert_eq!(
-                values(&get_model_options_for_audience(
-                    BuildAudience::External,
-                    false
-                )),
-                [None, Some("haiku")]
-            );
-        }
-        {
-            // An empty allowlist blocks every user-specified model.
-            let _fixture = OptionsFixture::new(serde_json::json!({ "availableModels": [] }));
-            assert_eq!(
-                values(&get_model_options_for_audience(
-                    BuildAudience::External,
-                    false
-                )),
-                [None]
-            );
-        }
     }
 
     /// Maps to: CC `utils/model/modelOptions.ts:272-288` — the ant list, which
@@ -1128,11 +1060,7 @@ mod tests {
         );
         assert_eq!(
             options[0].description,
-            "Use the default model for Ants (currently Opus 4.6 1M)"
-        );
-        assert_eq!(
-            options[0].description_for_model.as_deref(),
-            Some("Default model (currently Opus 4.6 1M)")
+            "no model profile configured — set settings.nyan.selection.main"
         );
         assert_eq!(
             options[1].description,

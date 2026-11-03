@@ -264,7 +264,7 @@ impl crate::tool::ToolCall for CodeSearchTool {
                 let provider = crate::utils::settings::get_settings_with_errors()
                     .settings
                     .nyan
-                    .as_ref()
+                    .as_deref()
                     .map(crate::services::decision::DecisionProvider::from_nyan);
                 let outcome = crate::services::retrieval::search_with_provider(
                     request.clone(),

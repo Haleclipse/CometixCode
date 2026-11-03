@@ -261,18 +261,19 @@ pub(crate) fn build_headless_initial_app_state(
     )
 }
 
-/// Maps to: CC `main.tsx:2941,3052-3071`: only an explicit CLI model or a
-/// non-inherit main-thread agent model becomes the runtime override, and the
-/// launch model is captured. Leaving the override undefined is significant
-/// because ANTHROPIC_MODEL and saved settings must remain eligible in
-/// `getUserSpecifiedModelSetting()`. Returns CC's `effectiveModel`.
+/// Resolve only explicit temporary launch overrides; persistent selection is
+/// resolved from the provider profile.
 fn apply_launch_model_override(
     cli: &crate::cli::CliConfig,
     agents: &ResolvedAgentLaunch,
 ) -> Option<String> {
     let effective_model = match cli.model.as_deref() {
-        Some("default") => Some(crate::utils::model::model::get_default_main_loop_model()),
-        Some(model) => Some(model.to_string()),
+        Some("default") => None,
+        Some(model) => crate::utils::model::profile::resolve_model_input(
+            &crate::utils::settings::get_initial_settings(),
+            model,
+        )
+        .ok(),
         None => agents
             .main_thread_agent_definition
             .as_ref()
@@ -2642,14 +2643,10 @@ mod tests {
     }
 
     #[test]
-    fn initial_state_without_explicit_override_preserves_environment_model_precedence() {
+    fn initial_state_without_profile_has_no_model() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let previous_override = crate::bootstrap::state::get_main_loop_model_override();
-        let _model = EnvVarGuard::set("ANTHROPIC_MODEL", "claude-opus-4-6");
-        let settings = SettingsJson {
-            model: Some("claude-haiku-4-5-20251001".to_string()),
-            ..SettingsJson::default()
-        };
+        let settings = SettingsJson::default();
         let agents = ResolvedAgentLaunch {
             definitions: Arc::new(
                 crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult::default(),
@@ -2667,7 +2664,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(state.main_loop_model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(state.main_loop_model, None);
         assert_eq!(
             crate::bootstrap::state::get_main_loop_model_override(),
             None,
@@ -2694,7 +2691,6 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("settings.json"), "{}").unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        let _model = EnvVarGuard::unset("ANTHROPIC_MODEL");
         utils::settings::settings_cache::reset_settings_cache();
 
         let agents = ResolvedAgentLaunch {
@@ -2731,7 +2727,7 @@ mod tests {
 
         crate::bootstrap::state::set_main_loop_model_override(previous_override);
         crate::bootstrap::state::set_initial_main_loop_model(previous_initial);
-        drop((_config, _model));
+        drop(_config);
         utils::settings::settings_cache::reset_settings_cache();
         let _ = fs::remove_dir_all(&root);
     }

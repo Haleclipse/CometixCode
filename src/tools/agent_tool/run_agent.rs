@@ -2311,8 +2311,6 @@ mod tests {
     #[test]
     fn resolves_model_override_before_agent_model_before_parent_inherit() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
 
         let context = ToolUseContext::default().with_main_loop_model("parent-sonnet-model");
         let mut agent = AgentDefinition::new(

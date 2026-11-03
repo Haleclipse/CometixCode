@@ -623,7 +623,6 @@ mod tests {
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
 
         let first_party = get_all_base_tools()
             .into_iter()

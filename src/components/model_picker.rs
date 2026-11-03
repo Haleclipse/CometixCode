@@ -54,64 +54,12 @@ fn model_option(
     }
 }
 
-/// @nyan offset: CC's ModelPicker hard-codes six Claude entries and reads no
-/// settings, so a gateway's own models (`availableModels`) could not be picked
-/// from `/model` at all. Append every allowlisted model the built-in aliases do
-/// not already resolve to, labelled from `additionalModelOptionsCache` when the
-/// global config carries an entry for it.
+/// Profile-specific picker entries are added in the profile selector stage.
 fn gateway_model_options(
-    max_description_chars: usize,
-    builtin: &[SelectOptionData],
+    _max_description_chars: usize,
+    _builtin: &[SelectOptionData],
 ) -> Vec<SelectOptionData> {
-    let Some(available) = crate::utils::settings::get_initial_settings().available_models else {
-        return Vec::new();
-    };
-    if available.is_empty() {
-        return Vec::new();
-    }
-    let cached = crate::utils::config::load_global_config()
-        .additional_model_options_cache
-        .unwrap_or_default();
-    // Built-in entries are aliases (`sonnet`, `opus[1m]`, …); a model id is
-    // already covered when one of them resolves to it, or when the entry's own
-    // value matches.
-    let claimed: Vec<String> = builtin
-        .iter()
-        .flat_map(|option| {
-            [
-                Some(option.value.clone()),
-                resolve_option_model(&option.value),
-            ]
-            .into_iter()
-            .flatten()
-        })
-        .collect();
-
-    let mut options: Vec<SelectOptionData> = Vec::new();
-    for model in available {
-        let id = model.trim();
-        if id.is_empty()
-            || claimed.iter().any(|name| name.eq_ignore_ascii_case(id))
-            || options.iter().any(|option| option.value == id)
-        {
-            continue;
-        }
-        let entry = cached
-            .iter()
-            .find(|option| option.value.as_deref() == Some(id));
-        let label = entry.map_or_else(|| id.to_string(), |option| option.label.clone());
-        let description = entry.map_or_else(
-            || format!("Custom model ({id})"),
-            |option| option.description.clone(),
-        );
-        options.push(model_option(
-            &label,
-            id,
-            &description,
-            max_description_chars,
-        ));
-    }
-    options
+    Vec::new()
 }
 
 pub(crate) fn model_picker_options(max_description_chars: usize) -> Vec<SelectOptionData> {

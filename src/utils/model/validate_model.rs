@@ -19,12 +19,6 @@ pub async fn validate_model(model: &str) -> Result<(), String> {
         return Err("Model name cannot be empty".to_string());
     }
 
-    if !crate::utils::model::model_allowlist::is_model_allowed(normalized) {
-        return Err(format!(
-            "Model '{normalized}' is not in the list of available models"
-        ));
-    }
-
     // CC `:39-47` — known aliases and the user-supplied custom option skip
     // the cache and the live probe.
     let lower = normalized.to_ascii_lowercase();

@@ -971,11 +971,11 @@ mod tests {
         crate::memdir::paths::seed_settings(
             crate::utils::settings::types::SettingsJson {
                 auto_memory_enabled: Some(true),
-                nyan: Some(NyanSettings {
+                nyan: Some(Box::new(NyanSettings {
                     memory: Some(memory),
                     decision: Some(DecisionSettings::default()),
                     ..Default::default()
-                }),
+                })),
                 ..Default::default()
             },
             None,

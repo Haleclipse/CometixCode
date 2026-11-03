@@ -51,11 +51,11 @@ impl WebSettingsGuard {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let settings = crate::utils::settings::types::SettingsJson {
-            nyan: Some(crate::utils::settings::nyan::NyanSettings {
+            nyan: Some(Box::new(crate::utils::settings::nyan::NyanSettings {
                 web: Some(web),
                 decision: Some(disabled_decisions()),
                 ..Default::default()
-            }),
+            })),
             ..Default::default()
         };
         settings_cache::set_session_settings_cache(SettingsWithErrors {

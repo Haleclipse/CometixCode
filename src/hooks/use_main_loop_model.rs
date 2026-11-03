@@ -5,7 +5,7 @@
 //! when the caller already has AppState model fields (including session
 //! overrides) and needs alias → `ANTHROPIC_DEFAULT_*_MODEL` resolution.
 
-use crate::utils::model::model::{get_default_main_loop_model_setting, parse_user_specified_model};
+use crate::utils::model::model::parse_user_specified_model;
 
 /// Maps to: CC `hooks/useMainLoopModel.ts` `useMainLoopModel()`.
 ///
@@ -17,11 +17,12 @@ pub fn use_main_loop_model(
     main_loop_model: Option<&str>,
     main_loop_model_for_session: Option<&str>,
 ) -> String {
-    let default_setting = get_default_main_loop_model_setting();
-    let setting = main_loop_model_for_session
+    let Some(setting) = main_loop_model_for_session
         .filter(|value| !value.trim().is_empty())
         .or_else(|| main_loop_model.filter(|value| !value.trim().is_empty()))
-        .unwrap_or(default_setting.as_str());
+    else {
+        return String::new();
+    };
     parse_user_specified_model(setting)
 }
 
@@ -51,10 +52,7 @@ mod tests {
             use_main_loop_model(Some("opus"), Some("sonnet")),
             parse_user_specified_model("sonnet")
         );
-        assert_eq!(
-            use_main_loop_model(None, None),
-            parse_user_specified_model(&get_default_main_loop_model_setting())
-        );
+        assert_eq!(use_main_loop_model(None, None), "");
 
         crate::utils::process_env::remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
     }

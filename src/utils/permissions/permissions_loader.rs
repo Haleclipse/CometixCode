@@ -600,11 +600,12 @@ mod persistence_tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let fixture = Fixture::new();
         for deleting in [false, true] {
-            fixture.write(json!({"model":"old","permissions":{"allow":["Read"],"deny":["Bash"]}}));
+            fixture
+                .write(json!({"language":"old","permissions":{"allow":["Read"],"deny":["Bash"]}}));
             assert_eq!(
                 get_settings_for_source(SettingSource::User)
                     .unwrap()
-                    .model
+                    .language
                     .as_deref(),
                 Some("old")
             );
@@ -625,9 +626,8 @@ mod persistence_tests {
                 ));
             }
             let value = fixture.read();
-            assert_eq!(value["model"], "old");
-            assert!(
-                !value.as_object().unwrap().contains_key("language"),
+            assert_eq!(
+                value["language"], "old",
                 "source bypasses per-source cache but retains the earlier parsed-file snapshot"
             );
             assert_eq!(value["permissions"]["deny"], json!(["Bash"]));
@@ -710,7 +710,7 @@ mod persistence_tests {
     fn add_rules_matches_official_real_validation_failure_preserves_existing_rules() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let fixture = Fixture::new();
-        fixture.write(json!({"model":42,"permissions":{"allow":["Read(src/**)"]},"custom":"keep"}));
+        fixture.write(json!({"fastMode":"not-a-bool","permissions":{"allow":["Read(src/**)"]},"custom":"keep"}));
         fixture.assert_official_validation_failure_boundary();
         assert!(add_permission_rules_to_settings(
             &[PermissionRuleValue::new("Bash", Some("ls".into()))],
@@ -719,7 +719,7 @@ mod persistence_tests {
         ));
         assert_eq!(
             fixture.read(),
-            json!({"model":42,
+            json!({"fastMode":"not-a-bool",
             "permissions":{"allow":["Read(src/**)","Bash(ls)"]},"custom":"keep"})
         );
         assert!(get_settings_for_source(SettingSource::User).is_none());

@@ -251,7 +251,7 @@
       "type": "object",
       "properties": {
         "setting": {
-          "description": "The setting key (e.g., \"theme\", \"model\", \"permissions.defaultMode\")",
+          "description": "The setting key (e.g., \"theme\", \"language\", \"permissions.defaultMode\")",
           "type": "string"
         },
         "value": {

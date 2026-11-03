@@ -4,7 +4,6 @@
 use crate::types::permissions::PermissionMode;
 use crate::utils::model::model::{get_runtime_main_loop_model, parse_user_specified_model};
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
-use crate::utils::process_env::JsTruthy;
 
 /// Maps to CC `utils/model/agent.ts#AGENT_MODEL_OPTIONS`.
 pub const AGENT_MODEL_OPTIONS: &[&str] = &[
@@ -30,14 +29,6 @@ pub fn get_agent_model(
     tool_specified_model: Option<&str>,
     permission_mode: Option<PermissionMode>,
 ) -> String {
-    // Maps to CC `agent.ts:42-44`: `if (process.env.CLAUDE_CODE_SUBAGENT_MODEL)`
-    // — plain JS truthiness on the env value. A whitespace-only value is
-    // truthy in JS and reaches `parseUserSpecifiedModel`; trimming here would
-    // have swallowed it.
-    if let Some(env_model) = crate::utils::process_env::var("CLAUDE_CODE_SUBAGENT_MODEL").truthy() {
-        return parse_user_specified_model(&env_model);
-    }
-
     let parent_region_prefix =
         crate::utils::model::bedrock::get_bedrock_region_prefix(parent_model);
     let apply_parent_region_prefix = |resolved_model: String, original_spec: &str| -> String {
@@ -128,9 +119,6 @@ mod tests {
     #[test]
     fn get_agent_model_matches_official_inherit_and_priority_order() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
-
         assert_eq!(
             get_agent_model(
                 None,
@@ -163,7 +151,6 @@ mod tests {
     #[test]
     fn get_agent_model_preserves_parent_exact_model_for_matching_bare_aliases() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
 
         assert_eq!(
             get_agent_model(
@@ -185,30 +172,15 @@ mod tests {
         );
     }
 
-    /// CC's `getAgentModel` uses THREE different guards, and they are not
-    /// interchangeable: truthiness on the env value (`agent.ts:42`), truthiness
-    /// on `toolSpecifiedModel` (`:69`), and NULLISH coalescing on `agentModel`
-    /// (`:77`). A single `.trim().is_empty()` filter at all three sites — what
-    /// this port had — collapses them into one behaviour and reroutes every
-    /// blank input to `inherit`. Each assertion below is a case where CC does
-    /// NOT fall through to the parent model.
     #[test]
-    fn get_agent_model_keeps_officials_three_distinct_guards() {
+    fn get_agent_model_keeps_empty_explicit_values_distinct_from_inherit() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
 
-        // `agent.ts:77` is `??`: an empty agent model is NOT replaced by
-        // `getDefaultSubagentModel()`, so it never reaches the `inherit` branch.
         assert_eq!(
             get_agent_model(Some(""), "parent-sonnet-model", None, None),
             ""
         );
-
-        // `agent.ts:69` is truthiness: a whitespace-only tool model is truthy in
-        // JS, so it takes the tool branch instead of falling through to the
-        // agent model.
         assert_eq!(
             get_agent_model(
                 Some("inherit"),
@@ -218,42 +190,11 @@ mod tests {
             ),
             ""
         );
-
-        // `agent.ts:42` is truthiness on the raw env value, which is truthy for
-        // whitespace; the env branch wins over both models below it.
-        crate::utils::process_env::set("CLAUDE_CODE_SUBAGENT_MODEL", "   ");
-        assert_eq!(
-            get_agent_model(
-                Some("inherit"),
-                "parent-sonnet-model",
-                None,
-                Some(PermissionMode::Default)
-            ),
-            ""
-        );
-        crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
-    }
-
-    #[test]
-    fn get_agent_model_honors_official_subagent_env_override() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_SUBAGENT_MODEL", "haiku");
-        assert!(
-            get_agent_model(
-                Some("opus"),
-                "parent-sonnet-model",
-                Some("sonnet"),
-                Some(PermissionMode::Default)
-            )
-            .contains("haiku")
-        );
-        crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
     }
 
     #[test]
     fn get_agent_model_inherits_bedrock_region_for_aliases() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SUBAGENT_MODEL");
         crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
         crate::utils::process_env::set(
             "ANTHROPIC_DEFAULT_HAIKU_MODEL",

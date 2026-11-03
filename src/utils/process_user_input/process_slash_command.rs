@@ -2055,7 +2055,7 @@ mod tests {
 
         assert_eq!(
             local_output(&info),
-            "<local-command-stdout>Current model: Sonnet 4.6 (default)</local-command-stdout>"
+            "<local-command-stdout>Current model: no model profile configured — set settings.nyan.selection.main</local-command-stdout>"
         );
         assert!(local_output(&help).contains("Run /model to open"));
         assert!(info.local_action.is_none());

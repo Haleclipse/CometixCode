@@ -61,13 +61,13 @@ mod tests {
         // valid → invalid is blocked with the full message.
         let message = validate_input_for_settings_file_edit(
             &settings_path(),
-            r#"{"model": "opus"}"#,
-            r#"{"model": 5}"#,
+            r#"{"language": "zh"}"#,
+            r#"{"language": 5}"#,
             &cwd(),
         )
         .expect("valid-to-invalid must block");
         assert!(message.starts_with("nyan settings.json validation failed after edit:\n"));
-        assert!(message.contains("- model: Expected string, but received number"));
+        assert!(message.contains("- language: Expected string, but received number"));
         assert!(message.contains("Full schema:\n{\n  \"$schema\""));
         assert!(
             message.ends_with(
@@ -79,8 +79,8 @@ mod tests {
         assert!(
             validate_input_for_settings_file_edit(
                 &settings_path(),
-                r#"{"model": 5}"#,
-                r#"{"model": 6}"#,
+                r#"{"language": 5}"#,
+                r#"{"language": 6}"#,
                 &cwd(),
             )
             .is_none()
@@ -90,7 +90,7 @@ mod tests {
         assert!(
             validate_input_for_settings_file_edit(
                 std::path::Path::new("/tmp/other.json"),
-                r#"{"model": "opus"}"#,
+                r#"{"language": "zh"}"#,
                 "{ not json",
                 &cwd(),
             )
@@ -102,8 +102,8 @@ mod tests {
     fn strict_settings_schema_rejects_unknown_top_level_fields() {
         let message = validate_input_for_settings_file_edit(
             &settings_path(),
-            r#"{"model": "opus"}"#,
-            r#"{"model": "opus", "definitelyNotAClaudeSetting": true}"#,
+            r#"{"language": "zh"}"#,
+            r#"{"language": "zh", "definitelyNotAClaudeSetting": true}"#,
             &cwd(),
         )
         .expect("unknown key must block under .strict()");
@@ -115,8 +115,8 @@ mod tests {
         // .catch(undefined) fields degrade instead of failing the edit.
         assert!(validate_input_for_settings_file_edit(
             &settings_path(),
-            r#"{"model": "opus"}"#,
-            r#"{"model": "opus", "effortLevel": "ultra", "strictPluginOnlyCustomization": "skills"}"#,
+            r#"{"language": "zh"}"#,
+            r#"{"language": "zh", "effortLevel": "ultra", "strictPluginOnlyCustomization": "skills"}"#,
             &cwd(),
         )
         .is_none());
@@ -128,7 +128,7 @@ mod tests {
         assert!(
             validate_input_for_settings_file_edit(
                 &settings_path(),
-                r#"{"model": "opus"}"#,
+                r#"{"language": "zh"}"#,
                 r#"{"env": {"PORT": 8080}}"#,
                 &cwd(),
             )
@@ -137,7 +137,7 @@ mod tests {
         // A marketplace refinement failure blocks (reserved settings name).
         let message = validate_input_for_settings_file_edit(
             &settings_path(),
-            r#"{"model": "opus"}"#,
+            r#"{"language": "zh"}"#,
             r#"{"extraKnownMarketplaces": {"agent-skills": {"source": {"source": "settings", "name": "agent-skills", "plugins": []}}}}"#,
             &cwd(),
         )

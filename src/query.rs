@@ -7027,7 +7027,9 @@ mod tests {
     fn query_actor_retries_call_model_after_model_fallback_and_strips_signature_blocks() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NODE_ENV", "test");
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "claude-primary-model");
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "claude-primary-model".to_string(),
+        )));
 
         #[derive(Clone, Debug)]
         struct FallbackDeps {
@@ -7151,7 +7153,7 @@ mod tests {
             ));
 
         crate::utils::process_env::remove("NODE_ENV");
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
+        crate::bootstrap::state::set_main_loop_model_override(None);
 
         assert_eq!(terminal.reason, "completed");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
@@ -7196,7 +7198,9 @@ mod tests {
     fn query_actor_retries_after_streaming_non_streaming_model_fallback_signal() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NODE_ENV", "test");
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "claude-primary-model");
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "claude-primary-model".to_string(),
+        )));
 
         #[derive(Clone, Debug)]
         struct StreamModelFallbackDeps {
@@ -7348,7 +7352,7 @@ mod tests {
             ));
 
         crate::utils::process_env::remove("NODE_ENV");
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
+        crate::bootstrap::state::set_main_loop_model_override(None);
 
         assert_eq!(terminal.reason, "completed");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
@@ -7395,7 +7399,9 @@ mod tests {
     fn query_actor_keeps_fallback_model_for_tool_result_continuation() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NODE_ENV", "test");
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "claude-primary-model");
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
+            "claude-primary-model".to_string(),
+        )));
 
         #[derive(Clone, Debug)]
         struct FallbackContinuationDeps {
@@ -7513,7 +7519,7 @@ mod tests {
             ));
 
         crate::utils::process_env::remove("NODE_ENV");
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
+        crate::bootstrap::state::set_main_loop_model_override(None);
 
         assert_eq!(terminal.reason, "completed");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
@@ -8382,7 +8388,7 @@ mod tests {
     #[test]
     fn build_call_model_request_uses_runtime_plan_model_selection_like_official() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("ANTHROPIC_MODEL", "opusplan");
+        crate::bootstrap::state::set_main_loop_model_override(Some(Some("opusplan".to_string())));
         crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "default-opus");
         crate::utils::process_env::set("ANTHROPIC_DEFAULT_SONNET_MODEL", "default-sonnet");
 
@@ -8428,7 +8434,7 @@ mod tests {
         );
         assert_eq!(guarded_request.options.model, "default-sonnet");
 
-        crate::utils::process_env::remove("ANTHROPIC_MODEL");
+        crate::bootstrap::state::set_main_loop_model_override(None);
         crate::utils::process_env::remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
         crate::utils::process_env::remove("ANTHROPIC_DEFAULT_SONNET_MODEL");
     }

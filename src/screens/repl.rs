@@ -16714,7 +16714,7 @@ mod tests {
             (
                 LocalCommandUi::Model,
                 "model",
-                "Kept model as Sonnet 4.6 (default)",
+                "no model profile configured — set settings.nyan.selection.main",
             ),
             (
                 LocalCommandUi::Effort {

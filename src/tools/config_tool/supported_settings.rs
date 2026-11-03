@@ -52,7 +52,6 @@ pub enum SettingType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncableAppStateKey {
     Verbose,
-    MainLoopModel,
     ThinkingEnabled,
 }
 
@@ -153,59 +152,6 @@ impl SettingConfig {
     }
 }
 
-/// Maps to: CC `supportedSettings.ts:95-103` `model.getOptions` — the picker
-/// list minus its `value: null` default entry, falling back to the source's
-/// `catch` branch (`:100-102`).
-///
-/// The fallback is reachable only through an unwind: every read in the
-/// `get_model_options()` call graph is infallible here, unlike the source's
-/// `getSettings_DEPRECATED`/`getModelStrings`/`getGlobalConfig`, which throw.
-pub(super) fn model_option_values() -> Vec<String> {
-    std::panic::catch_unwind(|| {
-        crate::utils::model::model_options::get_model_options(false)
-            .into_iter()
-            .filter_map(|option| option.value)
-            .collect::<Vec<_>>()
-    })
-    .unwrap_or_else(|_| {
-        MODEL_OPTIONS_FALLBACK
-            .iter()
-            .map(|option| (*option).to_string())
-            .collect()
-    })
-}
-
-/// Maps to: CC `supportedSettings.ts:101` — the `catch` branch's list.
-pub(super) const MODEL_OPTIONS_FALLBACK: &[&str] = &["sonnet", "opus", "haiku"];
-
-/// Maps to: CC `supportedSettings.ts:104` `validateOnWrite: v => validateModel(String(v))`
-/// → `utils/model/validateModel.ts`.
-///
-/// `String(v)` runs synchronously when the arrow is invoked and the promise
-/// handed back is `validateModel`'s own; same order here — coerce first, then
-/// the owner's future takes the owned string. Every tier, including the live
-/// `sideQuery` probe (`validateModel.ts:56-81`), is the owner's.
-fn validate_model_on_write(
-    value: &serde_json::Value,
-) -> futures::future::BoxFuture<'_, Result<(), String>> {
-    let model = super::setting_value_as_string(value);
-    Box::pin(async move { crate::utils::model::validate_model::validate_model(&model).await })
-}
-
-/// Maps to: CC `supportedSettings.ts:105` `formatOnRead: v => (v === null ? 'default' : v)`.
-///
-/// `undefined` is NOT `null` in JS, so an unset `model` — the common case,
-/// where `getValue` walked off the object and returned `undefined` — falls
-/// through this formatter untouched and reads back as `undefined`, not
-/// `'default'`. Only a settings file that literally stores `"model": null`
-/// takes the `'default'` branch.
-pub(super) fn format_model_on_read(value: Option<&serde_json::Value>) -> Option<serde_json::Value> {
-    match value {
-        Some(serde_json::Value::Null) => Some(serde_json::Value::String("default".to_string())),
-        other => other.cloned(),
-    }
-}
-
 /// Maps to: CC `supportedSettings.ts:160`
 /// `formatOnRead: () => getRemoteControlAtStartup()`. The arrow takes no
 /// parameter, so the stored value — `undefined` included — never reaches it.
@@ -272,11 +218,6 @@ pub fn supported_settings() -> Vec<SettingConfig> {
             Boolean,
             "Enable todo/task tracking",
         ),
-        SettingConfig::new("model", Settings, Str, "Override the default model")
-            .app_state_key(SyncableAppStateKey::MainLoopModel)
-            .get_options(model_option_values)
-            .validate_on_write(validate_model_on_write)
-            .format_on_read(format_model_on_read),
         SettingConfig::new(
             "alwaysThinkingEnabled",
             Settings,
@@ -426,114 +367,5 @@ pub fn get_path(key: &str) -> Vec<String> {
     match get_config(key).and_then(|config| config.path) {
         Some(path) => path.iter().map(|segment| segment.to_string()).collect(),
         None => key.split('.').map(str::to_string).collect(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::super::prompt::tests::ModelSectionFixture;
-    use crate::utils::test_env::TEST_ENV_LOCK;
-
-    /// Maps to: CC `supportedSettings.ts:105` — `v === null ? 'default' : v`.
-    /// `undefined` is not `null`, so the unset case passes through.
-    #[test]
-    fn model_format_on_read_separates_undefined_from_null() {
-        assert_eq!(super::format_model_on_read(None), None);
-        assert_eq!(
-            super::format_model_on_read(Some(&serde_json::Value::Null)),
-            Some(serde_json::json!("default"))
-        );
-        assert_eq!(
-            super::format_model_on_read(Some(&serde_json::json!("opus"))),
-            Some(serde_json::json!("opus"))
-        );
-    }
-
-    /// Maps to: CC `supportedSettings.ts:104` — only `model` hangs
-    /// `validateOnWrite`. `if (config.validateOnWrite)` is the only question
-    /// the source asks of the slot, so the check is set-ness, not identity.
-    #[test]
-    fn only_model_declares_the_validate_on_write_slot() {
-        assert!(
-            super::get_config("model")
-                .unwrap()
-                .validate_on_write
-                .is_some()
-        );
-        for key in [
-            "theme",
-            "language",
-            "verbose",
-            "alwaysThinkingEnabled",
-            "editorMode",
-        ] {
-            assert!(
-                super::get_config(key).unwrap().validate_on_write.is_none(),
-                "{key}"
-            );
-        }
-    }
-
-    /// Maps to: CC `supportedSettings.ts:104` `v => validateModel(String(v))` —
-    /// the slot's own two steps: `String(v)`, then the owner. The owner's tiers
-    /// are `validate_model.rs`'s to test; the empty guard (`validateModel.ts:26-28`)
-    /// and the `availableModels` allowlist (`:31-36`) only prove the call landed,
-    /// and the allowlist error echoing the normalized name is what makes the
-    /// coercion observable without the live probe.
-    #[tokio::test]
-    async fn model_slot_coerces_string_v_and_reaches_validate_model() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let fixture = ModelSectionFixture::new();
-        fixture.write_settings(r#"{"availableModels":["haiku"]}"#);
-
-        assert!(
-            super::validate_model_on_write(&serde_json::json!("haiku"))
-                .await
-                .is_ok()
-        );
-        assert_eq!(
-            super::validate_model_on_write(&serde_json::json!("  "))
-                .await
-                .unwrap_err(),
-            "Model name cannot be empty"
-        );
-        assert_eq!(
-            super::validate_model_on_write(&serde_json::json!("opus"))
-                .await
-                .unwrap_err(),
-            "Model 'opus' is not in the list of available models"
-        );
-        // The input schema admits booleans and numbers for a string-typed
-        // setting (`ConfigTool.ts:43-45`); `String(true)` is `"true"` and
-        // `String(1)` is `"1"`.
-        assert_eq!(
-            super::validate_model_on_write(&serde_json::json!(true))
-                .await
-                .unwrap_err(),
-            "Model 'true' is not in the list of available models"
-        );
-        assert_eq!(
-            super::validate_model_on_write(&serde_json::json!(1.0))
-                .await
-                .unwrap_err(),
-            "Model '1' is not in the list of available models"
-        );
-    }
-
-    /// Maps to: CC `utils/model/aliases.ts:1-9`.
-    #[test]
-    fn model_aliases_match_the_official_list() {
-        assert_eq!(
-            crate::utils::model::aliases::MODEL_ALIASES,
-            [
-                "sonnet",
-                "opus",
-                "haiku",
-                "best",
-                "sonnet[1m]",
-                "opus[1m]",
-                "opusplan"
-            ]
-        );
     }
 }

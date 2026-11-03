@@ -30,7 +30,7 @@ pub fn input_schema() -> &'static crate::utils::zod::Schema {
             (
                 "setting",
                 zod::string().describe(
-                    "The setting key (e.g., \"theme\", \"model\", \"permissions.defaultMode\")",
+                    "The setting key (e.g., \"theme\", \"language\", \"permissions.defaultMode\")",
                 ),
             ),
             (
@@ -369,15 +369,6 @@ fn sync_app_state_key(
                 next.verbose = verbose;
                 next
             }
-            SyncableAppStateKey::MainLoopModel => {
-                let model = setting_value_as_string(final_value);
-                if prev.main_loop_model.as_deref() == Some(model.as_str()) {
-                    return UpdateDecision::Same(());
-                }
-                let mut next = (**prev).clone();
-                next.main_loop_model = Some(model);
-                next
-            }
             SyncableAppStateKey::ThinkingEnabled => {
                 let Some(thinking_enabled) = final_value.as_bool() else {
                     return UpdateDecision::Same(());
@@ -582,7 +573,7 @@ impl crate::tool::ToolCall for ConfigTool {
     /// word-bound hit here above one in the prompt
     /// (`ToolSearchTool.ts:282`).
     fn search_hint(&self) -> Option<&'static str> {
-        Some("get or set nyan settings (theme, model)")
+        Some("get or set nyan settings (theme, language)")
     }
 
     /// Maps to: CC `ConfigTool.description()` (:71-73) — the `DESCRIPTION`
@@ -876,109 +867,6 @@ mod tests {
         );
     }
 
-    /// Maps to: CC `ConfigTool.ts:216-218` — `validateOnWrite` runs after
-    /// options and before persist. A model rejected by the picker or the
-    /// owner slot must not land in settings.
-    #[tokio::test]
-    async fn config_set_does_not_persist_a_model_rejected_on_write() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let fixture = super::prompt::tests::ModelSectionFixture::new();
-        fixture.write_settings(r#"{"availableModels":["haiku"]}"#);
-
-        let context = crate::tool::ToolUseContext::default();
-        let output = super::config_output(
-            &serde_json::json!({"setting": "model", "value": "opus"}),
-            &context,
-        )
-        .await;
-        assert!(!output.success);
-        assert_eq!(output.operation.as_deref(), Some("set"));
-        assert!(output.error.is_some());
-
-        let read = super::config_output(&serde_json::json!({"setting": "model"}), &context).await;
-        assert!(read.success);
-        assert_eq!(
-            read.value, None,
-            "a rejected model write must leave the key unset"
-        );
-    }
-
-    /// Maps to: CC `ConfigTool.ts:436-453` + `:142` + `:418` — `getValue`
-    /// returns JS `undefined` for an unset key, the get branch passes it
-    /// straight into `data.value`, and the tool_result template interpolates
-    /// `JSON.stringify(undefined)` as the literal text `undefined`.
-    ///
-    /// `model` is the settings-source case and the one whose `formatOnRead`
-    /// (`supportedSettings.ts:105`) proves the distinction is a VALUE
-    /// difference, not formatting: `undefined !== null`, so the unset read is
-    /// `undefined`, never `'default'`.
-    #[tokio::test]
-    async fn config_get_reads_an_unset_setting_back_as_undefined_not_null() {
-        use crate::tool::ToolCall;
-
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let fixture = super::prompt::tests::ModelSectionFixture::new();
-        fixture.write_settings("{}");
-
-        let context = crate::tool::ToolUseContext::default();
-        let output = super::config_output(&serde_json::json!({"setting": "model"}), &context).await;
-        assert!(output.success);
-        assert_eq!(output.operation.as_deref(), Some("get"));
-        assert_eq!(
-            output.value, None,
-            "an unset key is JS undefined, and formatOnRead's `v === null` does not catch it"
-        );
-
-        let tool = super::ConfigTool;
-        let data = crate::tool::ToolOutput::Config(output);
-        let (content, status) = tool.map_tool_result_to_tool_result_block_param(&data, "toolu_cfg");
-        assert_eq!(status, crate::types::message::ToolResultStatus::Success);
-        assert_eq!(content, "model = undefined");
-
-        // `JSON.stringify` DROPS an undefined property, so the wire shape has
-        // no `value` key at all (CC `outputSchema` `.optional()`).
-        let raw = tool
-            .tool_use_result(&data)
-            .expect("raw output rides the row");
-        assert_eq!(
-            raw,
-            serde_json::json!({"success": true, "operation": "get", "setting": "model"})
-        );
-        // And the transcript renderer interpolates it as JSX, where React
-        // renders `undefined` as nothing (UI.tsx:29-33).
-        let lines = super::ui::render_tool_result_message(Some(&raw));
-        assert_eq!(lines[0].text, "model = ");
-    }
-
-    /// Maps to: CC `ConfigTool.ts:436-453` — a value that IS present reads back
-    /// as itself, and a settings file that literally stores JSON `null` is the
-    /// only way `formatOnRead`'s `'default'` branch fires.
-    #[tokio::test]
-    async fn config_get_reads_a_present_setting_back_as_its_value() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let fixture = super::prompt::tests::ModelSectionFixture::new();
-        fixture.write_settings(r#"{"model":"opus"}"#);
-
-        let context = crate::tool::ToolUseContext::default();
-        let output = super::config_output(&serde_json::json!({"setting": "model"}), &context).await;
-        assert_eq!(output.value, Some(serde_json::json!("opus")));
-
-        // The global source is the other half of `getValue`. `theme` carries a
-        // factory default (CC `config.ts:590` `createDefaultGlobalConfig`,
-        // ported at `config.rs:899`), so it is never undefined — but only
-        // through the real loader, since the fixture's in-memory override is a
-        // bare `GlobalConfig::default()`.
-        use_real_global_config_file();
-        let theme = super::config_output(&serde_json::json!({"setting": "theme"}), &context).await;
-        assert_eq!(theme.value, Some(serde_json::json!("dark")));
-
-        // An unset global key with NO factory default stays undefined, the
-        // same as the settings source.
-        let teammate_mode =
-            super::config_output(&serde_json::json!({"setting": "teammateMode"}), &context).await;
-        assert_eq!(teammate_mode.value, None);
-    }
-
     /// Maps to: CC `ConfigTool.ts:355-362` — the generic `appStateKey` sync,
     /// which runs AFTER the persist and inside the `try`. All three syncable
     /// keys (`supportedSettings.ts:46/:94/:111`) land in one pass.
@@ -1006,15 +894,6 @@ mod tests {
         .await;
         assert!(verbose.success, "{:?}", verbose.error);
         assert!(store.get().verbose);
-
-        // `model` — settings source, string.
-        let model = super::config_output(
-            &serde_json::json!({"setting": "model", "value": "haiku"}),
-            &context,
-        )
-        .await;
-        assert!(model.success, "{:?}", model.error);
-        assert_eq!(store.get().main_loop_model.as_deref(), Some("haiku"));
 
         // `alwaysThinkingEnabled` — settings source, boolean.
         let thinking = super::config_output(
@@ -1086,7 +965,7 @@ mod tests {
         fixture.write_settings("{ this is not json");
 
         let output = super::config_output(
-            &serde_json::json!({"setting": "model", "value": "haiku"}),
+            &serde_json::json!({"setting": "language", "value": "japanese"}),
             &context,
         )
         .await;
@@ -1303,7 +1182,7 @@ mod tests {
         );
         assert_eq!(
             tool.search_hint(),
-            Some("get or set nyan settings (theme, model)")
+            Some("get or set nyan settings (theme, language)")
         );
         // The prompt is a different, much longer string that merely starts
         // with the same sentence.

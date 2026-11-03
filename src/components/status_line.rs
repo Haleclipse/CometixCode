@@ -607,12 +607,11 @@ mod tests {
         crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "grok-4.5");
 
         let settings = SettingsJson {
-            model: Some("opus".to_string()),
             output_style: Some("explanatory".to_string()),
             ..Default::default()
         };
         let main_loop_model =
-            crate::hooks::use_main_loop_model::use_main_loop_model(settings.model.as_deref(), None);
+            crate::hooks::use_main_loop_model::use_main_loop_model(Some("opus"), None);
         let input = build_status_line_command_input(
             PermissionMode::Default,
             false,
