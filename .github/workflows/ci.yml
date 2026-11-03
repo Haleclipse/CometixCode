@@ -302,6 +302,32 @@ jobs:
           $rg = Join-Path $releaseVendor 'rg.exe'
           $rgVersion = & $rg --version
           if ($LASTEXITCODE -ne 0 -or "$rgVersion" -notmatch '^ripgrep ') { throw "release rg.exe --version failed: $rgVersion" }
+      - name: Smoke-test Git worktree under Git Bash
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $wtRoot = Join-Path $env:RUNNER_TEMP 'nyan-worktree-smoke-ci'
+          New-Item -ItemType Directory -Force $wtRoot | Out-Null
+          $repo = Join-Path $wtRoot 'repo'
+          New-Item -ItemType Directory -Force $repo | Out-Null
+          git -C $repo init
+          git -C $repo config user.email "ci@example.com"
+          git -C $repo config user.name "CI"
+          Set-Content -Path (Join-Path $repo 'smoke.txt') -Value 'worktree smoke'
+          git -C $repo add smoke.txt
+          git -C $repo commit -m 'smoke'
+          $wt = Join-Path $wtRoot 'wt'
+          git -C $repo worktree add -b feature-wt $wt
+          $gitExe = (Get-Command git.exe).Source
+          $bash = Join-Path (Split-Path (Split-Path $gitExe -Parent) -Parent) 'bin\bash.exe'
+          if (-not (Test-Path $bash)) { throw "Git for Windows bash.exe not found next to $gitExe" }
+          $posixPath = $wt.Replace('\', '/')
+          $out = & $bash -lc "cd '$posixPath' && pwd -P && git rev-parse --show-toplevel && printf 'worktree-ci-ok\n'"
+          Write-Host "Worktree Git Bash smoke output:"
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0 -or "$out" -notmatch 'worktree-ci-ok') {
+            throw "Git worktree Bash smoke failed"
+          }
       - name: Run targeted Windows runtime smoke tests
         shell: pwsh
         env:

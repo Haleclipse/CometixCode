@@ -320,6 +320,13 @@ pub fn get_doctor_diagnostic() -> DiagnosticInfo {
         crate::utils::process_env::var("NYAN_PACKAGE_MANAGER")
             .unwrap_or_else(|| "unknown".to_string())
     });
+    #[cfg(target_os = "windows")]
+    if let Err(err) = crate::utils::windows_paths::find_git_bash_path() {
+        warnings.push(DiagnosticWarning {
+            issue: format!("Git Bash is not available: {err}"),
+            fix: "Install Git for Windows (https://git-scm.com/downloads/win) or set CLAUDE_CODE_GIT_BASH_PATH to your bash.exe path".to_string(),
+        });
+    }
     let git_bash = git_bash_display();
 
     DiagnosticInfo {
@@ -345,7 +352,7 @@ fn git_bash_display() -> Option<String> {
         let source = crate::utils::windows_paths::git_bash_discovery_source();
         Some(match crate::utils::windows_paths::find_git_bash_path() {
             Ok(path) => format!("Found at {} (source: {source})", path.display()),
-            Err(_) => format!("Not found (source: {source})"),
+            Err(err) => format!("Unavailable: {err} (source: {source})"),
         })
     }
 

@@ -226,6 +226,108 @@ mod windows_acl {
         }
         Ok(())
     }
+
+    #[cfg(test)]
+    pub(super) fn verify_owner_only_acl(path: &Path) -> io::Result<()> {
+        use windows_sys::Win32::{
+            Foundation::LocalFree,
+            Security::Authorization::GetNamedSecurityInfoW,
+            Security::{EqualSid, GetAce, GetSecurityDescriptorControl, SE_DACL_PROTECTED},
+        };
+
+        let mut wide_path = path.as_os_str().encode_wide().collect::<Vec<_>>();
+        wide_path.push(0);
+
+        let mut dacl: *mut ACL = null_mut();
+        let mut sd: *mut core::ffi::c_void = null_mut();
+
+        let err = unsafe {
+            GetNamedSecurityInfoW(
+                wide_path.as_ptr(),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION,
+                null_mut(),
+                null_mut(),
+                &mut dacl,
+                null_mut(),
+                &mut sd,
+            )
+        };
+        if err != ERROR_SUCCESS {
+            return Err(io::Error::from_raw_os_error(err as i32));
+        }
+        struct SdCleanup(*mut core::ffi::c_void);
+        impl Drop for SdCleanup {
+            fn drop(&mut self) {
+                if !self.0.is_null() {
+                    unsafe {
+                        LocalFree(self.0);
+                    }
+                }
+            }
+        }
+        let _sd_guard = SdCleanup(sd);
+
+        if dacl.is_null() {
+            return Err(io::Error::other("File has NULL DACL"));
+        }
+
+        let mut control = 0u16;
+        let mut revision = 0u32;
+        if unsafe { GetSecurityDescriptorControl(sd, &mut control, &mut revision) } == 0 {
+            return Err(last_error());
+        }
+        if control & SE_DACL_PROTECTED == 0 {
+            return Err(io::Error::other(
+                "DACL is not protected (SE_DACL_PROTECTED flag not set)",
+            ));
+        }
+
+        let ace_count = unsafe { (*dacl).AceCount };
+        if ace_count != 1 {
+            return Err(io::Error::other(format!(
+                "DACL has {ace_count} ACEs, expected exactly 1 owner ACE"
+            )));
+        }
+
+        let mut ace_ptr: *mut core::ffi::c_void = null_mut();
+        if unsafe { GetAce(dacl, 0, &mut ace_ptr) } == 0 {
+            return Err(last_error());
+        }
+        let allowed_ace = unsafe { &*ace_ptr.cast::<ACCESS_ALLOWED_ACE>() };
+        // ACCESS_ALLOWED_ACE_TYPE is 0
+        if allowed_ace.Header.AceType != 0 {
+            return Err(io::Error::other(format!(
+                "ACE type is {}, expected ACCESS_ALLOWED_ACE_TYPE (0)",
+                allowed_ace.Header.AceType
+            )));
+        }
+        if allowed_ace.Header.AceFlags != 0 {
+            return Err(io::Error::other(format!(
+                "ACE flags are 0x{:X}, expected 0 (non-inherited)",
+                allowed_ace.Header.AceFlags
+            )));
+        }
+
+        let expected_mask = DELETE | FILE_GENERIC_READ | FILE_GENERIC_WRITE;
+        if (allowed_ace.Mask & expected_mask) != expected_mask {
+            return Err(io::Error::other(format!(
+                "ACE access mask 0x{:X} does not contain expected 0x{:X}",
+                allowed_ace.Mask, expected_mask
+            )));
+        }
+
+        let user_sid = current_user_sid()?;
+        let ace_sid = std::ptr::addr_of!(allowed_ace.SidStart)
+            .cast_mut()
+            .cast::<core::ffi::c_void>();
+        let user_sid_ptr = user_sid.as_ptr().cast_mut().cast::<core::ffi::c_void>();
+        if unsafe { EqualSid(ace_sid, user_sid_ptr) } == 0 {
+            return Err(io::Error::other("ACE SID does not match current user SID"));
+        }
+
+        Ok(())
+    }
 }
 
 /// Maps to: CC `utils/secureStorage/plainTextStorage.ts:10-14` `getStoragePath`.
@@ -455,6 +557,41 @@ mod tests {
         persist_credential_file(&path, "new secret", apply_windows_credential_acl)
             .expect("Windows credential ACL should replace the existing file");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new secret");
+
+        windows_acl::verify_owner_only_acl(&path)
+            .expect("DACL must be owner-only and protected on the replaced credential file");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_plaintext_credentials_new_file_has_owner_only_acl() {
+        let path = crate::utils::node_os::tmpdir()
+            .join(format!("nyan-cred-acl-windows-new-{}", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        persist_credential_file(&path, "fresh secret", apply_windows_credential_acl)
+            .expect("Windows credential ACL should secure new credential file");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "fresh secret");
+
+        windows_acl::verify_owner_only_acl(&path)
+            .expect("DACL must be owner-only and protected on the new credential file");
+
+        let icacls = std::process::Command::new("icacls")
+            .arg(&path)
+            .output()
+            .expect("icacls command must execute on Windows");
+        assert!(
+            icacls.status.success(),
+            "icacls check failed: {}",
+            String::from_utf8_lossy(&icacls.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&icacls.stdout);
+        assert!(
+            !stdout.contains("(I)"),
+            "Credential file must not have inherited ACEs: {stdout}"
+        );
+
         let _ = std::fs::remove_file(&path);
     }
 }

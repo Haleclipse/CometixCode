@@ -146,9 +146,8 @@ Job 会下载固定版本的 MSVC `ripgrep`，校验 SHA256，运行 `vendor/rip
 ### P0：发布前必须完成
 
 - [x] 发布包提供并验证 `vendor/ripgrep/x64-win32/rg.exe`；修复 Global Search 的直接 `rg` 调用，使其复用统一 resolver。（#26、#28）
-- [ ] 发布说明和启动诊断明确要求 Git for Windows/Git Bash；验证 `CLAUDE_CODE_GIT_BASH_PATH`、盘符、UNC、worktree 和基本 Bash 命令。（#28、#29）
-  - 已完成：README 要求 Git for Windows；启动诊断提示；Windows runner 上的基本 Bash 命令 smoke；盘符/UNC 字符串转换 smoke（纯字符串，不含真实 Git Bash 工作目录）。
-  - 待做：worktree 真实冒烟（尚未在 Windows runner 验证）；`CLAUDE_CODE_GIT_BASH_PATH` 的运行时覆盖（目前只有发现来源的单测）。
+- [x] 发布说明和启动诊断明确要求 Git for Windows/Git Bash；验证 `CLAUDE_CODE_GIT_BASH_PATH`、盘符、UNC、worktree 和基本 Bash 命令。（#28、#29、#37）
+  - 已完成：README 要求 Git for Windows；启动诊断与 doctor 运行时校验 `CLAUDE_CODE_GIT_BASH_PATH`（存在性、可执行、是 bash，支持盘符与 UNC 路径，缺失或错误时给出清晰提示）；Windows runner 上的基本 Bash 命令 smoke；Git worktree 下基本 Bash 命令执行与路径转换 smoke；`CLAUDE_CODE_GIT_BASH_PATH` 运行时覆盖与错误提示验证。
 - [x] Windows `--version`、`--help`、一次无模型启动冒烟通过；release 构建实际产出并可执行，而不只是 `cargo check`。（#28）
 - [x] Windows sandbox 默认明确显示 unavailable；不能把普通 Bash 执行宣称为 sandboxed。涉及不可信代码时给出降级提示。（#27）
 - [x] 凭据方案至少做出明确选择：首发若暂时使用 plaintext，必须限制 config 目录 ACL、显示 warning，并在发布说明中明确风险；更好的最小方案是 Credential Manager/DPAPI。
@@ -162,9 +161,9 @@ Job 会下载固定版本的 MSVC `ripgrep`，校验 SHA256，运行 `vendor/rip
 
 - [x] Windows RSS 通过 `GetProcessMemoryInfo` 实现，避免 `process_rss_bytes()` 恒为 0。（#27）
 - [x] 用 Job Object 替代仅依赖 `taskkill /T /F` 的进程树管理，并验证后台任务、超时、取消和孙进程。（#31）
-- [ ] 补 Windows ACL、junction/symlink、文件锁和共享删除的测试（部分完成，#30）。
-  - 已有：junction 不能逃逸工作目录（`src/utils/permissions/filesystem.rs`）；junction/symlink 解析（`windows_link_tests.rs`）；独占句柄下 Write/Edit 报错且不截断（`file_write_tool`、`file_edit_tool`）；共享删除 unlink/rename（`src/utils/fs_operations/tests.rs:191`，用 `share_mode(0x7)` 即 FILE_SHARE_DELETE）。
-  - 缺口：共享删除只测允许删除/重命名成功的路径，未测被拒绝路径；file symlink 测试在无 SeCreateSymbolicLinkPrivilege 的 runner 上直接跳过（只打印原因），不算覆盖；Windows ACL 专项测试未做。
+- [ ] 补 Windows ACL、junction/symlink、文件锁和共享删除的测试（部分完成，#30、#35、#37）。
+  - 已有：junction 不能逃逸工作目录（`src/utils/permissions/filesystem.rs`）；junction/symlink 解析（`windows_link_tests.rs`）；独占句柄下 Write/Edit 报错且不截断（`file_write_tool`、`file_edit_tool`）；共享删除 unlink/rename（`src/utils/fs_operations/tests.rs:191`，用 `share_mode(0x7)` 即 FILE_SHARE_DELETE）；Windows 凭据文件 owner-only DACL 生效断言（`SE_DACL_PROTECTED`、单用户 ACE、access mask 与 SID 校验，#37）。
+  - 缺口：共享删除只测允许删除/重命名成功的路径，未测被拒绝路径；file symlink 测试在无 SeCreateSymbolicLinkPrivilege 的 runner 上直接跳过（只打印原因），不算覆盖。
 - [ ] 为 Windows 增加 release zip、SHA256、可选签名和 SmartScreen 限制说明；实现后再接自动更新。
   - 决定（2026-11-03，Yuki 已定）：不签名，靠 SHA256 校验 + SmartScreen 说明；Windows 自动更新暂不做，提示手动从 GitHub Releases 下载（`src/utils/auto_updater.rs:27`）。
   - 已完成：release.yml 产出 zip 与 `SHA256SUMS`；README 写明校验与 SmartScreen 警告（#32）。
