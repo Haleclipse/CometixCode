@@ -22,7 +22,6 @@
 //!   either shape uses.
 
 use crate::components::logo_v2::guest_passes_upsell::GuestPassesUpsellSnapshot;
-use crate::utils::auth::{get_subscription_type, is_claude_ai_subscriber};
 use crate::utils::config::GlobalConfig;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -165,24 +164,13 @@ pub fn guest_passes_snapshot_from_readonly_config(
     (snapshot, eligibility.reward_text)
 }
 
-/// Maps to: CC `services/api/referral.ts#shouldCheckForPasses` — a
-/// zero-argument predicate.
+/// Maps to: CC `services/api/referral.ts#shouldCheckForPasses`.
 ///
-/// It used to take a `get_env` the body never read: `is_claude_ai_subscriber`
-/// and `get_subscription_type` resolve from process state (ultimately
-/// `.credentials.json` under `get_claude_config_home_dir()`), exactly as at the source.
-/// The parameter made callers look like they could steer the result, which is
-/// how a test came to assert the no-subscription outcome while silently
-/// depending on whichever account the developer was logged into. Removed rather
-/// than wired up — CC takes no arguments here, so giving it real ones would be
-/// the deviation.
-fn should_check_for_passes(config: &GlobalConfig) -> bool {
-    let has_org = config
-        .oauth_account
-        .as_ref()
-        .and_then(|account| account.organization_uuid.as_deref())
-        .is_some_and(|org_id| !org_id.is_empty());
-    has_org && is_claude_ai_subscriber() && get_subscription_type().as_deref() == Some("max")
+/// Guest passes are a claude.ai Max benefit. There is no claude.ai subscriber,
+/// so no passes are ever offered, whatever a leftover `oauthAccount` or cache
+/// entry in the config says.
+fn should_check_for_passes(_config: &GlobalConfig) -> bool {
+    false
 }
 
 fn cached_passes_entry(
@@ -248,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_passes_eligibility_requires_official_precheck_and_reports_cache_state() {
+    fn cached_passes_eligibility_ignores_a_max_subscriber_credentials_file() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let config = config_with_cache(serde_json::json!({
             "eligible": true,
@@ -256,34 +244,8 @@ mod tests {
             "remaining_passes": 2,
             "referrer_reward": { "currency": "USD", "amount_minor_units": 500 }
         }));
-
-        // Asserting the NO-subscription outcome means owning that premise: the
-        // subscription lookup falls back to `.credentials.json` under
-        // `get_claude_config_home_dir()`, where the harness seeds a logged-in identity.
-        // The sibling test below does the same thing in reverse (it writes a
-        // max-subscriber file); this one needs the directory empty.
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-referral-nosub-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
-
-        let without_subscription = check_cached_passes_eligibility(&config, 2_000);
-
-        let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(without_subscription, CachedPassesEligibility::default());
-    }
-
-    #[test]
-    fn cached_passes_eligibility_reads_fresh_max_subscriber_cache() {
-        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let config = config_with_cache(serde_json::json!({
-            "eligible": true,
-            "timestamp": 1_000,
-            "remaining_passes": 2,
-            "referrer_reward": { "currency": "USD", "amount_minor_units": 500 }
-        }));
+        // Guest passes are a claude.ai Max benefit. A leftover credentials file
+        // naming a Max subscription must not bring them back.
         let dir =
             std::env::temp_dir().join(format!("nyan-referral-cache-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -299,23 +261,16 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-
-        // The credentials file only counts if the process actually looks there.
-        // This used to pass a `CLAUDE_CONFIG_DIR` closure that nothing read, so
-        // the test was green purely because the harness seeds a max-subscriber
-        // identity at the real config home — it would have passed with an empty
-        // `dir` too, and failed the moment the harness stopped seeding.
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "ambient-oauth-token");
 
         let eligibility = check_cached_passes_eligibility(&config, 2_000);
 
         let _ = std::fs::remove_dir_all(dir);
 
-        assert!(eligibility.eligible);
-        assert!(eligibility.has_cache);
-        assert!(!eligibility.needs_refresh);
-        assert_eq!(eligibility.reward_text.as_deref(), Some("$5"));
-        assert_eq!(eligibility.remaining_passes, Some(2));
+        assert_eq!(eligibility, CachedPassesEligibility::default());
+        assert_eq!(get_cached_referrer_reward_text(&config), None);
+        assert_eq!(get_cached_remaining_passes(&config), None);
     }
 
     #[test]

@@ -528,7 +528,7 @@ pub fn analyze_context_usage(input: AnalyzeContextUsageInput<'_>) -> ContextData
         input.model.to_string(),
         false,
     );
-    let betas = crate::utils::betas::get_model_betas(&runtime_model);
+    let betas = crate::services::provider::anthropic::betas::get_model_betas(&runtime_model);
     let context_window =
         crate::utils::context::get_context_window_for_model(&runtime_model, &betas).max(1) as u64;
 

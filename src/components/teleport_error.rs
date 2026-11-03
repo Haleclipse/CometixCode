@@ -4,9 +4,6 @@
 //! side effects remain in the teleport/runtime slice. This file ports the
 //! official error prioritization and render branches from caller-provided state.
 
-use crate::components::console_oauth_flow::{
-    ConsoleOAuthFlow, ConsoleOAuthMode, ForceLoginMethod, OAuthStatus,
-};
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::dialog::Dialog;
 use crate::components::teleport_stash::{TeleportStash, TeleportStashState};
@@ -75,20 +72,14 @@ pub fn select_current_teleport_error(
     None
 }
 
-/// Maps to: CC `TeleportError.tsx` login dialog select options.
+/// Maps to: CC `TeleportError.tsx` login dialog select options. There is no
+/// claude.ai login to offer, so the only choice is to exit.
 pub fn teleport_login_options() -> Vec<SelectOptionData> {
-    vec![
-        SelectOptionData {
-            label: "Login with Claude account".to_string(),
-            value: "login".to_string(),
-            ..SelectOptionData::default()
-        },
-        SelectOptionData {
-            label: "Exit".to_string(),
-            value: "exit".to_string(),
-            ..SelectOptionData::default()
-        },
-    ]
+    vec![SelectOptionData {
+        label: "Exit".to_string(),
+        value: "exit".to_string(),
+        ..SelectOptionData::default()
+    }]
 }
 
 /// Maps to: CC `components/TeleportError.tsx#TeleportError`.
@@ -104,27 +95,16 @@ pub fn TeleportError(props: &TeleportErrorProps) -> impl Into<AnyElement<'static
         }
         .into_any(),
         TeleportLocalErrorType::NeedsLogin => {
-            if props.is_logging_in {
-                return element! {
-                    ConsoleOAuthFlow(
-                        oauth_status: OAuthStatus::Idle,
-                        mode: ConsoleOAuthMode::Login,
-                        force_login_method: Some(ForceLoginMethod::ClaudeAi),
-                    )
-                }
-                .into_any();
-            }
             let options = teleport_login_options();
             element! {
-                Dialog(title: "Log in to Claude".to_string()) {
+                Dialog(title: "Teleport is unavailable".to_string()) {
                     View(flex_direction: FlexDirection::Column) {
-                        Text(content: "Teleport requires a Claude.ai account.".to_string(), dim: true, wrap: TextWrap::NoWrap)
-                        Text(content: "Your Claude Pro/Max subscription will be used by nyan.".to_string(), dim: true, wrap: TextWrap::NoWrap)
+                        Text(content: "Teleport requires a Claude.ai account, which nyan does not support.".to_string(), dim: true, wrap: TextWrap::NoWrap)
                     }
                     Select(
                         options: options,
                         focused_index: 0usize,
-                        visible_option_count: 2usize,
+                        visible_option_count: 1usize,
                         visible_from_index: 0usize,
                         layout: SelectLayout::Expanded,
                     )
@@ -184,12 +164,11 @@ mod tests {
     }
 
     #[test]
-    fn teleport_login_options_match_official_copy() {
+    fn teleport_login_options_offer_only_exit() {
         let options = teleport_login_options();
-        assert_eq!(options[0].label, "Login with Claude account");
-        assert_eq!(options[0].value, "login");
-        assert_eq!(options[1].label, "Exit");
-        assert_eq!(options[1].value, "exit");
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].label, "Exit");
+        assert_eq!(options[0].value, "exit");
     }
 
     #[test]
@@ -201,13 +180,16 @@ mod tests {
             current_error: Some(TeleportLocalErrorType::NeedsLogin),
             ..TeleportErrorProps::default()
         });
-        assert!(login.contains("Log in to Claude"), "canvas=\n{login}");
         assert!(
-            login.contains("Teleport requires a Claude.ai account."),
+            login.contains("Teleport is unavailable"),
             "canvas=\n{login}"
         );
         assert!(
-            login.contains("Login with Claude account"),
+            login.contains("Teleport requires a Claude.ai account"),
+            "canvas=\n{login}"
+        );
+        assert!(
+            !login.contains("Login with Claude account"),
             "canvas=\n{login}"
         );
 
@@ -217,19 +199,5 @@ mod tests {
             ..TeleportErrorProps::default()
         });
         assert!(stash.contains("Checking git status…"), "canvas=\n{stash}");
-    }
-
-    #[test]
-    fn teleport_error_logging_in_uses_console_oauth_flow_without_external_login_side_effects() {
-        let login = render(TeleportErrorProps {
-            current_error: Some(TeleportLocalErrorType::NeedsLogin),
-            is_logging_in: true,
-            ..TeleportErrorProps::default()
-        });
-        assert!(login.contains("Select login method"), "canvas=\n{login}");
-        assert!(
-            login.contains("Claude account with subscription"),
-            "canvas=\n{login}"
-        );
     }
 }

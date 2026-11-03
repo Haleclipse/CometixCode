@@ -24,15 +24,8 @@ pub fn get_plan_mode_v2_agent_count() -> usize {
     if let Some(count) = env_count("CLAUDE_CODE_PLAN_V2_AGENT_COUNT") {
         return count;
     }
-    let subscription = crate::utils::auth::get_subscription_type();
-    let rate_limit_tier =
-        crate::utils::auth::get_claude_ai_oauth_tokens().and_then(|tokens| tokens.rate_limit_tier);
-    if (subscription.as_deref() == Some("max")
-        && rate_limit_tier.as_deref() == Some("default_claude_max_20x"))
-        || matches!(subscription.as_deref(), Some("enterprise" | "team"))
-    {
-        return 3;
-    }
+    // The 3-agent tier required a claude.ai Max 20x / Team / Enterprise
+    // subscription; with API-key-only auth every user gets the base count.
     1
 }
 

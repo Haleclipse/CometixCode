@@ -205,7 +205,7 @@ pub fn tool_to_api_schema(
                     && tool.strict == Some(true)
                     && options
                         .model
-                        .is_some_and(crate::utils::betas::model_supports_structured_outputs))
+                        .is_some_and(crate::services::provider::anthropic::betas::model_supports_structured_outputs))
                 .then_some(true),
                 eager_input_streaming: (crate::utils::model::providers::get_api_provider()
                     == crate::utils::model::providers::ApiProvider::FirstParty
@@ -288,7 +288,8 @@ pub fn split_sys_prompt_prefix(
     system_prompt: &[String],
     skip_global_cache_for_system_prompt: bool,
 ) -> Vec<SystemPromptBlock> {
-    let use_global_cache_feature = crate::utils::betas::should_use_global_cache_scope();
+    let use_global_cache_feature =
+        crate::services::provider::anthropic::betas::should_use_global_cache_scope();
     if use_global_cache_feature && skip_global_cache_for_system_prompt {
         // CC: logEvent('tengu_sysprompt_using_tool_based_cache', …) — joins
         // with analytics.
@@ -906,12 +907,13 @@ mod tests {
         }
 
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
-        crate::utils::betas::clear_betas_caches();
+        crate::services::provider::anthropic::betas::clear_betas_caches();
         crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
         assert!(
-            !crate::utils::betas::get_all_model_betas("claude-sonnet-4-6")
+            !crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
-                .any(|beta| beta == crate::utils::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
+                .any(|beta| beta
+                    == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         let eager_body = serde_json::to_value(
@@ -921,13 +923,14 @@ mod tests {
         assert_eq!(eager_body["eager_input_streaming"], serde_json::json!(true));
         assert!(eager_body.get("strict").is_none());
         assert!(
-            !crate::utils::betas::get_all_model_betas("claude-sonnet-4-6")
+            !crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
-                .any(|beta| beta == crate::utils::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
+                .any(|beta| beta
+                    == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
 
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
-        crate::utils::betas::clear_betas_caches();
+        crate::services::provider::anthropic::betas::clear_betas_caches();
         crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
         let non_eager_body = serde_json::to_value(
             tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
@@ -936,14 +939,16 @@ mod tests {
         assert!(non_eager_body.get("eager_input_streaming").is_none());
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         assert!(
-            crate::utils::betas::get_all_model_betas("claude-sonnet-4-6")
+            crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
-                .any(|beta| beta == crate::utils::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
+                .any(|beta| beta
+                    == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
         assert!(
-            !crate::utils::betas::get_all_model_betas("claude-sonnet-4-6")
+            !crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
-                .any(|beta| beta == crate::utils::betas::STRUCTURED_OUTPUTS_BETA_HEADER)
+                .any(|beta| beta
+                    == crate::services::provider::anthropic::betas::STRUCTURED_OUTPUTS_BETA_HEADER)
         );
         let same_non_eager_body = serde_json::to_value(
             tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
@@ -953,7 +958,7 @@ mod tests {
 
         crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING");
         crate::utils::config::set_test_global_config(None);
-        crate::utils::betas::clear_betas_caches();
+        crate::services::provider::anthropic::betas::clear_betas_caches();
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
     }
 
@@ -992,18 +997,16 @@ mod tests {
         };
 
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
-        crate::utils::betas::clear_betas_caches();
+        crate::services::provider::anthropic::betas::clear_betas_caches();
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
-        let killed_header = crate::utils::betas::get_all_model_betas("claude-sonnet-4-6");
+        let killed_header =
+            crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6");
         let killed_body = serde_json::to_value(
             tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
         )
         .unwrap();
-        assert!(
-            !killed_header
-                .iter()
-                .any(|beta| beta == crate::utils::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
-        );
+        assert!(!killed_header.iter().any(|beta| beta
+            == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER));
         assert!(killed_body.get("eager_input_streaming").is_none());
         assert!(killed_body.get("strict").is_none());
 
@@ -1018,17 +1021,19 @@ mod tests {
         );
         assert!(unhidden_body.get("strict").is_none());
         assert!(
-            !crate::utils::betas::get_all_model_betas("claude-sonnet-4-6")
+            !crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
-                .any(|beta| beta == crate::utils::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
+                .any(|beta| beta
+                    == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
 
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
-        crate::utils::betas::clear_betas_caches();
+        crate::services::provider::anthropic::betas::clear_betas_caches();
         assert!(
-            crate::utils::betas::get_all_model_betas("claude-sonnet-4-6")
+            crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
-                .any(|beta| beta == crate::utils::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
+                .any(|beta| beta
+                    == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
         let warm_body = serde_json::to_value(
             tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
@@ -1043,15 +1048,16 @@ mod tests {
         .unwrap();
         assert!(hidden_warm_body.get("eager_input_streaming").is_none());
         assert!(
-            crate::utils::betas::get_all_model_betas("claude-sonnet-4-6")
+            crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
-                .any(|beta| beta == crate::utils::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
+                .any(|beta| beta
+                    == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
 
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING");
         crate::utils::config::set_test_global_config(None);
-        crate::utils::betas::clear_betas_caches();
+        crate::services::provider::anthropic::betas::clear_betas_caches();
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
     }
 

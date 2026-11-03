@@ -32,8 +32,6 @@ pub mod hooks;
 pub mod ide;
 pub mod init;
 pub mod keybindings;
-pub mod login;
-pub mod logout;
 pub mod mcp;
 pub mod memory;
 pub mod model;
@@ -56,7 +54,6 @@ pub mod terminal_setup;
 pub mod theme;
 pub mod vim;
 
-use crate::utils::auth::is_claude_ai_subscriber;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -531,18 +528,6 @@ fn install_github_app_enabled() -> bool {
     )
 }
 
-fn login_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_LOGIN_COMMAND").as_deref(),
-    )
-}
-
-fn logout_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_LOGOUT_COMMAND").as_deref(),
-    )
-}
-
 fn is_using_3p_services() -> bool {
     [
         "CLAUDE_CODE_USE_BEDROCK",
@@ -555,10 +540,11 @@ fn is_using_3p_services() -> bool {
     })
 }
 
+/// There is no claude.ai subscriber: Anthropic is API-key only, so every
+/// first-party API user is a Console user and `ClaudeAi`-only commands are
+/// never available.
 fn is_console_user() -> bool {
-    !is_claude_ai_subscriber()
-        && !is_using_3p_services()
-        && crate::utils::model::providers::is_first_party_anthropic_base_url()
+    !is_using_3p_services() && crate::utils::model::providers::is_first_party_anthropic_base_url()
 }
 
 fn chrome_enabled() -> bool {
@@ -579,7 +565,7 @@ fn fast_hidden() -> bool {
 }
 
 fn cost_hidden() -> bool {
-    !is_internal_build() && is_claude_ai_subscriber()
+    false
 }
 
 fn terminal_setup_hidden() -> bool {
@@ -606,21 +592,15 @@ fn feedback_enabled() -> bool {
 }
 
 fn remote_env_enabled() -> bool {
-    is_claude_ai_subscriber()
+    false
 }
 
 fn rate_limit_options_enabled() -> bool {
-    is_claude_ai_subscriber()
+    false
 }
 
 fn privacy_settings_enabled() -> bool {
-    if !is_claude_ai_subscriber() {
-        return false;
-    }
-    matches!(
-        crate::utils::auth::get_subscription_type().as_deref(),
-        Some("pro" | "max")
-    )
+    false
 }
 
 fn upgrade_enabled() -> bool {
@@ -629,7 +609,7 @@ fn upgrade_enabled() -> bool {
     ) {
         return false;
     }
-    crate::utils::auth::get_subscription_type().as_deref() != Some("enterprise")
+    true
 }
 
 fn passes_hidden() -> bool {
@@ -896,12 +876,6 @@ fn commands() -> Vec<Command> {
             .executable(execution::call_sandbox),
     ];
 
-    // Maps to CC `!isUsing3PServices() ? [logout, login()] : []`.
-    if !is_using_3p_services() {
-        result.push(logout::command().enabled_when(logout_enabled));
-        result.push(login::command().enabled_when(login_enabled));
-    }
-
     result.push(
         Command::local_ui("passes", "Share a free week of nyan with friends")
             .hidden_when(passes_hidden),
@@ -982,7 +956,7 @@ pub fn command_description(command: &Command) -> Cow<'_, str> {
 
 /// Maps to: CC `commands.ts::meetsAvailabilityRequirement`.
 pub fn meets_availability_requirement(command: &Command) -> bool {
-    meets_availability_requirement_with(command, is_claude_ai_subscriber(), is_console_user())
+    meets_availability_requirement_with(command, false, is_console_user())
 }
 
 fn meets_availability_requirement_with(command: &Command, claude_ai: bool, console: bool) -> bool {
@@ -1091,10 +1065,8 @@ pub fn clear_commands_cache() {
 /// Availability and enablement are reevaluated for each launch snapshot, just
 /// as CC does after the memoized expensive source load.
 pub fn get_commands(cwd: &Path) -> Vec<Command> {
-    let claude_ai = is_claude_ai_subscriber();
-    let console = !claude_ai
-        && !is_using_3p_services()
-        && crate::utils::model::providers::is_first_party_anthropic_base_url();
+    let claude_ai = false;
+    let console = is_console_user();
     let resolve = |mut command: Command| {
         if let Some(resolver) = command.description_resolver.take() {
             command.description = Cow::Owned(resolver());
@@ -1503,18 +1475,20 @@ mod tests {
         let _demo = EnvVarGuard::unset("IS_DEMO");
 
         let catalog = commands();
-        // 71 direct descriptors + provider-conditioned logout/login + internal /version,
-        // plus @nyan `/retrieval`.
+        // 71 direct descriptors + internal /version, plus @nyan `/retrieval`.
+        // `/login` and `/logout` are gone: Anthropic is API-key only.
         let base_len = if crate::utils::build_profile::build_audience().is_internal() {
             73
         } else {
             72
         };
-        assert!(catalog.len() == base_len || catalog.len() == base_len + 2);
-        assert_eq!(
-            catalog.iter().any(|command| command.name == "login"),
-            !is_using_3p_services()
-        );
+        assert_eq!(catalog.len(), base_len);
+        for removed in ["login", "logout"] {
+            assert!(
+                catalog.iter().all(|command| command.name != removed),
+                "/{removed} must not be declared"
+            );
+        }
         assert_eq!(catalog[0].name, "add-dir");
         let declared_names = catalog
             .iter()

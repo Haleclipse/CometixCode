@@ -26,7 +26,8 @@ pub struct RateLimitUiContext {
 impl RateLimitUiContext {
     /// Captured outside retained rendering by the interactive launch owner.
     pub fn from_global_config(config: &crate::utils::config::GlobalConfig) -> Self {
-        let subscription_type = crate::utils::auth::get_subscription_type();
+        // No claude.ai subscription exists, so there is no subscription type.
+        let subscription_type: Option<String> = None;
         let account = config.oauth_account.as_ref();
         let org_role = account.and_then(|account| account.organization_role.as_deref());
         let has_billing_access = crate::services::mock_rate_limits::mock_billing_access_override()

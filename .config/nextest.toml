@@ -1,5 +1,11 @@
-# CI-specific nextest profile. `cargo nextest` reads this file for every
-# run; the default profile is unchanged, so `just test` behaves as before.
+# `cargo nextest` reads this file for every run. The default profile only adds
+# a per-test timeout: a hung test is killed after period * terminate-after
+# (5 minutes) instead of stalling the whole run.
+[profile.default]
+slow-timeout = { period = "60s", terminate-after = 5 }
+
+# CI-specific nextest profile. The `ci` profile inherits `default`, so it gets
+# the same per-test timeout.
 #
 # `fail-fast` and `retries` are mirrored on the command line when needed, but
 # keeping them here means a caller cannot accidentally reintroduce retries:

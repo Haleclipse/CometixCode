@@ -2092,11 +2092,19 @@ mod tests {
         crate::utils::tls_provider::install_crypto_provider();
         let _project = IsolatedProjectSettings::pin();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let _url = EnvVarGuard::set(
-            "ANTHROPIC_BASE_URL",
-            format!("http://{}", listener.local_addr().unwrap()),
+        let _key = EnvVarGuard::set("NYAN_COMPACT_TEST_KEY", "sk-ant-test-partial-compact");
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        crate::services::provider::anthropic::target::install_test_main_profile(
+            &format!("http://{}", listener.local_addr().unwrap()),
+            "NYAN_COMPACT_TEST_KEY",
         );
-        let _key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test-partial-compact");
+        struct ResetSettings;
+        impl Drop for ResetSettings {
+            fn drop(&mut self) {
+                crate::utils::settings::settings_cache::reset_settings_cache();
+            }
+        }
+        let _reset_settings = ResetSettings;
         let _memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
         let _auto = EnvVarGuard::set("DISABLE_AUTO_COMPACT", "1");
         let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));

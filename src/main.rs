@@ -2204,7 +2204,6 @@ mod tests {
         .unwrap();
         let snapshot = SetupScreensSnapshot {
             show_onboarding: true,
-            oauth_enabled: false,
             api_key_needing_approval: None,
             offer_terminal_setup: false,
             terminal_name: Some("kitty".to_string()),

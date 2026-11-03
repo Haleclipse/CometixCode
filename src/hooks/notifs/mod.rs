@@ -1,7 +1,6 @@
 //! Maps to: CC `hooks/notifs/` notification producer hooks.
 
 pub mod auto_mode_unavailable;
-pub mod can_switch_to_existing_subscription;
 pub mod deprecation_warning;
 pub mod env_hook;
 pub mod external_editor_hint;

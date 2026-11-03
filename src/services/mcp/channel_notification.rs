@@ -193,20 +193,20 @@ pub fn allowed_channel_plugins_from_settings_values(
 
 /// Maps to: CC `gateChannelServer(...)` caller-side reads in
 /// `useManageMCPConnections.ts`.
-/// A `get_env` parameter was removed: the body never read it, and the auth
-/// facts it appeared to gate (`get_subscription_type`, the OAuth check) resolve
-/// from process state exactly as at the source. A `global_config` parameter was
-/// removed likewise once the channel ledger moved to the switch table.
+/// A `get_env` parameter was removed: the body never read it. A `global_config`
+/// parameter was removed likewise once the channel ledger moved to the switch
+/// table. Channels require a claude.ai OAuth login, which does not exist, so the
+/// subscription is always absent and `has_claude_ai_oauth` is always false.
 pub fn channel_gate_context_from_readonly_runtime(
     policy_settings: Option<&crate::utils::settings::SettingsJson>,
 ) -> ChannelRuntimeGateContext {
-    let subscription = crate::utils::auth::get_subscription_type();
+    let subscription: Option<String> = None;
     let org_list = policy_settings
         .and_then(|settings| settings.allowed_channel_plugins.as_deref())
         .map(|values| allowed_channel_plugins_from_settings_values(Some(values)));
     ChannelRuntimeGateContext {
         channels_enabled: crate::services::mcp::channel_allowlist::is_channels_enabled(),
-        has_claude_ai_oauth: crate::utils::auth::get_claude_ai_oauth_tokens().is_some(),
+        has_claude_ai_oauth: false,
         policy_channels_enabled: policy_settings.and_then(|settings| settings.channels_enabled),
         session_channels: crate::bootstrap::state::get_allowed_channels(),
         allowlist: get_effective_channel_allowlist(
@@ -611,16 +611,13 @@ mod tests {
     }
 
     #[test]
-    fn channel_gate_context_reads_cached_ledger_policy_oauth_and_session_channels() {
+    fn channel_gate_context_reads_cached_ledger_policy_and_session_channels_without_oauth() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _channels_guard =
             AllowedChannelsGuard::set(vec![ChannelEntry::server("planner", true)]);
-        // The OAuth check resolves from process state (`utils/auth.rs:701`), so
-        // the logged-in identity is this test's to establish. Reading whatever
-        // credential file the ambient config home happens to hold makes the
-        // `has_claude_ai_oauth` assertion depend on the runner's setup.
+        // An ambient OAuth token must not make channels available: there is no
+        // claude.ai login.
         let _oauth_guard = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-channel-gate");
-        let _bare_guard = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
 
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
@@ -637,7 +634,8 @@ mod tests {
         let context = channel_gate_context_from_readonly_runtime(Some(&policy));
         crate::utils::config::set_test_global_config(None);
         assert!(!context.channels_enabled);
-        assert!(context.has_claude_ai_oauth);
+        assert!(!context.has_claude_ai_oauth);
+        assert_eq!(context.subscription, None);
         assert_eq!(context.policy_channels_enabled, Some(true));
         assert_eq!(
             context.session_channels,

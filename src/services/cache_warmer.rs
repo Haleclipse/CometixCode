@@ -44,7 +44,9 @@ pub fn warm_eligibility(
     thinking: &ThinkingConfig,
     has_tool_use: bool,
 ) -> Option<WarmEligibility> {
-    let Some(ttl_usage) = crate::services::api::claude::last_cache_ttl_usage_for(model) else {
+    let Some(ttl_usage) =
+        crate::services::provider::anthropic::cache::last_cache_ttl_usage_for(model)
+    else {
         // No recorded TTL for this model (gateway auto-cache, or a model switch
         // since the last recorded write): do not pretend a refresh helps.
         return None;
@@ -54,7 +56,7 @@ pub fn warm_eligibility(
 
 pub fn warm_eligibility_with_ttl(
     usage: &crate::types::message::TokenUsage,
-    ttl_usage: crate::services::api::claude::CacheTtlUsage,
+    ttl_usage: crate::services::provider::anthropic::cache::CacheTtlUsage,
     model: &str,
     thinking: &ThinkingConfig,
     has_tool_use: bool,
@@ -72,7 +74,7 @@ pub fn warm_eligibility_with_ttl(
 fn warm_eligibility_with_settings(
     settings: &crate::utils::settings::nyan::CacheSettings,
     usage: &crate::types::message::TokenUsage,
-    ttl_usage: crate::services::api::claude::CacheTtlUsage,
+    ttl_usage: crate::services::provider::anthropic::cache::CacheTtlUsage,
     model: &str,
     thinking: &ThinkingConfig,
     has_tool_use: bool,
@@ -312,7 +314,7 @@ pub fn observe_real_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::api::claude::CacheTtlUsage;
+    use crate::services::provider::anthropic::cache::CacheTtlUsage;
     use crate::utils::settings::nyan::CacheSettings;
 
     fn usage(cached: u64) -> crate::types::message::TokenUsage {

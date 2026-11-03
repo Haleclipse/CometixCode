@@ -85,36 +85,13 @@ fn unlabeled_property(value: impl Into<String>) -> Property {
 }
 
 /// Maps to: CC `utils/status.tsx:286-330` `buildAccountProperties`.
+///
+/// The rows (login method, auth token source, organization, email) all described
+/// a claude.ai/Console OAuth login or an ambient `ANTHROPIC_AUTH_TOKEN`. Neither
+/// exists: Anthropic credentials come only from the selected provider profile,
+/// so there is no account to report.
 pub fn build_account_properties() -> Vec<Property> {
-    let Some(account_info) = crate::utils::auth::get_account_information() else {
-        return Vec::new();
-    };
-    let mut properties = Vec::new();
-    if let Some(subscription) = account_info.subscription {
-        properties.push(property("Login method", format!("{subscription} Account")));
-    }
-    if let Some(token_source) = account_info.token_source {
-        properties.push(property("Auth token", token_source));
-    }
-    if let Some(api_key_source) = account_info
-        .api_key_source
-        .and_then(|source| source.status_label())
-    {
-        properties.push(property("API key", api_key_source));
-    }
-    if crate::utils::process_env::var_os("IS_DEMO")
-        .as_deref()
-        .truthy()
-        .is_none()
-    {
-        if let Some(organization) = account_info.organization {
-            properties.push(property("Organization", organization));
-        }
-        if let Some(email) = account_info.email {
-            properties.push(property("Email", email));
-        }
-    }
-    properties
+    Vec::new()
 }
 
 fn push_env_property(properties: &mut Vec<Property>, label: &'static str, key: &str) {
@@ -264,21 +241,12 @@ mod tests {
     }
 
     #[test]
-    fn build_account_properties_matches_official_sources_without_secret_values() {
+    fn build_account_properties_reports_no_account_even_with_ambient_credentials() {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = std::env::temp_dir().join(format!(
-            "nyan-status-account-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&dir).unwrap();
-        let _config_home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
-        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
-        let _api_key = EnvVarGuard::unset("ANTHROPIC_API_KEY");
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
+        let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "ambient-oauth-token");
+        let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-secret");
 
         let mut config = crate::utils::config::GlobalConfig::default();
         config.primary_api_key = Some("sk-ant-secret".to_string());
@@ -289,19 +257,8 @@ mod tests {
         });
         let previous = crate::utils::config::replace_test_global_config(Some(config));
 
-        let rows = build_account_properties();
-        assert_eq!(
-            rows,
-            vec![
-                property("Auth token", "none"),
-                property("API key", "/login managed key"),
-                property("Organization", "Example Org"),
-                property("Email", "user@example.com"),
-            ]
-        );
-        assert!(rows.iter().all(|row| !row.value.contains("sk-ant-secret")));
+        assert_eq!(build_account_properties(), Vec::<Property>::new());
 
         crate::utils::config::replace_test_global_config(previous);
-        let _ = std::fs::remove_dir_all(dir);
     }
 }

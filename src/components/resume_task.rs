@@ -225,7 +225,7 @@ pub fn resume_task_error_guidance_lines(error_type: ResumeTaskLoadErrorType) -> 
         ResumeTaskLoadErrorType::Network => vec!["Check your internet connection"],
         ResumeTaskLoadErrorType::Auth => vec![
             "Teleport requires a Claude account",
-            "Run /login and select \"Claude account with subscription\"",
+            "nyan does not support Claude account login",
         ],
         ResumeTaskLoadErrorType::Api => vec!["Sorry, Claude encountered an error"],
         ResumeTaskLoadErrorType::Other => vec!["Sorry, nyan encountered an error"],

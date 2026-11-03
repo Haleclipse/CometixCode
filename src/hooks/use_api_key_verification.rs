@@ -8,7 +8,7 @@ use crate::bootstrap::state::get_is_non_interactive_session;
 use crate::services::api::claude::verify_api_key;
 use crate::utils::auth::{
     ApiKeySource, GetAnthropicApiKeyOptions, get_anthropic_api_key_with_source,
-    get_api_key_from_api_key_helper, is_anthropic_auth_enabled, is_claude_ai_subscriber,
+    get_api_key_from_api_key_helper,
 };
 use iocraft::prelude::*;
 use std::sync::Arc;
@@ -49,11 +49,25 @@ impl ApiKeyVerificationResult {
     }
 }
 
+/// Bedrock, Vertex and Foundry authenticate through their own SDK credential
+/// chains, so there is no Anthropic API key to verify.
+fn third_party_provider_selected() -> bool {
+    [
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ]
+    .into_iter()
+    .any(|key| {
+        crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref())
+    })
+}
+
 /// Maps to: CC `hooks/useApiKeyVerification.ts:24-83`
 /// `useApiKeyVerification`.
 pub fn use_api_key_verification(hooks: &mut Hooks<'_, '_>) -> ApiKeyVerificationResult {
     let status = hooks.use_state(|| {
-        if !is_anthropic_auth_enabled() || is_claude_ai_subscriber() {
+        if third_party_provider_selected() {
             return VerificationStatus::Valid;
         }
         // Avoid executing apiKeyHelper before the trust dialog is shown.
@@ -71,7 +85,7 @@ pub fn use_api_key_verification(hooks: &mut Hooks<'_, '_>) -> ApiKeyVerification
         let mut status = status;
         let mut error = error;
         move |completed: async_channel::Sender<()>| async move {
-            if !is_anthropic_auth_enabled() || is_claude_ai_subscriber() {
+            if third_party_provider_selected() {
                 status.set(VerificationStatus::Valid);
                 let _ = completed.send(()).await;
                 return;

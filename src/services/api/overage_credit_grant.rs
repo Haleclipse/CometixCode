@@ -6,10 +6,8 @@
 //! calls, invalidation writes, or analytics.
 
 use crate::components::logo_v2::overage_credit_upsell::OverageCreditGrantInfo as UiGrantInfo;
-use crate::utils::auth::is_anthropic_auth_enabled;
 use crate::utils::config::GlobalConfig;
 use serde::Deserialize;
-use std::collections::HashMap;
 
 pub const CACHE_TTL_MS: i64 = 60 * 60 * 1000;
 
@@ -32,26 +30,13 @@ pub struct OverageCreditGrantCacheEntry {
 
 /// Maps to: CC `services/api/overageCreditGrant.ts` `getCachedOverageCreditGrant`.
 ///
-/// A `get_env` parameter was removed: the body never read it, and
-/// `is_anthropic_auth_enabled` resolves from process state exactly as at the
-/// source. It only served to make callers look like they could steer the gate.
+/// Overage credit grants belong to a claude.ai OAuth account. There is no such
+/// account, so a leftover `oauthAccount` or cache entry is never read.
 pub fn get_cached_overage_credit_grant_readonly(
-    config: &GlobalConfig,
-    now_ms: i64,
+    _config: &GlobalConfig,
+    _now_ms: i64,
 ) -> Option<OverageCreditGrantInfo> {
-    if !is_anthropic_auth_enabled() {
-        return None;
-    }
-    let org_id = config
-        .oauth_account
-        .as_ref()
-        .and_then(|account| account.organization_uuid.as_deref())
-        .filter(|org_id| !org_id.is_empty())?;
-    let entry = cached_grant_entry(config, org_id)?;
-    if now_ms.saturating_sub(entry.timestamp) > CACHE_TTL_MS {
-        return None;
-    }
-    Some(entry.info)
+    None
 }
 
 /// Maps to: CC `services/api/overageCreditGrant.ts` `formatGrantAmount`.
@@ -80,14 +65,6 @@ pub fn ui_grant_info_from_cached_readonly(
         granted: info.granted,
         amount,
     })
-}
-
-fn cached_grant_entry(config: &GlobalConfig, org_id: &str) -> Option<OverageCreditGrantCacheEntry> {
-    let cache = config.overage_credit_grant_cache.as_ref()?;
-    let by_org =
-        serde_json::from_value::<HashMap<String, OverageCreditGrantCacheEntry>>(cache.clone())
-            .ok()?;
-    by_org.get(org_id).cloned()
 }
 
 #[cfg(test)]
@@ -137,7 +114,9 @@ mod tests {
     }
 
     #[test]
-    fn cached_overage_grant_requires_auth_and_fresh_org_cache() {
+    fn cached_overage_grant_is_never_read_without_a_claude_ai_account() {
+        // A populated cache for the org of a leftover `oauthAccount` is ignored:
+        // there is no claude.ai OAuth account, so no grant is ever surfaced.
         let config = config_with_cache(serde_json::json!({
             "timestamp": 1_000,
             "info": {
@@ -149,28 +128,7 @@ mod tests {
             }
         }));
 
-        assert!(get_cached_overage_credit_grant_readonly(&config, 2_000).is_some());
-        assert!(
-            get_cached_overage_credit_grant_readonly(&config, 1_000 + CACHE_TTL_MS + 1).is_none()
-        );
-    }
-
-    #[test]
-    fn ui_grant_info_maps_cached_entry_to_logo_gate_shape() {
-        let config = config_with_cache(serde_json::json!({
-            "timestamp": 1_000,
-            "info": {
-                "available": true,
-                "eligible": true,
-                "granted": false,
-                "amount_minor_units": 1_000,
-                "currency": "USD"
-            }
-        }));
-
-        let info = ui_grant_info_from_cached_readonly(&config, 2_000).expect("cached grant");
-        assert!(info.available);
-        assert!(!info.granted);
-        assert_eq!(info.amount.as_deref(), Some("$10"));
+        assert!(get_cached_overage_credit_grant_readonly(&config, 2_000).is_none());
+        assert!(ui_grant_info_from_cached_readonly(&config, 2_000).is_none());
     }
 }

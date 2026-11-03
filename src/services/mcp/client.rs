@@ -1968,31 +1968,6 @@ mod runtime {
         )
     }
 
-    fn claude_ai_proxy_http_config(
-        url: &str,
-        token: String,
-    ) -> anyhow::Result<StreamableHttpClientTransportConfig> {
-        // Maps to: CC `claudeai-proxy` StreamableHTTP options.
-        let headers = BTreeMap::from([
-            (
-                "User-Agent".to_string(),
-                crate::utils::http::get_mcp_user_agent(),
-            ),
-            (
-                "X-Mcp-Client-Session-Id".to_string(),
-                crate::bootstrap::state::get_session_id(),
-            ),
-        ]);
-        // No session re-initialization in the transport, as in
-        // `streamable_http_config`.
-        Ok(
-            StreamableHttpClientTransportConfig::with_uri(url.to_string())
-                .custom_headers(header_map_from_strings(headers)?)
-                .reinit_on_expired_session(false)
-                .auth_header(token),
-        )
-    }
-
     async fn serve_streamable_http(
         name: &str,
         config: &ScopedMcpServerConfig,
@@ -2020,76 +1995,15 @@ mod runtime {
             .build()?)
     }
 
-    async fn serve_claude_ai_proxy_http_with_token(
-        name: &str,
-        proxy_url: &str,
-        token: String,
-    ) -> anyhow::Result<RunningService<RoleClient, NyanMcpClientHandler>> {
-        // Rust/rmcp transport boundary for the source's nested `doRequest`:
-        // each retry must start a new service with the bearer token it sends.
-        let transport_config = claude_ai_proxy_http_config(proxy_url, token)?;
-        let transport =
-            StreamableHttpClientTransport::with_client(streamable_http_client()?, transport_config);
-        let handler = NyanMcpClientHandler::new(name);
-        let timeout = Duration::from_millis(connection_timeout_ms());
-        Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
-    }
-
     async fn serve_claude_ai_proxy_http(
-        name: &str,
-        proxy_url: &str,
+        _name: &str,
+        _proxy_url: &str,
     ) -> anyhow::Result<RunningService<RoleClient, NyanMcpClientHandler>> {
         // Maps to: CC `services/mcp/client.ts:369-424`
-        // `createClaudeAiProxyFetch`: refresh before attaching the bearer token
-        // and retry once after a 401 only when the failed token changed or a
-        // force-refresh succeeded.
-        let read_access_token =
-            || crate::utils::auth::get_claude_ai_oauth_tokens().map(|tokens| tokens.access_token);
-
-        let _ = crate::utils::auth::check_and_refresh_oauth_token_if_needed(false).await?;
-        let sent_token =
-            read_access_token().ok_or_else(|| anyhow::anyhow!("No claude.ai OAuth token found"))?;
-        match serve_claude_ai_proxy_http_with_token(name, proxy_url, sent_token.clone()).await {
-            Ok(service) => Ok(service),
-            Err(error) if is_auth_error(&error) => {
-                let token_changed =
-                    match crate::utils::auth::handle_oauth_401_error(&sent_token).await {
-                        Ok(changed) => changed,
-                        Err(gate_error)
-                            if gate_error
-                                .downcast_ref::<crate::constants::oauth::OAuthCredentialSideEffectsUnavailable>()
-                                .is_some() =>
-                        {
-                            return Err(gate_error);
-                        }
-                        Err(_) => false,
-                    };
-                let current_token =
-                    match crate::utils::auth::check_and_refresh_oauth_token_if_needed(false).await {
-                        Ok(_) => read_access_token(),
-                        Err(gate_error)
-                            if gate_error
-                                .downcast_ref::<crate::constants::oauth::OAuthCredentialSideEffectsUnavailable>()
-                                .is_some() =>
-                        {
-                            return Err(gate_error);
-                        }
-                        Err(_) => None,
-                    };
-                if (token_changed
-                    || current_token
-                        .as_deref()
-                        .is_some_and(|now| now != sent_token))
-                    && let Some(current_token) = current_token
-                    && let Ok(service) =
-                        serve_claude_ai_proxy_http_with_token(name, proxy_url, current_token).await
-                {
-                    return Ok(service);
-                }
-                Err(error)
-            }
-            Err(error) => Err(error),
-        }
+        // `createClaudeAiProxyFetch`. The proxy authenticates with the claude.ai
+        // OAuth token, which does not exist: Anthropic is API-key only, so there
+        // is no token to attach, refresh, or retry with.
+        Err(anyhow::anyhow!("No claude.ai OAuth token found"))
     }
 
     async fn serve_legacy_sse(
@@ -5113,6 +5027,22 @@ rl.on('line', line => {
         let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let _skip_auth = EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "1");
         let _endpoint = EnvVarGuard::set("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", &endpoint);
+        // Token counting needs a selected main profile to exist; the Bedrock
+        // endpoint above supplies the count, so the profile's own key and URL
+        // are unused here.
+        let _count_key = EnvVarGuard::set("NYAN_MCP_TEST_KEY", "sk-unused-by-bedrock");
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        crate::services::provider::anthropic::target::install_test_main_profile(
+            "https://unused.invalid",
+            "NYAN_MCP_TEST_KEY",
+        );
+        struct ResetSettings;
+        impl Drop for ResetSettings {
+            fn drop(&mut self) {
+                crate::utils::settings::settings_cache::reset_settings_cache();
+            }
+        }
+        let _reset_settings = ResetSettings;
         let previous_model = crate::bootstrap::state::get_main_loop_model_override();
         crate::bootstrap::state::set_main_loop_model_override(Some(Some(
             "anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),

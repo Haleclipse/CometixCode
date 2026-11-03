@@ -111,8 +111,6 @@ pub enum FeatureFlag {
     FineGrainedToolStreaming,
     /// Maps to CC GrowthBook `tengu_amber_wren` Read-limits override map.
     FileReadLimitsOverride,
-    /// Maps to CC GrowthBook `tengu_ccr_bridge` Remote Control entitlement.
-    RemoteControlEntitlement,
     /// Maps to CC GrowthBook `tengu_hawthorn_steeple` tool-result content-replacement gate.
     ToolResultContentReplacement,
     /// Maps to CC GrowthBook `tengu_hawthorn_window` per-message budget override.
@@ -451,12 +449,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_amber_wren",
         enabled: false,
         note: "Official default is an empty override map, so Read keeps MAX_OUTPUT_SIZE / DEFAULT_MAX_OUTPUT_TOKENS; CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS still overrides the token cap.",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::RemoteControlEntitlement,
-        cc_growthbook_name: "tengu_ccr_bridge",
-        enabled: false,
-        note: "Official default false; the per-account Remote Control entitlement cannot be resolved without the GrowthBook runtime, so the bridge stays unreachable even for claude.ai subscribers.",
     },
     FeatureSwitch {
         flag: FeatureFlag::ToolResultContentReplacement,

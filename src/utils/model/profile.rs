@@ -1,16 +1,17 @@
 //! Profile selection for the provider-neutral settings shape.
 //!
-//! PR 1 only has the temporary Anthropic request compatibility path. Other
-//! provider kinds are intentionally rejected until their adapters land.
+//! Only provider kinds whose adapter has landed resolve; the others are
+//! rejected with a clear error until their adapter PR.
 
 use std::fmt;
 
 use crate::utils::settings::SettingsJson;
 use crate::utils::settings::nyan::{
-    ModelProfileSettings, NyanSettings, ProviderKind, ProviderProtocol, ProviderSettings,
+    CredentialReference, ModelProfileSettings, NyanSettings, ProviderKind, ProviderProtocol,
+    ProviderSettings,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedModelProfile {
     pub profile: String,
     pub provider: String,
@@ -18,6 +19,8 @@ pub struct ResolvedModelProfile {
     pub model: String,
     pub context_window: u32,
     pub max_output_tokens: u32,
+    pub base_url: Option<String>,
+    pub credential: Option<CredentialReference>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,7 +66,7 @@ impl fmt::Display for ProfileResolutionError {
             ),
             Self::UnsupportedProvider(kind) => write!(
                 f,
-                "Provider kind {kind:?} is not available in PR 1; only the temporary Anthropic compatibility path is implemented."
+                "Provider kind {kind:?} has no adapter yet; only anthropic profiles can send requests."
             ),
             Self::MissingModel(profile) => write!(
                 f,
@@ -148,8 +151,6 @@ pub fn resolve_profile(
         ));
     }
 
-    // @nyan: PR 1's temporary compatibility layer delegates credentials and
-    // transport to the existing Anthropic client. PR 4 removes this branch.
     Ok(ResolvedModelProfile {
         profile: profile_name.to_string(),
         provider: provider_name.to_string(),
@@ -157,6 +158,8 @@ pub fn resolve_profile(
         model,
         context_window,
         max_output_tokens,
+        base_url: provider.base_url.clone(),
+        credential: provider.credential.clone(),
     })
 }
 

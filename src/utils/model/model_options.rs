@@ -7,14 +7,12 @@
 //! here performs a network round-trip.
 
 use crate::bootstrap::state::get_initial_main_loop_model;
-use crate::utils::auth::{is_claude_ai_subscriber, is_max_subscriber, is_team_premium_subscriber};
 use crate::utils::model::check_1m_access::{check_opus_1m_access, check_sonnet_1m_access};
 use crate::utils::model::model::{
-    NO_MAIN_PROFILE_PROMPT, get_canonical_name, get_claude_ai_user_default_model_description,
-    get_default_haiku_model, get_default_opus_model, get_default_sonnet_model,
-    get_marketing_name_for_model, get_opus_46_pricing_suffix, get_user_specified_model_setting,
-    has_main_profile, is_opus_1m_merge_enabled, render_default_model_setting,
-    render_default_model_setting_for_audience_display,
+    NO_MAIN_PROFILE_PROMPT, get_canonical_name, get_default_haiku_model, get_default_opus_model,
+    get_default_sonnet_model, get_marketing_name_for_model, get_opus_46_pricing_suffix,
+    get_user_specified_model_setting, has_main_profile, is_opus_1m_merge_enabled,
+    render_default_model_setting, render_default_model_setting_for_audience_display,
 };
 use crate::utils::model::model_strings::get_model_strings;
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
@@ -74,11 +72,8 @@ fn tier_3_15_suffix() -> String {
 }
 
 /// Maps to: CC `utils/model/modelOptions.ts:45-74` `getDefaultOptionForUser`.
-pub fn get_default_option_for_user(fast_mode: bool) -> ModelOption {
-    get_default_option_for_user_for_audience(
-        crate::utils::build_profile::build_audience(),
-        fast_mode,
-    )
+pub fn get_default_option_for_user() -> ModelOption {
+    get_default_option_for_user_for_audience(crate::utils::build_profile::build_audience())
 }
 
 /// The audience-parameterized body of [`get_default_option_for_user`]. CC gates
@@ -86,7 +81,6 @@ pub fn get_default_option_for_user(fast_mode: bool) -> ModelOption {
 /// resolves at compile time, so tests reach both profiles through here.
 pub fn get_default_option_for_user_for_audience(
     audience: crate::utils::build_profile::BuildAudience,
-    fast_mode: bool,
 ) -> ModelOption {
     // No main profile: name no model. The row tells the user what to configure.
     if !has_main_profile() {
@@ -111,14 +105,6 @@ pub fn get_default_option_for_user_for_audience(
             format!("Use the default model for Ants (currently {current_model})"),
         )
         .with_description_for_model(&format!("Default model (currently {current_model})"));
-    }
-
-    if is_claude_ai_subscriber() {
-        return ModelOption::new(
-            None,
-            "Default (recommended)",
-            get_claude_ai_user_default_model_description(fast_mode),
-        );
     }
 
     ModelOption::new(
@@ -359,40 +345,6 @@ fn get_max_opus_option(fast_mode: bool) -> ModelOption {
     )
 }
 
-/// Maps to: CC `utils/model/modelOptions.ts:219-227` `getMaxSonnet46_1MOption`.
-pub fn get_max_sonnet_46_1m_option() -> ModelOption {
-    let billing_info = if is_claude_ai_subscriber() {
-        " · Billed as extra usage"
-    } else {
-        ""
-    };
-    ModelOption::new(
-        Some("sonnet[1m]"),
-        "Sonnet (1M context)",
-        format!(
-            "Sonnet 4.6 with 1M context{billing_info}{}",
-            tier_3_15_suffix()
-        ),
-    )
-}
-
-/// Maps to: CC `utils/model/modelOptions.ts:229-236` `getMaxOpus46_1MOption`.
-pub fn get_max_opus_46_1m_option(fast_mode: bool) -> ModelOption {
-    let billing_info = if is_claude_ai_subscriber() {
-        " · Billed as extra usage"
-    } else {
-        ""
-    };
-    ModelOption::new(
-        Some("opus[1m]"),
-        "Opus (1M context)",
-        format!(
-            "Opus 4.6 with 1M context{billing_info}{}",
-            get_opus_46_pricing_suffix(fast_mode)
-        ),
-    )
-}
-
 /// Maps to: CC `utils/model/modelOptions.ts:238-247` `getMergedOpus1MOption`.
 fn get_merged_opus_1m_option(fast_mode: bool) -> ModelOption {
     let is_3p = is_3p();
@@ -412,24 +364,6 @@ fn get_merged_opus_1m_option(fast_mode: bool) -> ModelOption {
         format!("Opus 4.6 with 1M context · Most capable for complex work{suffix}"),
     )
     .with_description_for_model("Opus 4.6 with 1M context - most capable for complex work")
-}
-
-/// Maps to: CC `utils/model/modelOptions.ts:249-253` `MaxSonnet46Option`.
-fn max_sonnet_46_option() -> ModelOption {
-    ModelOption::new(
-        Some("sonnet"),
-        "Sonnet",
-        "Sonnet 4.6 · Best for everyday tasks".to_string(),
-    )
-}
-
-/// Maps to: CC `utils/model/modelOptions.ts:255-259` `MaxHaiku45Option`.
-fn max_haiku_45_option() -> ModelOption {
-    ModelOption::new(
-        Some("haiku"),
-        "Haiku",
-        "Haiku 4.5 · Fastest for quick answers".to_string(),
-    )
 }
 
 /// Maps to: CC `utils/model/modelOptions.ts:261-267` `getOpusPlanOption`.
@@ -463,7 +397,7 @@ fn get_model_options_base(
         audience,
         crate::utils::build_profile::InternalCapability::Models,
     ) {
-        let mut options = vec![get_default_option_for_user_for_audience(audience, false)];
+        let mut options = vec![get_default_option_for_user_for_audience(audience)];
         options.extend(get_ant_model_options());
         options.push(get_merged_opus_1m_option(fast_mode));
         options.push(get_sonnet_46_option());
@@ -472,51 +406,9 @@ fn get_model_options_base(
         return options;
     }
 
-    if is_claude_ai_subscriber() {
-        if is_max_subscriber() || is_team_premium_subscriber() {
-            // Max and Team Premium: Opus is the default, Sonnet the alternative.
-            let mut premium_options = vec![get_default_option_for_user_for_audience(
-                audience, fast_mode,
-            )];
-            if !is_opus_1m_merge_enabled() && check_opus_1m_access() {
-                premium_options.push(get_max_opus_46_1m_option(fast_mode));
-            }
-
-            premium_options.push(max_sonnet_46_option());
-            if check_sonnet_1m_access() {
-                premium_options.push(get_max_sonnet_46_1m_option());
-            }
-
-            premium_options.push(max_haiku_45_option());
-            return premium_options;
-        }
-
-        // Pro/Team Standard/Enterprise: Sonnet is the default, Opus the alternative.
-        let mut standard_options = vec![get_default_option_for_user_for_audience(
-            audience, fast_mode,
-        )];
-        if check_sonnet_1m_access() {
-            standard_options.push(get_max_sonnet_46_1m_option());
-        }
-
-        if is_opus_1m_merge_enabled() {
-            standard_options.push(get_merged_opus_1m_option(fast_mode));
-        } else {
-            standard_options.push(get_max_opus_option(fast_mode));
-            if check_opus_1m_access() {
-                standard_options.push(get_max_opus_46_1m_option(fast_mode));
-            }
-        }
-
-        standard_options.push(max_haiku_45_option());
-        return standard_options;
-    }
-
     // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 4.6 + Opus 1M + Haiku.
     if get_api_provider() == ApiProvider::FirstParty {
-        let mut payg_1p_options = vec![get_default_option_for_user_for_audience(
-            audience, fast_mode,
-        )];
+        let mut payg_1p_options = vec![get_default_option_for_user_for_audience(audience)];
         if check_sonnet_1m_access() {
             payg_1p_options.push(get_sonnet_46_1m_option());
         }
@@ -534,9 +426,7 @@ fn get_model_options_base(
 
     // PAYG 3P: Default (Sonnet 4.5) + Sonnet (3P custom) or Sonnet 4.6/1M +
     // Opus (3P custom) or Opus 4.1/Opus 4.6/Opus 1M + Haiku.
-    let mut payg_3p_options = vec![get_default_option_for_user_for_audience(
-        audience, fast_mode,
-    )];
+    let mut payg_3p_options = vec![get_default_option_for_user_for_audience(audience)];
 
     match get_custom_sonnet_option() {
         Some(custom_sonnet) => payg_3p_options.push(custom_sonnet),

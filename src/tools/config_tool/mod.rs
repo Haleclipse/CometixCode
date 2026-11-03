@@ -98,14 +98,7 @@ fn voice_enable_preflight_error() -> Option<String> {
     if crate::voice::voice_mode_enabled::is_voice_mode_enabled() {
         return None;
     }
-    Some(
-        if crate::utils::auth::is_anthropic_auth_enabled() {
-            "Voice mode is not available."
-        } else {
-            "Voice mode requires a Claude.ai account. Please run /login to sign in."
-        }
-        .to_string(),
-    )
+    Some("Voice mode is not available.".to_string())
 }
 
 /// Copy for the four voice pre-flight checks CC runs after
@@ -1199,18 +1192,13 @@ mod tests {
         use super::voice_preflight_copy;
 
         // CC :246 / :276 share one string; :248 is the authenticated variant.
-        // Which one the pre-flight picks depends on ambient credentials, so pin
-        // the copy rather than the developer's login state.
+        // Voice has no auth source, so the pre-flight is always "not available".
         const REQUIRES_ACCOUNT: &str =
             "Voice mode requires a Claude.ai account. Please run /login to sign in.";
-        const NOT_AVAILABLE: &str = "Voice mode is not available.";
-        match super::voice_enable_preflight_error() {
-            Some(error) => assert!(
-                error == REQUIRES_ACCOUNT || error == NOT_AVAILABLE,
-                "unexpected pre-flight copy: {error}"
-            ),
-            None => assert!(crate::voice::voice_mode_enabled::is_voice_mode_enabled()),
-        }
+        assert_eq!(
+            super::voice_enable_preflight_error().as_deref(),
+            Some("Voice mode is not available.")
+        );
         assert_eq!(
             voice_preflight_copy::STREAM_UNAVAILABLE_ERROR,
             REQUIRES_ACCOUNT

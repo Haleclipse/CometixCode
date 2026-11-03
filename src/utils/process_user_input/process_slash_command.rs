@@ -73,14 +73,6 @@ pub enum LocalCommandUi {
     Mcp {
         args: String,
     },
-    /// Maps to CC `commands/login/login.tsx` local JSX flow.
-    Login {
-        args: String,
-    },
-    /// Maps to CC `commands/logout/logout.tsx` local JSX flow.
-    Logout {
-        args: String,
-    },
     /// Maps to CC `commands/ide/ide.tsx` local JSX flow.
     Ide {
         args: String,
@@ -2248,20 +2240,6 @@ mod tests {
                 "/diff",
                 LocalCommandUi::Diff,
                 SlashCommandInvocation::new("diff", ""),
-            ),
-            (
-                "/login",
-                LocalCommandUi::Login {
-                    args: String::new(),
-                },
-                SlashCommandInvocation::new("login", ""),
-            ),
-            (
-                "/logout",
-                LocalCommandUi::Logout {
-                    args: String::new(),
-                },
-                SlashCommandInvocation::new("logout", ""),
             ),
             (
                 "/ide open",

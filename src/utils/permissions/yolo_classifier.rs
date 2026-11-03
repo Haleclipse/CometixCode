@@ -471,7 +471,10 @@ fn classifier_text_block(text: impl Into<String>, cached: bool) -> TextBlockPara
     TextBlockParam {
         text: text.into(),
         cache_control: cached.then(|| {
-            let cache = crate::services::api::claude::get_cache_control(None, Some("auto_mode"));
+            let cache = crate::services::provider::anthropic::cache::get_cache_control(
+                None,
+                Some("auto_mode"),
+            );
             CacheControlEphemeral {
                 type_name: cache.cache_type,
                 ttl: cache.ttl,

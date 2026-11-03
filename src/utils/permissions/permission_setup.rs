@@ -558,7 +558,7 @@ pub fn is_auto_mode_gate_enabled() -> bool {
     if is_auto_mode_disabled_by_settings() {
         return false;
     }
-    if !crate::utils::betas::model_supports_auto_mode(
+    if !crate::services::provider::anthropic::betas::model_supports_auto_mode(
         &crate::utils::model::model::get_main_loop_model(),
     ) {
         return false;
@@ -581,7 +581,7 @@ pub fn get_auto_mode_unavailable_reason() -> Option<AutoModeUnavailableReason> {
     if crate::utils::permissions::auto_mode_state::is_auto_mode_circuit_broken() {
         return Some(AutoModeUnavailableReason::CircuitBreaker);
     }
-    if !crate::utils::betas::model_supports_auto_mode(
+    if !crate::services::provider::anthropic::betas::model_supports_auto_mode(
         &crate::utils::model::model::get_main_loop_model(),
     ) {
         return Some(AutoModeUnavailableReason::Model);
@@ -690,7 +690,8 @@ pub async fn verify_auto_mode_gate_access(
                 crate::utils::build_profile::InternalCapability::Permissions,
             ) && main_model.to_lowercase().contains("-fast")));
     let model_supported =
-        crate::utils::betas::model_supports_auto_mode(&main_model) && !disable_fast;
+        crate::services::provider::anthropic::betas::model_supports_auto_mode(&main_model)
+            && !disable_fast;
     let can_enter =
         enabled != AutoModeEnabledState::Disabled && !disabled_by_settings && model_supported;
     let carousel_available = can_enter

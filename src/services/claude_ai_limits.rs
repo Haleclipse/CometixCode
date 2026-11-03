@@ -338,10 +338,10 @@ pub fn limits_from_error_headers(headers: &HashMap<String, String>) -> ClaudeAiL
     limits
 }
 
+/// Unified quota headers exist only for claude.ai subscriptions, which nyan
+/// does not support, so only an active internal mock is ever processed.
 fn should_process_rate_limits() -> bool {
-    crate::services::rate_limit_mocking::should_process_rate_limits(
-        crate::utils::auth::is_claude_ai_subscriber(),
-    )
+    crate::services::rate_limit_mocking::should_process_rate_limits(false)
 }
 
 fn cache_extra_usage_disabled_reason(headers: &HashMap<String, String>) {
@@ -472,16 +472,23 @@ pub async fn check_quota_status() {
     }
 
     let model = crate::utils::model::model::get_small_fast_model();
-    let client = match crate::services::api::client::get_anthropic_client(
-        crate::services::api::client::GetAnthropicClientOptions {
-            api_key: None,
-            max_retries: 0,
-            model: Some(model.clone()),
-            source: Some("quota_check".to_string()),
-        },
-    )
-    .await
-    .and_then(|handle| handle.build().map_err(anyhow::Error::new))
+    let options =
+        match crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
+            0,
+            Some(model.clone()),
+            Some("quota_check".to_string()),
+        ) {
+            Ok(options) => options,
+            Err(error) => {
+                crate::utils::debug::log_for_debugging(&format!(
+                    "Quota status preflight skipped: {error}"
+                ));
+                return;
+            }
+        };
+    let client = match crate::services::provider::anthropic::client::get_anthropic_client(options)
+        .await
+        .and_then(|handle| handle.build().map_err(anyhow::Error::new))
     {
         Ok(client) => client,
         Err(error) => {
@@ -502,7 +509,7 @@ pub async fn check_quota_status() {
 
 /// Maps to CC `services/claudeAiLimits.ts:199-218` `makeTestQuery()`.
 async fn make_test_query(
-    client: &crate::services::api::client::ClientBuildOutput,
+    client: &crate::services::provider::anthropic::client::ClientBuildOutput,
     model: &str,
 ) -> Result<
     anthropic_sdk::core::response::ApiResponse<
@@ -510,7 +517,7 @@ async fn make_test_query(
     >,
     anthropic_sdk::ApiError,
 > {
-    let betas = crate::utils::betas::get_model_betas(model);
+    let betas = crate::services::provider::anthropic::betas::get_model_betas(model);
     let params = anthropic_sdk::resources::beta::messages::BetaMessageCreateParams {
         model: model.to_string(),
         max_tokens: 1,

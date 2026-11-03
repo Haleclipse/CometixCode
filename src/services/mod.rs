@@ -25,9 +25,10 @@ pub mod mcp_server_approval;
 /// @nyan: shadow-mode Decision Provider seam for the memory points (C4).
 pub mod memory_decision;
 pub mod mock_rate_limits;
-pub mod oauth;
 pub mod policy_limits;
 pub mod prompt_suggestion;
+/// @nyan: provider-neutral request IR and adapters (provider redesign PR 4).
+pub mod provider;
 pub mod rate_limit_messages;
 pub mod rate_limit_mocking;
 /// @nyan: shared Qwen3-Reranker client (retrieval 4.9, slice G0).

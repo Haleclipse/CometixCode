@@ -5159,7 +5159,7 @@ mod tests {
             .to_string();
 
         assert!(
-            text.contains("Not logged in · Run /login"),
+            text.contains("No API key · Set one on the selected provider profile"),
             "canvas=\n{text}"
         );
     }

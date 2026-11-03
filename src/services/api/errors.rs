@@ -779,8 +779,7 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
         // centralized limits message formatter (including active internal
         // mocks) before the generic 429/entitlement path.
         let config = crate::utils::config::load_global_config();
-        let is_subscriber = crate::utils::auth::is_claude_ai_subscriber();
-        if crate::services::rate_limit_mocking::should_process_rate_limits(is_subscriber) {
+        if crate::services::rate_limit_mocking::should_process_rate_limits(false) {
             let has_unified_headers = error
                 .header("anthropic-ratelimit-unified-representative-claim")
                 .is_some()

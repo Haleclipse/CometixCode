@@ -125,7 +125,7 @@ Anthropic 的 beta、cache control、Bedrock/Vertex/Foundry auth 和 Anthropic S
 19. **主请求重试**：统一重试控制器默认最多重试 2 次（同 provider，且仅在未产生可见输出时，见 §7.2）；托管设置的全局上限默认是 2，硬上限是 5，profile 配置不能超过该全局上限。PR 8 前的过渡行为见决策 23。参考：OpenCode 会话请求最多重试 10 次、一次性调用 3 次（`packages/core/src/model-retry.ts:22-27`），nyan 的统一控制器有意收紧为上述上限。
 20. **Gemini 单独 PR**：Gemini adapter 紧接 OpenAI 阶段之后单独一个 PR（PR 6），不与 OpenAI 并行。
 21. **本地模型可进主 fallback**：vLLM / Ollama profile 可以显式写入 `selection.mainFallbacks`。本地 profile 永远不能进入 Decision Provider。
-22. **临时 Anthropic 兼容层**：PR 1 保留一个临时的内部 Anthropic profile 兼容层，保证每个 PR 合入后 nyan 都能发请求。它是决策 4（无默认 provider）的唯一例外：只读取 Anthropic 现有凭据来源，不读取已删除的旧字段，不写入用户配置。PR 4（Anthropic adapter）落地时删除。
+22. **临时 Anthropic 兼容层**：PR 1 保留一个临时的内部 Anthropic profile 兼容层，保证每个 PR 合入后 nyan 都能发请求。它是决策 4（无默认 provider）的唯一例外：只读取 Anthropic 现有凭据来源，不读取已删除的旧字段，不写入用户配置。PR 4（Anthropic adapter）落地时删除。**状态：已在 PR 4 删除。** Anthropic client 现在只从所选 profile 取 base URL 和 API key（`src/services/provider/anthropic/target.rs`、`credential.rs`），不再读取 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`、`ANTHROPIC_BASE_URL`、claude.ai OAuth token 或 `apiKeyHelper`；缺少 profile 或 key 时返回指明应配置项的错误，不回退。PR 4 只覆盖请求发送路径；认证/状态 UI 对 claude.ai 订阅状态的读取不在其中。
 23. **过渡期重试行为**：PR 4 沿用现有 Anthropic 重试行为（`CLAUDE_CODE_MAX_RETRIES` 默认 10，529 上限 3，不改动）。PR 5（OpenAI）和 PR 6（Gemini）不新增自动重试，重试次数为 0，错误直接返回，直到 PR 8 统一重试控制器落地；PR 7 的本地 OpenAI-compatible 路径同样为 0。PR 8 把 Anthropic 默认从 10 降到 2，并启用托管全局硬上限 5，这是行为变更，必须在 PR 8 描述中写明。
 
 ## 三、目标抽象

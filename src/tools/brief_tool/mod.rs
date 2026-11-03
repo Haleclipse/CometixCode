@@ -3,7 +3,6 @@
 
 pub mod prompt;
 pub mod ui;
-pub mod upload;
 
 /// Maps to: CC `tools/BriefTool/BriefTool.ts:88-100` `isBriefEntitled()`.
 /// Decides whether an opt-in should be *honored*, never whether one happened.
@@ -151,10 +150,7 @@ fn resolve_attachment_paths(
     Ok(attachments)
 }
 
-/// Maps to: CC `utils/imagePaste.ts:270` `IMAGE_EXTENSION_REGEX`. Kept in sync
-/// with `upload::MIME_BY_EXT`: an extension here but not there (e.g. `bmp`)
-/// uploads as octet-stream with no `/preview` variant, so remote viewers render
-/// a broken thumbnail.
+/// Maps to: CC `utils/imagePaste.ts:270` `IMAGE_EXTENSION_REGEX`.
 fn is_image_path(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
     // The official regex anchors on a literal `.`, so a dotless name whose
@@ -167,49 +163,17 @@ fn is_image_path(path: &str) -> bool {
 
 /// Maps to: CC `tools/BriefTool/attachments.ts:63-110` `resolveAttachments`.
 ///
-/// Stat serially (local, fast) to keep ordering deterministic, then upload in
-/// parallel (network, slow). Upload failures resolve `None` — the attachment
-/// still carries `{path, size, isImage}` for local renderers.
+/// Stat the attachments serially (local, fast) to keep ordering deterministic.
+///
+/// CC also uploads each attachment to claude.ai's private API with the claude.ai
+/// OAuth token so web viewers can preview it, and stores the returned
+/// `file_uuid`. Anthropic is API-key only, so there is no token and no upload:
+/// attachments always carry `{path, size, isImage}` with no `file_uuid`.
 async fn resolve_attachments(
     input: &serde_json::Value,
     context: &crate::tool::ToolUseContext,
 ) -> Result<Vec<BriefAttachmentOutput>, String> {
-    let stated = resolve_attachment_paths(input, context)?;
-    // CC gates the dynamic `./upload.js` import on `feature('BRIDGE_MODE')`
-    // (attachments.ts:88) so the upload module stays out of non-bridge builds.
-    if !crate::utils::feature_flags::feature_enabled(
-        crate::utils::feature_flags::FeatureFlag::BridgeMode,
-    ) {
-        return Ok(stated);
-    }
-
-    // Headless/SDK callers never set `replBridgeEnabled` (only the TTY REPL
-    // does, at init). `CLAUDE_CODE_BRIEF_UPLOAD` lets a host that runs the CLI
-    // as a subprocess opt in — e.g. the cowork desktop bridge, which already
-    // passes `CLAUDE_CODE_OAUTH_TOKEN` for auth (attachments.ts:93-95).
-    let should_upload = context
-        .get_app_state()
-        .is_some_and(|state| state.repl_bridge_enabled)
-        || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_BRIEF_UPLOAD").as_deref(),
-        );
-    let uploads = stated.iter().map(|attachment| {
-        let ctx = upload::BriefUploadContext {
-            repl_bridge_enabled: should_upload,
-            abort: Some(context.abort_controller.clone()),
-        };
-        async move { upload::upload_brief_attachment(&attachment.path, attachment.size, &ctx).await }
-    });
-    let uuids = futures::future::join_all(uploads).await;
-
-    Ok(stated
-        .into_iter()
-        .zip(uuids)
-        .map(|(attachment, file_uuid)| BriefAttachmentOutput {
-            file_uuid,
-            ..attachment
-        })
-        .collect())
+    resolve_attachment_paths(input, context)
 }
 
 /// Behavioral half of CC `BriefTool` — dispatched via `crate::tool::ToolCall`.

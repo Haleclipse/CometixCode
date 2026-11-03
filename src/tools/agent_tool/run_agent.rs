@@ -5012,6 +5012,7 @@ mod input_contract_tests {
                     server.abort();
                 }
                 crate::bootstrap::state::set_original_cwd(self.previous_cwd.clone());
+                crate::utils::settings::settings_cache::reset_settings_cache();
                 // Restore the environment here, in the order the variables
                 // were set, before the temporary root is removed.
                 self.env.clear();
@@ -5028,9 +5029,8 @@ mod input_contract_tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let env = [
-            ("ANTHROPIC_BASE_URL", format!("http://{address}")),
             (
-                "ANTHROPIC_API_KEY",
+                "NYAN_AGENT_TEST_KEY",
                 "sk-ant-test-agent-contract".to_string(),
             ),
             ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1".to_string()),
@@ -5041,6 +5041,11 @@ mod input_contract_tests {
             .iter()
             .map(|(key, value)| EnvVarGuard::set(key, value))
             .collect();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        crate::services::provider::anthropic::target::install_test_main_profile(
+            &format!("http://{address}"),
+            "NYAN_AGENT_TEST_KEY",
+        );
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
         fixture.server = Some(tokio::spawn(async move {
             tokio::time::timeout(std::time::Duration::from_secs(45), async move {

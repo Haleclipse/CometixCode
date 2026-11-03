@@ -1,7 +1,7 @@
 //! Maps to: CC `utils/statusNoticeDefinitions.tsx`.
 //!
-//! Safety boundary: official definitions read auth sources, config, JetBrains
-//! plugin state, and current working directory directly. This Rust port accepts
+//! Safety boundary: official definitions read config, JetBrains plugin state,
+//! and current working directory directly. This Rust port accepts
 //! an explicit `StatusNoticeContext` snapshot so startup UI can stay pure and
 //! side-effect free.
 
@@ -30,9 +30,6 @@ pub enum StatusNoticeType {
 pub enum StatusNoticeId {
     LargeMemoryFiles,
     LargeAgentDescriptions,
-    ClaudeAiExternalToken,
-    ApiKeyConflict,
-    BothAuthMethods,
     JetbrainsPluginInstall,
 }
 
@@ -41,9 +38,6 @@ impl StatusNoticeId {
         match self {
             Self::LargeMemoryFiles => "large-memory-files",
             Self::LargeAgentDescriptions => "large-agent-descriptions",
-            Self::ClaudeAiExternalToken => "claude-ai-external-token",
-            Self::ApiKeyConflict => "api-key-conflict",
-            Self::BothAuthMethods => "both-auth-methods",
             Self::JetbrainsPluginInstall => "jetbrains-plugin-install",
         }
     }
@@ -61,14 +55,6 @@ pub struct StatusNoticeContext {
     pub cwd: String,
     pub memory_files: Vec<MemoryFileInfo>,
     pub agent_definitions: Option<AgentDefinitionsSnapshot>,
-    /// Maps to `getAuthTokenSource().source`.
-    pub auth_token_source: String,
-    /// Maps to `getAnthropicApiKeyWithSource(...).source`.
-    pub api_key_source: String,
-    /// Maps to `!!getApiKeyFromConfigOrMacOSKeychain()`.
-    pub has_console_api_key: bool,
-    /// Maps to `isClaudeAISubscriber()`.
-    pub is_claude_ai_subscriber: bool,
     /// Maps to `config.autoInstallIdeExtension ?? true`.
     pub auto_install_ide_extension: bool,
     /// Maps to `isSupportedJetBrainsTerminal()`.
@@ -85,10 +71,6 @@ impl Default for StatusNoticeContext {
             cwd: String::new(),
             memory_files: Vec::new(),
             agent_definitions: None,
-            auth_token_source: "none".to_string(),
-            api_key_source: "none".to_string(),
-            has_console_api_key: false,
-            is_claude_ai_subscriber: false,
             auto_install_ide_extension: true,
             is_supported_jetbrains_terminal: false,
             is_jetbrains_plugin_installed: false,
@@ -123,25 +105,6 @@ pub fn is_large_agent_descriptions_active(context: &StatusNoticeContext) -> bool
         > AGENT_DESCRIPTIONS_THRESHOLD
 }
 
-pub fn is_claude_ai_external_token_active(context: &StatusNoticeContext) -> bool {
-    context.is_claude_ai_subscriber
-        && (context.auth_token_source == "ANTHROPIC_AUTH_TOKEN"
-            || context.auth_token_source == "apiKeyHelper")
-}
-
-pub fn is_api_key_conflict_active(context: &StatusNoticeContext) -> bool {
-    context.has_console_api_key
-        && (context.api_key_source == "ANTHROPIC_API_KEY"
-            || context.api_key_source == "apiKeyHelper")
-}
-
-pub fn is_both_auth_methods_active(context: &StatusNoticeContext) -> bool {
-    context.api_key_source != "none"
-        && context.auth_token_source != "none"
-        && !(context.api_key_source == "apiKeyHelper"
-            && context.auth_token_source == "apiKeyHelper")
-}
-
 pub fn is_jetbrains_plugin_notice_active(context: &StatusNoticeContext) -> bool {
     context.is_supported_jetbrains_terminal
         && context.auto_install_ide_extension
@@ -157,15 +120,6 @@ pub fn get_active_notices(context: &StatusNoticeContext) -> Vec<StatusNoticeId> 
     }
     if is_large_agent_descriptions_active(context) {
         notices.push(StatusNoticeId::LargeAgentDescriptions);
-    }
-    if is_claude_ai_external_token_active(context) {
-        notices.push(StatusNoticeId::ClaudeAiExternalToken);
-    }
-    if is_api_key_conflict_active(context) {
-        notices.push(StatusNoticeId::ApiKeyConflict);
-    }
-    if is_both_auth_methods_active(context) {
-        notices.push(StatusNoticeId::BothAuthMethods);
     }
     if is_jetbrains_plugin_notice_active(context) {
         notices.push(StatusNoticeId::JetbrainsPluginInstall);
@@ -205,10 +159,6 @@ mod tests {
                 source: "project".to_string(),
             }],
         });
-        context.is_claude_ai_subscriber = true;
-        context.auth_token_source = "ANTHROPIC_AUTH_TOKEN".to_string();
-        context.has_console_api_key = true;
-        context.api_key_source = "ANTHROPIC_API_KEY".to_string();
         context.is_supported_jetbrains_terminal = true;
         context.is_jetbrains_plugin_installed = false;
         context.ide_display_name = Some("PyCharm".to_string());
@@ -218,21 +168,8 @@ mod tests {
             vec![
                 StatusNoticeId::LargeMemoryFiles,
                 StatusNoticeId::LargeAgentDescriptions,
-                StatusNoticeId::ClaudeAiExternalToken,
-                StatusNoticeId::ApiKeyConflict,
-                StatusNoticeId::BothAuthMethods,
                 StatusNoticeId::JetbrainsPluginInstall,
             ]
         );
-    }
-
-    #[test]
-    fn api_key_helper_for_both_sources_does_not_trigger_both_auth_notice() {
-        let context = StatusNoticeContext {
-            api_key_source: "apiKeyHelper".to_string(),
-            auth_token_source: "apiKeyHelper".to_string(),
-            ..StatusNoticeContext::default()
-        };
-        assert!(!is_both_auth_methods_active(&context));
     }
 }

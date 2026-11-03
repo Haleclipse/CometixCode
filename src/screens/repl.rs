@@ -1080,12 +1080,6 @@ enum LocalCommandPanel {
     Mcp {
         args: String,
     },
-    Login {
-        args: String,
-    },
-    Logout {
-        args: String,
-    },
     Ide {
         args: String,
     },
@@ -2553,8 +2547,6 @@ fn local_command_panel_from_command(command: LocalCommandUi) -> LocalCommandPane
         LocalCommandUi::Btw { question, context } => LocalCommandPanel::Btw { question, context },
         LocalCommandUi::Copy { data } => LocalCommandPanel::Copy(data),
         LocalCommandUi::Mcp { args } => LocalCommandPanel::Mcp { args },
-        LocalCommandUi::Login { args } => LocalCommandPanel::Login { args },
-        LocalCommandUi::Logout { args } => LocalCommandPanel::Logout { args },
         LocalCommandUi::Ide { args } => LocalCommandPanel::Ide { args },
         LocalCommandUi::Effort {
             args,
@@ -2617,8 +2609,6 @@ fn local_command_ui_dismiss_result(panel: &LocalCommandPanel) -> Option<String> 
         LocalCommandPanel::Btw { .. } => None,
         LocalCommandPanel::Copy(_) => Some("Copy cancelled".to_string()),
         LocalCommandPanel::Mcp { .. } => Some("MCP dialog dismissed".to_string()),
-        LocalCommandPanel::Login { .. } => Some("Login interrupted".to_string()),
-        LocalCommandPanel::Logout { .. } => Some("Logout cancelled".to_string()),
         LocalCommandPanel::Ide { .. } => Some("IDE dialog dismissed".to_string()),
         LocalCommandPanel::It2Setup { .. } => {
             Some("Teammate spawn cancelled - iTerm2 setup required".to_string())
@@ -9738,16 +9728,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             on_result: on_local_command_ui_result,
                         )
                     }.into_any()),
-                    LocalCommandPanel::Login { .. } => Some(element! {
-                        crate::commands::login::login::LoginCommand(
-                            on_done: on_local_command_ui_result,
-                        )
-                    }.into_any()),
-                    LocalCommandPanel::Logout { .. } => Some(element! {
-                        crate::commands::logout::logout::LogoutCommand(
-                            on_done: on_local_command_ui_result,
-                        )
-                    }.into_any()),
                     LocalCommandPanel::Ide { args } => Some(element! {
                         crate::commands::ide::ide::IdeCommand(
                             args: args,
@@ -10040,9 +10020,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     // These commands are regular bottom-slot dialogs. They
                     // are mounted by the non-immediate branch above so they
                     // do not get duplicated in the immediate slot.
-                    LocalCommandPanel::Login { .. }
-                    | LocalCommandPanel::Logout { .. }
-                    | LocalCommandPanel::Ide { .. } => None,
+                    LocalCommandPanel::Ide { .. } => None,
                     LocalCommandPanel::It2Setup { .. } => None,
                 }
             }))

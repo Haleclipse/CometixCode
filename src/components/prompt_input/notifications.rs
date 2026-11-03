@@ -32,7 +32,7 @@ use crate::hooks::notifs::ide_status_indicator::IdeConnectionStatus;
 use crate::hooks::use_api_key_verification::VerificationStatus;
 use crate::services::compact::auto_compact::is_auto_compact_enabled;
 use crate::state::store::AppStore;
-use crate::utils::auth::{get_api_key_helper_elapsed_ms, get_subscription_type};
+use crate::utils::auth::get_api_key_helper_elapsed_ms;
 use crate::utils::config::load_global_config;
 use crate::utils::env_utils::is_env_truthy;
 use crate::utils::format::format_duration;
@@ -73,7 +73,7 @@ pub fn auth_status_indicator(
         if is_remote_mode {
             "Authentication error · Try again"
         } else {
-            "Not logged in · Run /login"
+            "No API key · Set one on the selected provider profile"
         },
         NotificationColor::Error,
     ))
@@ -192,25 +192,9 @@ pub fn direct_footer_row_count_from_app(
         memory_visible,
         sandbox_hint_visible,
     );
-    // Documented deviation from CC's operand order, identical in shape to
-    // `prompt_input_footer::bridge_status_indicator_count_from_app`: CC reads
-    // an in-memory `getSubscriptionType()`, while the Rust call performs real
-    // token-file/keychain/settings IO. `overage_indicator` returns `None`
-    // whenever `is_using_overage` is false, so gating on the cheap AppState
-    // field first yields an identical result and keeps hot render frames free
-    // of auth IO (pinned by `logo_header_hot_path_avoids_uncached_auth_io...`
-    // in screens/repl.rs, which only reaches this path now that REPL test
-    // harnesses mount a real AppStateProvider).
+    // There is no claude.ai subscription, so no team/enterprise suppression.
     if state.claude_ai_limits.is_using_overage {
-        let subscription_type = get_subscription_type();
-        let is_team_or_enterprise =
-            matches!(subscription_type.as_deref(), Some("team" | "enterprise"));
-        if overage_indicator(
-            state.claude_ai_limits.is_using_overage,
-            is_team_or_enterprise,
-        )
-        .is_some()
-        {
+        if overage_indicator(state.claude_ai_limits.is_using_overage, false).is_some() {
             count += 1;
         }
     }
@@ -354,17 +338,8 @@ pub fn Notifications(
     );
     let is_remote_mode =
         is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
-    // Same documented operand-order deviation as
-    // `direct_footer_row_count_from_app` / the bridge indicator: CC's
-    // `getSubscriptionType()` is an in-memory read, the Rust one performs
-    // token-file/keychain/settings IO. `overage_indicator` is `None` whenever
-    // `is_in_overage_mode` is false, so the cheap AppState gate runs first and
-    // hot frames stay free of auth IO. Result is identical.
-    let is_team_or_enterprise = is_in_overage_mode
-        && matches!(
-            get_subscription_type().as_deref(),
-            Some("team" | "enterprise")
-        );
+    // There is no claude.ai subscription, so no team/enterprise suppression.
+    let is_team_or_enterprise = false;
     let theme = hooks.use_context::<Theme>();
     let store = hooks.try_use_context::<AppStore>().map(|s| s.clone());
 
@@ -801,7 +776,10 @@ mod tests {
     fn auth_status_indicator_matches_official_local_and_remote_copy() {
         let local = auth_status_indicator(VerificationStatus::Missing, false).unwrap();
         let remote = auth_status_indicator(VerificationStatus::Invalid, true).unwrap();
-        assert_eq!(local.text, "Not logged in · Run /login");
+        assert_eq!(
+            local.text,
+            "No API key · Set one on the selected provider profile"
+        );
         assert_eq!(remote.text, "Authentication error · Try again");
         assert_eq!(local.segments[0].color, Some(NotificationColor::Error));
         assert_eq!(remote.segments[0].color, Some(NotificationColor::Error));
@@ -907,7 +885,7 @@ mod tests {
         .render(Some(120))
         .to_string();
         assert!(
-            text.contains("Not logged in · Run /login"),
+            text.contains("No API key · Set one on the selected provider profile"),
             "canvas=\n{text}"
         );
     }
@@ -942,9 +920,10 @@ mod tests {
     }
 
     #[test]
-    fn notifications_overage_gate_uses_canonical_subscription_state() {
+    fn notifications_overage_row_ignores_a_claude_ai_credentials_file() {
+        // A leftover `.credentials.json` naming a team subscription must not
+        // suppress the overage row: stored claude.ai credentials are ignored.
         let _runtime = NotificationsRuntimeFixture::new(Some("team"), false);
-        assert_eq!(get_subscription_type().as_deref(), Some("team"));
 
         let mut initial = crate::state::app_state_store::AppState::default();
         initial.claude_ai_limits =
@@ -970,8 +949,8 @@ mod tests {
         .render(Some(120))
         .to_string();
         assert!(
-            !text.contains("Now using extra usage"),
-            "team subscription must suppress overage row; canvas=\n{text}"
+            text.contains("Now using extra usage"),
+            "stored team credentials must not suppress the overage row; canvas=\n{text}"
         );
     }
 

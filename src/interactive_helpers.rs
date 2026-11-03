@@ -20,11 +20,6 @@ use crate::components::trust_dialog::{
 use crate::services::mcp::config::get_mcp_configs_by_scope_readonly;
 use crate::services::mcp::types::ConfigScope;
 use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides;
-use crate::utils::auth::{
-    GetAnthropicApiKeyOptions, get_anthropic_api_key_with_source,
-    get_api_key_from_config_or_macos_keychain, get_auth_token_source, is_anthropic_auth_enabled,
-    is_claude_ai_subscriber,
-};
 use crate::utils::claude_in_chrome::setup::should_enable_claude_in_chrome_from_readonly_runtime;
 use crate::utils::claudemd::{ClaudeMdFile, discover_claude_md_files};
 use crate::utils::claudemd::{
@@ -67,7 +62,6 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SetupScreensSnapshot {
     pub show_onboarding: bool,
-    pub oauth_enabled: bool,
     pub api_key_needing_approval: Option<String>,
     pub offer_terminal_setup: bool,
     pub terminal_name: Option<String>,
@@ -125,7 +119,6 @@ pub fn setup_screens_snapshot_from_readonly_runtime(
 
     SetupScreensSnapshot {
         show_onboarding,
-        oauth_enabled: is_anthropic_auth_enabled(),
         api_key_needing_approval: api_key_needing_onboarding_approval(global_config, get_env),
         offer_terminal_setup: should_offer_terminal_setup_for(terminal_name.as_deref(), platform),
         terminal_name,
@@ -151,28 +144,12 @@ pub fn status_notice_context_from_readonly_runtime(
     memory_files: Vec<ClaudeMdFile>,
     ide_installation_status: Option<&IDEExtensionInstallationStatus>,
 ) -> StatusNoticeContext {
-    let auth_token_source = get_auth_token_source()
-        .source
-        .status_label()
-        .unwrap_or("none")
-        .to_string();
-    let api_key_source = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions {
-        skip_retrieving_key_from_api_key_helper: true,
-    })
-    .source
-    .status_label()
-    .unwrap_or("none")
-    .to_string();
     let ide_type = ide_installation_status.and_then(|status| status.ide_type.as_deref());
 
     StatusNoticeContext {
         cwd: cwd.to_string_lossy().to_string(),
         memory_files: status_notice_memory_files(memory_files),
         agent_definitions: Some(get_agent_definitions_with_overrides(cwd).into()),
-        auth_token_source,
-        api_key_source,
-        has_console_api_key: get_api_key_from_config_or_macos_keychain().is_some(),
-        is_claude_ai_subscriber: is_claude_ai_subscriber(),
         auto_install_ide_extension: global_config.auto_install_ide_extension.unwrap_or(true),
         is_supported_jetbrains_terminal: is_jetbrains_ide(ide_type),
         is_jetbrains_plugin_installed: ide_installation_status
@@ -427,7 +404,6 @@ fn SetupScreensHost<'a>(
                                     on_done: move |_| {
                                         dismissed.set(true);
                                     },
-                                    oauth_enabled: snapshot.oauth_enabled,
                                     api_key_needing_approval: snapshot.api_key_needing_approval.clone(),
                                     offer_terminal_setup: snapshot.offer_terminal_setup,
                                     terminal_name: snapshot.terminal_name.clone(),
@@ -618,7 +594,6 @@ mod setup_screens_snapshot_tests {
             runtime_env::Platform::MacOS,
         );
         assert!(snapshot.show_onboarding);
-        assert!(snapshot.oauth_enabled);
         assert!(snapshot.offer_terminal_setup);
 
         config.theme = Some("dark".to_string());
@@ -738,19 +713,8 @@ mod setup_screens_snapshot_tests {
     }
 
     #[test]
-    fn status_notice_context_from_readonly_runtime_builds_auth_memory_and_ide_snapshot() {
-        // `auth_token_source` and `api_key_source` come from
-        // `get_auth_token_source()` / `get_anthropic_api_key_with_source()`,
-        // which read the process environment directly — CC does the same
-        // (`utils/auth.ts:125` reads `process.env.ANTHROPIC_AUTH_TOKEN`), so
-        // these two assertions need the variable set in the carrier.
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "token");
-
+    fn status_notice_context_from_readonly_runtime_builds_memory_and_ide_snapshot() {
         let mut global_config = GlobalConfig::default();
-        global_config.primary_api_key = Some("sk-console".to_string());
         global_config.auto_install_ide_extension = Some(true);
         let memory_file = ClaudeMdFile {
             path: Path::new("/repo/AGENTS.md").to_path_buf(),
@@ -767,25 +731,15 @@ mod setup_screens_snapshot_tests {
             ide_type: Some("pycharm".to_string()),
         };
 
-        // `api_key_source` resolves through `load_global_config()`
-        // (`auth.rs:534`), not the `global_config` argument — that one only
-        // feeds `auto_install_ide_extension`. Inject the same config so the
-        // /login-managed key is actually visible to the lookup.
-        crate::utils::config::set_test_global_config(Some(global_config.clone()));
-
         let context = status_notice_context_from_readonly_runtime(
             &global_config,
             Path::new("/repo"),
             vec![memory_file],
             Some(&ide_status),
         );
-        crate::utils::config::set_test_global_config(None);
 
         assert_eq!(context.cwd, "/repo");
         assert_eq!(context.memory_files[0].path, "/repo/AGENTS.md");
-        assert_eq!(context.auth_token_source, "ANTHROPIC_AUTH_TOKEN");
-        assert_eq!(context.api_key_source, "/login managed key");
-        assert!(context.has_console_api_key);
         assert!(context.is_supported_jetbrains_terminal);
         assert_eq!(context.ide_display_name.as_deref(), Some("PyCharm"));
     }
@@ -831,55 +785,6 @@ mod setup_screens_snapshot_tests {
                 .as_ref()
                 .is_some_and(|servers| servers.get("alpha").is_some())
         );
-    }
-
-    #[test]
-    fn status_notice_context_uses_official_api_key_approval_for_conflict_source() {
-        // Same two fixtures the sibling test above documents and this one was
-        // missing. `api_key_source` does not read the `global_config`
-        // argument — it goes through
-        // `get_anthropic_api_key_with_source()`, which reads the process
-        // environment and `load_global_config()` (auth.rs:534), exactly as CC
-        // reads `process.env` in `utils/auth.ts`. Without both, the lookup saw
-        // the scratch home's empty config and no ANTHROPIC_API_KEY, so the
-        // source was "none" and this looked like an approval-logic bug.
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-test");
-
-        let mut global_config = GlobalConfig {
-            primary_api_key: Some("sk-console".to_string()),
-            ..Default::default()
-        };
-        crate::utils::config::set_test_global_config(Some(global_config.clone()));
-        let unapproved = status_notice_context_from_readonly_runtime(
-            &global_config,
-            Path::new("/repo"),
-            Vec::new(),
-            None,
-        );
-        assert_eq!(unapproved.api_key_source, "/login managed key");
-
-        global_config.custom_api_key_responses = Some(CustomApiKeyResponses {
-            approved: Some(vec![normalize_api_key_for_config("sk-ant-test")]),
-            rejected: None,
-        });
-        // Re-inject: the approval list is what the lookup consults, and it also
-        // lives in the loaded global config, not the argument.
-        crate::utils::config::set_test_global_config(Some(global_config.clone()));
-        let approved = status_notice_context_from_readonly_runtime(
-            &global_config,
-            Path::new("/repo"),
-            Vec::new(),
-            None,
-        );
-        crate::utils::config::set_test_global_config(None);
-
-        assert_eq!(approved.api_key_source, "ANTHROPIC_API_KEY");
-        assert!(crate::utils::status_notice_definitions::get_active_notices(&approved).contains(
-            &crate::utils::status_notice_definitions::StatusNoticeId::ApiKeyConflict,
-        ));
     }
 
     #[test]

@@ -1477,14 +1477,13 @@ pub(crate) fn get_agent_listing_delta_attachment(
         .iter()
         .map(crate::tools::agent_tool::prompt::format_agent_line)
         .collect::<Vec<_>>();
-    let subscription = crate::utils::auth::get_subscription_type();
     Some(AttachmentMessage::new(serde_json::json!({
         "type": "agent_listing_delta",
         "addedTypes": added_types,
         "addedLines": added_lines,
         "removedTypes": removed_types,
         "isInitial": announced.is_empty(),
-        "showConcurrencyNote": subscription.as_deref() != Some("pro"),
+        "showConcurrencyNote": true,
     })))
 }
 

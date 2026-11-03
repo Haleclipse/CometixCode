@@ -1,7 +1,7 @@
 //! Maps to: CC `components/StatusNotices.tsx`.
 //!
 //! Safety boundary: official `StatusNotices` constructs context by reading
-//! global config, memory files, auth state, and IDE plugin state. Nyan accepts
+//! global config, memory files, and IDE plugin state. Nyan accepts
 //! a prebuilt `StatusNoticeContext` snapshot and renders active notices only.
 
 use crate::constants::figures::figures;
@@ -49,27 +49,6 @@ fn render_status_notice(
     match notice {
         StatusNoticeId::LargeMemoryFiles => render_large_memory_files(context, theme),
         StatusNoticeId::LargeAgentDescriptions => render_large_agent_descriptions(context, theme),
-        StatusNoticeId::ClaudeAiExternalToken => {
-            let source = context.auth_token_source.clone();
-            element! {
-                View(flex_direction: FlexDirection::Row, margin_top: 1u32) {
-                    Text(content: figures().warning.to_string(), color: theme.warning)
-                    Text(content: format!("Auth conflict: Using {source} instead of Claude account subscription token. Either unset {source}, or run `claude /logout`."), color: theme.warning, wrap: TextWrap::Wrap)
-                }
-            }
-            .into_any()
-        }
-        StatusNoticeId::ApiKeyConflict => {
-            let source = context.api_key_source.clone();
-            element! {
-                View(flex_direction: FlexDirection::Row, margin_top: 1u32) {
-                    Text(content: figures().warning.to_string(), color: theme.warning)
-                    Text(content: format!("Auth conflict: Using {source} instead of Anthropic Console key. Either unset {source}, or run `claude /logout`."), color: theme.warning, wrap: TextWrap::Wrap)
-                }
-            }
-            .into_any()
-        }
-        StatusNoticeId::BothAuthMethods => render_both_auth_methods(context, theme),
         StatusNoticeId::JetbrainsPluginInstall => {
             let ide_name = context
                 .ide_display_name
@@ -141,45 +120,6 @@ fn render_large_agent_descriptions(
     .into_any()
 }
 
-fn render_both_auth_methods(
-    context: &StatusNoticeContext,
-    theme: crate::utils::theme::Theme,
-) -> AnyElement<'static> {
-    let api_key_source = context.api_key_source.clone();
-    let auth_token_source = context.auth_token_source.clone();
-    let auth_source_label = if auth_token_source == "claude.ai" {
-        "claude.ai".to_string()
-    } else {
-        auth_token_source.clone()
-    };
-    let auth_action = if api_key_source == "ANTHROPIC_API_KEY" {
-        "Unset the ANTHROPIC_API_KEY environment variable, or claude /logout then say \"No\" to the API key approval before login.".to_string()
-    } else if api_key_source == "apiKeyHelper" {
-        "Unset the apiKeyHelper setting.".to_string()
-    } else {
-        "claude /logout".to_string()
-    };
-    let api_action = if auth_token_source == "claude.ai" {
-        "claude /logout to sign out of claude.ai.".to_string()
-    } else {
-        format!("Unset the {auth_token_source} environment variable.")
-    };
-
-    element! {
-        View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
-            View(flex_direction: FlexDirection::Row) {
-                Text(content: figures().warning.to_string(), color: theme.warning)
-                Text(content: format!("Auth conflict: Both a token ({auth_token_source}) and an API key ({api_key_source}) are set. This may lead to unexpected behavior."), color: theme.warning, wrap: TextWrap::Wrap)
-            }
-            View(flex_direction: FlexDirection::Column, margin_left: 3u32) {
-                Text(content: format!("· Trying to use {auth_source_label}? {auth_action}"), color: theme.warning, wrap: TextWrap::Wrap)
-                Text(content: format!("· Trying to use {api_key_source}? {api_action}"), color: theme.warning, wrap: TextWrap::Wrap)
-            }
-        }
-    }
-    .into_any()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,12 +176,8 @@ mod tests {
     }
 
     #[test]
-    fn status_notices_render_auth_and_jetbrains_copy() {
+    fn status_notices_render_jetbrains_copy_and_no_auth_conflict_notices() {
         let context = StatusNoticeContext {
-            is_claude_ai_subscriber: true,
-            auth_token_source: "ANTHROPIC_AUTH_TOKEN".to_string(),
-            has_console_api_key: true,
-            api_key_source: "ANTHROPIC_API_KEY".to_string(),
             is_supported_jetbrains_terminal: true,
             is_jetbrains_plugin_installed: false,
             ide_display_name: Some("PyCharm".to_string()),
@@ -249,18 +185,7 @@ mod tests {
         };
         let text = render_context(context);
 
-        assert!(
-            text.contains("instead of Claude account subscription token"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("instead of Anthropic Console key"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("Both a token (ANTHROPIC_AUTH_TOKEN) and an API key"),
-            "canvas=\n{text}"
-        );
+        assert!(!text.contains("Auth conflict"), "canvas=\n{text}");
         assert!(
             text.contains("Install the PyCharm plugin"),
             "canvas=\n{text}"

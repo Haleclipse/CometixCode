@@ -158,7 +158,7 @@ impl Default for SideQueryOptions {
 /// Build beta list for a side_query request.
 /// Maps to: CC `sideQuery` `betas` construction (+ STRUCTURED_OUTPUTS when applicable).
 pub fn side_query_betas_for_request(model: &str, has_output_format: bool) -> Vec<String> {
-    use crate::utils::betas::{
+    use crate::services::provider::anthropic::betas::{
         STRUCTURED_OUTPUTS_BETA_HEADER, get_model_betas, model_supports_structured_outputs,
     };
     let mut betas = get_model_betas(model);
@@ -210,13 +210,12 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
     let max_retries = opts.max_retries.unwrap_or(2);
 
     // Maps to: CC `getAnthropicClient({ maxRetries, model, source: 'side_query' })`.
-    let client = crate::services::api::client::get_anthropic_client(
-        crate::services::api::client::GetAnthropicClientOptions {
-            api_key: None,
+    let client = crate::services::provider::anthropic::client::get_anthropic_client(
+        crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
             max_retries,
-            model: Some(opts.model.clone()),
-            source: Some("side_query".to_string()),
-        },
+            Some(opts.model.clone()),
+            Some("side_query".to_string()),
+        )?,
     )
     .await?
     .build()?;
@@ -400,8 +399,7 @@ mod tests {
             let mut env = vec![
                 EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
                 EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
-                EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-local-side-query-test"),
-                EnvVarGuard::set("ANTHROPIC_BASE_URL", format!("http://{address}")),
+                EnvVarGuard::set("NYAN_SIDE_QUERY_TEST_KEY", "sk-ant-local-side-query-test"),
                 EnvVarGuard::set("API_TIMEOUT_MS", "5000"),
                 EnvVarGuard::set("NO_PROXY", "*"),
                 EnvVarGuard::set("no_proxy", "*"),
@@ -418,6 +416,10 @@ mod tests {
                 env.push(EnvVarGuard::unset(key));
             }
             crate::utils::settings::settings_cache::reset_settings_cache();
+            crate::services::provider::anthropic::target::install_test_main_profile(
+                &format!("http://{address}"),
+                "NYAN_SIDE_QUERY_TEST_KEY",
+            );
             let (tx, requests) = tokio::sync::mpsc::unbounded_channel();
             let server = tokio::spawn(async move {
                 tokio::time::timeout(std::time::Duration::from_secs(10), async move {
@@ -597,10 +599,12 @@ mod tests {
 
     #[test]
     fn structured_outputs_beta_pushed_only_when_format_and_model_support() {
-        use crate::utils::betas::STRUCTURED_OUTPUTS_BETA_HEADER;
+        use crate::services::provider::anthropic::betas::STRUCTURED_OUTPUTS_BETA_HEADER;
         let with_format = side_query_betas_for_request("claude-sonnet-4-6", true);
         // Support depends on provider env; if supported, header must appear.
-        if crate::utils::betas::model_supports_structured_outputs("claude-sonnet-4-6") {
+        if crate::services::provider::anthropic::betas::model_supports_structured_outputs(
+            "claude-sonnet-4-6",
+        ) {
             assert!(
                 with_format
                     .iter()
@@ -619,7 +623,9 @@ mod tests {
                 .iter()
                 .filter(|b| *b == STRUCTURED_OUTPUTS_BETA_HEADER)
                 .count();
-        if crate::utils::betas::model_supports_structured_outputs("claude-sonnet-4-6") {
+        if crate::services::provider::anthropic::betas::model_supports_structured_outputs(
+            "claude-sonnet-4-6",
+        ) {
             assert!(
                 only_from_format || without.iter().any(|b| b == STRUCTURED_OUTPUTS_BETA_HEADER)
             );

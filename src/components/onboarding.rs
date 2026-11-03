@@ -5,14 +5,11 @@
 //! theme step's ThemePicker, the api-key step's `ApproveApiKey` (which
 //! records the answer in `customApiKeyResponses`), and the terminal-setup
 //! step's Select; Onboarding's own confirm:yes / confirm:no bindings sit
-//! in a carrier ahead of the step. OAuth and preflight remain safe
-//! boundaries: no network, OAuth browser launch, keychain write, or
-//! analytics; those stay with their dedicated slices (`ConsoleOAuthFlow`,
-//! `PreflightStep`). Terminal setup delegates to the canonical
-//! `terminalSetup` installer.
+//! in a carrier ahead of the step. There is no sign-in step: Anthropic is
+//! API-key only. Terminal setup delegates to the canonical `terminalSetup`
+//! installer.
 
 use crate::components::approve_api_key::ApproveApiKey;
-use crate::components::console_oauth_flow::{ConsoleOAuthFlow, ConsoleOAuthMode, OAuthStatus};
 use crate::components::custom_select::{
     Select, SelectInputOptionMeta, SelectLayout, SelectOptionData, UseSelectInputOptions,
     UseSelectStateProps, use_select_input, use_select_state,
@@ -23,16 +20,13 @@ use crate::components::theme_picker::ThemePicker;
 use crate::components::ui::{OrderedList, OrderedListItem};
 use crate::constants::product;
 use crate::utils::env;
-use crate::utils::preflight_checks::PreflightStep;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OnboardingStepId {
-    Preflight,
     Theme,
     ApiKey,
-    OAuth,
     Security,
     TerminalSetup,
 }
@@ -40,10 +34,8 @@ pub(crate) enum OnboardingStepId {
 impl OnboardingStepId {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Self::Preflight => "preflight",
             Self::Theme => "theme",
             Self::ApiKey => "api-key",
-            Self::OAuth => "oauth",
             Self::Security => "security",
             Self::TerminalSetup => "terminal-setup",
         }
@@ -52,24 +44,16 @@ impl OnboardingStepId {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct OnboardingFlowConfig {
-    pub oauth_enabled: bool,
     pub api_key_needing_approval: Option<String>,
-    pub skip_oauth: bool,
     pub offer_terminal_setup: bool,
 }
 
 /// Maps to: CC `components/Onboarding.tsx`:150-230 step construction.
 pub(crate) fn onboarding_step_ids(config: &OnboardingFlowConfig) -> Vec<OnboardingStepId> {
     let mut steps = Vec::new();
-    if config.oauth_enabled {
-        steps.push(OnboardingStepId::Preflight);
-    }
     steps.push(OnboardingStepId::Theme);
     if config.api_key_needing_approval.is_some() {
         steps.push(OnboardingStepId::ApiKey);
-    }
-    if config.oauth_enabled && !config.skip_oauth {
-        steps.push(OnboardingStepId::OAuth);
     }
     steps.push(OnboardingStepId::Security);
     if config.offer_terminal_setup {
@@ -118,7 +102,6 @@ fn step_from_initial(
 #[derive(Props, Default)]
 pub(crate) struct OnboardingProps<'a> {
     pub on_done: HandlerMut<'a, ()>,
-    pub oauth_enabled: bool,
     pub api_key_needing_approval: Option<String>,
     pub offer_terminal_setup: bool,
     pub initial_step: Option<OnboardingStepId>,
@@ -142,9 +125,7 @@ pub(crate) fn Onboarding<'a>(
         .or_else(|| env::get().terminal.clone())
         .unwrap_or_else(|| "unknown".to_string());
     let base_config = OnboardingFlowConfig {
-        oauth_enabled: props.oauth_enabled,
         api_key_needing_approval: props.api_key_needing_approval.clone(),
-        skip_oauth: false,
         offer_terminal_setup: props.offer_terminal_setup,
     };
     let base_steps = onboarding_step_ids(&base_config);
@@ -152,7 +133,6 @@ pub(crate) fn Onboarding<'a>(
         step_from_initial(&base_steps, props.initial_step, props.initial_step_index);
 
     let mut current_step_index = hooks.use_state(|| initial_index);
-    let skip_oauth = hooks.use_state(|| false);
     // CC calls `onDone()` from `goToNextStep`; this component's `on_done`
     // cannot be held by the step callbacks, so they set this and the next
     // render calls it.
@@ -161,9 +141,7 @@ pub(crate) fn Onboarding<'a>(
     let exit_state = hooks.use_state(crate::hooks::use_exit::ExitKeyState::default);
 
     let config = OnboardingFlowConfig {
-        oauth_enabled: props.oauth_enabled,
         api_key_needing_approval: props.api_key_needing_approval.clone(),
-        skip_oauth: skip_oauth.get(),
         offer_terminal_setup: props.offer_terminal_setup,
     };
     let steps = onboarding_step_ids(&config);
@@ -194,17 +172,10 @@ pub(crate) fn Onboarding<'a>(
             go_to_next_step();
         }
     };
-    // CC :143-148 `handleApiKeyDone`: an approved key skips OAuth, then
-    // `goToNextStep()`. CC lands on its skipped OAuth step, whose
-    // SkippableStep moves on; the port drops that step from `steps`, so
-    // the next index is already the step after it.
-    let handle_api_key_done = move |approved: bool| {
-        if approved {
-            let mut skip_oauth = skip_oauth;
-            skip_oauth.set(true);
-        }
-        go_to_next_step();
-    };
+    // CC :143-148 `handleApiKeyDone`: the answer is recorded by
+    // `ApproveApiKey`; approving or rejecting both go to the next step, since
+    // there is no sign-in step to skip.
+    let handle_api_key_done = move |_approved: bool| go_to_next_step();
 
     // Maps to: CC Onboarding.tsx:207-216, Select onChange's
     // setupTerminal(theme).catch(...).finally(goToNextStep), the
@@ -234,47 +205,7 @@ pub(crate) fn Onboarding<'a>(
         (props.on_done)(());
     }
 
-    hooks.use_propagated_terminal_events({
-        let steps = steps.clone();
-        move |event| {
-            let TerminalEvent::Key(KeyEvent { code, kind, .. }) = event.event() else {
-                return;
-            };
-            if *kind == KeyEventKind::Release {
-                return;
-            }
-            let index = current_step_index.get().min(steps.len().saturating_sub(1));
-            let Some(step) = steps.get(index).copied() else {
-                return;
-            };
-
-            let mut go_next = || {
-                if index + 1 < steps.len() {
-                    current_step_index.set(index + 1);
-                } else {
-                    should_done.set(true);
-                }
-            };
-
-            match step {
-                // ThemePicker owns the theme step's keys (Onboarding.tsx:80-90).
-                OnboardingStepId::Theme => {}
-                OnboardingStepId::Security => {}
-                OnboardingStepId::TerminalSetup => {}
-                // ApproveApiKey owns its keys (Onboarding.tsx:156-165).
-                OnboardingStepId::ApiKey => {}
-                OnboardingStepId::Preflight | OnboardingStepId::OAuth => {
-                    if matches!(code, KeyCode::Enter | KeyCode::Tab | KeyCode::Esc) {
-                        go_next();
-                        event.stop_propagation();
-                    }
-                }
-            }
-        }
-    });
-
     let body = match current_step {
-        Some(OnboardingStepId::Preflight) => render_preflight_step(theme),
         Some(OnboardingStepId::Theme) => render_theme_step(handle_theme_selection),
         Some(OnboardingStepId::ApiKey) => render_api_key_step(
             props
@@ -283,7 +214,6 @@ pub(crate) fn Onboarding<'a>(
                 .unwrap_or_default(),
             handle_api_key_done,
         ),
-        Some(OnboardingStepId::OAuth) => render_oauth_step(),
         Some(OnboardingStepId::Security) => render_security_step(theme),
         Some(OnboardingStepId::TerminalSetup) => render_terminal_setup_step(
             theme,
@@ -339,12 +269,11 @@ struct OnboardingExitBindingProps {
 /// Native placement carrier for CC `Onboarding.tsx:77`
 /// `useExitOnCtrlCDWithKeybindings()`, like Settings' `SettingsExitBinding`:
 /// a zero-size first child, so the hook sees Ctrl+C/Ctrl+D before a step's
-/// ThemePicker (whose own exit is a no-op), as CC's listener order gives it
-/// whenever Onboarding mounted before the picker (the OAuth preflight step
-/// comes first). Without OAuth CC mounts the picker in the same commit, and
-/// its child-first effects let the picker's no-op take the keys; the port
-/// keeps Onboarding's exit there too. The state goes back to Onboarding for
-/// its "again to exit" lines.
+/// ThemePicker (whose own exit is a no-op). CC mounts the picker in the same
+/// commit as Onboarding when there is no preflight step, and its child-first
+/// effects let the picker's no-op take the keys; the port keeps Onboarding's
+/// exit there too. The state goes back to Onboarding for its "again to exit"
+/// lines.
 #[component]
 fn OnboardingExitBinding(
     props: &OnboardingExitBindingProps,
@@ -579,17 +508,6 @@ fn render_terminal_setup_step(
     .into_any()
 }
 
-fn render_preflight_step(_theme: Theme) -> AnyElement<'static> {
-    element! {
-        PreflightStep(
-            result: None,
-            is_checking: true,
-            show_spinner: true,
-        )
-    }
-    .into_any()
-}
-
 /// Maps to: CC `Onboarding.tsx:156-165`.
 fn render_api_key_step(
     custom_api_key_truncated: &str,
@@ -599,23 +517,6 @@ fn render_api_key_step(
         ApproveApiKey(
             custom_api_key_truncated: custom_api_key_truncated.to_string(),
             on_done: handle_api_key_done,
-        )
-    }
-    .into_any()
-}
-
-fn render_oauth_step() -> AnyElement<'static> {
-    element! {
-        ConsoleOAuthFlow(
-            oauth_status: OAuthStatus::Idle,
-            mode: ConsoleOAuthMode::Login,
-            starting_message: None,
-            force_login_method: None,
-            show_paste_prompt: false,
-            url_copied: false,
-            pasted_code: String::new(),
-            cursor_offset: 0usize,
-            text_input_columns: 60usize,
         )
     }
     .into_any()
@@ -635,7 +536,6 @@ mod tests {
     }
 
     fn render_onboarding_text(props: OnboardingProps<'static>) -> String {
-        let oauth_enabled = props.oauth_enabled;
         let api_key_needing_approval = props.api_key_needing_approval;
         let offer_terminal_setup = props.offer_terminal_setup;
         let initial_step = props.initial_step;
@@ -648,7 +548,6 @@ mod tests {
                 crate::state::app_state::AppStateProvider(
                     children: crate::state::app_state::ProviderChildren::new(move || element! {
                         Onboarding(
-                            oauth_enabled: oauth_enabled,
                             api_key_needing_approval: api_key_needing_approval.clone(),
                             offer_terminal_setup: offer_terminal_setup,
                             initial_step: initial_step,
@@ -671,31 +570,13 @@ mod tests {
         );
         assert_eq!(
             onboarding_step_ids(&OnboardingFlowConfig {
-                oauth_enabled: true,
                 api_key_needing_approval: Some("abc".to_string()),
-                skip_oauth: false,
                 offer_terminal_setup: true,
             })
             .into_iter()
             .map(OnboardingStepId::as_str)
             .collect::<Vec<_>>(),
-            vec![
-                "preflight",
-                "theme",
-                "api-key",
-                "oauth",
-                "security",
-                "terminal-setup",
-            ]
-        );
-        assert!(
-            !onboarding_step_ids(&OnboardingFlowConfig {
-                oauth_enabled: true,
-                api_key_needing_approval: None,
-                skip_oauth: true,
-                offer_terminal_setup: false,
-            })
-            .contains(&OnboardingStepId::OAuth)
+            vec!["theme", "api-key", "security", "terminal-setup"]
         );
     }
 
@@ -818,9 +699,9 @@ mod tests {
     }
 
     #[test]
-    fn onboarding_api_key_answer_skips_oauth_only_when_approved() {
-        // CC Onboarding.tsx:143-148 `handleApiKeyDone`: approving skips the
-        // OAuth step; rejecting goes on to it. The dialog owns its keys and
+    fn onboarding_api_key_answer_goes_to_security_whether_approved_or_rejected() {
+        // CC Onboarding.tsx:143-148 `handleApiKeyDone`. With no sign-in step
+        // both answers continue to Security. The dialog owns its keys and
         // opens on "No". Terminal setup follows security, so a second step
         // would show. Writes stay off: the answer's config save is a dry
         // run here.
@@ -854,7 +735,6 @@ mod tests {
                             children: crate::state::app_state::ProviderChildren::new(|| element! {
                                 View(flex_direction: FlexDirection::Column) {
                                     Onboarding(
-                                        oauth_enabled: true,
                                         api_key_needing_approval: Some("abcd1234".to_string()),
                                         offer_terminal_setup: true,
                                         initial_step: Some(OnboardingStepId::ApiKey),
@@ -906,10 +786,10 @@ mod tests {
         let approved = run(vec![vec![KeyCode::Up], vec![KeyCode::Enter]]);
         assert!(approved.contains("Security notes:"), "{approved}");
         let rejected = run(vec![vec![KeyCode::Enter]]);
-        assert!(rejected.contains("Select login method:"), "{rejected}");
+        assert!(rejected.contains("Security notes:"), "{rejected}");
         // An answer and Esc in one read are one answer, one step.
         let rejected = run(vec![vec![KeyCode::Enter, KeyCode::Esc]]);
-        assert!(rejected.contains("Select login method:"), "{rejected}");
+        assert!(rejected.contains("Security notes:"), "{rejected}");
         let approved = run(vec![vec![KeyCode::Up], vec![KeyCode::Enter, KeyCode::Esc]]);
         assert!(approved.contains("Security notes:"), "{approved}");
     }
@@ -1070,26 +950,6 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(!text.contains("Esc to cancel"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn onboarding_oauth_step_delegates_to_console_oauth_flow_idle_state() {
-        let text = render_onboarding_text(OnboardingProps {
-            oauth_enabled: true,
-            initial_step: Some(OnboardingStepId::OAuth),
-            terminal_name: Some("xterm".to_string()),
-            ..OnboardingProps::default()
-        });
-
-        assert!(
-            text.contains("nyan can be used with your Claude subscription"),
-            "canvas=\n{text}"
-        );
-        assert!(text.contains("Select login method:"), "canvas=\n{text}");
-        assert!(
-            text.contains("Claude account with subscription"),
-            "canvas=\n{text}"
-        );
     }
 
     #[test]

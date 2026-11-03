@@ -352,33 +352,7 @@ pub fn is_opus_1m_merge_enabled() -> bool {
         return false;
     }
 
-    let subscription_type = crate::utils::auth::get_subscription_type();
-    if subscription_type.as_deref() == Some("pro") {
-        return false;
-    }
-
-    if crate::utils::auth::is_claude_ai_subscriber() && subscription_type.is_none() {
-        return false;
-    }
-
     true
-}
-
-// @[MODEL LAUNCH]: Update the default model description strings shown to users.
-/// Maps to: CC `utils/model/model.ts:286-296#getClaudeAiUserDefaultModelDescription`.
-pub fn get_claude_ai_user_default_model_description(fast_mode: bool) -> String {
-    if crate::utils::auth::is_max_subscriber() || crate::utils::auth::is_team_premium_subscriber() {
-        let suffix = if fast_mode {
-            get_opus_46_pricing_suffix(true)
-        } else {
-            String::new()
-        };
-        if is_opus_1m_merge_enabled() {
-            return format!("Opus 4.6 with 1M context · Most capable for complex work{suffix}");
-        }
-        return format!("Opus 4.6 · Most capable for complex work{suffix}");
-    }
-    "Sonnet 4.6 · Best for everyday tasks".to_string()
 }
 
 /// Maps to: CC `utils/model/model.ts:298-305#renderDefaultModelSetting`.
@@ -516,14 +490,13 @@ mod tests {
     /// Maps to: CC `isOpus1mMergeEnabled()` (`utils/model/model.ts`). Every
     /// input is process state at the source, so the test drives process state.
     ///
-    /// The fourth case is CC's fail-closed guard and the reason it exists: a
-    /// subscriber whose OAuth tokens carry valid scopes but NO
-    /// `subscriptionType` (the source cites a stale/partial refresh in the VS
-    /// Code config subprocess). Without the guard `isProSubscriber()` is false
-    /// for those users and `opus[1m]` leaks into the dropdown, where the API
-    /// rejects it as a misleading "rate limit reached".
+    /// CC also closes the gate for a Pro subscriber and fails closed for a
+    /// subscriber whose tokens carry no `subscriptionType`. There are no
+    /// claude.ai subscribers any more, so those cases are gone: the gate depends
+    /// only on the provider and the 1M opt-out, and stored or ambient claude.ai
+    /// credentials (here a Pro subscriber and a bare OAuth token) are ignored.
     #[test]
-    fn opus_1m_merge_gate_matches_official_provider_and_unknown_subscriber_guards() {
+    fn opus_1m_merge_gate_depends_only_on_provider_and_opt_out_not_on_claude_ai_credentials() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _providers = [
             "CLAUDE_CODE_DISABLE_1M_CONTEXT",
@@ -537,23 +510,25 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-opus1m-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&config_dir).unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        let write_credentials = |oauth: serde_json::Value| {
-            std::fs::write(
-                config_dir.join(".credentials.json"),
-                serde_json::json!({ "claudeAiOauth": oauth }).to_string(),
-            )
-            .unwrap();
-            crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
-        };
 
-        // A max subscriber on first-party: the merge is on.
-        write_credentials(serde_json::json!({
-            "accessToken": "sk-ant-oat01-test",
-            "refreshToken": "sk-ant-ort01-test",
-            "expiresAt": 99_999_999_999_999u64,
-            "scopes": ["user:inference"],
-            "subscriptionType": "max",
-        }));
+        // First-party with no credentials at all: the merge is on.
+        assert!(is_opus_1m_merge_enabled());
+
+        // A stored Pro subscription and an ambient OAuth token are ignored.
+        std::fs::write(
+            config_dir.join(".credentials.json"),
+            serde_json::json!({ "claudeAiOauth": {
+                "accessToken": "sk-ant-oat01-test",
+                "refreshToken": "sk-ant-ort01-test",
+                "expiresAt": 99_999_999_999_999u64,
+                "scopes": ["user:inference"],
+                "subscriptionType": "pro",
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        let _oauth_token = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token");
+        crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
         assert!(is_opus_1m_merge_enabled());
 
         // Non-first-party provider closes the gate.
@@ -565,17 +540,6 @@ mod tests {
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1");
         assert!(!is_opus_1m_merge_enabled());
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_1M_CONTEXT");
-
-        // Subscriber with tokens but no subscriptionType: fail closed.
-        let _oauth_token = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token");
-        let _unix_socket = EnvVarGuard::set("ANTHROPIC_UNIX_SOCKET", "/tmp/nyan-test.sock");
-        write_credentials(serde_json::json!({
-            "accessToken": "sk-ant-oat01-test",
-            "refreshToken": "sk-ant-ort01-test",
-            "expiresAt": 99_999_999_999_999u64,
-            "scopes": ["user:inference"],
-        }));
-        assert!(!is_opus_1m_merge_enabled());
 
         let _ = std::fs::remove_dir_all(&config_dir);
     }

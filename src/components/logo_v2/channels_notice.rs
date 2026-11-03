@@ -148,7 +148,7 @@ fn configured_mcp_server_names_readonly(
 /// Maps to: CC `components/LogoV2/ChannelsNotice.tsx` mount-time snapshot.
 ///
 /// A `get_env` parameter was removed here: the body never read it, and the
-/// subscription facts it appears to gate (`get_subscription_type`,
+/// subscription facts it appears to gate (formerly `get_subscription_type`,
 /// `get_allowed_channels`) come from process state exactly as at the source.
 /// Leaving it in place made callers — and their tests — look like they could
 /// steer the result.
@@ -162,8 +162,9 @@ pub fn channels_notice_snapshot_from_readonly_sources(
         return ChannelsNoticeSnapshot::default();
     }
 
-    let subscription_type = crate::utils::auth::get_subscription_type();
-    let managed = matches!(subscription_type.as_deref(), Some("team" | "enterprise"));
+    // No claude.ai subscription exists, so channels are never org-managed.
+    let subscription_type: Option<String> = None;
+    let managed = false;
     let org_list = policy_settings.and_then(|settings| {
         settings
             .allowed_channel_plugins
@@ -195,7 +196,7 @@ pub fn channels_notice_snapshot_from_readonly_sources(
         channels,
         has_dev_channels: crate::bootstrap::state::get_has_dev_channels(),
         disabled: !is_channels_enabled(),
-        no_auth: crate::utils::auth::get_claude_ai_oauth_tokens().is_none(),
+        no_auth: true,
         policy_blocked: managed
             && policy_settings.and_then(|settings| settings.channels_enabled) != Some(true),
     }
@@ -231,7 +232,7 @@ pub fn ChannelsNotice(props: &ChannelsNoticeProps, hooks: Hooks) -> impl Into<An
     let dim_lines: Vec<String> = if snapshot.disabled {
         vec!["Channels are not currently available".to_string()]
     } else if snapshot.no_auth {
-        vec!["Channels require claude.ai authentication · run /login, then restart".to_string()]
+        vec!["Channels require claude.ai authentication, which nyan does not support".to_string()]
     } else if snapshot.policy_blocked {
         vec![
             "Inbound messages will be silently dropped".to_string(),
@@ -359,9 +360,8 @@ mod tests {
         }
 
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        // The auth facts come from process state (`utils/auth.rs:701`), so the
-        // logged-in identity is this test's to establish rather than whatever
-        // credential file the ambient config home happens to hold.
+        // An ambient OAuth token must not count as authentication: channels
+        // need a claude.ai login, which nyan does not support.
         let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-channels-notice");
 
         let _channels = BootstrapChannelsGuard;
@@ -385,7 +385,7 @@ mod tests {
             snapshot.disabled,
             "source-controlled tengu_harbor default is off"
         );
-        assert!(!snapshot.no_auth);
+        assert!(snapshot.no_auth);
         assert!(
             snapshot
                 .unmatched

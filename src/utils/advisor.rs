@@ -31,7 +31,7 @@ pub fn is_advisor_enabled() -> bool {
     ) {
         return false;
     }
-    if !crate::utils::betas::should_include_first_party_only_betas() {
+    if !crate::services::provider::anthropic::betas::should_include_first_party_only_betas() {
         return false;
     }
     get_advisor_config().enabled.unwrap_or(false)

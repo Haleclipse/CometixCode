@@ -15,15 +15,13 @@ use crate::components::model_picker::{
 };
 use crate::state::app_state::use_app_state_maybe_outside_of_provider;
 use crate::state::store::AppStore;
-use crate::utils::extra_usage::is_billed_as_extra_usage;
 use crate::utils::fast_mode::{
     clear_fast_mode_cooldown, is_fast_mode_available, is_fast_mode_enabled,
     is_fast_mode_supported_by_model,
 };
 use crate::utils::model::model::{
     NO_MAIN_PROFILE_PROMPT, get_default_main_loop_model_setting, get_main_loop_model,
-    has_main_profile, is_opus_1m_merge_enabled, parse_user_specified_model,
-    render_default_model_setting, render_model_name,
+    has_main_profile, parse_user_specified_model, render_default_model_setting, render_model_name,
 };
 use iocraft::prelude::*;
 
@@ -81,14 +79,6 @@ fn handle_select_message(
             message.push_str(" · Fast mode ON");
             was_fast_mode_toggled_on = Some(true);
         }
-    }
-
-    if is_billed_as_extra_usage(
-        model,
-        was_fast_mode_toggled_on == Some(true),
-        is_opus_1m_merge_enabled(),
-    ) {
-        message.push_str(" · Billed as extra usage");
     }
 
     if was_fast_mode_toggled_on == Some(false) {

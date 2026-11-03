@@ -17,7 +17,6 @@ use crate::constants::figures;
 use crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings;
 use crate::services::mcp::types::{McpServerConnectionType, Transport};
 use crate::services::mcp::utils::describe_mcp_config_file_path;
-use crate::utils::process_env::JsTruthy;
 use iocraft::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,59 +165,15 @@ pub fn auth_url_copy_hint(copied: bool) -> &'static str {
 /// account, environment, and component-state preparation remain complete;
 /// `open_browser` rejects only at its final process-launch outlet.
 async fn handle_claude_ai_auth(
-    config: &crate::services::mcp::types::ScopedMcpServerConfig,
+    _config: &crate::services::mcp::types::ScopedMcpServerConfig,
     on_auth_started: impl FnOnce(String),
 ) -> anyhow::Result<()> {
     let claude_ai_base_url = crate::constants::oauth::get_oauth_config()?.claude_ai_origin;
-    // CC `getOauthAccountInfo()` returns account metadata only while Anthropic
-    // auth is the active process authentication mode.
-    let account_info = crate::utils::auth::is_anthropic_auth_enabled()
-        .then(|| crate::utils::config::load_global_config().oauth_account)
-        .flatten();
-    let org_uuid = account_info
-        .as_ref()
-        .and_then(|account| account.organization_uuid.as_deref())
-        .filter(|organization_uuid| !organization_uuid.is_empty());
-
-    let auth_url = if let (Some(org_uuid), Transport::ClaudeAiProxy, Some(server_id)) = (
-        org_uuid,
-        config.transport,
-        config
-            .id
-            .as_deref()
-            .filter(|server_id| !server_id.is_empty()),
-    ) {
-        let server_id = server_id
-            .strip_prefix("mcprs")
-            .map(|suffix| format!("mcpsrv{suffix}"))
-            .unwrap_or_else(|| server_id.to_string());
-        let product_surface = crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT")
-            .truthy()
-            .unwrap_or_else(|| "cli".to_string());
-        let mut encoded_product_surface = String::new();
-        for byte in product_surface.bytes() {
-            match byte {
-                b'A'..=b'Z'
-                | b'a'..=b'z'
-                | b'0'..=b'9'
-                | b'-'
-                | b'_'
-                | b'.'
-                | b'!'
-                | b'~'
-                | b'*'
-                | b'\''
-                | b'('
-                | b')' => encoded_product_surface.push(byte as char),
-                _ => encoded_product_surface.push_str(&format!("%{byte:02X}")),
-            }
-        }
-        format!(
-            "{claude_ai_base_url}/api/organizations/{org_uuid}/mcp/start-auth/{server_id}?product_surface={encoded_product_surface}"
-        )
-    } else {
-        format!("{claude_ai_base_url}/settings/connectors")
-    };
+    // CC builds an organization-scoped `start-auth` deep link from
+    // `getOauthAccountInfo()`. There is no claude.ai OAuth account, so the
+    // organization is never known and the connectors settings page is the only
+    // target.
+    let auth_url = format!("{claude_ai_base_url}/settings/connectors");
 
     on_auth_started(auth_url.clone());
     // CC: logEvent('tengu_claudeai_mcp_auth_started', {}) — joins with analytics.
@@ -1232,7 +1187,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_claude_ai_auth_matches_official_url_selection_and_closed_outlet() {
+    fn handle_claude_ai_auth_targets_connectors_page_and_ignores_a_stored_account() {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1241,10 +1196,10 @@ mod tests {
             EnvVarGuard::unset("USE_STAGING_OAUTH"),
             EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
             EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
-            EnvVarGuard::set("ANTHROPIC_UNIX_SOCKET", "/tmp/nyan-test-auth.sock"),
             EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token"),
         ];
-        let _entrypoint = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli test");
+        // A stored claude.ai account (and an ambient token) must not produce the
+        // organization-scoped deep link: there is no claude.ai OAuth account.
         let mut account = crate::utils::config::AccountInfo::default();
         account.organization_uuid = Some("org_123".to_string());
         let _global_config = GlobalConfigRestore::install(crate::utils::config::GlobalConfig {
@@ -1252,49 +1207,26 @@ mod tests {
             ..crate::utils::config::GlobalConfig::default()
         });
 
-        let mut direct_config = server(
+        let mut config = server(
             McpServerConnectionType::NeedsAuth,
             Transport::ClaudeAiProxy,
             None,
         )
         .config;
-        direct_config.id = Some("mcprs_abc".to_string());
-        let direct_url = Arc::new(Mutex::new(None::<String>));
-        let direct_url_for_callback = Arc::clone(&direct_url);
-        let direct_error =
-            futures::executor::block_on(handle_claude_ai_auth(&direct_config, move |url| {
-                *direct_url_for_callback.lock().expect("direct URL mutex") = Some(url);
-            }))
-            .expect_err("the prepared OAuth browser outlet must remain default-closed");
+        config.id = Some("mcprs_abc".to_string());
+        let url = Arc::new(Mutex::new(None::<String>));
+        let url_for_callback = Arc::clone(&url);
+        let error = futures::executor::block_on(handle_claude_ai_auth(&config, move |url| {
+            *url_for_callback.lock().expect("URL mutex") = Some(url);
+        }))
+        .expect_err("the prepared OAuth browser outlet must remain default-closed");
         assert!(
-            direct_error
+            error
                 .downcast_ref::<crate::constants::oauth::OAuthCredentialSideEffectsUnavailable>()
                 .is_some()
         );
         assert_eq!(
-            direct_url.lock().expect("direct URL mutex").as_deref(),
-            Some(
-                "https://claude.ai/api/organizations/org_123/mcp/start-auth/mcpsrv_abc?product_surface=cli%20test"
-            )
-        );
-
-        direct_config.id = None;
-        let fallback_url = Arc::new(Mutex::new(None::<String>));
-        let fallback_url_for_callback = Arc::clone(&fallback_url);
-        let fallback_error =
-            futures::executor::block_on(handle_claude_ai_auth(&direct_config, move |url| {
-                *fallback_url_for_callback
-                    .lock()
-                    .expect("fallback URL mutex") = Some(url);
-            }))
-            .expect_err("the fallback browser outlet must remain default-closed");
-        assert!(
-            fallback_error
-                .downcast_ref::<crate::constants::oauth::OAuthCredentialSideEffectsUnavailable>()
-                .is_some()
-        );
-        assert_eq!(
-            fallback_url.lock().expect("fallback URL mutex").as_deref(),
+            url.lock().expect("URL mutex").as_deref(),
             Some("https://claude.ai/settings/connectors")
         );
     }

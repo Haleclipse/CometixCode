@@ -822,7 +822,7 @@ fn platform_name() -> &'static str {
 }
 
 fn should_use_global_cache_scope() -> bool {
-    crate::utils::betas::should_use_global_cache_scope()
+    crate::services::provider::anthropic::betas::should_use_global_cache_scope()
 }
 
 #[cfg(test)]

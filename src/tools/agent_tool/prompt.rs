@@ -175,9 +175,7 @@ pub fn get_prompt(
 
     // When listing via attachment, the "launch multiple agents" note ships in
     // the attachment message (conditioned on subscription there).
-    let concurrency_note = if !list_via_attachment
-        && crate::utils::auth::get_subscription_type().as_deref() != Some("pro")
-    {
+    let concurrency_note = if !list_via_attachment {
         "\n- Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses"
     } else {
         ""

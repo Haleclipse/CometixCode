@@ -41,7 +41,7 @@ static INFERENCE_PROFILE_BACKING_MODELS: LazyLock<Mutex<HashMap<String, Option<S
 /// API client may use.
 pub async fn get_inference_profile_backing_model(
     profile_id: &str,
-    auth: &crate::services::api::client::BedrockAuth,
+    auth: &crate::services::provider::anthropic::client::BedrockAuth,
 ) -> Option<String> {
     if let Some(cached) = INFERENCE_PROFILE_BACKING_MODELS
         .lock()
@@ -57,12 +57,12 @@ pub async fn get_inference_profile_backing_model(
             .truthy()
             .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK").truthy())
             .unwrap_or_else(|| format!("https://bedrock.{region}.amazonaws.com"));
-        let response = crate::services::api::client::send_bedrock_request(
+        let response = crate::services::provider::anthropic::client::send_bedrock_request(
             reqwest::Method::GET,
             &endpoint,
             &format!(
                 "/inference-profiles/{}",
-                crate::services::api::client::aws_uri_encode(profile_id)
+                crate::services::provider::anthropic::client::aws_uri_encode(profile_id)
             ),
             Vec::new(),
             &region,

@@ -26,7 +26,6 @@ pub mod claude_md_external_includes_dialog;
 pub mod clickable_image_ref;
 pub mod compact_summary;
 pub mod configurable_shortcut_hint;
-pub mod console_oauth_flow;
 pub mod context_suggestions;
 pub mod context_visualization;
 pub mod coordinator_agent_status;

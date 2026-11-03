@@ -232,13 +232,10 @@ impl LogoDisplayData {
         // SandboxManager.isSandboxingEnabled()`.
         let show_sandbox_status = crate::utils::sandbox::sandbox_adapter::is_sandboxing_enabled();
 
-        // Maps to CC `utils/logoV2Utils.ts` `getLogoDisplayData()`:
-        // `billingType = isClaudeAISubscriber() ? getSubscriptionName() : 'API Usage Billing'`.
+        // Maps to CC `utils/logoV2Utils.ts` `getLogoDisplayData()`; with no
+        // claude.ai subscriber the billing type is always 'API Usage Billing'.
         // Never surface oauthAccount.billingType (`stripe_subscription`, etc.).
-        let billing_type = logo_billing_type_label(
-            crate::utils::auth::is_claude_ai_subscriber(),
-            crate::utils::auth::get_subscription_type().as_deref(),
-        );
+        let billing_type = API_USAGE_BILLING_LABEL.to_string();
         // Maps to CC LogoV2 / CondensedLogo:
         // `renderModelSetting(useMainLoopModel())` — resolved model marketing name,
         // not the settings picker label "Default (recommended)".
@@ -745,17 +742,8 @@ fn format_welcome_message(username: Option<&str>) -> String {
     }
 }
 
-/// Maps to: CC `getLogoDisplayData().billingType` selection.
-pub(crate) fn logo_billing_type_label(
-    is_claude_ai_subscriber: bool,
-    subscription_type: Option<&str>,
-) -> String {
-    if is_claude_ai_subscriber {
-        crate::utils::auth::claude_ai_subscription_name(subscription_type).to_string()
-    } else {
-        "API Usage Billing".to_string()
-    }
-}
+/// Maps to: CC `getLogoDisplayData().billingType` for a non-subscriber.
+pub(crate) const API_USAGE_BILLING_LABEL: &str = "API Usage Billing";
 
 pub(crate) fn format_model_and_billing(
     model_name: &str,
@@ -1193,25 +1181,9 @@ mod tests {
     }
 
     #[test]
-    fn logo_billing_type_uses_subscription_name_not_raw_billing_rail() {
-        // Official getLogoDisplayData: subscriber → getSubscriptionName().
-        assert_eq!(logo_billing_type_label(true, Some("max")), "Claude Max");
-        assert_eq!(logo_billing_type_label(true, Some("pro")), "Claude Pro");
-        assert_eq!(logo_billing_type_label(true, Some("team")), "Claude Team");
-        assert_eq!(
-            logo_billing_type_label(true, Some("enterprise")),
-            "Claude Enterprise"
-        );
-        assert_eq!(logo_billing_type_label(true, None), "Claude API");
-        // Non-subscriber always shows API usage billing — ignore plan tokens.
-        assert_eq!(
-            logo_billing_type_label(false, Some("max")),
-            "API Usage Billing"
-        );
+    fn logo_billing_type_is_always_api_usage_billing() {
+        // There is no claude.ai subscriber, so no plan name is ever shown, and
         // oauthAccount.billingType rails like stripe_subscription are not labels.
-        assert_ne!(
-            logo_billing_type_label(true, Some("max")),
-            "stripe_subscription"
-        );
+        assert_eq!(API_USAGE_BILLING_LABEL, "API Usage Billing");
     }
 }
