@@ -49,7 +49,7 @@
 | `src/utils/windows_paths.rs:9-55` | **正常**。覆盖盘符、UNC、`/cygdrive` 和 Git Bash POSIX/Windows 转换；`src/utils/shell/mod.rs:352-370` 会把 `pwd -P` 结果转回 Windows 路径。 | 增加真实 Git Bash 工作目录、盘符、UNC 和 worktree 冒烟；当前单测主要是纯字符串。 | M |
 | `src/utils/fs_operations/native.rs:60-78`、`:166-223` | **正常**。Windows 使用专门的 stat/lstat、symlink/junction 实现。 | 保持；在 Windows runner 运行 symlink/junction 权限允许时的测试。 | M |
 | `src/utils/fs_operations/native.rs:103-135`、`:249-268` | **能编译但行为不对**。Unix mode 参数在 Windows 被忽略；`mkdir`/`append` 不会实现 `0o600`/`0o700` 的 Unix 语义。 | 对敏感文件改用 Windows ACL/DACL；普通文件则在文档中说明 Windows ACL 继承语义。不要仅把 mode 静默当成安全保证。 | M–L |
-| `src/utils/secure_storage/plain_text_storage.rs:48-69`、`:119-132` | **能编译但安全属性不对**。Windows 路径会走 plaintext backend，`#[cfg(unix)]` 的 `chmod 600` 不执行，凭据文件依赖目录/文件默认 ACL。 | 实现 Windows Credential Manager 或 DPAPI backend；在此之前至少用 ACL 限制凭据文件并在 doctor/登录提示中明确“明文存储”。 | M–L |
+| `src/utils/secure_storage/plain_text_storage.rs:49-172`、`:265-300` | **正常（首发约束）**。Windows 路径走 plaintext backend，写入后设置受保护 DACL，仅当前用户可读写；凭据仍是明文文件。 | 后续实现 Windows Credential Manager 或 DPAPI backend；首发保留明文 warning，并在 ACL 设置失败时提示使用 env。 | M–L |
 | `src/utils/sandbox/sandbox_adapter.rs:515-567`、`:594-628` | **不可用（随 sandbox）**。路径规范化本身可编译，但最终路径限制交给 Seatbelt/bwrap，Windows 没有对应 enforcement。 | 与 Windows sandbox backend 一起实现并测试，不能单独把路径转换当作权限隔离。 | XL |
 
 ### 4. 信号、进程树和后台任务
@@ -75,7 +75,7 @@
 
 | 位置 | 现状 | 建议方案 | 工作量 |
 |---|---|---|---|
-| `src/utils/secure_storage/mod.rs:30-43` | **能编译但安全属性不对**。只有 macOS 使用 keychain fallback；Windows 与 Linux 都直接选择 `PlainTextStorage`。 | Windows 使用 Credential Manager（推荐）或 DPAPI 加密 blob；保留 plaintext 仅作为明确的、带 warning 的 fallback。 | M–L |
+| `src/utils/secure_storage/mod.rs:30-43` | **能编译但安全属性受限**。只有 macOS 使用 keychain fallback；Windows 与 Linux 都直接选择 `PlainTextStorage`，Windows 文件 ACL 已限制为当前用户。 | Windows 后续使用 Credential Manager（推荐）或 DPAPI 加密 blob；在此之前保留带 warning 的 plaintext fallback。 | M–L |
 | `src/utils/secure_storage/plain_text_storage.rs:8-12`、`:78-103` | **正常（功能）/能编译但安全属性不对**。凭据位置是 config home 下 `.credentials.json`，并支持旧路径导入；Windows 可读写，但不是系统凭据库。 | 发布前至少确认 config 目录 ACL；实现安全 backend 后验证迁移、删除和旧凭据导入。 | M |
 | `src/utils/secure_storage/mac_os_keychain_storage.rs:29-99`、`:130-225` | **正常（Windows 不会误调用）**。`security`/macOS keychain 代码在非 macOS 编译为 no-op/缓存分支。 | 不需要 Windows 替代 `security`；替代点是 `get_secure_storage()` 的 Windows backend。 | M–L |
 
@@ -139,7 +139,7 @@ cargo test --locked --lib windows_smoke -- --nocapture
 
 Job 会下载固定版本的 MSVC `ripgrep`，校验 SHA256，运行 `vendor/ripgrep/x64-win32/rg.exe --version`，并把同一二进制放入 release 目录后再次验证。`windows_required` 由 `scripts/ci/impact.mjs:116-148` 根据改动路径和新增/删除的 Windows/cfg 模式条件触发；docs-only PR 会跳过该 job。
 
-这组定向 smoke 覆盖 Git Bash 基本命令、PowerShell tool 基本命令、Global Search 通过统一 resolver 执行 vendored ripgrep、Job Object 超时/取消后的进程树清理（失败时回退 `taskkill /T /F`）、后台任务和盘符/UNC 路径转换。它仍不覆盖 Windows ACL、Credential Manager/DPAPI、更新器/安装器、zip 归档或代码签名。
+这组定向 smoke 覆盖 Git Bash 基本命令、PowerShell tool 基本命令、Global Search 通过统一 resolver 执行 vendored ripgrep、Job Object 超时/取消后的进程树清理（失败时回退 `taskkill /T /F`）、后台任务、盘符/UNC 路径转换和 Windows 凭据 owner-only ACL。它仍不覆盖 Credential Manager/DPAPI、更新器/安装器、zip 归档或代码签名。
 
 ## 让 Windows 版“能用”的最小清单
 
@@ -151,10 +151,10 @@ Job 会下载固定版本的 MSVC `ripgrep`，校验 SHA256，运行 `vendor/rip
   - 待做：worktree 真实冒烟（尚未在 Windows runner 验证）；`CLAUDE_CODE_GIT_BASH_PATH` 的运行时覆盖（目前只有发现来源的单测）。
 - [x] Windows `--version`、`--help`、一次无模型启动冒烟通过；release 构建实际产出并可执行，而不只是 `cargo check`。（#28）
 - [x] Windows sandbox 默认明确显示 unavailable；不能把普通 Bash 执行宣称为 sandboxed。涉及不可信代码时给出降级提示。（#27）
-- [ ] 凭据方案至少做出明确选择：首发若暂时使用 plaintext，必须限制 config 目录 ACL、显示 warning，并在发布说明中明确风险；更好的最小方案是 Credential Manager/DPAPI。
+- [x] 凭据方案至少做出明确选择：首发若暂时使用 plaintext，必须限制 config 目录 ACL、显示 warning，并在发布说明中明确风险；更好的最小方案是 Credential Manager/DPAPI。
   - 决定（2026-11-03，Yuki 已定）：首发用明文文件 + owner-only ACL + 警告；Credential Manager/DPAPI 后续再做。
-  - 现状：Windows 走 `PlainTextStorage`，写入成功后返回 `Warning: Storing credentials in plaintext.`（`src/utils/secure_storage/plain_text_storage.rs:137`）。owner-only ACL 尚未实现：代码中无 DACL 设置，`chmod 600` 只在 Unix 生效。
-  - 待做：为凭据文件设置 owner-only ACL 并加测试；发布说明写明明文存储风险；ACL 落地后再勾选。
+  - 已完成：Windows `PlainTextStorage` 写入成功后设置受保护 DACL，仅授予当前用户读写权限；不继承父目录 ACL，因此 Everyone/Users 无访问 ACE。写入成功仍返回 `Warning: Storing credentials in plaintext.`，ACL 设置失败则拒绝保存并提示使用 `CLAUDE_CODE_OAUTH_TOKEN`。
+  - 后续：Credential Manager/DPAPI；继续保留明文存储风险说明。
 - [x] 自动更新/安装器 UI 不得显示“可更新但实际 no-op”；首发改为手动下载提示，或完成一个可验证的 Windows installer/update path。（#27）
 - [x] 在 Windows runner 至少运行一组定向 runtime smoke：Git Bash shell、PowerShell tool、`rg.exe --version`、Global Search、超时/杀进程树、路径转换。（#28、#31）
 
