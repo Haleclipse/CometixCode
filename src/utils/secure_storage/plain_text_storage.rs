@@ -26,6 +26,70 @@ fn apply_windows_credential_acl(path: &Path) -> io::Result<()> {
     }
 }
 
+/// Writes `serialized` to `dest` with owner-only permissions (mode 0600 on Unix,
+/// owner-only ACL on Windows), replacing any existing file atomically.
+pub(crate) fn write_owner_only_file(dest: &Path, serialized: &str) -> io::Result<()> {
+    persist_credential_file(dest, serialized, apply_windows_credential_acl).map_err(|error| {
+        match error {
+            CredentialPersistenceError::Write(error) | CredentialPersistenceError::Acl(error) => {
+                error
+            }
+        }
+    })
+}
+
+#[cfg(windows)]
+pub(crate) fn verify_owner_only_acl(path: &Path) -> io::Result<()> {
+    windows_acl::verify_owner_only_acl(path)
+}
+
+/// Fails unless `path` is a regular file that only its owner can access:
+/// no group/other mode bits on Unix, a verified owner-only ACL on Windows.
+/// Symlinks are rejected, not followed.
+pub(crate) fn verify_owner_only_file(path: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let metadata = std::fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{} is not a regular file", path.display()),
+            ));
+        }
+        let mode = metadata.permissions().mode() & 0o777;
+        if mode & 0o077 != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!(
+                    "{} has insecure permissions {mode:04o}; it must be owner-only (0600)",
+                    path.display()
+                ),
+            ));
+        }
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        // `symlink_metadata` does not follow links, so a symlink or junction
+        // reports as non-file and cannot stand in for the checked file.
+        if !std::fs::symlink_metadata(path)?.file_type().is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("{} is not a regular file", path.display()),
+            ));
+        }
+        verify_owner_only_acl(path)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            format!("cannot verify owner-only access to {}", path.display()),
+        ))
+    }
+}
+
 #[cfg(windows)]
 fn replace_credential_file(temporary: &Path, dest: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
@@ -110,12 +174,14 @@ mod windows_acl {
     use super::*;
     use std::{mem::size_of, os::windows::ffi::OsStrExt, ptr::null_mut, slice};
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, ERROR_SUCCESS, GetLastError, HANDLE},
-        Security::Authorization::{SE_FILE_OBJECT, SetNamedSecurityInfoW},
+        Foundation::{CloseHandle, ERROR_SUCCESS, GetLastError, HANDLE, LocalFree},
+        Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT, SetNamedSecurityInfoW},
         Security::{
-            ACCESS_ALLOWED_ACE, ACL, ACL_REVISION, DACL_SECURITY_INFORMATION, GetLengthSid,
-            GetTokenInformation, InitializeAcl, PROTECTED_DACL_SECURITY_INFORMATION, TOKEN_QUERY,
-            TOKEN_USER, TokenUser,
+            ACCESS_ALLOWED_ACE, ACE_HEADER, ACL, ACL_REVISION, ACL_SIZE_INFORMATION,
+            AclSizeInformation, DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation,
+            GetLengthSid, GetSecurityDescriptorControl, GetTokenInformation, InitializeAcl,
+            PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SE_DACL_PROTECTED,
+            TOKEN_QUERY, TOKEN_USER, TokenUser,
         },
         Storage::FileSystem::{DELETE, FILE_GENERIC_READ, FILE_GENERIC_WRITE},
         System::Threading::{GetCurrentProcess, OpenProcessToken},
@@ -227,21 +293,36 @@ mod windows_acl {
         Ok(())
     }
 
-    #[cfg(test)]
+    struct LocalDescriptor(PSECURITY_DESCRIPTOR);
+
+    impl Drop for LocalDescriptor {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                unsafe {
+                    let _ = LocalFree(self.0);
+                }
+            }
+        }
+    }
+
+    /// Reads the DACL back from disk. Passes only when inheritance is blocked
+    /// and the single ACE is an allow entry for the current user.
     pub(super) fn verify_owner_only_acl(path: &Path) -> io::Result<()> {
-        use windows_sys::Win32::{
-            Foundation::LocalFree,
-            Security::Authorization::GetNamedSecurityInfoW,
-            Security::{EqualSid, GetAce, GetSecurityDescriptorControl, SE_DACL_PROTECTED},
+        // winnt.h `ACCESS_ALLOWED_ACE_TYPE`; its windows-sys module is not enabled.
+        const ACCESS_ALLOWED: u8 = 0;
+        let unverified = |reason: &str| {
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("credential file ACL is not owner-only: {reason}"),
+            )
         };
 
+        let sid = current_user_sid()?;
         let mut wide_path = path.as_os_str().encode_wide().collect::<Vec<_>>();
         wide_path.push(0);
-
         let mut dacl: *mut ACL = null_mut();
-        let mut sd: *mut core::ffi::c_void = null_mut();
-
-        let err = unsafe {
+        let mut descriptor: PSECURITY_DESCRIPTOR = null_mut();
+        let result = unsafe {
             GetNamedSecurityInfoW(
                 wide_path.as_ptr(),
                 SE_FILE_OBJECT,
@@ -250,82 +331,69 @@ mod windows_acl {
                 null_mut(),
                 &mut dacl,
                 null_mut(),
-                &mut sd,
+                &mut descriptor,
             )
         };
-        if err != ERROR_SUCCESS {
-            return Err(io::Error::from_raw_os_error(err as i32));
+        if result != ERROR_SUCCESS {
+            return Err(io::Error::from_raw_os_error(result as i32));
         }
-        struct SdCleanup(*mut core::ffi::c_void);
-        impl Drop for SdCleanup {
-            fn drop(&mut self) {
-                if !self.0.is_null() {
-                    unsafe {
-                        LocalFree(self.0);
-                    }
-                }
-            }
-        }
-        let _sd_guard = SdCleanup(sd);
-
-        if dacl.is_null() {
-            return Err(io::Error::other("File has NULL DACL"));
-        }
+        let _descriptor = LocalDescriptor(descriptor);
 
         let mut control = 0u16;
         let mut revision = 0u32;
-        if unsafe { GetSecurityDescriptorControl(sd, &mut control, &mut revision) } == 0 {
+        if unsafe { GetSecurityDescriptorControl(descriptor, &mut control, &mut revision) } == 0 {
             return Err(last_error());
         }
         if control & SE_DACL_PROTECTED == 0 {
-            return Err(io::Error::other(
-                "DACL is not protected (SE_DACL_PROTECTED flag not set)",
-            ));
+            return Err(unverified("inherited ACEs are not blocked"));
         }
-
-        let ace_count = unsafe { (*dacl).AceCount };
-        if ace_count != 1 {
-            return Err(io::Error::other(format!(
-                "DACL has {ace_count} ACEs, expected exactly 1 owner ACE"
-            )));
+        if dacl.is_null() {
+            return Err(unverified("no DACL"));
         }
-
-        let mut ace_ptr: *mut core::ffi::c_void = null_mut();
-        if unsafe { GetAce(dacl, 0, &mut ace_ptr) } == 0 {
+        let mut info = ACL_SIZE_INFORMATION {
+            AceCount: 0,
+            AclBytesInUse: 0,
+            AclBytesFree: 0,
+        };
+        if unsafe {
+            GetAclInformation(
+                dacl,
+                (&mut info as *mut ACL_SIZE_INFORMATION).cast(),
+                size_of::<ACL_SIZE_INFORMATION>() as u32,
+                AclSizeInformation,
+            )
+        } == 0
+        {
             return Err(last_error());
         }
-        let allowed_ace = unsafe { &*ace_ptr.cast::<ACCESS_ALLOWED_ACE>() };
-        // ACCESS_ALLOWED_ACE_TYPE is 0
-        if allowed_ace.Header.AceType != 0 {
-            return Err(io::Error::other(format!(
-                "ACE type is {}, expected ACCESS_ALLOWED_ACE_TYPE (0)",
-                allowed_ace.Header.AceType
-            )));
+        if info.AceCount != 1 {
+            return Err(unverified("expected exactly one ACE"));
         }
-        if allowed_ace.Header.AceFlags != 0 {
-            return Err(io::Error::other(format!(
-                "ACE flags are 0x{:X}, expected 0 (non-inherited)",
-                allowed_ace.Header.AceFlags
-            )));
+        let mut ace: *mut core::ffi::c_void = null_mut();
+        if unsafe { GetAce(dacl, 0, &mut ace) } == 0 {
+            return Err(last_error());
         }
-
+        let header = ace.cast::<ACE_HEADER>();
+        if unsafe { (*header).AceType } != ACCESS_ALLOWED {
+            return Err(unverified("ACE is not an allow entry"));
+        }
+        if unsafe { (*header).AceFlags } != 0 {
+            return Err(unverified("ACE is inherited or has inheritance flags"));
+        }
         let expected_mask = DELETE | FILE_GENERIC_READ | FILE_GENERIC_WRITE;
-        if (allowed_ace.Mask & expected_mask) != expected_mask {
-            return Err(io::Error::other(format!(
-                "ACE access mask 0x{:X} does not contain expected 0x{:X}",
-                allowed_ace.Mask, expected_mask
-            )));
+        let mask = unsafe { (*ace.cast::<ACCESS_ALLOWED_ACE>()).Mask };
+        if mask & expected_mask != expected_mask {
+            return Err(unverified(
+                "ACE does not grant the owner read, write and delete",
+            ));
         }
-
-        let user_sid = current_user_sid()?;
-        let ace_sid = std::ptr::addr_of!(allowed_ace.SidStart)
-            .cast_mut()
-            .cast::<core::ffi::c_void>();
-        let user_sid_ptr = user_sid.as_ptr().cast_mut().cast::<core::ffi::c_void>();
-        if unsafe { EqualSid(ace_sid, user_sid_ptr) } == 0 {
-            return Err(io::Error::other("ACE SID does not match current user SID"));
+        let sid_start: PSID =
+            unsafe { std::ptr::addr_of!((*ace.cast::<ACCESS_ALLOWED_ACE>()).SidStart) }
+                .cast_mut()
+                .cast();
+        if unsafe { EqualSid(sid_start, sid.as_ptr().cast_mut().cast()) } == 0 {
+            return Err(unverified("ACE is not for the current user"));
         }
-
         Ok(())
     }
 }
@@ -545,6 +613,21 @@ mod tests {
         assert!(matches!(result, Err(CredentialPersistenceError::Acl(_))));
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "old secret");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_owner_only_acl_verification_rejects_inherited_acl() {
+        let dir = crate::utils::node_os::tmpdir()
+            .join(format!("nyan-cred-acl-verify-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let owner_only = dir.join("owner-only");
+        write_owner_only_file(&owner_only, "secret").unwrap();
+        verify_owner_only_acl(&owner_only).expect("owner-only ACL should verify");
+        let inherited = dir.join("inherited");
+        std::fs::write(&inherited, "secret").unwrap();
+        assert!(verify_owner_only_acl(&inherited).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(windows)]

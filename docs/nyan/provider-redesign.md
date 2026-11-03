@@ -396,6 +396,16 @@ credential reference 只引用来源，不把 secret 写入 settings：
 
 **存储（决策 17）**：先写入 `~/.nyan/auth/<provider>.json`，目录 0700、文件 0600；参考 Pi 的做法（`auth-storage.ts:37,71,77`）使用文件锁串行化读改写。Windows 必须验证 owner-only ACL，无法验证则拒绝使用。系统 keychain 后续再接。
 
+**PR 3 实现（`src/utils/provider_auth/`）**：
+
+- `reference.rs`：`env` / `optionalEnv` / `file` 的读取与错误；`file` 要求 owner-only（Unix 0600、拒绝符号链接；Windows 校验 ACL）且只有一行。`Secret` 的 `Debug` 不输出内容。
+- `store.rs`：`~/.nyan/auth/<provider>.json`，每个 provider 一个文件、文件内按 account 分条目（`version: 1`）。provider id 只允许 `a-z0-9-`（它是文件名）。读无锁（文件原子替换），写必须持有 `<provider>.lock` 的独占锁（`AuthLock`）。路径不接受环境变量覆盖，避免 settings 注入改变 token 位置。
+- `refresh.rs`：`fresh_credential` 在 provider 锁内重读后才刷新，等锁的调用方直接拿到先到者写入的新 token，不会重复消耗一次性 refresh token。不同 provider 互不阻塞。
+- `oauth/openai_codex.rs`（PKCE + 授权码）、`oauth/opencode.rs`（device flow）：各自持有 endpoint、client id、token 解析与 refresh；公共部分只有表单/JSON 提交和“错误里不引用响应体”的失败分类。token 请求不跟随重定向，OpenCode 的 server 只接受 https 或回环 http。
+- `resolve.rs`：`validate_reference` 按 provider `kind` 限定 `oauth` 可用的模块（`openai` ↔ `openai-codex`，`gateway` ↔ `opencode`），`anthropic` 配 `oauth` 一律拒绝。
+- 新存储不读取 `OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED`；该开关仍只保护继承下来的 Anthropic / MCP OAuth 出口；provider 凭据不经过这些出口。这些旧出口的删除范围见 PR 3 描述的“待决策”。
+- PR 3 不发真实模型请求、不开浏览器、不监听端口、不提供登录命令；登录步骤以函数形式暴露，由后续 provider adapter 阶段驱动。
+
 ## 五、模型选择协议
 
 ### 5.1 主模型与 session 临时模型

@@ -140,6 +140,7 @@ pub mod prompt_category;
 pub mod prompt_editor;
 pub mod prompt_history;
 pub mod prompt_shell_execution;
+pub mod provider_auth;
 pub mod proxy;
 pub mod query_helpers;
 pub mod queue_processor;
