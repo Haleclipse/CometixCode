@@ -145,6 +145,8 @@ impl ProviderAdapter for AnthropicAdapter {
                 .collect();
             let request_id = response.request_id.clone();
             let mut normalizer = StreamNormalizer::default();
+            let cache_source = self.source.clone().unwrap_or_default();
+            let cache_model = target.model.clone();
             let events: EventStream = Box::pin(response.data.filter_map(move |item| {
                 let event = match item {
                     Err(error) => return futures::future::ready(Some(Err(provider_error(&error)))),
@@ -153,6 +155,19 @@ impl ProviderAdapter for AnthropicAdapter {
                 // Re-serialize once: the normalizer reads wire-only usage
                 // extensions from the raw JSON, and callers keep it as `wire`.
                 let wire = serde_json::to_value(&event).ok();
+                // The cache-TTL breakdown is an Anthropic usage extension the
+                // neutral `Usage` does not carry; record it here, where the
+                // wire shape is still in hand.
+                if let Some(wire) = wire.as_ref() {
+                    let raw_usage = wire.pointer("/message/usage").or_else(|| wire.get("usage"));
+                    if let Some(raw_usage) = raw_usage {
+                        super::cache::record_cache_ttl_usage(
+                            &cache_source,
+                            &cache_model,
+                            raw_usage,
+                        );
+                    }
+                }
                 let normalized =
                     serde_json::from_value(wire.clone().unwrap_or(serde_json::Value::Null))
                         .ok()
@@ -383,6 +398,32 @@ mod tests {
         let recorded = mock.requests();
         assert_eq!(recorded[0].header("x-api-key"), Some("sk-adapter"));
         assert_eq!(recorded[0].header("authorization"), None);
+    }
+
+    #[tokio::test]
+    async fn cache_ttl_breakdown_is_recorded_from_the_wire_usage() {
+        let (_lock, _env) = env();
+        let mut events = message_stream(StreamSpec::default());
+        events[0].1["message"]["usage"]["cache_creation"] =
+            json!({"ephemeral_1h_input_tokens": 900, "ephemeral_5m_input_tokens": 0});
+        let mock = MockAnthropic::start(vec![Reply::Sse(events)]).await;
+        // The recorder only follows the main thread's own requests.
+        let adapter = AnthropicAdapter::new(
+            adapter_for(&mock.base_url).target.clone(),
+            Some("repl_main_thread".into()),
+        );
+        adapter.prepare(wire("claude-sonnet-4-6"));
+        let cancel = anthropic_sdk::AbortSignal::new();
+        let opened = adapter
+            .send(&target("claude-sonnet-4-6"), &ir_request(), &cancel)
+            .await
+            .expect("stream opens");
+        let _: Vec<_> = opened.events.collect().await;
+        let ttl = crate::services::provider::anthropic::cache::last_cache_ttl_usage_for(
+            "claude-sonnet-4-6",
+        )
+        .expect("breakdown recorded");
+        assert_eq!(ttl.ephemeral_1h_input_tokens, 900);
     }
 
     #[tokio::test]

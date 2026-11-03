@@ -31,6 +31,9 @@ pub mod referral;
 /// Maps to: CC services/api/errors.ts
 pub mod errors;
 
+/// IR stream events -> transcript usage / stop reason / `ApiEvent` envelope.
+pub mod ir_bridge;
+
 /// Retry logic with exponential backoff, jitter, 529 fallback, and keep-alive.
 /// Maps to: CC services/api/withRetry.ts
 pub mod with_retry;

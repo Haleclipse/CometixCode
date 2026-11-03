@@ -50,7 +50,7 @@ use std::collections::HashMap;
 type ApiQuerySource = crate::constants::query_source::QuerySourceString;
 
 use crate::services::provider::anthropic::cache::{
-    CacheControl, get_cache_control, get_prompt_caching_enabled, record_cache_ttl_usage,
+    CacheControl, get_cache_control, get_prompt_caching_enabled,
 };
 /// Maps to: CC `services/api/claude.ts` `import type { CacheScope } from '../../utils/api.js'`.
 pub use crate::utils::api::CacheScope;
@@ -1836,6 +1836,10 @@ struct SdkMessageCreatePlan {
     // `anthropic.beta.messages.create`.
     params: anthropic_sdk::resources::beta::messages::BetaMessageCreateParams,
     private_body_overrides: SdkPrivateBodyOverrides,
+    /// The same call as a provider-neutral request. The Anthropic adapter
+    /// sends `params` (cache-prefix bytes are pinned by fixtures); other
+    /// adapters build their wire body from this.
+    request: crate::services::provider::ir::ModelRequest,
 }
 
 /// Maps to CC `services/api/claude.ts` `paramsFromContext(...)`: CC adds
@@ -2007,6 +2011,9 @@ fn build_sdk_message_create_plan(
     // ].filter(Boolean))` — the two leading blocks are what the server's
     // Claude Code cache policy prefix-matches on; `filter(Boolean)` drops the
     // header when attribution is disabled (empty string).
+    // The attribution header and CLI prefix below are Anthropic cache-policy
+    // blocks; the neutral request must carry only what the caller supplied.
+    let caller_system_prompt = system_prompt;
     let system_prompt = std::iter::once(crate::constants::system::get_attribution_header(
         &fingerprint,
     ))
@@ -2158,10 +2165,90 @@ fn build_sdk_message_create_plan(
         );
     }
 
+    let request = build_model_request(
+        &api_messages,
+        caller_system_prompt,
+        request_tools,
+        messages,
+        options,
+        thinking_config,
+        max_tokens,
+    );
+
     Ok(SdkMessageCreatePlan {
         params,
         private_body_overrides,
+        request,
     })
+}
+
+/// The neutral form of one call: already-normalized history, the full system
+/// prompt (attribution and CLI prefix included, as the Anthropic body has
+/// them), and the tools the request would carry.
+fn build_model_request(
+    api_messages: &[Message],
+    system_prompt: &SystemPrompt,
+    tools: &[Tool],
+    original_messages: &[Message],
+    options: &Options,
+    thinking_config: &ThinkingConfig,
+    max_tokens: u32,
+) -> crate::services::provider::ir::ModelRequest {
+    use crate::services::provider::ir::{ClientContext, ToolChoice as IrToolChoice};
+    let tool_choice = match options.tool_choice.as_ref() {
+        None => IrToolChoice::Auto,
+        Some(value) => match value.get("type").and_then(JsonValue::as_str) {
+            Some("any") => IrToolChoice::Any,
+            Some("none") => IrToolChoice::None,
+            Some("tool") => value
+                .get("name")
+                .and_then(JsonValue::as_str)
+                .map(|name| IrToolChoice::Tool {
+                    name: name.to_string(),
+                })
+                .unwrap_or_default(),
+            _ => IrToolChoice::Auto,
+        },
+    };
+    crate::services::provider::request::build_request(
+        api_messages,
+        system_prompt,
+        tools,
+        crate::utils::tool_search::extract_discovered_tool_names(original_messages)
+            .into_iter()
+            .collect(),
+        crate::services::provider::request::RequestParams {
+            model: options.model.clone(),
+            query_source: options.query_source.clone(),
+            agent_id: options.agent_id.as_ref().map(|id| id.0.clone()),
+            max_output_tokens: max_tokens,
+            temperature: options.temperature_override,
+            tool_choice,
+            disable_parallel_tools: options
+                .tool_choice
+                .as_ref()
+                .and_then(|value| value.get("disable_parallel_tool_use"))
+                .and_then(JsonValue::as_bool)
+                .unwrap_or(false),
+            thinking: thinking_config.clone(),
+            effort: options.effort_value.clone(),
+            output_schema: options.output_format.as_ref().map(|format| {
+                format
+                    .get("schema")
+                    .cloned()
+                    .unwrap_or_else(|| format.clone())
+            }),
+            enable_prompt_caching: options
+                .enable_prompt_caching
+                .unwrap_or_else(|| get_prompt_caching_enabled(&options.model)),
+            skip_cache_write: options.skip_cache_write.unwrap_or(false),
+            client: ClientContext {
+                non_interactive: options.is_non_interactive_session,
+                has_append_system_prompt: options.has_append_system_prompt,
+            },
+            tools_pending: options.has_pending_mcp_servers.unwrap_or(false),
+        },
+    )
 }
 
 #[cfg(test)]
@@ -2596,173 +2683,15 @@ fn sdk_error_message_without_secrets(error: impl std::fmt::Display) -> String {
     sanitized
 }
 
-pub async fn query_model_streaming_text(
-    messages: &[Message],
-    system_prompt: &SystemPrompt,
-    thinking_config: &ThinkingConfig,
-    options: &Options,
-) -> anyhow::Result<String> {
-    let items =
-        query_model_streaming_items(messages, system_prompt, thinking_config, options).await?;
-    Ok(items
-        .into_iter()
-        .filter_map(|item| match item {
-            ClaudeStreamItem::Text(text) => Some(text),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join(""))
-}
-
-pub async fn query_model_streaming_items(
-    messages: &[Message],
-    system_prompt: &SystemPrompt,
-    thinking_config: &ThinkingConfig,
-    options: &Options,
-) -> anyhow::Result<Vec<ClaudeStreamItem>> {
-    let client = crate::services::provider::anthropic::client::get_anthropic_client(
-        crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
-            2,
-            Some(options.model.clone()),
-            Some(options.query_source.clone()),
-        )?,
-    )
-    .await?
-    .build()?;
-    let beta_capture = {
-        // This text-only helper builds its plan with an EMPTY tool list (see the
-        // `&[]` argument below), so the beta capture must gate on the same list.
-        // It previously gated on `options.mcp_tools`, which no caller ever fills
-        // and which CC never reads (`claude.ts:694` declared, zero readers).
-        let request_tools: &[Tool] = &[];
-        let mut tool_search_enabled =
-            crate::tools::tool_search_tool::prompt::is_tool_search_enabled_for_request(
-                &options.model,
-                request_tools,
-            );
-        let deferred_tool_names = if tool_search_enabled {
-            request_tools
-                .iter()
-                .filter(|tool| crate::tools::tool_search_tool::prompt::is_deferred_tool(tool))
-                .map(|tool| tool.name.clone())
-                .collect::<std::collections::BTreeSet<_>>()
-        } else {
-            std::collections::BTreeSet::new()
-        };
-        if tool_search_enabled
-            && deferred_tool_names.is_empty()
-            && !options.has_pending_mcp_servers.unwrap_or(false)
-        {
-            tool_search_enabled = false;
-        }
-        let mut betas = get_merged_betas(
-            &options.model,
-            is_agentic_query_source(&options.query_source),
-        );
-        if options.advisor_model.is_some() {
-            betas.push(ADVISOR_BETA_HEADER.to_string());
-        }
-        let tool_search_header =
-            tool_search_enabled.then(|| get_tool_search_beta_header().to_string());
-        if let Some(header) = tool_search_header.as_ref()
-            && crate::utils::model::providers::get_api_provider()
-                != crate::utils::model::providers::ApiProvider::Bedrock
-            && !betas.contains(header)
-        {
-            betas.push(header.clone());
-        }
-        if should_use_global_cache_scope()
-            && !betas.contains(&PROMPT_CACHING_SCOPE_BETA_HEADER.to_string())
-        {
-            betas.push(PROMPT_CACHING_SCOPE_BETA_HEADER.to_string());
-        }
-        SdkRequestBetaCapture {
-            emit_betas: !betas.is_empty(),
-            betas,
-            tool_search_header,
-            original_model: options.model.clone(),
-        }
-    };
-    let SdkMessageCreatePlan {
-        mut params,
-        private_body_overrides,
-    } = build_sdk_message_create_plan(messages, system_prompt, thinking_config, &[], options)?;
-    let mut request_options = build_sdk_message_request_options(
-        messages,
-        thinking_config,
-        options,
-        &beta_capture,
-        Some(&mut params),
-        anthropic_sdk::RequestOptions::default(),
-    )?;
-    apply_sdk_private_body_overrides(&mut request_options, &private_body_overrides);
-    // Maps to CC `anthropic.beta.messages.create({ ...params, stream: true })`.
-    let response = client
-        .beta()
-        .messages()
-        .create_stream_with_response_and_options(&params, Some(&request_options))
-        .await?;
-    crate::services::claude_ai_limits::extract_quota_status_from_headers(
-        &response.response.headers,
-    );
-    let mut stream = response.data;
-    let mut blocks: HashMap<usize, ActiveClaudeStreamBlock> = HashMap::new();
-    let mut items = Vec::new();
-
-    use futures::StreamExt;
-    while let Some(event) = stream.next().await {
-        match serde_json::from_value(serde_json::to_value(&event?)?)? {
-            anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockStart {
-                content_block,
-                index,
-            } => {
-                blocks.insert(
-                    index,
-                    ActiveClaudeStreamBlock::from_content_block(content_block),
-                );
-            }
-            anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockDelta {
-                delta,
-                index,
-            } => {
-                if let Some(block) = blocks.get_mut(&index) {
-                    block.push_delta(delta);
-                }
-            }
-            anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockStop { index } => {
-                if let Some(mut block) = blocks.remove(&index) {
-                    block.normalize_api_content(
-                        &[],
-                        options.agent_id.as_ref().map(|id| id.0.as_str()),
-                    )?;
-                    if let Some(item) = block.into_item() {
-                        items.push(item);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    Ok(items)
-}
-
-fn stream_item_for_delta(
-    delta: &anthropic_sdk::resources::messages::ContentBlockDelta,
-) -> Option<ClaudeStreamItem> {
+fn stream_item_for_delta(delta: &crate::services::provider::ir::Delta) -> Option<ClaudeStreamItem> {
+    use crate::services::provider::ir::Delta;
     match delta {
-        anthropic_sdk::resources::messages::ContentBlockDelta::TextDelta { text }
-            if !text.is_empty() =>
-        {
-            Some(ClaudeStreamItem::Text(text.clone()))
-        }
-        anthropic_sdk::resources::messages::ContentBlockDelta::ThinkingDelta { thinking }
-            if !thinking.is_empty() =>
-        {
-            // Preview-only; signature arrives via SignatureDelta on the active
-            // block and is attached at content_block_stop.
+        Delta::Text { text } if !text.is_empty() => Some(ClaudeStreamItem::Text(text.clone())),
+        Delta::Thinking { text } if !text.is_empty() => {
+            // Preview-only; signature arrives via a Signature delta on the
+            // active block and is attached at block stop.
             Some(ClaudeStreamItem::Thinking {
-                text: thinking.clone(),
+                text: text.clone(),
                 signature: String::new(),
             })
         }
@@ -2792,6 +2721,64 @@ enum ActiveClaudeStreamBlock {
 }
 
 impl ActiveClaudeStreamBlock {
+    /// Start a block from a neutral IR event. Mirrors `from_content_block`,
+    /// which still serves the non-streaming fallback response.
+    fn from_block_start(block: crate::services::provider::ir::BlockStart) -> Self {
+        use crate::services::provider::ir::BlockStart;
+        match block {
+            BlockStart::Text => Self::Text(String::new()),
+            // Maps to CC `services/api/claude.ts` content_block_start: reset
+            // thinking text and initialize the signature so the field exists
+            // even if no signature delta ever arrives.
+            BlockStart::Thinking => Self::Thinking {
+                thinking: String::new(),
+                signature: String::new(),
+            },
+            BlockStart::RedactedThinking { data } => Self::RedactedThinking(data),
+            BlockStart::ToolCall {
+                id,
+                name,
+                server,
+                input,
+            } => {
+                if server && name == "advisor" {
+                    // Maps to CC: `[AdvisorTool] Advisor tool called`
+                    crate::utils::debug::log_for_debugging("[AdvisorTool] Advisor tool called");
+                }
+                Self::ToolUse {
+                    id,
+                    name,
+                    input_json: initial_tool_input_json(input),
+                    is_server: server,
+                }
+            }
+            BlockStart::ServerToolResult {
+                tool_call_id,
+                content,
+                ..
+            } => Self::WebSearchToolResult {
+                tool_use_id: tool_call_id,
+                content,
+            },
+        }
+    }
+
+    fn push_ir_delta(&mut self, delta: crate::services::provider::ir::Delta) {
+        use crate::services::provider::ir::Delta;
+        match (self, delta) {
+            (Self::Text(text), Delta::Text { text: delta }) => text.push_str(&delta),
+            (Self::Thinking { thinking, .. }, Delta::Thinking { text }) => thinking.push_str(&text),
+            // Maps to CC: `contentBlock.signature = delta.signature`
+            (Self::Thinking { signature, .. }, Delta::Signature { signature: delta }) => {
+                *signature = delta;
+            }
+            (Self::ToolUse { input_json, .. }, Delta::ToolInput { json }) => {
+                input_json.push_str(&json);
+            }
+            _ => {}
+        }
+    }
+
     fn from_content_block(block: anthropic_sdk::resources::messages::ContentBlock) -> Self {
         match block {
             anthropic_sdk::resources::messages::ContentBlock::Text { text, .. } => Self::Text(text),
@@ -2834,43 +2821,6 @@ impl ActiveClaudeStreamBlock {
                 tool_use_id,
                 content: serde_json::to_value(content).unwrap_or(JsonValue::Null),
             },
-        }
-    }
-
-    fn push_delta(&mut self, delta: anthropic_sdk::resources::messages::ContentBlockDelta) {
-        match (self, delta) {
-            (
-                Self::Text(text),
-                anthropic_sdk::resources::messages::ContentBlockDelta::TextDelta { text: delta },
-            ) => {
-                text.push_str(&delta);
-            }
-            (
-                Self::Thinking { thinking, .. },
-                anthropic_sdk::resources::messages::ContentBlockDelta::ThinkingDelta {
-                    thinking: delta,
-                },
-            ) => {
-                thinking.push_str(&delta);
-            }
-            (
-                Self::Thinking { signature, .. },
-                anthropic_sdk::resources::messages::ContentBlockDelta::SignatureDelta {
-                    signature: delta,
-                },
-            ) => {
-                // Maps to CC: `contentBlock.signature = delta.signature`
-                *signature = delta;
-            }
-            (
-                Self::ToolUse { input_json, .. },
-                anthropic_sdk::resources::messages::ContentBlockDelta::InputJsonDelta {
-                    partial_json,
-                },
-            ) => {
-                input_json.push_str(&partial_json);
-            }
-            _ => {}
         }
     }
 
@@ -3361,10 +3311,27 @@ pub async fn query_model_with_streaming(
     Ok(rx)
 }
 
-/// The provider dispatch's boxed event stream
-/// ([`crate::services::provider::anthropic::client::BetaMessageEventStream`]): SSE for the
-/// core, Vertex and Foundry, Smithy EventStream for Bedrock.
-type SdkMessageStream = crate::services::provider::anthropic::client::BetaMessageEventStream;
+/// Normalized stream from whichever adapter served the request.
+type SdkMessageStream = crate::services::provider::adapter::EventStream;
+
+fn resolved_target_for(
+    target: &crate::services::provider::anthropic::target::AnthropicTarget,
+    model: &str,
+) -> crate::services::provider::adapter::ResolvedTarget {
+    let (context_window, max_output_tokens) = crate::utils::model::profile::resolve_main_profile(
+        &crate::utils::settings::get_initial_settings(),
+    )
+    .map(|profile| (profile.context_window, profile.max_output_tokens))
+    .unwrap_or((0, 0));
+    crate::services::provider::adapter::ResolvedTarget {
+        profile: target.profile.clone(),
+        provider: target.provider.clone(),
+        protocol: crate::services::provider::ir::Protocol::AnthropicMessages,
+        model: model.to_string(),
+        context_window,
+        max_output_tokens,
+    }
+}
 
 async fn open_sdk_message_stream_with_retry(
     messages: &[Message],
@@ -3425,29 +3392,16 @@ async fn open_sdk_message_stream_with_retry(
                 super::api_trace::set_current_trace(Some(attempt_trace.clone()));
                 let attempt_options =
                     streaming_attempt_options_from_retry_context(&base_options, &retry_context);
-                let client = crate::services::provider::anthropic::client::get_anthropic_client(
-                    crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
-                        0,
-                        Some(attempt_options.model.clone()),
-                        Some(attempt_options.query_source.clone()),
-                    )
+                let target = crate::services::provider::anthropic::target::current_main_target()
                     .map_err(|error| {
                         crate::services::api::with_retry::RetryableError::Other(anyhow::Error::new(
                             error,
                         ))
-                    })?,
-                )
-                .await
-                .map_err(crate::services::api::with_retry::RetryableError::Other)?
-                .build()
-                .map_err(|error| {
-                    crate::services::api::with_retry::RetryableError::Other(anyhow::Error::new(
-                        error,
-                    ))
-                })?;
+                    })?;
                 let SdkMessageCreatePlan {
                     mut params,
                     private_body_overrides,
+                    request,
                 } = build_sdk_message_create_plan(
                     &messages,
                     &system_prompt,
@@ -3470,23 +3424,36 @@ async fn open_sdk_message_stream_with_retry(
                 .map_err(crate::services::api::with_retry::RetryableError::Other)?;
                 apply_sdk_private_body_overrides(&mut request_options, &private_body_overrides);
 
-                let response = client
-                    .beta()
-                    .messages()
-                    .create_stream_with_response_and_options(&params, Some(&request_options))
-                    .await
-                    .map_err(sdk_api_error_to_retryable)?;
-                crate::services::claude_ai_limits::extract_quota_status_from_headers(
-                    &response.response.headers,
+                let message_count = params.messages.len();
+                let resolved = resolved_target_for(&target, &attempt_options.model);
+                let adapter = crate::services::provider::anthropic::adapter::AnthropicAdapter::new(
+                    target,
+                    Some(attempt_options.query_source.clone()),
                 );
-                let stream = response.data;
+                adapter.prepare(crate::services::provider::anthropic::adapter::WireRequest {
+                    params,
+                    options: request_options,
+                });
+                let cancel = attempt_options
+                    .abort_signal
+                    .clone()
+                    .unwrap_or_else(anthropic_sdk::AbortSignal::new);
+                let opened = crate::services::provider::adapter::ProviderAdapter::send(
+                    &adapter, &resolved, &request, &cancel,
+                )
+                .await
+                .map_err(provider_error_to_retryable)?;
+                crate::services::claude_ai_limits::extract_quota_status_from_headers(
+                    &opened.response_headers.clone().into_iter().collect(),
+                );
+                let stream = opened.events;
                 super::api_trace::emit(
                     &attempt_trace,
                     "http_sent",
                     serde_json::json!({
                         "model": attempt_options.model,
                         "stream": true,
-                        "message_count": params.messages.len(),
+                        "message_count": message_count,
                     }),
                 );
                 Ok(stream)
@@ -3548,30 +3515,6 @@ fn stream_idle_timeout_ms() -> u64 {
 
 /// Maps to CC `STALL_THRESHOLD_MS` (30s gap between stream events).
 const STREAM_STALL_THRESHOLD_MS: u64 = 30_000;
-
-fn stream_event_type_label(
-    event: &anthropic_sdk::resources::messages::MessageStreamEvent,
-) -> &'static str {
-    match event {
-        anthropic_sdk::resources::messages::MessageStreamEvent::MessageStart { .. } => {
-            "message_start"
-        }
-        anthropic_sdk::resources::messages::MessageStreamEvent::MessageDelta { .. } => {
-            "message_delta"
-        }
-        anthropic_sdk::resources::messages::MessageStreamEvent::MessageStop => "message_stop",
-        anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockStart { .. } => {
-            "content_block_start"
-        }
-        anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockDelta { .. } => {
-            "content_block_delta"
-        }
-        anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockStop { .. } => {
-            "content_block_stop"
-        }
-        anthropic_sdk::resources::messages::MessageStreamEvent::Ping => "ping",
-    }
-}
 
 /// Maps to CC `services/api/claude.ts:2171-2208` `content_block_stop`.
 fn assistant_message_for_completed_block(
@@ -3720,7 +3663,7 @@ async fn drain_sdk_message_stream_to_channel(
             break;
         };
         let event = match event {
-            Ok(event) => serde_json::from_value(serde_json::to_value(&event)?)?,
+            Ok(event) => event.kind,
             Err(error) => {
                 super::api_trace::emit_current(
                     "request_failed",
@@ -3730,11 +3673,16 @@ async fn drain_sdk_message_stream_to_channel(
                         "event_count": stream_event_count,
                     }),
                 );
+                if error.kind == crate::services::provider::ir::ProviderErrorKind::Aborted {
+                    return Err(anyhow::Error::new(anthropic_sdk::ApiError::UserAbort {
+                        message: "Request was aborted.".to_owned(),
+                    }));
+                }
                 return Err(error.into());
             }
         };
         stream_event_count += 1;
-        let event_label = stream_event_type_label(&event);
+        let event_label = super::ir_bridge::event_label(&event);
         if stream_event_types.len() < 64 {
             stream_event_types.push(event_label);
         }
@@ -3772,28 +3720,11 @@ async fn drain_sdk_message_stream_to_channel(
             first_ttft_ms = Some(ms);
             Some(ms)
         };
-        let event_request_id = match &event {
-            anthropic_sdk::resources::messages::MessageStreamEvent::MessageStart { message } => {
-                message.request_id.clone()
-            }
-            _ => None,
-        };
-        let mut raw_event =
-            serde_json::to_value(&event).unwrap_or_else(|_| serde_json::Value::Null);
-        // The SDK deliberately skips `_request_id` when serializing Message;
-        // preserve the response-header metadata on the typed stream envelope
-        // so forked suggestion consumers can join generation outcomes.
-        if let Some(object) = raw_event.as_object_mut()
-            && let Some(request_id) = event_request_id
-        {
-            object.insert(
-                "request_id".to_string(),
-                serde_json::Value::String(request_id),
-            );
-        }
+        // The envelope is rendered from the neutral event; `request_id` rides
+        // on `message_start` (the adapter fills it from the response header).
         if tx
             .send(QueryModelStreamItem::Stream(StreamEvent::ApiEvent {
-                event: raw_event,
+                event: super::ir_bridge::api_event_json(&event),
                 ttft_ms,
             }))
             .await
@@ -3801,26 +3732,32 @@ async fn drain_sdk_message_stream_to_channel(
         {
             return Ok(());
         }
+        use crate::services::provider::ir::{StopReason as IrStopReason, StreamEventKind};
         match event {
-            anthropic_sdk::resources::messages::MessageStreamEvent::MessageStart { message } => {
-                response_request_id = message.request_id.clone();
-                response_api_message_id = Some(message.id.clone());
-                response_model = Some(message.model);
-                record_cache_ttl_usage(&options.query_source, &options.model, &message.usage);
-                usage = Some(sdk_usage_to_token_usage(&message.usage));
+            StreamEventKind::MessageStart {
+                request_id,
+                message_id,
+                model,
+                usage: start_usage,
+            } => {
+                response_request_id = request_id;
+                response_api_message_id = message_id;
+                if model.is_some() {
+                    response_model = model;
+                }
+                usage = Some(super::ir_bridge::token_usage(&start_usage));
             }
-            anthropic_sdk::resources::messages::MessageStreamEvent::MessageDelta {
-                delta,
+            StreamEventKind::MessageDelta {
+                stop_reason: delta_stop_reason,
                 usage: delta_usage,
             } => {
-                let raw_stop_reason = delta.stop_reason.clone();
-                if let Some(reason) = sdk_stop_reason_to_message_stop_reason(delta.stop_reason) {
+                if let Some(reason) = delta_stop_reason
+                    .as_ref()
+                    .and_then(super::ir_bridge::message_stop_reason)
+                {
                     stop_reason = Some(reason);
                 }
-                if matches!(
-                    raw_stop_reason,
-                    Some(anthropic_sdk::resources::messages::StopReason::MaxTokens)
-                ) {
+                if delta_stop_reason == Some(IrStopReason::MaxTokens) {
                     let max_output_tokens = options
                         .max_output_tokens_override
                         .unwrap_or_else(|| get_max_output_tokens_for_model(&options.model));
@@ -3828,8 +3765,7 @@ async fn drain_sdk_message_stream_to_channel(
                         max_output_tokens,
                     ));
                 }
-                record_cache_ttl_usage(&options.query_source, &options.model, &delta_usage);
-                usage = Some(merge_sdk_delta_usage(usage, &delta_usage));
+                usage = Some(super::ir_bridge::token_usage(&delta_usage));
                 if tx
                     .send(QueryModelStreamItem::AssistantDelta {
                         stop_reason: stop_reason.clone(),
@@ -3841,22 +3777,13 @@ async fn drain_sdk_message_stream_to_channel(
                     return Ok(());
                 }
             }
-            anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockStart {
-                content_block,
-                index,
-            } => {
-                blocks.insert(
-                    index,
-                    ActiveClaudeStreamBlock::from_content_block(content_block),
-                );
+            StreamEventKind::BlockStart { index, block } => {
+                blocks.insert(index, ActiveClaudeStreamBlock::from_block_start(block));
             }
-            anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockDelta {
-                delta,
-                index,
-            } => {
+            StreamEventKind::BlockDelta { index, delta } => {
                 let delta_item = stream_item_for_delta(&delta);
                 if let Some(block) = blocks.get_mut(&index) {
-                    block.push_delta(delta);
+                    block.push_ir_delta(delta);
                 }
                 if let Some(item) = delta_item
                     && tx.send(QueryModelStreamItem::Content(item)).await.is_err()
@@ -3864,7 +3791,7 @@ async fn drain_sdk_message_stream_to_channel(
                     return Ok(());
                 }
             }
-            anthropic_sdk::resources::messages::MessageStreamEvent::ContentBlockStop { index } => {
+            StreamEventKind::BlockStop { index } => {
                 if let Some(mut block) = blocks.remove(&index) {
                     block.normalize_api_content(
                         tools,
@@ -4053,31 +3980,6 @@ fn sdk_usage_to_token_usage(
         // CC reads this undocumented cache-editing field via an `unknown`
         // cast because it is absent from the v0.74 SDK Usage interface.
         cache_deleted_input_tokens: sdk_cache_deleted_input_tokens(usage).unwrap_or(0),
-    }
-}
-
-fn merge_sdk_delta_usage(
-    current: Option<crate::types::message::TokenUsage>,
-    delta: &anthropic_sdk::resources::messages::MessageDeltaUsage,
-) -> crate::types::message::TokenUsage {
-    let current = current.unwrap_or_default();
-    crate::types::message::TokenUsage {
-        input_tokens: delta
-            .input_tokens
-            .map(nonnegative_i64_to_u64)
-            .unwrap_or(current.input_tokens),
-        output_tokens: nonnegative_i64_to_u64(delta.output_tokens),
-        cache_creation_input_tokens: delta
-            .cache_creation_input_tokens
-            .map(nonnegative_i64_to_u64)
-            .unwrap_or(current.cache_creation_input_tokens),
-        cache_read_input_tokens: delta
-            .cache_read_input_tokens
-            .map(nonnegative_i64_to_u64)
-            .unwrap_or(current.cache_read_input_tokens),
-        cache_deleted_input_tokens: sdk_cache_deleted_input_tokens(delta)
-            .filter(|tokens| *tokens > 0)
-            .unwrap_or(current.cache_deleted_input_tokens),
     }
 }
 
@@ -4565,6 +4467,37 @@ fn sdk_api_error_to_retryable(
                 body: error.body().cloned(),
             },
         ),
+    }
+}
+
+/// Adapter error -> the retry loop's error type. Status, headers and body are
+/// kept so the existing predicates (529 fallback, context-overflow max-token
+/// reduction, stale-connection handling) see what they saw before.
+fn provider_error_to_retryable(
+    error: crate::services::provider::ir::ProviderError,
+) -> crate::services::api::with_retry::RetryableError {
+    use crate::services::api::with_retry::{ApiError, ConnectionError, RetryableError};
+    use crate::services::provider::ir::ProviderErrorKind;
+
+    crate::services::claude_ai_limits::extract_quota_status_from_error(
+        error.status,
+        Some(&error.headers.clone().into_iter().collect()),
+    );
+    match error.kind {
+        ProviderErrorKind::Aborted => RetryableError::Aborted,
+        ProviderErrorKind::Transport => RetryableError::Connection(ConnectionError {
+            message: error.message,
+            code: None,
+        }),
+        ProviderErrorKind::InvalidRequest if error.status.is_none() => {
+            RetryableError::Other(anyhow::anyhow!(error.message))
+        }
+        _ => RetryableError::Api(ApiError {
+            status: error.status,
+            message: error.message,
+            headers: error.headers.into_iter().collect(),
+            body: error.body,
+        }),
     }
 }
 
@@ -5686,6 +5619,33 @@ mod tests {
             prompt_block["cache_control"]["type"],
             serde_json::json!("ephemeral")
         );
+    }
+
+    #[test]
+    fn neutral_request_carries_only_the_callers_system_prompt() {
+        let messages = vec![wire_test_user_message("hello")];
+        let mut options = Options::new(
+            "claude-sonnet-4-20250514".to_string(),
+            "repl_main_thread".to_string(),
+        );
+        options.enable_prompt_caching = Some(true);
+        let system_prompt = vec!["System A".to_string(), "System B".to_string()];
+
+        let plan = build_sdk_message_create_plan(
+            &messages,
+            &system_prompt,
+            &ThinkingConfig::Disabled,
+            &[],
+            &options,
+        )
+        .expect("plan builds");
+
+        // The Anthropic body gains attribution and CLI-prefix blocks; the
+        // neutral request must not, or every other adapter would send them.
+        assert_eq!(plan.request.system, system_prompt);
+        let body = serde_json::to_string(&plan.request).unwrap();
+        assert!(!body.contains("x-anthropic-billing-header"), "{body}");
+        assert!(!body.contains("cache_control"), "{body}");
     }
 
     #[test]
@@ -7963,22 +7923,6 @@ mod tests {
         assert_eq!(initial.cache_creation_input_tokens, 12);
         assert_eq!(initial.cache_read_input_tokens, 34);
         assert_eq!(initial.cache_deleted_input_tokens, 0);
-
-        let merged = merge_sdk_delta_usage(
-            Some(initial),
-            &anthropic_sdk::resources::messages::MessageDeltaUsage {
-                cache_creation_input_tokens: None,
-                cache_read_input_tokens: Some(55),
-                input_tokens: None,
-                output_tokens: 77,
-                server_tool_use: None,
-            },
-        );
-        assert_eq!(merged.input_tokens, 100);
-        assert_eq!(merged.output_tokens, 77);
-        assert_eq!(merged.cache_creation_input_tokens, 12);
-        assert_eq!(merged.cache_read_input_tokens, 55);
-        assert_eq!(merged.cache_deleted_input_tokens, 0);
 
         assert_eq!(
             sdk_cache_deleted_input_tokens(&serde_json::json!({

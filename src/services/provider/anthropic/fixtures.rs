@@ -380,13 +380,11 @@ async fn streamed_thinking_text_and_tool_call_become_ordered_assistant_blocks() 
         })
     );
     // Identity rides on every block's envelope. The API message id comes from
-    // `message_start`. KNOWN GAP, identical on master: the SDK's streaming
-    // `message_start` carries no `_request_id`, and `drain_sdk_message_stream`
-    // never consults the response header (`ApiResponse.request_id`), so a
-    // streamed assistant has no request id. This pins today's behavior; fixing
-    // it changes `AssistantMessageIdentity` and is left to its own change, at
-    // which point this assertion should become `Some("req_mock")`.
-    assert_eq!(messages[2].request_id(), None);
+    // `message_start`; the request id comes from the response header, which the
+    // adapter copies onto `message_start` (the SDK's streaming `message_start`
+    // carries none). Before the query layer read the adapter's stream this was
+    // `None` for every streamed assistant.
+    assert_eq!(messages[2].request_id(), Some("req_mock"));
     assert_eq!(messages[2].api_message_id(), Some("msg_mock"));
 
     // Cumulative usage and the stop reason arrive with message_delta.
