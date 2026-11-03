@@ -1,0 +1,113 @@
+name: Update Model Metadata
+
+on:
+  schedule:
+    # Weekly, Monday 03:00 UTC
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+# Branch push and PR creation use the MODEL_METADATA_BOT_TOKEN secret instead of
+# github.token: PRs opened with github.token do not trigger pull_request workflows,
+# so CI would never run on the weekly PR and it could not pass the Merge gate.
+# The secret must be a fine-grained PAT or GitHub App token scoped to this
+# repository only, with:
+#   - Contents: read and write (push the update branch)
+#   - Pull requests: read and write (open the PR)
+# Read-only upstream lookups keep using github.token.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-metadata:
+    name: update-metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      # Pi files that scripts/update-model-metadata.mjs was ported from. If either
+      # blob changes upstream, the job fails until a human re-reviews the converter
+      # and updates these pins in the same PR.
+      PI_REVIEWED_MODELS_DEV_BLOB: 3928dc438813e96998ac5f644bad0beb4fe6f303
+      PI_REVIEWED_PROVIDERS_INDEX_BLOB: 60b29cbd570bc8b6a68c575079c7712f13c9925e
+    steps:
+      - name: Require MODEL_METADATA_BOT_TOKEN
+        env:
+          BOT_TOKEN: ${{ secrets.MODEL_METADATA_BOT_TOKEN }}
+        run: |
+          if [ -z "$BOT_TOKEN" ]; then
+            echo "::error title=Missing repository secret::MODEL_METADATA_BOT_TOKEN is not set. Add a fine-grained PAT or GitHub App token for blxzer77/nyan with Contents and Pull requests read/write under Settings > Secrets and variables > Actions." >&2
+            exit 1
+          fi
+
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+
+      - name: Resolve upstream commits
+        id: upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pi_head=$(gh api repos/earendil-works/pi/commits/main --jq .sha)
+          mdev_head=$(gh api repos/anomalyco/models.dev/commits/dev --jq .sha)
+          for pair in \
+            "packages/ai/catalog/sources/models-dev.ts:$PI_REVIEWED_MODELS_DEV_BLOB" \
+            "packages/ai/catalog/providers/index.ts:$PI_REVIEWED_PROVIDERS_INDEX_BLOB"; do
+            path=${pair%%:*}
+            expected=${pair#*:}
+            actual=$(gh api "repos/earendil-works/pi/contents/$path?ref=$pi_head" --jq .sha)
+            if [ "$actual" != "$expected" ]; then
+              echo "::error file=$path::Pi converter source changed to $actual; re-review scripts/update-model-metadata.mjs and update the pins." >&2
+              exit 1
+            fi
+          done
+          echo "pi_commit=$pi_head" >> "$GITHUB_OUTPUT"
+          echo "models_dev_version=$mdev_head" >> "$GITHUB_OUTPUT"
+
+      - name: Regenerate snapshot
+        env:
+          PI_COMMIT: ${{ steps.upstream.outputs.pi_commit }}
+          MODELS_DEV_VERSION: ${{ steps.upstream.outputs.models_dev_version }}
+        run: |
+          node scripts/update-model-metadata.mjs \
+            --pi-commit "$PI_COMMIT" \
+            --models-dev-version "$MODELS_DEV_VERSION"
+
+      - name: Check for diff
+        id: git-diff
+        run: |
+          if git diff --quiet -- src/utils/model/model_metadata.json NOTICE; then
+            echo "has_diff=false" >> "$GITHUB_OUTPUT"
+            echo "No model metadata diff detected."
+          else
+            echo "has_diff=true" >> "$GITHUB_OUTPUT"
+            echo "Model metadata changes detected."
+          fi
+
+      - name: Create pull request if updated
+        if: steps.git-diff.outputs.has_diff == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MODEL_METADATA_BOT_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PI_COMMIT: ${{ steps.upstream.outputs.pi_commit }}
+          MODELS_DEV_VERSION: ${{ steps.upstream.outputs.models_dev_version }}
+        run: |
+          branch="chore/update-model-metadata-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add src/utils/model/model_metadata.json NOTICE
+          git commit -m "chore(metadata): update model metadata snapshot"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "$branch"
+          gh pr create \
+            --base master \
+            --head "$branch" \
+            --title "chore(metadata): update model metadata snapshot" \
+            --body "Weekly automated update. Pi commit: ${PI_COMMIT}; models.dev commit: ${MODELS_DEV_VERSION}. Opened by the update-model-metadata workflow; not auto-merged."

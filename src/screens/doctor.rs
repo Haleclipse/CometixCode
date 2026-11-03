@@ -216,6 +216,17 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
     let env_warnings = hooks.use_memo(env_validation_warnings, ());
     let auto_update_channel = doctor_auto_update_channel();
     let search_status = doctor_search_status(&diagnostic);
+    let profile_diagnoses = hooks.use_memo(
+        || {
+            crate::utils::settings::load_settings_from_disk()
+                .settings
+                .nyan
+                .as_deref()
+                .map(crate::utils::model::profile::diagnose_profiles)
+                .unwrap_or_default()
+        },
+        (),
+    );
     let keybinding_warnings = props.keybinding_warnings.clone();
     let keybindings_path = props.keybindings_path.clone();
     let keybinding_customization_enabled = props.keybinding_customization_enabled;
@@ -308,6 +319,34 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
                 }))
                 Text(content: format!("└ Auto-update channel: {auto_update_channel}"))
                 Text(content: "└ Failed to fetch versions".to_string(), dim: true)
+            }
+
+            View(margin_top: 1u32, flex_direction: FlexDirection::Column) {
+                Text(content: "Model Profiles".to_string(), weight: Weight::Bold)
+                #(if profile_diagnoses.is_empty() {
+                    Some(element! {
+                        Text(content: "└ No model profiles configured".to_string(), dim: true)
+                    })
+                } else {
+                    None
+                })
+                #(profile_diagnoses.into_iter().map(|diag| {
+                    element! {
+                        View(flex_direction: FlexDirection::Column) {
+                            Text(content: format!("└ Profile {:?} ({}/{}):", diag.profile_name, diag.provider, diag.model))
+                            #(diag.fields.into_iter().map(|field| {
+                                let source_label = if field.is_override {
+                                    "(profile override)"
+                                } else {
+                                    "(builtin snapshot)"
+                                };
+                                element! {
+                                    Text(content: format!("  └ {}: {} {}", field.field_name, field.value, source_label))
+                                }
+                            }))
+                        }
+                    }
+                }))
             }
 
             SandboxDoctorSection()
@@ -581,6 +620,7 @@ mod tests {
         assert!(text.contains("Updates"), "canvas=\n{text}");
         assert!(text.contains("└ Auto-updates:"), "canvas=\n{text}");
         assert!(text.contains("└ Auto-update channel:"), "canvas=\n{text}");
+        assert!(text.contains("Model Profiles"), "canvas=\n{text}");
         assert!(text.contains("Press Enter to continue…"), "canvas=\n{text}");
     }
 

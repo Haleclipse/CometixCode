@@ -52,6 +52,10 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
         return Some(exit_unimplemented(&reasons));
     }
 
+    if config.subcommand.as_deref() == Some("doctor") {
+        return Some(run_doctor_cli());
+    }
+
     // Maps to CC `cli/print.ts`: print/SDK mode owns the query lifetime and
     // structured stdout protocol instead of entering the retained TUI.
     if config.print {
@@ -60,6 +64,47 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
 
     // Interactive prompt-only without -p is Partial: allowed (typed later in REPL).
     None
+}
+
+fn run_doctor_cli() -> i32 {
+    let diagnostic = crate::utils::doctor_diagnostic::get_doctor_diagnostic();
+    println!("Diagnostics");
+    println!(
+        "└ Currently running: {} ({})",
+        diagnostic.installation_type.as_str(),
+        diagnostic.version
+    );
+    println!("└ Path: {}", diagnostic.installation_path);
+    println!("└ Invoked: {}", diagnostic.invoked_binary);
+
+    println!("\nModel Profiles");
+    let settings = crate::utils::settings::load_settings_from_disk();
+    let profile_diagnoses = settings
+        .settings
+        .nyan
+        .as_deref()
+        .map(crate::utils::model::profile::diagnose_profiles)
+        .unwrap_or_default();
+
+    if profile_diagnoses.is_empty() {
+        println!("└ No model profiles configured");
+    } else {
+        for diag in profile_diagnoses {
+            println!(
+                "└ Profile {:?} ({}/{}):",
+                diag.profile_name, diag.provider, diag.model
+            );
+            for field in diag.fields {
+                let source_label = if field.is_override {
+                    "(profile override)"
+                } else {
+                    "(builtin snapshot)"
+                };
+                println!("  └ {}: {} {}", field.field_name, field.value, source_label);
+            }
+        }
+    }
+    0
 }
 
 #[cfg(test)]
@@ -77,6 +122,12 @@ mod tests {
     #[test]
     fn dispatch_version_exits_zero() {
         let c = parse_cli_config(&argv(&["-v"]));
+        assert_eq!(dispatch(&c), Some(0));
+    }
+
+    #[test]
+    fn dispatch_doctor_subcommand_exits_zero() {
+        let c = parse_cli_config(&argv(&["doctor"]));
         assert_eq!(dispatch(&c), Some(0));
     }
 

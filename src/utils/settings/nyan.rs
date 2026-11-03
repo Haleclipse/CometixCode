@@ -1389,6 +1389,24 @@ pub struct ModelProfileSettings {
     pub display_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<ModelCapabilities>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost: Option<ModelCostSettings>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct ModelCostSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1553,11 +1571,22 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
             zod::enumeration(vec!["none", "native"]).optional(),
         ),
     ]);
+    let cost = zod::strict_object(vec![
+        ("input", zod::number().min(0).optional()),
+        ("output", zod::number().min(0).optional()),
+        ("cacheRead", zod::number().min(0).optional()),
+        ("cacheWrite", zod::number().min(0).optional()),
+    ]);
     let model = zod::strict_object(vec![
         ("provider", zod::string().min(1)),
         ("model", zod::string().min(1)),
         ("displayName", zod::string().min(1).optional()),
         ("capabilities", capabilities.optional()),
+        (
+            "input",
+            zod::array(zod::enumeration(vec!["text", "image"])).optional(),
+        ),
+        ("cost", cost.optional()),
     ]);
     let decision_selection = zod::strict_object(vec![
         ("fast", zod::string().min(1).optional()),
@@ -2248,6 +2277,9 @@ mod tests {
             json!({"providers": {"x": {"kind": "openai", "commercial": true}}}),
             json!({"providers": {"x": {"kind": "openai", "credential": {"env": "A", "file": "B"}}}}),
             json!({"models": {"x": {"provider": "p", "model": "m", "capabilities": {"tools": "guess"}}}}),
+            json!({"models": {"x": {"provider": "p", "model": "m", "input": ["application/pdf"]}}}),
+            json!({"models": {"x": {"provider": "p", "model": "m", "cost": {"input": -1}}}}),
+            json!({"models": {"x": {"provider": "p", "model": "m", "cost": {"currency": "USD"}}}}),
         ] {
             assert!(
                 crate::utils::zod::safe_parse(&nyan_settings_schema(), &bad).is_err(),

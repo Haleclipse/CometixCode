@@ -228,7 +228,9 @@ impl CliConfig {
         }
 
         if let Some(sub) = &self.subcommand {
-            reasons.push(sub.clone());
+            if sub != "doctor" {
+                reasons.push(sub.clone());
+            }
         }
         if self.worktree {
             reasons.push("--worktree".to_string());
