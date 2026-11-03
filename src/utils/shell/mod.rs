@@ -334,7 +334,7 @@ pub fn exec(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        process.creation_flags(0x0800_0000);
+        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
     }
 
     let child = match process.spawn() {

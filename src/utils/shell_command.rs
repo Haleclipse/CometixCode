@@ -13,6 +13,30 @@ const SIGKILL_EXIT: i32 = 137;
 const SIGTERM_EXIT: i32 = 143;
 const SIZE_WATCHDOG_INTERVAL: Duration = Duration::from_secs(5);
 
+#[cfg(windows)]
+pub(crate) struct ProcessJob {
+    handle: usize,
+}
+
+#[cfg(windows)]
+impl ProcessJob {
+    fn raw_handle(&self) -> windows_sys::Win32::Foundation::HANDLE {
+        self.handle as _
+    }
+}
+
+#[cfg(windows)]
+impl Drop for ProcessJob {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = windows_sys::Win32::Foundation::CloseHandle(self.raw_handle());
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) struct ProcessJob;
+
 #[cfg(test)]
 static TEST_SIZE_WATCHDOG_LIMIT: std::sync::atomic::AtomicU64 =
     std::sync::atomic::AtomicU64::new(0);
@@ -234,6 +258,35 @@ impl ShellCommand {
 /// Maps to CC `wrapSpawn(...)`.
 pub type ResultFinalizer = Box<dyn FnOnce(&mut ExecResult) + Send + 'static>;
 
+pub(crate) fn assign_process_to_job(child: &Child) -> Option<ProcessJob> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
+
+        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if job.is_null() {
+            return None;
+        }
+
+        let assigned = unsafe { AssignProcessToJobObject(job, child.as_raw_handle() as _) } != 0;
+        if !assigned {
+            unsafe {
+                let _ = windows_sys::Win32::Foundation::CloseHandle(job);
+            }
+            return None;
+        }
+        Some(ProcessJob {
+            handle: job as usize,
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = child;
+        None
+    }
+}
+
 pub fn wrap_spawn(
     mut child: Child,
     abort_signal: crate::tool::AbortController,
@@ -242,6 +295,9 @@ pub fn wrap_spawn(
     should_auto_background: bool,
     result_finalizer: Option<ResultFinalizer>,
 ) -> ShellCommand {
+    // The monitor owns the Job handle so dropping a foreground ShellCommand does
+    // not close a Job that a background task is still running.
+    let job = assign_process_to_job(&child);
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let active_readers = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -288,6 +344,7 @@ pub fn wrap_spawn(
             &abort_signal,
             timeout,
             should_auto_background,
+            job,
             &active_readers,
             result_finalizer,
         );
@@ -311,6 +368,7 @@ fn monitor_child(
     abort_signal: &crate::tool::AbortController,
     timeout: Duration,
     should_auto_background: bool,
+    job: Option<ProcessJob>,
     active_readers: &std::sync::atomic::AtomicUsize,
     result_finalizer: Option<ResultFinalizer>,
 ) {
@@ -331,7 +389,7 @@ fn monitor_child(
             .unwrap_or(ShellCommandStatus::Killed);
         if inner.kill_requested.load(Ordering::Acquire) {
             mark_status_killed(inner);
-            terminate_process_tree(child);
+            terminate_process_tree(child, job.as_ref());
             break child
                 .wait()
                 .unwrap_or_else(|_| synthetic_exit_status(SIGKILL_EXIT));
@@ -348,7 +406,7 @@ fn monitor_child(
                         .forced_exit_code
                         .store(SIGKILL_EXIT, Ordering::Release);
                     mark_status_killed(inner);
-                    terminate_process_tree(child);
+                    terminate_process_tree(child, job.as_ref());
                     break child
                         .wait()
                         .unwrap_or_else(|_| synthetic_exit_status(SIGKILL_EXIT));
@@ -360,7 +418,7 @@ fn monitor_child(
                     .forced_exit_code
                     .store(SIGKILL_EXIT, Ordering::Release);
                 mark_status_killed(inner);
-                terminate_process_tree(child);
+                terminate_process_tree(child, job.as_ref());
                 break child
                     .wait()
                     .unwrap_or_else(|_| synthetic_exit_status(SIGKILL_EXIT));
@@ -381,7 +439,7 @@ fn monitor_child(
                             .forced_exit_code
                             .store(SIGTERM_EXIT, Ordering::Release);
                         mark_status_killed(inner);
-                        terminate_process_tree(child);
+                        terminate_process_tree(child, job.as_ref());
                         break child
                             .wait()
                             .unwrap_or_else(|_| synthetic_exit_status(SIGTERM_EXIT));
@@ -391,7 +449,7 @@ fn monitor_child(
                         .forced_exit_code
                         .store(SIGTERM_EXIT, Ordering::Release);
                     mark_status_killed(inner);
-                    terminate_process_tree(child);
+                    terminate_process_tree(child, job.as_ref());
                     break child
                         .wait()
                         .unwrap_or_else(|_| synthetic_exit_status(SIGTERM_EXIT));
@@ -528,19 +586,27 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
-fn terminate_process_tree(child: &mut Child) {
+pub(crate) fn terminate_process_tree(child: &mut Child, _job: Option<&ProcessJob>) {
     #[cfg(unix)]
     unsafe {
         libc::kill(-(child.id() as i32), libc::SIGKILL);
     }
     #[cfg(windows)]
     {
-        let mut command = std::process::Command::new("taskkill");
-        // tree-kill `exec('taskkill ...')` inherits process.env; the carrier is its counterpart.
-        crate::utils::subprocess_env::apply_process_env_std(&mut command);
-        let _ = command
-            .args(["/PID", &child.id().to_string(), "/T", "/F"])
-            .status();
+        let terminated_by_job = _job.is_some_and(|job| unsafe {
+            windows_sys::Win32::System::JobObjects::TerminateJobObject(
+                job.raw_handle(),
+                SIGKILL_EXIT as u32,
+            ) != 0
+        });
+        if !terminated_by_job {
+            let mut command = std::process::Command::new("taskkill");
+            // Tree-kill fallback inherits the controlled subprocess environment.
+            crate::utils::subprocess_env::apply_process_env_std(&mut command);
+            let _ = command
+                .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                .status();
+        }
     }
     let _ = child.kill();
 }
@@ -664,6 +730,152 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn windows_nested_tree_command() -> &'static str {
+        concat!(
+            "$grandchild = Start-Process -FilePath (Join-Path $env:SystemRoot '",
+            "System32\\ping.exe",
+            "') -ArgumentList @('-n','30','127.0.0.1') -WindowStyle Hidden -PassThru; ",
+            "Set-Content -Path $env:NYAN_WINDOWS_CHILD_PID_FILE -Value $grandchild.Id; ",
+            "Wait-Process -Id $grandchild.Id"
+        )
+    }
+
+    #[cfg(windows)]
+    fn windows_nested_tree_parent_command() -> &'static str {
+        concat!(
+            "$child = Start-Process -FilePath $env:NYAN_WINDOWS_POWERSHELL ",
+            "-ArgumentList @('-NoProfile','-NonInteractive','-Command',",
+            "$env:NYAN_WINDOWS_GRANDCHILD_COMMAND) -WindowStyle Hidden -PassThru; ",
+            "Wait-Process -Id $child.Id"
+        )
+    }
+
+    #[cfg(windows)]
+    fn windows_nested_tree_parent_normal_exit_command() -> &'static str {
+        concat!(
+            "$null = Start-Process -FilePath $env:NYAN_WINDOWS_POWERSHELL ",
+            "-ArgumentList @('-NoProfile','-NonInteractive','-Command',",
+            "$env:NYAN_WINDOWS_GRANDCHILD_COMMAND) -WindowStyle Hidden; ",
+            "$deadline = [DateTime]::UtcNow.AddSeconds(5); ",
+            "while (-not (Test-Path $env:NYAN_WINDOWS_CHILD_PID_FILE) -and ",
+            "[DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 10 }; ",
+            "exit 0"
+        )
+    }
+
+    #[cfg(windows)]
+    fn spawn_windows_nested_tree(
+        marker: &std::path::Path,
+        abort: &crate::tool::AbortController,
+        timeout: Duration,
+    ) -> ShellCommand {
+        let powershell = crate::utils::shell::powershell_detection::get_cached_powershell_path()
+            .unwrap_or_else(|| panic!("PowerShell is unavailable on the Windows runner"));
+        let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
+        let output = TaskOutput::new(&task_id, false);
+        let mut process = Command::new(&powershell);
+        process
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                windows_nested_tree_parent_command(),
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        crate::utils::subprocess_env::apply_subprocess_env_std(&mut process);
+        process
+            .env("NYAN_WINDOWS_POWERSHELL", &powershell)
+            .env(
+                "NYAN_WINDOWS_GRANDCHILD_COMMAND",
+                windows_nested_tree_command(),
+            )
+            .env("NYAN_WINDOWS_CHILD_PID_FILE", marker.as_os_str());
+        use std::os::windows::process::CommandExt;
+        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+        wrap_spawn(
+            process.spawn().unwrap_or_else(|error| {
+                panic!("nested process-tree smoke failed to start: {error}")
+            }),
+            abort.clone(),
+            timeout,
+            output,
+            false,
+            None,
+        )
+    }
+
+    #[cfg(windows)]
+    fn windows_pid_from_marker(marker: &std::path::Path) -> u32 {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Ok(value) = std::fs::read_to_string(marker)
+                && let Ok(pid) = value.trim().parse::<u32>()
+            {
+                return pid;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "process-tree smoke did not record child PID"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[cfg(windows)]
+    fn windows_process_is_running(pid: u32) -> bool {
+        let tasklist = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .expect("tasklist must be available on Windows");
+        assert!(
+            tasklist.status.success(),
+            "tasklist failed: {}",
+            String::from_utf8_lossy(&tasklist.stderr)
+        );
+        let pid = pid.to_string();
+        String::from_utf8_lossy(&tasklist.stdout)
+            .lines()
+            .any(|line| line.split_whitespace().any(|field| field == pid))
+    }
+
+    #[cfg(windows)]
+    fn kill_windows_process(pid: u32) {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status();
+    }
+
+    #[cfg(windows)]
+    struct WindowsProcessCleanup<'a>(&'a std::path::Path);
+
+    #[cfg(windows)]
+    impl Drop for WindowsProcessCleanup<'_> {
+        fn drop(&mut self) {
+            if let Ok(value) = std::fs::read_to_string(self.0)
+                && let Ok(pid) = value.trim().parse::<u32>()
+                && windows_process_is_running(pid)
+            {
+                kill_windows_process(pid);
+            }
+            let _ = std::fs::remove_file(self.0);
+        }
+    }
+
+    #[cfg(windows)]
+    fn wait_for_windows_process_exit(pid: u32) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if !windows_process_is_running(pid) {
+                return true;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        !windows_process_is_running(pid)
+    }
+
+    #[cfg(windows)]
     #[test]
     fn windows_smoke_timeout_kills_process_tree_without_orphan() {
         let powershell = crate::utils::shell::powershell_detection::get_cached_powershell_path()
@@ -677,13 +889,16 @@ mod tests {
             "NYAN_WINDOWS_CHILD_PID_FILE",
             marker.as_os_str(),
         );
-        let command = concat!(
-            "$child = Start-Process -FilePath (Join-Path $env:SystemRoot '",
-            "System32\\ping.exe",
-            "') -ArgumentList @('-n','30','127.0.0.1') -WindowStyle Hidden -PassThru; ",
-            "Set-Content -Path $env:NYAN_WINDOWS_CHILD_PID_FILE -Value $child.Id; ",
-            "Wait-Process -Id $child.Id"
+        let _powershell = crate::utils::test_env::EnvVarGuard::set(
+            "NYAN_WINDOWS_POWERSHELL",
+            powershell.as_str(),
         );
+        let _grandchild = crate::utils::test_env::EnvVarGuard::set(
+            "NYAN_WINDOWS_GRANDCHILD_COMMAND",
+            windows_nested_tree_command(),
+        );
+        let command = windows_nested_tree_parent_command();
+        let _cleanup = WindowsProcessCleanup(&marker);
         let run = crate::utils::shell::run_command_streaming(
             &powershell,
             &["-NoProfile", "-NonInteractive", "-Command", command],
@@ -695,36 +910,138 @@ mod tests {
         .unwrap_or_else(|error| panic!("process-tree smoke failed to start: {error}"));
         assert!(run.timed_out, "process-tree smoke did not time out");
 
-        let pid = std::fs::read_to_string(&marker)
-            .unwrap_or_else(|error| panic!("process-tree smoke did not record child PID: {error}"))
-            .trim()
-            .parse::<u32>()
-            .unwrap_or_else(|error| {
-                panic!("process-tree smoke recorded invalid child PID: {error}")
-            });
-        let tasklist = Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
-            .output()
-            .expect("tasklist must be available on Windows");
+        let pid = windows_pid_from_marker(&marker);
+        let child_running = windows_process_is_running(pid);
         assert!(
-            tasklist.status.success(),
-            "tasklist failed: {}",
-            String::from_utf8_lossy(&tasklist.stderr)
+            wait_for_windows_process_exit(pid),
+            "Job Object/taskkill left the grandchild process running (was_running={child_running})"
         );
-        let tasklist_stdout = String::from_utf8_lossy(&tasklist.stdout);
-        let child_running = tasklist_stdout
-            .lines()
-            .any(|line| line.contains(&pid.to_string()));
-        if child_running {
-            let _ = Command::new("taskkill")
-                .args(["/PID", &pid.to_string(), "/T", "/F"])
-                .status();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_normal_exit_keeps_grandchild_alive_after_job_drop() {
+        let powershell = crate::utils::shell::powershell_detection::get_cached_powershell_path()
+            .unwrap_or_else(|| panic!("PowerShell is unavailable on the Windows runner"));
+        let marker = std::env::temp_dir().join(format!(
+            "nyan-windows-normal-child-pid-{}.txt",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let _env = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        let _marker = crate::utils::test_env::EnvVarGuard::set(
+            "NYAN_WINDOWS_CHILD_PID_FILE",
+            marker.as_os_str(),
+        );
+        let _powershell = crate::utils::test_env::EnvVarGuard::set(
+            "NYAN_WINDOWS_POWERSHELL",
+            powershell.as_str(),
+        );
+        let _grandchild = crate::utils::test_env::EnvVarGuard::set(
+            "NYAN_WINDOWS_GRANDCHILD_COMMAND",
+            windows_nested_tree_command(),
+        );
+        let _cleanup = WindowsProcessCleanup(&marker);
+        let run = crate::utils::shell::run_command_streaming(
+            &powershell,
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                windows_nested_tree_parent_normal_exit_command(),
+            ],
+            Duration::from_secs(5),
+            None,
+            &crate::tool::AbortController::default(),
+            None,
+        )
+        .unwrap_or_else(|error| panic!("normal-exit smoke failed to start: {error}"));
+        assert!(
+            run.output.status.success(),
+            "normal-exit smoke failed with {:?}",
+            run.output.status
+        );
+
+        let pid = windows_pid_from_marker(&marker);
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < deadline {
+            assert!(
+                windows_process_is_running(pid),
+                "normal shell exit unexpectedly killed the grandchild"
+            );
+            std::thread::sleep(Duration::from_millis(25));
         }
-        let _ = std::fs::remove_file(marker);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_cancel_kills_grandchild_without_orphan() {
+        let marker = std::env::temp_dir().join(format!(
+            "nyan-windows-cancel-child-pid-{}.txt",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let _cleanup = WindowsProcessCleanup(&marker);
+        let abort = crate::tool::AbortController::default();
+        let command = spawn_windows_nested_tree(&marker, &abort, Duration::from_secs(30));
+        let pid = windows_pid_from_marker(&marker);
+        abort.abort();
+        let result = command.wait_result();
+        assert_eq!(result.code, SIGKILL_EXIT);
+        assert!(result.interrupted);
         assert!(
-            !child_running,
-            "taskkill /T left the child process running: {tasklist_stdout}"
+            wait_for_windows_process_exit(pid),
+            "Job Object/taskkill left the cancelled grandchild process running"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_smoke_background_task_survives_foreground_handle_drop() {
+        let marker = std::env::temp_dir().join(format!(
+            "nyan-windows-background-{}.txt",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let powershell = crate::utils::shell::powershell_detection::get_cached_powershell_path()
+            .unwrap_or_else(|| panic!("PowerShell is unavailable on the Windows runner"));
+        let task_id = crate::task::generate_task_id(crate::task::TaskType::LocalBash);
+        let output = TaskOutput::new(&task_id, false);
+        let mut process = Command::new(&powershell);
+        process
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Milliseconds 250; Set-Content -Path $env:NYAN_WINDOWS_BACKGROUND_MARKER -Value done",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        crate::utils::subprocess_env::apply_subprocess_env_std(&mut process);
+        process.env("NYAN_WINDOWS_BACKGROUND_MARKER", marker.as_os_str());
+        use std::os::windows::process::CommandExt;
+        process.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+        let shell = wrap_spawn(
+            process.spawn().expect("background smoke must start"),
+            crate::tool::AbortController::default(),
+            Duration::from_secs(2),
+            output,
+            true,
+            None,
+        );
+        assert!(shell.background("windows-background-smoke"));
+        drop(shell);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline && !marker.exists() {
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        let background_output = std::fs::read_to_string(&marker)
+            .unwrap_or_else(|error| panic!("background task did not write its marker: {error}"));
+        assert_eq!(
+            background_output.trim(),
+            "done",
+            "background task did not survive foreground handle drop"
+        );
+        let _ = std::fs::remove_file(marker);
     }
 
     #[test]

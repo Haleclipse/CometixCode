@@ -56,8 +56,8 @@
 
 | 位置 | 现状 | 建议方案 | 工作量 |
 |---|---|---|---|
-| `src/utils/shell_command.rs:531-546` | **能编译且基本正常**。Windows 使用内置 `taskkill /PID /T /F`，Unix 使用负进程组 signal；超时/取消可以杀进程树。 | 用 Windows Job Object 绑定子进程树，`taskkill` 作为兼容 fallback；补“子进程继续运行/句柄继承”测试。 | L |
-| `src/utils/bash/shell_snapshot.rs:220-245` | **能编译且基本正常**。snapshot 超时在 Windows 走 `taskkill`。 | 与 shell command 共用 Job Object 或至少验证 taskkill 失败时的清理行为。 | M |
+| `src/utils/shell_command.rs:609-632` | **能编译且基本正常**。Windows 使用不带 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的 Job Object 管理进程树，仅在超时、取消、abort 或 watchdog 路径显式终止；创建/分配或终止失败回退 `taskkill /PID /T /F`；Unix 使用负进程组 signal。 | 保持 fallback，并持续覆盖正常退出、超时、取消、后台任务和孙进程。 | L |
+| `src/utils/bash/shell_snapshot.rs:220-245` | **能编译且基本正常**。snapshot 超时在 Windows 复用 Job Object，失败时回退 `taskkill`。 | 保持与 shell command 一致的进程树清理语义。 | M |
 | `src/utils/shell_command.rs:495-510`、`:554-558` | **能编译但状态语义不完全相同**。Windows 没有 Unix signal 退出码；代码用进程 exit code 或合成 137/143 表示 killed/timeout。 | 对 UI/模型结果使用显式 `timed_out`/`interrupted` 字段，不要依赖 Unix 退出码；保留兼容码只用于展示。 | M |
 | `src/utils/native_installer/pid_lock.rs:51-71`、`:87-95` | **能编译但行为不对**。非 Unix `is_process_running_platform` 恒为 `false`，Windows 上所有 PID lock 都会被诊断为非运行。 | 用 `OpenProcess` + `GetExitCodeProcess`（并验证 executable path，避免 PID reuse）；再实现 acquire/release/清理。 | L |
 | `src/utils/native_installer/pid_lock.rs:125-133` | **不可用**。stale lock cleanup 当前是安全禁用的 no-op，与平台无关，但 Windows native installer 还没有可用的安装锁生命周期。 | 在安装器实现前明确禁用自动安装；完成 Windows installer 后再接入 lock mutation。 | L |
@@ -139,24 +139,24 @@ cargo test --locked --lib windows_smoke -- --nocapture
 
 Job 会下载固定版本的 MSVC `ripgrep`，校验 SHA256，运行 `vendor/ripgrep/x64-win32/rg.exe --version`，并把同一二进制放入 release 目录后再次验证。`windows_required` 由 `scripts/ci/impact.mjs:116-148` 根据改动路径和新增/删除的 Windows/cfg 模式条件触发；docs-only PR 会跳过该 job。
 
-这组定向 smoke 覆盖 Git Bash 基本命令、PowerShell tool 基本命令、Global Search 通过统一 resolver 执行 vendored ripgrep、超时后的 `taskkill /T` 进程树清理，以及盘符/UNC 路径转换。它仍不覆盖 Windows ACL、Credential Manager/DPAPI、更新器/安装器、zip 归档或代码签名。
+这组定向 smoke 覆盖 Git Bash 基本命令、PowerShell tool 基本命令、Global Search 通过统一 resolver 执行 vendored ripgrep、Job Object 超时/取消后的进程树清理（失败时回退 `taskkill /T /F`）、后台任务和盘符/UNC 路径转换。它仍不覆盖 Windows ACL、Credential Manager/DPAPI、更新器/安装器、zip 归档或代码签名。
 
 ## 让 Windows 版“能用”的最小清单
 
 ### P0：发布前必须完成
 
 - [x] 发布包提供并验证 `vendor/ripgrep/x64-win32/rg.exe`；修复 Global Search 的直接 `rg` 调用，使其复用统一 resolver。
-- [ ] 发布说明和启动诊断明确要求 Git for Windows/Git Bash；验证 `CLAUDE_CODE_GIT_BASH_PATH`、盘符、UNC、worktree 和基本 Bash 命令。
+- [x] 发布说明和启动诊断明确要求 Git for Windows/Git Bash；验证 `CLAUDE_CODE_GIT_BASH_PATH`、盘符、UNC、worktree 和基本 Bash 命令。
 - [x] Windows `--version`、`--help`、一次无模型启动冒烟通过；release 构建实际产出并可执行，而不只是 `cargo check`。
-- [ ] Windows sandbox 默认明确显示 unavailable；不能把普通 Bash 执行宣称为 sandboxed。涉及不可信代码时给出降级提示。
+- [x] Windows sandbox 默认明确显示 unavailable；不能把普通 Bash 执行宣称为 sandboxed。涉及不可信代码时给出降级提示。
 - [ ] 凭据方案至少做出明确选择：首发若暂时使用 plaintext，必须限制 config 目录 ACL、显示 warning，并在发布说明中明确风险；更好的最小方案是 Credential Manager/DPAPI。
-- [ ] 自动更新/安装器 UI 不得显示“可更新但实际 no-op”；首发改为手动下载提示，或完成一个可验证的 Windows installer/update path。
+- [x] 自动更新/安装器 UI 不得显示“可更新但实际 no-op”；首发改为手动下载提示，或完成一个可验证的 Windows installer/update path。
 - [x] 在 Windows runner 至少运行一组定向 runtime smoke：Git Bash shell、PowerShell tool、`rg.exe --version`、Global Search、超时/杀进程树、路径转换。
 
 ### P1：首发后尽快补齐
 
-- [ ] Windows RSS 通过 `GetProcessMemoryInfo` 实现，避免 `process_rss_bytes()` 恒为 0。
-- [ ] 用 Job Object 替代仅依赖 `taskkill /T /F` 的进程树管理，并验证后台任务、超时、取消和孙进程。
+- [x] Windows RSS 通过 `GetProcessMemoryInfo` 实现，避免 `process_rss_bytes()` 恒为 0。
+- [x] 用 Job Object 替代仅依赖 `taskkill /T /F` 的进程树管理，并验证后台任务、超时、取消和孙进程。
 - [ ] 补 Windows ACL、junction/symlink、文件锁和共享删除的测试。
 - [ ] 为 Windows 增加 release zip、SHA256、可选签名和 SmartScreen 限制说明；实现后再接自动更新。
 
