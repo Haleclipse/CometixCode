@@ -117,7 +117,7 @@ impl fmt::Display for ProfileResolutionError {
             ),
             Self::UnsupportedProvider(kind) => write!(
                 f,
-                "Provider kind {kind:?} has no adapter yet; only anthropic, openai, vllm and ollama profiles can send requests."
+                "Provider kind {kind:?} has no adapter yet; only anthropic, openai, gemini, vllm and ollama profiles can send requests."
             ),
             Self::MissingBaseUrl(provider) => write!(
                 f,
@@ -181,6 +181,7 @@ fn kind_protocols(kind: ProviderKind) -> &'static [ProviderProtocol] {
             ProviderProtocol::OpenaiChat,
             ProviderProtocol::OpenaiResponses,
         ],
+        ProviderKind::Gemini => &[ProviderProtocol::Gemini],
         ProviderKind::Vllm | ProviderKind::Ollama => &[ProviderProtocol::OpenaiChat],
         _ => &[],
     }

@@ -219,7 +219,7 @@ impl ProviderAdapter for OpenAiAdapter {
 }
 
 /// A pure stream machine: frames in, IR events out.
-trait Machine: Send + 'static {
+pub(crate) trait Machine: Send + 'static {
     fn feed(&mut self, frame: &Frame) -> Result<Vec<StreamEventKind>, ProviderError>;
     fn end(&mut self) -> Result<Vec<StreamEventKind>, ProviderError>;
     /// Reclassify a failure as `PartialStream` once output has been produced,
@@ -253,7 +253,7 @@ impl Machine for ResponsesStream {
 
 /// Run frames through a stream machine, yielding IR events. The machine is
 /// pure; this is the only place frames and machine meet.
-fn drive<M: Machine>(frames: FrameStream, machine: M) -> EventStream {
+pub(crate) fn drive<M: Machine>(frames: FrameStream, machine: M) -> EventStream {
     use futures::StreamExt;
     struct State<M> {
         frames: FrameStream,

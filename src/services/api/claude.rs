@@ -3465,8 +3465,8 @@ async fn open_sdk_message_stream_with_retry(
                 if profile.protocol
                     != crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages
                 {
-                    // OpenAI Chat / Responses. Nothing below this point is
-                    // Anthropic's: no betas, no cache markers, no SDK body.
+                    // Non-Anthropic protocols (OpenAI Chat / Responses / Gemini).
+                    // Nothing below this point is Anthropic's: no betas, no cache markers, no SDK body.
                     let request = build_neutral_request(
                         &messages,
                         &system_prompt,
@@ -3478,10 +3478,21 @@ async fn open_sdk_message_stream_with_retry(
                         .abort_signal
                         .clone()
                         .unwrap_or_else(anthropic_sdk::AbortSignal::new);
-                    let opened =
-                        crate::services::provider::openai::open_stream(&profile, &request, &cancel)
+                    let opened = match profile.protocol {
+                        crate::utils::settings::nyan::ProviderProtocol::Gemini => {
+                            crate::services::provider::gemini::open_stream(
+                                &profile, &request, &cancel,
+                            )
                             .await
-                            .map_err(|error| provider_error_to_retryable(error, false))?;
+                        }
+                        _ => {
+                            crate::services::provider::openai::open_stream(
+                                &profile, &request, &cancel,
+                            )
+                            .await
+                        }
+                    }
+                    .map_err(|error| provider_error_to_retryable(error, false))?;
                     super::api_trace::emit(
                         &attempt_trace,
                         "http_sent",

@@ -91,6 +91,31 @@ pub async fn post_stream(
     cancel: &Cancel,
     connect_timeout: Duration,
 ) -> Result<Opened, ProviderError> {
+    post_stream_classified(
+        url,
+        headers,
+        body,
+        cancel,
+        connect_timeout,
+        errors::from_http,
+    )
+    .await
+}
+
+/// Turns a non-2xx status, its headers, body text and request id into the
+/// protocol's own [`ProviderError`].
+pub type ClassifyHttp = fn(u16, BTreeMap<String, String>, &str, Option<String>) -> ProviderError;
+
+/// [`post_stream`] with the protocol's own error classification: the transport
+/// is shared, the shape of an error body is not.
+pub async fn post_stream_classified(
+    url: &str,
+    headers: Vec<(String, String)>,
+    body: &Value,
+    cancel: &Cancel,
+    connect_timeout: Duration,
+    classify: ClassifyHttp,
+) -> Result<Opened, ProviderError> {
     if cancel.is_aborted() {
         return Err(aborted());
     }
@@ -154,12 +179,7 @@ pub async fn post_stream(
             _ = abort.aborted() => return Err(aborted()),
             text = response.text() => text.unwrap_or_default(),
         };
-        return Err(errors::from_http(
-            status,
-            response_headers,
-            &text,
-            request_id,
-        ));
+        return Err(classify(status, response_headers, &text, request_id));
     }
 
     let frames = sse_frames(response, cancel.clone());
