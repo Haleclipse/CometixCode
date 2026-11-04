@@ -102,9 +102,120 @@ pub async fn post_stream(
     .await
 }
 
+/// POST `body` as JSON and return the parsed JSON answer.
+pub async fn post_json(
+    url: &str,
+    headers: Vec<(String, String)>,
+    body: &Value,
+    cancel: &Cancel,
+    connect_timeout: Duration,
+) -> Result<(BTreeMap<String, String>, Option<String>, Value), ProviderError> {
+    post_json_classified(
+        url,
+        headers,
+        body,
+        cancel,
+        connect_timeout,
+        errors::from_http,
+    )
+    .await
+}
+
 /// Turns a non-2xx status, its headers, body text and request id into the
 /// protocol's own [`ProviderError`].
 pub type ClassifyHttp = fn(u16, BTreeMap<String, String>, &str, Option<String>) -> ProviderError;
+
+/// [`post_json`] with the protocol's own error classification.
+pub async fn post_json_classified(
+    url: &str,
+    headers: Vec<(String, String)>,
+    body: &Value,
+    cancel: &Cancel,
+    connect_timeout: Duration,
+    classify: ClassifyHttp,
+) -> Result<(BTreeMap<String, String>, Option<String>, Value), ProviderError> {
+    if cancel.is_aborted() {
+        return Err(aborted());
+    }
+    let client = crate::utils::proxy::get_proxy_fetch_options(false)
+        .and_then(|builder| {
+            builder
+                .connect_timeout(connect_timeout)
+                .build()
+                .map_err(anyhow::Error::from)
+        })
+        .map_err(|error| {
+            ProviderError::new(
+                ProviderErrorKind::InvalidRequest,
+                format!("could not build the HTTP client: {error}"),
+            )
+        })?;
+
+    let mut layered = crate::services::provider::anthropic::headers::common_headers();
+    for (name, value) in headers {
+        layered.insert(name, Some(value));
+    }
+    crate::services::provider::anthropic::headers::apply_configured_overrides(&mut layered);
+
+    let mut request = client
+        .post(url)
+        .header("accept", "application/json")
+        .header("content-type", "application/json");
+    for (name, value) in layered {
+        if let Some(value) = value {
+            request = request.header(name, value);
+        }
+    }
+    let request = request.body(
+        serde_json::to_vec(body)
+            .map_err(|e| ProviderError::new(ProviderErrorKind::InvalidRequest, e.to_string()))?,
+    );
+
+    let mut abort = cancel.clone();
+    let response = tokio::select! {
+        biased;
+        _ = abort.aborted() => return Err(aborted()),
+        sent = tokio::time::timeout(RESPONSE_HEADERS_TIMEOUT, request.send()) => match sent {
+            Err(_) => {
+                return Err(ProviderError::new(
+                    ProviderErrorKind::Transport,
+                    "the server did not answer in time",
+                ));
+            }
+            Ok(Err(error)) => return Err(transport_error(&error)),
+            Ok(Ok(response)) => response,
+        },
+    };
+
+    let status = response.status().as_u16();
+    let response_headers = lowercase_headers(response.headers());
+    let request_id = request_id_of(&response_headers);
+
+    if !(200..300).contains(&status) {
+        let text = tokio::select! {
+            biased;
+            _ = abort.aborted() => return Err(aborted()),
+            text = response.text() => text.unwrap_or_default(),
+        };
+        return Err(classify(status, response_headers, &text, request_id));
+    }
+
+    let text = tokio::select! {
+        biased;
+        _ = abort.aborted() => return Err(aborted()),
+        text = response.text() => match text {
+            Ok(t) => t,
+            Err(e) => return Err(transport_error(&e)),
+        },
+    };
+    let value = serde_json::from_str(&text).map_err(|error| {
+        ProviderError::new(
+            ProviderErrorKind::InvalidRequest,
+            format!("could not parse JSON response from server: {error}; raw body: {text}"),
+        )
+    })?;
+    Ok((response_headers, request_id, value))
+}
 
 /// [`post_stream`] with the protocol's own error classification: the transport
 /// is shared, the shape of an error body is not.

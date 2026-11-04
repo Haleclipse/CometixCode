@@ -471,6 +471,24 @@ pub async fn check_quota_status() {
         return;
     }
 
+    let settings = crate::utils::settings::get_initial_settings();
+    let profile = match crate::utils::model::profile::resolve_main_profile(&settings) {
+        Ok(profile) => profile,
+        Err(error) => {
+            crate::utils::debug::log_for_debugging(&format!(
+                "Quota status preflight skipped: {error}"
+            ));
+            return;
+        }
+    };
+    if profile.protocol != crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Quota status preflight skipped: protocol {:?} does not support quota preflight",
+            profile.protocol
+        ));
+        return;
+    }
+
     let model = crate::utils::model::model::get_small_fast_model();
     let options =
         match crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
@@ -795,6 +813,20 @@ mod tests {
         assert_eq!(body["max_tokens"], 1);
         assert_eq!(body["messages"][0]["role"], "user");
         assert_eq!(body["messages"][0]["content"], "quota");
+    }
+
+    #[tokio::test]
+    async fn quota_preflight_skips_when_main_profile_is_not_anthropic() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        crate::services::provider::openai::install_test_main_profile(
+            "http://127.0.0.1:9",
+            "ANY_KEY",
+            crate::utils::settings::nyan::ProviderProtocol::OpenaiChat,
+            Default::default(),
+        );
+        // check_quota_status must skip and not attempt to connect to port 9
+        check_quota_status().await;
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]

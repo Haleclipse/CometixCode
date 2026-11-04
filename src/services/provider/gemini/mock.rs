@@ -28,6 +28,7 @@ impl Recorded {
 pub enum Reply {
     Sse(Vec<(Option<String>, String)>),
     SseThenCut(Vec<(Option<String>, String)>),
+    Json(Value),
     Error {
         status: u16,
         headers: Vec<(String, String)>,
@@ -38,6 +39,10 @@ pub enum Reply {
 impl Reply {
     pub fn sse_data(items: impl IntoIterator<Item = Value>) -> Self {
         Self::Sse(items.into_iter().map(|v| (None, v.to_string())).collect())
+    }
+
+    pub fn json(body: Value) -> Self {
+        Self::Json(body)
     }
 
     pub fn error(status: u16, body: Value) -> Self {
@@ -143,6 +148,17 @@ impl MockGemini {
                              x-request-id: req_mock_gemini\r\nContent-Length: {}\r\n\
                              Connection: close\r\n\r\n",
                             body.len() + 4096
+                        );
+                        let _ = stream.write_all(head.as_bytes()).await;
+                        let _ = stream.write_all(body.as_bytes()).await;
+                    }
+                    Reply::Json(value) => {
+                        let body = value.to_string();
+                        let head = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                             x-request-id: req_mock_gemini\r\n\
+                             Content-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
                         );
                         let _ = stream.write_all(head.as_bytes()).await;
                         let _ = stream.write_all(body.as_bytes()).await;

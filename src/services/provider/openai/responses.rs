@@ -267,6 +267,99 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Back
     body
 }
 
+/// The `responses` body for one non-streaming call.
+pub fn build_body_non_streaming(
+    target: &ResolvedTarget,
+    request: &ModelRequest,
+    backend: Backend,
+) -> Value {
+    let mut body = build_body(target, request, backend);
+    body["stream"] = json!(false);
+    body
+}
+
+pub fn parse_non_streaming_response(
+    response: &Value,
+    request_id: Option<String>,
+) -> Result<crate::services::provider::non_streaming::NonStreamingResponse, ProviderError> {
+    use crate::services::provider::non_streaming::{NonStreamingContent, NonStreamingResponse};
+
+    let mut content = Vec::new();
+    let mut saw_call = false;
+
+    if let Some(output) = response.get("output").and_then(Value::as_array) {
+        for item in output {
+            let item_type = item.get("type").and_then(Value::as_str).unwrap_or_default();
+            match item_type {
+                "message" => {
+                    if let Some(parts) = item.get("content").and_then(Value::as_array) {
+                        for part in parts {
+                            if part.get("type").and_then(Value::as_str) == Some("output_text")
+                                && let Some(text) = part.get("text").and_then(Value::as_str)
+                            {
+                                content.push(NonStreamingContent::Text(text.to_string()));
+                            }
+                        }
+                    }
+                }
+                "function_call" => {
+                    let id = composite_id(item);
+                    let name = item
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    let args_raw = item
+                        .get("arguments")
+                        .and_then(Value::as_str)
+                        .unwrap_or("{}");
+                    let input = serde_json::from_str(args_raw).unwrap_or_else(|_| json!({}));
+                    content.push(NonStreamingContent::ToolUse { id, name, input });
+                    saw_call = true;
+                }
+                "reasoning" => {
+                    if let Some(summary) = item.get("summary").and_then(Value::as_array) {
+                        let text = summary
+                            .iter()
+                            .filter_map(|s| s.get("text").and_then(Value::as_str))
+                            .collect::<Vec<_>>()
+                            .join("");
+                        if !text.is_empty() {
+                            content.push(NonStreamingContent::Thinking {
+                                text,
+                                signature: None,
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let stop = stop_from(response, saw_call).ok();
+    let usage = parse_usage(response.get("usage").unwrap_or(&Value::Null));
+    let id = response
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("resp-1")
+        .to_string();
+    let model = response
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    Ok(NonStreamingResponse {
+        id,
+        model,
+        request_id,
+        content,
+        stop_reason: stop,
+        usage,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Stream
 // ---------------------------------------------------------------------------

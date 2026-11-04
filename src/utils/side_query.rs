@@ -39,6 +39,8 @@
 //! }).await?;
 //! ```
 
+use serde_json::json;
+
 use crate::constants::system::{get_attribution_header, get_cli_sysprompt_prefix};
 use crate::services::api::claude::get_api_metadata;
 use crate::utils::fingerprint::compute_fingerprint;
@@ -205,6 +207,12 @@ fn text_block(text: impl Into<String>) -> TextBlockParam {
 /// This IS the wrapper that handles OAuth attribution (CC biome-ignore note:
 /// do not bypass this for side calls).
 pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
+    let settings = crate::utils::settings::get_initial_settings();
+    let profile = crate::utils::model::profile::resolve_main_profile(&settings)?;
+    if profile.protocol != crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages {
+        return side_query_neutral(profile, opts).await;
+    }
+
     // Defaults match CC destructuring: max_tokens = 1024, maxRetries = 2.
     let max_tokens = opts.max_tokens.unwrap_or(1024);
     let max_retries = opts.max_retries.unwrap_or(2);
@@ -338,6 +346,275 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
 
     serde_json::from_value(serde_json::to_value(response)?)
         .map_err(|error| anyhow::anyhow!("side_query response: {error}"))
+}
+
+async fn side_query_neutral(
+    mut profile: crate::utils::model::profile::ResolvedModelProfile,
+    opts: SideQueryOptions,
+) -> anyhow::Result<Message> {
+    use crate::services::provider::ir::{
+        ClientContext, JsonSchemaOutput, MediaSource, ModelRequest, ThinkingPreference, ToolChoice,
+        ToolResultContent, ToolSpec, UserPart,
+    };
+
+    let model = if !opts.model.trim().is_empty() {
+        opts.model.clone()
+    } else {
+        profile.model.clone()
+    };
+    profile.model = model.clone();
+
+    // Build system prompt
+    let mut system: Vec<String> = Vec::new();
+    if !opts.skip_system_prompt_prefix {
+        system.push(
+            get_cli_sysprompt_prefix(opts.is_non_interactive, opts.has_append_system_prompt)
+                .to_string(),
+        );
+    }
+    match &opts.system {
+        Some(SideQuerySystem::Text(text)) => system.push(text.clone()),
+        Some(SideQuerySystem::Blocks(blocks)) => {
+            system.extend(blocks.iter().map(|b| b.text.clone()));
+        }
+        None => {}
+    }
+
+    // Build messages
+    let mut messages = Vec::new();
+    for msg in &opts.messages {
+        let is_user = msg.role == "user";
+        if is_user {
+            let mut parts = Vec::new();
+            match &msg.content {
+                MessageContent::Text(text) => {
+                    parts.push(UserPart::Text { text: text.clone() });
+                }
+                MessageContent::Blocks(blocks) => {
+                    for block in blocks {
+                        if let Ok(v) = serde_json::to_value(block) {
+                            let block_type = v
+                                .get("type")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default();
+                            match block_type {
+                                "text" => {
+                                    if let Some(text) =
+                                        v.get("text").and_then(serde_json::Value::as_str)
+                                    {
+                                        parts.push(UserPart::Text {
+                                            text: text.to_string(),
+                                        });
+                                    }
+                                }
+                                "image" => {
+                                    if let Some(source) = v.get("source") {
+                                        let media_type = source
+                                            .get("media_type")
+                                            .and_then(serde_json::Value::as_str)
+                                            .unwrap_or("image/png");
+                                        let data = source
+                                            .get("data")
+                                            .and_then(serde_json::Value::as_str)
+                                            .unwrap_or_default();
+                                        parts.push(UserPart::Image {
+                                            source: MediaSource::Base64 {
+                                                media_type: media_type.to_string(),
+                                                data: data.to_string(),
+                                            },
+                                            provider_state: None,
+                                        });
+                                    }
+                                }
+                                "tool_result" => {
+                                    let tool_use_id = v
+                                        .get("tool_use_id")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or_default()
+                                        .to_string();
+                                    let content = v
+                                        .get("content")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or_default()
+                                        .to_string();
+                                    let is_error = v
+                                        .get("is_error")
+                                        .and_then(serde_json::Value::as_bool)
+                                        .unwrap_or(false);
+                                    parts.push(UserPart::ToolResult {
+                                        tool_call_id: tool_use_id,
+                                        content: ToolResultContent::Text(content),
+                                        is_error,
+                                    });
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            messages.push(crate::services::provider::ir::Message::User { parts });
+        } else {
+            let mut parts = Vec::new();
+            match &msg.content {
+                MessageContent::Text(text) => {
+                    parts.push(crate::services::provider::ir::AssistantPart::Text {
+                        text: text.clone(),
+                    });
+                }
+                MessageContent::Blocks(blocks) => {
+                    for block in blocks {
+                        if let Ok(v) = serde_json::to_value(block) {
+                            let block_type = v
+                                .get("type")
+                                .and_then(serde_json::Value::as_str)
+                                .unwrap_or_default();
+                            match block_type {
+                                "text" => {
+                                    if let Some(text) =
+                                        v.get("text").and_then(serde_json::Value::as_str)
+                                    {
+                                        parts.push(
+                                            crate::services::provider::ir::AssistantPart::Text {
+                                                text: text.to_string(),
+                                            },
+                                        );
+                                    }
+                                }
+                                "tool_use" => {
+                                    let id = v
+                                        .get("id")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or_default()
+                                        .to_string();
+                                    let name = v
+                                        .get("name")
+                                        .and_then(serde_json::Value::as_str)
+                                        .unwrap_or_default()
+                                        .to_string();
+                                    let input =
+                                        v.get("input").cloned().unwrap_or_else(|| json!({}));
+                                    parts.push(
+                                        crate::services::provider::ir::AssistantPart::ToolCall {
+                                            id,
+                                            name,
+                                            input,
+                                            provider_state: None,
+                                        },
+                                    );
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            messages.push(crate::services::provider::ir::Message::Assistant { parts });
+        }
+    }
+
+    // Build tools
+    let tools: Vec<ToolSpec> = opts
+        .tools
+        .as_ref()
+        .map(|list| {
+            list.iter()
+                .map(|tu| match tu {
+                    anthropic_sdk::resources::messages::ToolUnion::Custom(t) => ToolSpec {
+                        name: t.name.clone(),
+                        description: t.description.clone().unwrap_or_default(),
+                        input_schema: t.input_schema.clone(),
+                        strict: t.strict == Some(true),
+                        deferrable: false,
+                        is_mcp: false,
+                    },
+                    _ => ToolSpec {
+                        name: String::new(),
+                        description: String::new(),
+                        input_schema: json!({}),
+                        strict: false,
+                        deferrable: false,
+                        is_mcp: false,
+                    },
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Tool choice
+    let tool_choice = match &opts.tool_choice {
+        Some(anthropic_sdk::resources::messages::ToolChoice::Tool { name, .. }) => {
+            ToolChoice::Tool { name: name.clone() }
+        }
+        Some(anthropic_sdk::resources::messages::ToolChoice::Auto { .. }) => ToolChoice::Auto,
+        Some(anthropic_sdk::resources::messages::ToolChoice::Any { .. }) => ToolChoice::Any,
+        Some(anthropic_sdk::resources::messages::ToolChoice::None) => ToolChoice::None,
+        None => {
+            if tools.is_empty() {
+                ToolChoice::None
+            } else {
+                ToolChoice::Auto
+            }
+        }
+    };
+
+    let thinking = match &opts.thinking {
+        Some(SideQueryThinking::Disabled) => ThinkingPreference::Disabled,
+        Some(SideQueryThinking::Enabled { budget_tokens }) => ThinkingPreference::Budget {
+            tokens: Some((*budget_tokens).max(0) as u32),
+        },
+        None => ThinkingPreference::Disabled,
+    };
+
+    let request = ModelRequest {
+        model,
+        system,
+        messages,
+        tools,
+        tool_choice,
+        thinking,
+        effort: None,
+        max_output_tokens: opts.max_tokens.unwrap_or(1024).max(1) as u32,
+        temperature: opts.temperature,
+        structured_output: opts.output_format.as_ref().map(|schema| JsonSchemaOutput {
+            schema: schema.clone(),
+        }),
+        cache: Default::default(),
+        query_source: opts.query_source.clone(),
+        agent_id: None,
+        disable_parallel_tools: false,
+        discovered_tools: Vec::new(),
+        tools_pending: false,
+        client: ClientContext {
+            non_interactive: opts.is_non_interactive,
+            has_append_system_prompt: opts.has_append_system_prompt,
+        },
+        extensions: Vec::new(),
+    };
+
+    let cancel = opts
+        .signal
+        .clone()
+        .unwrap_or_else(anthropic_sdk::AbortSignal::new);
+    let limits = crate::services::provider::retry::RetryLimits::for_profile_with_override(
+        &profile.profile,
+        opts.max_retries,
+    );
+
+    let response =
+        crate::services::provider::execute_non_streaming(&profile, &request, &cancel, &limits)
+            .await
+            .map_err(|error| {
+                if error.kind == crate::services::provider::ir::ProviderErrorKind::Aborted {
+                    anyhow::Error::new(anthropic_sdk::ApiError::UserAbort {
+                        message: "Request was aborted.".to_string(),
+                    })
+                } else {
+                    anyhow::Error::new(error)
+                }
+            })?;
+
+    Ok(response.to_api_message())
 }
 
 /// Build a custom `ToolUnion` from name + JSON schema (e.g. classifier tools).

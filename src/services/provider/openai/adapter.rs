@@ -39,14 +39,14 @@ impl OpenAiAdapter {
         }
     }
 
-    fn backend(&self) -> Backend {
+    pub(crate) fn backend(&self) -> Backend {
         match self.target.auth {
             OpenAiAuth::Codex { .. } => Backend::Codex,
             _ => Backend::Api,
         }
     }
 
-    fn url(&self) -> String {
+    pub(crate) fn url(&self) -> String {
         let path = match self.protocol {
             Protocol::OpenaiResponses => "responses",
             _ => "chat/completions",
@@ -57,7 +57,7 @@ impl OpenAiAdapter {
     /// A local server either accepts the connection at once or is not running,
     /// so it fails in seconds. Only the connect is shortened: the first token of
     /// a local model can take a long time (Ollama loads weights on first use).
-    fn connect_timeout(&self) -> std::time::Duration {
+    pub(crate) fn connect_timeout(&self) -> std::time::Duration {
         if self.target.provider_kind.is_local() {
             transport::LOCAL_CONNECT_TIMEOUT
         } else {
@@ -68,7 +68,7 @@ impl OpenAiAdapter {
     /// A 401 with no credential sent is an auth error that names the variable
     /// the profile reads, so the fix is visible without the key ever being
     /// shown. A 401 with a credential keeps the server's own message.
-    fn explain_unauthorized(&self, mut error: ProviderError) -> ProviderError {
+    pub(crate) fn explain_unauthorized(&self, mut error: ProviderError) -> ProviderError {
         if error.kind == ProviderErrorKind::Unauthorized
             && matches!(self.target.auth, OpenAiAuth::None)
             && let Some(name) = &self.target.optional_env
@@ -82,7 +82,7 @@ impl OpenAiAdapter {
     }
 
     /// Per-request headers. Settings `httpHeaders` still override these.
-    fn headers(&self) -> Vec<(String, String)> {
+    pub(crate) fn headers(&self) -> Vec<(String, String)> {
         let mut headers = Vec::new();
         match &self.target.auth {
             OpenAiAuth::None => {}

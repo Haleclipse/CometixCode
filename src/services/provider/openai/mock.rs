@@ -34,6 +34,8 @@ pub enum Reply {
     Sse(Vec<(Option<String>, String)>),
     /// `200` with these messages and then the connection is cut mid-stream.
     SseThenCut(Vec<(Option<String>, String)>),
+    /// A 200 JSON response.
+    Json(Value),
     /// A non-200 response with extra headers.
     Error {
         status: u16,
@@ -45,6 +47,10 @@ pub enum Reply {
 impl Reply {
     pub fn sse_data(items: impl IntoIterator<Item = Value>) -> Self {
         Self::Sse(items.into_iter().map(|v| (None, v.to_string())).collect())
+    }
+
+    pub fn json(body: Value) -> Self {
+        Self::Json(body)
     }
 
     pub fn error(status: u16, body: Value) -> Self {
@@ -152,6 +158,17 @@ impl MockOpenAi {
                              x-request-id: req_mock\r\nContent-Length: {}\r\n\
                              Connection: close\r\n\r\n",
                             body.len() + 4096
+                        );
+                        let _ = stream.write_all(head.as_bytes()).await;
+                        let _ = stream.write_all(body.as_bytes()).await;
+                    }
+                    Reply::Json(value) => {
+                        let body = value.to_string();
+                        let head = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                             x-request-id: req_mock\r\n\
+                             Content-Length: {}\r\nConnection: close\r\n\r\n",
+                            body.len()
                         );
                         let _ = stream.write_all(head.as_bytes()).await;
                         let _ = stream.write_all(body.as_bytes()).await;

@@ -5,6 +5,9 @@ pub mod adapter;
 pub mod anthropic;
 pub mod gemini;
 pub mod ir;
+pub mod non_streaming;
 pub mod openai;
 pub mod request;
 pub mod retry;
+
+pub use non_streaming::{NonStreamingContent, NonStreamingResponse, execute_non_streaming};

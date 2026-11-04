@@ -246,6 +246,101 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: Compa
     body
 }
 
+/// The `chat/completions` body for one non-streaming call.
+pub fn build_body_non_streaming(
+    target: &ResolvedTarget,
+    request: &ModelRequest,
+    compat: Compat,
+) -> Value {
+    let mut body = build_body(target, request, compat);
+    body["stream"] = json!(false);
+    if let Some(obj) = body.as_object_mut() {
+        obj.remove("stream_options");
+    }
+    body
+}
+
+pub fn parse_non_streaming_response(
+    response: &Value,
+    request_id: Option<String>,
+) -> Result<crate::services::provider::non_streaming::NonStreamingResponse, ProviderError> {
+    use crate::services::provider::non_streaming::{NonStreamingContent, NonStreamingResponse};
+
+    let choices = response
+        .get("choices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            ProviderError::new(
+                ProviderErrorKind::InvalidRequest,
+                format!("OpenAI response missing 'choices': {response}"),
+            )
+        })?;
+
+    let choice = choices.first().ok_or_else(|| {
+        ProviderError::new(
+            ProviderErrorKind::InvalidRequest,
+            "OpenAI response 'choices' array is empty",
+        )
+    })?;
+
+    let mut content = Vec::new();
+    let message = choice.get("message").unwrap_or(&Value::Null);
+
+    if let Some(text) = message.get("content").and_then(Value::as_str)
+        && !text.is_empty()
+    {
+        content.push(NonStreamingContent::Text(text.to_string()));
+    }
+
+    let mut saw_call = false;
+    if let Some(tool_calls) = message.get("tool_calls").and_then(Value::as_array) {
+        for call in tool_calls {
+            let id = call
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let name = call
+                .pointer("/function/name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let args_raw = call
+                .pointer("/function/arguments")
+                .and_then(Value::as_str)
+                .unwrap_or("{}");
+            let input = serde_json::from_str(args_raw).unwrap_or_else(|_| json!({}));
+            content.push(NonStreamingContent::ToolUse { id, name, input });
+            saw_call = true;
+        }
+    }
+
+    let stop = choice
+        .get("finish_reason")
+        .and_then(Value::as_str)
+        .map(|r| stop_reason(r, saw_call));
+    let usage = response.get("usage").map(parse_usage).unwrap_or_default();
+    let id = response
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("chatcmpl-1")
+        .to_string();
+    let model = response
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    Ok(NonStreamingResponse {
+        id,
+        model,
+        request_id,
+        content,
+        stop_reason: stop,
+        usage,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Stream
 // ---------------------------------------------------------------------------

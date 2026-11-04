@@ -3202,8 +3202,7 @@ pub async fn query_model_with_streaming(
         Err(MainOpenFailure {
             error,
             switched: false,
-        }) if main_profile_is_anthropic()
-            && should_fallback_stream_creation_error_to_non_streaming(&error)
+        }) if should_fallback_stream_creation_error_to_non_streaming(&error)
             && !is_non_streaming_fallback_disabled() =>
         {
             let messages = messages.to_vec();
@@ -4399,6 +4398,26 @@ async fn execute_non_streaming_fallback_to_assistant(
     beta_capture: &SdkRequestBetaCapture,
     initial_consecutive_529_errors: Option<u32>,
 ) -> anyhow::Result<AssistantMessage> {
+    let settings = crate::utils::settings::get_initial_settings();
+    let profile = crate::utils::model::profile::resolve_main_profile(&settings);
+    if let Ok(profile) = profile
+        && profile.protocol != crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages
+    {
+        let request =
+            build_neutral_request(messages, system_prompt, thinking_config, tools, options);
+        let cancel = options
+            .abort_signal
+            .clone()
+            .unwrap_or_else(anthropic_sdk::AbortSignal::new);
+        let limits = crate::services::provider::retry::RetryLimits::for_profile(&profile.profile);
+        let response =
+            crate::services::provider::execute_non_streaming(&profile, &request, &cancel, &limits)
+                .await?;
+        return Ok(
+            response.to_assistant_message(tools, options.agent_id.as_ref().map(|id| id.0.as_str()))
+        );
+    }
+
     // Maps to CC `queryModel(...)` streaming-error fallback: reuse the same
     // paramsFromContext shape as the streaming attempt, run
     // `executeNonStreamingRequest(...)`, then normalize the returned message
@@ -4443,7 +4462,7 @@ async fn execute_non_streaming_fallback_to_assistant(
     )
 }
 
-fn sdk_message_response_to_assistant_message(
+pub(crate) fn sdk_message_response_to_assistant_message(
     mut value: serde_json::Value,
     tools: &[Tool],
     agent_id: Option<&str>,
@@ -4819,47 +4838,7 @@ fn provider_error_to_retryable(
     protocol: crate::services::provider::ir::Protocol,
     limits: &crate::services::provider::retry::RetryLimits,
 ) -> crate::services::api::with_retry::RetryableError {
-    use crate::services::api::with_retry::{ApiError, ConnectionError, RetryableError};
-    use crate::services::provider::ir::{Protocol, ProviderErrorKind};
-
-    // The quota machinery reads Anthropic's rate-limit headers.
-    if protocol == Protocol::AnthropicMessages {
-        crate::services::claude_ai_limits::extract_quota_status_from_error(
-            error.status,
-            Some(&error.headers.clone().into_iter().collect()),
-        );
-    }
-    match error.kind {
-        ProviderErrorKind::Aborted => RetryableError::Aborted,
-        ProviderErrorKind::Transport => RetryableError::Connection(ConnectionError {
-            message: error.message,
-            code: None,
-        }),
-        ProviderErrorKind::InvalidRequest if error.status.is_none() => {
-            RetryableError::Other(anyhow::anyhow!(error.message))
-        }
-        _ => {
-            let judged = crate::services::provider::retry::judge(
-                crate::services::provider::retry::policy_for(protocol),
-                limits,
-                error,
-            );
-            let verdict = judged.verdict();
-            let error = judged.error;
-            RetryableError::Judged {
-                api: ApiError {
-                    status: error.status,
-                    message: error.message,
-                    headers: error.headers.into_iter().collect(),
-                    body: error.body,
-                },
-                verdict,
-                kind: error.kind,
-                request_id: error.request_id,
-                max_delay: limits.max_delay,
-            }
-        }
-    }
+    crate::services::provider::retry::to_retryable(error, protocol, limits)
 }
 
 /// How long a freshly opened stream may stay silent before its first output.

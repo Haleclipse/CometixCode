@@ -62,6 +62,57 @@ pub async fn open_stream(
     adapter.send(&resolved, request, cancel).await
 }
 
+/// Execute one non-streaming attempt for an OpenAI-protocol profile.
+pub async fn execute_non_streaming(
+    profile: &ResolvedModelProfile,
+    request: &ModelRequest,
+    cancel: &Cancel,
+) -> Result<crate::services::provider::non_streaming::NonStreamingResponse, ProviderError> {
+    let invalid = |message: String| ProviderError::new(ProviderErrorKind::InvalidRequest, message);
+    let target = target::target_for_profile(profile)
+        .await
+        .map_err(|error| invalid(error.to_string()))?;
+    let resolved = ResolvedTarget::from_profile(profile);
+
+    match profile.protocol {
+        ProviderProtocol::OpenaiChat => {
+            let adapter = adapter::OpenAiAdapter::chat(target.clone());
+            adapter
+                .validate(&resolved, request)
+                .map_err(|error| invalid(error.to_string()))?;
+            let url = format!("{}/chat/completions", target.base_url);
+            let headers = adapter.headers();
+            let body = chat::build_body_non_streaming(&resolved, request, target.compat);
+            let connect_timeout = adapter.connect_timeout();
+
+            let (_headers, request_id, json_response) =
+                transport::post_json(&url, headers, &body, cancel, connect_timeout)
+                    .await
+                    .map_err(|e| adapter.explain_unauthorized(e))?;
+
+            chat::parse_non_streaming_response(&json_response, request_id)
+        }
+        ProviderProtocol::OpenaiResponses => {
+            let adapter = adapter::OpenAiAdapter::responses(target.clone());
+            adapter
+                .validate(&resolved, request)
+                .map_err(|error| invalid(error.to_string()))?;
+            let url = format!("{}/responses", target.base_url);
+            let headers = adapter.headers();
+            let body = responses::build_body_non_streaming(&resolved, request, adapter.backend());
+            let connect_timeout = adapter.connect_timeout();
+
+            let (_headers, request_id, json_response) =
+                transport::post_json(&url, headers, &body, cancel, connect_timeout)
+                    .await
+                    .map_err(|e| adapter.explain_unauthorized(e))?;
+
+            responses::parse_non_streaming_response(&json_response, request_id)
+        }
+        other => Err(invalid(format!("{other:?} is not an OpenAI protocol"))),
+    }
+}
+
 /// Test support: install an OpenAI main profile (`protocol`) in the session
 /// settings cache, with the key held in `env_name`.
 #[cfg(test)]

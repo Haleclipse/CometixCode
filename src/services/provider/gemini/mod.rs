@@ -38,6 +38,232 @@ pub async fn open_stream(
     adapter.send(&resolved, request, cancel).await
 }
 
+/// Execute one non-streaming attempt for a Gemini-protocol profile.
+pub async fn execute_non_streaming(
+    profile: &ResolvedModelProfile,
+    request: &ModelRequest,
+    cancel: &Cancel,
+) -> Result<crate::services::provider::non_streaming::NonStreamingResponse, ProviderError> {
+    use crate::services::provider::ir::{StopReason, Usage};
+    use crate::services::provider::non_streaming::{NonStreamingContent, NonStreamingResponse};
+    use crate::services::provider::openai::transport::post_json_classified;
+
+    let invalid = |message: String| ProviderError::new(ProviderErrorKind::InvalidRequest, message);
+    let target = target::target_for_profile(profile)
+        .await
+        .map_err(|error| invalid(error.to_string()))?;
+    let resolved = ResolvedTarget::from_profile(profile);
+    let adapter = adapter::GeminiAdapter::new(target.clone());
+    adapter
+        .validate(&resolved, request)
+        .map_err(|error| invalid(error.to_string()))?;
+
+    let url = format!(
+        "{}/models/{}:generateContent",
+        target.base_url, resolved.model
+    );
+    let headers = adapter.headers();
+    let body = serde_json::to_value(wire::build_request(request, &resolved))
+        .map_err(|e| invalid(e.to_string()))?;
+
+    let (_headers_map, request_id, json_response) = post_json_classified(
+        &url,
+        headers,
+        &body,
+        cancel,
+        crate::services::provider::openai::transport::CONNECT_TIMEOUT,
+        errors::from_http,
+    )
+    .await?;
+
+    let parsed: wire::GenerateContentResponse = serde_json::from_value(json_response)
+        .map_err(|e| invalid(format!("Gemini response parse error: {e}")))?;
+
+    let candidate = parsed
+        .candidates
+        .first()
+        .ok_or_else(|| invalid("Gemini response contained no candidates".to_string()))?;
+
+    let mut content = Vec::new();
+    let mut saw_call = false;
+
+    if let Some(candidate_content) = &candidate.content {
+        for part in &candidate_content.parts {
+            if let Some(text) = &part.text {
+                if part.thought == Some(true) {
+                    content.push(NonStreamingContent::Thinking {
+                        text: text.clone(),
+                        signature: part.thought_signature.clone(),
+                    });
+                } else {
+                    content.push(NonStreamingContent::Text(text.clone()));
+                }
+            } else if let Some(call) = &part.function_call {
+                let id = call.id.clone().unwrap_or_else(|| call.name.clone());
+                content.push(NonStreamingContent::ToolUse {
+                    id,
+                    name: call.name.clone(),
+                    input: call.args.clone(),
+                });
+                saw_call = true;
+            }
+        }
+    }
+
+    let stop_reason = candidate
+        .finish_reason
+        .as_deref()
+        .map(|reason| match reason {
+            "STOP" => {
+                if saw_call {
+                    StopReason::ToolUse
+                } else {
+                    StopReason::EndTurn
+                }
+            }
+            "MAX_TOKENS" => StopReason::MaxTokens,
+            "SAFETY" | "RECITATION" | "BLOCKLIST" | "PROHIBITED_CONTENT" | "SPI_RESTRICTION" => {
+                StopReason::Refusal
+            }
+            other => StopReason::Other(other.to_string()),
+        });
+
+    let usage = parsed
+        .usage_metadata
+        .as_ref()
+        .map(|u| Usage {
+            input_tokens: u.prompt_token_count,
+            output_tokens: u.candidates_token_count,
+            cache_read_tokens: u.cached_content_token_count,
+            reasoning_tokens: u.thoughts_token_count,
+            ..Default::default()
+        })
+        .unwrap_or_default();
+
+    let model = parsed
+        .model_version
+        .unwrap_or_else(|| resolved.model.clone());
+    let id = format!("gemini-{}", uuid::Uuid::new_v4());
+
+    Ok(NonStreamingResponse {
+        id,
+        model,
+        request_id,
+        content,
+        stop_reason,
+        usage,
+    })
+}
+
+/// Count tokens for raw text on a Gemini model.
+pub async fn count_tokens(
+    profile: &ResolvedModelProfile,
+    text: &str,
+) -> Result<usize, ProviderError> {
+    use crate::services::provider::openai::transport::post_json_classified;
+    use serde_json::Value;
+
+    let invalid = |message: String| ProviderError::new(ProviderErrorKind::InvalidRequest, message);
+    let target = target::target_for_profile(profile)
+        .await
+        .map_err(|error| invalid(error.to_string()))?;
+    let resolved = ResolvedTarget::from_profile(profile);
+    let adapter = adapter::GeminiAdapter::new(target.clone());
+
+    let url = format!("{}/models/{}:countTokens", target.base_url, resolved.model);
+    let headers = adapter.headers();
+    let body = serde_json::json!({
+        "contents": [
+            {
+                "parts": [
+                    { "text": text }
+                ]
+            }
+        ]
+    });
+
+    let cancel = Cancel::new();
+    let (_headers, _req_id, response) = post_json_classified(
+        &url,
+        headers,
+        &body,
+        &cancel,
+        crate::services::provider::openai::transport::CONNECT_TIMEOUT,
+        errors::from_http,
+    )
+    .await?;
+
+    let total = response
+        .get("totalTokens")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| invalid("Gemini countTokens response missing 'totalTokens'".into()))?;
+    Ok(total as usize)
+}
+
+/// Count tokens for messages on a Gemini model.
+pub async fn count_messages_tokens(
+    profile: &ResolvedModelProfile,
+    messages: &[anthropic_sdk::resources::beta::messages::BetaMessageParam],
+) -> Result<usize, ProviderError> {
+    use crate::services::provider::openai::transport::post_json_classified;
+    use serde_json::Value;
+
+    let invalid = |message: String| ProviderError::new(ProviderErrorKind::InvalidRequest, message);
+    let target = target::target_for_profile(profile)
+        .await
+        .map_err(|error| invalid(error.to_string()))?;
+    let resolved = ResolvedTarget::from_profile(profile);
+    let adapter = adapter::GeminiAdapter::new(target.clone());
+
+    let url = format!("{}/models/{}:countTokens", target.base_url, resolved.model);
+    let headers = adapter.headers();
+
+    let mut contents = Vec::new();
+    for msg in messages {
+        let role = if msg.role == "assistant" {
+            "model"
+        } else {
+            "user"
+        };
+        let text = match &msg.content {
+            anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(t) => t.clone(),
+            anthropic_sdk::resources::beta::messages::BetaMessageContent::Blocks(blocks) => {
+                let mut acc = String::new();
+                for block in blocks {
+                    if let Ok(val) = serde_json::to_value(block)
+                        && let Some(t) = val.get("text").and_then(Value::as_str)
+                    {
+                        acc.push_str(t);
+                    }
+                }
+                acc
+            }
+        };
+        contents.push(serde_json::json!({
+            "role": role,
+            "parts": [{ "text": text }]
+        }));
+    }
+
+    let body = serde_json::json!({ "contents": contents });
+    let cancel = Cancel::new();
+    let (_headers, _req_id, response) = post_json_classified(
+        &url,
+        headers,
+        &body,
+        &cancel,
+        crate::services::provider::openai::transport::CONNECT_TIMEOUT,
+        errors::from_http,
+    )
+    .await?;
+
+    let total = response
+        .get("totalTokens")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| invalid("Gemini countTokens response missing 'totalTokens'".into()))?;
+    Ok(total as usize)
+}
+
 /// Test support: install a Gemini main profile in the session settings cache,
 /// pointing to `base_url` with key held in `env_name`.
 #[cfg(test)]

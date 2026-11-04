@@ -666,29 +666,57 @@ async fn failure_of(messages: Vec<Message>) -> (String, Vec<QueryModelStreamItem
 }
 
 #[tokio::test]
-async fn a_404_at_open_is_reported_and_never_retried_as_a_non_streaming_anthropic_request() {
-    // Anthropic falls back to a non-streaming request on exactly this status.
-    // For an OpenAI profile that second request would be Anthropic-shaped, so
-    // the error must be reported as it is and nothing more sent.
+async fn a_404_at_open_falls_back_to_non_streaming_on_openai_endpoint() {
     let mock = MockOpenAi::start(vec![
         Reply::error(
             404,
-            json!({"error": {"message": "The model `gpt-5` does not exist", "type": "invalid_request_error", "code": "model_not_found"}}),
+            json!({"error": {"message": "Streaming endpoint not found", "type": "invalid_request_error", "code": "endpoint_not_found"}}),
         ),
-        Reply::error(404, json!({"error": {"message": "second request", "type": "x", "code": null}})),
+        Reply::json(json!({
+            "id": "chatcmpl-fallback",
+            "model": "gpt-5",
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": "served by non-streaming fallback"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5}
+        })),
     ])
     .await;
     let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
 
-    let (message, items) = failure_of(vec![user("go")]).await;
-    assert!(message.contains("gpt-5"), "{message}");
+    let items = run(vec![user("go")], vec![]).await;
     assert!(
-        !items
+        items
             .iter()
             .any(|i| matches!(i, QueryModelStreamItem::StreamingFallback)),
-        "{items:?}"
+        "expected StreamingFallback signal: {items:?}"
     );
-    assert_eq!(mock.requests().len(), 1, "exactly one request");
+    let messages = assistants(&items);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        first(messages[0]),
+        AssistantContent::Text("served by non-streaming fallback".into())
+    );
+
+    let requests = mock.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "1 streaming attempt + 1 non-streaming fallback attempt"
+    );
+    assert_eq!(requests[0].body["stream"], true);
+    assert_eq!(requests[1].body["stream"], false);
+    assert_eq!(
+        requests[1].header("authorization"),
+        Some("Bearer sk-query-path")
+    );
+    assert_eq!(
+        requests[1].header("x-api-key"),
+        None,
+        "no Anthropic key used on fallback"
+    );
 }
 
 #[tokio::test]
@@ -738,35 +766,190 @@ async fn a_cut_stream_after_output_is_reported_and_never_replayed() {
 }
 
 #[tokio::test]
-async fn the_anthropic_only_entry_points_refuse_an_openai_profile_instead_of_sending() {
-    // `side_query` serves the permission classifier, the explainer and model
-    // validation. It is still Anthropic-only; with an OpenAI main profile it
-    // must say so, and above all must not put an Anthropic-shaped request on
-    // the wire to the OpenAI endpoint or with the OpenAI key.
-    let mock = MockOpenAi::start(vec![Reply::sse_data([chat_chunk(
-        json!({"content": "unexpected"}),
-        json!("stop"),
-    )])])
+async fn a_chat_profile_serves_side_query_through_request_ir_and_openai_endpoint() {
+    let mock = MockOpenAi::start(vec![Reply::json(json!({
+        "id": "chatcmpl-sq",
+        "model": "gpt-5",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "validated"},
+            "finish_reason": "stop"
+        }],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 1}
+    }))])
     .await;
     let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
 
-    let error = crate::utils::side_query::side_query(crate::utils::side_query::SideQueryOptions {
-        model: "gpt-5".to_string(),
-        messages: vec![crate::utils::side_query::user_text_message("Hi")],
-        max_tokens: Some(1),
-        max_retries: Some(0),
-        query_source: "model_validation".to_string(),
-        ..Default::default()
-    })
-    .await
-    .expect_err("side_query must not serve an OpenAI profile");
+    let response =
+        crate::utils::side_query::side_query(crate::utils::side_query::SideQueryOptions {
+            model: "gpt-5".to_string(),
+            messages: vec![crate::utils::side_query::user_text_message("Hi")],
+            max_tokens: Some(1),
+            max_retries: Some(0),
+            query_source: "model_validation".to_string(),
+            ..Default::default()
+        })
+        .await
+        .expect("side_query serves OpenAI Chat profile");
+
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 1, "exactly one request sent");
     assert!(
-        error
-            .to_string()
-            .contains("cannot be served by the Anthropic client"),
-        "{error}"
+        requests[0]
+            .request_line
+            .starts_with("POST /chat/completions")
     );
-    assert!(mock.requests().is_empty(), "nothing was sent");
+    assert_eq!(
+        requests[0].header("authorization"),
+        Some("Bearer sk-query-path")
+    );
+    assert_eq!(requests[0].header("x-api-key"), None, "no Anthropic key");
+    assert_eq!(requests[0].body["stream"], false);
+    assert_eq!(requests[0].body["model"], "gpt-5");
+
+    assert_eq!(response.id, "chatcmpl-sq");
+    let content = crate::utils::messages::extract_text_content(&response.content, None);
+    assert_eq!(content, "validated");
+}
+
+#[tokio::test]
+async fn a_responses_profile_serves_side_query_through_request_ir_and_responses_endpoint() {
+    let mock = MockOpenAi::start(vec![Reply::json(json!({
+        "id": "resp-sq",
+        "model": "gpt-5",
+        "status": "completed",
+        "output": [{
+            "type": "message",
+            "content": [{"type": "output_text", "text": "responses side query ok"}]
+        }],
+        "usage": {"input_tokens": 8, "output_tokens": 4}
+    }))])
+    .await;
+    let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiResponses);
+
+    let response =
+        crate::utils::side_query::side_query(crate::utils::side_query::SideQueryOptions {
+            model: "gpt-5".to_string(),
+            messages: vec![crate::utils::side_query::user_text_message("Hi")],
+            max_tokens: Some(10),
+            max_retries: Some(0),
+            query_source: "permission_explainer".to_string(),
+            ..Default::default()
+        })
+        .await
+        .expect("side_query serves OpenAI Responses profile");
+
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].request_line.starts_with("POST /responses"));
+    assert_eq!(requests[0].body["stream"], false);
+
+    assert_eq!(response.id, "resp-sq");
+    let content = crate::utils::messages::extract_text_content(&response.content, None);
+    assert_eq!(content, "responses side query ok");
+}
+
+#[tokio::test]
+async fn a_responses_profile_falls_back_to_non_streaming_on_stream_open_404() {
+    let mock = MockOpenAi::start(vec![
+        Reply::error(
+            404,
+            json!({"error": {"message": "Streaming not supported", "type": "invalid_request_error"}}),
+        ),
+        Reply::json(json!({
+            "id": "resp-fb",
+            "model": "gpt-5",
+            "status": "completed",
+            "output": [{
+                "type": "message",
+                "content": [{"type": "output_text", "text": "responses fallback output"}]
+            }],
+            "usage": {"input_tokens": 12, "output_tokens": 3}
+        })),
+    ])
+    .await;
+    let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiResponses);
+
+    let items = run(vec![user("go")], vec![]).await;
+    assert!(
+        items
+            .iter()
+            .any(|i| matches!(i, QueryModelStreamItem::StreamingFallback)),
+        "expected StreamingFallback signal: {items:?}"
+    );
+    let messages = assistants(&items);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        first(messages[0]),
+        AssistantContent::Text("responses fallback output".into())
+    );
+
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[0].body["stream"], true);
+    assert_eq!(requests[1].body["stream"], false);
+}
+
+#[tokio::test]
+async fn count_tokens_on_openai_profile_falls_back_to_local_estimation() {
+    let mock = MockOpenAi::start(vec![]).await;
+    let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
+
+    let count = crate::services::token_estimation::count_tokens_with_api("hello world").await;
+    assert!(count.is_some());
+    assert_eq!(
+        count.unwrap(),
+        crate::services::token_estimation::rough_token_count_estimation("hello world") as usize
+    );
+    assert!(
+        mock.requests().is_empty(),
+        "no network request made for OpenAI count_tokens"
+    );
+}
+
+#[tokio::test]
+async fn a_local_vllm_profile_serves_side_query_without_key() {
+    let mock = MockOpenAi::start(vec![Reply::json(json!({
+        "id": "cmpl-local-sq",
+        "model": "qwen-local",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "local side query ok"},
+            "finish_reason": "stop"
+        }],
+        "usage": {"prompt_tokens": 6, "completion_tokens": 3}
+    }))])
+    .await;
+    let _env = local_env(&mock.base_url, ProviderKind::Vllm, None, None);
+
+    let response =
+        crate::utils::side_query::side_query(crate::utils::side_query::SideQueryOptions {
+            model: "qwen-local".to_string(),
+            messages: vec![crate::utils::side_query::user_text_message("Hi local")],
+            max_tokens: Some(10),
+            max_retries: Some(0),
+            query_source: "side_query".to_string(),
+            ..Default::default()
+        })
+        .await
+        .expect("side_query serves local vLLM profile");
+
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(
+        requests[0]
+            .request_line
+            .starts_with("POST /chat/completions")
+    );
+    assert_eq!(
+        requests[0].header("authorization"),
+        None,
+        "no key on keyless local server"
+    );
+    assert_eq!(requests[0].body["stream"], false);
+    assert_eq!(response.id, "cmpl-local-sq");
+    let content = crate::utils::messages::extract_text_content(&response.content, None);
+    assert_eq!(content, "local side query ok");
 }
 
 /// A vLLM-style reply: an SSE stream with a usage chunk, `max_tokens` on the

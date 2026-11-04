@@ -322,11 +322,55 @@ fn rough_token_count_estimation_for_block(block: RoughTokenBlock<'_>) -> i64 {
     }
 }
 
+fn estimate_messages_tokens_rough(
+    messages: &[anthropic_sdk::resources::beta::messages::BetaMessageParam],
+) -> usize {
+    let mut total = 0;
+    for message in messages {
+        match &message.content {
+            anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(text) => {
+                total += rough_token_count_estimation(text);
+            }
+            anthropic_sdk::resources::beta::messages::BetaMessageContent::Blocks(blocks) => {
+                for block in blocks {
+                    if let Ok(val) = serde_json::to_value(block)
+                        && let Some(text) = val.get("text").and_then(Value::as_str)
+                    {
+                        total += rough_token_count_estimation(text);
+                    }
+                }
+            }
+        }
+    }
+    total.max(0) as usize
+}
+
 /// Maps to: CC `services/tokenEstimation.ts#countTokensWithAPI` (:124-137).
 pub async fn count_tokens_with_api(content: &str) -> Option<usize> {
     if content.is_empty() {
         return Some(0);
     }
+    let settings = crate::utils::settings::get_initial_settings();
+    let profile = crate::utils::model::profile::resolve_main_profile(&settings).ok();
+    if let Some(profile) = &profile {
+        match profile.protocol {
+            crate::utils::settings::nyan::ProviderProtocol::Gemini => {
+                match crate::services::provider::gemini::count_tokens(profile, content).await {
+                    Ok(count) => return Some(count),
+                    Err(error) => {
+                        tracing::warn!(error = %error, "Gemini count_tokens failed, falling back to local estimate");
+                        return Some(rough_token_count_estimation(content).max(0) as usize);
+                    }
+                }
+            }
+            crate::utils::settings::nyan::ProviderProtocol::OpenaiChat
+            | crate::utils::settings::nyan::ProviderProtocol::OpenaiResponses => {
+                return Some(rough_token_count_estimation(content).max(0) as usize);
+            }
+            crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages => {}
+        }
+    }
+
     let message = anthropic_sdk::resources::beta::messages::BetaMessageParam {
         role: "user".to_string(),
         content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
@@ -341,6 +385,29 @@ pub async fn count_messages_tokens_with_api(
     messages: Vec<anthropic_sdk::resources::beta::messages::BetaMessageParam>,
     tools: Vec<anthropic_sdk::resources::beta::messages::BetaToolUnion>,
 ) -> Option<usize> {
+    let settings = crate::utils::settings::get_initial_settings();
+    let profile = crate::utils::model::profile::resolve_main_profile(&settings).ok();
+    if let Some(profile) = &profile {
+        match profile.protocol {
+            crate::utils::settings::nyan::ProviderProtocol::Gemini => {
+                match crate::services::provider::gemini::count_messages_tokens(profile, &messages)
+                    .await
+                {
+                    Ok(count) => return Some(count),
+                    Err(error) => {
+                        tracing::warn!(error = %error, "Gemini count_tokens failed, falling back to local estimate");
+                        return Some(estimate_messages_tokens_rough(&messages));
+                    }
+                }
+            }
+            crate::utils::settings::nyan::ProviderProtocol::OpenaiChat
+            | crate::utils::settings::nyan::ProviderProtocol::OpenaiResponses => {
+                return Some(estimate_messages_tokens_rough(&messages));
+            }
+            crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages => {}
+        }
+    }
+
     let model = crate::utils::model::model::get_main_loop_model();
     if model.trim().is_empty() {
         return None;

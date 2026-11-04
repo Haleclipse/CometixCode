@@ -29,7 +29,7 @@ impl GeminiAdapter {
         Self { target }
     }
 
-    fn headers(&self) -> Vec<(String, String)> {
+    pub(crate) fn headers(&self) -> Vec<(String, String)> {
         let mut headers = vec![("content-type".into(), "application/json".into())];
         if let GeminiAuth::ApiKey(key) = &self.target.auth {
             headers.push(("x-goog-api-key".into(), key.expose().to_string()));

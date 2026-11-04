@@ -94,6 +94,15 @@ impl RetryLimits {
             env_max_retries(),
         )
     }
+
+    pub fn for_profile_with_override(profile: &str, retries_override: Option<u32>) -> Self {
+        let mut limits = Self::for_profile(profile);
+        if let Some(r) = retries_override {
+            let cap = global_cap();
+            limits.max_retries = r.min(cap);
+        }
+        limits
+    }
 }
 
 /// Budget for call sites that name no profile (side queries, the non-streaming
@@ -398,6 +407,50 @@ impl SwitchReceipt {
             "Switched from profile {:?} to fallback profile {:?} after a {:?} failure{status}.",
             self.from_profile, self.to_profile, self.error_kind
         )
+    }
+}
+
+/// Turns an adapter's [`ProviderError`] into [`crate::services::api::with_retry::RetryableError`]
+/// judged by the protocol's rate policy.
+pub fn to_retryable(
+    error: ProviderError,
+    protocol: Protocol,
+    limits: &RetryLimits,
+) -> crate::services::api::with_retry::RetryableError {
+    use crate::services::api::with_retry::{ApiError, ConnectionError, RetryableError};
+
+    if protocol == Protocol::AnthropicMessages {
+        crate::services::claude_ai_limits::extract_quota_status_from_error(
+            error.status,
+            Some(&error.headers.clone().into_iter().collect()),
+        );
+    }
+    match error.kind {
+        ProviderErrorKind::Aborted => RetryableError::Aborted,
+        ProviderErrorKind::Transport => RetryableError::Connection(ConnectionError {
+            message: error.message,
+            code: None,
+        }),
+        ProviderErrorKind::InvalidRequest if error.status.is_none() => {
+            RetryableError::Other(anyhow::anyhow!(error.message))
+        }
+        _ => {
+            let judged = judge(policy_for(protocol), limits, error);
+            let verdict = judged.verdict();
+            let error = judged.error;
+            RetryableError::Judged {
+                api: ApiError {
+                    status: error.status,
+                    message: error.message,
+                    headers: error.headers.into_iter().collect(),
+                    body: error.body,
+                },
+                verdict,
+                kind: error.kind,
+                request_id: error.request_id,
+                max_delay: limits.max_delay,
+            }
+        }
     }
 }
 

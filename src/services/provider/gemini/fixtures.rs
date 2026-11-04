@@ -1014,3 +1014,156 @@ async fn test_gemini_partial_stream_after_output_does_not_replay() {
         "partial stream must not trigger a replay request"
     );
 }
+
+#[tokio::test]
+async fn test_gemini_side_query_success() {
+    let reply = json!({
+        "candidates": [{
+            "content": {
+                "parts": [{ "text": "gemini side query response" }]
+            },
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {
+            "promptTokenCount": 8,
+            "candidatesTokenCount": 4
+        }
+    });
+
+    let server = MockGemini::start(vec![Reply::json(reply)]).await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let response =
+        crate::utils::side_query::side_query(crate::utils::side_query::SideQueryOptions {
+            model: "gemini-2.5-flash".to_string(),
+            messages: vec![crate::utils::side_query::user_text_message("Hi Gemini")],
+            max_tokens: Some(10),
+            max_retries: Some(0),
+            query_source: "model_validation".to_string(),
+            ..Default::default()
+        })
+        .await
+        .expect("side_query succeeds on Gemini profile");
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(
+        requests[0]
+            .request_line
+            .contains("/models/gemini-2.5-flash:generateContent")
+    );
+    assert_eq!(
+        requests[0].header("x-goog-api-key"),
+        Some("fake-gemini-key")
+    );
+
+    let content = crate::utils::messages::extract_text_content(&response.content, None);
+    assert_eq!(content, "gemini side query response");
+}
+
+#[tokio::test]
+async fn test_gemini_count_tokens_api() {
+    let reply = json!({
+        "totalTokens": 42
+    });
+
+    let server = MockGemini::start(vec![Reply::json(reply)]).await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let count =
+        crate::services::token_estimation::count_tokens_with_api("hello gemini world").await;
+    assert_eq!(count, Some(42));
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(
+        requests[0]
+            .request_line
+            .contains("/models/gemini-2.5-flash:countTokens")
+    );
+    assert_eq!(
+        requests[0].header("x-goog-api-key"),
+        Some("fake-gemini-key")
+    );
+}
+
+#[tokio::test]
+async fn test_gemini_non_streaming_fallback_on_404() {
+    let err_body = json!({
+        "error": {
+            "code": 404,
+            "message": "Stream endpoint not found",
+            "status": "NOT_FOUND"
+        }
+    });
+    let non_stream_reply = json!({
+        "candidates": [{
+            "content": {
+                "parts": [{ "text": "gemini fallback response" }]
+            },
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {
+            "promptTokenCount": 12,
+            "candidatesTokenCount": 4
+        }
+    });
+
+    let server = MockGemini::start(vec![
+        Reply::error(404, err_body),
+        Reply::json(non_stream_reply),
+    ])
+    .await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let options = crate::services::api::claude::Options::new(
+        "gemini-2.5-flash".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let mut rx = crate::services::api::claude::query_model_with_streaming(
+        &[user_msg("go")],
+        &vec![],
+        &crate::utils::thinking::ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await
+    .expect("stream opens on fallback");
+
+    let mut items = Vec::new();
+    while let Some(item) = rx.recv().await {
+        items.push(item);
+    }
+    assert!(
+        items.iter().any(|i| matches!(
+            i,
+            crate::services::api::claude::QueryModelStreamItem::StreamingFallback
+        )),
+        "expected StreamingFallback item: {items:?}"
+    );
+
+    let found_text = items.iter().any(|item| {
+        if let crate::services::api::claude::QueryModelStreamItem::Assistant(msg) = item {
+            if let Some(crate::types::message::AssistantContent::Text(text)) =
+                msg.first_content_block()
+            {
+                return text == "gemini fallback response";
+            }
+        }
+        false
+    });
+    assert!(found_text, "expected fallback text: {items:?}");
+
+    let requests = server.requests();
+    assert_eq!(
+        requests.len(),
+        2,
+        "1 streaming + 1 non-streaming fallback request"
+    );
+    assert!(
+        requests[0]
+            .request_line
+            .contains(":streamGenerateContent?alt=sse")
+    );
+    assert!(requests[1].request_line.contains(":generateContent"));
+}
