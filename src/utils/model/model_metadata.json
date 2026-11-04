@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "piCommit": "1f8604f84f968814fc84523557c01d704a6a8f83",
-  "modelsDevVersion": "c630900e53c472132194987aa702d22e392197db",
-  "hash": "cc46135dd67f35c66737bbad8b9fe81b7c58ecfd988bee8428f2b0b49424d997",
+  "piCommit": "676af1d777ef6f04b6bc8daf4cf3b9b1799cff4d",
+  "modelsDevVersion": "e845f3fea626e243e0e166fbc0c938de6f5b3c32",
+  "hash": "8037c3990288adf301f7272244a2262cbe014090f9fe918eb6ce4bb8b99b8987",
   "models": {
     "amazon-bedrock/amazon.nova-2-lite-v1:0": {
       "provider": "amazon-bedrock",
@@ -25673,7 +25673,7 @@
     "opencode-go/deepseek-v4-pro": {
       "provider": "opencode-go",
       "model": "deepseek-v4-pro",
-      "displayName": "DeepSeek V4 Pro (New)",
+      "displayName": "DeepSeek V4 Pro",
       "contextWindow": 1000000,
       "maxOutputTokens": 384000,
       "capabilities": {
@@ -27417,6 +27417,35 @@
         "image/png",
         "image/gif",
         "image/webp",
+        "application/pdf"
+      ]
+    },
+    "opencode/crouton-alpha-free": {
+      "provider": "opencode",
+      "model": "crouton-alpha-free",
+      "displayName": "Crouton Alpha Free",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 270000,
+      "capabilities": {
+        "contextWindow": 1048576,
+        "maxOutputTokens": 270000,
+        "tools": "native",
+        "thinking": "adaptive",
+        "images": "input",
+        "structuredOutput": true,
+        "streaming": true,
+        "promptCache": "none"
+      },
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": null
+      },
+      "input": [
+        "text",
+        "image",
+        "video",
         "application/pdf"
       ]
     },
@@ -33614,9 +33643,9 @@
         "promptCache": "none"
       },
       "cost": {
-        "input": 0.093,
-        "output": 0.278,
-        "cacheRead": 0.046,
+        "input": 0.077,
+        "output": 0.23,
+        "cacheRead": 0.038,
         "cacheWrite": null
       },
       "input": [
@@ -34873,9 +34902,9 @@
         "promptCache": "none"
       },
       "cost": {
-        "input": 0.15,
-        "output": 0.6,
-        "cacheRead": 0.015,
+        "input": 0.075,
+        "output": 0.3,
+        "cacheRead": 0.0075,
         "cacheWrite": null
       },
       "input": [
@@ -35712,9 +35741,9 @@
         "promptCache": "none"
       },
       "cost": {
-        "input": 0.192,
+        "input": 0.2,
         "output": 15,
-        "cacheRead": 0.182,
+        "cacheRead": 0.19,
         "cacheWrite": null
       },
       "input": [
@@ -38450,10 +38479,10 @@
       "model": "qwen/qwen3-235b-a22b-2507",
       "displayName": "Qwen3 235B A22B Instruct 2507",
       "contextWindow": 262144,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "contextWindow": 262144,
-        "maxOutputTokens": 16384,
+        "maxOutputTokens": 117964,
         "tools": "native",
         "thinking": "none",
         "images": "none",
@@ -38462,9 +38491,9 @@
         "promptCache": "none"
       },
       "cost": {
-        "input": 0.09,
-        "output": 0.55,
-        "cacheRead": null,
+        "input": 0.14,
+        "output": 0.8,
+        "cacheRead": 0.05,
         "cacheWrite": null
       },
       "input": [
@@ -40172,9 +40201,9 @@
         "promptCache": "none"
       },
       "cost": {
-        "input": 0.132,
-        "output": 0.528,
-        "cacheRead": 0.033,
+        "input": 0.0825,
+        "output": 0.33,
+        "cacheRead": 0.020625,
         "cacheWrite": null
       },
       "input": [
@@ -40224,9 +40253,9 @@
         "promptCache": "none"
       },
       "cost": {
-        "input": 0.834,
-        "output": 2.501,
-        "cacheRead": 0.042,
+        "input": 0.7506,
+        "output": 2.2509,
+        "cacheRead": 0.0378,
         "cacheWrite": null
       },
       "input": [
@@ -41782,9 +41811,9 @@
         "promptCache": "none"
       },
       "cost": {
-        "input": 0.1548,
-        "output": 9.3388,
-        "cacheRead": 0.15,
+        "input": 0.2,
+        "output": 15,
+        "cacheRead": 0.19,
         "cacheWrite": null
       },
       "input": [

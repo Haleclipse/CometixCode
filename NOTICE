@@ -7,7 +7,7 @@ This product includes software and data developed by third parties:
 Pi Agent Model Catalog (packages/ai)
 ==============================================================================
 Source: https://github.com/earendil-works/pi
-Commit: 1f8604f84f968814fc84523557c01d704a6a8f83
+Commit: 676af1d777ef6f04b6bc8daf4cf3b9b1799cff4d
 
 Copyright (c) 2025 Mario Zechner
 
@@ -33,7 +33,7 @@ SOFTWARE.
 models.dev Model Catalog
 ==============================================================================
 Source: https://github.com/anomalyco/models.dev
-Commit: c630900e53c472132194987aa702d22e392197db
+Commit: e845f3fea626e243e0e166fbc0c938de6f5b3c32
 
 Copyright (c) 2025 models.dev
 
