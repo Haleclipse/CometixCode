@@ -231,17 +231,12 @@ impl Machine for GeminiStream {
 
         // 2. Usage update
         if let Some(usage) = resp.usage_metadata {
-            let input = usage
-                .prompt_token_count
-                .saturating_sub(usage.cached_content_token_count);
-            self.accumulated_usage = Usage {
-                input_tokens: input,
-                output_tokens: usage.candidates_token_count,
-                cache_read_tokens: usage.cached_content_token_count,
-                cache_write_tokens: 0,
-                cache_deleted_tokens: 0,
-                reasoning_tokens: usage.thoughts_token_count,
-            };
+            self.accumulated_usage = Usage::from_gemini_metadata(
+                Some(usage.prompt_token_count),
+                Some(usage.candidates_token_count),
+                Some(usage.cached_content_token_count),
+                Some(usage.thoughts_token_count),
+            );
         }
 
         // 3. Process candidate content parts

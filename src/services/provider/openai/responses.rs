@@ -365,15 +365,7 @@ pub fn parse_non_streaming_response(
 // ---------------------------------------------------------------------------
 
 fn parse_usage(usage: &Value) -> Usage {
-    let input = super::u64_at(usage, "/input_tokens");
-    let cached = super::u64_at(usage, "/input_tokens_details/cached_tokens");
-    Usage {
-        input_tokens: input.saturating_sub(cached),
-        output_tokens: super::u64_at(usage, "/output_tokens"),
-        cache_read_tokens: cached,
-        reasoning_tokens: super::u64_at(usage, "/output_tokens_details/reasoning_tokens"),
-        ..Usage::default()
-    }
+    Usage::from_openai_responses(usage)
 }
 
 /// The call this item belongs to, in the transcript's composite form.

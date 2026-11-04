@@ -398,7 +398,7 @@ pub fn split_sys_prompt_prefix(
     let mut system_prompt_prefix: Option<&str> = None;
     let mut rest: Vec<&str> = Vec::new();
     for block in system_prompt {
-        if block.is_empty() {
+        if block.is_empty() || block == SYSTEM_PROMPT_DYNAMIC_BOUNDARY {
             continue;
         }
         if block.starts_with("x-anthropic-billing-header") {

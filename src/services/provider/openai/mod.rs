@@ -284,12 +284,7 @@ pub(crate) fn item_part(id: &str) -> Option<&str> {
     id.split_once(ID_SEPARATOR).map(|(_, item)| item)
 }
 
-pub(crate) fn u64_at(value: &Value, pointer: &str) -> u64 {
-    value
-        .pointer(pointer)
-        .and_then(Value::as_u64)
-        .unwrap_or_default()
-}
+pub(crate) use crate::services::provider::usage::u64_at;
 
 #[cfg(test)]
 mod tests {

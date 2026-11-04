@@ -131,14 +131,13 @@ pub async fn execute_non_streaming(
     let usage = parsed
         .usage_metadata
         .as_ref()
-        .map(|u| Usage {
-            input_tokens: u
-                .prompt_token_count
-                .saturating_sub(u.cached_content_token_count),
-            output_tokens: u.candidates_token_count,
-            cache_read_tokens: u.cached_content_token_count,
-            reasoning_tokens: u.thoughts_token_count,
-            ..Default::default()
+        .map(|u| {
+            Usage::from_gemini_metadata(
+                Some(u.prompt_token_count),
+                Some(u.candidates_token_count),
+                Some(u.cached_content_token_count),
+                Some(u.thoughts_token_count),
+            )
         })
         .unwrap_or_default();
 

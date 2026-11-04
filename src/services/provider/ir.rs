@@ -19,6 +19,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub use super::usage::{CACHE_MISS_NOISE_FLOOR_TOKENS, CacheMiss};
 /// Marker that splits `ModelRequest::system` into a stable prefix and a
 /// per-session suffix. Adapters that support prefix caching place their cache
 /// boundary on it; every adapter must strip it from the wire text.

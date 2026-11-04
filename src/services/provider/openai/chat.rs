@@ -346,17 +346,7 @@ pub fn parse_non_streaming_response(
 // ---------------------------------------------------------------------------
 
 fn parse_usage(usage: &Value) -> Usage {
-    let prompt = super::u64_at(usage, "/prompt_tokens");
-    let cached = super::u64_at(usage, "/prompt_tokens_details/cached_tokens");
-    Usage {
-        // Anthropic-style: `input` excludes what was served from cache, so the
-        // query layer's sum of the four counters is the real context size.
-        input_tokens: prompt.saturating_sub(cached),
-        output_tokens: super::u64_at(usage, "/completion_tokens"),
-        cache_read_tokens: cached,
-        reasoning_tokens: super::u64_at(usage, "/completion_tokens_details/reasoning_tokens"),
-        ..Usage::default()
-    }
+    Usage::from_openai_chat(usage)
 }
 
 fn stop_reason(reason: &str, saw_tool_call: bool) -> StopReason {
@@ -962,6 +952,43 @@ mod tests {
         assert_eq!(usage.output_tokens, 20);
         assert_eq!(usage.reasoning_tokens, 7);
         assert_eq!(events.last(), Some(&StreamEventKind::MessageStop));
+    }
+
+    #[test]
+    fn text_stream_parses_deepseek_and_kimi_cache_usage() {
+        let (events, error) = run(vec![
+            chunk(json!({"role": "assistant", "content": "ok"}), Value::Null),
+            chunk(json!({}), json!("stop")),
+            json!({"id": "chatcmpl-ds", "choices": [], "usage": {
+                "prompt_tokens": 1000, "completion_tokens": 50, "total_tokens": 1050,
+                "prompt_cache_hit_tokens": 800,
+                "prompt_cache_miss_tokens": 200}}),
+        ]);
+        assert!(error.is_none(), "{error:?}");
+        let Some(StreamEventKind::MessageDelta { usage, .. }) = events.iter().rev().nth(1) else {
+            panic!("{events:?}");
+        };
+        assert_eq!(usage.input_tokens, 200);
+        assert_eq!(usage.cache_read_tokens, 800);
+        assert_eq!(usage.output_tokens, 50);
+
+        let (events_kimi, error_kimi) = run(vec![
+            chunk(json!({"role": "assistant", "content": "ok"}), Value::Null),
+            chunk(json!({}), json!("stop")),
+            json!({"id": "chatcmpl-kimi", "choices": [], "usage": {
+                "prompt_tokens": 500, "completion_tokens": 40, "total_tokens": 540,
+                "cached_tokens": 350}}),
+        ]);
+        assert!(error_kimi.is_none(), "{error_kimi:?}");
+        let Some(StreamEventKind::MessageDelta {
+            usage: usage_kimi, ..
+        }) = events_kimi.iter().rev().nth(1)
+        else {
+            panic!("{events_kimi:?}");
+        };
+        assert_eq!(usage_kimi.input_tokens, 150);
+        assert_eq!(usage_kimi.cache_read_tokens, 350);
+        assert_eq!(usage_kimi.output_tokens, 40);
     }
 
     #[test]
