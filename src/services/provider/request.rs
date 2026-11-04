@@ -145,14 +145,22 @@ fn assistant_parts(content: &[AssistantContent]) -> Vec<AssistantPart> {
         .iter()
         .filter_map(|part| match part {
             AssistantContent::Text(text) => Some(AssistantPart::Text { text: text.clone() }),
-            AssistantContent::Thinking { text, signature } => Some(AssistantPart::Thinking {
-                text: text.clone(),
-                signature: signature.clone(),
-                provider_state: None,
-            }),
+            AssistantContent::Thinking { text, signature } => {
+                // A signature that is really another adapter's replay state.
+                let provider_state = ProviderState::from_signature(signature);
+                Some(AssistantPart::Thinking {
+                    text: text.clone(),
+                    signature: if provider_state.is_some() {
+                        String::new()
+                    } else {
+                        signature.clone()
+                    },
+                    provider_state,
+                })
+            }
             AssistantContent::RedactedThinking { data } => Some(AssistantPart::RedactedThinking {
                 data: data.clone(),
-                provider_state: None,
+                provider_state: ProviderState::from_signature(data),
             }),
             AssistantContent::ToolUse(block) => Some(AssistantPart::ToolCall {
                 id: block.id.0.clone(),
@@ -410,6 +418,37 @@ mod tests {
             Message::User { parts }
                 if matches!(&parts[0], UserPart::ToolResult { tool_call_id, content: ToolResultContent::Text(t), is_error: false }
                     if tool_call_id == "t1" && t == "contents")
+        ));
+    }
+
+    #[test]
+    fn stored_provider_state_comes_back_as_state_not_as_a_signature() {
+        let state = ProviderState {
+            protocol: Protocol::OpenaiResponses,
+            data: serde_json::json!({"type": "reasoning", "id": "rs_1"}),
+        };
+        let messages = vec![assistant(vec![
+            AssistantContent::RedactedThinking {
+                data: state.to_signature(),
+            },
+            AssistantContent::RedactedThinking {
+                data: "anthropic-opaque".into(),
+            },
+        ])];
+        let request = build_request(&messages, &[], &[], Vec::new(), params());
+        let Message::Assistant { parts } = &request.messages[0] else {
+            panic!()
+        };
+        assert!(matches!(
+            &parts[0],
+            AssistantPart::RedactedThinking { provider_state: Some(s), .. } if *s == state
+        ));
+        assert!(matches!(
+            &parts[1],
+            AssistantPart::RedactedThinking {
+                provider_state: None,
+                ..
+            }
         ));
     }
 

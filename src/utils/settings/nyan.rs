@@ -1385,6 +1385,11 @@ pub struct ModelProfileSettings {
     pub provider: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Which of the provider's protocols this profile speaks. Required when the
+    /// provider offers more than one (e.g. OpenAI Chat and Responses); a
+    /// profile never mixes them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<ProviderProtocol>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1580,6 +1585,16 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
     let model = zod::strict_object(vec![
         ("provider", zod::string().min(1)),
         ("model", zod::string().min(1)),
+        (
+            "protocol",
+            zod::enumeration(vec![
+                "anthropicMessages",
+                "openaiChat",
+                "openaiResponses",
+                "gemini",
+            ])
+            .optional(),
+        ),
         ("displayName", zod::string().min(1).optional()),
         ("capabilities", capabilities.optional()),
         (

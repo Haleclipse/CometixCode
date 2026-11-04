@@ -45,6 +45,27 @@ pub struct ProviderState {
     pub data: Value,
 }
 
+impl ProviderState {
+    /// Tells a stored state apart from a provider's own signature string.
+    const SIGNATURE_PREFIX: &'static str = "nyan-state:";
+
+    /// The transcript keeps one opaque string per thinking block. An adapter
+    /// whose replay state is not a plain signature stores this form there, so
+    /// the owning protocol finds it again and every other protocol (including
+    /// Anthropic, which would reject it as a signature) recognizes and skips it.
+    pub fn to_signature(&self) -> String {
+        format!(
+            "{}{}",
+            Self::SIGNATURE_PREFIX,
+            serde_json::to_string(self).unwrap_or_default()
+        )
+    }
+
+    pub fn from_signature(signature: &str) -> Option<Self> {
+        serde_json::from_str(signature.strip_prefix(Self::SIGNATURE_PREFIX)?).ok()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Request
 // ---------------------------------------------------------------------------
@@ -587,6 +608,20 @@ mod tests {
             .insert("Retry-After".to_string(), "7".to_string());
         assert_eq!(error.header("retry-after"), Some("7"));
         assert_eq!(error.to_string(), "[429] slow down");
+    }
+
+    #[test]
+    fn provider_state_round_trips_through_a_signature_string_and_plain_signatures_are_not_state() {
+        let state = ProviderState {
+            protocol: Protocol::OpenaiResponses,
+            data: serde_json::json!({"id": "rs_1", "encrypted_content": "abc"}),
+        };
+        assert_eq!(
+            ProviderState::from_signature(&state.to_signature()),
+            Some(state)
+        );
+        assert_eq!(ProviderState::from_signature("EqQBCkYI-base64=="), None);
+        assert_eq!(ProviderState::from_signature("nyan-state:{broken"), None);
     }
 
     #[test]

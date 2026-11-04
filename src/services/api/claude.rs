@@ -800,10 +800,22 @@ pub fn assistant_message_to_message_param(
     // `MessageIdentity` is the Rust carrier for CC's assistant envelope, not
     // an Anthropic content block. Filter it before cache-breakpoint indexing
     // so adding identity cannot change request bytes or cache placement.
+    // A thinking block whose signature is another protocol's stored replay
+    // state (an OpenAI reasoning item) means nothing to Anthropic and its
+    // signature check would reject it, so it is not sent.
     let api_content = message
         .content
         .iter()
-        .filter(|content| !matches!(content, AssistantContent::MessageIdentity(_)))
+        .filter(|content| match content {
+            AssistantContent::MessageIdentity(_) => false,
+            AssistantContent::Thinking { signature, .. } => {
+                crate::services::provider::ir::ProviderState::from_signature(signature).is_none()
+            }
+            AssistantContent::RedactedThinking { data } => {
+                crate::services::provider::ir::ProviderState::from_signature(data).is_none()
+            }
+            _ => true,
+        })
         .collect::<Vec<_>>();
     let blocks: Vec<serde_json::Value> = api_content
         .iter()
@@ -3176,7 +3188,8 @@ pub async fn query_model_with_streaming(
             return Err(error);
         }
         Err(error)
-            if should_fallback_stream_creation_error_to_non_streaming(&error)
+            if main_profile_is_anthropic()
+                && should_fallback_stream_creation_error_to_non_streaming(&error)
                 && !is_non_streaming_fallback_disabled() =>
         {
             let messages = messages.to_vec();
@@ -3257,7 +3270,10 @@ pub async fn query_model_with_streaming(
             crate::utils::debug::log_for_debugging(&format!(
                 "Error streaming (will fall back if allowed): {error}"
             ));
-            if is_non_streaming_fallback_disabled() {
+            // The fallback is a second, non-streaming Anthropic request. For any
+            // other protocol it would replay a request whose tool calls may have
+            // already been issued, so the error is reported as it is.
+            if is_non_streaming_fallback_disabled() || !main_profile_is_anthropic() {
                 let _ = tx
                     .send(QueryModelStreamItem::SystemError(
                         system_api_error_message_from_error(error),
@@ -3311,26 +3327,72 @@ pub async fn query_model_with_streaming(
     Ok(rx)
 }
 
+/// False only when the selected main profile resolves and speaks another
+/// protocol. An unresolvable profile counts as Anthropic so the existing error
+/// path reports what is missing.
+fn main_profile_is_anthropic() -> bool {
+    crate::utils::model::profile::resolve_main_profile(
+        &crate::utils::settings::get_initial_settings(),
+    )
+    .map(|profile| {
+        profile.protocol == crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages
+    })
+    .unwrap_or(true)
+}
+
+/// The neutral request for a non-Anthropic provider: the same history
+/// normalization the Anthropic body gets, without any Anthropic body building.
+fn build_neutral_request(
+    messages: &[Message],
+    system_prompt: &SystemPrompt,
+    thinking_config: &ThinkingConfig,
+    tools: &[Tool],
+    options: &Options,
+) -> crate::services::provider::ir::ModelRequest {
+    let api_messages = crate::utils::messages::strip_advisor_blocks(
+        crate::utils::messages::ensure_tool_result_pairing(
+            crate::utils::messages::normalize_messages_for_api_with_model(
+                messages.to_vec(),
+                tools,
+                Some(&options.model),
+            ),
+        ),
+    );
+    let max_tokens = options
+        .max_output_tokens_override
+        .unwrap_or_else(|| get_max_output_tokens_for_model(&options.model));
+    build_model_request(
+        &api_messages,
+        system_prompt,
+        tools,
+        messages,
+        options,
+        thinking_config,
+        max_tokens,
+    )
+}
+
 /// Normalized stream from whichever adapter served the request.
 type SdkMessageStream = crate::services::provider::adapter::EventStream;
 
-fn resolved_target_for(
-    target: &crate::services::provider::anthropic::target::AnthropicTarget,
-    model: &str,
-) -> crate::services::provider::adapter::ResolvedTarget {
-    let (context_window, max_output_tokens) = crate::utils::model::profile::resolve_main_profile(
+/// The selected main profile as an adapter target, with the model of this
+/// attempt (a retry may have switched it).
+fn resolved_target_for(model: &str) -> crate::services::provider::adapter::ResolvedTarget {
+    let mut resolved = crate::utils::model::profile::resolve_main_profile(
         &crate::utils::settings::get_initial_settings(),
     )
-    .map(|profile| (profile.context_window, profile.max_output_tokens))
-    .unwrap_or((0, 0));
-    crate::services::provider::adapter::ResolvedTarget {
-        profile: target.profile.clone(),
-        provider: target.provider.clone(),
+    .map(|profile| crate::services::provider::adapter::ResolvedTarget::from_profile(&profile))
+    .unwrap_or_else(|_| crate::services::provider::adapter::ResolvedTarget {
+        profile: String::new(),
+        provider: String::new(),
         protocol: crate::services::provider::ir::Protocol::AnthropicMessages,
-        model: model.to_string(),
-        context_window,
-        max_output_tokens,
-    }
+        model: String::new(),
+        context_window: 0,
+        max_output_tokens: 0,
+        capabilities: Default::default(),
+    });
+    resolved.model = model.to_string();
+    resolved
 }
 
 async fn open_sdk_message_stream_with_retry(
@@ -3392,12 +3454,56 @@ async fn open_sdk_message_stream_with_retry(
                 super::api_trace::set_current_trace(Some(attempt_trace.clone()));
                 let attempt_options =
                     streaming_attempt_options_from_retry_context(&base_options, &retry_context);
-                let target = crate::services::provider::anthropic::target::current_main_target()
-                    .map_err(|error| {
-                        crate::services::api::with_retry::RetryableError::Other(anyhow::Error::new(
-                            error,
-                        ))
-                    })?;
+                let profile = crate::utils::model::profile::resolve_main_profile(
+                    &crate::utils::settings::get_initial_settings(),
+                )
+                .map_err(|error| {
+                    crate::services::api::with_retry::RetryableError::Other(anyhow::Error::new(
+                        crate::services::provider::anthropic::target::TargetError::Profile(error),
+                    ))
+                })?;
+                if profile.protocol
+                    != crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages
+                {
+                    // OpenAI Chat / Responses. Nothing below this point is
+                    // Anthropic's: no betas, no cache markers, no SDK body.
+                    let request = build_neutral_request(
+                        &messages,
+                        &system_prompt,
+                        &retry_context.thinking_config,
+                        &tools,
+                        &attempt_options,
+                    );
+                    let cancel = attempt_options
+                        .abort_signal
+                        .clone()
+                        .unwrap_or_else(anthropic_sdk::AbortSignal::new);
+                    let opened = crate::services::provider::openai::open_stream(
+                        &profile,
+                        &attempt_options.model,
+                        &request,
+                        &cancel,
+                    )
+                    .await
+                    .map_err(|error| provider_error_to_retryable(error, false))?;
+                    super::api_trace::emit(
+                        &attempt_trace,
+                        "http_sent",
+                        serde_json::json!({
+                            "model": attempt_options.model,
+                            "stream": true,
+                            "message_count": request.messages.len(),
+                        }),
+                    );
+                    return Ok(opened.events);
+                }
+                let target =
+                    crate::services::provider::anthropic::target::target_for_profile(&profile)
+                        .map_err(|error| {
+                            crate::services::api::with_retry::RetryableError::Other(
+                                anyhow::Error::new(error),
+                            )
+                        })?;
                 let SdkMessageCreatePlan {
                     mut params,
                     private_body_overrides,
@@ -3425,7 +3531,7 @@ async fn open_sdk_message_stream_with_retry(
                 apply_sdk_private_body_overrides(&mut request_options, &private_body_overrides);
 
                 let message_count = params.messages.len();
-                let resolved = resolved_target_for(&target, &attempt_options.model);
+                let resolved = resolved_target_for(&attempt_options.model);
                 let adapter = crate::services::provider::anthropic::adapter::AnthropicAdapter::new(
                     target,
                     Some(attempt_options.query_source.clone()),
@@ -3442,7 +3548,7 @@ async fn open_sdk_message_stream_with_retry(
                     &adapter, &resolved, &request, &cancel,
                 )
                 .await
-                .map_err(provider_error_to_retryable)?;
+                .map_err(|error| provider_error_to_retryable(error, true))?;
                 crate::services::claude_ai_limits::extract_quota_status_from_headers(
                     &opened.response_headers.clone().into_iter().collect(),
                 );
@@ -3460,7 +3566,13 @@ async fn open_sdk_message_stream_with_retry(
             }
         },
         crate::services::api::with_retry::RetryOptions {
-            max_retries: None,
+            // Decision 23: Anthropic keeps its existing budget; OpenAI makes no
+            // automatic retry until the unified controller (PR 8).
+            max_retries: if main_profile_is_anthropic() {
+                None
+            } else {
+                Some(0)
+            },
             model: options_for_retry.model.clone(),
             fallback_model: options_for_retry.fallback_model.clone(),
             thinking_config: thinking_config_for_retry,
@@ -4475,14 +4587,18 @@ fn sdk_api_error_to_retryable(
 /// reduction, stale-connection handling) see what they saw before.
 fn provider_error_to_retryable(
     error: crate::services::provider::ir::ProviderError,
+    anthropic: bool,
 ) -> crate::services::api::with_retry::RetryableError {
     use crate::services::api::with_retry::{ApiError, ConnectionError, RetryableError};
     use crate::services::provider::ir::ProviderErrorKind;
 
-    crate::services::claude_ai_limits::extract_quota_status_from_error(
-        error.status,
-        Some(&error.headers.clone().into_iter().collect()),
-    );
+    // The quota machinery reads Anthropic's rate-limit headers.
+    if anthropic {
+        crate::services::claude_ai_limits::extract_quota_status_from_error(
+            error.status,
+            Some(&error.headers.clone().into_iter().collect()),
+        );
+    }
     match error.kind {
         ProviderErrorKind::Aborted => RetryableError::Aborted,
         ProviderErrorKind::Transport => RetryableError::Connection(ConnectionError {
@@ -5619,6 +5735,40 @@ mod tests {
             prompt_block["cache_control"]["type"],
             serde_json::json!("ephemeral")
         );
+    }
+
+    #[test]
+    fn anthropic_wire_skips_thinking_that_holds_another_protocols_state() {
+        let foreign = crate::services::provider::ir::ProviderState {
+            protocol: crate::services::provider::ir::Protocol::OpenaiResponses,
+            data: serde_json::json!({"type": "reasoning", "id": "rs_1"}),
+        }
+        .to_signature();
+        let mut message = crate::utils::messages::create_assistant_message("answer".into());
+        message.content.insert(
+            0,
+            crate::types::message::AssistantContent::Thinking {
+                text: "summary".into(),
+                signature: foreign,
+            },
+        );
+        message.content.insert(
+            1,
+            crate::types::message::AssistantContent::Thinking {
+                text: "own".into(),
+                signature: "sig-anthropic".into(),
+            },
+        );
+        let param = assistant_message_to_message_param(&message, false, false, None);
+        let MessageContent::Blocks(blocks) = param.content else {
+            panic!("blocks expected")
+        };
+        let signatures: Vec<_> = blocks
+            .iter()
+            .filter(|block| block["type"] == "thinking")
+            .map(|block| block["signature"].as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(signatures, vec!["sig-anthropic".to_string()]);
     }
 
     #[test]

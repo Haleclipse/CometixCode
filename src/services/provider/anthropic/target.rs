@@ -12,6 +12,7 @@ use std::fmt;
 use super::credential::{ApiKey, CredentialGateError, resolve_api_key};
 use crate::utils::model::profile::{ProfileResolutionError, ResolvedModelProfile};
 use crate::utils::settings::SettingsJson;
+use crate::utils::settings::nyan::ProviderProtocol;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AnthropicTarget {
@@ -25,6 +26,13 @@ pub struct AnthropicTarget {
 pub enum TargetError {
     Profile(ProfileResolutionError),
     Credential(CredentialGateError),
+    /// The profile speaks another protocol. Sending it an Anthropic request
+    /// would put another provider's key and endpoint behind Anthropic's wire
+    /// format, so the Anthropic client refuses it.
+    NotAnthropic {
+        profile: String,
+        protocol: ProviderProtocol,
+    },
 }
 
 impl fmt::Display for TargetError {
@@ -32,6 +40,10 @@ impl fmt::Display for TargetError {
         match self {
             Self::Profile(error) => error.fmt(f),
             Self::Credential(error) => error.fmt(f),
+            Self::NotAnthropic { profile, protocol } => write!(
+                f,
+                "Model profile {profile:?} uses protocol {protocol:?}; it cannot be served by the Anthropic client."
+            ),
         }
     }
 }
@@ -58,6 +70,12 @@ fn clean_base_url(base_url: Option<&str>) -> Option<String> {
 
 /// Build the target for an already-resolved profile.
 pub fn target_for_profile(profile: &ResolvedModelProfile) -> Result<AnthropicTarget, TargetError> {
+    if profile.protocol != ProviderProtocol::AnthropicMessages {
+        return Err(TargetError::NotAnthropic {
+            profile: profile.profile.clone(),
+            protocol: profile.protocol,
+        });
+    }
     let api_key = resolve_api_key(&profile.provider, profile.credential.as_ref())?;
     Ok(AnthropicTarget {
         profile: profile.profile.clone(),
@@ -156,9 +174,11 @@ mod tests {
             profile: "main".into(),
             provider: "anthropic".into(),
             provider_kind: ProviderKind::Anthropic,
+            protocol: crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages,
             model: "claude-sonnet-4-6".into(),
             context_window: 200_000,
             max_output_tokens: 64_000,
+            capabilities: Default::default(),
             base_url: base_url.map(str::to_string),
             credential,
         }
@@ -189,6 +209,22 @@ mod tests {
         .unwrap();
         assert_eq!(target.api_key.unwrap().expose(), "sk-profile");
         assert_eq!(target.base_url.as_deref(), Some("https://gw.example"));
+    }
+
+    #[test]
+    fn an_openai_profile_is_never_turned_into_an_anthropic_target() {
+        let _lock = lock();
+        let _key = EnvVarGuard::set("NYAN_TARGET_TEST_OPENAI", "sk-openai");
+        let mut openai = profile(Some(env_ref("NYAN_TARGET_TEST_OPENAI")), None);
+        openai.provider_kind = ProviderKind::Openai;
+        openai.protocol = ProviderProtocol::OpenaiResponses;
+        assert!(matches!(
+            target_for_profile(&openai).unwrap_err(),
+            TargetError::NotAnthropic {
+                protocol: ProviderProtocol::OpenaiResponses,
+                ..
+            }
+        ));
     }
 
     #[test]

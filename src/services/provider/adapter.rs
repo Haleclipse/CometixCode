@@ -22,6 +22,32 @@ pub struct ResolvedTarget {
     pub model: String,
     pub context_window: u32,
     pub max_output_tokens: u32,
+    /// What the profile declares (snapshot under profile overrides). An
+    /// undeclared capability is a "no".
+    pub capabilities: crate::utils::model::profile::ResolvedCapabilities,
+}
+
+impl ResolvedTarget {
+    pub fn from_profile(profile: &crate::utils::model::profile::ResolvedModelProfile) -> Self {
+        Self {
+            profile: profile.profile.clone(),
+            provider: profile.provider.clone(),
+            protocol: match profile.protocol {
+                crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages => {
+                    Protocol::AnthropicMessages
+                }
+                crate::utils::settings::nyan::ProviderProtocol::OpenaiChat => Protocol::OpenaiChat,
+                crate::utils::settings::nyan::ProviderProtocol::OpenaiResponses => {
+                    Protocol::OpenaiResponses
+                }
+                crate::utils::settings::nyan::ProviderProtocol::Gemini => Protocol::Gemini,
+            },
+            model: profile.model.clone(),
+            context_window: profile.context_window,
+            max_output_tokens: profile.max_output_tokens,
+            capabilities: profile.capabilities,
+        }
+    }
 }
 
 /// Cooperative cancellation shared with the query layer.

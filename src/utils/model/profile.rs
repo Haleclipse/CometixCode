@@ -11,14 +11,29 @@ use crate::utils::settings::nyan::{
     ProviderSettings,
 };
 
+/// Capabilities after merging the metadata snapshot under the profile's
+/// explicit fields. A capability neither declares is "not supported" (§3.2);
+/// nothing here is probed or guessed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ResolvedCapabilities {
+    pub tools: bool,
+    pub images: bool,
+    pub thinking: bool,
+    pub structured_output: bool,
+    pub streaming: bool,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedModelProfile {
     pub profile: String,
     pub provider: String,
     pub provider_kind: ProviderKind,
+    /// The one wire protocol this profile speaks.
+    pub protocol: ProviderProtocol,
     pub model: String,
     pub context_window: u32,
     pub max_output_tokens: u32,
+    pub capabilities: ResolvedCapabilities,
     pub base_url: Option<String>,
     pub credential: Option<CredentialReference>,
 }
@@ -31,6 +46,18 @@ pub enum ProfileResolutionError {
     MissingProvider(String),
     MissingProviderKind(String),
     MissingProviderProtocol(String),
+    /// The provider offers several protocols and the profile names none.
+    AmbiguousProtocol {
+        profile: String,
+        provider: String,
+    },
+    /// The profile names a protocol its provider does not declare, or one the
+    /// provider kind cannot speak.
+    ProtocolNotOffered {
+        profile: String,
+        provider: String,
+        protocol: ProviderProtocol,
+    },
     UnsupportedProvider(ProviderKind),
     MissingModel(String),
     MissingContextWindow(String),
@@ -64,9 +91,21 @@ impl fmt::Display for ProfileResolutionError {
                 f,
                 "Provider {provider:?} must declare protocol or protocols."
             ),
+            Self::AmbiguousProtocol { profile, provider } => write!(
+                f,
+                "Provider {provider:?} offers several protocols; set settings.nyan.models.{profile}.protocol to one of them (openaiChat or openaiResponses)."
+            ),
+            Self::ProtocolNotOffered {
+                profile,
+                provider,
+                protocol,
+            } => write!(
+                f,
+                "Model profile {profile:?} asks for protocol {protocol:?}, which provider {provider:?} does not offer."
+            ),
             Self::UnsupportedProvider(kind) => write!(
                 f,
-                "Provider kind {kind:?} has no adapter yet; only anthropic profiles can send requests."
+                "Provider kind {kind:?} has no adapter yet; only anthropic and openai profiles can send requests."
             ),
             Self::MissingModel(profile) => write!(
                 f,
@@ -96,6 +135,116 @@ fn provider_supports_protocol(provider: &ProviderSettings, protocol: ProviderPro
             .protocols
             .as_ref()
             .is_some_and(|protocols| protocols.contains(&protocol))
+}
+
+fn declared_protocols(provider: &ProviderSettings) -> Vec<ProviderProtocol> {
+    let mut all: Vec<ProviderProtocol> = provider.protocol.into_iter().collect();
+    for protocol in provider.protocols.iter().flatten() {
+        if !all.contains(protocol) {
+            all.push(*protocol);
+        }
+    }
+    all
+}
+
+/// Protocols a provider kind has an adapter for. A kind outside this table
+/// cannot send requests yet (Gemini is PR 6, local servers PR 7).
+fn kind_protocols(kind: ProviderKind) -> &'static [ProviderProtocol] {
+    match kind {
+        ProviderKind::Anthropic => &[ProviderProtocol::AnthropicMessages],
+        ProviderKind::Openai => &[
+            ProviderProtocol::OpenaiChat,
+            ProviderProtocol::OpenaiResponses,
+        ],
+        _ => &[],
+    }
+}
+
+/// The one protocol a profile speaks. A profile never mixes protocols: the
+/// choice is made here once and every later stage reads it from the result.
+fn select_protocol(
+    profile_name: &str,
+    provider_name: &str,
+    provider: &ProviderSettings,
+    kind: ProviderKind,
+    requested: Option<ProviderProtocol>,
+) -> Result<ProviderProtocol, ProfileResolutionError> {
+    let declared = declared_protocols(provider);
+    let offered = kind_protocols(kind);
+    let not_offered = |protocol| ProfileResolutionError::ProtocolNotOffered {
+        profile: profile_name.to_string(),
+        provider: provider_name.to_string(),
+        protocol,
+    };
+    let chosen = match requested {
+        Some(protocol) => protocol,
+        None => match declared.as_slice() {
+            [] => {
+                return Err(ProfileResolutionError::MissingProviderProtocol(
+                    provider_name.to_string(),
+                ));
+            }
+            [only] => *only,
+            _ => {
+                return Err(ProfileResolutionError::AmbiguousProtocol {
+                    profile: profile_name.to_string(),
+                    provider: provider_name.to_string(),
+                });
+            }
+        },
+    };
+    if !provider_supports_protocol(provider, chosen) || !offered.contains(&chosen) {
+        return Err(not_offered(chosen));
+    }
+    Ok(chosen)
+}
+
+fn flag(value: Option<&str>, on: &str) -> Option<bool> {
+    value.map(|value| value == on)
+}
+
+/// The profile's own value, else the snapshot's.
+fn pick_str<'a>(own: Option<&'a String>, snapshot: Option<&'a String>) -> Option<&'a str> {
+    own.or(snapshot).map(String::as_str)
+}
+
+fn resolve_capabilities(
+    profile: &ModelProfileSettings,
+    metadata: Option<&crate::utils::model::metadata::ModelMetadataEntry>,
+) -> ResolvedCapabilities {
+    let explicit = profile.capabilities.as_ref();
+    let snapshot = metadata.map(|entry| &entry.capabilities);
+    ResolvedCapabilities {
+        tools: flag(
+            pick_str(
+                explicit.and_then(|c| c.tools.as_ref()),
+                snapshot.and_then(|c| c.tools.as_ref()),
+            ),
+            "native",
+        )
+        .unwrap_or(false),
+        images: flag(
+            pick_str(
+                explicit.and_then(|c| c.images.as_ref()),
+                snapshot.and_then(|c| c.images.as_ref()),
+            ),
+            "input",
+        )
+        .unwrap_or(false),
+        thinking: pick_str(
+            explicit.and_then(|c| c.thinking.as_ref()),
+            snapshot.and_then(|c| c.thinking.as_ref()),
+        )
+        .is_some_and(|value| value != "none"),
+        structured_output: explicit
+            .and_then(|c| c.structured_output)
+            .or(snapshot.and_then(|c| c.structured_output))
+            .unwrap_or(false),
+        streaming: explicit
+            .and_then(|c| c.streaming)
+            .or(snapshot.and_then(|c| c.streaming))
+            .unwrap_or(false),
+    }
 }
 
 pub fn resolve_profile(
@@ -142,22 +291,26 @@ pub fn resolve_profile(
         .or_else(|| metadata.map(|m| m.max_output_tokens))
         .ok_or_else(|| ProfileResolutionError::MissingMaxOutputTokens(profile_name.to_string()))?;
 
-    if kind != ProviderKind::Anthropic {
+    if kind_protocols(kind).is_empty() {
         return Err(ProfileResolutionError::UnsupportedProvider(kind));
     }
-    if !provider_supports_protocol(provider, ProviderProtocol::AnthropicMessages) {
-        return Err(ProfileResolutionError::MissingProviderProtocol(
-            provider_name.to_string(),
-        ));
-    }
+    let protocol = select_protocol(
+        profile_name,
+        provider_name,
+        provider,
+        kind,
+        model_profile.protocol,
+    )?;
 
     Ok(ResolvedModelProfile {
         profile: profile_name.to_string(),
         provider: provider_name.to_string(),
         provider_kind: kind,
+        protocol,
         model,
         context_window,
         max_output_tokens,
+        capabilities: resolve_capabilities(model_profile, metadata),
         base_url: provider.base_url.clone(),
         credential: provider.credential.clone(),
     })
@@ -610,6 +763,126 @@ mod tests {
             .unwrap_err(),
             ProfileResolutionError::MissingContextWindow("missing".to_string())
         );
+    }
+
+    fn openai_nyan(model_profile: serde_json::Value) -> NyanSettings {
+        serde_json::from_value(serde_json::json!({
+            "providers": {
+                "openai": {
+                    "kind": "openai",
+                    "protocols": ["openaiChat", "openaiResponses"],
+                    "credential": {"env": "OPENAI_API_KEY"}
+                },
+                "chat-only": {
+                    "kind": "openai",
+                    "protocol": "openaiChat"
+                }
+            },
+            "models": { "p": model_profile },
+            "selection": {"main": "p"}
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_profile_speaks_exactly_the_protocol_it_names() {
+        for (name, expected) in [
+            ("openaiChat", ProviderProtocol::OpenaiChat),
+            ("openaiResponses", ProviderProtocol::OpenaiResponses),
+        ] {
+            let nyan = openai_nyan(serde_json::json!({
+                "provider": "openai", "model": "gpt-5", "protocol": name
+            }));
+            assert_eq!(resolve_profile(&nyan, "p").unwrap().protocol, expected);
+        }
+    }
+
+    #[test]
+    fn a_provider_with_two_protocols_needs_the_profile_to_choose() {
+        let nyan = openai_nyan(serde_json::json!({"provider": "openai", "model": "gpt-5"}));
+        assert_eq!(
+            resolve_profile(&nyan, "p").unwrap_err(),
+            ProfileResolutionError::AmbiguousProtocol {
+                profile: "p".into(),
+                provider: "openai".into()
+            }
+        );
+    }
+
+    #[test]
+    fn a_single_protocol_provider_needs_no_choice_but_refuses_another() {
+        let nyan = openai_nyan(serde_json::json!({"provider": "chat-only", "model": "gpt-5"}));
+        assert_eq!(
+            resolve_profile(&nyan, "p").unwrap().protocol,
+            ProviderProtocol::OpenaiChat
+        );
+        let nyan = openai_nyan(serde_json::json!({
+            "provider": "chat-only", "model": "gpt-5", "protocol": "openaiResponses"
+        }));
+        assert!(matches!(
+            resolve_profile(&nyan, "p").unwrap_err(),
+            ProfileResolutionError::ProtocolNotOffered { .. }
+        ));
+    }
+
+    #[test]
+    fn a_kind_cannot_speak_a_protocol_it_has_no_adapter_for() {
+        let nyan: NyanSettings = serde_json::from_value(serde_json::json!({
+            "providers": {
+                "anthropic": {
+                    "kind": "anthropic",
+                    "protocols": ["anthropicMessages", "openaiChat"]
+                }
+            },
+            "models": {"p": {
+                "provider": "anthropic", "model": "claude-sonnet-4-6", "protocol": "openaiChat"
+            }}
+        }))
+        .unwrap();
+        assert!(matches!(
+            resolve_profile(&nyan, "p").unwrap_err(),
+            ProfileResolutionError::ProtocolNotOffered { .. }
+        ));
+    }
+
+    #[test]
+    fn undeclared_capabilities_are_not_supported_and_declared_ones_override_the_snapshot() {
+        // gpt-5 is in the snapshot with tools/images/thinking/structured output.
+        let from_snapshot = resolve_profile(
+            &openai_nyan(serde_json::json!({
+                "provider": "openai", "model": "gpt-5", "protocol": "openaiChat"
+            })),
+            "p",
+        )
+        .unwrap();
+        assert!(from_snapshot.capabilities.tools);
+        assert!(from_snapshot.capabilities.images);
+        assert!(from_snapshot.capabilities.thinking);
+        assert!(from_snapshot.capabilities.structured_output);
+
+        let overridden = resolve_profile(
+            &openai_nyan(serde_json::json!({
+                "provider": "openai", "model": "gpt-5", "protocol": "openaiChat",
+                "capabilities": {"tools": "none", "images": "none", "thinking": "none"}
+            })),
+            "p",
+        )
+        .unwrap();
+        assert!(!overridden.capabilities.tools);
+        assert!(!overridden.capabilities.images);
+        assert!(!overridden.capabilities.thinking);
+        assert!(overridden.capabilities.structured_output);
+
+        // Not in the snapshot and declared nowhere: nothing is assumed.
+        let unknown = resolve_profile(
+            &openai_nyan(serde_json::json!({
+                "provider": "openai", "model": "no-such-model", "protocol": "openaiChat",
+                "capabilities": {"contextWindow": 8000, "maxOutputTokens": 1000}
+            })),
+            "p",
+        )
+        .unwrap();
+        assert_eq!(unknown.capabilities, ResolvedCapabilities::default());
     }
 
     #[test]

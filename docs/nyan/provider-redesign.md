@@ -530,6 +530,53 @@ partialStream
 
 “各家 provider 支持什么 header/错误码”属于 adapter contract 和测试 fixture，不在公共层硬编码。provider 更新 rate-limit 语义时更新 adapter 与 fixture，不修改用户配置含义。
 
+### 7.4 PR 5 实现：OpenAI adapters（`src/services/provider/openai/`）
+
+**协议选择。** profile 用 `protocol` 声明自己说哪一种；provider 同时声明 `openaiChat` 和 `openaiResponses` 时必须写，否则解析报 `AmbiguousProtocol`。解析结果只有一个协议，之后各层都读这个值：Chat adapter 的 `validate` 拒绝 Responses profile，反之亦然；Anthropic 的 target 拒绝非 Anthropic 协议的 profile。ProviderState 带协议标签，只被产生它的协议回放。
+
+**重试。** 决策 23：PR 5 重试次数为 0（主请求路径对非 Anthropic profile 把 `max_retries` 设为 0，且不走 Anthropic 的 non-streaming fallback）。PR 5 只做到：错误分类（含 `Retry-After` / `retry-after-ms` 解析）、流已产出内容后的失败归为 `PartialStream`。§九 PR 5 行“未输出重试”由 PR 8 的统一控制器落地，不在 PR 5。
+
+**请求映射（IR → wire）。**
+
+| IR | Chat Completions | Responses |
+|---|---|---|
+| `system` | 首条 `role: system`（去掉缓存边界标记） | `instructions`；ChatGPT 后端永不为空（缺省 `You are a helpful assistant.`） |
+| `UserPart::Text` | `content` 字符串；含图片时为 `text` / `image_url` 数组 | `message` 的 `input_text` |
+| `UserPart::Image` | `image_url`（data URL 或 URL） | `input_image`（`detail: auto`） |
+| `UserPart::Document` | `file`（`file_data` data URL） | `input_file` |
+| `AssistantPart::Text` | `assistant.content` | `message` / `output_text`（`status: completed`） |
+| `AssistantPart::ToolCall` | `tool_calls[]`，`id` 取 `call_id` 部分、限 40 字符、超长加哈希后缀 | `function_call`，`call_id`；`id`（`fc_…`，≤64）只对 API 后端且格式合法时带上 |
+| `UserPart::ToolResult` | `role: tool`；其中图片放在紧随的 user 消息里 | `function_call_output`；图片留在 `output` 数组内 |
+| `Thinking` / `RedactedThinking` | 丢弃（Chat 没有输入通道） | 仅本协议的 ProviderState：整条 reasoning item 原样回放 |
+| `ServerToolCall` / `ServerToolResult` | 丢弃（Anthropic 概念） | 丢弃 |
+| `ToolSpec` | `tools[].function`，不带 `strict`；`ToolSearch` 不发送 | `tools[]`，显式 `strict: false`；`ToolSearch` 不发送 |
+| `tool_choice` / `disable_parallel_tools` | `tool_choice` / `parallel_tool_calls: false` | 同名 |
+| `thinking` + `effort` | `reasoning_effort`（`max`/`xhigh` 发 `high`；token 预算按档位折算；Adaptive 无 effort 不发） | `reasoning: {effort, summary: auto}` |
+| `structured_output` | `response_format: json_schema`（`strict: false`） | `text.format: json_schema`（`strict: false`） |
+| `max_output_tokens` | `max_completion_tokens`，取 profile 上限的较小值 | `max_output_tokens`（≥16）；ChatGPT 后端不发 |
+| `temperature` | 仅在 profile 未声明 thinking 时发送 | 同左；ChatGPT 后端不发 |
+| 固定字段 | `stream`、`stream_options.include_usage` | `stream`、`store: false`、`include: [reasoning.encrypted_content]` |
+
+未声明的能力按“不支持”处理（§3.2）：tools / thinking 不支持时从请求中省略；images / structured output 不支持时 `validate` 返回 `CapabilityError`。
+
+**流映射（wire → IR）。**
+
+| 事件 | Chat Completions | Responses |
+|---|---|---|
+| `MessageStart` | 首个 chunk（`id`、`model`；`request_id` 取响应头） | `response.created`（`id`、`model`；`request_id` 取响应头） |
+| 文本 | `delta.content` / `delta.refusal` → Text 块 | `output_text.delta` / `refusal.delta` → Text 块 |
+| 工具调用 | `delta.tool_calls[]` 按 `index` 汇集；名字到齐后才开块，先到的参数暂存 | `output_item.added`(function_call) 开块，id 为 `call_id` + `-nyanfc-` + `fc_…`；`function_call_arguments.delta` 追加；`output_item.done` 补齐缺失的参数 |
+| 推理 | 不处理 | `reasoning_summary_text.delta` → Thinking；`output_item.done` 把整条 item 作为 ProviderState 写入签名；没有摘要时以 `RedactedThinking` 保留，保证 `store: false` 下 function_call 与 reasoning 成对 |
+| 用量 | `usage.prompt_tokens` 减 `cached_tokens` 为 input；`completion_tokens_details.reasoning_tokens` | `input_tokens` 减 `cached_tokens` 为 input；`output_tokens_details.reasoning_tokens` |
+| 停止原因 | `stop`→EndTurn（有工具调用则 ToolUse）、`tool_calls`→ToolUse、`length`→MaxTokens、`content_filter`→Refusal、其它→`Other` | `status: completed`→EndTurn（有 function_call 则 ToolUse）、`incomplete`+`max_output_tokens`→MaxTokens、`content_filter`→Refusal、其它→`Other` |
+| 结束 | 必须见到 `finish_reason`；否则 Transport / PartialStream | 必须见到 `response.completed`；否则 Transport / PartialStream |
+
+**错误分类。** 先读结构化的 `error.code` / `error.type`，状态码兜底（401/403/404 以状态码为准，`code` 只细化 400/429/5xx）：`context_length_exceeded`（或消息含 context window / maximum context length）→ `ContextOverflow`；`rate_limit_exceeded` / `insufficient_quota` → `RateLimited`（原始 body 保留，PR 8 区分计费 429 与突发 429）；401 → `Unauthorized`；5xx / 408 → `Transient { retryable: true }`。流内的 `error` / `response.failed` 同样按 `code` 分类；已有输出时一律 `PartialStream`。
+
+**ChatGPT（Codex）登录。** `oauth: openai-codex` 只与 Responses 搭配（Chat 报 `CodexNeedsResponses`），请求发往 `https://chatgpt.com/backend-api/codex/responses`，带 `chatgpt-account-id`、`OpenAI-Beta: responses=experimental`、`originator`、`session-id`，不带 `max_output_tokens` / `temperature`，不回放 `fc_` item id。该后端的行为取自 Pi 与官方 Codex 客户端的公开源码，未用真实账号验证（见 PR 描述“待决策”）。
+
+**本 PR 未覆盖。** `side_query`（权限分类 / 解释、模型校验）、`count_tokens`、额度预检、非流式 fallback 仍只支持 Anthropic profile；非 Anthropic profile 下它们会返回“该 profile 不能由 Anthropic client 服务”的明确错误，而不是发出 Anthropic 形状的请求。
+
 ## 八、替换路径（不是兼容迁移）
 
 nyan 没有用户，因此实现阶段直接删除旧入口：
@@ -552,7 +599,7 @@ nyan 没有用户，因此实现阶段直接删除旧入口：
 | 2. pinned model metadata + 周更 CI | 导入 Pi 快照（转换格式、Pi commit、models.dev 版本、schema version、hash）；根目录 `NOTICE` 同时列 Pi 与 models.dev；profile override 与 `nyan doctor` 展示；定时 CI 拉取上游并开 PR（决策 13–15） | 快照 hash/schema 校验；缺 contextWindow 的 profile 被拒绝；覆盖字段在 `nyan doctor` 可见；运行时无网络请求；CI 只开 PR 不合并 | 上游 schema breaking、NOTICE 漏列、周更 PR 噪声 |
 | 3. credential owner and OAuth | env/`file`/`optionalEnv`/`oauth` 引用；`~/.nyan/auth/<provider>.json`（目录 0700、文件 0600、文件锁）；首批 OAuth：OpenAI Codex、OpenCode（决策 16–17）；Anthropic 只使用 API key；Windows owner-only ACL | env、OAuth、auth 文件 mock；ACL 无法验证时拒绝；无 secret 日志；provider 间账号隔离。PR 3 只做凭据存取和 mock 测试；真实模型请求从对应 provider adapter 阶段起使用 OAuth 凭据 | token schema 差异、refresh 并发、账号隔离 |
 | 4. request IR + Anthropic adapter | 公共 message/tool/image/thinking/usage/error IR；Anthropic client、headers、betas、Bedrock/Vertex/Foundry 接入 adapter；**删除 PR 1 的临时 Anthropic 兼容层**（决策 22） | Anthropic mock 请求与 stream fixture；API-key credential gate；兼容层代码和引用已删除；沿用现有重试默认（决策 23） | cache prefix、beta、stream/tool/thinking 改变、兼容层删除遗漏 |
-| 5. OpenAI adapters | **同一阶段**实现 Chat Completions 和 Responses；tools/images/streaming/structured output/usage/error | 两种协议各自 mock contract；同一 profile 不能混淆 chat/responses；未输出重试与 partialStream | 两种 wire shape、tool call streaming、retry/replay |
+| 5. OpenAI adapters | **同一阶段**实现 Chat Completions 和 Responses；tools/images/streaming/structured output/usage/error（实现与映射表见 §7.4） | 两种协议各自 mock contract；同一 profile 不能混淆 chat/responses；错误分类与 partialStream（重试次数为 0，统一重试在 PR 8，决策 23） | 两种 wire shape、tool call streaming、retry/replay |
 | 6. Gemini adapter | 独立 PR（决策 20），紧接 OpenAI 阶段且不并行；Gemini 仍按商业 kind 处理 | Gemini parts/function/thinking fixture；错误映射 `RESOURCE_EXHAUSTED` 等 | parts 与 thinking 转换、图片 inline data |
 | 7. OpenAI-compatible local | vLLM/Ollama 只走 `openaiChat`；不做 Ollama native；本地 profile 可进 `mainFallbacks`（决策 21）；local profile 不能进 Decision Provider | local endpoint mock；`optionalEnv` 401 报 auth error；本地 profile 出现在 DP tier 时 schema 拒绝 | gateway 方言、本地 timeout |
 | 8. retry/fallback/health | normalized errors、各 adapter rate-limit policy、统一重试控制器（默认 2 次，托管全局硬上限 5）、显式 fallback 列表；禁止隐式跨 provider。**行为变更**：Anthropic 默认重试从 10 降到 2，写入 PR 描述（决策 19、23） | 429/Retry-After/529/503/stream partial fixture；空 fallback 不切 provider；switch receipt；托管上限生效且不得超过 5 | 重复工具调用、provider header drift、默认值变更影响 |
