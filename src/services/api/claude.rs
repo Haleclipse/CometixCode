@@ -286,6 +286,7 @@ pub struct Options {
     /// projects to the empty permission context at the serialization site.
     pub tool_permission_context: Option<crate::tool::ToolPermissionContext>,
     pub task_budget: Option<TaskBudget>,
+    pub cache_retention: Option<crate::utils::settings::nyan::CacheRetention>,
     /// Maps to CC cached microcompact `useCachedMC` request assembly gate.
     pub cached_mc_enabled: bool,
     /// Maps to CC `newCacheEdits` consumed from microCompact before SDK params.
@@ -651,6 +652,64 @@ fn tool_result_api_content(result: &crate::types::message::ToolResult) -> serde_
     }
 }
 
+const ERROR_TOOL_IMAGE_PLACEHOLDER: &str = "(image attached after the tool results)";
+
+/// Extracted images from an error tool result.
+struct SplitErrorToolImages {
+    tool_use_id: String,
+    images: Vec<crate::types::message::ToolResultMediaSource>,
+}
+
+fn split_error_tool_result_images(
+    result: &crate::types::message::ToolResult,
+) -> (serde_json::Value, Option<SplitErrorToolImages>) {
+    if !result.is_error || result.content_blocks.is_empty() {
+        return (tool_result_api_content(result), None);
+    }
+
+    let has_images = result.content_blocks.iter().any(|b| {
+        matches!(
+            b,
+            crate::types::message::ToolResultContentBlock::Image { .. }
+        )
+    });
+    if !has_images {
+        return (tool_result_api_content(result), None);
+    }
+
+    let mut new_blocks: Vec<crate::types::message::ToolResultContentBlock> = Vec::new();
+    let mut extracted_images = Vec::new();
+    let mut previous_was_placeholder = false;
+
+    for block in &result.content_blocks {
+        match block {
+            crate::types::message::ToolResultContentBlock::Image { source } => {
+                extracted_images.push(source.clone());
+                if !previous_was_placeholder {
+                    new_blocks.push(crate::types::message::ToolResultContentBlock::text(
+                        ERROR_TOOL_IMAGE_PLACEHOLDER,
+                    ));
+                    previous_was_placeholder = true;
+                }
+            }
+            other => {
+                previous_was_placeholder = false;
+                new_blocks.push(other.clone());
+            }
+        }
+    }
+
+    let content = serde_json::to_value(&new_blocks)
+        .unwrap_or_else(|_| serde_json::Value::String(ERROR_TOOL_IMAGE_PLACEHOLDER.to_string()));
+
+    let split = SplitErrorToolImages {
+        tool_use_id: result.tool_use_id.0.clone(),
+        images: extracted_images,
+    };
+
+    (content, Some(split))
+}
+
 pub fn user_message_to_message_param(
     message: &UserMessage,
     add_cache: bool,
@@ -659,80 +718,46 @@ pub fn user_message_to_message_param(
 ) -> MessageParam {
     use crate::types::message::UserContent;
 
-    if add_cache {
-        let blocks: Vec<serde_json::Value> = message
-            .content
-            .iter()
-            .enumerate()
-            .map(|(i, content)| {
-                let mut block = match content {
-                    UserContent::Text(text) | UserContent::MetaText(text) => {
-                        serde_json::json!({
-                            "type": "text",
-                            "text": text,
-                        })
-                    }
-                    UserContent::RawImage { block, .. } => block.clone(),
-                    UserContent::Image { media_type, data }
-                    | UserContent::MetaImage { media_type, data } => {
-                        serde_json::json!({
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": data,
-                            }
-                        })
-                    }
-                    UserContent::Document { media_type, data }
-                    | UserContent::MetaDocument { media_type, data } => {
-                        serde_json::json!({
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": data,
-                            }
-                        })
-                    }
-                    UserContent::ToolResult(result) => {
-                        let content = tool_result_api_content(result);
-                        serde_json::json!({
-                            "type": "tool_result",
-                            "tool_use_id": result.tool_use_id.0,
-                            "content": content,
-                            "is_error": result.is_error,
-                        })
-                    }
-                };
+    let mut blocks: Vec<serde_json::Value> = Vec::new();
+    let mut split_images_list: Vec<SplitErrorToolImages> = Vec::new();
 
-                // Add cache_control to the last block
-                if i == message.content.len() - 1
-                    && enable_prompt_caching
-                    && let Some(obj) = block.as_object_mut()
-                {
-                    let cc = get_cache_control(None, query_source);
-                    obj.insert(
-                        "cache_control".to_string(),
-                        serde_json::to_value(&cc).unwrap_or_default(),
-                    );
-                }
-
-                block
-            })
-            .collect();
-
-        return MessageParam {
-            role: "user".to_string(),
-            content: MessageContent::Blocks(blocks),
-        };
+    // 1. All tool results must come first in Anthropic messages
+    for content in &message.content {
+        if let UserContent::ToolResult(result) = content {
+            let (content_val, split) = split_error_tool_result_images(result);
+            if let Some(split) = split {
+                split_images_list.push(split);
+            }
+            blocks.push(serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": result.tool_use_id.0,
+                "content": content_val,
+                "is_error": result.is_error,
+            }));
+        }
     }
 
-    // Non-cached path: clone content blocks to prevent in-place mutation
-    let blocks: Vec<serde_json::Value> = message
-        .content
-        .iter()
-        .map(|content| match content {
+    // 2. Images split from error tool results follow all tool results
+    for split in split_images_list {
+        blocks.push(serde_json::json!({
+            "type": "text",
+            "text": format!("Images from the error result of tool call {}:", split.tool_use_id),
+        }));
+        for img in split.images {
+            blocks.push(serde_json::json!({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.media_type,
+                    "data": img.data,
+                }
+            }));
+        }
+    }
+
+    // 3. Other user content blocks (text, image, document, raw image)
+    for content in &message.content {
+        let block = match content {
             UserContent::Text(text) | UserContent::MetaText(text) => {
                 serde_json::json!({
                     "type": "text",
@@ -762,17 +787,23 @@ pub fn user_message_to_message_param(
                     }
                 })
             }
-            UserContent::ToolResult(result) => {
-                let content = tool_result_api_content(result);
-                serde_json::json!({
-                    "type": "tool_result",
-                    "tool_use_id": result.tool_use_id.0,
-                    "content": content,
-                    "is_error": result.is_error,
-                })
+            UserContent::ToolResult(_) => continue,
+        };
+        blocks.push(block);
+    }
+
+    // 4. Add cache_control to the last block if requested
+    if add_cache && enable_prompt_caching {
+        if let Some(last_block) = blocks.last_mut() {
+            if let Some(obj) = last_block.as_object_mut() {
+                let cc = get_cache_control(None, query_source);
+                obj.insert(
+                    "cache_control".to_string(),
+                    serde_json::to_value(&cc).unwrap_or_default(),
+                );
             }
-        })
-        .collect();
+        }
+    }
 
     MessageParam {
         role: "user".to_string(),
@@ -1477,13 +1508,33 @@ pub fn build_system_prompt_blocks(
     skip_global_cache_for_system_prompt: bool,
     query_source: Option<&str>,
 ) -> Vec<TextBlockParam> {
+    build_system_prompt_blocks_with_retention(
+        system_prompt,
+        enable_prompt_caching,
+        skip_global_cache_for_system_prompt,
+        query_source,
+        None,
+    )
+}
+
+pub fn build_system_prompt_blocks_with_retention(
+    system_prompt: &SystemPrompt,
+    enable_prompt_caching: bool,
+    skip_global_cache_for_system_prompt: bool,
+    query_source: Option<&str>,
+    cache_retention: Option<crate::utils::settings::nyan::CacheRetention>,
+) -> Vec<TextBlockParam> {
     crate::utils::api::split_sys_prompt_prefix(system_prompt, skip_global_cache_for_system_prompt)
         .into_iter()
         .map(|block| {
             let cache_control = if enable_prompt_caching {
-                block
-                    .cache_scope
-                    .map(|scope| get_cache_control(Some(scope), query_source))
+                block.cache_scope.map(|scope| {
+                    crate::services::provider::anthropic::cache::get_cache_control_with_retention(
+                        Some(scope),
+                        query_source,
+                        cache_retention,
+                    )
+                })
             } else {
                 None
             };
@@ -1648,6 +1699,7 @@ impl Options {
             allowed_agent_types: None,
             tool_permission_context: None,
             task_budget: None,
+            cache_retention: None,
             cached_mc_enabled: false,
             cached_mc_new_cache_edits: None,
             cached_mc_pinned_edits: Vec::new(),
@@ -1854,6 +1906,48 @@ struct SdkMessageCreatePlan {
     request: crate::services::provider::ir::ModelRequest,
 }
 
+pub const DEFERRED_TOOL_PLACEHOLDER_NAME: &str = "__nyan_deferred_placeholder__";
+
+fn create_deferred_tool_placeholder() -> anthropic_sdk::resources::messages::ToolUnion {
+    let beta_tool = serde_json::json!({
+        "name": DEFERRED_TOOL_PLACEHOLDER_NAME,
+        "description": "Reserved placeholder. Never available. Never call this.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        },
+        "defer_loading": true
+    });
+    anthropic_sdk::resources::messages::ToolUnion::Raw(beta_tool)
+}
+
+fn add_cache_control_to_tool_union(
+    tool: &mut anthropic_sdk::resources::messages::ToolUnion,
+    cache_control: &crate::services::provider::anthropic::cache::CacheControl,
+) {
+    use anthropic_sdk::resources::messages::{CacheControlEphemeral, ToolUnion};
+    match tool {
+        ToolUnion::Custom(t) => {
+            t.cache_control = Some(CacheControlEphemeral {
+                type_name: cache_control.cache_type.clone(),
+                ttl: cache_control.ttl.clone(),
+            });
+        }
+        ToolUnion::Raw(v) => {
+            if let Some(obj) = v.as_object_mut() {
+                if let Ok(cc_val) = serde_json::to_value(cache_control) {
+                    obj.insert("cache_control".to_string(), cc_val);
+                }
+            }
+        }
+        ToolUnion::WithHelper { tool, .. } => {
+            add_cache_control_to_tool_union(tool, cache_control);
+        }
+        _ => {}
+    }
+}
+
 /// Maps to CC `services/api/claude.ts` `paramsFromContext(...)`: CC adds
 /// first-party cache-editing fields to structurally typed SDK objects at
 /// runtime. They are not public `anthropic-sdk-typescript` message models, so
@@ -1872,7 +1966,10 @@ fn build_sdk_message_create_plan(
     super::api_trace::set_current_trace(Some(trace.clone()));
     let enable_prompt_caching = options
         .enable_prompt_caching
-        .unwrap_or_else(|| get_prompt_caching_enabled(&options.model));
+        .unwrap_or_else(|| get_prompt_caching_enabled(&options.model))
+        && crate::services::provider::anthropic::cache::is_cache_retention_enabled(
+            options.cache_retention,
+        );
     let normalized_api_messages = crate::utils::messages::ensure_tool_result_pairing(
         crate::utils::messages::normalize_messages_for_api_with_model(
             messages.to_vec(),
@@ -2040,11 +2137,12 @@ fn build_sdk_message_create_plan(
     .filter(|block| !block.is_empty())
     .collect::<SystemPrompt>();
     // CC: logAPIPrefix(systemPrompt) — joins with analytics.
-    let local_system_blocks = build_system_prompt_blocks(
+    let local_system_blocks = build_system_prompt_blocks_with_retention(
         &system_prompt,
         enable_prompt_caching,
         skip_global_cache_for_system_prompt,
         Some(&options.query_source),
+        options.cache_retention,
     );
     let private_system = local_system_blocks
         .iter()
@@ -2107,6 +2205,19 @@ fn build_sdk_message_create_plan(
             "name": "advisor",
             "model": advisor_model,
         }))?);
+    }
+    if tool_search_enabled {
+        sdk_tools.push(create_deferred_tool_placeholder());
+    }
+    if enable_prompt_caching && !sdk_tools.is_empty() {
+        let cc = crate::services::provider::anthropic::cache::get_cache_control_with_retention(
+            None,
+            Some(&options.query_source),
+            options.cache_retention,
+        );
+        if let Some(last_tool) = sdk_tools.last_mut() {
+            add_cache_control_to_tool_union(last_tool, &cc);
+        }
     }
 
     let max_tokens = options
@@ -2252,7 +2363,10 @@ fn build_model_request(
             }),
             enable_prompt_caching: options
                 .enable_prompt_caching
-                .unwrap_or_else(|| get_prompt_caching_enabled(&options.model)),
+                .unwrap_or_else(|| get_prompt_caching_enabled(&options.model))
+                && crate::services::provider::anthropic::cache::is_cache_retention_enabled(
+                    options.cache_retention,
+                ),
             skip_cache_write: options.skip_cache_write.unwrap_or(false),
             client: ClientContext {
                 non_interactive: options.is_non_interactive_session,
@@ -9385,6 +9499,290 @@ mod tests {
             ]}])
         );
         crate::utils::config::replace_test_global_config(previous);
+    }
+
+    #[test]
+    fn tool_definition_tail_gets_cache_control_and_total_breakpoints_capped() {
+        let messages = vec![
+            Message::User(crate::utils::messages::create_user_message(
+                "hello".to_string(),
+            )),
+            Message::Assistant(crate::utils::messages::create_assistant_message(
+                "hi".to_string(),
+            )),
+            Message::User(crate::utils::messages::create_user_message(
+                "next".to_string(),
+            )),
+        ];
+        let mut options = Options::new(
+            "claude-sonnet-4-6".to_string(),
+            "repl_main_thread".to_string(),
+        );
+        options.enable_prompt_caching = Some(true);
+        let tools = vec![
+            Tool {
+                name: "tool_a".to_string(),
+                description: "tool a".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                ..Default::default()
+            },
+            Tool {
+                name: "tool_b".to_string(),
+                description: "tool b".to_string(),
+                input_schema: serde_json::json!({"type": "object"}),
+                ..Default::default()
+            },
+        ];
+        let system_prompt = vec!["System static instructions".to_string()];
+        let params = build_sdk_message_create_params(
+            &messages,
+            &system_prompt,
+            &ThinkingConfig::Disabled,
+            &tools,
+            &options,
+        )
+        .expect("SDK params build");
+        let value = serde_json::to_value(&params).expect("serialize");
+
+        // Tools: last tool has cache_control, prior does not
+        let api_tools = value["tools"].as_array().expect("tools");
+        assert_eq!(api_tools.len(), 2);
+        assert!(api_tools[0].get("cache_control").is_none());
+        assert_eq!(api_tools[1]["cache_control"]["type"], "ephemeral");
+
+        // System prompt: has cache_control
+        let system = value["system"].as_array().expect("system");
+        let system_cc_count = system
+            .iter()
+            .filter(|b| b.get("cache_control").is_some())
+            .count();
+        assert!(system_cc_count >= 1);
+
+        // Messages: last message has cache_control
+        let api_messages = value["messages"].as_array().expect("messages");
+        let msg_cc_count = api_messages
+            .iter()
+            .flat_map(|m| m["content"].as_array().into_iter().flatten())
+            .filter(|b| b.get("cache_control").is_some())
+            .count();
+        assert_eq!(msg_cc_count, 1);
+
+        // Total breakpoints <= 4 and reaches Pi's 3-4
+        let total_breakpoints = system_cc_count + 1 + msg_cc_count;
+        assert!(
+            total_breakpoints <= 4,
+            "total breakpoints must not exceed 4, got {total_breakpoints}"
+        );
+        assert!(
+            total_breakpoints >= 3,
+            "total breakpoints should reach 3-4, got {total_breakpoints}"
+        );
+    }
+
+    #[test]
+    fn tool_search_adds_deferred_tool_placeholder_and_anchors_cache_control() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
+
+        let messages = vec![Message::User(crate::utils::messages::create_user_message(
+            "run search".to_string(),
+        ))];
+        let mut options = Options::new(
+            "claude-sonnet-4-6".to_string(),
+            "repl_main_thread".to_string(),
+        );
+        options.enable_prompt_caching = Some(true);
+        let tools = vec![
+            crate::tools::tool_search_tool::tool_search_tool_schema(),
+            crate::tools::web_fetch_tool::web_fetch_tool_schema(),
+        ];
+
+        let params = build_sdk_message_create_params(
+            &messages,
+            &Vec::new(),
+            &ThinkingConfig::Disabled,
+            &tools,
+            &options,
+        )
+        .expect("SDK params build");
+        let value = serde_json::to_value(&params).expect("serialize");
+        let api_tools = value["tools"].as_array().expect("tools");
+
+        // ToolSearch is present; undiscovered WebFetch is omitted
+        assert!(api_tools.iter().any(|t| t["name"] == "ToolSearch"));
+        assert!(!api_tools.iter().any(|t| t["name"] == "WebFetch"));
+
+        // Placeholder is present at the end with defer_loading: true
+        let last_tool = api_tools.last().expect("last tool");
+        assert_eq!(last_tool["name"], DEFERRED_TOOL_PLACEHOLDER_NAME);
+        assert_eq!(last_tool["defer_loading"], serde_json::json!(true));
+        // Cache control is anchored on the placeholder
+        assert_eq!(last_tool["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn cache_retention_long_sets_1h_ttl_on_tools_and_system() {
+        let messages = vec![Message::User(crate::utils::messages::create_user_message(
+            "hello".to_string(),
+        ))];
+        let mut options = Options::new(
+            "claude-sonnet-4-6".to_string(),
+            "repl_main_thread".to_string(),
+        );
+        options.enable_prompt_caching = Some(true);
+        options.cache_retention = Some(crate::utils::settings::nyan::CacheRetention::Long);
+        let tools = vec![Tool {
+            name: "tool_a".to_string(),
+            description: "tool a".to_string(),
+            input_schema: serde_json::json!({"type": "object"}),
+            ..Default::default()
+        }];
+        let system_prompt = vec!["System prompt text".to_string()];
+        let params = build_sdk_message_create_params(
+            &messages,
+            &system_prompt,
+            &ThinkingConfig::Disabled,
+            &tools,
+            &options,
+        )
+        .expect("SDK params build");
+        let value = serde_json::to_value(&params).expect("serialize");
+
+        // Tool breakpoint has ttl: "1h"
+        let api_tools = value["tools"].as_array().expect("tools");
+        assert_eq!(api_tools[0]["cache_control"]["ttl"], "1h");
+
+        // System prompt breakpoint has ttl: "1h"
+        let system = value["system"].as_array().expect("system");
+        let cached_sys = system
+            .iter()
+            .find(|b| b.get("cache_control").is_some())
+            .unwrap();
+        assert_eq!(cached_sys["cache_control"]["ttl"], "1h");
+    }
+
+    #[test]
+    fn error_tool_result_with_images_splits_images_after_all_tool_results() {
+        let user_msg = UserMessage {
+            uuid: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            content: vec![
+                crate::types::message::UserContent::ToolResult(crate::types::message::ToolResult {
+                    tool_use_id: crate::types::ids::ToolUseId("call-1".to_string()),
+                    content: "Script failed".to_string(),
+                    is_error: true,
+                    content_blocks: vec![
+                        crate::types::message::ToolResultContentBlock::text("Script failed"),
+                        crate::types::message::ToolResultContentBlock::image_base64(
+                            "image/png",
+                            "AAAA",
+                        ),
+                        crate::types::message::ToolResultContentBlock::image_base64(
+                            "image/png",
+                            "CCCC",
+                        ),
+                        crate::types::message::ToolResultContentBlock::text("Script error"),
+                    ],
+                    tool_use_result: None,
+                }),
+                crate::types::message::UserContent::ToolResult(crate::types::message::ToolResult {
+                    tool_use_id: crate::types::ids::ToolUseId("call-2".to_string()),
+                    content: "ok".to_string(),
+                    is_error: false,
+                    content_blocks: vec![
+                        crate::types::message::ToolResultContentBlock::text("(see attached image)"),
+                        crate::types::message::ToolResultContentBlock::image_base64(
+                            "image/png",
+                            "BBBB",
+                        ),
+                    ],
+                    tool_use_result: None,
+                }),
+            ],
+            is_compact_summary: false,
+            plan_content: None,
+            image_paste_ids: None,
+            is_visible_in_transcript_only: false,
+            mcp_meta: None,
+            source_tool_assistant_uuid: None,
+            permission_mode: None,
+            origin: None,
+            summarize_metadata: None,
+        };
+
+        let param = user_message_to_message_param(&user_msg, false, false, None);
+        let value = serde_json::to_value(&param).expect("serialize param");
+        let blocks = value["content"].as_array().expect("blocks");
+
+        // 1. Tool result 1: is_error: true, images replaced with placeholder, no images inside
+        assert_eq!(blocks[0]["type"], "tool_result");
+        assert_eq!(blocks[0]["tool_use_id"], "call-1");
+        assert_eq!(blocks[0]["is_error"], true);
+        let tr1_blocks = blocks[0]["content"].as_array().expect("content blocks");
+        assert_eq!(tr1_blocks.len(), 3);
+        assert_eq!(tr1_blocks[0]["text"], "Script failed");
+        assert_eq!(
+            tr1_blocks[1]["text"],
+            "(image attached after the tool results)"
+        );
+        assert_eq!(tr1_blocks[2]["text"], "Script error");
+
+        // 2. Tool result 2: is_error: false, images stay inside tool_result
+        assert_eq!(blocks[1]["type"], "tool_result");
+        assert_eq!(blocks[1]["tool_use_id"], "call-2");
+        assert_eq!(blocks[1]["is_error"], false);
+        let tr2_blocks = blocks[1]["content"].as_array().expect("content blocks");
+        assert_eq!(tr2_blocks.len(), 2);
+        assert_eq!(tr2_blocks[1]["type"], "image");
+
+        // 3. Caption for error tool result
+        assert_eq!(blocks[2]["type"], "text");
+        assert_eq!(
+            blocks[2]["text"],
+            "Images from the error result of tool call call-1:"
+        );
+
+        // 4. Extracted images follow all tool results
+        assert_eq!(blocks[3]["type"], "image");
+        assert_eq!(blocks[3]["source"]["data"], "AAAA");
+        assert_eq!(blocks[4]["type"], "image");
+        assert_eq!(blocks[4]["source"]["data"], "CCCC");
+    }
+
+    #[test]
+    fn error_tool_result_without_images_stays_unchanged() {
+        let user_msg = UserMessage {
+            uuid: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            content: vec![crate::types::message::UserContent::ToolResult(
+                crate::types::message::ToolResult {
+                    tool_use_id: crate::types::ids::ToolUseId("call-1".to_string()),
+                    content: "Script failed".to_string(),
+                    is_error: true,
+                    content_blocks: vec![crate::types::message::ToolResultContentBlock::text(
+                        "Script failed",
+                    )],
+                    tool_use_result: None,
+                },
+            )],
+            is_compact_summary: false,
+            plan_content: None,
+            image_paste_ids: None,
+            is_visible_in_transcript_only: false,
+            mcp_meta: None,
+            source_tool_assistant_uuid: None,
+            permission_mode: None,
+            origin: None,
+            summarize_metadata: None,
+        };
+
+        let param = user_message_to_message_param(&user_msg, false, false, None);
+        let value = serde_json::to_value(&param).expect("serialize param");
+        let blocks = value["content"].as_array().expect("blocks");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0]["type"], "tool_result");
+        assert_eq!(blocks[0]["is_error"], true);
     }
 }
 

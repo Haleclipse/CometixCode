@@ -20,6 +20,7 @@ pub struct AnthropicTarget {
     pub provider: String,
     pub base_url: Option<String>,
     pub api_key: Option<ApiKey>,
+    pub cache_retention: crate::utils::settings::nyan::CacheRetention,
 }
 
 #[derive(Debug)]
@@ -68,8 +69,11 @@ fn clean_base_url(base_url: Option<&str>) -> Option<String> {
         .filter(|url| !url.is_empty())
 }
 
-/// Build the target for an already-resolved profile.
-pub fn target_for_profile(profile: &ResolvedModelProfile) -> Result<AnthropicTarget, TargetError> {
+/// Build the target for an already-resolved profile and explicit settings.
+pub fn target_for_profile_with_settings(
+    profile: &ResolvedModelProfile,
+    settings: &SettingsJson,
+) -> Result<AnthropicTarget, TargetError> {
     if profile.protocol != ProviderProtocol::AnthropicMessages {
         return Err(TargetError::NotAnthropic {
             profile: profile.profile.clone(),
@@ -77,12 +81,25 @@ pub fn target_for_profile(profile: &ResolvedModelProfile) -> Result<AnthropicTar
         });
     }
     let api_key = resolve_api_key(&profile.provider, profile.credential.as_ref())?;
+    let cache_retention = settings
+        .nyan
+        .as_ref()
+        .and_then(|nyan| nyan.models.as_ref())
+        .and_then(|models| models.get(&profile.profile))
+        .map(|model_profile| model_profile.cache_retention())
+        .unwrap_or_default();
     Ok(AnthropicTarget {
         profile: profile.profile.clone(),
         provider: profile.provider.clone(),
         base_url: clean_base_url(profile.base_url.as_deref()),
         api_key,
+        cache_retention,
     })
+}
+
+/// Build the target for an already-resolved profile.
+pub fn target_for_profile(profile: &ResolvedModelProfile) -> Result<AnthropicTarget, TargetError> {
+    target_for_profile_with_settings(profile, &crate::utils::settings::get_initial_settings())
 }
 
 /// The target of the selected main profile. Auxiliary requests (titles,
@@ -90,7 +107,7 @@ pub fn target_for_profile(profile: &ResolvedModelProfile) -> Result<AnthropicTar
 /// second source of Anthropic credentials.
 pub fn resolve_main_target(settings: &SettingsJson) -> Result<AnthropicTarget, TargetError> {
     let profile = crate::utils::model::profile::resolve_main_profile(settings)?;
-    target_for_profile(&profile)
+    target_for_profile_with_settings(&profile, settings)
 }
 
 /// Same as [`resolve_main_target`] against the live settings.
@@ -104,6 +121,15 @@ pub fn current_main_target() -> Result<AnthropicTarget, TargetError> {
 /// lean on ambient Anthropic variables again.
 #[cfg(test)]
 pub(crate) fn install_test_main_profile(base_url: &str, env_name: &str) {
+    install_test_main_profile_with_retention(base_url, env_name, None);
+}
+
+#[cfg(test)]
+pub(crate) fn install_test_main_profile_with_retention(
+    base_url: &str,
+    env_name: &str,
+    cache_retention: Option<crate::utils::settings::nyan::CacheRetention>,
+) {
     use crate::utils::settings::nyan::{
         CredentialReference, ModelCapabilities, ModelProfileSettings, NyanSettings, ProviderKind,
         ProviderProtocol, ProviderSettings, SelectionSettings,
@@ -136,6 +162,7 @@ pub(crate) fn install_test_main_profile(base_url: &str, env_name: &str) {
                     max_output_tokens: Some(64_000),
                     ..Default::default()
                 }),
+                cache_retention,
                 ..Default::default()
             },
         )])),
@@ -210,6 +237,37 @@ mod tests {
         .unwrap();
         assert_eq!(target.api_key.unwrap().expose(), "sk-profile");
         assert_eq!(target.base_url.as_deref(), Some("https://gw.example"));
+        assert_eq!(
+            target.cache_retention,
+            crate::utils::settings::nyan::CacheRetention::Short
+        );
+    }
+
+    #[test]
+    fn target_resolves_cache_retention_from_profile_settings() {
+        let _lock = lock();
+        let _guards = [EnvVarGuard::set("NYAN_TARGET_TEST_KEY", "sk-profile")];
+        install_test_main_profile_with_retention(
+            "https://api.anthropic.com",
+            "NYAN_TARGET_TEST_KEY",
+            Some(crate::utils::settings::nyan::CacheRetention::Long),
+        );
+        let target = current_main_target().unwrap();
+        assert_eq!(
+            target.cache_retention,
+            crate::utils::settings::nyan::CacheRetention::Long
+        );
+
+        install_test_main_profile_with_retention(
+            "https://api.anthropic.com",
+            "NYAN_TARGET_TEST_KEY",
+            None,
+        );
+        let default_target = current_main_target().unwrap();
+        assert_eq!(
+            default_target.cache_retention,
+            crate::utils::settings::nyan::CacheRetention::Short
+        );
     }
 
     #[test]

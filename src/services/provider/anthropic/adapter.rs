@@ -270,6 +270,7 @@ mod tests {
                         "sk-adapter",
                     ),
                 ),
+                ..Default::default()
             },
             Some("test".into()),
         )

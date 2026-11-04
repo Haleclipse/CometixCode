@@ -327,12 +327,112 @@ async fn thinking_signature_and_tool_blocks_replay_on_the_next_request() {
     assert_eq!(result["is_error"], false);
     // The breakpoint lands on the tool result, the last block of the last message.
     assert_eq!(result["cache_control"]["type"], "ephemeral");
-    // The tool definition is sent with its name and schema.
+    // The tool definition is sent with its name and schema, and tail cache_control.
     let tool = body["tools"]
         .as_array()
         .and_then(|tools| tools.iter().find(|t| t["name"] == "Probe"))
         .expect("Probe tool on the wire");
     assert_eq!(tool["input_schema"]["properties"]["a"]["type"], "number");
+    assert_eq!(tool["cache_control"]["type"], "ephemeral");
+}
+
+#[tokio::test]
+async fn cache_retention_long_profile_sends_1h_ttl_on_the_wire() {
+    use crate::utils::settings::nyan::CacheRetention;
+
+    let mock = MockAnthropic::start(vec![Reply::Sse(message_stream(StreamSpec::default()))]).await;
+    let _env = Env::new(&mock.base_url);
+    super::target::install_test_main_profile_with_retention(
+        &mock.base_url,
+        KEY_VAR,
+        Some(CacheRetention::Long),
+    );
+
+    let options = Options::new(
+        "claude-sonnet-4-6".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let messages = vec![user("hello")];
+    let system_prompt = vec!["System static instructions.".to_string()];
+    let tools = vec![probe_tool()];
+    let mut rx = query_model_with_streaming(
+        &messages,
+        &system_prompt,
+        &ThinkingConfig::Disabled,
+        &tools,
+        &options,
+    )
+    .await
+    .expect("stream opens");
+    while let Some(_) = rx.recv().await {}
+
+    let requests = mock.requests();
+    let body = &requests[0].body;
+
+    // Tool breakpoint has ttl: "1h"
+    let tool = body["tools"]
+        .as_array()
+        .and_then(|tools| tools.iter().find(|t| t["name"] == "Probe"))
+        .expect("Probe tool on the wire");
+    assert_eq!(tool["cache_control"]["type"], "ephemeral");
+    assert_eq!(tool["cache_control"]["ttl"], "1h");
+
+    // System prompt breakpoint has ttl: "1h"
+    let system = body["system"].as_array().expect("system blocks");
+    let cached_sys = system
+        .iter()
+        .find(|b| b.get("cache_control").is_some())
+        .unwrap();
+    assert_eq!(cached_sys["cache_control"]["ttl"], "1h");
+
+    // Message breakpoint has ttl: "1h"
+    let msg = &body["messages"][0]["content"][0];
+    assert_eq!(msg["cache_control"]["ttl"], "1h");
+}
+
+#[tokio::test]
+async fn tool_search_placeholder_is_on_the_wire_with_defer_loading_and_anchors_tool_cache() {
+    let mock = MockAnthropic::start(vec![Reply::Sse(message_stream(StreamSpec::default()))]).await;
+    let _env = Env::new(&mock.base_url);
+
+    let options = Options::new(
+        "claude-sonnet-4-6".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let messages = vec![user("search")];
+    let system_prompt = vec!["System instructions.".to_string()];
+    let tools = vec![
+        crate::tools::tool_search_tool::tool_search_tool_schema(),
+        crate::tools::web_fetch_tool::web_fetch_tool_schema(),
+        probe_tool(),
+    ];
+    let mut rx = query_model_with_streaming(
+        &messages,
+        &system_prompt,
+        &ThinkingConfig::Disabled,
+        &tools,
+        &options,
+    )
+    .await
+    .expect("stream opens");
+    while let Some(_) = rx.recv().await {}
+
+    let requests = mock.requests();
+    let body = &requests[0].body;
+    let tools = body["tools"].as_array().expect("tools on the wire");
+
+    // Probe has NO cache_control because it's not the last tool
+    let probe = tools.iter().find(|t| t["name"] == "Probe").unwrap();
+    assert!(probe.get("cache_control").is_none());
+
+    // Placeholder is at the end with defer_loading and cache_control
+    let placeholder = tools.last().unwrap();
+    assert_eq!(
+        placeholder["name"],
+        crate::services::api::claude::DEFERRED_TOOL_PLACEHOLDER_NAME
+    );
+    assert_eq!(placeholder["defer_loading"], true);
+    assert_eq!(placeholder["cache_control"]["type"], "ephemeral");
 }
 
 // ---------------------------------------------------------------------------

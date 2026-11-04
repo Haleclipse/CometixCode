@@ -1406,6 +1406,17 @@ pub struct ModelCapabilities {
     pub prompt_cache: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum CacheRetention {
+    #[default]
+    #[serde(alias = "5m")]
+    Short,
+    #[serde(alias = "1h")]
+    Long,
+    None,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
@@ -1431,6 +1442,14 @@ pub struct ModelProfileSettings {
     /// lower the managed global cap, never raise it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry: Option<RetrySettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_retention: Option<CacheRetention>,
+}
+
+impl ModelProfileSettings {
+    pub fn cache_retention(&self) -> CacheRetention {
+        self.cache_retention.unwrap_or_default()
+    }
 }
 
 /// Retry limits (provider redesign §7.2). At `nyan.retry` only the managed
@@ -1697,6 +1716,10 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ),
         ("cost", cost.optional()),
         ("retry", retry.clone().optional()),
+        (
+            "cacheRetention",
+            zod::enumeration(vec!["short", "long", "none", "5m", "1h"]).optional(),
+        ),
     ]);
     let decision_selection = zod::strict_object(vec![
         ("fast", zod::string().min(1).optional()),
@@ -2535,5 +2558,47 @@ mod tests {
     fn max_return_chars_is_capped_at_forty_thousand() {
         let settings = parse(json!({"web": {"maxReturnChars": 100_000}}));
         assert_eq!(settings.web().max_return_chars(), 40_000);
+    }
+
+    #[test]
+    fn cache_retention_defaults_to_short_and_accepts_long_none_and_ttl_aliases() {
+        let empty = ModelProfileSettings::default();
+        assert_eq!(empty.cache_retention(), CacheRetention::Short);
+
+        for (input, expected) in [
+            ("short", CacheRetention::Short),
+            ("5m", CacheRetention::Short),
+            ("long", CacheRetention::Long),
+            ("1h", CacheRetention::Long),
+            ("none", CacheRetention::None),
+        ] {
+            let parsed: ModelProfileSettings =
+                serde_json::from_value(json!({ "cacheRetention": input })).unwrap();
+            assert_eq!(parsed.cache_retention(), expected);
+            let schema_val = json!({
+                "models": {
+                    "m": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-4-6",
+                        "cacheRetention": input
+                    }
+                }
+            });
+            assert!(
+                crate::utils::zod::safe_parse(&nyan_settings_schema(), &schema_val).is_ok(),
+                "should accept cacheRetention={input}"
+            );
+        }
+
+        let bad_schema = json!({
+            "models": {
+                "m": {
+                    "provider": "anthropic",
+                    "model": "claude-sonnet-4-6",
+                    "cacheRetention": "2h"
+                }
+            }
+        });
+        assert!(crate::utils::zod::safe_parse(&nyan_settings_schema(), &bad_schema).is_err());
     }
 }

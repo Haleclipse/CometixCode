@@ -109,11 +109,50 @@ pub struct CacheControl {
 /// The query-source allowlist is settings.json `promptCache1h.allowlist`.
 /// Vertex / Foundry / Bedrock keep `should1hCacheTTL`.
 pub fn get_cache_control(scope: Option<CacheScope>, query_source: Option<&str>) -> CacheControl {
+    get_cache_control_with_retention(scope, query_source, None)
+}
+
+/// Computes cache-control with an explicit or profile-resolved cache retention TTL.
+pub fn get_cache_control_with_retention(
+    scope: Option<CacheScope>,
+    query_source: Option<&str>,
+    retention: Option<crate::utils::settings::nyan::CacheRetention>,
+) -> CacheControl {
+    let effective_retention = retention
+        .or_else(|| {
+            super::target::current_main_target()
+                .ok()
+                .map(|t| t.cache_retention)
+        })
+        .unwrap_or_default();
+
+    let ttl = match effective_retention {
+        crate::utils::settings::nyan::CacheRetention::Long => Some("1h".to_string()),
+        crate::utils::settings::nyan::CacheRetention::None => None,
+        crate::utils::settings::nyan::CacheRetention::Short => {
+            should_1h_cache_ttl(query_source).then(|| "1h".to_string())
+        }
+    };
+
     CacheControl {
         cache_type: "ephemeral".to_string(),
-        ttl: should_1h_cache_ttl(query_source).then(|| "1h".to_string()),
+        ttl,
         scope: (scope == Some(CacheScope::Global)).then_some(CacheScope::Global),
     }
+}
+
+/// Returns whether cache retention allows prompt caching (i.e. not `CacheRetention::None`).
+pub fn is_cache_retention_enabled(
+    retention: Option<crate::utils::settings::nyan::CacheRetention>,
+) -> bool {
+    let effective = retention
+        .or_else(|| {
+            super::target::current_main_target()
+                .ok()
+                .map(|t| t.cache_retention)
+        })
+        .unwrap_or_default();
+    effective != crate::utils::settings::nyan::CacheRetention::None
 }
 
 fn should_1h_cache_ttl(query_source: Option<&str>) -> bool {
@@ -328,6 +367,23 @@ mod tests {
                 .scope
                 .is_none()
         );
+    }
+
+    #[test]
+    fn cache_control_with_retention_honors_explicit_retention() {
+        use crate::utils::settings::nyan::CacheRetention;
+
+        let cc_long = get_cache_control_with_retention(None, None, Some(CacheRetention::Long));
+        assert_eq!(cc_long.cache_type, "ephemeral");
+        assert_eq!(cc_long.ttl.as_deref(), Some("1h"));
+
+        let cc_short = get_cache_control_with_retention(None, None, Some(CacheRetention::Short));
+        assert_eq!(cc_short.cache_type, "ephemeral");
+        assert!(cc_short.ttl.is_none());
+
+        assert!(is_cache_retention_enabled(Some(CacheRetention::Long)));
+        assert!(is_cache_retention_enabled(Some(CacheRetention::Short)));
+        assert!(!is_cache_retention_enabled(Some(CacheRetention::None)));
     }
 
     #[test]

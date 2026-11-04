@@ -1373,6 +1373,7 @@ mod tests {
             provider: "anthropic".to_string(),
             base_url: base_url.map(str::to_string),
             api_key: Some(super::super::credential::ApiKey::for_test(key)),
+            ..Default::default()
         }
     }
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
