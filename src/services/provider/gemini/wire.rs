@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::services::provider::adapter::ResolvedTarget;
 use crate::services::provider::ir::{
-    AssistantPart, MediaSource, Message, ModelRequest, SYSTEM_BOUNDARY, ThinkingPreference,
+    AssistantPart, Effort, MediaSource, Message, ModelRequest, SYSTEM_BOUNDARY, ThinkingPreference,
     ToolChoice, ToolResultContent, ToolResultPart, ToolSpec,
 };
 
@@ -78,6 +78,8 @@ pub struct FunctionResponse {
     pub id: Option<String>,
     pub name: String,
     pub response: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parts: Option<Vec<Part>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -131,6 +133,10 @@ pub struct GenerationConfig {
 pub struct ThinkingConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_budget: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_thoughts: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +207,7 @@ pub fn build_system_instruction(system: &[String]) -> Option<Content> {
 }
 
 fn build_tools(tools: &[ToolSpec]) -> Vec<Tool> {
-    let function_declarations = tools
+    let mut function_declarations = tools
         .iter()
         .filter(|t| t.name != "ToolSearch")
         .map(|t| FunctionDeclaration {
@@ -211,6 +217,8 @@ fn build_tools(tools: &[ToolSpec]) -> Vec<Tool> {
         })
         .collect::<Vec<_>>();
 
+    function_declarations.sort_by(|a, b| a.name.cmp(&b.name));
+
     if function_declarations.is_empty() {
         Vec::new()
     } else {
@@ -218,6 +226,28 @@ fn build_tools(tools: &[ToolSpec]) -> Vec<Tool> {
             function_declarations,
         }]
     }
+}
+
+/// Returns true if the model is Gemini 3 or newer (or rolling aliases/Gemma 4)
+/// which use discrete `thinkingLevel` and support multimodal function responses.
+pub fn is_gemini_3_or_newer(model_id: &str) -> bool {
+    let id = model_id.to_ascii_lowercase();
+    let id = id.strip_prefix("models/").unwrap_or(&id);
+    if id == "gemini-flash-latest" || id == "gemini-flash-lite-latest" {
+        return true;
+    }
+    if id.contains("gemma-4") || id.contains("gemma4") {
+        return true;
+    }
+    if let Some(rest) = id.strip_prefix("gemini-") {
+        let rest = rest.strip_prefix("live-").unwrap_or(rest);
+        let ver_str = rest.split('-').next().unwrap_or("");
+        let major_str = ver_str.split('.').next().unwrap_or("");
+        if let Ok(major) = major_str.parse::<u32>() {
+            return major >= 3;
+        }
+    }
+    false
 }
 
 fn build_tool_config(choice: &ToolChoice) -> Option<ToolConfig> {
@@ -261,52 +291,79 @@ pub fn build_request(request: &ModelRequest, target: &ResolvedTarget) -> Generat
     // 2. Build contents, coalescing consecutive messages with the same role
     // to strictly adhere to Gemini's alternation requirement.
     let mut contents: Vec<Content> = Vec::new();
+    let is_gemini_3 = is_gemini_3_or_newer(&target.model);
 
     for message in &request.messages {
-        let (role_str, new_parts) = match message {
+        match message {
             Message::User { parts } => {
-                let mut wire_parts = Vec::new();
                 for part in parts {
                     match part {
                         crate::services::provider::ir::UserPart::Text { text } => {
-                            wire_parts.push(Part {
+                            let wire_part = Part {
                                 text: Some(text.clone()),
                                 ..Default::default()
-                            });
+                            };
+                            if let Some(last) = contents.last_mut()
+                                && last.role.as_deref() == Some("user")
+                                && !last.parts.iter().any(|p| p.function_response.is_some())
+                            {
+                                last.parts.push(wire_part);
+                            } else {
+                                contents.push(Content {
+                                    role: Some("user".into()),
+                                    parts: vec![wire_part],
+                                });
+                            }
                         }
                         crate::services::provider::ir::UserPart::Image { source, .. } => {
                             if let MediaSource::Base64 { media_type, data } = source {
-                                wire_parts.push(Part {
+                                let wire_part = Part {
                                     inline_data: Some(InlineData {
                                         mime_type: media_type.clone(),
                                         data: data.clone(),
                                     }),
                                     ..Default::default()
-                                });
+                                };
+                                if let Some(last) = contents.last_mut()
+                                    && last.role.as_deref() == Some("user")
+                                    && !last.parts.iter().any(|p| p.function_response.is_some())
+                                {
+                                    last.parts.push(wire_part);
+                                } else {
+                                    contents.push(Content {
+                                        role: Some("user".into()),
+                                        parts: vec![wire_part],
+                                    });
+                                }
                             }
                         }
                         crate::services::provider::ir::UserPart::Document { media_type, data } => {
-                            wire_parts.push(Part {
+                            let wire_part = Part {
                                 inline_data: Some(InlineData {
                                     mime_type: media_type.clone(),
                                     data: data.clone(),
                                 }),
                                 ..Default::default()
-                            });
+                            };
+                            if let Some(last) = contents.last_mut()
+                                && last.role.as_deref() == Some("user")
+                                && !last.parts.iter().any(|p| p.function_response.is_some())
+                            {
+                                last.parts.push(wire_part);
+                            } else {
+                                contents.push(Content {
+                                    role: Some("user".into()),
+                                    parts: vec![wire_part],
+                                });
+                            }
                         }
                         crate::services::provider::ir::UserPart::ToolResult {
                             tool_call_id,
                             content,
-                            is_error: _,
+                            is_error,
                         } => {
-                            let fn_name = tool_name_map
-                                .get(tool_call_id)
-                                .cloned()
-                                .unwrap_or_else(|| tool_call_id.clone());
-                            let response_val = match content {
-                                ToolResultContent::Text(text) => {
-                                    serde_json::json!({ "output": text })
-                                }
+                            let (text, image_parts) = match content {
+                                ToolResultContent::Text(t) => (t.clone(), Vec::new()),
                                 ToolResultContent::Parts(parts) => {
                                     let text = parts
                                         .iter()
@@ -316,21 +373,104 @@ pub fn build_request(request: &ModelRequest, target: &ResolvedTarget) -> Generat
                                         })
                                         .collect::<Vec<_>>()
                                         .join("\n");
-                                    serde_json::json!({ "output": text })
+                                    let images = parts
+                                        .iter()
+                                        .filter_map(|p| match p {
+                                            ToolResultPart::Image { source, .. } => match source {
+                                                MediaSource::Base64 { media_type, data } => {
+                                                    Some(Part {
+                                                        inline_data: Some(InlineData {
+                                                            mime_type: media_type.clone(),
+                                                            data: data.clone(),
+                                                        }),
+                                                        ..Default::default()
+                                                    })
+                                                }
+                                                MediaSource::Url { .. } => None,
+                                            },
+                                            _ => None,
+                                        })
+                                        .collect::<Vec<_>>();
+                                    (text, images)
                                 }
                             };
-                            wire_parts.push(Part {
-                                function_response: Some(FunctionResponse {
-                                    id: Some(tool_call_id.clone()),
-                                    name: fn_name,
-                                    response: response_val,
-                                }),
-                                ..Default::default()
-                            });
+
+                            let has_text = !text.trim().is_empty();
+                            let has_images = !image_parts.is_empty();
+                            let response_text = if has_text {
+                                text.as_str()
+                            } else if has_images {
+                                "(see attached image)"
+                            } else {
+                                ""
+                            };
+                            let response_val = if *is_error {
+                                serde_json::json!({ "error": response_text })
+                            } else {
+                                serde_json::json!({ "output": response_text })
+                            };
+                            let fn_name = tool_name_map
+                                .get(tool_call_id)
+                                .cloned()
+                                .unwrap_or_else(|| tool_call_id.clone());
+
+                            if is_gemini_3 {
+                                let fr_part = Part {
+                                    function_response: Some(FunctionResponse {
+                                        id: Some(tool_call_id.clone()),
+                                        name: fn_name,
+                                        response: response_val,
+                                        parts: if has_images { Some(image_parts) } else { None },
+                                    }),
+                                    ..Default::default()
+                                };
+                                if let Some(last) = contents.last_mut()
+                                    && last.role.as_deref() == Some("user")
+                                    && last.parts.iter().any(|p| p.function_response.is_some())
+                                {
+                                    last.parts.push(fr_part);
+                                } else {
+                                    contents.push(Content {
+                                        role: Some("user".into()),
+                                        parts: vec![fr_part],
+                                    });
+                                }
+                            } else {
+                                let fr_part = Part {
+                                    function_response: Some(FunctionResponse {
+                                        id: Some(tool_call_id.clone()),
+                                        name: fn_name,
+                                        response: response_val,
+                                        parts: None,
+                                    }),
+                                    ..Default::default()
+                                };
+                                if let Some(last) = contents.last_mut()
+                                    && last.role.as_deref() == Some("user")
+                                    && last.parts.iter().any(|p| p.function_response.is_some())
+                                {
+                                    last.parts.push(fr_part);
+                                } else {
+                                    contents.push(Content {
+                                        role: Some("user".into()),
+                                        parts: vec![fr_part],
+                                    });
+                                }
+                                if has_images {
+                                    let mut img_turn = vec![Part {
+                                        text: Some("Tool result image:".into()),
+                                        ..Default::default()
+                                    }];
+                                    img_turn.extend(image_parts);
+                                    contents.push(Content {
+                                        role: Some("user".into()),
+                                        parts: img_turn,
+                                    });
+                                }
+                            }
                         }
                     }
                 }
-                ("user", wire_parts)
             }
             Message::Assistant { parts } => {
                 let mut wire_parts = Vec::new();
@@ -388,23 +528,19 @@ pub fn build_request(request: &ModelRequest, target: &ResolvedTarget) -> Generat
                         | AssistantPart::ServerToolResult { .. } => {}
                     }
                 }
-                ("model", wire_parts)
+                if !wire_parts.is_empty() {
+                    if let Some(last) = contents.last_mut()
+                        && last.role.as_deref() == Some("model")
+                    {
+                        last.parts.extend(wire_parts);
+                    } else {
+                        contents.push(Content {
+                            role: Some("model".into()),
+                            parts: wire_parts,
+                        });
+                    }
+                }
             }
-        };
-
-        if new_parts.is_empty() {
-            continue;
-        }
-
-        if let Some(last) = contents.last_mut()
-            && last.role.as_deref() == Some(role_str)
-        {
-            last.parts.extend(new_parts);
-        } else {
-            contents.push(Content {
-                role: Some(role_str.to_string()),
-                parts: new_parts,
-            });
         }
     }
 
@@ -439,18 +575,60 @@ pub fn build_request(request: &ModelRequest, target: &ResolvedTarget) -> Generat
         gen_config.response_mime_type = Some("application/json".into());
         gen_config.response_schema = Some(structured.schema.clone());
     }
-    match request.thinking {
-        ThinkingPreference::Disabled => {}
-        ThinkingPreference::Adaptive => {
-            gen_config.thinking_config = Some(ThinkingConfig {
-                thinking_budget: Some(-1),
-            });
+
+    if is_gemini_3 {
+        match request.thinking {
+            ThinkingPreference::Disabled => {}
+            ThinkingPreference::Adaptive | ThinkingPreference::Budget { .. } => {
+                let level = match &request.effort {
+                    Some(Effort::Named(name)) => match name.to_ascii_lowercase().as_str() {
+                        "minimal" => "MINIMAL",
+                        "low" => "LOW",
+                        "medium" => "MEDIUM",
+                        "high" | "xhigh" | "max" => "HIGH",
+                        _ => "HIGH",
+                    },
+                    Some(Effort::Numeric(n)) => match n {
+                        0..=2_048 => "LOW",
+                        2_049..=16_384 => "MEDIUM",
+                        _ => "HIGH",
+                    },
+                    None => match request.thinking {
+                        ThinkingPreference::Budget {
+                            tokens: Some(tokens),
+                        } => match tokens {
+                            0..=2_048 => "LOW",
+                            2_049..=16_384 => "MEDIUM",
+                            _ => "HIGH",
+                        },
+                        _ => "HIGH",
+                    },
+                };
+                gen_config.thinking_config = Some(ThinkingConfig {
+                    thinking_budget: None,
+                    thinking_level: Some(level.to_string()),
+                    include_thoughts: Some(true),
+                });
+            }
         }
-        ThinkingPreference::Budget { tokens } => {
-            let budget = tokens.map(|t| t as i32).unwrap_or(0);
-            gen_config.thinking_config = Some(ThinkingConfig {
-                thinking_budget: Some(budget),
-            });
+    } else {
+        match request.thinking {
+            ThinkingPreference::Disabled => {}
+            ThinkingPreference::Adaptive => {
+                gen_config.thinking_config = Some(ThinkingConfig {
+                    thinking_budget: Some(-1),
+                    thinking_level: None,
+                    include_thoughts: None,
+                });
+            }
+            ThinkingPreference::Budget { tokens } => {
+                let budget = tokens.map(|t| t as i32).unwrap_or(0);
+                gen_config.thinking_config = Some(ThinkingConfig {
+                    thinking_budget: Some(budget),
+                    thinking_level: None,
+                    include_thoughts: None,
+                });
+            }
         }
     }
 

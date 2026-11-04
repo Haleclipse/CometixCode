@@ -132,7 +132,9 @@ pub async fn execute_non_streaming(
         .usage_metadata
         .as_ref()
         .map(|u| Usage {
-            input_tokens: u.prompt_token_count,
+            input_tokens: u
+                .prompt_token_count
+                .saturating_sub(u.cached_content_token_count),
             output_tokens: u.candidates_token_count,
             cache_read_tokens: u.cached_content_token_count,
             reasoning_tokens: u.thoughts_token_count,

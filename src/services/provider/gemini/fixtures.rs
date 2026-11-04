@@ -13,9 +13,9 @@ use super::mock::{MockGemini, Reply};
 use super::wire;
 use crate::services::provider::adapter::{Cancel, ResolvedTarget};
 use crate::services::provider::ir::{
-    AssistantPart, BlockStart, Delta, JsonSchemaOutput, MediaSource, Message, ModelRequest,
+    AssistantPart, BlockStart, Delta, Effort, JsonSchemaOutput, MediaSource, Message, ModelRequest,
     Protocol, ProviderErrorKind, SYSTEM_BOUNDARY, StopReason, StreamEventKind, ThinkingPreference,
-    ToolChoice, ToolResultContent, ToolSpec, Usage, UserPart,
+    ToolChoice, ToolResultContent, ToolResultPart, ToolSpec, Usage, UserPart,
 };
 use crate::services::provider::openai::adapter::Machine;
 use crate::services::provider::openai::transport::Frame;
@@ -281,6 +281,323 @@ fn test_wire_structured_output_and_thinking_budget() {
 
     let think = gen_config.thinking_config.expect("thinking_config present");
     assert_eq!(think.thinking_budget, Some(2048));
+}
+
+#[test]
+fn test_wire_gemini_3_model_detection() {
+    assert!(wire::is_gemini_3_or_newer("gemini-3.8-flash"));
+    assert!(wire::is_gemini_3_or_newer("gemini-3-pro-preview"));
+    assert!(wire::is_gemini_3_or_newer("gemini-3.1-pro-preview"));
+    assert!(wire::is_gemini_3_or_newer("gemini-3.7-flash"));
+    assert!(wire::is_gemini_3_or_newer("gemini-4-argon"));
+    assert!(wire::is_gemini_3_or_newer("gemini-flash-latest"));
+    assert!(wire::is_gemini_3_or_newer("gemini-flash-lite-latest"));
+    assert!(wire::is_gemini_3_or_newer("gemma-4-27b"));
+    assert!(wire::is_gemini_3_or_newer("gemma4-9b"));
+    assert!(wire::is_gemini_3_or_newer("models/gemini-3-flash"));
+    assert!(!wire::is_gemini_3_or_newer("gemini-2.5-flash"));
+    assert!(!wire::is_gemini_3_or_newer("gemini-2.5-pro"));
+    assert!(!wire::is_gemini_3_or_newer("gemini-1.5-pro"));
+    assert!(!wire::is_gemini_3_or_newer("claude-3-7-sonnet"));
+}
+
+#[test]
+fn test_wire_gemini_3_thinking_level_and_effort_mapping() {
+    let mut target = test_target();
+    target.model = "gemini-3.8-flash".into();
+
+    // 1. Adaptive with no effort hint defaults to HIGH for Gemini 3
+    let mut req = minimal_request(vec![Message::User {
+        parts: vec![UserPart::Text {
+            text: "Solve math".into(),
+        }],
+    }]);
+    req.thinking = ThinkingPreference::Adaptive;
+    let wire = wire::build_request(&req, &target);
+    let think = wire
+        .generation_config
+        .as_ref()
+        .and_then(|g| g.thinking_config.as_ref())
+        .expect("thinking_config present");
+    assert_eq!(think.thinking_level.as_deref(), Some("HIGH"));
+    assert_eq!(think.include_thoughts, Some(true));
+    assert_eq!(think.thinking_budget, None);
+
+    // 2. Named efforts: minimal, low, medium, high, and clamp xhigh/max to HIGH
+    for (name, expected) in [
+        ("minimal", "MINIMAL"),
+        ("low", "LOW"),
+        ("medium", "MEDIUM"),
+        ("high", "HIGH"),
+        ("xhigh", "HIGH"),
+        ("max", "HIGH"),
+    ] {
+        req.effort = Some(Effort::Named(name.into()));
+        let wire = wire::build_request(&req, &target);
+        let think = wire
+            .generation_config
+            .as_ref()
+            .and_then(|g| g.thinking_config.as_ref())
+            .expect("thinking_config present");
+        assert_eq!(think.thinking_level.as_deref(), Some(expected));
+        assert_eq!(think.include_thoughts, Some(true));
+        assert_eq!(think.thinking_budget, None);
+    }
+
+    // 3. Budget preference mapped to discrete levels for Gemini 3
+    req.effort = None;
+    for (tokens, expected) in [(1000, "LOW"), (4096, "MEDIUM"), (32768, "HIGH")] {
+        req.thinking = ThinkingPreference::Budget {
+            tokens: Some(tokens),
+        };
+        let wire = wire::build_request(&req, &target);
+        let think = wire
+            .generation_config
+            .as_ref()
+            .and_then(|g| g.thinking_config.as_ref())
+            .expect("thinking_config present");
+        assert_eq!(think.thinking_level.as_deref(), Some(expected));
+        assert_eq!(think.include_thoughts, Some(true));
+        assert_eq!(think.thinking_budget, None);
+    }
+
+    // 4. Disabled thinking produces no thinking_config
+    req.thinking = ThinkingPreference::Disabled;
+    let wire = wire::build_request(&req, &target);
+    assert!(
+        wire.generation_config
+            .as_ref()
+            .and_then(|g| g.thinking_config.as_ref())
+            .is_none()
+    );
+}
+
+#[test]
+fn test_wire_tool_result_images_gemini_3() {
+    let mut target = test_target();
+    target.model = "gemini-3.8-flash".into();
+
+    let req = minimal_request(vec![
+        Message::User {
+            parts: vec![UserPart::Text {
+                text: "Take screenshot".into(),
+            }],
+        },
+        Message::Assistant {
+            parts: vec![AssistantPart::ToolCall {
+                id: "call_snap".into(),
+                name: "screenshot".into(),
+                input: json!({}),
+                provider_state: None,
+            }],
+        },
+        Message::User {
+            parts: vec![UserPart::ToolResult {
+                tool_call_id: "call_snap".into(),
+                content: ToolResultContent::Parts(vec![
+                    ToolResultPart::Text {
+                        text: "Screenshot captured".into(),
+                    },
+                    ToolResultPart::Image {
+                        source: MediaSource::Base64 {
+                            media_type: "image/png".into(),
+                            data: "iVBORw0KGgoAAAANSUhEUg==".into(),
+                        },
+                        provider_state: None,
+                    },
+                ]),
+                is_error: false,
+            }],
+        },
+    ]);
+
+    let wire = wire::build_request(&req, &target);
+    assert_eq!(wire.contents.len(), 3);
+    assert_eq!(wire.contents[2].role.as_deref(), Some("user"));
+    assert_eq!(wire.contents[2].parts.len(), 1);
+
+    let fr = wire.contents[2].parts[0]
+        .function_response
+        .as_ref()
+        .unwrap();
+    assert_eq!(fr.name, "screenshot");
+    assert_eq!(fr.id.as_deref(), Some("call_snap"));
+    assert_eq!(fr.response, json!({ "output": "Screenshot captured" }));
+
+    // Image is nested directly inside FunctionResponse.parts
+    let parts = fr
+        .parts
+        .as_ref()
+        .expect("FunctionResponse parts must be present for Gemini 3");
+    assert_eq!(parts.len(), 1);
+    let inline = parts[0].inline_data.as_ref().unwrap();
+    assert_eq!(inline.mime_type, "image/png");
+    assert_eq!(inline.data, "iVBORw0KGgoAAAANSUhEUg==");
+}
+
+#[test]
+fn test_wire_tool_result_image_only_and_error_handling() {
+    let mut target = test_target();
+    target.model = "gemini-3-pro-preview".into();
+
+    let req = minimal_request(vec![
+        Message::User {
+            parts: vec![UserPart::Text {
+                text: "Run tool".into(),
+            }],
+        },
+        Message::Assistant {
+            parts: vec![AssistantPart::ToolCall {
+                id: "call_err".into(),
+                name: "failing_visual_tool".into(),
+                input: json!({}),
+                provider_state: None,
+            }],
+        },
+        Message::User {
+            parts: vec![UserPart::ToolResult {
+                tool_call_id: "call_err".into(),
+                content: ToolResultContent::Parts(vec![
+                    // Whitespace-only text should be treated as no text (Pi issue #8720)
+                    ToolResultPart::Text {
+                        text: "   \n".into(),
+                    },
+                    ToolResultPart::Image {
+                        source: MediaSource::Base64 {
+                            media_type: "image/jpeg".into(),
+                            data: "/9j/4AAQSkZJRg==".into(),
+                        },
+                        provider_state: None,
+                    },
+                ]),
+                is_error: true,
+            }],
+        },
+    ]);
+
+    let wire = wire::build_request(&req, &target);
+    assert_eq!(wire.contents.len(), 3);
+    let fr = wire.contents[2].parts[0]
+        .function_response
+        .as_ref()
+        .unwrap();
+    assert_eq!(fr.name, "failing_visual_tool");
+    // Since is_error: true and text was whitespace, response uses {"error": "(see attached image)"}
+    assert_eq!(fr.response, json!({ "error": "(see attached image)" }));
+    let parts = fr.parts.as_ref().unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(
+        parts[0].inline_data.as_ref().unwrap().mime_type,
+        "image/jpeg"
+    );
+}
+
+#[test]
+fn test_wire_tool_result_images_gemini_2_5_fallback_turn() {
+    let mut target = test_target();
+    target.model = "gemini-2.5-flash".into();
+
+    let req = minimal_request(vec![
+        Message::User {
+            parts: vec![UserPart::Text {
+                text: "Run tool".into(),
+            }],
+        },
+        Message::Assistant {
+            parts: vec![AssistantPart::ToolCall {
+                id: "call_img".into(),
+                name: "legacy_tool".into(),
+                input: json!({}),
+                provider_state: None,
+            }],
+        },
+        Message::User {
+            parts: vec![UserPart::ToolResult {
+                tool_call_id: "call_img".into(),
+                content: ToolResultContent::Parts(vec![ToolResultPart::Image {
+                    source: MediaSource::Base64 {
+                        media_type: "image/png".into(),
+                        data: "abc123".into(),
+                    },
+                    provider_state: None,
+                }]),
+                is_error: false,
+            }],
+        },
+    ]);
+
+    let wire = wire::build_request(&req, &target);
+    // For Gemini < 3, function response has NO parts, and images go into separate user turn
+    assert_eq!(wire.contents.len(), 4);
+    assert_eq!(wire.contents[2].role.as_deref(), Some("user"));
+    let fr = wire.contents[2].parts[0]
+        .function_response
+        .as_ref()
+        .unwrap();
+    assert_eq!(fr.name, "legacy_tool");
+    assert_eq!(fr.response, json!({ "output": "(see attached image)" }));
+    assert!(fr.parts.is_none());
+
+    // Contents[3] is the synthetic user image turn
+    assert_eq!(wire.contents[3].role.as_deref(), Some("user"));
+    assert_eq!(wire.contents[3].parts.len(), 2);
+    assert_eq!(
+        wire.contents[3].parts[0].text.as_deref(),
+        Some("Tool result image:")
+    );
+    assert_eq!(
+        wire.contents[3].parts[1]
+            .inline_data
+            .as_ref()
+            .unwrap()
+            .mime_type,
+        "image/png"
+    );
+}
+
+#[test]
+fn test_wire_tools_deterministic_sorting() {
+    let target = test_target();
+    let mut req = minimal_request(vec![Message::User {
+        parts: vec![UserPart::Text {
+            text: "Hello".into(),
+        }],
+    }]);
+    // Tools in non-alphabetical order
+    req.tools = vec![
+        ToolSpec {
+            name: "zeta".into(),
+            description: "Zeta tool".into(),
+            input_schema: json!({ "type": "object" }),
+            strict: false,
+            deferrable: false,
+            is_mcp: false,
+        },
+        ToolSpec {
+            name: "alpha".into(),
+            description: "Alpha tool".into(),
+            input_schema: json!({ "type": "object" }),
+            strict: false,
+            deferrable: false,
+            is_mcp: false,
+        },
+        ToolSpec {
+            name: "beta".into(),
+            description: "Beta tool".into(),
+            input_schema: json!({ "type": "object" }),
+            strict: false,
+            deferrable: false,
+            is_mcp: false,
+        },
+    ];
+
+    let wire = wire::build_request(&req, &target);
+    assert_eq!(wire.tools.len(), 1);
+    let decls = &wire.tools[0].function_declarations;
+    assert_eq!(decls.len(), 3);
+    assert_eq!(decls[0].name, "alpha");
+    assert_eq!(decls[1].name, "beta");
+    assert_eq!(decls[2].name, "zeta");
 }
 
 // ---------------------------------------------------------------------------
