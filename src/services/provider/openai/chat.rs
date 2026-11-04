@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
+use super::target::Compat;
 use super::transport::Frame;
 use super::{
     EMPTY_TOOL_OUTPUT, call_part, media_url, reasoning_effort, system_text, tool_result_text,
@@ -19,6 +20,7 @@ use crate::services::provider::ir::{
     ProviderErrorKind, StopReason, StreamEventKind, ToolChoice, ToolResultContent, ToolResultPart,
     Usage, UserPart,
 };
+use crate::utils::settings::nyan::MaxTokensField;
 
 /// OpenAI rejects tool-call ids longer than 40 characters.
 const MAX_CALL_ID: usize = 40;
@@ -173,7 +175,7 @@ fn tool_choice(choice: &ToolChoice) -> Option<Value> {
 }
 
 /// The `chat/completions` body for one streaming call.
-pub fn build_body(target: &ResolvedTarget, request: &ModelRequest) -> Value {
+pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: Compat) -> Value {
     let mut messages = Vec::new();
     if let Some(system) = system_text(request) {
         messages.push(json!({"role": "system", "content": system}));
@@ -194,9 +196,15 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest) -> Value {
         "model": target.model,
         "messages": messages,
         "stream": true,
-        "stream_options": {"include_usage": true},
-        "max_completion_tokens": max_output,
     });
+    let cap_key = match compat.max_tokens_field {
+        MaxTokensField::MaxCompletionTokens => "max_completion_tokens",
+        MaxTokensField::MaxTokens => "max_tokens",
+    };
+    body[cap_key] = json!(max_output);
+    if compat.include_usage {
+        body["stream_options"] = json!({"include_usage": true});
+    }
 
     let tools: Vec<_> = super::wire_tools(request).collect();
     if !tools.is_empty() && target.capabilities.tools {
@@ -534,6 +542,13 @@ mod tests {
         CachePolicy, ClientContext, JsonSchemaOutput, ThinkingPreference, ToolSpec,
     };
     use crate::utils::model::profile::ResolvedCapabilities;
+    use crate::utils::settings::nyan::ProviderKind;
+
+    /// The OpenAI kind's defaults, which every case here except the local-server
+    /// tests uses.
+    fn build_body(target: &ResolvedTarget, request: &ModelRequest) -> Value {
+        super::build_body(target, request, Compat::resolve(ProviderKind::Openai, None))
+    }
 
     fn target(capabilities: ResolvedCapabilities) -> ResolvedTarget {
         ResolvedTarget {

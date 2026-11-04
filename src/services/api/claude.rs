@@ -3478,19 +3478,15 @@ async fn open_sdk_message_stream_with_retry(
                         .abort_signal
                         .clone()
                         .unwrap_or_else(anthropic_sdk::AbortSignal::new);
-                    let opened = crate::services::provider::openai::open_stream(
-                        &profile,
-                        &attempt_options.model,
-                        &request,
-                        &cancel,
-                    )
-                    .await
-                    .map_err(|error| provider_error_to_retryable(error, false))?;
+                    let opened =
+                        crate::services::provider::openai::open_stream(&profile, &request, &cancel)
+                            .await
+                            .map_err(|error| provider_error_to_retryable(error, false))?;
                     super::api_trace::emit(
                         &attempt_trace,
                         "http_sent",
                         serde_json::json!({
-                            "model": attempt_options.model,
+                            "model": profile.model,
                             "stream": true,
                             "message_count": request.messages.len(),
                         }),

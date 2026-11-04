@@ -7,8 +7,8 @@ use std::fmt;
 
 use crate::utils::settings::SettingsJson;
 use crate::utils::settings::nyan::{
-    CredentialReference, ModelProfileSettings, NyanSettings, ProviderKind, ProviderProtocol,
-    ProviderSettings,
+    CredentialReference, ModelProfileSettings, NyanSettings, OpenaiCompatSettings, ProviderKind,
+    ProviderProtocol, ProviderSettings,
 };
 
 /// Capabilities after merging the metadata snapshot under the profile's
@@ -36,6 +36,7 @@ pub struct ResolvedModelProfile {
     pub capabilities: ResolvedCapabilities,
     pub base_url: Option<String>,
     pub credential: Option<CredentialReference>,
+    pub compat: Option<OpenaiCompatSettings>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,10 +60,21 @@ pub enum ProfileResolutionError {
         protocol: ProviderProtocol,
     },
     UnsupportedProvider(ProviderKind),
+    /// A local server kind without its own endpoint. Never defaults to a
+    /// commercial base URL.
+    MissingBaseUrl(String),
+    /// `compat` is set on a provider whose profile speaks another protocol.
+    CompatNotForProtocol {
+        profile: String,
+        protocol: ProviderProtocol,
+    },
     MissingModel(String),
     MissingContextWindow(String),
     MissingMaxOutputTokens(String),
     InvalidDecisionProfile(String),
+    /// A decision tier named a profile on a local server. Decision providers
+    /// accept commercial profiles only (design §5.3).
+    LocalDecisionProfile(String),
 }
 
 impl fmt::Display for ProfileResolutionError {
@@ -105,7 +117,15 @@ impl fmt::Display for ProfileResolutionError {
             ),
             Self::UnsupportedProvider(kind) => write!(
                 f,
-                "Provider kind {kind:?} has no adapter yet; only anthropic and openai profiles can send requests."
+                "Provider kind {kind:?} has no adapter yet; only anthropic, openai, vllm and ollama profiles can send requests."
+            ),
+            Self::MissingBaseUrl(provider) => write!(
+                f,
+                "Provider {provider:?} is a local server and must set baseUrl; a local profile never falls back to a commercial endpoint."
+            ),
+            Self::CompatNotForProtocol { profile, protocol } => write!(
+                f,
+                "Model profile {profile:?} speaks {protocol:?}, but its provider sets compat; compat options only apply to openaiChat."
             ),
             Self::MissingModel(profile) => write!(
                 f,
@@ -122,6 +142,10 @@ impl fmt::Display for ProfileResolutionError {
             Self::InvalidDecisionProfile(profile) => write!(
                 f,
                 "Decision profile {profile:?} must be commercial and support structured output."
+            ),
+            Self::LocalDecisionProfile(profile) => write!(
+                f,
+                "Decision profile {profile:?} is served by a local provider; decision tiers accept commercial profiles only."
             ),
         }
     }
@@ -148,7 +172,8 @@ fn declared_protocols(provider: &ProviderSettings) -> Vec<ProviderProtocol> {
 }
 
 /// Protocols a provider kind has an adapter for. A kind outside this table
-/// cannot send requests yet (Gemini is PR 6, local servers PR 7).
+/// cannot send requests yet (Gemini is PR 6). Local servers speak only the
+/// OpenAI-compatible Chat Completions protocol; there is no Ollama native one.
 fn kind_protocols(kind: ProviderKind) -> &'static [ProviderProtocol] {
     match kind {
         ProviderKind::Anthropic => &[ProviderProtocol::AnthropicMessages],
@@ -156,6 +181,7 @@ fn kind_protocols(kind: ProviderKind) -> &'static [ProviderProtocol] {
             ProviderProtocol::OpenaiChat,
             ProviderProtocol::OpenaiResponses,
         ],
+        ProviderKind::Vllm | ProviderKind::Ollama => &[ProviderProtocol::OpenaiChat],
         _ => &[],
     }
 }
@@ -301,6 +327,22 @@ pub fn resolve_profile(
         kind,
         model_profile.protocol,
     )?;
+    if kind.is_local()
+        && provider
+            .base_url
+            .as_deref()
+            .is_none_or(|url| url.trim().is_empty())
+    {
+        return Err(ProfileResolutionError::MissingBaseUrl(
+            provider_name.to_string(),
+        ));
+    }
+    if provider.compat.is_some() && protocol != ProviderProtocol::OpenaiChat {
+        return Err(ProfileResolutionError::CompatNotForProtocol {
+            profile: profile_name.to_string(),
+            protocol,
+        });
+    }
 
     Ok(ResolvedModelProfile {
         profile: profile_name.to_string(),
@@ -313,6 +355,7 @@ pub fn resolve_profile(
         capabilities: resolve_capabilities(model_profile, metadata),
         base_url: provider.base_url.clone(),
         credential: provider.credential.clone(),
+        compat: provider.compat.clone(),
     })
 }
 
@@ -357,18 +400,35 @@ pub fn model_profile<'a>(nyan: &'a NyanSettings, name: &str) -> Option<&'a Model
     nyan.models.as_ref()?.get(name)
 }
 
+/// The built-in kind of the provider a profile names, if both exist.
+fn profile_provider_kind(nyan: &NyanSettings, profile_name: &str) -> Option<ProviderKind> {
+    let provider = model_profile(nyan, profile_name)?.provider.as_deref()?;
+    nyan.providers.as_ref()?.get(provider)?.kind
+}
+
 pub fn validate_decision_profile(
     nyan: &NyanSettings,
     profile_name: &str,
 ) -> Result<(), ProfileResolutionError> {
-    let resolved = resolve_profile(nyan, profile_name)?;
+    // Checked before resolution so a local profile is refused for being local,
+    // whatever else is wrong with it.
+    if profile_provider_kind(nyan, profile_name).is_some_and(ProviderKind::is_local) {
+        return Err(ProfileResolutionError::LocalDecisionProfile(
+            profile_name.to_string(),
+        ));
+    }
+    if !profile_provider_kind(nyan, profile_name).is_some_and(ProviderKind::is_commercial) {
+        return Err(ProfileResolutionError::InvalidDecisionProfile(
+            profile_name.to_string(),
+        ));
+    }
+    resolve_profile(nyan, profile_name)?;
     let profile = model_profile(nyan, profile_name).expect("resolved model profile exists");
-    if !resolved.provider_kind.is_commercial()
-        || profile
-            .capabilities
-            .as_ref()
-            .and_then(|capabilities| capabilities.structured_output)
-            != Some(true)
+    if profile
+        .capabilities
+        .as_ref()
+        .and_then(|capabilities| capabilities.structured_output)
+        != Some(true)
     {
         return Err(ProfileResolutionError::InvalidDecisionProfile(
             profile_name.to_string(),
@@ -720,7 +780,7 @@ mod tests {
             .structured_output = Some(true);
         assert_eq!(
             validate_decision_profile(nyan, "local").unwrap_err(),
-            ProfileResolutionError::UnsupportedProvider(ProviderKind::Vllm)
+            ProfileResolutionError::LocalDecisionProfile("local".to_string())
         );
     }
 
@@ -728,9 +788,10 @@ mod tests {
     fn rejects_unsupported_and_incomplete_profiles_without_defaults() {
         let settings = settings();
         let nyan = settings.nyan.as_ref().unwrap();
+        // The fixture's local provider has no baseUrl; it must not borrow one.
         assert_eq!(
             resolve_profile(nyan, "local").unwrap_err(),
-            ProfileResolutionError::UnsupportedProvider(ProviderKind::Vllm)
+            ProfileResolutionError::MissingBaseUrl("local".to_string())
         );
         assert_eq!(
             resolve_main_profile(&SettingsJson::default()).unwrap_err(),
@@ -823,6 +884,72 @@ mod tests {
             resolve_profile(&nyan, "p").unwrap_err(),
             ProfileResolutionError::ProtocolNotOffered { .. }
         ));
+    }
+
+    #[test]
+    fn local_kinds_speak_only_openai_chat_and_must_name_an_endpoint() {
+        let local = |protocol: &str, base_url: Option<&str>| -> NyanSettings {
+            let mut provider = serde_json::json!({"kind": "ollama", "protocol": protocol});
+            if let Some(url) = base_url {
+                provider["baseUrl"] = serde_json::json!(url);
+            }
+            serde_json::from_value(serde_json::json!({
+                "providers": {"local": provider},
+                "models": {"p": {
+                    "provider": "local", "model": "qwen3",
+                    "capabilities": {"contextWindow": 32768, "maxOutputTokens": 4096}
+                }}
+            }))
+            .unwrap()
+        };
+        let ok =
+            resolve_profile(&local("openaiChat", Some("http://127.0.0.1:11434/v1")), "p").unwrap();
+        assert_eq!(ok.protocol, ProviderProtocol::OpenaiChat);
+        assert_eq!(ok.provider_kind, ProviderKind::Ollama);
+        assert!(!ok.provider_kind.is_commercial());
+
+        assert!(matches!(
+            resolve_profile(&local("openaiResponses", Some("http://x/v1")), "p").unwrap_err(),
+            ProfileResolutionError::ProtocolNotOffered { .. }
+        ));
+        assert_eq!(
+            resolve_profile(&local("openaiChat", None), "p").unwrap_err(),
+            ProfileResolutionError::MissingBaseUrl("local".to_string())
+        );
+        assert_eq!(
+            resolve_profile(&local("openaiChat", Some("  ")), "p").unwrap_err(),
+            ProfileResolutionError::MissingBaseUrl("local".to_string())
+        );
+    }
+
+    #[test]
+    fn compat_is_only_meaningful_on_openai_chat() {
+        let nyan: NyanSettings = serde_json::from_value(serde_json::json!({
+            "providers": {"openai": {
+                "kind": "openai",
+                "protocols": ["openaiChat", "openaiResponses"],
+                "compat": {"includeUsage": false}
+            }},
+            "models": {"p": {"provider": "openai", "model": "gpt-5", "protocol": "openaiResponses"}}
+        }))
+        .unwrap();
+        assert!(matches!(
+            resolve_profile(&nyan, "p").unwrap_err(),
+            ProfileResolutionError::CompatNotForProtocol { .. }
+        ));
+    }
+
+    #[test]
+    fn a_decision_tier_refuses_a_local_profile_before_anything_else_is_checked() {
+        let nyan: NyanSettings = serde_json::from_value(serde_json::json!({
+            "providers": {"local": {"kind": "vllm", "protocol": "openaiChat"}},
+            "models": {"p": {"provider": "local", "model": "qwen"}}
+        }))
+        .unwrap();
+        assert_eq!(
+            validate_decision_profile(&nyan, "p").unwrap_err(),
+            ProfileResolutionError::LocalDecisionProfile("p".to_string())
+        );
     }
 
     #[test]

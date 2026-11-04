@@ -40,7 +40,6 @@ use crate::utils::settings::nyan::ProviderProtocol;
 /// message that names the setting to fix; none of them is retryable.
 pub async fn open_stream(
     profile: &ResolvedModelProfile,
-    model: &str,
     request: &ModelRequest,
     cancel: &Cancel,
 ) -> Result<OpenedStream, ProviderError> {
@@ -53,8 +52,9 @@ pub async fn open_stream(
         ProviderProtocol::OpenaiResponses => adapter::OpenAiAdapter::responses(target),
         other => return Err(invalid(format!("{other:?} is not an OpenAI protocol"))),
     };
-    let mut resolved = ResolvedTarget::from_profile(profile);
-    resolved.model = model.to_string();
+    // The profile names the wire model. The caller's string never overrides it,
+    // so the model sent is the one the settings declare.
+    let resolved = ResolvedTarget::from_profile(profile);
     adapter
         .validate(&resolved, request)
         .map_err(|error| invalid(error.to_string()))?;

@@ -6,6 +6,8 @@
 //! Each test installs an OpenAI main profile aimed at a local mock and reads the
 //! transcript items the query layer produces.
 
+use std::collections::BTreeMap;
+
 use serde_json::{Value, json};
 
 use super::mock::{MockOpenAi, Reply};
@@ -15,7 +17,13 @@ use crate::types::message::{
     AssistantContent, AssistantMessage, Message, ToolResult, ToolUseBlock, UserContent,
 };
 use crate::types::tools::Tool;
-use crate::utils::settings::nyan::{ModelCapabilities, ProviderProtocol};
+use crate::utils::settings::SettingsJson;
+use crate::utils::settings::nyan::{
+    CredentialReference, ModelCapabilities, ModelProfileSettings, NyanSettings,
+    OpenaiCompatSettings, ProviderKind, ProviderProtocol, ProviderSettings, SelectionSettings,
+};
+use crate::utils::settings::settings_cache::set_session_settings_cache;
+use crate::utils::settings::validation::SettingsWithErrors;
 use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 use crate::utils::thinking::ThinkingConfig;
 
@@ -29,12 +37,35 @@ struct Env {
 
 impl Env {
     fn new(base_url: &str, protocol: ProviderProtocol) -> Self {
+        Self::with(Vec::new, || {
+            super::install_test_main_profile(
+                base_url,
+                KEY_VAR,
+                protocol,
+                ModelCapabilities {
+                    context_window: Some(400_000),
+                    max_output_tokens: Some(128_000),
+                    tools: Some("native".into()),
+                    thinking: Some("adaptive".into()),
+                    images: Some("input".into()),
+                    structured_output: Some(true),
+                    streaming: Some(true),
+                    ..Default::default()
+                },
+            )
+        })
+    }
+
+    /// Environment and settings for one test. `extra` and `install` run under
+    /// the env lock, so no variable is touched outside it.
+    fn with(extra: impl FnOnce() -> Vec<EnvVarGuard>, install: impl FnOnce()) -> Self {
         let lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root = std::env::temp_dir().join(format!("nyan-openai-query-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let mut guards = vec![
+        let mut guards = extra();
+        guards.extend([
             EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
             EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
             EnvVarGuard::set(KEY_VAR, "sk-query-path"),
@@ -43,38 +74,88 @@ impl Env {
             EnvVarGuard::set("no_proxy", "*"),
             // A stray Anthropic key must change nothing for an OpenAI profile.
             EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-must-not-be-used"),
-        ];
-        for key in [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-            "HTTPS_PROXY",
-            "HTTP_PROXY",
-        ] {
-            guards.push(EnvVarGuard::unset(key));
-        }
+            EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
+            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
+            EnvVarGuard::unset("HTTPS_PROXY"),
+            EnvVarGuard::unset("HTTP_PROXY"),
+        ]);
         crate::utils::settings::settings_cache::reset_settings_cache();
-        super::install_test_main_profile(
-            base_url,
-            KEY_VAR,
-            protocol,
-            ModelCapabilities {
-                context_window: Some(400_000),
-                max_output_tokens: Some(128_000),
-                tools: Some("native".into()),
-                thinking: Some("adaptive".into()),
-                images: Some("input".into()),
-                structured_output: Some(true),
-                streaming: Some(true),
-                ..Default::default()
-            },
-        );
+        install();
         Self {
             _lock: lock,
             _guards: guards,
             root,
         }
     }
+}
+
+/// The variable an optional-credential local profile reads.
+const LOCAL_KEY_VAR: &str = "NYAN_QUERY_PATH_LOCAL_KEY";
+
+/// A vLLM or Ollama style profile on `openaiChat`. `key` sets the optional
+/// credential; `None` leaves it unset, as a keyless local server is run.
+fn local_env(
+    base_url: &str,
+    kind: ProviderKind,
+    compat: Option<OpenaiCompatSettings>,
+    key: Option<&str>,
+) -> Env {
+    let base_url = base_url.to_string();
+    let key = key.map(str::to_string);
+    Env::with(
+        move || {
+            vec![match key {
+                Some(value) => EnvVarGuard::set(LOCAL_KEY_VAR, &value),
+                None => EnvVarGuard::unset(LOCAL_KEY_VAR),
+            }]
+        },
+        move || {
+            let nyan = NyanSettings {
+                providers: Some(BTreeMap::from([(
+                    "local".to_string(),
+                    ProviderSettings {
+                        kind: Some(kind),
+                        protocol: Some(ProviderProtocol::OpenaiChat),
+                        base_url: Some(base_url),
+                        credential: Some(CredentialReference {
+                            optional_env: Some(LOCAL_KEY_VAR.into()),
+                            ..Default::default()
+                        }),
+                        compat,
+                        ..Default::default()
+                    },
+                )])),
+                models: Some(BTreeMap::from([(
+                    "main".to_string(),
+                    ModelProfileSettings {
+                        provider: Some("local".to_string()),
+                        model: Some("qwen-local".to_string()),
+                        capabilities: Some(ModelCapabilities {
+                            context_window: Some(32_768),
+                            max_output_tokens: Some(4_096),
+                            tools: Some("native".into()),
+                            streaming: Some(true),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                )])),
+                selection: Some(SelectionSettings {
+                    main: Some("main".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+            set_session_settings_cache(SettingsWithErrors {
+                settings: SettingsJson {
+                    nyan: Some(Box::new(nyan)),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+        },
+    )
 }
 
 impl Drop for Env {
@@ -495,6 +576,154 @@ async fn the_anthropic_only_entry_points_refuse_an_openai_profile_instead_of_sen
             .contains("cannot be served by the Anthropic client"),
         "{error}"
     );
+    assert!(mock.requests().is_empty(), "nothing was sent");
+}
+
+/// A vLLM-style reply: an SSE stream with a usage chunk, `max_tokens` on the
+/// request, and no Anthropic headers.
+#[tokio::test]
+async fn a_vllm_style_local_profile_streams_without_a_key_and_names_its_cap_field() {
+    let mock = MockOpenAi::start(vec![Reply::sse_data([
+        chat_chunk(json!({"content": "local hi"}), json!("stop")),
+        json!({"id": "cmpl-local", "choices": [], "usage": {
+            "prompt_tokens": 12, "completion_tokens": 3}}),
+    ])])
+    .await;
+    let _env = local_env(&mock.base_url, ProviderKind::Vllm, None, None);
+
+    let items = run(vec![user("go")], vec![]).await;
+    let messages = assistants(&items);
+    assert_eq!(messages.len(), 1, "{items:?}");
+    assert_eq!(
+        first(messages[0]),
+        AssistantContent::Text("local hi".into())
+    );
+
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 1);
+    assert!(
+        requests[0]
+            .request_line
+            .starts_with("POST /chat/completions")
+    );
+    assert_eq!(
+        requests[0].header("authorization"),
+        None,
+        "no credential when the optional variable is unset"
+    );
+    assert_eq!(requests[0].body["model"], "qwen-local");
+    assert!(
+        requests[0].body.get("max_tokens").is_some(),
+        "vLLM default: max_tokens: {}",
+        requests[0].body
+    );
+    assert!(requests[0].body.get("max_completion_tokens").is_none());
+    assert_eq!(requests[0].body["stream_options"]["include_usage"], true);
+}
+
+/// An Ollama-style endpoint that does not take `stream_options`: the dialect
+/// option turns the usage request off and the body must not carry it.
+#[tokio::test]
+async fn an_ollama_profile_with_usage_disabled_omits_stream_options_and_keeps_the_cap() {
+    let mock = MockOpenAi::start(vec![Reply::sse_data([chat_chunk(
+        json!({"content": "ok"}),
+        json!("stop"),
+    )])])
+    .await;
+    let compat = OpenaiCompatSettings {
+        max_tokens_field: Some(crate::utils::settings::nyan::MaxTokensField::MaxCompletionTokens),
+        include_usage: Some(false),
+    };
+    let _env = local_env(&mock.base_url, ProviderKind::Ollama, Some(compat), None);
+
+    let items = run(vec![user("go")], vec![]).await;
+    assert_eq!(assistants(&items).len(), 1, "{items:?}");
+
+    let body = &mock.requests()[0].body;
+    assert!(body.get("stream_options").is_none(), "{body}");
+    assert!(
+        body.get("max_completion_tokens").is_some(),
+        "explicit compat wins over the local default: {body}"
+    );
+    assert!(body.get("max_tokens").is_none(), "{body}");
+}
+
+/// Ollama answers a missing credential with 401 when the server was started with
+/// one. The error must say which variable to set, and nothing is retried.
+#[tokio::test]
+async fn an_unset_optional_key_that_the_server_rejects_names_the_variable_and_is_not_retried() {
+    let mock = MockOpenAi::start(vec![
+        Reply::error(
+            401,
+            json!({"error": {"message": "invalid api key", "type": "authentication_error", "code": "invalid_api_key"}}),
+        ),
+        Reply::sse_data([chat_chunk(json!({"content": "unexpected"}), json!("stop"))]),
+    ])
+    .await;
+    let _env = local_env(&mock.base_url, ProviderKind::Vllm, None, None);
+
+    let (message, items) = failure_of(vec![user("go")]).await;
+    assert!(message.contains(LOCAL_KEY_VAR), "{message}");
+    assert!(message.contains("401"), "{message}");
+    assert!(
+        !items
+            .iter()
+            .any(|i| matches!(i, QueryModelStreamItem::StreamingFallback)),
+        "{items:?}"
+    );
+    assert_eq!(mock.requests().len(), 1, "one request, no retry");
+}
+
+/// The same 401 with a key set reports the server's own words: the variable is
+/// not the problem then.
+#[tokio::test]
+async fn a_401_with_a_key_set_keeps_the_servers_own_message() {
+    let mock = MockOpenAi::start(vec![Reply::error(
+        401,
+        json!({"error": {"message": "wrong key", "type": "authentication_error", "code": "invalid_api_key"}}),
+    )])
+    .await;
+    let _env = local_env(
+        &mock.base_url,
+        ProviderKind::Vllm,
+        None,
+        Some("sk-local-set"),
+    );
+
+    let (message, _) = failure_of(vec![user("go")]).await;
+    assert!(message.contains("wrong key"), "{message}");
+    assert!(!message.contains(LOCAL_KEY_VAR), "{message}");
+    assert_eq!(
+        mock.requests()[0].header("authorization"),
+        Some("Bearer sk-local-set")
+    );
+}
+
+/// A local server that is not running must fail at the connection, quickly and
+/// with the endpoint named, and must not reach a commercial endpoint instead.
+#[tokio::test]
+async fn a_local_profile_with_no_base_url_is_refused_before_any_request() {
+    let mock = MockOpenAi::start(vec![]).await;
+    let _env = local_env(&mock.base_url, ProviderKind::Vllm, None, None);
+
+    // Replace the session profile with one that has no baseUrl.
+    let nyan: NyanSettings = serde_json::from_value(json!({
+        "providers": {"local": {"kind": "vllm", "protocol": "openaiChat"}},
+        "models": {"main": {"provider": "local", "model": "qwen-local", "capabilities": {
+            "contextWindow": 32768, "maxOutputTokens": 4096}}},
+        "selection": {"main": "main"}
+    }))
+    .unwrap();
+    set_session_settings_cache(SettingsWithErrors {
+        settings: SettingsJson {
+            nyan: Some(Box::new(nyan)),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+
+    let (message, _) = failure_of(vec![user("go")]).await;
+    assert!(message.contains("baseUrl"), "{message}");
     assert!(mock.requests().is_empty(), "nothing was sent");
 }
 

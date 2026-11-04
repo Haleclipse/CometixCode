@@ -301,6 +301,50 @@ fn selected_profile_names(settings: &SettingsJson) -> Vec<String> {
     names
 }
 
+/// A decision tier may name only a commercial profile (design §5.3). A tier that
+/// names a local one is reported and dropped, so its decision point takes the
+/// deterministic path instead of sending data to a local model.
+fn strip_local_decision_tiers(settings: &mut SettingsJson) -> Vec<ValidationError> {
+    let Some(nyan) = settings.nyan.clone() else {
+        return Vec::new();
+    };
+    let Some(decision) = settings
+        .nyan
+        .as_mut()
+        .and_then(|nyan| nyan.selection.as_mut())
+        .and_then(|selection| selection.decision.as_mut())
+    else {
+        return Vec::new();
+    };
+    let mut errors = Vec::new();
+    for (tier, slot) in [
+        ("fast", &mut decision.fast),
+        ("accurate", &mut decision.accurate),
+    ] {
+        let Some(name) = slot.as_deref() else {
+            continue;
+        };
+        if matches!(
+            crate::utils::model::profile::validate_decision_profile(&nyan, name),
+            Err(crate::utils::model::profile::ProfileResolutionError::LocalDecisionProfile(_))
+        ) {
+            errors.push(ValidationError {
+                file: None,
+                path: format!("nyan.selection.decision.{tier}"),
+                message: format!(
+                    "profile {name:?} is served by a local provider; decision tiers accept commercial profiles only"
+                ),
+                expected: None,
+                invalid_value: None,
+                doc_link: None,
+                suggestion: None,
+            });
+            *slot = None;
+        }
+    }
+    errors
+}
+
 fn validate_project_profile_references(
     path: &Path,
     settings: &SettingsJson,
@@ -413,6 +457,9 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
             validate_project_profile_references(&path, &settings, &trusted_profile_names);
         collect_errors(&scope_errors, &mut all_errors, &mut seen_errors);
     }
+
+    let tier_errors = strip_local_decision_tiers(&mut merged);
+    collect_errors(&tier_errors, &mut all_errors, &mut seen_errors);
 
     SettingsWithErrors {
         settings: merged,
@@ -1138,6 +1185,39 @@ mod tests {
         let reference_errors = validate_project_profile_references(path, &project, &trusted);
         assert_eq!(reference_errors.len(), 1);
         assert!(reference_errors[0].message.contains("missing"));
+    }
+
+    #[test]
+    fn a_decision_tier_on_a_local_profile_is_reported_and_dropped() {
+        let mut settings: SettingsJson = serde_json::from_value(serde_json::json!({
+            "nyan": {
+                "providers": {
+                    "cloud": {"kind": "anthropic", "protocol": "anthropicMessages"},
+                    "local": {"kind": "vllm", "protocol": "openaiChat", "baseUrl": "http://127.0.0.1:8000/v1"}
+                },
+                "models": {
+                    "cloud-fast": {"provider": "cloud", "model": "claude-haiku-4-5-20251001",
+                        "capabilities": {"structuredOutput": true}},
+                    "local-fast": {"provider": "local", "model": "qwen",
+                        "capabilities": {"contextWindow": 32768, "maxOutputTokens": 4096,
+                            "structuredOutput": true}}
+                },
+                "selection": {"main": "cloud-fast",
+                    "decision": {"fast": "local-fast", "accurate": "cloud-fast"}}
+            }
+        }))
+        .unwrap();
+        let errors = strip_local_decision_tiers(&mut settings);
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0].path, "nyan.selection.decision.fast");
+        let decision = settings
+            .nyan
+            .as_ref()
+            .and_then(|nyan| nyan.selection.as_ref())
+            .and_then(|selection| selection.decision.as_ref())
+            .unwrap();
+        assert_eq!(decision.fast, None, "the local tier is gone, not rerouted");
+        assert_eq!(decision.accurate.as_deref(), Some("cloud-fast"));
     }
 
     #[test]

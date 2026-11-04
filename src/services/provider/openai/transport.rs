@@ -19,7 +19,10 @@ use crate::services::provider::ir::{ProviderError, ProviderErrorKind};
 /// How long the server may take to answer with headers. The body is a stream
 /// of unbounded length; its liveness is the query layer's idle watchdog.
 const RESPONSE_HEADERS_TIMEOUT: Duration = Duration::from_secs(600);
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// A local server on loopback or the LAN either accepts at once or refuses; a
+/// long wait means it is not there, so fail in seconds with the endpoint named.
+pub const LOCAL_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// One SSE message that carried data.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +89,7 @@ pub async fn post_stream(
     headers: Vec<(String, String)>,
     body: &Value,
     cancel: &Cancel,
+    connect_timeout: Duration,
 ) -> Result<Opened, ProviderError> {
     if cancel.is_aborted() {
         return Err(aborted());
@@ -93,7 +97,7 @@ pub async fn post_stream(
     let client = crate::utils::proxy::get_proxy_fetch_options(false)
         .and_then(|builder| {
             builder
-                .connect_timeout(CONNECT_TIMEOUT)
+                .connect_timeout(connect_timeout)
                 .build()
                 .map_err(anyhow::Error::from)
         })

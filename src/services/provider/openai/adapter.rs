@@ -54,6 +54,33 @@ impl OpenAiAdapter {
         format!("{}/{path}", self.target.base_url)
     }
 
+    /// A local server either accepts the connection at once or is not running,
+    /// so it fails in seconds. Only the connect is shortened: the first token of
+    /// a local model can take a long time (Ollama loads weights on first use).
+    fn connect_timeout(&self) -> std::time::Duration {
+        if self.target.provider_kind.is_local() {
+            transport::LOCAL_CONNECT_TIMEOUT
+        } else {
+            transport::CONNECT_TIMEOUT
+        }
+    }
+
+    /// A 401 with no credential sent is an auth error that names the variable
+    /// the profile reads, so the fix is visible without the key ever being
+    /// shown. A 401 with a credential keeps the server's own message.
+    fn explain_unauthorized(&self, mut error: ProviderError) -> ProviderError {
+        if error.kind == ProviderErrorKind::Unauthorized
+            && matches!(self.target.auth, OpenAiAuth::None)
+            && let Some(name) = &self.target.optional_env
+        {
+            error.message = format!(
+                "Provider {:?} answered 401 because no credential was sent; {name} is unset. Set it to the server's API key. Server said: {}",
+                self.target.provider, error.message
+            );
+        }
+        error
+    }
+
     /// Per-request headers. Settings `httpHeaders` still override these.
     fn headers(&self) -> Vec<(String, String)> {
         let mut headers = Vec::new();
@@ -165,9 +192,17 @@ impl ProviderAdapter for OpenAiAdapter {
         Box::pin(async move {
             let body: Value = match self.protocol {
                 Protocol::OpenaiResponses => responses::build_body(target, request, self.backend()),
-                _ => chat::build_body(target, request),
+                _ => chat::build_body(target, request, self.target.compat),
             };
-            let opened = transport::post_stream(&self.url(), self.headers(), &body, cancel).await?;
+            let opened = transport::post_stream(
+                &self.url(),
+                self.headers(),
+                &body,
+                cancel,
+                self.connect_timeout(),
+            )
+            .await
+            .map_err(|error| self.explain_unauthorized(error))?;
             let response_headers = opened.headers.clone();
             let events = match self.protocol {
                 Protocol::OpenaiResponses => {

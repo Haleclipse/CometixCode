@@ -15,10 +15,38 @@ use crate::utils::provider_auth::reference::{
 };
 use crate::utils::provider_auth::resolve::{ResolveError, Resolved, Resolver, validate_reference};
 use crate::utils::provider_auth::store::AuthStore;
-use crate::utils::settings::nyan::ProviderProtocol;
+use crate::utils::settings::nyan::{
+    MaxTokensField, OpenaiCompatSettings, ProviderKind, ProviderProtocol,
+};
 
 pub const API_BASE: &str = "https://api.openai.com/v1";
 pub const CODEX_BASE: &str = "https://chatgpt.com/backend-api/codex";
+
+/// Dialect options for an `openaiChat` endpoint with the kind's defaults
+/// applied. Settings say what the server takes; nothing is probed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Compat {
+    pub max_tokens_field: MaxTokensField,
+    pub include_usage: bool,
+}
+
+impl Compat {
+    pub fn resolve(kind: ProviderKind, settings: Option<&OpenaiCompatSettings>) -> Self {
+        // Local servers take `max_tokens`, the one cap name both vLLM and Ollama
+        // accept; the OpenAI kind keeps its own `max_completion_tokens`.
+        let default_field = if kind.is_local() {
+            MaxTokensField::MaxTokens
+        } else {
+            MaxTokensField::MaxCompletionTokens
+        };
+        Self {
+            max_tokens_field: settings
+                .and_then(|s| s.max_tokens_field)
+                .unwrap_or(default_field),
+            include_usage: settings.and_then(|s| s.include_usage).unwrap_or(true),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum OpenAiAuth {
@@ -36,10 +64,15 @@ pub enum OpenAiAuth {
 pub struct OpenAiTarget {
     pub profile: String,
     pub provider: String,
+    pub provider_kind: ProviderKind,
     pub protocol: ProviderProtocol,
     /// No trailing slash. The protocol path is appended to it.
     pub base_url: String,
     pub auth: OpenAiAuth,
+    /// The `optionalEnv` variable this credential reads, so an unset one can be
+    /// named when the server answers 401.
+    pub optional_env: Option<String>,
+    pub compat: Compat,
 }
 
 #[derive(Debug)]
@@ -62,6 +95,10 @@ pub enum TargetError {
     },
     /// The access token carries no ChatGPT account id.
     MissingAccountId {
+        provider: String,
+    },
+    /// A local server with no endpoint. It must never reach a commercial one.
+    MissingBaseUrl {
         provider: String,
     },
     Resolver(String),
@@ -88,6 +125,10 @@ impl fmt::Display for TargetError {
             Self::MissingAccountId { provider } => write!(
                 f,
                 "Provider {provider:?}: the OpenAI Codex access token carries no ChatGPT account id; sign in again."
+            ),
+            Self::MissingBaseUrl { provider } => write!(
+                f,
+                "Provider {provider:?} is a local server and must set baseUrl; it never falls back to a commercial endpoint."
             ),
             Self::Resolver(reason) => write!(f, "credential resolver unavailable: {reason}"),
         }
@@ -142,6 +183,13 @@ async fn resolve(
             protocol: profile.protocol,
         });
     }
+    // Before any credential is read: a local profile must not fall through to
+    // the commercial default endpoint below.
+    if profile.provider_kind.is_local() && clean_base_url(profile.base_url.as_deref()).is_none() {
+        return Err(TargetError::MissingBaseUrl {
+            provider: profile.provider.clone(),
+        });
+    }
     let provider = profile.provider.clone();
     let credential_error = |source| TargetError::Credential {
         provider: provider.clone(),
@@ -154,6 +202,13 @@ async fn resolve(
             provider: provider.clone(),
         })?;
     let source = validate_reference(profile.provider_kind, reference).map_err(credential_error)?;
+    let optional_env = match &source {
+        CredentialSource::Env {
+            name,
+            required: false,
+        } => Some(name.clone()),
+        _ => None,
+    };
 
     let auth = match source {
         CredentialSource::Env { name, required } => {
@@ -202,10 +257,13 @@ async fn resolve(
     Ok(OpenAiTarget {
         profile: profile.profile.clone(),
         provider,
+        provider_kind: profile.provider_kind,
         protocol: profile.protocol,
         base_url: clean_base_url(profile.base_url.as_deref())
             .unwrap_or_else(|| default_base.into()),
         auth,
+        optional_env,
+        compat: Compat::resolve(profile.provider_kind, profile.compat.as_ref()),
     })
 }
 
@@ -213,7 +271,7 @@ async fn resolve(
 mod tests {
     use super::*;
     use crate::utils::model::profile::ResolvedCapabilities;
-    use crate::utils::settings::nyan::{CredentialReference, ProviderKind};
+    use crate::utils::settings::nyan::{CredentialReference, MaxTokensField, ProviderKind};
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn profile(
@@ -231,6 +289,7 @@ mod tests {
             capabilities: ResolvedCapabilities::default(),
             base_url: None,
             credential,
+            compat: None,
         }
     }
 
@@ -317,6 +376,47 @@ mod tests {
             .unwrap_err();
         assert!(
             matches!(error, TargetError::CodexNeedsResponses { .. }),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_local_profile_with_no_optional_key_sends_none_and_names_the_variable() {
+        let _lock = lock();
+        let _unset = EnvVarGuard::unset("NYAN_OPENAI_TEST_LOCAL_KEY");
+        let mut p = profile(
+            Some(CredentialReference {
+                optional_env: Some("NYAN_OPENAI_TEST_LOCAL_KEY".into()),
+                ..Default::default()
+            }),
+            ProviderProtocol::OpenaiChat,
+        );
+        p.provider_kind = ProviderKind::Vllm;
+        p.base_url = Some("http://127.0.0.1:8000/v1".into());
+        let target = target_for_profile(&p).await.unwrap();
+        assert!(matches!(target.auth, OpenAiAuth::None));
+        assert_eq!(
+            target.optional_env.as_deref(),
+            Some("NYAN_OPENAI_TEST_LOCAL_KEY")
+        );
+        assert_eq!(target.base_url, "http://127.0.0.1:8000/v1");
+        assert_eq!(target.compat.max_tokens_field, MaxTokensField::MaxTokens);
+        assert!(target.compat.include_usage);
+    }
+
+    #[tokio::test]
+    async fn a_local_profile_without_a_base_url_never_reaches_the_commercial_default() {
+        let _lock = lock();
+        let _key = EnvVarGuard::set("NYAN_OPENAI_TEST_LOCAL_KEY2", "sk-must-not-leave");
+        let mut p = profile(
+            Some(env_ref("NYAN_OPENAI_TEST_LOCAL_KEY2")),
+            ProviderProtocol::OpenaiChat,
+        );
+        p.provider_kind = ProviderKind::Ollama;
+        p.base_url = Some("   ".into());
+        let error = target_for_profile(&p).await.unwrap_err();
+        assert!(
+            matches!(error, TargetError::MissingBaseUrl { .. }),
             "{error}"
         );
     }

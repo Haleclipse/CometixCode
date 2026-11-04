@@ -1312,6 +1312,12 @@ impl ProviderKind {
             Self::Anthropic | Self::Openai | Self::Gemini | Self::Openrouter | Self::Gateway
         )
     }
+
+    /// A local server (vLLM, Ollama). It needs an explicit `baseUrl` and never
+    /// falls back to a commercial endpoint.
+    pub fn is_local(self) -> bool {
+        matches!(self, Self::Vllm | Self::Ollama)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1339,6 +1345,27 @@ pub struct CredentialReference {
     pub none: Option<bool>,
 }
 
+/// The request field that carries the output cap on an OpenAI-compatible server.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MaxTokensField {
+    #[default]
+    MaxCompletionTokens,
+    MaxTokens,
+}
+
+/// Explicit dialect options for an `openaiChat` endpoint. Nothing is probed;
+/// an unset field takes the default for the provider kind.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct OpenaiCompatSettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens_field: Option<MaxTokensField>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_usage: Option<bool>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
@@ -1353,6 +1380,8 @@ pub struct ProviderSettings {
     pub base_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub credential: Option<CredentialReference>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compat: Option<OpenaiCompatSettings>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1559,6 +1588,17 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ),
         ("baseUrl", zod::string().min(1).optional()),
         ("credential", credential.optional()),
+        (
+            "compat",
+            zod::strict_object(vec![
+                (
+                    "maxTokensField",
+                    zod::enumeration(vec!["max_tokens", "max_completion_tokens"]).optional(),
+                ),
+                ("includeUsage", zod::boolean().optional()),
+            ])
+            .optional(),
+        ),
     ]);
     let capabilities = zod::strict_object(vec![
         ("contextWindow", zod::number().int().positive().optional()),
@@ -2283,6 +2323,38 @@ mod tests {
                 .as_deref(),
             Some(["local".to_string()].as_slice())
         );
+    }
+
+    #[test]
+    fn local_kinds_parse_with_explicit_compat_options_and_reject_unknown_ones() {
+        let value = json!({
+            "providers": {
+                "local": {
+                    "kind": "ollama",
+                    "protocol": "openaiChat",
+                    "baseUrl": "http://127.0.0.1:11434/v1",
+                    "credential": {"none": true},
+                    "compat": {"maxTokensField": "max_tokens", "includeUsage": false}
+                }
+            }
+        });
+        let parsed =
+            crate::utils::zod::safe_parse(&nyan_settings_schema(), &value).expect("valid local");
+        let settings: NyanSettings = serde_json::from_value(parsed).unwrap();
+        let compat = settings.providers.unwrap()["local"].compat.clone().unwrap();
+        assert_eq!(compat.max_tokens_field, Some(MaxTokensField::MaxTokens));
+        assert_eq!(compat.include_usage, Some(false));
+
+        for bad in [
+            json!({"providers": {"x": {"kind": "vllm", "compat": {"probe": true}}}}),
+            json!({"providers": {"x": {"kind": "vllm", "compat": {"maxTokensField": "max_output"}}}}),
+            json!({"providers": {"x": {"kind": "ollama", "protocol": "ollama"}}}),
+        ] {
+            assert!(
+                crate::utils::zod::safe_parse(&nyan_settings_schema(), &bad).is_err(),
+                "should reject {bad}"
+            );
+        }
     }
 
     #[test]

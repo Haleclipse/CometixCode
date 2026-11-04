@@ -181,6 +181,7 @@ mod tests {
             capabilities: Default::default(),
             base_url: base_url.map(str::to_string),
             credential,
+            compat: None,
         }
     }
 

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use super::adapter::OpenAiAdapter;
 use super::mock::{MockOpenAi, Recorded, Reply};
-use super::target::{OpenAiAuth, OpenAiTarget};
+use super::target::{Compat, OpenAiAuth, OpenAiTarget};
 use crate::services::provider::adapter::{Cancel, ProviderAdapter, ResolvedTarget};
 use crate::services::provider::ir::{
     AssistantPart, BlockStart, CachePolicy, ClientContext, Delta, Message, ModelRequest, Protocol,
@@ -20,7 +20,7 @@ use crate::services::provider::ir::{
 };
 use crate::utils::model::profile::ResolvedCapabilities;
 use crate::utils::provider_auth::reference::Secret;
-use crate::utils::settings::nyan::ProviderProtocol;
+use crate::utils::settings::nyan::{ProviderKind, ProviderProtocol};
 use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 
 struct Env {
@@ -73,9 +73,12 @@ fn target(base_url: &str, protocol: ProviderProtocol, auth: OpenAiAuth) -> OpenA
     OpenAiTarget {
         profile: "main".into(),
         provider: "openai".into(),
+        provider_kind: ProviderKind::Openai,
         protocol,
         base_url: base_url.into(),
         auth,
+        optional_env: None,
+        compat: Compat::resolve(ProviderKind::Openai, None),
     }
 }
 
