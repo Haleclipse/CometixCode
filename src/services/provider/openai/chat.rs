@@ -20,7 +20,7 @@ use crate::services::provider::ir::{
     ProviderErrorKind, StopReason, StreamEventKind, ToolChoice, ToolResultContent, ToolResultPart,
     Usage, UserPart,
 };
-use crate::utils::settings::nyan::MaxTokensField;
+use crate::utils::settings::nyan::{CacheRetention, MaxTokensField};
 
 /// OpenAI rejects tool-call ids longer than 40 characters.
 const MAX_CALL_ID: usize = 40;
@@ -132,9 +132,11 @@ fn arguments_json(input: &Value) -> String {
     }
 }
 
-fn push_assistant(messages: &mut Vec<Value>, parts: &[AssistantPart]) {
+fn push_assistant(messages: &mut Vec<Value>, parts: &[AssistantPart], compat: &Compat) {
     let mut text = String::new();
     let mut calls = Vec::new();
+    let mut thinking = Vec::new();
+    let mut reasoning_field = "reasoning_content";
     for part in parts {
         match part {
             AssistantPart::Text { text: t } => text.push_str(t),
@@ -145,14 +147,26 @@ fn push_assistant(messages: &mut Vec<Value>, parts: &[AssistantPart]) {
                 "type": "function",
                 "function": {"name": name, "arguments": arguments_json(input)},
             })),
-            // No input channel for reasoning, and server tools are Anthropic's.
-            AssistantPart::Thinking { .. }
-            | AssistantPart::RedactedThinking { .. }
+            AssistantPart::Thinking {
+                text: t, signature, ..
+            } => {
+                let is_reasoning_field = signature == "reasoning"
+                    || signature == "reasoning_text"
+                    || signature == "reasoning_content";
+                if (is_reasoning_field || compat.requires_reasoning_content) && !t.trim().is_empty()
+                {
+                    thinking.push(t.as_str());
+                    if is_reasoning_field {
+                        reasoning_field = signature.as_str();
+                    }
+                }
+            }
+            AssistantPart::RedactedThinking { .. }
             | AssistantPart::ServerToolCall { .. }
             | AssistantPart::ServerToolResult { .. } => {}
         }
     }
-    if text.is_empty() && calls.is_empty() {
+    if text.is_empty() && calls.is_empty() && thinking.is_empty() {
         return;
     }
     let mut message = json!({
@@ -162,7 +176,62 @@ fn push_assistant(messages: &mut Vec<Value>, parts: &[AssistantPart]) {
     if !calls.is_empty() {
         message["tool_calls"] = Value::Array(calls);
     }
+    if !thinking.is_empty() {
+        message[reasoning_field] = Value::String(thinking.join("\n\n"));
+    } else if compat.requires_reasoning_content {
+        message["reasoning_content"] = Value::String(String::new());
+    }
     messages.push(message);
+}
+
+fn add_cache_control_to_text_part(msg: &mut Value, cache_control: &Value) {
+    if let Some(content_str) = msg.get("content").and_then(Value::as_str) {
+        if !content_str.is_empty() {
+            msg["content"] = json!([{
+                "type": "text",
+                "text": content_str,
+                "cache_control": cache_control,
+            }]);
+        }
+    } else if let Some(parts) = msg.get_mut("content").and_then(Value::as_array_mut) {
+        for part in parts.iter_mut().rev() {
+            if part.get("type").and_then(Value::as_str) == Some("text") {
+                part["cache_control"] = cache_control.clone();
+                break;
+            }
+        }
+    }
+}
+
+fn apply_anthropic_cache_control(
+    messages: &mut [Value],
+    tools: Option<&mut Value>,
+    cache_control: &Value,
+) {
+    // 1. System prompt
+    for msg in messages.iter_mut() {
+        let role = msg.get("role").and_then(Value::as_str);
+        if role == Some("system") || role == Some("developer") {
+            add_cache_control_to_text_part(msg, cache_control);
+            break;
+        }
+    }
+
+    // 2. Last tool
+    if let Some(tool_list) = tools.and_then(Value::as_array_mut) {
+        if let Some(last_tool) = tool_list.last_mut() {
+            last_tool["cache_control"] = cache_control.clone();
+        }
+    }
+
+    // 3. Last conversation message
+    for msg in messages.iter_mut().rev() {
+        let role = msg.get("role").and_then(Value::as_str).unwrap_or_default();
+        if role == "user" || role == "assistant" || role == "tool" {
+            add_cache_control_to_text_part(msg, cache_control);
+            break;
+        }
+    }
 }
 
 fn tool_choice(choice: &ToolChoice) -> Option<Value> {
@@ -175,7 +244,7 @@ fn tool_choice(choice: &ToolChoice) -> Option<Value> {
 }
 
 /// The `chat/completions` body for one streaming call.
-pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: Compat) -> Value {
+pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: &Compat) -> Value {
     let mut messages = Vec::new();
     if let Some(system) = system_text(request) {
         messages.push(json!({"role": "system", "content": system}));
@@ -183,7 +252,7 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: Compa
     for message in &request.messages {
         match message {
             Message::User { parts } => push_user(&mut messages, parts),
-            Message::Assistant { parts } => push_assistant(&mut messages, parts),
+            Message::Assistant { parts } => push_assistant(&mut messages, parts, compat),
         }
     }
 
@@ -243,6 +312,28 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: Compa
             "strict": false,
         }});
     }
+    if target.cache_retention != CacheRetention::None {
+        let session_id = crate::bootstrap::state::get_session_id();
+        if !session_id.is_empty() {
+            body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
+        }
+    }
+    if target.cache_retention == CacheRetention::Long {
+        body["prompt_cache_retention"] = json!("24h");
+    }
+
+    if compat.cache_control_format.as_deref() == Some("anthropic")
+        && target.cache_retention != CacheRetention::None
+    {
+        let cache_control = if target.cache_retention == CacheRetention::Long {
+            json!({"type": "ephemeral", "ttl": "1h"})
+        } else {
+            json!({"type": "ephemeral"})
+        };
+        apply_anthropic_cache_control(&mut messages, body.get_mut("tools"), &cache_control);
+        body["messages"] = json!(messages);
+    }
+
     body
 }
 
@@ -250,7 +341,7 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: Compa
 pub fn build_body_non_streaming(
     target: &ResolvedTarget,
     request: &ModelRequest,
-    compat: Compat,
+    compat: &Compat,
 ) -> Value {
     let mut body = build_body(target, request, compat);
     body["stream"] = json!(false);
@@ -285,6 +376,22 @@ pub fn parse_non_streaming_response(
 
     let mut content = Vec::new();
     let message = choice.get("message").unwrap_or(&Value::Null);
+
+    if let Some((field, reasoning)) = ["reasoning_content", "reasoning", "reasoning_text"]
+        .iter()
+        .find_map(|f| {
+            message
+                .get(f)
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(|text| (*f, text))
+        })
+    {
+        content.push(NonStreamingContent::Thinking {
+            text: reasoning.to_string(),
+            signature: Some(field.to_string()),
+        });
+    }
 
     if let Some(text) = message.get("content").and_then(Value::as_str)
         && !text.is_empty()
@@ -377,6 +484,8 @@ pub struct ChatStream {
     finished: bool,
     next_block: usize,
     text_block: Option<usize>,
+    thinking_block: Option<usize>,
+    thinking_signature_emitted: bool,
     tools: BTreeMap<u64, ToolState>,
     stop: Option<StopReason>,
     usage: Usage,
@@ -391,6 +500,8 @@ impl ChatStream {
             finished: false,
             next_block: 0,
             text_block: None,
+            thinking_block: None,
+            thinking_signature_emitted: false,
             tools: BTreeMap::new(),
             stop: None,
             usage: Usage::default(),
@@ -407,6 +518,26 @@ impl ChatStream {
             error.kind = ProviderErrorKind::PartialStream;
         }
         error
+    }
+
+    fn close_thinking(&mut self, out: &mut Vec<StreamEventKind>) {
+        if let Some(index) = self.thinking_block.take() {
+            out.push(StreamEventKind::BlockStop { index });
+        }
+    }
+
+    fn open_thinking(&mut self, out: &mut Vec<StreamEventKind>) -> usize {
+        if let Some(index) = self.thinking_block {
+            return index;
+        }
+        let index = self.next_block;
+        self.next_block += 1;
+        self.thinking_block = Some(index);
+        out.push(StreamEventKind::BlockStart {
+            index,
+            block: BlockStart::Thinking,
+        });
+        index
     }
 
     fn close_text(&mut self, out: &mut Vec<StreamEventKind>) {
@@ -431,6 +562,7 @@ impl ChatStream {
 
     /// Announce a tool call once its name is known, then flush buffered args.
     fn start_tool(&mut self, key: u64, out: &mut Vec<StreamEventKind>) {
+        self.close_thinking(out);
         self.close_text(out);
         let index = self.next_block;
         let Some(state) = self.tools.get_mut(&key) else {
@@ -503,6 +635,38 @@ impl ChatStream {
         };
         let delta = choice.get("delta").unwrap_or(&Value::Null);
 
+        // Reasoning content arrived (DeepSeek, Kimi, llama.cpp, etc.):
+        let reasoning_match = ["reasoning_content", "reasoning", "reasoning_text"]
+            .iter()
+            .find_map(|field| {
+                delta
+                    .get(field)
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(|text| (*field, text))
+            });
+
+        if let Some((field, reasoning)) = reasoning_match {
+            self.close_text(&mut out);
+            let index = self.open_thinking(&mut out);
+            self.saw_output = true;
+            if !self.thinking_signature_emitted {
+                self.thinking_signature_emitted = true;
+                out.push(StreamEventKind::BlockDelta {
+                    index,
+                    delta: Delta::Signature {
+                        signature: field.to_string(),
+                    },
+                });
+            }
+            out.push(StreamEventKind::BlockDelta {
+                index,
+                delta: Delta::Thinking {
+                    text: reasoning.to_string(),
+                },
+            });
+        }
+
         // A refusal arrives in its own field and reads as text to the user.
         for field in ["content", "refusal"] {
             if let Some(text) = delta
@@ -510,6 +674,7 @@ impl ChatStream {
                 .and_then(Value::as_str)
                 .filter(|t| !t.is_empty())
             {
+                self.close_thinking(&mut out);
                 let index = self.open_text(&mut out);
                 self.saw_output = true;
                 out.push(StreamEventKind::BlockDelta {
@@ -521,6 +686,8 @@ impl ChatStream {
             }
         }
         if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
+            self.close_thinking(&mut out);
+            self.close_text(&mut out);
             for (position, call) in calls.iter().enumerate() {
                 let key = call
                     .get("index")
@@ -563,6 +730,7 @@ impl ChatStream {
         }
 
         if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
+            self.close_thinking(&mut out);
             self.close_text(&mut out);
             let keys: Vec<u64> = self.tools.keys().copied().collect();
             for key in &keys {
@@ -632,7 +800,11 @@ mod tests {
     /// The OpenAI kind's defaults, which every case here except the local-server
     /// tests uses.
     fn build_body(target: &ResolvedTarget, request: &ModelRequest) -> Value {
-        super::build_body(target, request, Compat::resolve(ProviderKind::Openai, None))
+        super::build_body(
+            target,
+            request,
+            &Compat::resolve(ProviderKind::Openai, None),
+        )
     }
 
     fn target(capabilities: ResolvedCapabilities) -> ResolvedTarget {
@@ -644,6 +816,7 @@ mod tests {
             context_window: 400_000,
             max_output_tokens: 8_000,
             capabilities,
+            cache_retention: Default::default(),
         }
     }
 
@@ -1175,6 +1348,234 @@ mod tests {
                     data: "{oops".into()
                 })
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn stream_parses_reasoning_content_delta_before_text() {
+        let (events, error) = run(vec![
+            chunk(
+                json!({"role": "assistant", "reasoning_content": "let me think"}),
+                Value::Null,
+            ),
+            chunk(json!({"reasoning_content": " a bit more"}), Value::Null),
+            chunk(json!({"content": "the answer"}), Value::Null),
+            chunk(json!({}), json!("stop")),
+        ]);
+        assert!(error.is_none(), "{error:?}");
+        assert_eq!(
+            events[1],
+            StreamEventKind::BlockStart {
+                index: 0,
+                block: BlockStart::Thinking,
+            }
+        );
+        assert_eq!(
+            events[2],
+            StreamEventKind::BlockDelta {
+                index: 0,
+                delta: Delta::Signature {
+                    signature: "reasoning_content".into(),
+                },
+            }
+        );
+        assert_eq!(
+            events[3],
+            StreamEventKind::BlockDelta {
+                index: 0,
+                delta: Delta::Thinking {
+                    text: "let me think".into(),
+                },
+            }
+        );
+        assert_eq!(
+            events[4],
+            StreamEventKind::BlockDelta {
+                index: 0,
+                delta: Delta::Thinking {
+                    text: " a bit more".into(),
+                },
+            }
+        );
+        assert_eq!(events[5], StreamEventKind::BlockStop { index: 0 });
+        assert_eq!(
+            events[6],
+            StreamEventKind::BlockStart {
+                index: 1,
+                block: BlockStart::Text,
+            }
+        );
+        assert_eq!(
+            events[7],
+            StreamEventKind::BlockDelta {
+                index: 1,
+                delta: Delta::Text {
+                    text: "the answer".into(),
+                },
+            }
+        );
+        assert_eq!(events[8], StreamEventKind::BlockStop { index: 1 });
+    }
+
+    #[test]
+    fn build_body_emits_prompt_cache_key_and_retention() {
+        let req = request(vec![user_text("hi")]);
+        let mut t = target(all());
+
+        // Default / Short retention: prompt_cache_key present, retention absent
+        t.cache_retention = CacheRetention::Short;
+        let body = super::build_body(&t, &req, &Compat::resolve(ProviderKind::Openai, None));
+        let key = body["prompt_cache_key"].as_str().unwrap();
+        assert!(
+            !key.is_empty()
+                && key.len()
+                    <= crate::services::provider::openai::OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH
+        );
+        assert!(body.get("prompt_cache_retention").is_none());
+
+        // Long retention: prompt_cache_key present, retention is "24h"
+        t.cache_retention = CacheRetention::Long;
+        let body_long = super::build_body(&t, &req, &Compat::resolve(ProviderKind::Openai, None));
+        assert_eq!(body_long["prompt_cache_retention"], "24h");
+        assert_eq!(body_long["prompt_cache_key"], body["prompt_cache_key"]);
+
+        // None retention: prompt_cache_key and retention omitted
+        t.cache_retention = CacheRetention::None;
+        let body_none = super::build_body(&t, &req, &Compat::resolve(ProviderKind::Openai, None));
+        assert!(body_none.get("prompt_cache_key").is_none());
+        assert!(body_none.get("prompt_cache_retention").is_none());
+    }
+
+    #[test]
+    fn build_body_replays_reasoning_content_for_assistant_messages() {
+        let mut messages = vec![
+            Message::User {
+                parts: vec![UserPart::Text { text: "q".into() }],
+            },
+            Message::Assistant {
+                parts: vec![
+                    AssistantPart::Thinking {
+                        text: "step 1".into(),
+                        signature: "reasoning_content".into(),
+                        provider_state: None,
+                    },
+                    AssistantPart::Text { text: "ans".into() },
+                ],
+            },
+        ];
+        let req = request(messages.clone());
+        let body = super::build_body(
+            &target(all()),
+            &req,
+            &Compat::resolve(ProviderKind::Openai, None),
+        );
+        let msgs = body["messages"].as_array().unwrap();
+        assert_eq!(msgs[2]["role"], "assistant");
+        assert_eq!(msgs[2]["content"], "ans");
+        assert_eq!(msgs[2]["reasoning_content"], "step 1");
+
+        // When requires_reasoning_content is set on compat and assistant has no thinking:
+        messages[1] = Message::Assistant {
+            parts: vec![AssistantPart::Text {
+                text: "ans only".into(),
+            }],
+        };
+        let req_no_think = request(messages);
+        let mut compat = Compat::resolve(ProviderKind::Openai, None);
+        compat.requires_reasoning_content = true;
+        let body_compat = super::build_body(&target(all()), &req_no_think, &compat);
+        let msgs_compat = body_compat["messages"].as_array().unwrap();
+        assert_eq!(msgs_compat[2]["reasoning_content"], "");
+    }
+
+    #[test]
+    fn build_body_applies_anthropic_cache_control_for_openrouter() {
+        let mut req = request(vec![
+            Message::User {
+                parts: vec![UserPart::Text {
+                    text: "first question".into(),
+                }],
+            },
+            Message::Assistant {
+                parts: vec![AssistantPart::Text {
+                    text: "first answer".into(),
+                }],
+            },
+            Message::User {
+                parts: vec![UserPart::Text {
+                    text: "second question".into(),
+                }],
+            },
+        ]);
+        req.tools = vec![tool()];
+        let mut compat = Compat::resolve(ProviderKind::Openai, None);
+        compat.cache_control_format = Some("anthropic".into());
+
+        let mut t = target(all());
+        t.cache_retention = CacheRetention::Short;
+        let body = super::build_body(&t, &req, &compat);
+
+        let msgs = body["messages"].as_array().unwrap();
+        // 1. System prompt has cache_control
+        assert_eq!(msgs[0]["role"], "system");
+        let sys_parts = msgs[0]["content"].as_array().unwrap();
+        assert_eq!(sys_parts[0]["cache_control"]["type"], "ephemeral");
+        assert!(sys_parts[0]["cache_control"].get("ttl").is_none());
+
+        // 2. Last tool has cache_control
+        let tools = body["tools"].as_array().unwrap();
+        let last_tool = tools.last().unwrap();
+        assert_eq!(last_tool["cache_control"]["type"], "ephemeral");
+
+        // 3. Last conversation message has cache_control
+        let last_msg = msgs.last().unwrap();
+        assert_eq!(last_msg["role"], "user");
+        let last_msg_parts = last_msg["content"].as_array().unwrap();
+        assert_eq!(last_msg_parts[0]["cache_control"]["type"], "ephemeral");
+
+        // With Long retention: ttl is "1h"
+        t.cache_retention = CacheRetention::Long;
+        let body_long = super::build_body(&t, &req, &compat);
+        let msgs_long = body_long["messages"].as_array().unwrap();
+        let sys_parts_long = msgs_long[0]["content"].as_array().unwrap();
+        assert_eq!(sys_parts_long[0]["cache_control"]["ttl"], "1h");
+    }
+
+    #[test]
+    fn non_streaming_parses_reasoning_content() {
+        let response_json = json!({
+            "id": "chatcmpl-test",
+            "model": "gpt-5",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "reasoning_content": "detailed thinking",
+                    "content": "final answer"
+                },
+                "finish_reason": "stop"
+            }],
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150
+            }
+        });
+        let parsed = super::parse_non_streaming_response(&response_json, Some("req_1".into()))
+            .expect("parses");
+        assert_eq!(parsed.content.len(), 2);
+        assert_eq!(
+            parsed.content[0],
+            crate::services::provider::non_streaming::NonStreamingContent::Thinking {
+                text: "detailed thinking".into(),
+                signature: Some("reasoning_content".into()),
+            }
+        );
+        assert_eq!(
+            parsed.content[1],
+            crate::services::provider::non_streaming::NonStreamingContent::Text(
+                "final answer".into()
+            )
         );
     }
 }

@@ -25,6 +25,7 @@ pub struct ResolvedTarget {
     /// What the profile declares (snapshot under profile overrides). An
     /// undeclared capability is a "no".
     pub capabilities: crate::utils::model::profile::ResolvedCapabilities,
+    pub cache_retention: crate::utils::settings::nyan::CacheRetention,
 }
 
 impl ResolvedTarget {
@@ -46,6 +47,7 @@ impl ResolvedTarget {
             context_window: profile.context_window,
             max_output_tokens: profile.max_output_tokens,
             capabilities: profile.capabilities,
+            cache_retention: profile.cache_retention,
         }
     }
 }

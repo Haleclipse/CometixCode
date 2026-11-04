@@ -210,6 +210,7 @@ mod tests {
             context_window: 200_000,
             max_output_tokens: 64_000,
             capabilities: Default::default(),
+            cache_retention: Default::default(),
         }
     }
 

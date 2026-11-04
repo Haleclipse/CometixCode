@@ -261,8 +261,16 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Back
             "strict": false,
         }});
     }
-    if backend == Backend::Codex {
-        body["prompt_cache_key"] = json!(crate::bootstrap::state::get_session_id());
+    if target.cache_retention != crate::utils::settings::nyan::CacheRetention::None {
+        let session_id = crate::bootstrap::state::get_session_id();
+        if !session_id.is_empty() {
+            body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
+        }
+    }
+    if backend == Backend::Api
+        && target.cache_retention == crate::utils::settings::nyan::CacheRetention::Long
+    {
+        body["prompt_cache_retention"] = json!("24h");
     }
     body
 }
@@ -804,6 +812,7 @@ mod tests {
             context_window: 400_000,
             max_output_tokens: 8_000,
             capabilities,
+            cache_retention: Default::default(),
         }
     }
 
@@ -874,13 +883,8 @@ mod tests {
             body["input"][0],
             json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]})
         );
-        for absent in [
-            "tools",
-            "reasoning",
-            "text",
-            "temperature",
-            "prompt_cache_key",
-        ] {
+        assert!(body.get("prompt_cache_key").is_some());
+        for absent in ["tools", "reasoning", "text", "temperature"] {
             assert!(body.get(absent).is_none(), "{absent}: {body}");
         }
     }
@@ -1317,5 +1321,53 @@ mod tests {
             json!({"type": "response.output_text.delta", "output_index": 0, "delta": "x"}),
         ]);
         assert_eq!(cut.unwrap().kind, ProviderErrorKind::PartialStream);
+    }
+
+    #[test]
+    fn responses_build_body_emits_prompt_cache_key_and_retention() {
+        use crate::utils::settings::nyan::CacheRetention;
+
+        let req = request(vec![Message::User {
+            parts: vec![UserPart::Text { text: "hi".into() }],
+        }]);
+        let mut t = target(all());
+
+        // 1. Backend::Api with Short retention: prompt_cache_key present, retention absent
+        t.cache_retention = CacheRetention::Short;
+        let body_api = build_body(&t, &req, Backend::Api);
+        let key = body_api["prompt_cache_key"].as_str().unwrap();
+        assert!(
+            !key.is_empty()
+                && key.len()
+                    <= crate::services::provider::openai::OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH
+        );
+        assert!(body_api.get("prompt_cache_retention").is_none());
+
+        // 2. Backend::Api with Long retention: prompt_cache_key present, retention is "24h"
+        t.cache_retention = CacheRetention::Long;
+        let body_api_long = build_body(&t, &req, Backend::Api);
+        assert_eq!(body_api_long["prompt_cache_retention"], "24h");
+        assert_eq!(
+            body_api_long["prompt_cache_key"],
+            body_api["prompt_cache_key"]
+        );
+
+        // 3. Backend::Codex with Long retention: prompt_cache_key present, retention omitted (ChatGPT rejects it)
+        let body_codex_long = build_body(&t, &req, Backend::Codex);
+        assert_eq!(
+            body_codex_long["prompt_cache_key"],
+            body_api["prompt_cache_key"]
+        );
+        assert!(body_codex_long.get("prompt_cache_retention").is_none());
+
+        // 4. Backend::Api and Codex with None retention: both omitted
+        t.cache_retention = CacheRetention::None;
+        let body_api_none = build_body(&t, &req, Backend::Api);
+        assert!(body_api_none.get("prompt_cache_key").is_none());
+        assert!(body_api_none.get("prompt_cache_retention").is_none());
+
+        let body_codex_none = build_body(&t, &req, Backend::Codex);
+        assert!(body_codex_none.get("prompt_cache_key").is_none());
+        assert!(body_codex_none.get("prompt_cache_retention").is_none());
     }
 }

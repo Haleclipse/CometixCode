@@ -3516,6 +3516,7 @@ fn resolved_target_for(model: &str) -> crate::services::provider::adapter::Resol
         context_window: 0,
         max_output_tokens: 0,
         capabilities: Default::default(),
+        cache_retention: Default::default(),
     });
     resolved.model = model.to_string();
     resolved

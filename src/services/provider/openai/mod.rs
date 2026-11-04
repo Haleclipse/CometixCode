@@ -82,7 +82,7 @@ pub async fn execute_non_streaming(
                 .map_err(|error| invalid(error.to_string()))?;
             let url = format!("{}/chat/completions", target.base_url);
             let headers = adapter.headers();
-            let body = chat::build_body_non_streaming(&resolved, request, target.compat);
+            let body = chat::build_body_non_streaming(&resolved, request, &target.compat);
             let connect_timeout = adapter.connect_timeout();
 
             let (_headers, request_id, json_response) =
@@ -282,6 +282,20 @@ pub(crate) fn call_part(id: &str) -> &str {
 /// The server item id half, if the id is composite.
 pub(crate) fn item_part(id: &str) -> Option<&str> {
     id.split_once(ID_SEPARATOR).map(|(_, item)| item)
+}
+
+/// Maximum length of OpenAI `prompt_cache_key` parameter (64 characters).
+pub const OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH: usize = 64;
+
+/// Clamps a prompt cache key string to OpenAI's 64-character limit.
+pub fn clamp_prompt_cache_key(key: &str) -> String {
+    if key.chars().count() <= OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH {
+        key.to_string()
+    } else {
+        key.chars()
+            .take(OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH)
+            .collect()
+    }
 }
 
 pub(crate) use crate::services::provider::usage::u64_at;

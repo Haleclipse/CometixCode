@@ -751,6 +751,7 @@ mod tests {
             base_url: None,
             credential: None,
             compat: None,
+            cache_retention: Default::default(),
         }
     }
 

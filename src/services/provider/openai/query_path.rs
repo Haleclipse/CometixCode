@@ -1006,6 +1006,7 @@ async fn an_ollama_profile_with_usage_disabled_omits_stream_options_and_keeps_th
     let compat = OpenaiCompatSettings {
         max_tokens_field: Some(crate::utils::settings::nyan::MaxTokensField::MaxCompletionTokens),
         include_usage: Some(false),
+        ..Default::default()
     };
     let _env = local_env(&mock.base_url, ProviderKind::Ollama, Some(compat), None);
 

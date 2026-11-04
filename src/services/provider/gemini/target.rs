@@ -174,6 +174,7 @@ mod tests {
                 ..Default::default()
             }),
             compat: None,
+            cache_retention: Default::default(),
         };
         let error = target_for_profile(&profile).await.unwrap_err();
         assert!(matches!(error, TargetError::Credential { .. }), "{error}");

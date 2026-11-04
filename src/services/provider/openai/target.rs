@@ -16,7 +16,7 @@ use crate::utils::provider_auth::reference::{
 use crate::utils::provider_auth::resolve::{ResolveError, Resolved, Resolver, validate_reference};
 use crate::utils::provider_auth::store::AuthStore;
 use crate::utils::settings::nyan::{
-    MaxTokensField, OpenaiCompatSettings, ProviderKind, ProviderProtocol,
+    CacheRetention, MaxTokensField, OpenaiCompatSettings, ProviderKind, ProviderProtocol,
 };
 
 pub const API_BASE: &str = "https://api.openai.com/v1";
@@ -24,14 +24,25 @@ pub const CODEX_BASE: &str = "https://chatgpt.com/backend-api/codex";
 
 /// Dialect options for an `openaiChat` endpoint with the kind's defaults
 /// applied. Settings say what the server takes; nothing is probed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Compat {
     pub max_tokens_field: MaxTokensField,
     pub include_usage: bool,
+    pub cache_control_format: Option<String>,
+    pub requires_reasoning_content: bool,
 }
 
 impl Compat {
     pub fn resolve(kind: ProviderKind, settings: Option<&OpenaiCompatSettings>) -> Self {
+        Self::resolve_full(kind, None, None, settings)
+    }
+
+    pub fn resolve_full(
+        kind: ProviderKind,
+        provider: Option<&str>,
+        model: Option<&str>,
+        settings: Option<&OpenaiCompatSettings>,
+    ) -> Self {
         // Local servers take `max_tokens`, the one cap name both vLLM and Ollama
         // accept; the OpenAI kind keeps its own `max_completion_tokens`.
         let default_field = if kind.is_local() {
@@ -39,11 +50,38 @@ impl Compat {
         } else {
             MaxTokensField::MaxCompletionTokens
         };
+        let cache_control_format = settings
+            .and_then(|s| s.cache_control_format.clone())
+            .or_else(|| {
+                if let (Some(p), Some(m)) = (provider, model) {
+                    if p.eq_ignore_ascii_case("openrouter")
+                        && (m.starts_with("anthropic/") || m.starts_with("google/"))
+                    {
+                        return Some("anthropic".to_string());
+                    }
+                }
+                None
+            });
+        let requires_reasoning_content = settings
+            .and_then(|s| s.requires_reasoning_content)
+            .unwrap_or_else(|| {
+                let p = provider.unwrap_or_default().to_lowercase();
+                let m = model.unwrap_or_default().to_lowercase();
+                p.contains("deepseek")
+                    || m.contains("deepseek")
+                    || p.contains("kimi")
+                    || m.contains("kimi")
+                    || p.contains("moonshot")
+                    || m.contains("moonshot")
+            });
+
         Self {
             max_tokens_field: settings
                 .and_then(|s| s.max_tokens_field)
                 .unwrap_or(default_field),
             include_usage: settings.and_then(|s| s.include_usage).unwrap_or(true),
+            cache_control_format,
+            requires_reasoning_content,
         }
     }
 }
@@ -73,6 +111,7 @@ pub struct OpenAiTarget {
     /// named when the server answers 401.
     pub optional_env: Option<String>,
     pub compat: Compat,
+    pub cache_retention: CacheRetention,
 }
 
 #[derive(Debug)]
@@ -263,7 +302,13 @@ async fn resolve(
             .unwrap_or_else(|| default_base.into()),
         auth,
         optional_env,
-        compat: Compat::resolve(profile.provider_kind, profile.compat.as_ref()),
+        compat: Compat::resolve_full(
+            profile.provider_kind,
+            Some(&profile.provider),
+            Some(&profile.model),
+            profile.compat.as_ref(),
+        ),
+        cache_retention: profile.cache_retention,
     })
 }
 
@@ -290,6 +335,7 @@ mod tests {
             base_url: None,
             credential,
             compat: None,
+            cache_retention: CacheRetention::default(),
         }
     }
 

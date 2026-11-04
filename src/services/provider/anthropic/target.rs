@@ -209,6 +209,7 @@ mod tests {
             base_url: base_url.map(str::to_string),
             credential,
             compat: None,
+            cache_retention: Default::default(),
         }
     }
 

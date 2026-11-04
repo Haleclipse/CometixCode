@@ -1364,6 +1364,10 @@ pub struct OpenaiCompatSettings {
     pub max_tokens_field: Option<MaxTokensField>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_usage: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub requires_reasoning_content: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

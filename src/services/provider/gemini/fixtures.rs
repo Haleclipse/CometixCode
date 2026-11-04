@@ -62,6 +62,7 @@ fn test_target() -> ResolvedTarget {
             structured_output: true,
             streaming: true,
         },
+        cache_retention: Default::default(),
     }
 }
 

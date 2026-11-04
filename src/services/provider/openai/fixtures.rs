@@ -66,6 +66,7 @@ fn resolved(protocol: Protocol) -> ResolvedTarget {
         context_window: 400_000,
         max_output_tokens: 8_000,
         capabilities: all(),
+        cache_retention: Default::default(),
     }
 }
 
@@ -79,6 +80,7 @@ fn target(base_url: &str, protocol: ProviderProtocol, auth: OpenAiAuth) -> OpenA
         auth,
         optional_env: None,
         compat: Compat::resolve(ProviderKind::Openai, None),
+        cache_retention: Default::default(),
     }
 }
 
@@ -228,6 +230,7 @@ async fn chat_request_reaches_the_wire_with_the_key_path_and_body() {
         json!({"role": "user", "content": "hello"})
     );
     assert_eq!(body["tools"][0]["function"]["name"], "Read");
+    assert!(body.get("prompt_cache_key").is_some());
     for forbidden in ["cache_control", "betas", "input", "instructions", "store"] {
         assert!(
             body.get(forbidden).is_none(),
@@ -481,6 +484,7 @@ async fn responses_request_reaches_the_wire_with_the_key_path_and_body() {
     );
     assert_eq!(body["tools"][0]["name"], "Read");
     assert_eq!(body["tools"][0]["strict"], false);
+    assert!(body.get("prompt_cache_key").is_some());
     for forbidden in [
         "messages",
         "stream_options",
@@ -791,4 +795,298 @@ async fn aborting_before_the_request_is_sent_sends_nothing() {
         .expect("aborted");
     assert_eq!(error.kind, ProviderErrorKind::Aborted);
     assert!(mock.requests().is_empty());
+}
+
+#[tokio::test]
+async fn chat_stream_ingests_reasoning_content_delta_over_wire() {
+    let _env = env();
+    let mock = MockOpenAi::start(vec![Reply::sse_data([
+        chat_chunk(
+            json!({"role": "assistant", "reasoning_content": "calculating"}),
+            Value::Null,
+        ),
+        chat_chunk(json!({"reasoning_content": " result"}), Value::Null),
+        chat_chunk(json!({"content": "done"}), Value::Null),
+        chat_chunk(json!({}), json!("stop")),
+        json!({"id": "chatcmpl-think", "choices": [], "usage": {
+            "prompt_tokens": 80, "completion_tokens": 20, "total_tokens": 100,
+            "completion_tokens_details": {"reasoning_tokens": 15}}}),
+    ])])
+    .await;
+    let adapter = chat_adapter(&mock.base_url);
+    let (kinds, error) = collect(&adapter, Protocol::OpenaiChat, &request(hello())).await;
+    assert!(error.is_none(), "{error:?}");
+
+    assert_eq!(
+        kinds[1],
+        StreamEventKind::BlockStart {
+            index: 0,
+            block: BlockStart::Thinking,
+        }
+    );
+    assert_eq!(
+        kinds[2],
+        StreamEventKind::BlockDelta {
+            index: 0,
+            delta: Delta::Signature {
+                signature: "reasoning_content".into(),
+            },
+        }
+    );
+    assert_eq!(
+        kinds[3],
+        StreamEventKind::BlockDelta {
+            index: 0,
+            delta: Delta::Thinking {
+                text: "calculating".into(),
+            },
+        }
+    );
+    assert_eq!(
+        kinds[4],
+        StreamEventKind::BlockDelta {
+            index: 0,
+            delta: Delta::Thinking {
+                text: " result".into(),
+            },
+        }
+    );
+    assert_eq!(kinds[5], StreamEventKind::BlockStop { index: 0 });
+    assert_eq!(
+        kinds[6],
+        StreamEventKind::BlockStart {
+            index: 1,
+            block: BlockStart::Text,
+        }
+    );
+    assert_eq!(
+        kinds[7],
+        StreamEventKind::BlockDelta {
+            index: 1,
+            delta: Delta::Text {
+                text: "done".into(),
+            },
+        }
+    );
+    assert_eq!(kinds[8], StreamEventKind::BlockStop { index: 1 });
+}
+
+#[tokio::test]
+async fn chat_multi_turn_replays_reasoning_content_over_wire() {
+    let _env = env();
+    let mock = MockOpenAi::start(vec![Reply::sse_data([chat_chunk(
+        json!({"content": "hi again"}),
+        json!("stop"),
+    )])])
+    .await;
+    let adapter = chat_adapter(&mock.base_url);
+    let messages = vec![
+        Message::User {
+            parts: vec![UserPart::Text {
+                text: "solve this".into(),
+            }],
+        },
+        Message::Assistant {
+            parts: vec![
+                AssistantPart::Thinking {
+                    text: "step by step thoughts".into(),
+                    signature: "reasoning_content".into(),
+                    provider_state: None,
+                },
+                AssistantPart::Text {
+                    text: "answer 42".into(),
+                },
+            ],
+        },
+        Message::User {
+            parts: vec![UserPart::Text {
+                text: "are you sure?".into(),
+            }],
+        },
+    ];
+    let (kinds, error) = collect(&adapter, Protocol::OpenaiChat, &request(messages)).await;
+    assert!(error.is_none(), "{error:?}");
+    assert!(!kinds.is_empty());
+
+    let sent = only(&mock);
+    let sent_msgs = sent.body["messages"].as_array().unwrap();
+    assert_eq!(sent_msgs[2]["role"], "assistant");
+    assert_eq!(sent_msgs[2]["content"], "answer 42");
+    assert_eq!(sent_msgs[2]["reasoning_content"], "step by step thoughts");
+}
+
+#[tokio::test]
+async fn chat_openrouter_anthropic_cache_control_over_wire() {
+    let _env = env();
+    let mock = MockOpenAi::start(vec![Reply::sse_data([chat_chunk(
+        json!({"content": "cached response"}),
+        json!("stop"),
+    )])])
+    .await;
+    let mut target = target(&mock.base_url, ProviderProtocol::OpenaiChat, key());
+    target.compat.cache_control_format = Some("anthropic".into());
+    target.cache_retention = crate::utils::settings::nyan::CacheRetention::Short;
+    let adapter = OpenAiAdapter::chat(target);
+
+    let messages = vec![
+        Message::User {
+            parts: vec![UserPart::Text {
+                text: "first".into(),
+            }],
+        },
+        Message::Assistant {
+            parts: vec![AssistantPart::Text {
+                text: "second".into(),
+            }],
+        },
+        Message::User {
+            parts: vec![UserPart::Text {
+                text: "third".into(),
+            }],
+        },
+    ];
+    let (_, error) = collect(&adapter, Protocol::OpenaiChat, &request(messages)).await;
+    assert!(error.is_none(), "{error:?}");
+
+    let sent = only(&mock);
+    let msgs = sent.body["messages"].as_array().unwrap();
+    // System prompt wrapped in text parts with cache_control:
+    assert_eq!(msgs[0]["role"], "system");
+    let sys_parts = msgs[0]["content"].as_array().unwrap();
+    assert_eq!(sys_parts[0]["cache_control"]["type"], "ephemeral");
+
+    // Last tool in tools has cache_control:
+    let tools = sent.body["tools"].as_array().unwrap();
+    let last_tool = tools.last().unwrap();
+    assert_eq!(last_tool["cache_control"]["type"], "ephemeral");
+
+    // Last message has cache_control:
+    let last_msg = msgs.last().unwrap();
+    assert_eq!(last_msg["role"], "user");
+    let last_msg_parts = last_msg["content"].as_array().unwrap();
+    assert_eq!(last_msg_parts[0]["cache_control"]["type"], "ephemeral");
+}
+
+#[tokio::test]
+async fn chat_stream_parses_openrouter_cache_write_and_read_usage() {
+    let _env = env();
+    let mock = MockOpenAi::start(vec![Reply::sse_data([
+        chat_chunk(json!({"content": "hi"}), json!("stop")),
+        json!({"id": "chatcmpl-or", "choices": [], "usage": {
+            "prompt_tokens": 500, "completion_tokens": 50, "total_tokens": 550,
+            "prompt_tokens_details": {
+                "cached_tokens": 300,
+                "cache_write_tokens": 100
+            }
+        }}),
+    ])])
+    .await;
+    let adapter = chat_adapter(&mock.base_url);
+    let (kinds, error) = collect(&adapter, Protocol::OpenaiChat, &request(hello())).await;
+    assert!(error.is_none(), "{error:?}");
+
+    let Some(StreamEventKind::MessageDelta { usage, .. }) = kinds.iter().rev().nth(1) else {
+        panic!("{kinds:?}");
+    };
+    assert_eq!(usage.cache_read_tokens, 300);
+    assert_eq!(usage.cache_write_tokens, 100);
+    assert_eq!(usage.input_tokens, 100, "500 - 300 - 100");
+    assert_eq!(usage.output_tokens, 50);
+}
+
+#[tokio::test]
+async fn responses_stream_parses_cache_read_and_write_usage() {
+    let _env = env();
+    let mock = MockOpenAi::start(vec![Reply::sse_data([
+        created(),
+        json!({"type": "response.completed", "response": {
+            "id": "resp_cache",
+            "status": "completed",
+            "usage": {
+                "input_tokens": 400,
+                "output_tokens": 30,
+                "total_tokens": 430,
+                "input_tokens_details": {
+                    "cached_tokens": 250,
+                    "cache_write_tokens": 50
+                },
+                "output_tokens_details": {
+                    "reasoning_tokens": 15
+                }
+            }
+        }}),
+    ])])
+    .await;
+    let adapter = responses_adapter(&mock.base_url);
+    let (kinds, error) = collect(&adapter, Protocol::OpenaiResponses, &request(hello())).await;
+    assert!(error.is_none(), "{error:?}");
+
+    let Some(StreamEventKind::MessageDelta { usage, .. }) = kinds.iter().rev().nth(1) else {
+        panic!("{kinds:?}");
+    };
+    assert_eq!(usage.cache_read_tokens, 250);
+    assert_eq!(usage.cache_write_tokens, 50);
+    assert_eq!(usage.input_tokens, 100, "400 - 250 - 50");
+    assert_eq!(usage.output_tokens, 30);
+    assert_eq!(usage.reasoning_tokens, 15);
+}
+
+#[tokio::test]
+async fn chat_and_responses_wire_prompt_cache_retention_when_long() {
+    let _env = env();
+    let mock = MockOpenAi::start(vec![
+        Reply::sse_data([chat_chunk(json!({"content": "chat"}), json!("stop"))]),
+        Reply::sse_data([created(), completed(json!({}))]),
+    ])
+    .await;
+
+    // 1. Chat with Long retention
+    let mut chat_t = target(&mock.base_url, ProviderProtocol::OpenaiChat, key());
+    chat_t.cache_retention = crate::utils::settings::nyan::CacheRetention::Long;
+    let chat_ad = OpenAiAdapter::chat(chat_t);
+    let mut res_target_long = resolved(Protocol::OpenaiChat);
+    res_target_long.cache_retention = crate::utils::settings::nyan::CacheRetention::Long;
+
+    let cancel = anthropic_sdk::AbortSignal::new();
+    let opened = chat_ad
+        .send(&res_target_long, &request(hello()), &cancel)
+        .await
+        .unwrap();
+    let mut events = opened.events;
+    while let Some(item) = events.next().await {
+        if item.is_err() {
+            break;
+        }
+    }
+
+    let reqs = mock.requests();
+    assert_eq!(reqs[0].body["prompt_cache_retention"], "24h");
+    let cache_key = reqs[0].body["prompt_cache_key"].as_str().unwrap();
+    assert!(!cache_key.is_empty() && cache_key.len() <= super::OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH);
+
+    // 2. Responses with Long retention
+    let mut resp_t = target(&mock.base_url, ProviderProtocol::OpenaiResponses, key());
+    resp_t.cache_retention = crate::utils::settings::nyan::CacheRetention::Long;
+    let resp_ad = OpenAiAdapter::responses(resp_t);
+    let mut resp_target_long = resolved(Protocol::OpenaiResponses);
+    resp_target_long.cache_retention = crate::utils::settings::nyan::CacheRetention::Long;
+
+    let cancel2 = anthropic_sdk::AbortSignal::new();
+    let opened2 = resp_ad
+        .send(&resp_target_long, &request(hello()), &cancel2)
+        .await
+        .unwrap();
+    let mut events2 = opened2.events;
+    while let Some(item) = events2.next().await {
+        if item.is_err() {
+            break;
+        }
+    }
+
+    let reqs = mock.requests();
+    assert_eq!(reqs[1].body["prompt_cache_retention"], "24h");
+    assert_eq!(
+        reqs[1].body["prompt_cache_key"],
+        reqs[0].body["prompt_cache_key"]
+    );
 }

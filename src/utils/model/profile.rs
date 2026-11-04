@@ -7,8 +7,8 @@ use std::fmt;
 
 use crate::utils::settings::SettingsJson;
 use crate::utils::settings::nyan::{
-    CredentialReference, ModelProfileSettings, NyanSettings, OpenaiCompatSettings, ProviderKind,
-    ProviderProtocol, ProviderSettings,
+    CacheRetention, CredentialReference, ModelProfileSettings, NyanSettings, OpenaiCompatSettings,
+    ProviderKind, ProviderProtocol, ProviderSettings,
 };
 
 /// Capabilities after merging the metadata snapshot under the profile's
@@ -37,6 +37,7 @@ pub struct ResolvedModelProfile {
     pub base_url: Option<String>,
     pub credential: Option<CredentialReference>,
     pub compat: Option<OpenaiCompatSettings>,
+    pub cache_retention: CacheRetention,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -357,6 +358,7 @@ pub fn resolve_profile(
         base_url: provider.base_url.clone(),
         credential: provider.credential.clone(),
         compat: provider.compat.clone(),
+        cache_retention: model_profile.cache_retention(),
     })
 }
 
