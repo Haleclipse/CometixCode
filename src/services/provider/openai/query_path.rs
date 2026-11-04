@@ -405,11 +405,11 @@ async fn a_responses_profile_keeps_reasoning_across_a_tool_round_trip() {
 }
 
 #[tokio::test]
-async fn an_http_failure_surfaces_once_with_no_retry_and_no_anthropic_fallback() {
+async fn a_billing_429_surfaces_once_with_no_retry_and_no_anthropic_fallback() {
     let mock = MockOpenAi::start(vec![
         Reply::error(
             429,
-            json!({"error": {"message": "slow down", "type": "rate_limit_error", "code": "rate_limit_exceeded"}}),
+            json!({"error": {"message": "quota exceeded", "type": "insufficient_quota", "code": "insufficient_quota"}}),
         ),
         // A second reply nobody should ask for.
         Reply::sse_data([chat_chunk(json!({"content": "unexpected"}), json!("stop"))]),
@@ -438,12 +438,202 @@ async fn an_http_failure_surfaces_once_with_no_retry_and_no_anthropic_fallback()
             text
         }
     };
-    assert!(error.contains("slow down"), "{error}");
+    assert!(error.contains("quota exceeded"), "{error}");
     assert_eq!(
         mock.requests().len(),
         1,
-        "no automatic retry, no non-streaming fallback"
+        "billing 429 is not retried and does not fallback to Anthropic"
     );
+}
+
+#[tokio::test]
+async fn a_burst_429_retries_under_the_unified_budget_and_recovers() {
+    let mock = MockOpenAi::start(vec![
+        Reply::error(
+            429,
+            json!({"error": {"message": "slow down", "type": "rate_limit_error", "code": "rate_limit_exceeded"}}),
+        ),
+        Reply::sse_data([chat_chunk(json!({"content": "recovered"}), json!("stop"))]),
+    ])
+    .await;
+    let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
+
+    let items = run(vec![user("go")], vec![]).await;
+    let messages = assistants(&items);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        first(messages[0]),
+        AssistantContent::Text("recovered".into())
+    );
+    assert_eq!(
+        mock.requests().len(),
+        2,
+        "the burst 429 was retried once and recovered"
+    );
+}
+
+#[tokio::test]
+async fn a_503_service_unavailable_retries_under_the_unified_budget_and_recovers() {
+    let mock = MockOpenAi::start(vec![
+        Reply::error(
+            503,
+            json!({"error": {"message": "service unavailable", "type": "server_error"}}),
+        ),
+        Reply::sse_data([chat_chunk(
+            json!({"content": "recovered 503"}),
+            json!("stop"),
+        )]),
+    ])
+    .await;
+    let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
+
+    let items = run(vec![user("go")], vec![]).await;
+    let messages = assistants(&items);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        first(messages[0]),
+        AssistantContent::Text("recovered 503".into())
+    );
+    assert_eq!(
+        mock.requests().len(),
+        2,
+        "the 503 was retried once and recovered"
+    );
+}
+
+#[tokio::test]
+async fn an_eligible_failure_switches_to_configured_main_fallback() {
+    let primary_mock = MockOpenAi::start(vec![Reply::error(
+        429,
+        json!({"error": {"message": "quota exceeded", "type": "insufficient_quota", "code": "insufficient_quota"}}),
+    )])
+    .await;
+    let fallback_mock = MockOpenAi::start(vec![Reply::sse_data([chat_chunk(
+        json!({"content": "served by fallback"}),
+        json!("stop"),
+    )])])
+    .await;
+
+    let _env = Env::with(Vec::new, || {
+        use crate::utils::settings::nyan::{
+            CredentialReference, ModelCapabilities, ModelProfileSettings, NyanSettings,
+            ProviderKind, ProviderSettings, SelectionSettings,
+        };
+        use crate::utils::settings::settings_cache::set_session_settings_cache;
+        use crate::utils::settings::validation::SettingsWithErrors;
+        use std::collections::BTreeMap;
+
+        let nyan = NyanSettings {
+            providers: Some(BTreeMap::from([
+                (
+                    "primary-provider".to_string(),
+                    ProviderSettings {
+                        kind: Some(ProviderKind::Openai),
+                        protocols: Some(vec![ProviderProtocol::OpenaiChat]),
+                        base_url: Some(primary_mock.base_url.clone()),
+                        credential: Some(CredentialReference {
+                            env: Some(KEY_VAR.to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "fallback-provider".to_string(),
+                    ProviderSettings {
+                        kind: Some(ProviderKind::Openai),
+                        protocols: Some(vec![ProviderProtocol::OpenaiChat]),
+                        base_url: Some(fallback_mock.base_url.clone()),
+                        credential: Some(CredentialReference {
+                            env: Some(KEY_VAR.to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                ),
+            ])),
+            models: Some(BTreeMap::from([
+                (
+                    "main".to_string(),
+                    ModelProfileSettings {
+                        provider: Some("primary-provider".to_string()),
+                        model: Some("gpt-5".to_string()),
+                        protocol: Some(ProviderProtocol::OpenaiChat),
+                        capabilities: Some(ModelCapabilities {
+                            context_window: Some(400_000),
+                            max_output_tokens: Some(128_000),
+                            streaming: Some(true),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "fb".to_string(),
+                    ModelProfileSettings {
+                        provider: Some("fallback-provider".to_string()),
+                        model: Some("gpt-5-fallback".to_string()),
+                        protocol: Some(ProviderProtocol::OpenaiChat),
+                        capabilities: Some(ModelCapabilities {
+                            context_window: Some(400_000),
+                            max_output_tokens: Some(128_000),
+                            streaming: Some(true),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    },
+                ),
+            ])),
+            selection: Some(SelectionSettings {
+                main: Some("main".to_string()),
+                main_fallbacks: Some(vec!["fb".to_string()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        set_session_settings_cache(SettingsWithErrors {
+            settings: SettingsJson {
+                nyan: Some(Box::new(nyan)),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+    });
+
+    let options = Options::new("gpt-5".to_string(), "repl_main_thread".to_string());
+    let mut rx = query_model_with_streaming(
+        &[user("go")],
+        &vec![],
+        &ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await
+    .expect("stream opens on fallback");
+    let mut items = Vec::new();
+    while let Some(item) = tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
+        .await
+        .expect("stream item before deadline")
+    {
+        items.push(item);
+    }
+    // A system warning notice was emitted for the switch.
+    let switched_warning = items.iter().find(|item| {
+        matches!(item, QueryModelStreamItem::SystemApiError(msg) if msg.content().is_some_and(|c| c.contains("Switched from profile \"main\" to fallback profile \"fb\"")))
+    });
+    assert!(
+        switched_warning.is_some(),
+        "expected switch notice: {items:?}"
+    );
+
+    let messages = assistants(&items);
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        first(messages[0]),
+        AssistantContent::Text("served by fallback".into())
+    );
+    assert_eq!(primary_mock.requests().len(), 1);
+    assert_eq!(fallback_mock.requests().len(), 1);
 }
 
 /// Everything the query layer reports for one call: the error from opening the

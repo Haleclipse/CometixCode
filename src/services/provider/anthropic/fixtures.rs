@@ -432,3 +432,49 @@ async fn max_tokens_stop_reports_the_output_limit_error() {
         outcome.items
     );
 }
+
+#[tokio::test]
+async fn an_overloaded_529_retries_under_the_unified_budget_and_recovers() {
+    let mock = MockAnthropic::start(vec![
+        Reply::Error {
+            status: 529,
+            body: json!({"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}}),
+        },
+        Reply::Sse(message_stream(StreamSpec::default())),
+    ])
+    .await;
+    let _env = Env::new(&mock.base_url);
+    // Override the fixture's CLAUDE_CODE_MAX_RETRIES="0" pin so the default budget (2) is active.
+    let _retries = EnvVarGuard::unset("CLAUDE_CODE_MAX_RETRIES");
+
+    let options = Options::new(
+        "claude-sonnet-4-6".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let mut rx = query_model_with_streaming(
+        &[user("hello")],
+        &vec!["You are a test.".to_string()],
+        &ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await
+    .expect("stream opens after retry");
+    let mut items = Vec::new();
+    while let Some(item) = tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
+        .await
+        .expect("stream item before deadline")
+    {
+        items.push(item);
+    }
+    let messages = assistants(&items);
+    assert!(
+        !messages.is_empty(),
+        "expected assistant response: {items:?}"
+    );
+    assert_eq!(
+        mock.requests().len(),
+        2,
+        "overloaded 529 was retried once and recovered"
+    );
+}

@@ -2113,7 +2113,7 @@ mod tests {
             for response_text in [
                 "<summary>FROM_SUMMARY</summary>",
                 "<summary>UP_TO_SUMMARY</summary>",
-                "\nPlease run /login · API Error: invalid credentials\n",
+                "\nCheck profile API key configuration · API Error: invalid credentials\n",
             ] {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 let mut request = Vec::new();
@@ -2257,7 +2257,10 @@ mod tests {
         .await
         .unwrap()
         .unwrap_err();
-        assert_eq!(error, "Please run /login · API Error: invalid credentials");
+        assert_eq!(
+            error,
+            "Check profile API key configuration · API Error: invalid credentials"
+        );
         server.await.unwrap();
         let requests = requests.lock().unwrap();
         assert_eq!(requests.len(), 3);

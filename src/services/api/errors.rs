@@ -116,7 +116,8 @@ pub const PROMPT_TOO_LONG_ERROR_MESSAGE: &str = "Prompt is too long";
 pub const CREDIT_BALANCE_TOO_LOW_ERROR_MESSAGE: &str = "Credit balance is too low";
 
 /// Maps to: CC services/api/errors.ts:155
-pub const INVALID_API_KEY_ERROR_MESSAGE: &str = "Not logged in \u{00b7} Please run /login";
+pub const INVALID_API_KEY_ERROR_MESSAGE: &str =
+    "Invalid API key \u{00b7} Check profile API key configuration";
 
 /// Maps to: CC services/api/errors.ts:156-157
 pub const INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL: &str =
@@ -191,7 +192,7 @@ pub fn create_assistant_api_error_message(
 pub fn starts_with_api_error_prefix(text: &str) -> bool {
     text.starts_with(API_ERROR_MESSAGE_PREFIX)
         || text.starts_with(&format!(
-            "Please run /login \u{00b7} {}",
+            "Check profile API key configuration \u{00b7} {}",
             API_ERROR_MESSAGE_PREFIX
         ))
 }
@@ -1045,7 +1046,9 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
         let content = if get_is_non_interactive_session() {
             format!("Failed to authenticate. {API_ERROR_MESSAGE_PREFIX}: {msg}")
         } else {
-            format!("Please run /login \u{00b7} {API_ERROR_MESSAGE_PREFIX}: {msg}")
+            format!(
+                "Check profile API key configuration \u{00b7} {API_ERROR_MESSAGE_PREFIX}: {msg}"
+            )
         };
         return create_assistant_api_error_message(
             &content,
@@ -1164,7 +1167,7 @@ mod tests {
     fn starts_with_api_error_prefix_matches_both_forms() {
         assert!(starts_with_api_error_prefix("API Error: something"));
         assert!(starts_with_api_error_prefix(
-            "Please run /login \u{00b7} API Error: auth failed"
+            "Check profile API key configuration \u{00b7} API Error: auth failed"
         ));
         assert!(!starts_with_api_error_prefix("Some other error"));
     }

@@ -14,6 +14,7 @@ pub mod errors;
 mod fixtures;
 #[cfg(test)]
 pub(crate) mod mock;
+pub mod policy;
 #[cfg(test)]
 mod query_path;
 pub mod responses;

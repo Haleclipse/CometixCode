@@ -80,6 +80,17 @@ impl std::error::Error for ConnectionError {}
 #[derive(Debug)]
 pub enum RetryableError {
     Api(ApiError),
+    /// An HTTP-level failure an adapter's rate-limit policy has already
+    /// judged (`services/provider/retry.rs`). The verdict, not the legacy
+    /// Anthropic status table, says whether this endpoint is tried again.
+    Judged {
+        api: ApiError,
+        verdict: crate::services::provider::retry::Verdict,
+        kind: crate::services::provider::ir::ProviderErrorKind,
+        request_id: Option<String>,
+        /// The profile's `maxRetryDelay`, which bounds backoff for this error.
+        max_delay: Duration,
+    },
     Connection(ConnectionError),
     Aborted,
     Other(anyhow::Error),
@@ -88,7 +99,7 @@ pub enum RetryableError {
 impl fmt::Display for RetryableError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Api(e) => write!(f, "{}", e),
+            Self::Api(e) | Self::Judged { api: e, .. } => write!(f, "{}", e),
             Self::Connection(e) => write!(f, "{}", e),
             Self::Aborted => write!(f, "request aborted"),
             Self::Other(e) => write!(f, "{}", e),
@@ -99,7 +110,7 @@ impl fmt::Display for RetryableError {
 impl std::error::Error for RetryableError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::Api(e) => Some(e),
+            Self::Api(e) | Self::Judged { api: e, .. } => Some(e),
             Self::Connection(e) => Some(e),
             Self::Other(e) => e.source(),
             Self::Aborted => None,
@@ -109,24 +120,69 @@ impl std::error::Error for RetryableError {
 
 impl RetryableError {
     fn status(&self) -> Option<u16> {
+        self.as_api().and_then(|e| e.status)
+    }
+
+    /// The adapter policy's verdict, when one was passed.
+    pub fn verdict(&self) -> Option<crate::services::provider::retry::Verdict> {
         match self {
-            Self::Api(e) => e.status,
+            Self::Judged { verdict, .. } => Some(*verdict),
             _ => None,
+        }
+    }
+
+    /// Whether a configured fallback profile may take over once this
+    /// endpoint is finished with: a judged failure that is not fatal, or a
+    /// connection that could not be made. Nothing else (bad request, bad key,
+    /// context overflow, abort) is cured by another provider.
+    pub fn failover_eligible(&self) -> bool {
+        use crate::services::provider::retry::Verdict;
+        match self {
+            Self::Judged { verdict, .. } => {
+                matches!(verdict, Verdict::Retry { .. } | Verdict::SwitchOnly)
+            }
+            Self::Connection(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Kind, status and request id for a switch receipt.
+    pub fn receipt_facts(
+        &self,
+    ) -> (
+        crate::services::provider::ir::ProviderErrorKind,
+        Option<u16>,
+        Option<String>,
+    ) {
+        use crate::services::provider::ir::ProviderErrorKind;
+        match self {
+            Self::Judged {
+                api,
+                kind,
+                request_id,
+                ..
+            } => (kind.clone(), api.status, request_id.clone()),
+            Self::Connection(_) => (ProviderErrorKind::Transport, None, None),
+            other => (
+                ProviderErrorKind::Transient { retryable: false },
+                other.status(),
+                None,
+            ),
         }
     }
 
     fn message(&self) -> String {
         match self {
-            Self::Api(e) => e.message.clone(),
+            Self::Api(e) | Self::Judged { api: e, .. } => e.message.clone(),
             Self::Connection(e) => e.message.clone(),
             Self::Aborted => "request aborted".to_string(),
             Self::Other(e) => format!("{}", e),
         }
     }
 
-    fn as_api(&self) -> Option<&ApiError> {
+    pub fn as_api(&self) -> Option<&ApiError> {
         match self {
-            Self::Api(e) => Some(e),
+            Self::Api(e) | Self::Judged { api: e, .. } => Some(e),
             _ => None,
         }
     }
@@ -145,9 +201,6 @@ impl RetryableError {
 ///
 /// Maps to: CC `services/api/withRetry.ts:54` `BASE_DELAY_MS`.
 pub const BASE_DELAY_MS: u64 = 500;
-
-/// Maps to: CC `services/api/withRetry.ts:53`
-const DEFAULT_MAX_RETRIES: u32 = 10;
 
 /// Maps to: CC `services/api/withRetry.ts:54`
 const FLOOR_OUTPUT_TOKENS: u64 = 3000;
@@ -349,9 +402,12 @@ fn should_retry_529(query_source: Option<&RetryQuerySource>) -> bool {
 ///
 /// Maps to: CC `services/api/withRetry.ts:100-104`
 fn is_persistent_retry_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY").as_deref(),
-    )
+    // @nyan: retry-forever would outlive the managed cap, so a managed cap
+    // switches it off.
+    !crate::services::provider::retry::managed_cap_set()
+        && crate::utils::env_utils::is_env_truthy(
+            crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY").as_deref(),
+        )
 }
 
 /// Check if an error is a transient capacity error (429 or 529).
@@ -693,23 +749,27 @@ fn get_rate_limit_reset_delay_ms(error: &ApiError) -> Option<u64> {
 // Maps to: CC services/api/withRetry.ts:789-797
 // ---------------------------------------------------------------------------
 
-/// Read the default maximum number of retries from the environment.
+/// The default maximum number of retries.
 ///
-/// Falls back to `DEFAULT_MAX_RETRIES` (10) when `CLAUDE_CODE_MAX_RETRIES`
-/// is unset or unparseable.
+/// @nyan: decisions 19 and 23. CC defaults to 10; nyan's unified controller
+/// defaults to 2 (`CLAUDE_CODE_MAX_RETRIES` may lower it) and the managed
+/// global cap (`nyan.retry.maxRetries` in managed settings, default 2, hard
+/// limit 5) bounds whatever is asked, so the environment cannot raise it.
 ///
 /// Maps to: CC `services/api/withRetry.ts:789-794`
 pub fn get_default_max_retries() -> u32 {
-    crate::utils::process_env::var("CLAUDE_CODE_MAX_RETRIES")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_MAX_RETRIES)
+    crate::services::provider::retry::default_max_retries()
 }
 
 /// Resolve the effective max retries from options or environment default.
 ///
 /// Maps to: CC `services/api/withRetry.ts:795-797`
 fn get_max_retries(options: &RetryOptions) -> u32 {
-    options.max_retries.unwrap_or_else(get_default_max_retries)
+    // @nyan: whoever asks, the managed global cap (hard limit 5) wins.
+    options
+        .max_retries
+        .unwrap_or_else(get_default_max_retries)
+        .min(crate::services::provider::retry::global_cap())
 }
 
 /// Cancellation-aware async sleep.
@@ -1044,11 +1104,22 @@ where
                                 .is_none()
                                 && !is_persistent_retry_enabled()
                             {
+                                // @nyan: still an overload, so a configured
+                                // fallback profile may take over (switch-only:
+                                // this endpoint is not tried again).
                                 return Err(CannotRetryError {
-                                    original_error: RetryableError::Other(anyhow::anyhow!(
-                                        "{}",
-                                        REPEATED_529_ERROR_MESSAGE
-                                    )),
+                                    original_error: RetryableError::Judged {
+                                        api: ApiError {
+                                            status: Some(529),
+                                            message: REPEATED_529_ERROR_MESSAGE.to_string(),
+                                            headers: Default::default(),
+                                            body: None,
+                                        },
+                                        verdict: crate::services::provider::retry::Verdict::SwitchOnly,
+                                        kind: crate::services::provider::ir::ProviderErrorKind::Overloaded,
+                                        request_id: None,
+                                        max_delay: crate::services::provider::retry::DEFAULT_MAX_RETRY_DELAY,
+                                    },
                                     retry_context,
                                 }
                                 .into());
@@ -1075,6 +1146,22 @@ where
                     handle_aws_credential_error(&error) || handle_gcp_credential_error(&error);
                 if !handled_cloud_auth {
                     match error.as_api() {
+                        // @nyan: an adapter policy already judged this one. A
+                        // max_tokens overflow stays retryable here because the
+                        // adjustment block below repairs it.
+                        Some(api) if error.verdict().is_some() => {
+                            if !matches!(
+                                error.verdict(),
+                                Some(crate::services::provider::retry::Verdict::Retry { .. })
+                            ) && parse_max_tokens_context_overflow(api).is_none()
+                            {
+                                return Err(CannotRetryError {
+                                    original_error: error,
+                                    retry_context,
+                                }
+                                .into());
+                            }
+                        }
                         Some(api) => {
                             if !should_retry(api) {
                                 return Err(CannotRetryError {
@@ -1173,8 +1260,20 @@ where
                         .min(PERSISTENT_RESET_CAP_MS);
                     }
                 } else {
-                    delay_ms =
-                        get_retry_delay(attempt, retry_after.as_deref(), DEFAULT_MAX_DELAY_MS);
+                    delay_ms = match &error {
+                        // @nyan: the adapter policy parsed the server's wait
+                        // (`retry-after-ms` included); backoff is bounded by
+                        // the profile's `maxRetryDelay`.
+                        RetryableError::Judged {
+                            verdict:
+                                crate::services::provider::retry::Verdict::Retry { wait: Some(wait) },
+                            ..
+                        } => wait.as_millis() as u64,
+                        RetryableError::Judged { max_delay, .. } => {
+                            get_retry_delay(attempt, None, max_delay.as_millis() as u64)
+                        }
+                        _ => get_retry_delay(attempt, retry_after.as_deref(), DEFAULT_MAX_DELAY_MS),
+                    };
                 }
 
                 let reported_attempt = if persistent {
@@ -1405,9 +1504,103 @@ mod tests {
     #[test]
     fn default_max_retries_fallback() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        // When env var is not set (which it shouldn't be in tests), default is 10
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        // Decisions 19/23: the default dropped from CC's 10 to 2.
         crate::utils::process_env::remove("CLAUDE_CODE_MAX_RETRIES");
-        assert_eq!(get_default_max_retries(), 10);
+        assert_eq!(get_default_max_retries(), 2);
+        assert_eq!(
+            get_max_retries(&RetryOptions {
+                max_retries: None,
+                model: String::new(),
+                fallback_model: None,
+                thinking_config: ThinkingConfig::Disabled,
+                fast_mode: None,
+                abort_rx: None,
+                query_source: None,
+                initial_consecutive_529_errors: None,
+            }),
+            2
+        );
+    }
+
+    #[test]
+    fn the_environment_can_lower_the_budget_but_not_raise_it_past_the_cap() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        {
+            let _one = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "1");
+            assert_eq!(get_default_max_retries(), 1);
+        }
+        // The old CC default, asked for explicitly, is held to the cap (2).
+        let _ten = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "10");
+        assert_eq!(get_default_max_retries(), 2);
+    }
+
+    #[test]
+    fn an_explicit_budget_is_held_to_the_managed_cap() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        let options = |max_retries| RetryOptions {
+            max_retries: Some(max_retries),
+            model: String::new(),
+            fallback_model: None,
+            thinking_config: ThinkingConfig::Disabled,
+            fast_mode: None,
+            abort_rx: None,
+            query_source: None,
+            initial_consecutive_529_errors: None,
+        };
+        // Callers that pass their own number (the classifier asks for the
+        // default, a test asks for 3) cannot exceed the global cap of 2.
+        assert_eq!(get_max_retries(&options(0)), 0);
+        assert_eq!(get_max_retries(&options(2)), 2);
+        assert_eq!(get_max_retries(&options(10)), 2);
+    }
+
+    #[tokio::test]
+    async fn a_judged_billing_error_is_not_repeated() {
+        use crate::services::provider::retry::Verdict;
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let seen = calls.clone();
+        let (heartbeat_tx, _heartbeat_rx) = tokio::sync::mpsc::channel(4);
+        let result: Result<(), WithRetryError> = with_retry(
+            || async { Ok(()) },
+            move |_attempt, _context| {
+                let seen = seen.clone();
+                async move {
+                    seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Err(RetryableError::Judged {
+                        api: ApiError {
+                            status: Some(429),
+                            message: "quota".into(),
+                            headers: Default::default(),
+                            body: None,
+                        },
+                        verdict: Verdict::SwitchOnly,
+                        kind: crate::services::provider::ir::ProviderErrorKind::RateLimited,
+                        request_id: None,
+                        max_delay: Duration::from_secs(1),
+                    })
+                }
+            },
+            RetryOptions {
+                max_retries: Some(2),
+                model: "m".into(),
+                fallback_model: None,
+                thinking_config: ThinkingConfig::Disabled,
+                fast_mode: None,
+                abort_rx: None,
+                query_source: Some(RetryQuerySource::ReplMainThread),
+                initial_consecutive_529_errors: None,
+            },
+            heartbeat_tx,
+        )
+        .await;
+        let Err(WithRetryError::CannotRetry(error)) = result else {
+            panic!("expected a terminal error");
+        };
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(error.original_error.failover_eligible());
     }
 
     // -- should_retry_529 --

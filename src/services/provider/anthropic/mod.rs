@@ -15,5 +15,6 @@ mod fixtures;
 pub mod headers;
 #[cfg(test)]
 pub(crate) mod mock;
+pub mod policy;
 pub mod target;
 pub mod wire;

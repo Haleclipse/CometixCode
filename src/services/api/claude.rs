@@ -3105,7 +3105,9 @@ pub async fn query_model_with_streaming(
     // Maps to CC `services/api/claude.ts:1057-1230,1380`
     // `queryModelWithStreaming`: capture base betas/useBetas before Tool
     // projection and retry-local `paramsFromContext` invocations.
-    let beta_capture = {
+    // A closure over the request's tools so a fallback profile's model gets its
+    // own betas instead of the primary's.
+    let beta_capture_for = |options: &Options| -> SdkRequestBetaCapture {
         // Maps to CC `claude.ts:1120-1236`: the tool-search gate reads the
         // `tools` PARAMETER. `options.mcpTools` has no reader in CC, and the
         // chain that used to be here re-added the raw (non-deny-filtered) MCP
@@ -3161,21 +3163,29 @@ pub async fn query_model_with_streaming(
             original_model: options.model.clone(),
         }
     };
-    let stream = match open_sdk_message_stream_with_retry(
-        messages,
-        system_prompt,
-        thinking_config,
-        tools,
-        options,
-        &beta_capture,
+    let beta_capture = beta_capture_for(options);
+    let opened = open_main_stream_with_fallbacks(
+        &MainRequest {
+            messages,
+            system_prompt,
+            thinking_config,
+            tools,
+            options,
+            beta_capture: &beta_capture,
+        },
+        &beta_capture_for,
         tx.clone(),
     )
-    .await
-    {
-        Ok(stream) => stream,
+    .await;
+    let (stream, active_options, anthropic_fallback_ok) = match opened {
+        Ok(MainStream {
+            stream,
+            options,
+            anthropic_fallback_ok,
+        }) => (stream, options, anthropic_fallback_ok),
         // Maps to CC `queryModel` / `withRetry`: `APIUserAbortError` or
         // `signal.aborted` before the stream is opened — propagate, no fallback.
-        Err(error)
+        Err(MainOpenFailure { error, .. })
             if crate::utils::errors::is_abort_error(&error)
                 || options
                     .abort_signal
@@ -3187,10 +3197,14 @@ pub async fn query_model_with_streaming(
             ));
             return Err(error);
         }
-        Err(error)
-            if main_profile_is_anthropic()
-                && should_fallback_stream_creation_error_to_non_streaming(&error)
-                && !is_non_streaming_fallback_disabled() =>
+        // The non-streaming request is built for the main profile, so it is
+        // only reachable when no fallback profile was involved.
+        Err(MainOpenFailure {
+            error,
+            switched: false,
+        }) if main_profile_is_anthropic()
+            && should_fallback_stream_creation_error_to_non_streaming(&error)
+            && !is_non_streaming_fallback_disabled() =>
         {
             let messages = messages.to_vec();
             let system_prompt = system_prompt.clone();
@@ -3235,7 +3249,7 @@ pub async fn query_model_with_streaming(
             });
             return Ok(rx);
         }
-        Err(error) => {
+        Err(MainOpenFailure { error, .. }) => {
             // Maps to CC: `Error in API request: …` (non-404 / non-fallback path).
             crate::utils::debug::log_for_debugging(&format!("Error in API request: {error}"));
             return Err(error);
@@ -3245,7 +3259,7 @@ pub async fn query_model_with_streaming(
     let system_prompt = system_prompt.clone();
     let thinking_config = thinking_config.clone();
     let tools = tools.to_vec();
-    let options = options.clone();
+    let options = active_options;
     let beta_capture = beta_capture.clone();
 
     tokio::spawn(async move {
@@ -3273,7 +3287,7 @@ pub async fn query_model_with_streaming(
             // The fallback is a second, non-streaming Anthropic request. For any
             // other protocol it would replay a request whose tool calls may have
             // already been issued, so the error is reported as it is.
-            if is_non_streaming_fallback_disabled() || !main_profile_is_anthropic() {
+            if is_non_streaming_fallback_disabled() || !anthropic_fallback_ok {
                 let _ = tx
                     .send(QueryModelStreamItem::SystemError(
                         system_api_error_message_from_error(error),
@@ -3328,8 +3342,7 @@ pub async fn query_model_with_streaming(
 }
 
 /// False only when the selected main profile resolves and speaks another
-/// protocol. An unresolvable profile counts as Anthropic so the existing error
-/// path reports what is missing.
+/// protocol, or when resolution fails.
 fn main_profile_is_anthropic() -> bool {
     crate::utils::model::profile::resolve_main_profile(
         &crate::utils::settings::get_initial_settings(),
@@ -3337,7 +3350,7 @@ fn main_profile_is_anthropic() -> bool {
     .map(|profile| {
         profile.protocol == crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages
     })
-    .unwrap_or(true)
+    .unwrap_or(false)
 }
 
 /// The neutral request for a non-Anthropic provider: the same history
@@ -3395,6 +3408,179 @@ fn resolved_target_for(model: &str) -> crate::services::provider::adapter::Resol
     resolved
 }
 
+/// A stream that opened, and which profile's options it was opened with.
+struct MainStream {
+    stream: SdkMessageStream,
+    options: Options,
+    /// The Anthropic non-streaming request is built for the main profile, so
+    /// a stream served by a fallback profile cannot use it.
+    anthropic_fallback_ok: bool,
+}
+
+/// What one main request is made of, shared by every profile it may be sent to.
+#[derive(Clone, Copy)]
+struct MainRequest<'a> {
+    messages: &'a [Message],
+    system_prompt: &'a SystemPrompt,
+    thinking_config: &'a ThinkingConfig,
+    tools: &'a [Tool],
+    options: &'a Options,
+    beta_capture: &'a SdkRequestBetaCapture,
+}
+
+struct MainOpenFailure {
+    error: anyhow::Error,
+    /// A fallback profile was tried (and failed too).
+    switched: bool,
+}
+
+fn failover_eligible(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<crate::services::api::with_retry::CannotRetryError>()
+        .is_some_and(|cannot_retry| cannot_retry.original_error.failover_eligible())
+}
+
+/// Open the main stream on the selected profile and, only when
+/// `selection.mainFallbacks` names more, on those profiles in order.
+///
+/// @nyan: decision 11. An empty list never switches provider. A switch happens
+/// only after the current profile has used its own retry budget, only for a
+/// failure another provider could cure (not a bad request, key or context
+/// overflow), and only before any output exists, because this runs before the
+/// stream is handed to the caller. Each fallback uses its own credential,
+/// protocol, rate-limit policy and retry limits.
+async fn open_main_stream_with_fallbacks(
+    request: &MainRequest<'_>,
+    beta_capture_for: &(dyn Fn(&Options) -> SdkRequestBetaCapture + Sync),
+    tx: tokio::sync::mpsc::Sender<QueryModelStreamItem>,
+) -> Result<MainStream, MainOpenFailure> {
+    let MainRequest {
+        messages,
+        system_prompt,
+        thinking_config,
+        tools,
+        options,
+        beta_capture,
+    } = *request;
+    let settings = crate::utils::settings::get_initial_settings();
+    let primary = crate::utils::model::profile::resolve_main_profile(&settings);
+    let primary_is_anthropic = primary
+        .as_ref()
+        .map(|profile| {
+            profile.protocol == crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages
+        })
+        .unwrap_or(false);
+    let mut last_error = match open_sdk_message_stream_with_retry(
+        messages,
+        system_prompt,
+        thinking_config,
+        tools,
+        options,
+        beta_capture,
+        primary.clone(),
+        tx.clone(),
+    )
+    .await
+    {
+        Ok(stream) => {
+            return Ok(MainStream {
+                stream,
+                options: options.clone(),
+                anthropic_fallback_ok: primary_is_anthropic,
+            });
+        }
+        Err(error) => error,
+    };
+
+    let (Ok(mut from), Some(nyan)) = (primary, settings.nyan.as_deref()) else {
+        return Err(MainOpenFailure {
+            error: last_error,
+            switched: false,
+        });
+    };
+    let (chain, skipped) = crate::services::provider::retry::fallback_chain(nyan, &from);
+    for (name, reason) in &skipped {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Fallback profile {name:?} is not usable: {reason}"
+        ));
+    }
+    let aborted = || {
+        options
+            .abort_signal
+            .as_ref()
+            .is_some_and(anthropic_sdk::AbortSignal::is_aborted)
+    };
+    let mut switched = false;
+    for next in chain {
+        if aborted() || !failover_eligible(&last_error) {
+            break;
+        }
+        let (kind, status, request_id) = last_error
+            .downcast_ref::<crate::services::api::with_retry::CannotRetryError>()
+            .map(|cannot_retry| cannot_retry.original_error.receipt_facts())
+            .unwrap_or((
+                crate::services::provider::ir::ProviderErrorKind::Transient { retryable: false },
+                None,
+                None,
+            ));
+        let receipt = crate::services::provider::retry::SwitchReceipt::new(
+            &from, &next, kind, status, request_id,
+        );
+        super::api_trace::emit_current(
+            "provider_switch",
+            serde_json::to_value(&receipt).unwrap_or_default(),
+        );
+        let _ = tx
+            .send(QueryModelStreamItem::SystemApiError(
+                crate::utils::messages::create_system_message(
+                    receipt.notice(),
+                    crate::types::message::SystemMessageLevel::Warning,
+                    None,
+                    None,
+                ),
+            ))
+            .await;
+        switched = true;
+
+        let mut fallback_options = options.clone();
+        fallback_options.model = next.model.clone();
+        // The same-provider 529 model fallback belongs to the primary profile.
+        fallback_options.fallback_model = None;
+        let fallback_betas = beta_capture_for(&fallback_options);
+        match open_sdk_message_stream_with_retry(
+            messages,
+            system_prompt,
+            thinking_config,
+            tools,
+            &fallback_options,
+            &fallback_betas,
+            Ok(next.clone()),
+            tx.clone(),
+        )
+        .await
+        {
+            Ok(stream) => {
+                return Ok(MainStream {
+                    stream,
+                    options: fallback_options,
+                    anthropic_fallback_ok: false,
+                });
+            }
+            Err(error) => {
+                last_error = error;
+                from = next;
+            }
+        }
+    }
+    Err(MainOpenFailure {
+        error: last_error,
+        switched,
+    })
+}
+
+/// One profile's attempt loop: open the stream, retrying under that profile's
+/// own policy and limits. Falling over to another profile is the caller's
+/// decision (`open_main_stream_with_fallbacks`).
 async fn open_sdk_message_stream_with_retry(
     messages: &[Message],
     system_prompt: &SystemPrompt,
@@ -3402,8 +3588,16 @@ async fn open_sdk_message_stream_with_retry(
     tools: &[Tool],
     options: &Options,
     beta_capture: &SdkRequestBetaCapture,
+    profile: Result<
+        crate::utils::model::profile::ResolvedModelProfile,
+        crate::utils::model::profile::ProfileResolutionError,
+    >,
     tx: tokio::sync::mpsc::Sender<QueryModelStreamItem>,
 ) -> anyhow::Result<SdkMessageStream> {
+    let limits = match &profile {
+        Ok(profile) => crate::services::provider::retry::RetryLimits::for_profile(&profile.profile),
+        Err(_) => crate::services::provider::retry::RetryLimits::unprofiled(),
+    };
     // Maps to CC `queryModelWithStreaming(...)` wrapping raw stream creation in
     // `withRetry(...)` with SDK auto-retry disabled. A
     // `FallbackTriggeredError` remains an `Err` from `callModel(...)`, so
@@ -3450,14 +3644,12 @@ async fn open_sdk_message_stream_with_retry(
             let base_options = options_for_operation.clone();
             let beta_capture = beta_capture_for_operation.clone();
             let attempt_trace = request_trace.with_attempt(attempt);
+            let profile = profile.clone();
             async move {
                 super::api_trace::set_current_trace(Some(attempt_trace.clone()));
                 let attempt_options =
                     streaming_attempt_options_from_retry_context(&base_options, &retry_context);
-                let profile = crate::utils::model::profile::resolve_main_profile(
-                    &crate::utils::settings::get_initial_settings(),
-                )
-                .map_err(|error| {
+                let profile = profile.map_err(|error| {
                     crate::services::api::with_retry::RetryableError::Other(anyhow::Error::new(
                         crate::services::provider::anthropic::target::TargetError::Profile(error),
                     ))
@@ -3478,6 +3670,9 @@ async fn open_sdk_message_stream_with_retry(
                         .abort_signal
                         .clone()
                         .unwrap_or_else(anthropic_sdk::AbortSignal::new);
+                    let protocol =
+                        crate::services::provider::adapter::ResolvedTarget::from_profile(&profile)
+                            .protocol;
                     let opened = match profile.protocol {
                         crate::utils::settings::nyan::ProviderProtocol::Gemini => {
                             crate::services::provider::gemini::open_stream(
@@ -3492,7 +3687,7 @@ async fn open_sdk_message_stream_with_retry(
                             .await
                         }
                     }
-                    .map_err(|error| provider_error_to_retryable(error, false))?;
+                    .map_err(|error| provider_error_to_retryable(error, protocol, &limits))?;
                     super::api_trace::emit(
                         &attempt_trace,
                         "http_sent",
@@ -3502,7 +3697,17 @@ async fn open_sdk_message_stream_with_retry(
                             "message_count": request.messages.len(),
                         }),
                     );
-                    return Ok(opened.events);
+                    // An `error` event before any output is still an open
+                    // failure; only once output flows is a failure a partial
+                    // stream that must not be replayed.
+                    let events = crate::services::provider::retry::commit_first_output(
+                        opened.events,
+                        &cancel,
+                        stream_open_idle_timeout(),
+                    )
+                    .await
+                    .map_err(|error| provider_error_to_retryable(error, protocol, &limits))?;
+                    return Ok(events);
                 }
                 let target =
                     crate::services::provider::anthropic::target::target_for_profile(&profile)
@@ -3555,11 +3760,29 @@ async fn open_sdk_message_stream_with_retry(
                     &adapter, &resolved, &request, &cancel,
                 )
                 .await
-                .map_err(|error| provider_error_to_retryable(error, true))?;
+                .map_err(|error| {
+                    provider_error_to_retryable(
+                        error,
+                        crate::services::provider::ir::Protocol::AnthropicMessages,
+                        &limits,
+                    )
+                })?;
                 crate::services::claude_ai_limits::extract_quota_status_from_headers(
                     &opened.response_headers.clone().into_iter().collect(),
                 );
-                let stream = opened.events;
+                let stream = crate::services::provider::retry::commit_first_output(
+                    opened.events,
+                    &cancel,
+                    stream_open_idle_timeout(),
+                )
+                .await
+                .map_err(|error| {
+                    provider_error_to_retryable(
+                        error,
+                        crate::services::provider::ir::Protocol::AnthropicMessages,
+                        &limits,
+                    )
+                })?;
                 super::api_trace::emit(
                     &attempt_trace,
                     "http_sent",
@@ -3573,13 +3796,9 @@ async fn open_sdk_message_stream_with_retry(
             }
         },
         crate::services::api::with_retry::RetryOptions {
-            // Decision 23: Anthropic keeps its existing budget; OpenAI makes no
-            // automatic retry until the unified controller (PR 8).
-            max_retries: if main_profile_is_anthropic() {
-                None
-            } else {
-                Some(0)
-            },
+            // Decisions 19 and 23: every protocol shares the unified budget
+            // (default 2, the profile may lower it, the managed cap bounds it).
+            max_retries: Some(limits.max_retries),
             model: options_for_retry.model.clone(),
             fallback_model: options_for_retry.fallback_model.clone(),
             thinking_config: thinking_config_for_retry,
@@ -4308,10 +4527,10 @@ fn should_fallback_stream_creation_error_to_non_streaming(error: &anyhow::Error)
     else {
         return false;
     };
-    matches!(
-        &cannot_retry.original_error,
-        crate::services::api::with_retry::RetryableError::Api(api) if api.status == Some(404)
-    )
+    cannot_retry
+        .original_error
+        .as_api()
+        .is_some_and(|api| api.status == Some(404))
 }
 
 fn stream_error_is_529(error: &anyhow::Error) -> bool {
@@ -4321,10 +4540,10 @@ fn stream_error_is_529(error: &anyhow::Error) -> bool {
     if let Some(cannot_retry) =
         error.downcast_ref::<crate::services::api::with_retry::CannotRetryError>()
     {
-        return matches!(
-            &cannot_retry.original_error,
-            crate::services::api::with_retry::RetryableError::Api(api) if api.status == Some(529)
-        );
+        return cannot_retry
+            .original_error
+            .as_api()
+            .is_some_and(|api| api.status == Some(529));
     }
     false
 }
@@ -4592,15 +4811,19 @@ fn sdk_api_error_to_retryable(
 /// Adapter error -> the retry loop's error type. Status, headers and body are
 /// kept so the existing predicates (529 fallback, context-overflow max-token
 /// reduction, stale-connection handling) see what they saw before.
+///
+/// @nyan: the protocol's rate-limit policy judges the failure here, once, so
+/// the loop acts on a verdict instead of re-reading status codes.
 fn provider_error_to_retryable(
     error: crate::services::provider::ir::ProviderError,
-    anthropic: bool,
+    protocol: crate::services::provider::ir::Protocol,
+    limits: &crate::services::provider::retry::RetryLimits,
 ) -> crate::services::api::with_retry::RetryableError {
     use crate::services::api::with_retry::{ApiError, ConnectionError, RetryableError};
-    use crate::services::provider::ir::ProviderErrorKind;
+    use crate::services::provider::ir::{Protocol, ProviderErrorKind};
 
     // The quota machinery reads Anthropic's rate-limit headers.
-    if anthropic {
+    if protocol == Protocol::AnthropicMessages {
         crate::services::claude_ai_limits::extract_quota_status_from_error(
             error.status,
             Some(&error.headers.clone().into_iter().collect()),
@@ -4615,13 +4838,35 @@ fn provider_error_to_retryable(
         ProviderErrorKind::InvalidRequest if error.status.is_none() => {
             RetryableError::Other(anyhow::anyhow!(error.message))
         }
-        _ => RetryableError::Api(ApiError {
-            status: error.status,
-            message: error.message,
-            headers: error.headers.into_iter().collect(),
-            body: error.body,
-        }),
+        _ => {
+            let judged = crate::services::provider::retry::judge(
+                crate::services::provider::retry::policy_for(protocol),
+                limits,
+                error,
+            );
+            let verdict = judged.verdict();
+            let error = judged.error;
+            RetryableError::Judged {
+                api: ApiError {
+                    status: error.status,
+                    message: error.message,
+                    headers: error.headers.into_iter().collect(),
+                    body: error.body,
+                },
+                verdict,
+                kind: error.kind,
+                request_id: error.request_id,
+                max_delay: limits.max_delay,
+            }
+        }
     }
+}
+
+/// How long a freshly opened stream may stay silent before its first output.
+/// The stream watchdog (`CLAUDE_ENABLE_STREAM_WATCHDOG`) only starts once the
+/// caller owns the stream, so before that this is the only bound.
+fn stream_open_idle_timeout() -> Option<std::time::Duration> {
+    stream_watchdog_enabled().then(|| std::time::Duration::from_millis(stream_idle_timeout_ms()))
 }
 
 fn with_retry_error_to_anyhow(
@@ -8414,6 +8659,25 @@ mod tests {
         );
 
         crate::utils::config::set_test_global_config(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        let _ = std::fs::remove_dir_all(config_dir);
+    }
+
+    #[test]
+    fn main_profile_is_anthropic_returns_false_when_resolution_fails() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let config_dir = std::env::temp_dir().join(format!(
+            "nyan-profile-anthropic-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let _guards = [
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir),
+            EnvVarGuard::unset("ANTHROPIC_API_KEY"),
+        ];
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        // When profile resolution fails, main_profile_is_anthropic must evaluate to false
+        assert!(!main_profile_is_anthropic());
         crate::utils::settings::settings_cache::reset_settings_cache();
         let _ = std::fs::remove_dir_all(config_dir);
     }

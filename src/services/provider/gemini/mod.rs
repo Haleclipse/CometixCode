@@ -6,6 +6,7 @@
 
 pub mod adapter;
 pub mod errors;
+pub mod policy;
 pub mod target;
 pub mod wire;
 

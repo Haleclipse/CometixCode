@@ -667,3 +667,350 @@ async fn test_mock_gemini_partial_stream_on_cut() {
     let err = stream.next().await.unwrap().unwrap_err();
     assert_eq!(err.kind, ProviderErrorKind::PartialStream);
 }
+
+// ---------------------------------------------------------------------------
+// 5. Query Layer Retry & RatePolicy Fixture Tests
+// ---------------------------------------------------------------------------
+
+struct QueryEnv {
+    _lock: TestEnvGuard<'static>,
+    _guards: Vec<EnvVarGuard>,
+    root: std::path::PathBuf,
+}
+
+impl Drop for QueryEnv {
+    fn drop(&mut self) {
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+impl QueryEnv {
+    fn new(base_url: &str) -> Self {
+        let lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let root = std::env::temp_dir().join(format!("nyan-gemini-query-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let guards = vec![
+            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+            EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
+            EnvVarGuard::set("TEST_GEMINI_KEY", "fake-gemini-key"),
+            EnvVarGuard::set("API_TIMEOUT_MS", "5000"),
+            EnvVarGuard::set("NO_PROXY", "*"),
+            EnvVarGuard::set("no_proxy", "*"),
+            EnvVarGuard::unset("HTTPS_PROXY"),
+            EnvVarGuard::unset("HTTP_PROXY"),
+            EnvVarGuard::unset("ANTHROPIC_API_KEY"),
+        ];
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        super::install_test_main_profile(
+            base_url,
+            "TEST_GEMINI_KEY",
+            crate::utils::settings::nyan::ModelCapabilities {
+                context_window: Some(1_000_000),
+                max_output_tokens: Some(8192),
+                tools: Some("native".into()),
+                thinking: Some("adaptive".into()),
+                streaming: Some(true),
+                ..Default::default()
+            },
+        );
+        Self {
+            _lock: lock,
+            _guards: guards,
+            root,
+        }
+    }
+}
+
+fn user_msg(text: &str) -> crate::types::message::Message {
+    crate::types::message::Message::User(crate::types::message::UserMessage {
+        uuid: uuid::Uuid::new_v4().to_string(),
+        timestamp: chrono::Utc::now(),
+        content: vec![crate::types::message::UserContent::Text(text.to_string())],
+        is_compact_summary: false,
+        plan_content: None,
+        image_paste_ids: None,
+        is_visible_in_transcript_only: false,
+        mcp_meta: None,
+        source_tool_assistant_uuid: None,
+        permission_mode: None,
+        origin: None,
+        summarize_metadata: None,
+    })
+}
+
+fn gemini_chunk(text: &str) -> serde_json::Value {
+    json!({
+        "candidates": [{
+            "content": {
+                "parts": [{ "text": text }]
+            },
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {
+            "promptTokenCount": 10,
+            "candidatesTokenCount": 5
+        }
+    })
+}
+
+#[tokio::test]
+async fn test_gemini_burst_429_retries_and_recovers() {
+    let chunk = gemini_chunk("recovered");
+    let err_body = json!({
+        "error": {
+            "code": 429,
+            "message": "Resource has been exhausted",
+            "status": "RESOURCE_EXHAUSTED",
+            "details": [
+                {
+                    "@type": "type.googleapis.com/google.rpc.RetryInfo",
+                    "retryDelay": "0.01s"
+                }
+            ]
+        }
+    });
+
+    let server = MockGemini::start(vec![
+        Reply::error(429, err_body),
+        Reply::sse_data(vec![chunk]),
+    ])
+    .await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let options = crate::services::api::claude::Options::new(
+        "gemini-2.5-flash".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let mut rx = crate::services::api::claude::query_model_with_streaming(
+        &[user_msg("go")],
+        &vec![],
+        &crate::utils::thinking::ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await
+    .expect("stream should open after retry");
+
+    let mut found_text = false;
+    while let Some(item) = rx.recv().await {
+        if let crate::services::api::claude::QueryModelStreamItem::Assistant(msg) = item {
+            if let Some(crate::types::message::AssistantContent::Text(text)) =
+                msg.first_content_block()
+            {
+                if text == "recovered" {
+                    found_text = true;
+                }
+            }
+        }
+    }
+    assert!(found_text, "expected recovered text from second attempt");
+    assert_eq!(
+        server.requests().len(),
+        2,
+        "burst 429 retried once and recovered"
+    );
+}
+
+#[tokio::test]
+async fn test_gemini_billing_quota_429_does_not_retry() {
+    let err_body = json!({
+        "error": {
+            "code": 429,
+            "message": "Quota exceeded for quota metric 'Queries'",
+            "status": "RESOURCE_EXHAUSTED"
+        }
+    });
+
+    let server = MockGemini::start(vec![
+        Reply::error(429, err_body),
+        Reply::sse_data(vec![gemini_chunk("unexpected")]),
+    ])
+    .await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let options = crate::services::api::claude::Options::new(
+        "gemini-2.5-flash".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let result = crate::services::api::claude::query_model_with_streaming(
+        &[user_msg("go")],
+        &vec![],
+        &crate::utils::thinking::ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await;
+
+    let error_text = match result {
+        Err(e) => e.to_string(),
+        Ok(mut rx) => {
+            let mut text = String::new();
+            while let Some(item) = rx.recv().await {
+                if let crate::services::api::claude::QueryModelStreamItem::SystemError(err) = item {
+                    text = err.content;
+                }
+            }
+            text
+        }
+    };
+    assert!(
+        error_text.contains("Quota exceeded") || error_text.contains("RESOURCE_EXHAUSTED"),
+        "error_text: {error_text}"
+    );
+    assert_eq!(
+        server.requests().len(),
+        1,
+        "quota 429 must not be retried on same endpoint"
+    );
+}
+
+#[tokio::test]
+async fn test_gemini_503_unavailable_retries_and_recovers() {
+    let chunk = gemini_chunk("recovered from 503");
+    let err_body = json!({
+        "error": {
+            "code": 503,
+            "message": "Service unavailable",
+            "status": "UNAVAILABLE"
+        }
+    });
+
+    let server = MockGemini::start(vec![
+        Reply::error(503, err_body),
+        Reply::sse_data(vec![chunk]),
+    ])
+    .await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let options = crate::services::api::claude::Options::new(
+        "gemini-2.5-flash".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let mut rx = crate::services::api::claude::query_model_with_streaming(
+        &[user_msg("go")],
+        &vec![],
+        &crate::utils::thinking::ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await
+    .expect("stream should open after retry");
+
+    let mut found_text = false;
+    while let Some(item) = rx.recv().await {
+        if let crate::services::api::claude::QueryModelStreamItem::Assistant(msg) = item {
+            if let Some(crate::types::message::AssistantContent::Text(text)) =
+                msg.first_content_block()
+            {
+                if text == "recovered from 503" {
+                    found_text = true;
+                }
+            }
+        }
+    }
+    assert!(found_text);
+    assert_eq!(server.requests().len(), 2, "503 retried once and recovered");
+}
+
+#[tokio::test]
+async fn test_gemini_401_unauthenticated_fails_fast_without_retry() {
+    let err_body = json!({
+        "error": {
+            "code": 401,
+            "message": "API key not valid",
+            "status": "UNAUTHENTICATED"
+        }
+    });
+
+    let server = MockGemini::start(vec![
+        Reply::error(401, err_body),
+        Reply::sse_data(vec![gemini_chunk("unexpected")]),
+    ])
+    .await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let options = crate::services::api::claude::Options::new(
+        "gemini-2.5-flash".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let result = crate::services::api::claude::query_model_with_streaming(
+        &[user_msg("go")],
+        &vec![],
+        &crate::utils::thinking::ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await;
+
+    assert!(
+        result.is_err() || {
+            let mut rx = result.unwrap();
+            let mut has_err = false;
+            while let Some(item) = rx.recv().await {
+                if matches!(
+                    item,
+                    crate::services::api::claude::QueryModelStreamItem::SystemError(_)
+                ) {
+                    has_err = true;
+                }
+            }
+            has_err
+        }
+    );
+    assert_eq!(
+        server.requests().len(),
+        1,
+        "401 must fail immediately without retry"
+    );
+}
+
+#[tokio::test]
+async fn test_gemini_partial_stream_after_output_does_not_replay() {
+    let chunk = json!({
+        "candidates": [{
+            "content": {
+                "parts": [{ "text": "partial output" }]
+            }
+        }]
+    });
+
+    let server = MockGemini::start(vec![
+        Reply::SseThenCut(vec![(None, chunk.to_string())]),
+        Reply::sse_data(vec![gemini_chunk("unexpected replay")]),
+    ])
+    .await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let options = crate::services::api::claude::Options::new(
+        "gemini-2.5-flash".to_string(),
+        "repl_main_thread".to_string(),
+    );
+    let mut rx = crate::services::api::claude::query_model_with_streaming(
+        &[user_msg("go")],
+        &vec![],
+        &crate::utils::thinking::ThinkingConfig::Disabled,
+        &[],
+        &options,
+    )
+    .await
+    .expect("stream should open with first chunk committed");
+
+    let mut got_error = false;
+    while let Some(item) = rx.recv().await {
+        if matches!(
+            item,
+            crate::services::api::claude::QueryModelStreamItem::SystemError(_)
+        ) {
+            got_error = true;
+        }
+    }
+    assert!(got_error, "expected system error on mid-stream cut");
+    assert_eq!(
+        server.requests().len(),
+        1,
+        "partial stream must not trigger a replay request"
+    );
+}

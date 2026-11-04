@@ -4795,7 +4795,7 @@ mod tests {
     fn assistant_text_matches_official_trim_before_compact_error_checks() {
         // CC messages.ts:2849-2855: trim before consumers inspect PTL/API prefixes.
         for text in [
-            "\nPlease run /login · API Error: authentication failed\n",
+            "\nCheck profile API key configuration · API Error: authentication failed\n",
             "\nPrompt is too long\n",
         ] {
             let message =

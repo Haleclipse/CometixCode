@@ -7,3 +7,4 @@ pub mod gemini;
 pub mod ir;
 pub mod openai;
 pub mod request;
+pub mod retry;

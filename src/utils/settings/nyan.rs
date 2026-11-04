@@ -1427,6 +1427,24 @@ pub struct ModelProfileSettings {
     pub input: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cost: Option<ModelCostSettings>,
+    /// Same-endpoint retry limits for this profile. `max_retries` can only
+    /// lower the managed global cap, never raise it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry: Option<RetrySettings>,
+}
+
+/// Retry limits (provider redesign §7.2). At `nyan.retry` only the managed
+/// (policy) source is read, and `max_retries` there is the global cap
+/// (default 2, hard limit 5); at `nyan.models.<profile>.retry` it is the
+/// profile's own request, clamped to that cap.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[serde(default)]
+pub struct RetrySettings {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_retries: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_retry_delay_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1483,6 +1501,8 @@ pub struct NyanSettings {
     pub models: Option<BTreeMap<String, ModelProfileSettings>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<SelectionSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry: Option<RetrySettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compaction: Option<CompactionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1622,6 +1642,10 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ("cacheRead", zod::number().min(0).optional()),
         ("cacheWrite", zod::number().min(0).optional()),
     ]);
+    let retry = zod::strict_object(vec![
+        ("maxRetries", zod::number().int().nonnegative().optional()),
+        ("maxRetryDelayMs", zod::number().int().positive().optional()),
+    ]);
     let model = zod::strict_object(vec![
         ("provider", zod::string().min(1)),
         ("model", zod::string().min(1)),
@@ -1642,6 +1666,7 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
             zod::array(zod::enumeration(vec!["text", "image"])).optional(),
         ),
         ("cost", cost.optional()),
+        ("retry", retry.clone().optional()),
     ]);
     let decision_selection = zod::strict_object(vec![
         ("fast", zod::string().min(1).optional()),
@@ -1968,6 +1993,7 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ("web", web.optional()),
         ("decision", decision.optional()),
         ("toolIo", tool_io.optional()),
+        ("retry", retry.optional()),
     ])
     .describe(
         "nyan settings: provider/model profiles and module settings. Provider profiles are user/managed-only; project/local settings may only select existing profile names.",

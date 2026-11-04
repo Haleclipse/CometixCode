@@ -19,7 +19,7 @@ const MAX_API_ERROR_CHARS: usize = 1000;
 const API_ERROR_MESSAGE_PREFIX: &str = "API Error";
 const PROMPT_TOO_LONG_ERROR_MESSAGE: &str = "Prompt is too long";
 const CREDIT_BALANCE_TOO_LOW_ERROR_MESSAGE: &str = "Credit balance is too low";
-const INVALID_API_KEY_ERROR_MESSAGE: &str = "Not logged in · Please run /login";
+const INVALID_API_KEY_ERROR_MESSAGE: &str = "Invalid API key · Check profile API key configuration";
 const INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL: &str = "Invalid API key · Fix external API key";
 const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH: &str = "Your ANTHROPIC_API_KEY belongs to a disabled organization · Unset the environment variable to use your subscription instead";
 const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY: &str = "Your ANTHROPIC_API_KEY belongs to a disabled organization · Update or unset the environment variable";
@@ -140,7 +140,8 @@ pub fn StreamingAssistantTextMessage(
 }
 
 fn starts_with_api_error_prefix(text: &str) -> bool {
-    text.starts_with(API_ERROR_MESSAGE_PREFIX) || text.starts_with("Please run /login · API Error")
+    text.starts_with(API_ERROR_MESSAGE_PREFIX)
+        || text.starts_with("Check profile API key configuration · API Error")
 }
 
 fn is_rate_limit_error_message(text: &str) -> bool {
