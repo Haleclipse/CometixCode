@@ -3,9 +3,10 @@
 //! The settings schema checks the shape of the reference. This module checks
 //! what the shape cannot: that an `oauth` reference names a provider module
 //! that exists and belongs to the provider's `kind` (decision 16: only OpenAI
-//! Codex and OpenCode; Anthropic is API key only). It does no network I/O for
-//! `env`, `optionalEnv` or `file`, and for `oauth` only refreshes an expired
-//! token.
+//! Codex and OpenCode; Anthropic is API key only), and that `optionalEnv` only
+//! pairs with local provider kinds (`vllm`, `ollama`). It does no network I/O
+//! for `env`, `optionalEnv` or `file`, and for `oauth` only refreshes an
+//! expired token.
 
 use std::fmt;
 
@@ -32,6 +33,10 @@ pub enum ResolveError {
         kind: ProviderKind,
         oauth: String,
     },
+    /// `optionalEnv` is only allowed for local provider kinds (`vllm`, `ollama`).
+    OptionalEnvNotAllowed {
+        kind: ProviderKind,
+    },
     Token(TokenError),
 }
 
@@ -52,6 +57,10 @@ impl fmt::Display for ResolveError {
                 } else {
                     ""
                 }
+            ),
+            Self::OptionalEnvNotAllowed { kind } => write!(
+                f,
+                "optionalEnv credential cannot be used with provider kind {kind:?}; optionalEnv is only allowed for local provider kinds (vllm, ollama)"
             ),
             Self::Token(error) => fmt::Display::fmt(error, f),
         }
@@ -103,6 +112,14 @@ pub fn validate_reference(
     let source = credential_source(reference)?;
     if let CredentialSource::OAuth { provider } = &source {
         kind_allows(kind, provider)?;
+    }
+    if let CredentialSource::Env {
+        required: false, ..
+    } = &source
+    {
+        if !kind.is_local() {
+            return Err(ResolveError::OptionalEnvNotAllowed { kind });
+        }
     }
     Ok(source)
 }
@@ -348,6 +365,46 @@ mod tests {
             assert!(validate_reference(kind, &reference(serde_json::json!({"env": "K"}))).is_ok());
             assert!(
                 validate_reference(kind, &reference(serde_json::json!({"none": true}))).is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn commercial_kinds_reject_optional_env() {
+        for kind in [
+            ProviderKind::Anthropic,
+            ProviderKind::Openai,
+            ProviderKind::Gemini,
+            ProviderKind::Openrouter,
+            ProviderKind::Gateway,
+        ] {
+            let error = validate_reference(
+                kind,
+                &reference(serde_json::json!({"optionalEnv": "OPTIONAL_KEY"})),
+            )
+            .unwrap_err();
+            assert!(
+                matches!(error, ResolveError::OptionalEnvNotAllowed { kind: k } if k == kind),
+                "{kind:?}"
+            );
+            assert!(
+                error
+                    .to_string()
+                    .contains("only allowed for local provider kinds")
+            );
+        }
+    }
+
+    #[test]
+    fn local_kinds_accept_optional_env() {
+        for kind in [ProviderKind::Vllm, ProviderKind::Ollama] {
+            assert!(
+                validate_reference(
+                    kind,
+                    &reference(serde_json::json!({"optionalEnv": "OPTIONAL_KEY"})),
+                )
+                .is_ok(),
+                "{kind:?}"
             );
         }
     }

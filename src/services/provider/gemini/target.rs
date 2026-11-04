@@ -150,3 +150,33 @@ pub async fn target_for_profile(
         optional_env,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::model::profile::ResolvedCapabilities;
+    use crate::utils::settings::nyan::CredentialReference;
+
+    #[tokio::test]
+    async fn commercial_gemini_profile_rejects_optional_env() {
+        let profile = ResolvedModelProfile {
+            profile: "gemini-p".into(),
+            provider: "gemini".into(),
+            provider_kind: ProviderKind::Gemini,
+            protocol: ProviderProtocol::Gemini,
+            model: "gemini-2.5-pro".into(),
+            context_window: 1_000_000,
+            max_output_tokens: 65_536,
+            capabilities: ResolvedCapabilities::default(),
+            base_url: None,
+            credential: Some(CredentialReference {
+                optional_env: Some("GEMINI_OPTIONAL_KEY".into()),
+                ..Default::default()
+            }),
+            compat: None,
+        };
+        let error = target_for_profile(&profile).await.unwrap_err();
+        assert!(matches!(error, TargetError::Credential { .. }), "{error}");
+        assert!(error.to_string().contains("optionalEnv"), "{error}");
+    }
+}

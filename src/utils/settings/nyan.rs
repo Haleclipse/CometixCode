@@ -1557,6 +1557,35 @@ impl NyanSettings {
 // Zod schema
 // ════════════════════════════════════════════════════════════
 
+fn provider_credential_check(v: &crate::utils::zod::Value) -> Vec<crate::utils::zod::CheckIssue> {
+    use crate::utils::zod::{CheckIssue, PathSegment};
+    let mut issues = Vec::new();
+    let Some(map) = v.as_object() else {
+        return issues;
+    };
+    let Some(kind) = map
+        .get("kind")
+        .and_then(|k| serde_json::from_value::<ProviderKind>(k.clone()).ok())
+    else {
+        return issues;
+    };
+    if !kind.is_local() {
+        if let Some(cred) = map.get("credential").and_then(|c| c.as_object()) {
+            if cred.contains_key("optionalEnv") {
+                issues.push(CheckIssue {
+                    path: vec![
+                        PathSegment::Key("credential".to_string()),
+                        PathSegment::Key("optionalEnv".to_string()),
+                    ],
+                    message: "optionalEnv is only allowed for local provider kinds (vllm, ollama)"
+                        .to_string(),
+                });
+            }
+        }
+    }
+    issues
+}
+
 /// Maps to no CC schema: the formal carrier for `SettingsJson.nyan`.
 ///
 /// Nested objects use `zod::object` (unknown keys stripped), matching every
@@ -1619,7 +1648,8 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
             ])
             .optional(),
         ),
-    ]);
+    ])
+    .check(provider_credential_check);
     let capabilities = zod::strict_object(vec![
         ("contextWindow", zod::number().int().positive().optional()),
         ("maxOutputTokens", zod::number().int().positive().optional()),
@@ -2397,6 +2427,49 @@ mod tests {
             assert!(
                 crate::utils::zod::safe_parse(&nyan_settings_schema(), &bad).is_err(),
                 "should reject {bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn commercial_providers_reject_optional_env_in_settings_schema() {
+        for kind in ["anthropic", "openai", "gemini", "openrouter", "gateway"] {
+            let value = json!({
+                "providers": {
+                    "p": {
+                        "kind": kind,
+                        "credential": {"optionalEnv": "SOME_KEY"}
+                    }
+                }
+            });
+            let error = crate::utils::zod::safe_parse(&nyan_settings_schema(), &value)
+                .expect_err("commercial kind with optionalEnv must fail");
+            assert!(
+                error.issues.iter().any(|issue| {
+                    issue
+                        .message
+                        .contains("optionalEnv is only allowed for local provider kinds")
+                }),
+                "expected rejection for kind {kind}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn local_providers_accept_optional_env_in_settings_schema() {
+        for kind in ["vllm", "ollama"] {
+            let value = json!({
+                "providers": {
+                    "p": {
+                        "kind": kind,
+                        "baseUrl": "http://127.0.0.1:8000/v1",
+                        "credential": {"optionalEnv": "SOME_KEY"}
+                    }
+                }
+            });
+            assert!(
+                crate::utils::zod::safe_parse(&nyan_settings_schema(), &value).is_ok(),
+                "local kind {kind} must accept optionalEnv"
             );
         }
     }

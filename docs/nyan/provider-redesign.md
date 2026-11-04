@@ -367,7 +367,7 @@ credential reference 只引用来源，不把 secret 写入 settings：
 
 - `env`：读取指定变量；未设置是 `missingCredential`；
 - `file`：单行读取；Unix 要求 0600；Windows 必须验证 owner-only ACL，无法验证立即拒绝并说明需要 env 或系统凭据；
-- `optionalEnv`：允许无认证本地 endpoint，但收到 401 仍报告 auth error；
+- `optionalEnv`：允许无认证本地 endpoint（仅限本地 kind `vllm` / `ollama`；商业 kind 在 settings 校验与凭据解析阶段拒绝），收到 401 仍报告 auth error；
 - `oauth`：绑定一个 provider-owned OAuth profile，flow、refresh、token schema、存储和删除都由该 provider owner 实现。
 
 **Pi Agent 参考**：
@@ -402,7 +402,7 @@ credential reference 只引用来源，不把 secret 写入 settings：
 - `store.rs`：`~/.nyan/auth/<provider>.json`，每个 provider 一个文件、文件内按 account 分条目（`version: 1`）。provider id 只允许 `a-z0-9-`（它是文件名）。读无锁（文件原子替换），写必须持有 `<provider>.lock` 的独占锁（`AuthLock`）。路径不接受环境变量覆盖，避免 settings 注入改变 token 位置。
 - `refresh.rs`：`fresh_credential` 在 provider 锁内重读后才刷新，等锁的调用方直接拿到先到者写入的新 token，不会重复消耗一次性 refresh token。不同 provider 互不阻塞。
 - `oauth/openai_codex.rs`（PKCE + 授权码）、`oauth/opencode.rs`（device flow）：各自持有 endpoint、client id、token 解析与 refresh；公共部分只有表单/JSON 提交和“错误里不引用响应体”的失败分类。token 请求不跟随重定向，OpenCode 的 server 只接受 https 或回环 http。
-- `resolve.rs`：`validate_reference` 按 provider `kind` 限定 `oauth` 可用的模块（`openai` ↔ `openai-codex`，`gateway` ↔ `opencode`），`anthropic` 配 `oauth` 一律拒绝。
+- `resolve.rs`：`validate_reference` 按 provider `kind` 限定 `oauth` 可用的模块（`openai` ↔ `openai-codex`，`gateway` ↔ `opencode`），`anthropic` 配 `oauth` 一律拒绝；限定 `optionalEnv` 仅允许本地 kind（`vllm`、`ollama`），商业 kind 配 `optionalEnv` 一律拒绝。
 - 新存储不读取 `OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED`；该开关仍只保护继承下来的 Anthropic / MCP OAuth 出口；provider 凭据不经过这些出口。这些旧出口的删除范围见 PR 3 描述的“待决策”。
 - PR 3 不发真实模型请求、不开浏览器、不监听端口、不提供登录命令；登录步骤以函数形式暴露，由后续 provider adapter 阶段驱动。
 

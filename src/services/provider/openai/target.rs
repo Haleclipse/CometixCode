@@ -341,20 +341,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_unset_optional_key_means_no_credential_and_a_set_one_is_used() {
-        let _lock = lock();
-        let _unset = EnvVarGuard::unset("NYAN_OPENAI_TEST_OPTIONAL");
+    async fn commercial_openai_profile_rejects_optional_env() {
         let optional = CredentialReference {
             optional_env: Some("NYAN_OPENAI_TEST_OPTIONAL".into()),
             ..Default::default()
         };
-        let target = target_for_profile(&profile(
-            Some(optional.clone()),
-            ProviderProtocol::OpenaiChat,
-        ))
-        .await
-        .unwrap();
-        assert!(matches!(target.auth, OpenAiAuth::None));
+        let error = target_for_profile(&profile(Some(optional), ProviderProtocol::OpenaiChat))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, TargetError::Credential { .. }), "{error}");
+        assert!(error.to_string().contains("optionalEnv"), "{error}");
     }
 
     #[tokio::test]
@@ -402,6 +398,26 @@ mod tests {
         assert_eq!(target.base_url, "http://127.0.0.1:8000/v1");
         assert_eq!(target.compat.max_tokens_field, MaxTokensField::MaxTokens);
         assert!(target.compat.include_usage);
+    }
+
+    #[tokio::test]
+    async fn a_local_profile_with_optional_key_uses_key_when_set() {
+        let _lock = lock();
+        let _set = EnvVarGuard::set("NYAN_OPENAI_TEST_LOCAL_KEY_SET", "sk-local-secret");
+        let mut p = profile(
+            Some(CredentialReference {
+                optional_env: Some("NYAN_OPENAI_TEST_LOCAL_KEY_SET".into()),
+                ..Default::default()
+            }),
+            ProviderProtocol::OpenaiChat,
+        );
+        p.provider_kind = ProviderKind::Vllm;
+        p.base_url = Some("http://127.0.0.1:8000/v1".into());
+        let target = target_for_profile(&p).await.unwrap();
+        let OpenAiAuth::ApiKey(key) = &target.auth else {
+            panic!("{:?}", target.auth)
+        };
+        assert_eq!(key.expose(), "sk-local-secret");
     }
 
     #[tokio::test]

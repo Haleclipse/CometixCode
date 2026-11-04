@@ -66,9 +66,8 @@ impl std::error::Error for CredentialGateError {}
 
 /// Resolve the API key a provider profile points at.
 ///
-/// `Ok(None)` means the profile explicitly asks for no key (`none`, or an unset
-/// `optionalEnv`), which suits an Anthropic-compatible gateway that
-/// authenticates some other way.
+/// `Ok(None)` means the profile explicitly asks for no key (`none`), which
+/// suits an Anthropic-compatible gateway that authenticates some other way.
 pub fn resolve_api_key(
     provider: &str,
     credential: Option<&CredentialReference>,
@@ -186,28 +185,27 @@ mod tests {
     }
 
     #[test]
-    fn optional_env_and_none_allow_a_keyless_request() {
-        let _lock = lock();
-        let _unset = EnvVarGuard::unset("NYAN_CRED_TEST_OPTIONAL");
-        let optional = reference(|r| r.optional_env = Some("NYAN_CRED_TEST_OPTIONAL".into()));
-        assert!(resolve_api_key("a", Some(&optional)).unwrap().is_none());
-        let _set = EnvVarGuard::set("NYAN_CRED_TEST_OPTIONAL", "x");
-        assert_eq!(
-            resolve_api_key("a", Some(&optional))
-                .unwrap()
-                .unwrap()
-                .expose(),
-            "x"
-        );
+    fn none_allows_a_keyless_request() {
         let none = reference(|r| r.none = Some(true));
         assert!(resolve_api_key("a", Some(&none)).unwrap().is_none());
+    }
+
+    #[test]
+    fn optional_env_is_rejected_for_anthropic() {
+        let optional = reference(|r| r.optional_env = Some("NYAN_CRED_TEST_OPTIONAL".into()));
+        let error = resolve_api_key("a", Some(&optional)).unwrap_err();
+        assert!(
+            matches!(error, CredentialGateError::Resolve { .. }),
+            "{error}"
+        );
+        assert!(error.to_string().contains("optionalEnv"), "{error}");
     }
 
     #[test]
     fn two_sources_at_once_are_rejected() {
         let credential = reference(|r| {
             r.env = Some("K".into());
-            r.optional_env = Some("J".into());
+            r.file = Some("path".into());
         });
         assert!(resolve_api_key("a", Some(&credential)).is_err());
     }
