@@ -81,9 +81,8 @@ pub struct ModelRequest {
     pub messages: Vec<Message>,
     pub tools: Vec<ToolSpec>,
     pub tool_choice: ToolChoice,
-    pub thinking: ThinkingPreference,
-    /// Reasoning-effort hint; adapters map it or drop it per capability.
-    pub effort: Option<Effort>,
+    /// Unified reasoning-effort depth (`off < medium < high < max`); `off` disables reasoning.
+    pub effort: Effort,
     pub max_output_tokens: u32,
     pub temperature: Option<f64>,
     pub structured_output: Option<JsonSchemaOutput>,
@@ -260,20 +259,8 @@ pub enum ToolChoice {
     },
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ThinkingPreference {
-    #[default]
-    Disabled,
-    /// Let the model decide how much to think.
-    Adaptive,
-    /// Think with a token budget; `None` means "adapter default for the model".
-    Budget { tokens: Option<u32> },
-}
-
-/// Provider-neutral effort hint (`low`/`medium`/`high`/... or a number).
-/// Adapters map or drop it according to their capabilities.
-pub type Effort = crate::utils::effort::EffortValue;
+/// Provider-neutral reasoning depth (`off < medium < high < max`).
+pub use crate::utils::effort::Effort;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonSchemaOutput {
@@ -561,8 +548,7 @@ mod tests {
             tool_choice: ToolChoice::Tool {
                 name: "Read".into(),
             },
-            thinking: ThinkingPreference::Budget { tokens: Some(100) },
-            effort: Some(Effort::Named("high".into())),
+            effort: Effort::High,
             max_output_tokens: 1000,
             temperature: None,
             structured_output: None,

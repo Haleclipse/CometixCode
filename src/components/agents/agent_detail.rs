@@ -204,7 +204,7 @@ mod tests {
         );
         agent.system_prompt = Some("Review the code carefully.".to_string());
         agent.tools = Some(vec!["Read".to_string(), "Missing".to_string()]);
-        agent.model = Some("opus".to_string());
+        agent.model = Some("@heavy:high".to_string());
         agent.color = Some("blue".to_string());
         let text = element! {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
@@ -216,7 +216,7 @@ mod tests {
         assert!(text.contains(".claude/agents/reviewer.md"));
         assert!(text.contains("Tools: Read"));
         assert!(text.contains("Unrecognized: Missing"));
-        assert!(text.contains("Model: Opus"));
+        assert!(text.contains("Model: @heavy:high"));
         assert!(text.contains("System prompt:"));
     }
 

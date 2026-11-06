@@ -5,12 +5,12 @@ use crate::components::custom_select::{
 };
 use crate::components::design_system::dialog::Dialog;
 use crate::state::store::AppStore;
-use crate::utils::effort::EffortValue;
+use crate::utils::effort::Effort;
 use iocraft::prelude::*;
 
 #[derive(Default, Props)]
 pub struct CacheBreakConfirmDialogProps<'a> {
-    pub effort: Option<EffortValue>,
+    pub effort: Option<Effort>,
     pub on_confirm: HandlerMut<'a, ()>,
     pub on_cancel: HandlerMut<'a, ()>,
 }
@@ -32,7 +32,7 @@ pub fn CacheBreakConfirmDialog<'a>(
     let target = props
         .effort
         .as_ref()
-        .map(EffortValue::as_str)
+        .map(|effort| effort.as_str().to_string())
         .unwrap_or_else(|| "auto".into());
     let options = vec![
         SelectOptionData {

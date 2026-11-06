@@ -6,18 +6,16 @@
 //! here; anything shaped by one protocol (cache markers, betas, tool-search
 //! deferral, system-block splitting) is left to that protocol's adapter.
 
+use super::ir::{
+    AssistantPart, CachePolicy, ClientContext, Effort, JsonSchemaOutput, MediaSource, Message,
+    ModelRequest, Protocol, ProviderState, ToolChoice, ToolResultContent, ToolResultPart, ToolSpec,
+    UserPart,
+};
 use crate::constants::api_limits::API_MAX_MEDIA_PER_REQUEST;
 use crate::types::message::{
     AssistantContent, Message as NyanMessage, ToolResult, ToolResultContentBlock, UserContent,
 };
 use crate::types::tools::Tool;
-use crate::utils::thinking::ThinkingConfig;
-
-use super::ir::{
-    AssistantPart, CachePolicy, ClientContext, Effort, JsonSchemaOutput, MediaSource, Message,
-    ModelRequest, Protocol, ProviderState, ThinkingPreference, ToolChoice, ToolResultContent,
-    ToolResultPart, ToolSpec, UserPart,
-};
 
 /// Everything the query layer decides about one call, before any wire format.
 #[derive(Debug, Clone)]
@@ -29,8 +27,7 @@ pub struct RequestParams {
     pub temperature: Option<f64>,
     pub tool_choice: ToolChoice,
     pub disable_parallel_tools: bool,
-    pub thinking: ThinkingConfig,
-    pub effort: Option<Effort>,
+    pub effort: Effort,
     pub output_schema: Option<serde_json::Value>,
     pub enable_prompt_caching: bool,
     pub skip_cache_write: bool,
@@ -310,21 +307,12 @@ pub fn build_request(
         .collect();
     strip_excess_media(&mut ir_messages, API_MAX_MEDIA_PER_REQUEST);
 
-    let thinking = match params.thinking {
-        ThinkingConfig::Disabled => ThinkingPreference::Disabled,
-        ThinkingConfig::Adaptive => ThinkingPreference::Adaptive,
-        ThinkingConfig::Enabled { budget_tokens } => ThinkingPreference::Budget {
-            tokens: budget_tokens.map(|tokens| tokens.clamp(0, u32::MAX as i64) as u32),
-        },
-    };
-
     ModelRequest {
         model: params.model,
         system: system.to_vec(),
         messages: ir_messages,
         tools: tools.iter().map(tool_spec).collect(),
         tool_choice: params.tool_choice,
-        thinking,
         effort: params.effort,
         max_output_tokens: params.max_output_tokens,
         temperature: params.temperature,
@@ -360,8 +348,7 @@ mod tests {
             temperature: None,
             tool_choice: ToolChoice::Auto,
             disable_parallel_tools: false,
-            thinking: ThinkingConfig::Disabled,
-            effort: None,
+            effort: Effort::Medium,
             output_schema: None,
             enable_prompt_caching: true,
             skip_cache_write: false,
@@ -472,20 +459,12 @@ mod tests {
     }
 
     #[test]
-    fn thinking_config_maps_to_preference() {
+    fn effort_is_carried_into_the_provider_request() {
         let mut p = params();
-        p.thinking = ThinkingConfig::Enabled {
-            budget_tokens: Some(2048),
-        };
+        p.effort = Effort::Max;
         assert_eq!(
-            build_request(&[], &[], &[], Vec::new(), p).thinking,
-            ThinkingPreference::Budget { tokens: Some(2048) }
-        );
-        let mut p = params();
-        p.thinking = ThinkingConfig::Adaptive;
-        assert_eq!(
-            build_request(&[], &[], &[], Vec::new(), p).thinking,
-            ThinkingPreference::Adaptive
+            build_request(&[], &[], &[], Vec::new(), p).effort,
+            Effort::Max
         );
     }
 

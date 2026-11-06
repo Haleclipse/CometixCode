@@ -295,7 +295,7 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: &Comp
         }
     }
     if target.capabilities.thinking
-        && let Some(effort) = reasoning_effort(request)
+        && let Some(effort) = reasoning_effort(request, target)
     {
         body["reasoning_effort"] = json!(effort);
     }
@@ -333,6 +333,8 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: &Comp
         apply_anthropic_cache_control(&mut messages, body.get_mut("tools"), &cache_control);
         body["messages"] = json!(messages);
     }
+
+    crate::services::provider::adapter::merge_extra(&mut body, target.extra.as_ref());
 
     body
 }
@@ -792,7 +794,7 @@ impl ChatStream {
 mod tests {
     use super::*;
     use crate::services::provider::ir::{
-        CachePolicy, ClientContext, JsonSchemaOutput, ThinkingPreference, ToolSpec,
+        CachePolicy, ClientContext, Effort, JsonSchemaOutput, ToolSpec,
     };
     use crate::utils::model::profile::ResolvedCapabilities;
     use crate::utils::settings::nyan::ProviderKind;
@@ -817,6 +819,7 @@ mod tests {
             max_output_tokens: 8_000,
             capabilities,
             cache_retention: Default::default(),
+            extra: None,
         }
     }
 
@@ -837,8 +840,7 @@ mod tests {
             messages,
             tools: vec![],
             tool_choice: ToolChoice::Auto,
-            thinking: ThinkingPreference::Disabled,
-            effort: None,
+            effort: Effort::Off,
             max_output_tokens: 32_000,
             temperature: None,
             structured_output: None,
@@ -885,18 +887,30 @@ mod tests {
             body["messages"][1],
             json!({"role": "user", "content": "hi"})
         );
-        for absent in [
-            "tools",
-            "tool_choice",
-            "reasoning_effort",
-            "temperature",
-            "response_format",
-        ] {
+        // `off` on gpt-5 clamps to its lowest tier rather than being left out.
+        assert_eq!(body["reasoning_effort"], "minimal");
+        for absent in ["tools", "tool_choice", "temperature", "response_format"] {
             assert!(
                 body.get(absent).is_none(),
                 "{absent} must not be sent: {body}"
             );
         }
+    }
+
+    #[test]
+    fn profile_extra_is_merged_last_into_the_chat_body() {
+        let mut with_extra = target(all());
+        with_extra.extra = Some(json!({
+            "max_completion_tokens": 123,
+            "chat_template_kwargs": {"enable_thinking": false}
+        }));
+        let body = build_body(&with_extra, &request(vec![user_text("hi")]));
+        assert_eq!(body["max_completion_tokens"], 123);
+        assert_eq!(
+            body["chat_template_kwargs"],
+            json!({"enable_thinking": false})
+        );
+        assert_eq!(body["model"], "gpt-5");
     }
 
     #[test]
@@ -926,8 +940,7 @@ mod tests {
     #[test]
     fn thinking_effort_and_temperature_follow_the_declared_capabilities() {
         let mut r = request(vec![user_text("hi")]);
-        r.thinking = ThinkingPreference::Adaptive;
-        r.effort = Some(crate::services::provider::ir::Effort::Named("high".into()));
+        r.effort = Effort::High;
         r.temperature = Some(0.2);
         let reasoning = build_body(&target(all()), &r);
         assert_eq!(reasoning["reasoning_effort"], "high");

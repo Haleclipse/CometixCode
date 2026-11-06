@@ -331,11 +331,10 @@ fn build_initial_app_state_with_thinking(
         settings.fast_mode_per_session_opt_in,
     );
 
-    // Maps to: CC 2.1.198 `p4i` / `HQr`: CLI extended effort, then the
-    // session-scoped ultracode seed, then the persisted effort level.
-    initial.effort_value =
-        crate::utils::ultracode::resolve_initial_effort_setting(cli.effort.as_deref(), settings);
-    initial.ultracode = crate::utils::ultracode::consume_ultracode_setting(settings);
+    initial.effort_value = cli
+        .effort
+        .as_deref()
+        .and_then(crate::utils::effort::Effort::from_str_loose);
 
     let loaded_permission_rules =
         crate::utils::permissions::permissions_loader::load_all_permission_rules_from_disk();
@@ -2620,7 +2619,7 @@ mod tests {
         assert_eq!(state.main_loop_model.as_deref(), Some("sonnet"));
         assert_eq!(
             state.effort_value,
-            Some(crate::utils::effort::EffortValue::Named("medium".into()))
+            Some(crate::utils::effort::Effort::Medium)
         );
         assert!(state.verbose);
         assert_eq!(

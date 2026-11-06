@@ -577,8 +577,8 @@ pub(crate) async fn apply_prompt_to_markdown(
         prompt,
         is_preapproved_domain,
     );
-    let mut options = crate::services::api::claude::Options::new(
-        crate::utils::model::model::get_small_fast_model(),
+    let mut options = crate::services::api::claude::Options::for_utility(
+        "webfetch",
         "web_fetch_apply".to_string(),
     );
     options.is_non_interactive_session = is_non_interactive_session;

@@ -112,8 +112,8 @@ pub async fn generate_session_title(
             "additionalProperties": false
         }
     });
-    let mut options = crate::services::api::claude::Options::new(
-        crate::utils::model::model::get_small_fast_model(),
+    let mut options = crate::services::api::claude::Options::for_utility(
+        "title",
         "generate_session_title".to_string(),
     );
     options.agents = Vec::new();

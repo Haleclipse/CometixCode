@@ -682,6 +682,8 @@ pub struct LoadedSession {
     pub agent_colors: HashMap<String, String>,
     pub agent_settings: HashMap<String, String>,
     pub modes: HashMap<String, String>,
+    pub session_models: HashMap<String, Option<String>>,
+    pub session_efforts: HashMap<String, Option<crate::utils::effort::Effort>>,
     pub worktree_states: HashMap<String, serde_json::Value>,
     pub pr_numbers: HashMap<String, u64>,
     pub pr_urls: HashMap<String, String>,
@@ -2858,6 +2860,31 @@ pub fn load_session_structured_from_path(path: &Path) -> LoadedSession {
                 }
             }
 
+            // ── Session-scoped model and effort changes (last-wins) ──
+            "model-change" => {
+                let model = entry.get("model").and_then(|value| {
+                    (!value.is_null())
+                        .then(|| value.as_str().map(str::to_string))
+                        .flatten()
+                });
+                session.session_models.insert(session_id_val, model);
+            }
+            "effort-change" => {
+                let effort = entry
+                    .get("effort")
+                    .and_then(|value| {
+                        Some(if value.is_null() {
+                            None
+                        } else {
+                            value
+                                .as_str()
+                                .and_then(crate::utils::effort::Effort::from_str_loose)
+                        })
+                    })
+                    .unwrap_or(None);
+                session.session_efforts.insert(session_id_val, effort);
+            }
+
             // ── Metadata: worktree-state (last-wins) ──
             "worktree-state" => {
                 if let Some(state) = entry.get("worktreeSession") {
@@ -4980,6 +5007,32 @@ fn insert_message_chain(
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
+/// Record a session-only model selection. `None` clears the override.
+pub fn save_session_model(model: Option<&str>) -> anyhow::Result<()> {
+    let session_id = crate::bootstrap::state::get_session_id();
+    append_entry_to_file(
+        &get_transcript_path(None),
+        &serde_json::json!({
+            "type": "model-change",
+            "model": model,
+            "sessionId": session_id,
+        }),
+    )
+}
+
+/// Record a session-only effort selection.
+pub fn save_session_effort(effort: crate::utils::effort::Effort) -> anyhow::Result<()> {
+    let session_id = crate::bootstrap::state::get_session_id();
+    append_entry_to_file(
+        &get_transcript_path(None),
+        &serde_json::json!({
+            "type": "effort-change",
+            "effort": effort.as_str(),
+            "sessionId": session_id,
+        }),
+    )
+}
+
 pub fn save_custom_title(
     session_id: &str,
     custom_title: &str,
@@ -5854,6 +5907,30 @@ mod tests {
     use serde_json::{Value, json};
     use std::fs;
     use uuid::Uuid;
+
+    #[test]
+    fn session_model_and_effort_events_are_last_wins_and_preserve_clears() {
+        let path =
+            std::env::temp_dir().join(format!("nyan-session-events-{}.jsonl", Uuid::new_v4()));
+        fs::write(
+            &path,
+            concat!(
+                "{\"type\":\"model-change\",\"sessionId\":\"s\",\"model\":\"old\"}\n",
+                "{\"type\":\"model-change\",\"sessionId\":\"s\",\"model\":null}\n",
+                "{\"type\":\"effort-change\",\"sessionId\":\"s\",\"effort\":\"high\"}\n",
+                "{\"type\":\"effort-change\",\"sessionId\":\"s\",\"effort\":\"off\"}\n",
+            ),
+        )
+        .unwrap();
+
+        let session = load_session_structured_from_path(&path);
+        assert_eq!(session.session_models.get("s"), Some(&None));
+        assert_eq!(
+            session.session_efforts.get("s"),
+            Some(&Some(crate::utils::effort::Effort::Off))
+        );
+        let _ = fs::remove_file(path);
+    }
 
     #[test]
     fn save_agent_color_matches_official_target_cache_and_error_order() {

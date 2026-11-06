@@ -267,11 +267,13 @@ const GATE_DEPENDENT_ORACLE_PATCHES: &[OraclePatch] = &[
 ///
 /// `WebFetchTool` also repurposes `prompt` (optional, verbatim excerpts) and
 /// `WebSearchTool` adds `max_results`; [`strip_nyan_extensions`] restores CC's
-/// description and `required` list for WebFetch as well.
+/// description and `required` list for WebFetch as well. `AgentTool` adds no
+/// parameter but retypes `model`, which [`strip_nyan_extensions`] restores.
 const NYAN_SCHEMA_EXTENSIONS: &[(&str, &[&str], bool)] = &[
     ("FileReadTool", &["encoding", "view", "files"], true),
     ("WebFetchTool", &["range"], false),
     ("WebSearchTool", &["max_results"], false),
+    ("AgentTool", &[], false),
 ];
 
 /// CC's WebFetch `prompt` description, replaced by nyan's excerpt wording.
@@ -304,8 +306,24 @@ fn strip_nyan_extensions(tool_dir: &str, mut schema: Value) -> Value {
         }
         schema["required"] = serde_json::json!(["url", "prompt"]);
     }
+    // @nyan: Agent's `model` is a free `ref[:effort]` string (profile name,
+    // `@light` / `@heavy` / `@main`, `inherit`, or a temporary `provider/model`)
+    // instead of CC's sonnet/opus/haiku enum (provider-redesign §5.1). The
+    // oracle's schema is restored before the diff.
+    if tool_dir == "AgentTool"
+        && let Some(model) = schema.pointer_mut("/properties/model")
+    {
+        *model = serde_json::json!({
+            "type": "string",
+            "enum": ["sonnet", "opus", "haiku"],
+            "description": CC_AGENT_MODEL_DESCRIPTION,
+        });
+    }
     schema
 }
+
+/// CC's Agent `model` description, replaced by nyan's `ref[:effort]` wording.
+const CC_AGENT_MODEL_DESCRIPTION: &str = "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent.";
 
 /// Ported tools the oracle never captured, so their schemas stay unverified.
 /// Empty: the dump script keys every tool a directory exports, not just the one

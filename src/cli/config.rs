@@ -279,7 +279,7 @@ Live:
       --verbose              Verbose mode
       --bare                 Minimal/simple mode (CLAUDE_CODE_SIMPLE)
       --model <model>        Session model (or `default`)
-      --effort <level>       Effort: low|medium|high|xhigh|max
+      --effort <level>       Effort: off|medium|high|max
       --thinking <mode>      adaptive|enabled|disabled
       --mcp-debug            Deprecated alias for debug logging
       --mcp-config <configs...>  Load MCP JSON files or inline JSON

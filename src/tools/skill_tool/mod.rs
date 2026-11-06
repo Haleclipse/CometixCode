@@ -185,8 +185,15 @@ impl SkillContextModifier {
         }
 
         // `if (effort !== undefined)` — presence, not truthiness.
-        if let Some(effort) = self.effort.clone() {
-            context.effort_value = Some(effort);
+        if let Some(effort) = self.effort.as_ref() {
+            context.effort_value = match effort {
+                crate::utils::effort::EffortValue::Named(value) => {
+                    crate::utils::effort::Effort::from_str_loose(value)
+                }
+                crate::utils::effort::EffortValue::Numeric(_) => {
+                    Some(crate::utils::effort::Effort::Medium)
+                }
+            };
         }
     }
 }
@@ -1175,7 +1182,7 @@ mod tests {
         assert_eq!(context.main_loop_model.as_deref(), Some("opus"));
         assert_eq!(
             context.effort_value,
-            Some(crate::utils::effort::EffortValue::Named("high".to_string()))
+            Some(crate::utils::effort::Effort::High)
         );
     }
 

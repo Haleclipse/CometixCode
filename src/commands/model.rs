@@ -96,8 +96,7 @@ fn apply_wrapper_model_state(store: &AppStore, model: Option<String>, is_fast_mo
     // stop a warmer that is still refreshing the previous model's prefix.
     crate::services::cache_warmer::invalidate();
     store.replace_with(|state| {
-        state.main_loop_model = model.clone();
-        state.main_loop_model_for_session = None;
+        state.main_loop_model_for_session = model.clone();
         if is_fast_mode_enabled()
             && is_fast_mode
             && !is_fast_mode_supported_by_model(model.as_deref())
@@ -105,6 +104,7 @@ fn apply_wrapper_model_state(store: &AppStore, model: Option<String>, is_fast_mo
             state.fast_mode = false;
         }
     });
+    let _ = crate::utils::session_storage::save_session_model(model.as_deref());
 }
 
 fn handle_select_output(option: &SelectOptionData, effort: Option<ModelEffortLevel>) -> String {
@@ -204,9 +204,12 @@ pub fn ModelPickerWrapper<'a>(
     let session_model_label = main_loop_model_for_session
         .as_deref()
         .map(session_model_display);
+    let effective_model = main_loop_model_for_session
+        .clone()
+        .or_else(|| main_loop_model.clone());
     let show_fast_mode_notice = is_fast_mode_enabled()
         && is_fast_mode
-        && is_fast_mode_supported_by_model(main_loop_model.as_deref())
+        && is_fast_mode_supported_by_model(effective_model.as_deref())
         && is_fast_mode_available();
     let store = hooks
         .try_use_context::<AppStore>()
@@ -219,10 +222,10 @@ pub fn ModelPickerWrapper<'a>(
         (props.on_select)(output);
     }
 
-    let cancel_model = main_loop_model.clone();
+    let cancel_model = effective_model.clone();
     element! {
         ModelPicker(
-            initial: main_loop_model,
+            initial: effective_model,
             header_text: None,
             session_model_label: session_model_label,
             is_standalone_command: true,
@@ -405,7 +408,10 @@ mod tests {
             text.contains("Sonnet 4.6 for long sessions"),
             "canvas=\n{text}"
         );
-        assert!(text.contains("● High effort (default)"), "canvas=\n{text}");
+        assert!(
+            text.contains("◐ Medium effort (default)"),
+            "canvas=\n{text}"
+        );
         assert!(
             !text.contains("Use /fast to turn on Fast mode"),
             "no fast-mode notice should render when ModelPickerWrapper does not enable showFastModeNotice; canvas=\n{text}"
@@ -437,8 +443,8 @@ mod tests {
             ModelEffortLevel::Max
         );
         assert_eq!(
-            cycle_effort(ModelEffortLevel::Xhigh, KeyCode::Right, "opus"),
-            ModelEffortLevel::Max
+            cycle_effort(ModelEffortLevel::Max, KeyCode::Right, "opus"),
+            ModelEffortLevel::Off
         );
         assert_eq!(
             displayed_effort(ModelEffortLevel::Max, "sonnet"),
@@ -450,12 +456,12 @@ mod tests {
             key(KeyCode::Right),
             key(KeyCode::Enter),
         ]);
-        // Official QOe denies xhigh on 4.6, so High → Max.
+        // The unified picker starts at the Medium default and cycles Medium → High.
         assert_eq!(
             selected,
             vec![handle_select_output(
                 &options[1],
-                Some(ModelEffortLevel::Max)
+                Some(ModelEffortLevel::High)
             )]
         );
     }

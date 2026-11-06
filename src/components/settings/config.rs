@@ -3303,7 +3303,7 @@ mod tests {
             "ModelPicker should use official compact rows with inline descriptions; canvas=\n{text}"
         );
         assert!(
-            text.contains("● High effort (default)"),
+            text.contains("◐ Medium effort (default)"),
             "ModelPicker should render the effort indicator; canvas=\n{text}"
         );
         assert!(
@@ -3330,8 +3330,8 @@ mod tests {
         let text = render_text_with_timed_events(events);
 
         assert!(
-            text.contains("◈ Max effort"),
-            "Right should walk High → Max without confirming the submenu; canvas=\n{text}"
+            text.contains("● High effort"),
+            "Right should walk Medium → High without confirming the submenu; canvas=\n{text}"
         );
         assert!(
             !crate::utils::session_storage::is_session_write_enabled(),

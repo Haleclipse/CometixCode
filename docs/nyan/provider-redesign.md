@@ -406,38 +406,73 @@ credential reference 只引用来源，不把 secret 写入 settings：
 - 新存储不读取 `OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED`；该开关仍只保护继承下来的 Anthropic / MCP OAuth 出口；provider 凭据不经过这些出口。这些旧出口的删除范围见 PR 3 描述的“待决策”。
 - PR 3 不发真实模型请求、不开浏览器、不监听端口、不提供登录命令；登录步骤以函数形式暴露，由后续 provider adapter 阶段驱动。
 
-## 五、模型选择协议
+## 五、模型选择协议与思考深度
 
-### 5.1 主模型与 session 临时模型
+### 5.1 模型选择与档位
 
-持久化选择只有 profile 名：
+持久化配置统一使用 profile 名与 tier 引用：
 
 ```text
 CLI --profile / --model provider/model（临时）
   > session /model profile 选择（只改当前 session）
-  > settings.nyan.selection.main（profile 名）
-  > 无配置：清晰引导/错误
+  > settings.nyan.selection.main（profile 名，必填）
+  > 无配置：启动进入配置引导或明确报错，绝不隐式回退 Anthropic
 ```
 
-临时值（CLI `--model provider/model` 或 session 选择）在会话结束时丢弃，不写盘、不进入下次启动（与决策 2 一致）。
+- **档位定义**：`selection.main`、`selection.light`、`selection.heavy` 均为 profile 名；`light`/`heavy` 未显式配置时自动回落 `main`。
+- **统一写法 `ref[:effort]`**：`selection.subagents.<type>`、`selection.utility.<role>`、agent md 的 `model:`、Agent 工具调用参数 `model` 均统一采用 `ref[:effort]` 格式。
+  - `ref` = profile 名 | `@light` | `@heavy` | `@main` | `inherit`；仅 Agent 工具调用参数额外允许临时 `provider/model`（只对本次会话有效，不写配置）。
+  - 只有 `:effort` 时（如 `:high`）等同于 `inherit:high`。按最后一个 `:` 拆分，且只有后缀属于合法 effort 档位时才拆分（兼容 `qwen3:32b` 这类含冒号的模型 ID）。
+- **默认规则**：
+  - 子 agent 类型：`general-purpose`、`plan` = `inherit`；`explore` = `@light`；`review` = `@heavy`。
+  - Utility 角色（`title`、`summary`、`commit_message`、`webfetch` 摘要、`bash_prefix` 提取、`prompt_suggestions`、`memory` 提取、`side_query`）= `@light`。
+  - `compaction`、权限分类器（`classifier`）= `@main`。
+- **未知 profile 校验**：引用未知的 profile 名在启动时报错（`selection.*` 校验）；`@tier`（`@light` / `@heavy` / `@main`）与 `inherit` 属于保留档位/关键字，永不报未知 profile 错误。`@tier` 在没有可指的 profile 时（未配置 `selection.main`）跟随父会话，与 `inherit` 相同。
+- **子 agent 模型解析链**：
+  ```text
+  调用参数 model (含 ref[:effort] 或临时 provider/model)
+    > agent md 的 model: 字段 (ref[:effort])
+    > selection.subagents.<type> (ref[:effort])
+    > selection.subagent (ref[:effort])
+    > 类型默认值 (explore=@light, review=@heavy, general-purpose/plan 及其他类型=inherit)
+  ```
+  `inherit` 取父会话**当前**的模型、effort 与 profile（含 `/model` 的会话临时选择）。解析结果同时给出模型、effort 和 profile；请求带着该 profile 走自己的 provider、凭据与协议。`inherit` 时整个 profile 跟随父会话，指定 profile 或 `@tier` 时换用该 profile。
+- **删除 CC 遗留别名**：彻底删除 `haiku`/`sonnet` 等硬编码别名和 Anthropic 专属 tier 匹配（`alias_matches_parent_tier`、Bedrock 前缀继承等）。
 
-没有 built-in default。选择器展示 profile 名、provider、协议、能力和 context window；没有 profile 时展示配置引导，不生成 Anthropic fallback。
+### 5.2 统一思考深度 Effort
 
-### 5.2 子 agent
+- **统一四档**：统一 effort 只有四档：`off < medium < high < max`。`off` 表示不思考（把原 `ThinkingPreference` 开关完全并入）。
+- **Profile 配置**：Profile 可配置 `effort`，未配置时使用模型默认行为。
+- **决定模型层决定 Effort**：Effort 严格跟着“决定模型的那一层”走：
+  - 该层显式写了 `:effort` 则使用该 effort；
+  - 否则，若该层是 `inherit` → 继承父会话当前 effort；
+  - 若指定 profile 或 `@tier` → 使用该 profile 配置的 `effort`（无配置则模型默认）；
+  - 若是临时 `provider/model` → 模型默认。
+  - 不单独沿解析链跨层合并 effort，确保父会话的思考深度不会意外落到其它厂商模型上。
+- **各 Adapter 映射与静默就近夹取**：
+  - **Anthropic**：支持 `output_config.effort` 的模型（Opus 4.5+、Sonnet 4.6+ 等）发送 `medium` / `high` / `max`（Opus 4.5 没有 `max`，夹取为 `high`）；`off` 关闭 thinking 且不发送该参数。不支持该参数的旧模型（Claude 3.x、Sonnet 4/4.5、Opus 4/4.1、Haiku 4.5）不发送，改按档位设 thinking budget（`medium` 8192、`high` 24576、`max` 取模型上限）。支持 adaptive thinking 的模型由 effort 档位承载深度，不再设 budget。
+  - **OpenAI**：映射为 `reasoning_effort` / `reasoning.effort`，`medium` / `high` 直通；`max` 在支持 `xhigh` 的模型（GPT-5.2+、GPT-6 系列）发送 `xhigh`，其余夹取为 `high`；`off` 取该模型族接受的最低档：GPT-5.1 / 5.2+ / GPT-6 Sol 为 `none`，GPT-5 为 `minimal`，GPT-5 Codex 与 o 系列为 `low`，GPT-6.1 Sol 与 GPT-6 Astra（拒绝 `none` / `minimal`）为 `low`；无法确认接受任何关闭值的模型（兼容网关、本地服务器）不发送字段。
+  - **Gemini**：Gemini 3 映射为 `thinkingLevel`（`MEDIUM` / `HIGH`），`off` 夹取为所有 Gemini 3 文本模型都支持的 `LOW`；Gemini 2.5 按档位推算 `thinkingBudget`（`medium` 8192、`high` 24576、`max` 为动态预算 `-1`，`off` 为 0，Pro 不接受 0，夹取为下限 128）。`off` 不请求思考摘要。
+  - **DeepSeek / Kimi**：只有开/关（`off` 关，其余开）。目标行为如此；本 PR 暂走 OpenAI 兼容路径发送 `reasoning_effort`（DeepSeek 把 `medium` 归并为 `high`），`off` 不发送字段、保持厂商默认。显式的 `thinking.type` 开关因各模型字段不同（如 DeepSeek 与 Kimi k2.6 / k3），留待能对真实账号验证后再做，当前可用 profile `extra` 补写。
+  - **不支持推理的模型（含本地模型）**：profile 未声明 thinking 能力时不发送任何推理字段，静默不报错。
+- **会话作用域与持久化**：
+  - `/effort` 命令只改当前会话。
+  - `/model` 选择器中通过左右键调节深度，回车确认只修改当前会话；只有显式“设为默认”才将 profile 写入 `selection.main` 并持久化该 profile 的 `effort`（“设为默认”及选择器 UI 重做留给后续 PR，本 PR 只落实“回车只改会话”）。
+  - 模型与 effort 的会话内变化记录为会话事件（`model-change` / `effort-change`），resume 时恢复。
+  - 删除全局 `effortLevel` 设置、`CLAUDE_CODE_EFFORT_LEVEL` 环境变量、launch pinning、org-limit clamp、ultracode 等 Claude Code 遗留逻辑。
+  - Agent md 文件不再包含独立的 `effort:` 字段；Agent 工具调用参数也不再提供独立的 `effort` 参数。
 
-```text
-explicit profile（调用时显式指定）
-  > agent 定义中的 profile
-  > selection.subagents.<agent-type>
-  > selection.subagent
-  > inherit（继承父 agent 的 ResolvedModel）
-```
+### 5.3 Profile 其余参数与继承
 
-`inherit` 继承父 `ResolvedModel` 的 provider、model、capabilities snapshot 和 credential profile。子 agent 的显式值必须是 profile 名；`provider/model` 只能作为同一个 session 的临时 tool/CLI 输入，不能写回 project settings。若显式 profile 不支持 tools/thinking/images，启动前返回 capability error，不静默换模型。
+- **字段精简（借鉴 Pi Agent）**：Profile 在现有字段（`contextWindow`、`maxOutputTokens`、`capabilities`、`retry`、`cacheRetention` 等）之外，仅扩展：
+  - `effort`: 可选统一深度（`off` / `medium` / `high` / `max`）。
+  - `extra`: 可选原样 JSON 对象（`Option<serde_json::Value>`），请求时最后合并进底层请求体。
+- 不添加 `temperature` / `top_p` / `stop` / `thinking_budget` 等冗余 profile 字段。
+- 子 agent 选择 `inherit` 时，整个 profile 完整跟随父会话当前生效的 profile（或临时配置）。
 
-### 5.3 Decision Provider
+### 5.4 Decision Provider
 
-`fast` / `accurate` 是逻辑 tier，只允许选择 provider `kind` 属于商业集合的 profile（决策 9、18）。示例中的 profile 名与 §4.1 的 `commercial-fast` / `commercial-accurate` 一致：
+`fast` / `accurate` 是逻辑 tier，只允许选择 provider `kind` 属于商业集合的 profile（决策 9、18）：
 
 ```jsonc
 {

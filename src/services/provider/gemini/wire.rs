@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use crate::services::provider::adapter::ResolvedTarget;
 use crate::services::provider::ir::{
-    AssistantPart, Effort, MediaSource, Message, ModelRequest, SYSTEM_BOUNDARY, ThinkingPreference,
-    ToolChoice, ToolResultContent, ToolResultPart, ToolSpec,
+    AssistantPart, Effort, MediaSource, Message, ModelRequest, SYSTEM_BOUNDARY, ToolChoice,
+    ToolResultContent, ToolResultPart, ToolSpec,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -248,6 +248,38 @@ pub fn is_gemini_3_or_newer(model_id: &str) -> bool {
         }
     }
     false
+}
+
+/// Gemini 3 takes a discrete `thinkingLevel`, Gemini 2.5 a `thinkingBudget`.
+/// `off` is clamped to the lowest setting the family accepts: `LOW` (the one
+/// level every Gemini 3 text model lists) and budget 0 (128 on Pro, which does
+/// not accept 0). `max` on 2.5 is the dynamic budget (-1).
+fn thinking_config(effort: Effort, is_gemini_3: bool, model: &str) -> ThinkingConfig {
+    let include_thoughts = effort.is_thinking().then_some(true);
+    if is_gemini_3 {
+        let level = match effort {
+            Effort::Off => "LOW",
+            Effort::Medium => "MEDIUM",
+            Effort::High | Effort::Max => "HIGH",
+        };
+        return ThinkingConfig {
+            thinking_budget: None,
+            thinking_level: Some(level.to_string()),
+            include_thoughts,
+        };
+    }
+    let budget = match effort {
+        Effort::Off if model.to_ascii_lowercase().contains("pro") => 128,
+        Effort::Off => 0,
+        Effort::Medium => 8192,
+        Effort::High => 24576,
+        Effort::Max => -1,
+    };
+    ThinkingConfig {
+        thinking_budget: Some(budget),
+        thinking_level: None,
+        include_thoughts,
+    }
 }
 
 fn build_tool_config(choice: &ToolChoice) -> Option<ToolConfig> {
@@ -576,60 +608,9 @@ pub fn build_request(request: &ModelRequest, target: &ResolvedTarget) -> Generat
         gen_config.response_schema = Some(structured.schema.clone());
     }
 
-    if is_gemini_3 {
-        match request.thinking {
-            ThinkingPreference::Disabled => {}
-            ThinkingPreference::Adaptive | ThinkingPreference::Budget { .. } => {
-                let level = match &request.effort {
-                    Some(Effort::Named(name)) => match name.to_ascii_lowercase().as_str() {
-                        "minimal" => "MINIMAL",
-                        "low" => "LOW",
-                        "medium" => "MEDIUM",
-                        "high" | "xhigh" | "max" => "HIGH",
-                        _ => "HIGH",
-                    },
-                    Some(Effort::Numeric(n)) => match n {
-                        0..=2_048 => "LOW",
-                        2_049..=16_384 => "MEDIUM",
-                        _ => "HIGH",
-                    },
-                    None => match request.thinking {
-                        ThinkingPreference::Budget {
-                            tokens: Some(tokens),
-                        } => match tokens {
-                            0..=2_048 => "LOW",
-                            2_049..=16_384 => "MEDIUM",
-                            _ => "HIGH",
-                        },
-                        _ => "HIGH",
-                    },
-                };
-                gen_config.thinking_config = Some(ThinkingConfig {
-                    thinking_budget: None,
-                    thinking_level: Some(level.to_string()),
-                    include_thoughts: Some(true),
-                });
-            }
-        }
-    } else {
-        match request.thinking {
-            ThinkingPreference::Disabled => {}
-            ThinkingPreference::Adaptive => {
-                gen_config.thinking_config = Some(ThinkingConfig {
-                    thinking_budget: Some(-1),
-                    thinking_level: None,
-                    include_thoughts: None,
-                });
-            }
-            ThinkingPreference::Budget { tokens } => {
-                let budget = tokens.map(|t| t as i32).unwrap_or(0);
-                gen_config.thinking_config = Some(ThinkingConfig {
-                    thinking_budget: Some(budget),
-                    thinking_level: None,
-                    include_thoughts: None,
-                });
-            }
-        }
+    if target.capabilities.thinking {
+        gen_config.thinking_config =
+            Some(thinking_config(request.effort, is_gemini_3, &target.model));
     }
 
     let generation_config = if gen_config != GenerationConfig::default() {

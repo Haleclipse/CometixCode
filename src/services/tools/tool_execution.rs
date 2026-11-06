@@ -7014,7 +7014,7 @@ mod tests {
         );
         assert_eq!(
             result.new_context.effort_value,
-            Some(crate::utils::effort::EffortValue::Named("high".to_string()))
+            Some(crate::utils::effort::Effort::High)
         );
         // Turn-scoped: the widening lives on the context handed forward, not in
         // the caller's own context (CC never calls `setAppState` here).

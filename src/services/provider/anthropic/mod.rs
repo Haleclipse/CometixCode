@@ -10,6 +10,7 @@ pub mod betas;
 pub mod cache;
 pub mod client;
 pub mod credential;
+pub mod effort;
 #[cfg(test)]
 mod fixtures;
 pub mod headers;

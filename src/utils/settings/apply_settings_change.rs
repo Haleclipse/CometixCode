@@ -26,8 +26,6 @@ pub fn apply_settings_change(source: SettingSource, store: &AppStore) {
         crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("hooks"),
     );
     store.replace_with(|state| {
-        let previous_effort = state.settings.effort_level.clone();
-        let new_effort = fresh.settings.effort_level.clone();
         let mut permission_context =
             crate::utils::permissions::permissions::sync_permission_rules_from_disk(
                 &state.tool_permission_context,
@@ -65,13 +63,6 @@ pub fn apply_settings_change(source: SettingSource, store: &AppStore) {
             );
 
         state.settings = Arc::new(fresh.settings.clone());
-        if previous_effort != new_effort
-            && let Some(effort) = new_effort
-                .as_deref()
-                .and_then(crate::utils::effort::parse_effort_value)
-            {
-                state.effort_value = Some(effort);
-            }
         state.set_tool_permission_context(permission_context);
     });
 }

@@ -1448,11 +1448,21 @@ pub struct ModelProfileSettings {
     pub retry: Option<RetrySettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_retention: Option<CacheRetention>,
+    /// Optional reasoning depth for this profile (`off` | `medium` | `high` | `max`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<crate::utils::effort::Effort>,
+    /// Optional extra JSON object merged into the provider wire request body (design §3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extra: Option<serde_json::Value>,
 }
 
 impl ModelProfileSettings {
     pub fn cache_retention(&self) -> CacheRetention {
         self.cache_retention.unwrap_or_default()
+    }
+
+    pub fn effort(&self) -> Option<crate::utils::effort::Effort> {
+        self.effort
     }
 }
 
@@ -1501,11 +1511,17 @@ pub struct SelectionSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub main: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub light: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heavy: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub main_fallbacks: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagent: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagents: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub utility: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decision: Option<SelectionDecisionSettings>,
 }
@@ -1724,6 +1740,11 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
             "cacheRetention",
             zod::enumeration(vec!["short", "long", "none", "5m", "1h"]).optional(),
         ),
+        (
+            "effort",
+            zod::enumeration(vec!["off", "medium", "high", "max"]).optional(),
+        ),
+        ("extra", zod::any().optional()),
     ]);
     let decision_selection = zod::strict_object(vec![
         ("fast", zod::string().min(1).optional()),
@@ -1731,9 +1752,12 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
     ]);
     let selection = zod::strict_object(vec![
         ("main", zod::string().min(1).optional()),
+        ("light", zod::string().min(1).optional()),
+        ("heavy", zod::string().min(1).optional()),
         ("mainFallbacks", zod::array(zod::string().min(1)).optional()),
         ("subagent", zod::string().min(1).optional()),
         ("subagents", zod::record(zod::string().min(1)).optional()),
+        ("utility", zod::record(zod::string().min(1)).optional()),
         ("decision", decision_selection.optional()),
     ]);
 
@@ -2535,6 +2559,38 @@ mod tests {
             DecisionMode::Shadow
         );
         assert_eq!(settings.tool_io().read_batch_max(), 0);
+    }
+
+    #[test]
+    fn schema_accepts_tiers_utility_and_profile_effort_extra() {
+        let value = json!({
+            "providers": {
+                "p": {"kind": "anthropic", "protocol": "anthropicMessages"}
+            },
+            "models": {
+                "main": {
+                    "provider": "p",
+                    "model": "claude-sonnet-4-6",
+                    "effort": "max",
+                    "extra": {"custom_field": {"enabled": true}}
+                }
+            },
+            "selection": {
+                "main": "main",
+                "light": "main",
+                "heavy": "main",
+                "utility": {"title": "main:high"}
+            }
+        });
+        let parsed = crate::utils::zod::safe_parse(&nyan_settings_schema(), &value)
+            .expect("tiered selection and profile additions are valid");
+        assert_eq!(parsed["models"]["main"]["effort"], "max");
+        assert_eq!(
+            parsed["models"]["main"]["extra"]["custom_field"]["enabled"],
+            true
+        );
+        assert_eq!(parsed["selection"]["light"], "main");
+        assert_eq!(parsed["selection"]["utility"]["title"], "main:high");
     }
 
     #[test]

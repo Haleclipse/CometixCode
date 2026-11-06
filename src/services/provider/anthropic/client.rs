@@ -113,8 +113,19 @@ impl GetAnthropicClientOptions {
         model: Option<String>,
         source: Option<String>,
     ) -> Result<Self, super::target::TargetError> {
+        Self::for_profile(None, max_retries, model, source)
+    }
+
+    /// Options aimed at the provider of the profile a request names; `None` is
+    /// the main profile.
+    pub fn for_profile(
+        profile: Option<&str>,
+        max_retries: u32,
+        model: Option<String>,
+        source: Option<String>,
+    ) -> Result<Self, super::target::TargetError> {
         Ok(Self {
-            target: super::target::current_main_target()?,
+            target: super::target::current_request_target(profile)?,
             max_retries,
             model,
             source,

@@ -7,11 +7,11 @@
 
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::pane::Pane;
-use crate::constants::figures::EFFORT_LOW;
 use crate::keybindings::keybinding_context::KeybindingRuntime;
 use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::{KeybindingHandlers, use_keybindings};
 use crate::state::store::AppStore;
+use crate::utils::effort::Effort;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
@@ -154,133 +154,35 @@ pub(crate) fn visible_from_index(
         .min(count.saturating_sub(visible_count))
 }
 
-/// Maps to: CC `components/ModelPicker.tsx`:324-330 `resolveOptionModel(...)`.
-fn resolve_option_model(value: &str) -> Option<String> {
-    if value.is_empty() {
-        return None;
-    }
-    if value == MODEL_NO_PREFERENCE {
-        return Some(crate::utils::model::model::get_default_main_loop_model());
-    }
-    Some(crate::utils::model::model::parse_user_specified_model(
-        value,
-    ))
-}
-
-/// Maps to: CC `utils/effort.ts#modelSupportsEffort` as consumed by
-/// `components/ModelPicker.tsx`:122-124.
-pub(crate) fn model_supports_effort(value: &str) -> bool {
-    resolve_option_model(value)
-        .as_deref()
-        .is_some_and(crate::utils::effort::model_supports_effort)
-}
-
-/// Maps to: CC `utils/effort.ts#modelSupportsMaxEffort` as consumed by
-/// `components/ModelPicker.tsx`:125-127.
-pub(crate) fn model_supports_max_effort(value: &str) -> bool {
-    resolve_option_model(value)
-        .as_deref()
-        .is_some_and(crate::utils::effort::model_supports_max_effort)
-}
-
-fn model_effort_level_from_name(level: &str) -> Option<ModelEffortLevel> {
-    Some(match level {
-        "low" => ModelEffortLevel::Low,
-        "medium" => ModelEffortLevel::Medium,
-        "high" => ModelEffortLevel::High,
-        "xhigh" => ModelEffortLevel::Xhigh,
-        "max" => ModelEffortLevel::Max,
-        _ => return None,
-    })
-}
-
-fn effort_level_from_label(level: &str) -> ModelEffortLevel {
-    model_effort_level_from_name(level).unwrap_or(ModelEffortLevel::High)
-}
-
 /// Maps to: CC `components/ModelPicker.tsx` initializing effort from
 /// `AppState.effortValue` / `sessionEffort`.
-pub(crate) fn model_effort_from_value(
-    value: Option<&crate::utils::effort::EffortValue>,
-) -> ModelEffortLevel {
-    value
-        .map(crate::utils::effort::convert_effort_value_to_level)
-        .map(effort_level_from_label)
-        .unwrap_or(ModelEffortLevel::High)
+pub(crate) fn model_effort_from_value(value: Option<&Effort>) -> ModelEffortLevel {
+    value.copied().unwrap_or(Effort::Medium)
 }
 
 /// Maps to: CC `components/ModelPicker.tsx`:132-133
 /// `getDefaultEffortLevelForOption(...)`.
-pub(crate) fn default_effort_level_for_option(value: &str) -> ModelEffortLevel {
-    resolve_option_model(value)
-        .as_deref()
-        .and_then(crate::utils::effort::get_default_effort_for_model)
-        .as_ref()
-        .map(crate::utils::effort::convert_effort_value_to_level)
-        .map(effort_level_from_label)
-        .unwrap_or(ModelEffortLevel::High)
+pub(crate) fn default_effort_level_for_option(_value: &str) -> ModelEffortLevel {
+    Effort::Medium
 }
 
-pub(crate) fn displayed_effort(effort: ModelEffortLevel, focused_value: &str) -> ModelEffortLevel {
-    if effort == ModelEffortLevel::Max && !model_supports_max_effort(focused_value) {
-        ModelEffortLevel::High
-    } else if effort == ModelEffortLevel::Xhigh && !model_supports_xhigh_effort(focused_value) {
-        ModelEffortLevel::High
-    } else {
-        effort
-    }
-}
-
-/// Maps to: CC `utils/ultracode.ts#modelSupportsXhighEffort` as consumed by
-/// ModelPicker effort cycling.
-pub(crate) fn model_supports_xhigh_effort(value: &str) -> bool {
-    resolve_option_model(value)
-        .as_deref()
-        .is_some_and(crate::utils::effort::model_supports_xhigh_effort)
+pub(crate) fn displayed_effort(effort: ModelEffortLevel, _focused_value: &str) -> ModelEffortLevel {
+    effort
 }
 
 /// Maps to: CC `components/ModelPicker.tsx` `cycleEffortLevel` / `lmg`.
 ///
-/// Official cycle starts from `getEligibleEffortLevels` (`mQe` / `AU`) and
-/// then drops `max` / `xhigh` unless the focused model supports them.
+/// Cycles through the four unified effort levels: `off < medium < high < max`.
 pub(crate) fn cycle_effort(
     current: ModelEffortLevel,
     direction: KeyCode,
-    focused_value: &str,
+    _focused_value: &str,
 ) -> ModelEffortLevel {
-    if !model_supports_effort(focused_value) {
-        return current;
-    }
-    let include_max = model_supports_max_effort(focused_value);
-    let include_xhigh = model_supports_xhigh_effort(focused_value);
-    let resolved = resolve_option_model(focused_value).unwrap_or_default();
-    let levels: Vec<ModelEffortLevel> =
-        crate::utils::ultracode::get_eligible_effort_levels(&resolved)
-            .into_iter()
-            .filter(|level| {
-                (*level != "max" || include_max) && (*level != "xhigh" || include_xhigh)
-            })
-            .filter_map(model_effort_level_from_name)
-            .collect();
-    let levels = if levels.is_empty() {
-        vec![
-            ModelEffortLevel::Low,
-            ModelEffortLevel::Medium,
-            ModelEffortLevel::High,
-        ]
-    } else {
-        levels
-    };
-    let normalized_current = displayed_effort(current, focused_value);
+    let levels = Effort::ALL;
     let current_index = levels
         .iter()
-        .position(|level| *level == normalized_current)
-        .unwrap_or_else(|| {
-            levels
-                .iter()
-                .position(|level| *level == ModelEffortLevel::High)
-                .unwrap_or(0)
-        });
+        .position(|level| *level == current)
+        .unwrap_or(1);
     match direction {
         KeyCode::Right => levels[(current_index + 1) % levels.len()],
         KeyCode::Left => levels[(current_index + levels.len() - 1) % levels.len()],
@@ -292,80 +194,34 @@ pub(crate) fn cycle_effort(
 /// gate (`hasToggledEffort && modelSupportsEffort`).
 pub(crate) fn selected_picker_effort(
     effort: ModelEffortLevel,
-    selected_value: &str,
+    _selected_value: &str,
     has_toggled: bool,
 ) -> Option<ModelEffortLevel> {
-    if !has_toggled || !model_supports_effort(selected_value) {
+    if !has_toggled {
         return None;
     }
     Some(effort)
 }
 
-/// Maps to: CC ModelPicker `handleSelect` / `bt` — persist persistable
-/// levels (`w5e`) and write `AppState.effortValue` / `sessionEffort`.
-/// @nyan: persist `max` as a production effortLevel (CC 2.1.88: ant-only).
+/// Enter only changes the current session.
 pub(crate) fn apply_model_picker_selection(
     state: &mut crate::state::app_state_store::AppState,
     model: Option<String>,
-    selected_value: &str,
+    _selected_value: &str,
     picked_effort: ModelEffortLevel,
     has_toggled_effort: bool,
 ) -> bool {
     let fast_mode_disabled = crate::utils::fast_mode::is_fast_mode_enabled()
         && state.fast_mode
         && !crate::utils::fast_mode::is_fast_mode_supported_by_model(model.as_deref());
-    state.main_loop_model = model.clone();
-    // @nyan offset: CC persists a picker choice to user settings `model`
-    // (`/model` promises "this session and future Claude Code sessions"), but
-    // this port wrote only `effortLevel`, so a pick was forgotten on restart.
-    // `Value::Null` deletes the key, restoring the default option.
-    let _ = crate::utils::settings::update_settings_for_source(
-        crate::utils::settings::SettingSource::User,
-        &serde_json::Map::from_iter([(
-            "model".to_string(),
-            model.as_ref().map_or(serde_json::Value::Null, |value| {
-                serde_json::Value::String(value.clone())
-            }),
-        )]),
-    );
-    state.main_loop_model_for_session = None;
+    state.main_loop_model_for_session = model.clone();
+    let _ = crate::utils::session_storage::save_session_model(model.as_deref());
     if fast_mode_disabled {
         state.fast_mode = false;
     }
-    let picked = crate::utils::effort::EffortValue::Named(picked_effort.label().to_string());
-    let model_default = crate::utils::effort::EffortValue::Named(
-        default_effort_level_for_option(selected_value)
-            .label()
-            .to_string(),
-    );
-    let prior_persisted = crate::utils::settings::get_settings_for_source(
-        crate::utils::settings::SettingSource::User,
-    )
-    .and_then(|settings| settings.effort_level);
-    let effort_level = crate::utils::effort::resolve_picker_effort_persistence(
-        Some(&picked),
-        &model_default,
-        prior_persisted.as_deref(),
-        has_toggled_effort,
-    );
-    if let Some(value) = effort_level.as_ref()
-        && let Some(persistable) = crate::utils::effort::to_persistable_effort(Some(value))
-    {
-        let _ = crate::utils::settings::update_settings_for_source(
-            crate::utils::settings::SettingSource::User,
-            &serde_json::Map::from_iter([(
-                "effortLevel".to_string(),
-                serde_json::Value::String(persistable),
-            )]),
-        );
-    }
-    state.effort_value = effort_level;
-    if has_toggled_effort && model_supports_effort(selected_value) {
-        // An explicit picker adjustment has the same session semantics as an
-        // explicit `/effort <level>`: it exits ultracode and lets the chosen
-        // level override launch-pinned model defaults.
-        crate::utils::ultracode::unpin_launch_effort();
-        state.ultracode = false;
+    if has_toggled_effort {
+        state.effort_value = Some(picked_effort);
+        let _ = crate::utils::session_storage::save_session_effort(picked_effort);
     }
     fast_mode_disabled
 }
@@ -458,18 +314,6 @@ struct ModelPickerView {
     exit_key_name: Option<String>,
 }
 
-impl Default for ModelEffortLevel {
-    fn default() -> Self {
-        Self::High
-    }
-}
-
-fn focused_model_label(options: &[SelectOptionData], focused_index: usize) -> Option<&str> {
-    options
-        .get(focused_index)
-        .map(|option| option.label.as_str())
-}
-
 fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElement<'static> {
     let count = props.options.len();
     let focused_index = props.focused_index.min(count.saturating_sub(1));
@@ -478,7 +322,6 @@ fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElem
         .get(focused_index)
         .map(|option| option.value.as_str())
         .unwrap_or(MODEL_NO_PREFERENCE);
-    let focused_label = focused_model_label(&props.options, focused_index);
     let visible_option_count = count.min(MODEL_PICKER_VISIBLE_COUNT).max(1);
     let visible_from = props
         .visible_from_index
@@ -486,7 +329,6 @@ fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElem
     let hidden_count = count.saturating_sub(visible_option_count);
     let display_effort = displayed_effort(props.effort, focused_value);
     let focused_default_effort = default_effort_level_for_option(focused_value);
-    let supports_effort = model_supports_effort(focused_value);
     let header_text = props
         .header_text
         .clone()
@@ -536,27 +378,16 @@ fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElem
                     })
                 }
                 View(margin_bottom: 1u32, flex_direction: FlexDirection::Column) {
-                    #(if supports_effort {
-                        element! {
-                            View(flex_direction: FlexDirection::Row) {
-                                Text(content: display_effort.symbol().to_string(), color: theme.claude, wrap: TextWrap::NoWrap)
-                                Text(content: format!(" {} effort", display_effort.title_label()), dim: true, wrap: TextWrap::NoWrap)
-                                #(if display_effort == focused_default_effort {
-                                    Some(element! { Text(content: " (default) ".to_string(), dim: true, wrap: TextWrap::NoWrap) })
-                                } else {
-                                    Some(element! { Text(content: " ".to_string(), dim: true, wrap: TextWrap::NoWrap) })
-                                })
-                                Text(content: "← → to adjust".to_string(), color: theme.subtle, wrap: TextWrap::NoWrap)
-                            }
-                        }.into_any()
-                    } else {
-                        element! {
-                            View(flex_direction: FlexDirection::Row) {
-                                Text(content: EFFORT_LOW.to_string(), color: theme.subtle, wrap: TextWrap::NoWrap)
-                                Text(content: format!(" Effort not supported{}", focused_label.map(|label| format!(" for {label}")).unwrap_or_default()), color: theme.subtle, wrap: TextWrap::NoWrap)
-                            }
-                        }.into_any()
-                    })
+                    View(flex_direction: FlexDirection::Row) {
+                        Text(content: display_effort.symbol().to_string(), color: theme.claude, wrap: TextWrap::NoWrap)
+                        Text(content: format!(" {} effort", display_effort.title_label()), dim: true, wrap: TextWrap::NoWrap)
+                        #(if display_effort == focused_default_effort {
+                            Some(element! { Text(content: " (default) ".to_string(), dim: true, wrap: TextWrap::NoWrap) })
+                        } else {
+                            Some(element! { Text(content: " ".to_string(), dim: true, wrap: TextWrap::NoWrap) })
+                        })
+                        Text(content: "← → to adjust".to_string(), color: theme.subtle, wrap: TextWrap::NoWrap)
+                    }
                 }
                 #(if props.show_fast_mode_notice {
                     Some(element! {
@@ -781,7 +612,6 @@ pub(crate) fn ModelPicker<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
 
     fn render_picker(props: ModelPickerProps) -> String {
@@ -807,12 +637,6 @@ mod tests {
 
     #[test]
     fn model_picker_options_and_effort_cycle_match_official_shape() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-
         let options = model_picker_options(120);
         assert_eq!(
             options
@@ -827,28 +651,21 @@ mod tests {
             ModelEffortLevel::Max
         );
         assert_eq!(
-            cycle_effort(ModelEffortLevel::Xhigh, KeyCode::Right, "opus"),
-            ModelEffortLevel::Max
+            cycle_effort(ModelEffortLevel::Max, KeyCode::Right, "opus"),
+            ModelEffortLevel::Off
         );
         assert_eq!(
             cycle_effort(ModelEffortLevel::High, KeyCode::Right, "sonnet"),
             ModelEffortLevel::Max
         );
         assert_eq!(
-            cycle_effort(ModelEffortLevel::Xhigh, KeyCode::Right, "sonnet"),
-            ModelEffortLevel::Max
+            cycle_effort(ModelEffortLevel::Max, KeyCode::Right, "sonnet"),
+            ModelEffortLevel::Off
         );
         assert_eq!(
             displayed_effort(ModelEffortLevel::Max, "sonnet"),
             ModelEffortLevel::Max
         );
-        assert!(model_supports_effort(MODEL_NO_PREFERENCE));
-        assert!(model_supports_effort("sonnet"));
-        assert!(model_supports_effort("opus"));
-        assert!(!model_supports_effort("haiku"));
-        assert!(model_supports_max_effort("opus"));
-        assert!(model_supports_max_effort("sonnet"));
-        assert!(!model_supports_max_effort("haiku"));
         assert_eq!(
             selected_picker_effort(ModelEffortLevel::Max, "sonnet", true),
             Some(ModelEffortLevel::Max)
@@ -859,7 +676,6 @@ mod tests {
         );
 
         let mut state = crate::state::app_state_store::AppState::default();
-        state.ultracode = true;
         apply_model_picker_selection(
             &mut state,
             Some("sonnet".to_string()),
@@ -867,34 +683,18 @@ mod tests {
             ModelEffortLevel::Max,
             true,
         );
-        assert_eq!(
-            state.effort_value,
-            Some(crate::utils::effort::EffortValue::Named("max".to_string()))
-        );
-        assert!(!state.ultracode);
+        assert_eq!(state.effort_value, Some(Effort::Max));
     }
 
     #[test]
-    fn model_picker_renders_unsupported_effort_for_haiku_like_official() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_ALWAYS_ENABLE_EFFORT");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-
+    fn model_picker_keeps_the_unified_effort_control_for_any_model() {
         let text = render_picker(ModelPickerProps {
             initial: Some("haiku".to_string()),
             ..ModelPickerProps::default()
         });
 
-        assert!(
-            text.contains("Effort not supported for Haiku"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("High effort"),
-            "Haiku should not show adjustable effort; canvas=\n{text}"
-        );
+        assert!(text.contains("effort"), "canvas=\n{text}");
+        assert!(text.contains("← → to adjust"), "canvas=\n{text}");
     }
 
     #[test]
@@ -914,10 +714,13 @@ mod tests {
             text.contains("Sonnet 4.6 for long sessions"),
             "canvas=\n{text}"
         );
-        assert!(text.contains("● High effort (default)"), "canvas=\n{text}");
+        assert!(
+            text.contains("◐ Medium effort (default)"),
+            "canvas=\n{text}"
+        );
         assert!(text.contains("← → to adjust"), "canvas=\n{text}");
-        assert_eq!(ModelEffortLevel::Xhigh.symbol(), "◉");
-        assert_eq!(ModelEffortLevel::Xhigh.title_label(), "xHigh");
+        assert_eq!(ModelEffortLevel::Off.symbol(), "○");
+        assert_eq!(ModelEffortLevel::Off.title_label(), "Off");
         assert_eq!(ModelEffortLevel::Max.symbol(), "◈");
         assert_eq!(ModelEffortLevel::Max.title_label(), "Max");
         assert!(

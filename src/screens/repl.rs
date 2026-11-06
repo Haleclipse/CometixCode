@@ -263,7 +263,7 @@ fn apply_repl_tool_use_context_options(
     thinking_enabled: Option<bool>,
     thinking_config: &crate::utils::thinking::ThinkingConfig,
     model: Option<String>,
-    effort_value: Option<crate::utils::effort::EffortValue>,
+    effort_value: Option<crate::utils::effort::Effort>,
 ) {
     // Maps to CC wiring `getAppState().channelPermissionCallbacks` / fastMode /
     // thinking / model / effort onto the top-level REPL `toolUseContext` before
@@ -12214,7 +12214,7 @@ mod tests {
             Some(false),
             &crate::utils::thinking::ThinkingConfig::Adaptive,
             Some("opus".to_string()),
-            Some(crate::utils::effort::EffortValue::Named("high".to_string())),
+            Some(crate::utils::effort::Effort::High),
         );
         assert_eq!(context.fast_mode, Some(true));
         // apply_repl_tool_use_context_options stores the caller-provided model
@@ -12222,7 +12222,7 @@ mod tests {
         assert_eq!(context.main_loop_model.as_deref(), Some("opus"));
         assert_eq!(
             context.effort_value,
-            Some(crate::utils::effort::EffortValue::Named("high".to_string()))
+            Some(crate::utils::effort::Effort::High)
         );
         apply_repl_tool_use_context_options(
             &mut context,

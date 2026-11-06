@@ -752,6 +752,8 @@ mod tests {
             credential: None,
             compat: None,
             cache_retention: Default::default(),
+            effort: None,
+            extra: None,
         }
     }
 

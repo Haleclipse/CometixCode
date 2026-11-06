@@ -2457,13 +2457,15 @@ mod tests {
         );
         assert!(good.contains("Review"), "canvas=\n{good}");
 
-        let bad_enum = render(
+        // `model` is a free `ref[:effort]` string, so a wrong *type* is what
+        // the schema rejects.
+        let bad_type = render(
             "Agent",
             serde_json::json!({
-                "description": "Review", "prompt": "check it", "model": "gpt"
+                "description": "Review", "prompt": "check it", "model": 5
             }),
         );
-        assert_eq!(bad_enum.trim(), "", "canvas=\n{bad_enum}");
+        assert_eq!(bad_type.trim(), "", "canvas=\n{bad_type}");
 
         // Not Agent-specific: `BashTool.inputSchema` is a `z.strictObject`
         // (`BashTool.tsx:337-431`), so a wrong-typed `command` is
@@ -2494,7 +2496,7 @@ mod tests {
         assert!(parses("Read", serde_json::json!({})));
         assert!(!parses(
             "Agent",
-            serde_json::json!({ "description": "d", "prompt": "p", "model": "gpt" })
+            serde_json::json!({ "description": "d", "prompt": "p", "model": 5 })
         ));
         // CC's three alias declarations resolve to the aliased tool's schema:
         // `AgentTool.tsx:374` → 'Task', `TaskStopTool.ts:44` → 'KillShell'
@@ -2502,7 +2504,7 @@ mod tests {
         // `shell_id`, `TaskStopTool.ts:10-19`).
         assert!(!parses(
             "Task",
-            serde_json::json!({ "description": "d", "prompt": "p", "model": "gpt" })
+            serde_json::json!({ "description": "d", "prompt": "p", "model": 5 })
         ));
         assert!(parses("KillShell", serde_json::json!({ "shell_id": "x" })));
 

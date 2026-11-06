@@ -602,12 +602,7 @@ pub struct AppState {
     /// owners. Defaults off.
     pub fast_mode: bool,
     /// Maps to: CC `AppState.effortValue`.
-    pub effort_value: Option<crate::utils::effort::EffortValue>,
-    /// Maps to: CC `AppState.ultracode` — session-scoped xhigh + workflow flag.
-    /// Written by official `/effort ultracode` when
-    /// [`crate::utils::ultracode::is_ultracode_available`]. Interactive toggles
-    /// never persist this; `--settings` / apply_flag_settings can seed it later.
-    pub ultracode: bool,
+    pub effort_value: Option<crate::utils::effort::Effort>,
     /// CC cacheMissAckedAtOutputTokens: confirmation watermark.
     pub cache_miss_acked_at_output_tokens: i64,
     /// Maps to: CC `AppState.expandedView` — persisted as the legacy
@@ -855,7 +850,6 @@ impl Default for AppState {
             thinking_enabled: None,
             fast_mode: false,
             effort_value: None,
-            ultracode: false,
             cache_miss_acked_at_output_tokens: -1,
             expanded_view: ExpandedView::None,
             settings: Arc::new(crate::utils::settings::SettingsJson::default()),

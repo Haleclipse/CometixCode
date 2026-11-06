@@ -115,6 +115,13 @@ pub fn current_main_target() -> Result<AnthropicTarget, TargetError> {
     resolve_main_target(&crate::utils::settings::get_initial_settings())
 }
 
+/// The target of the profile a request names (`None`: the main profile).
+pub fn current_request_target(profile: Option<&str>) -> Result<AnthropicTarget, TargetError> {
+    let settings = crate::utils::settings::get_initial_settings();
+    let profile = crate::utils::model::profile::resolve_request_profile(&settings, profile)?;
+    target_for_profile_with_settings(&profile, &settings)
+}
+
 /// Test support: install an Anthropic main profile in the session settings
 /// cache, with the key held in `env_name` (which the caller sets). Every test
 /// that sends a real request goes through this one path, so none of them can
@@ -210,6 +217,8 @@ mod tests {
             credential,
             compat: None,
             cache_retention: Default::default(),
+            effort: None,
+            extra: None,
         }
     }
 

@@ -39,7 +39,6 @@ pub mod dev_bar;
 pub mod dev_channels_dialog;
 pub mod diagnostics_display;
 pub mod diff;
-pub mod effort_callout;
 pub mod effort_indicator;
 pub mod effort_picker;
 pub mod exit_flow;

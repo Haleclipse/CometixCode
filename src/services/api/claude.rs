@@ -24,11 +24,12 @@ use crate::services::provider::anthropic::betas::{
     model_supports_structured_outputs, should_include_first_party_only_betas,
     should_use_global_cache_scope,
 };
+use crate::services::provider::anthropic::effort::{output_config_effort, thinking_for_effort};
 use crate::types::message::{StreamEvent, SystemApiErrorMessage};
 use crate::types::tools::Tool;
 use crate::utils::content_array::insert_block_after_tool_results;
 use crate::utils::context::{CAPPED_DEFAULT_MAX_TOKENS, get_model_max_output_tokens};
-use crate::utils::effort::{EffortValue, model_supports_effort, resolve_applied_effort};
+use crate::utils::effort::Effort;
 use crate::utils::model::model::{
     get_default_opus_model, get_default_sonnet_model, get_main_loop_model, get_small_fast_model,
     normalize_model_string_for_api,
@@ -230,6 +231,8 @@ pub struct TaskBudgetParam {
 #[derive(Debug, Clone)]
 pub struct Options {
     pub model: String,
+    /// Profile `model` belongs to; `None` is the session's main profile.
+    pub profile: Option<String>,
     pub is_non_interactive_session: bool,
     pub query_source: ApiQuerySource,
     pub agents: Vec<AgentDefinition>,
@@ -243,7 +246,7 @@ pub struct Options {
     pub enable_prompt_caching: Option<bool>,
     pub skip_cache_write: Option<bool>,
     pub temperature_override: Option<f64>,
-    pub effort_value: Option<EffortValue>,
+    pub effort_value: Option<Effort>,
     /// Maps to: CC `services/api/claude.ts:694` `mcpTools: Tools`.
     ///
     /// **Write-only, exactly as in CC.** The only producer is `query.ts:689`
@@ -464,45 +467,31 @@ pub fn get_extra_body_params(
 /// Configure effort parameters for API request.
 /// Mutates the output config and betas in-place.
 pub fn configure_effort_params(
-    effort_value: Option<&EffortValue>,
+    effort: Option<&Effort>,
     output_config: &mut OutputConfig,
-    extra_body_params: &mut serde_json::Map<String, JsonValue>,
     betas: &mut Vec<String>,
     model: &str,
 ) {
-    if !model_supports_effort(model) || output_config.contains_key("effort") {
+    if output_config.contains_key("effort") {
         return;
     }
+    let Some(value) = effort.and_then(|effort| output_config_effort(model, *effort)) else {
+        return;
+    };
+    output_config.insert("effort".to_string(), JsonValue::String(value.to_string()));
+    betas.push(EFFORT_BETA_HEADER.to_string());
+}
 
-    match effort_value {
-        None => {
-            betas.push(EFFORT_BETA_HEADER.to_string());
-        }
-        Some(EffortValue::Named(level)) => {
-            output_config.insert("effort".to_string(), JsonValue::String(level.clone()));
-            betas.push(EFFORT_BETA_HEADER.to_string());
-        }
-        Some(EffortValue::Numeric(value)) => {
-            // Numeric effort override - ant-only (uses anthropic_internal)
-            if crate::utils::build_profile::has_internal_capability(
-                crate::utils::build_profile::InternalCapability::Api,
-            ) {
-                let existing = extra_body_params
-                    .get("anthropic_internal")
-                    .cloned()
-                    .unwrap_or(JsonValue::Object(serde_json::Map::new()));
-                if let JsonValue::Object(mut internal) = existing {
-                    internal.insert(
-                        "effort_override".to_string(),
-                        JsonValue::Number(serde_json::Number::from(*value)),
-                    );
-                    extra_body_params.insert(
-                        "anthropic_internal".to_string(),
-                        JsonValue::Object(internal),
-                    );
-                }
-            }
-        }
+/// The thinking configuration of one request: the effort when the session or
+/// agent set one, otherwise the caller's own.
+fn effective_thinking_config(
+    effort: Option<Effort>,
+    thinking_config: &ThinkingConfig,
+    model: &str,
+) -> ThinkingConfig {
+    match effort {
+        Some(effort) => thinking_for_effort(effort, model_supports_adaptive_thinking(model)),
+        None => thinking_config.clone(),
     }
 }
 
@@ -1677,6 +1666,7 @@ impl Options {
     pub fn new(model: String, query_source: ApiQuerySource) -> Self {
         Self {
             model,
+            profile: None,
             is_non_interactive_session: false,
             query_source,
             agents: Vec::new(),
@@ -1705,6 +1695,21 @@ impl Options {
             cached_mc_pinned_edits: Vec::new(),
             abort_signal: None,
         }
+    }
+
+    /// Options for a utility role (title, summary, ...): the model, effort and
+    /// profile its selection resolves to (design §1).
+    pub fn for_utility(role: &str, query_source: ApiQuerySource) -> Self {
+        let settings = crate::utils::settings::get_initial_settings();
+        let resolved = crate::utils::model::agent::resolve_utility_model_and_effort(
+            role,
+            &crate::utils::model::agent::ParentSelection::configured(),
+            settings.nyan.as_deref(),
+        );
+        let mut options = Self::new(resolved.model, query_source);
+        options.effort_value = resolved.effort;
+        options.profile = resolved.profile;
+        options
     }
 }
 
@@ -2223,7 +2228,10 @@ fn build_sdk_message_create_plan(
     let max_tokens = options
         .max_output_tokens_override
         .unwrap_or_else(|| get_max_output_tokens_for_model(&options.model));
-    let sdk_thinking = local_thinking_config_to_sdk(thinking_config, &options.model, max_tokens);
+    let effective_thinking_config =
+        effective_thinking_config(options.effort_value, thinking_config, &options.model);
+    let sdk_thinking =
+        local_thinking_config_to_sdk(&effective_thinking_config, &options.model, max_tokens);
     let temperature = if matches!(
         &sdk_thinking,
         anthropic_sdk::resources::messages::ThinkingConfig::Disabled
@@ -2294,7 +2302,7 @@ fn build_sdk_message_create_plan(
         request_tools,
         messages,
         options,
-        thinking_config,
+        &effective_thinking_config,
         max_tokens,
     );
 
@@ -2353,8 +2361,12 @@ fn build_model_request(
                 .and_then(|value| value.get("disable_parallel_tool_use"))
                 .and_then(JsonValue::as_bool)
                 .unwrap_or(false),
-            thinking: thinking_config.clone(),
-            effort: options.effort_value.clone(),
+            effort: options
+                .effort_value
+                .unwrap_or_else(|| match thinking_config {
+                    ThinkingConfig::Disabled => Effort::Off,
+                    ThinkingConfig::Adaptive | ThinkingConfig::Enabled { .. } => Effort::Medium,
+                }),
             output_schema: options.output_format.as_ref().map(|format| {
                 format
                     .get("schema")
@@ -2655,12 +2667,9 @@ fn params_from_context(
     };
     let mut output_config = take_extra_body_output_config(&mut extra_body_params);
 
-    let applied_effort =
-        resolve_applied_effort(&capture.original_model, options.effort_value.as_ref());
     configure_effort_params(
-        applied_effort.as_ref(),
+        options.effort_value.as_ref(),
         &mut output_config,
-        &mut extra_body_params,
         &mut betas,
         &capture.original_model,
     );
@@ -2680,7 +2689,10 @@ fn params_from_context(
     let max_tokens = options
         .max_output_tokens_override
         .unwrap_or_else(|| get_max_output_tokens_for_model(&options.model));
-    let sdk_thinking = local_thinking_config_to_sdk(thinking_config, &options.model, max_tokens);
+    let effective_thinking_config =
+        effective_thinking_config(options.effort_value, thinking_config, &options.model);
+    let sdk_thinking =
+        local_thinking_config_to_sdk(&effective_thinking_config, &options.model, max_tokens);
     let has_thinking = !matches!(
         sdk_thinking,
         anthropic_sdk::resources::messages::ThinkingConfig::Disabled
@@ -3503,9 +3515,13 @@ type SdkMessageStream = crate::services::provider::adapter::EventStream;
 
 /// The selected main profile as an adapter target, with the model of this
 /// attempt (a retry may have switched it).
-fn resolved_target_for(model: &str) -> crate::services::provider::adapter::ResolvedTarget {
-    let mut resolved = crate::utils::model::profile::resolve_main_profile(
+fn resolved_target_for(
+    model: &str,
+    profile: Option<&str>,
+) -> crate::services::provider::adapter::ResolvedTarget {
+    let mut resolved = crate::utils::model::profile::resolve_request_profile(
         &crate::utils::settings::get_initial_settings(),
+        profile,
     )
     .map(|profile| crate::services::provider::adapter::ResolvedTarget::from_profile(&profile))
     .unwrap_or_else(|_| crate::services::provider::adapter::ResolvedTarget {
@@ -3517,6 +3533,7 @@ fn resolved_target_for(model: &str) -> crate::services::provider::adapter::Resol
         max_output_tokens: 0,
         capabilities: Default::default(),
         cache_retention: Default::default(),
+        extra: None,
     });
     resolved.model = model.to_string();
     resolved
@@ -3577,7 +3594,10 @@ async fn open_main_stream_with_fallbacks(
         beta_capture,
     } = *request;
     let settings = crate::utils::settings::get_initial_settings();
-    let primary = crate::utils::model::profile::resolve_main_profile(&settings);
+    let primary = crate::utils::model::profile::resolve_request_profile(
+        &settings,
+        options.profile.as_deref(),
+    );
     let primary_is_anthropic = primary
         .as_ref()
         .map(|profile| {
@@ -3857,7 +3877,8 @@ async fn open_sdk_message_stream_with_retry(
                 apply_sdk_private_body_overrides(&mut request_options, &private_body_overrides);
 
                 let message_count = params.messages.len();
-                let resolved = resolved_target_for(&attempt_options.model);
+                let resolved =
+                    resolved_target_for(&attempt_options.model, attempt_options.profile.as_deref());
                 let adapter = crate::services::provider::anthropic::adapter::AnthropicAdapter::new(
                     target,
                     Some(attempt_options.query_source.clone()),
@@ -4514,7 +4535,10 @@ async fn execute_non_streaming_fallback_to_assistant(
     initial_consecutive_529_errors: Option<u32>,
 ) -> anyhow::Result<AssistantMessage> {
     let settings = crate::utils::settings::get_initial_settings();
-    let profile = crate::utils::model::profile::resolve_main_profile(&settings);
+    let profile = crate::utils::model::profile::resolve_request_profile(
+        &settings,
+        options.profile.as_deref(),
+    );
     if let Ok(profile) = profile
         && profile.protocol != crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages
     {
@@ -4539,6 +4563,7 @@ async fn execute_non_streaming_fallback_to_assistant(
     // into the typed assistant item yielded by the query generator.
     let result = execute_non_streaming_request_with_initial_consecutive_529_errors(
         &options.model,
+        options.profile.as_deref(),
         &options.query_source,
         options.fallback_model.as_deref(),
         thinking_config,
@@ -4699,6 +4724,7 @@ fn stream_error_is_529(error: &anyhow::Error) -> bool {
 ///
 pub async fn execute_non_streaming_request(
     model: &str,
+    profile: Option<&str>,
     source: &str,
     fallback_model: Option<&str>,
     thinking_config: &ThinkingConfig,
@@ -4706,6 +4732,7 @@ pub async fn execute_non_streaming_request(
 ) -> anyhow::Result<serde_json::Value> {
     execute_non_streaming_request_with_initial_consecutive_529_errors(
         model,
+        profile,
         source,
         fallback_model,
         thinking_config,
@@ -4720,6 +4747,7 @@ pub async fn execute_non_streaming_request(
 
 async fn execute_non_streaming_request_with_initial_consecutive_529_errors(
     model: &str,
+    profile: Option<&str>,
     source: &str,
     fallback_model: Option<&str>,
     thinking_config: &ThinkingConfig,
@@ -4747,15 +4775,18 @@ async fn execute_non_streaming_request_with_initial_consecutive_529_errors(
     let get_client_slot = std::sync::Arc::clone(&client_slot);
     let get_client_model = model.to_string();
     let get_client_source = source.to_string();
+    let get_client_profile = profile.map(str::to_string);
 
     let result = crate::services::api::with_retry::with_retry(
         move || {
             let client_slot = std::sync::Arc::clone(&get_client_slot);
             let model = get_client_model.clone();
             let source = get_client_source.clone();
+            let profile = get_client_profile.clone();
             async move {
                 let client = crate::services::provider::anthropic::client::get_anthropic_client(
-                    crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
+                    crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_profile(
+                        profile.as_deref(),
                         0,
                         Some(model),
                         Some(source),
@@ -5035,9 +5066,10 @@ fn build_non_streaming_request_body(
 
 /// Maps to: CC services/api/claude.ts:3241-3291
 ///
-/// Convenience wrapper for small/fast model queries (historically Haiku, now
-/// may be Sonnet depending on configuration). Uses queryModelWithoutStreaming
-/// internally with thinking disabled and no tools.
+/// Convenience wrapper for small/fast model queries (historically Haiku). The
+/// caller picks the utility role's model through [`Options::for_utility`]; this
+/// uses queryModelWithoutStreaming internally with thinking disabled and no
+/// tools.
 ///
 pub async fn query_haiku(
     system_prompt: &SystemPrompt,
@@ -5046,8 +5078,7 @@ pub async fn query_haiku(
     options: &Options,
 ) -> anyhow::Result<AssistantMessage> {
     let messages = single_user_prompt_messages(user_prompt);
-    let single_shot_options =
-        single_shot_query_options(options, Some(get_small_fast_model()), output_format);
+    let single_shot_options = single_shot_query_options(options, None, output_format);
 
     query_model_without_streaming(
         &messages,
@@ -7246,7 +7277,7 @@ mod tests {
             "claude-sonnet-4-6".to_string(),
             "repl_main_thread".to_string(),
         );
-        options.effort_value = Some(EffortValue::Named("high".to_string()));
+        options.effort_value = Some(Effort::High);
         options.output_format = Some(serde_json::json!({
             "type": "json_schema",
             "schema": { "type": "object" }
@@ -8504,14 +8535,12 @@ mod tests {
     #[test]
     fn configure_effort_params_named_effort() {
         let mut output_config = serde_json::Map::new();
-        let mut extra = serde_json::Map::new();
         let mut betas = Vec::new();
-        let effort = EffortValue::Named("high".to_string());
+        let effort = Effort::High;
 
         configure_effort_params(
             Some(&effort),
             &mut output_config,
-            &mut extra,
             &mut betas,
             "claude-sonnet-4-6-20260101",
         );
@@ -8527,13 +8556,11 @@ mod tests {
     fn configure_effort_params_skips_if_already_set() {
         let mut output_config = serde_json::Map::new();
         output_config.insert("effort".to_string(), JsonValue::String("low".to_string()));
-        let mut extra = serde_json::Map::new();
         let mut betas = Vec::new();
 
         configure_effort_params(
-            Some(&EffortValue::Named("high".to_string())),
+            Some(&Effort::High),
             &mut output_config,
-            &mut extra,
             &mut betas,
             "claude-sonnet-4-6-20260101",
         );
@@ -8722,6 +8749,7 @@ mod tests {
         let request_options_calls = std::sync::atomic::AtomicUsize::new(0);
         let result = execute_non_streaming_request_with_initial_consecutive_529_errors(
             "claude-sonnet-4-20250514",
+            None,
             "repl_main_thread",
             None,
             &ThinkingConfig::Disabled,
@@ -9869,5 +9897,46 @@ mod raw_image_tests {
             metadata.get("json_owner_metadata"),
             Some(&serde_json::json!(123))
         );
+    }
+
+    #[test]
+    fn a_utility_role_picks_its_model_effort_and_profile_from_selection() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({
+                "nyan": {
+                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                    "models": {
+                        "main": {"provider": "p", "model": "claude-sonnet-4-6", "effort": "high",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                        "fast": {"provider": "p", "model": "claude-haiku-4-5", "effort": "off",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                    },
+                    "selection": {
+                        "main": "main",
+                        "light": "fast",
+                        "utility": {"summary": "main:medium"}
+                    }
+                }
+            }))
+            .unwrap(),
+        );
+
+        // Unconfigured roles default to `@light`.
+        let title = Options::for_utility("title", "generate_session_title".to_string());
+        assert_eq!(title.model, "claude-haiku-4-5");
+        assert_eq!(title.profile.as_deref(), Some("fast"));
+        assert_eq!(title.effort_value, Some(Effort::Off));
+        assert_eq!(title.query_source, "generate_session_title");
+
+        // A configured role beats the default, and its `:effort` beats the profile's.
+        let summary = Options::for_utility("summary", "tool_use_summary_generation".to_string());
+        assert_eq!(summary.model, "claude-sonnet-4-6");
+        assert_eq!(summary.profile.as_deref(), Some("main"));
+        assert_eq!(summary.effort_value, Some(Effort::Medium));
+
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 }

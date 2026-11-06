@@ -14,8 +14,8 @@ use super::mock::{MockOpenAi, Recorded, Reply};
 use super::target::{Compat, OpenAiAuth, OpenAiTarget};
 use crate::services::provider::adapter::{Cancel, ProviderAdapter, ResolvedTarget};
 use crate::services::provider::ir::{
-    AssistantPart, BlockStart, CachePolicy, ClientContext, Delta, Message, ModelRequest, Protocol,
-    ProviderError, ProviderErrorKind, StopReason, StreamEventKind, ThinkingPreference, ToolChoice,
+    AssistantPart, BlockStart, CachePolicy, ClientContext, Delta, Effort, Message, ModelRequest,
+    Protocol, ProviderError, ProviderErrorKind, StopReason, StreamEventKind, ToolChoice,
     ToolResultContent, ToolSpec, UserPart,
 };
 use crate::utils::model::profile::ResolvedCapabilities;
@@ -67,6 +67,7 @@ fn resolved(protocol: Protocol) -> ResolvedTarget {
         max_output_tokens: 8_000,
         capabilities: all(),
         cache_retention: Default::default(),
+        extra: None,
     }
 }
 
@@ -114,8 +115,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         messages,
         tools: vec![read_tool()],
         tool_choice: ToolChoice::Auto,
-        thinking: ThinkingPreference::Adaptive,
-        effort: Some(crate::services::provider::ir::Effort::Named("low".into())),
+        effort: Effort::Medium,
         max_output_tokens: 4_000,
         temperature: None,
         structured_output: None,
@@ -220,7 +220,7 @@ async fn chat_request_reaches_the_wire_with_the_key_path_and_body() {
     assert_eq!(body["stream"], true);
     assert_eq!(body["stream_options"], json!({"include_usage": true}));
     assert_eq!(body["max_completion_tokens"], 4_000);
-    assert_eq!(body["reasoning_effort"], "low");
+    assert_eq!(body["reasoning_effort"], "medium");
     assert_eq!(
         body["messages"][0],
         json!({"role": "system", "content": "You are a test."})
@@ -476,7 +476,7 @@ async fn responses_request_reaches_the_wire_with_the_key_path_and_body() {
     assert_eq!(body["max_output_tokens"], 4_000);
     assert_eq!(
         body["reasoning"],
-        json!({"effort": "low", "summary": "auto"})
+        json!({"effort": "medium", "summary": "auto"})
     );
     assert_eq!(
         body["input"][0],

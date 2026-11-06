@@ -249,7 +249,7 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Back
         body["parallel_tool_calls"] = json!(!request.disable_parallel_tools);
     }
     if target.capabilities.thinking {
-        if let Some(effort) = reasoning_effort(request) {
+        if let Some(effort) = reasoning_effort(request, target) {
             body["reasoning"] = json!({"effort": effort, "summary": "auto"});
         }
     }
@@ -272,6 +272,7 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Back
     {
         body["prompt_cache_retention"] = json!("24h");
     }
+    crate::services::provider::adapter::merge_extra(&mut body, target.extra.as_ref());
     body
 }
 
@@ -798,8 +799,7 @@ impl ResponsesStream {
 mod tests {
     use super::*;
     use crate::services::provider::ir::{
-        CachePolicy, ClientContext, Effort, JsonSchemaOutput, MediaSource, ThinkingPreference,
-        ToolSpec,
+        CachePolicy, ClientContext, Effort, JsonSchemaOutput, MediaSource, ToolSpec,
     };
     use crate::utils::model::profile::ResolvedCapabilities;
 
@@ -813,6 +813,7 @@ mod tests {
             max_output_tokens: 8_000,
             capabilities,
             cache_retention: Default::default(),
+            extra: None,
         }
     }
 
@@ -833,8 +834,7 @@ mod tests {
             messages,
             tools: vec![],
             tool_choice: ToolChoice::Auto,
-            thinking: ThinkingPreference::Disabled,
-            effort: None,
+            effort: Effort::Off,
             max_output_tokens: 32_000,
             temperature: None,
             structured_output: None,
@@ -884,9 +884,27 @@ mod tests {
             json!({"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]})
         );
         assert!(body.get("prompt_cache_key").is_some());
-        for absent in ["tools", "reasoning", "text", "temperature"] {
+        // `off` on gpt-5 clamps to its lowest tier rather than being left out.
+        assert_eq!(
+            body["reasoning"],
+            json!({"effort": "minimal", "summary": "auto"})
+        );
+        for absent in ["tools", "text", "temperature"] {
             assert!(body.get(absent).is_none(), "{absent}: {body}");
         }
+    }
+
+    #[test]
+    fn profile_extra_is_merged_last_into_the_responses_body() {
+        let mut with_extra = target(all());
+        with_extra.extra = Some(json!({
+            "max_output_tokens": 77,
+            "service_tier": "flex"
+        }));
+        let body = build_body(&with_extra, &request(vec![user_text("hi")]), Backend::Api);
+        assert_eq!(body["max_output_tokens"], 77);
+        assert_eq!(body["service_tier"], "flex");
+        assert_eq!(body["model"], "gpt-5");
     }
 
     #[test]
@@ -907,8 +925,7 @@ mod tests {
         r.tools = vec![tool()];
         r.tool_choice = ToolChoice::Any;
         r.disable_parallel_tools = true;
-        r.thinking = ThinkingPreference::Adaptive;
-        r.effort = Some(Effort::Named("medium".into()));
+        r.effort = Effort::Medium;
         let body = build_body(&target(all()), &r, Backend::Api);
         assert_eq!(body["tools"][0]["strict"], false);
         assert_eq!(body["tools"][0]["name"], "Read");

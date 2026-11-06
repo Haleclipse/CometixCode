@@ -1035,13 +1035,6 @@ pub(crate) fn call_effort(
             },
             invocation(command, args),
         ),
-        commands::effort::effort::EffortCall::ConfirmArgs(value) => open_local_command_ui(
-            LocalCommandUi::Effort {
-                args: Some(value),
-                has_conversation_messages: !context.messages.is_empty(),
-            },
-            invocation(command, args),
-        ),
         commands::effort::effort::EffortCall::Result(result) => local_command_result(
             uuid,
             commands::get_command_name(command),
@@ -2068,9 +2061,7 @@ mod tests {
             local_output(&result),
             format!(
                 "<local-command-stdout>{}</local-command-stdout>",
-                crate::commands::effort::effort::usage_text(
-                    &crate::utils::model::model::get_main_loop_model()
-                )
+                crate::commands::effort::effort::usage_text()
             )
         );
         assert_eq!(

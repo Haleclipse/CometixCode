@@ -73,8 +73,8 @@ fn full_input_fields() -> Vec<crate::utils::zod::ObjectField> {
         ),
         (
             "model",
-            zod::enumeration(vec!["sonnet", "opus", "haiku"]).optional().describe(
-                "Optional model override for this agent. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent.",
+            zod::string().optional().describe(
+                "Optional model override for this agent in ref[:effort] format. Takes precedence over the agent definition's model frontmatter. If omitted, uses the agent definition's model, or inherits from the parent.",
             ),
         ),
         (

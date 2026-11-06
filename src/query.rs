@@ -80,13 +80,10 @@ pub struct QueryParams {
 
 impl QueryParams {
     /// Ensure the seeded ToolUseContext is ready for the actor.
-    /// Fills tools from permission context when empty, and default effort.
+    /// Fills tools from permission context when empty.
     pub fn ensure_tool_use_context_ready(&mut self) {
         if self.tool_use_context.tools.is_empty() {
             self.tool_use_context.tools = self.default_tool_pool();
-        }
-        if self.tool_use_context.effort_value.is_none() {
-            self.tool_use_context.effort_value = crate::utils::effort::get_initial_effort_setting();
         }
     }
 
@@ -4418,7 +4415,6 @@ fn query_tool_use_context(
         .with_resume_restore_stores(resume_restore_stores.clone())
         .with_mcp_state(mcp_state.clone())
         .with_content_replacement_state(content_replacement_state)
-        .with_effort_value(crate::utils::effort::get_initial_effort_setting())
         .with_messages(messages);
     if app_store.store.is_some() {
         let isolate_writes = !app_store.writable || app_store.avoid_permission_prompts_overlay;
@@ -4472,6 +4468,7 @@ fn build_call_model_request(
     );
     let mut options =
         crate::services::api::claude::Options::new(model, query_source.as_api_source().to_string());
+    options.profile = tool_use_context.main_loop_profile.clone();
     options.query_source = query_source.as_api_source().to_string();
     // Maps to CC `services/api/claude.ts:697` `agentId?: AgentId // Only set
     // for subagents`, sourced the way `query.ts:588-590` sources the dump key:
@@ -4497,10 +4494,14 @@ fn build_call_model_request(
         .is_some_and(|prompt| !prompt.is_empty());
     // Maps to CC `query.ts` `fallbackModel: toolUseContext.options.fallbackModel`.
     options.fallback_model = tool_use_context.fallback_model.clone();
-    options.effort_value = tool_use_context
-        .effort_value
-        .clone()
-        .or_else(crate::utils::effort::get_initial_effort_setting);
+    // A session effort (`/effort`, `/model`, `--effort`, a resumed session)
+    // wins; without one the profile the request goes through decides.
+    options.effort_value = tool_use_context.effort_value.or_else(|| {
+        crate::utils::model::profile::profile_default_effort(
+            &crate::utils::settings::get_initial_settings(),
+            options.profile.as_deref(),
+        )
+    });
     options.fast_mode = tool_use_context
         .fast_mode
         .map(|enabled| enabled && crate::utils::fast_mode::is_fast_mode_enabled());
@@ -6417,13 +6418,12 @@ mod tests {
     fn tool_use_context_seed_carries_effort_for_nested_agents() {
         // Maps to: nested agents write effort onto ToolUseContext before
         // spawn_query (formerly QueryRuntimeOptions.effort_value).
-        let context = crate::tool::ToolUseContext::default().with_effort_value(Some(
-            crate::utils::effort::EffortValue::Named("low".to_string()),
-        ));
+        let context = crate::tool::ToolUseContext::default()
+            .with_effort_value(Some(crate::utils::effort::Effort::Off));
 
         assert_eq!(
             context.effort_value,
-            Some(crate::utils::effort::EffortValue::Named("low".to_string()))
+            Some(crate::utils::effort::Effort::Off)
         );
     }
 
@@ -8336,9 +8336,7 @@ mod tests {
             .with_non_interactive_session(true)
             .with_cwd_override(Some(std::path::PathBuf::from("/tmp/agent-cwd")))
             .with_critical_system_reminder_experimental(Some("Stay focused".to_string()))
-            .with_effort_value(Some(crate::utils::effort::EffortValue::Named(
-                "medium".to_string(),
-            )))
+            .with_effort_value(Some(crate::utils::effort::Effort::Medium))
             .with_fast_mode(Some(false));
 
         let request = build_call_model_request(
@@ -8360,9 +8358,7 @@ mod tests {
         );
         assert_eq!(
             request.options.effort_value,
-            Some(crate::utils::effort::EffortValue::Named(
-                "medium".to_string()
-            ))
+            Some(crate::utils::effort::Effort::Medium)
         );
         assert!(request.options.is_non_interactive_session);
         assert_eq!(request.options.fast_mode, Some(false));

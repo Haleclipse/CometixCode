@@ -34,10 +34,7 @@ pub async fn generate_session_name(
             "additionalProperties": false
         }
     });
-    let mut options = Options::new(
-        crate::utils::model::model::get_small_fast_model(),
-        "rename_generate_name".to_string(),
-    );
+    let mut options = Options::for_utility("title", "rename_generate_name".to_string());
     options.agents = Vec::new();
     options.is_non_interactive_session = false;
     options.has_append_system_prompt = false;

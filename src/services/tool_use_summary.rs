@@ -37,10 +37,7 @@ pub async fn generate_tool_use_summary(params: GenerateToolUseSummaryParams) -> 
     let user_prompt =
         build_tool_use_summary_user_prompt(&params.tools, params.last_assistant_text.as_deref());
     let system_prompt: SystemPrompt = vec![TOOL_USE_SUMMARY_SYSTEM_PROMPT.to_string()];
-    let mut options = Options::new(
-        crate::utils::model::model::get_small_fast_model(),
-        "tool_use_summary_generation".to_string(),
-    );
+    let mut options = Options::for_utility("summary", "tool_use_summary_generation".to_string());
     options.query_source = "tool_use_summary_generation".to_string();
     options.enable_prompt_caching = Some(true);
     options.agents = Vec::new();

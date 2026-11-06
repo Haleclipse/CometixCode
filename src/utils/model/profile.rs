@@ -38,6 +38,8 @@ pub struct ResolvedModelProfile {
     pub credential: Option<CredentialReference>,
     pub compat: Option<OpenaiCompatSettings>,
     pub cache_retention: CacheRetention,
+    pub effort: Option<crate::utils::effort::Effort>,
+    pub extra: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -359,6 +361,8 @@ pub fn resolve_profile(
         credential: provider.credential.clone(),
         compat: provider.compat.clone(),
         cache_retention: model_profile.cache_retention(),
+        effort: model_profile.effort,
+        extra: model_profile.extra.clone(),
     })
 }
 
@@ -374,6 +378,73 @@ pub fn resolve_main_profile(
         .as_ref()
         .and_then(|selection| selection.main.as_deref())
         .ok_or(ProfileResolutionError::MissingSelection)?;
+    resolve_profile(nyan, profile_name)
+}
+
+/// The effort the session runs at when nothing set one: the configured effort
+/// of the profile its requests go through, else the model default (`None`).
+pub fn profile_default_effort(
+    settings: &SettingsJson,
+    profile: Option<&str>,
+) -> Option<crate::utils::effort::Effort> {
+    resolve_request_profile(settings, profile)
+        .ok()
+        .and_then(|profile| profile.effort)
+}
+
+/// The profile a request is routed through: the one it names, else the session's
+/// main profile.
+pub fn resolve_request_profile(
+    settings: &SettingsJson,
+    profile: Option<&str>,
+) -> Result<ResolvedModelProfile, ProfileResolutionError> {
+    match profile {
+        Some(name) => {
+            let nyan = settings
+                .nyan
+                .as_ref()
+                .ok_or(ProfileResolutionError::MissingSettings)?;
+            resolve_profile(nyan, name)
+        }
+        None => resolve_main_profile(settings),
+    }
+}
+
+/// Resolves a tier ref (`@main`, `@light`, `@heavy`) or profile name to an effective profile name.
+/// `light` and `heavy` fall back to `main` if not explicitly configured (design §1).
+pub fn resolve_selection_profile_name<'a>(
+    selection: &'a crate::utils::settings::nyan::SelectionSettings,
+    model_ref: &'a str,
+) -> Result<&'a str, ProfileResolutionError> {
+    match model_ref {
+        "@main" => selection
+            .main
+            .as_deref()
+            .ok_or(ProfileResolutionError::MissingSelection),
+        "@light" => selection
+            .light
+            .as_deref()
+            .or_else(|| selection.main.as_deref())
+            .ok_or(ProfileResolutionError::MissingSelection),
+        "@heavy" => selection
+            .heavy
+            .as_deref()
+            .or_else(|| selection.main.as_deref())
+            .ok_or(ProfileResolutionError::MissingSelection),
+        other => Ok(other),
+    }
+}
+
+/// Resolve a tier reference (`@main`, `@light`, `@heavy`) or explicit profile name to its profile.
+pub fn resolve_ref_profile(
+    nyan: &NyanSettings,
+    model_ref: &str,
+) -> Result<ResolvedModelProfile, ProfileResolutionError> {
+    let selection = nyan
+        .selection
+        .as_ref()
+        .ok_or(ProfileResolutionError::MissingSelection)?;
+    let profile_name = resolve_selection_profile_name(selection, model_ref)?;
     resolve_profile(nyan, profile_name)
 }
 
@@ -752,6 +823,134 @@ mod tests {
             "provider/model"
         );
         assert!(validate_decision_profile(settings.nyan.as_ref().unwrap(), "main").is_ok());
+    }
+
+    fn tiered_settings() -> SettingsJson {
+        serde_json::from_value(serde_json::json!({
+            "nyan": {
+                "providers": {
+                    "anthropic": {"kind": "anthropic", "protocol": "anthropicMessages"}
+                },
+                "models": {
+                    "main": {
+                        "provider": "anthropic",
+                        "model": "claude-sonnet-4-6",
+                        "effort": "high",
+                        "extra": {"metadata": {"user_id": "u"}},
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}
+                    },
+                    "fast": {
+                        "provider": "anthropic",
+                        "model": "claude-haiku-4-5",
+                        "effort": "off",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}
+                    }
+                },
+                "selection": {"main": "main", "light": "fast"}
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_profile_carries_its_effort_and_extra() {
+        use crate::utils::effort::Effort;
+        let settings = tiered_settings();
+        let main = resolve_main_profile(&settings).unwrap();
+        assert_eq!(main.effort, Some(Effort::High));
+        assert_eq!(
+            main.extra,
+            Some(serde_json::json!({"metadata": {"user_id": "u"}}))
+        );
+        let fast = resolve_profile(settings.nyan.as_ref().unwrap(), "fast").unwrap();
+        assert_eq!(fast.effort, Some(Effort::Off));
+        assert_eq!(fast.extra, None);
+        // No `effort` written: the model default, not a made-up one.
+        let plain = resolve_main_profile(&self::settings()).unwrap();
+        assert_eq!(plain.effort, None);
+        assert_eq!(plain.extra, None);
+    }
+
+    #[test]
+    fn a_profile_rejects_an_effort_outside_the_four_tiers() {
+        for bad in ["low", "xhigh", "ultra", ""] {
+            let parsed = serde_json::from_value::<ModelProfileSettings>(
+                serde_json::json!({"provider": "p", "effort": bad}),
+            );
+            assert!(parsed.is_err(), "{bad:?} must not parse");
+        }
+    }
+
+    #[test]
+    fn tiers_resolve_to_their_profile_and_fall_back_to_main() {
+        let settings = tiered_settings();
+        let selection = settings.nyan.as_ref().unwrap().selection.as_ref().unwrap();
+        assert_eq!(
+            resolve_selection_profile_name(selection, "@main").unwrap(),
+            "main"
+        );
+        assert_eq!(
+            resolve_selection_profile_name(selection, "@light").unwrap(),
+            "fast"
+        );
+        // `heavy` is unset, so it is `main`.
+        assert_eq!(
+            resolve_selection_profile_name(selection, "@heavy").unwrap(),
+            "main"
+        );
+        // A plain name is not a tier and passes through untouched.
+        assert_eq!(
+            resolve_selection_profile_name(selection, "fast").unwrap(),
+            "fast"
+        );
+        // With no `main`, a tier has nothing to name.
+        let empty = crate::utils::settings::nyan::SelectionSettings::default();
+        for tier in ["@main", "@light", "@heavy"] {
+            assert_eq!(
+                resolve_selection_profile_name(&empty, tier).unwrap_err(),
+                ProfileResolutionError::MissingSelection,
+                "{tier}"
+            );
+        }
+        assert_eq!(
+            resolve_ref_profile(settings.nyan.as_ref().unwrap(), "@light")
+                .unwrap()
+                .profile,
+            "fast"
+        );
+    }
+
+    #[test]
+    fn a_request_goes_through_the_profile_it_names_else_main() {
+        use crate::utils::effort::Effort;
+        let settings = tiered_settings();
+        assert_eq!(
+            resolve_request_profile(&settings, None).unwrap().profile,
+            "main"
+        );
+        assert_eq!(
+            resolve_request_profile(&settings, Some("fast"))
+                .unwrap()
+                .profile,
+            "fast"
+        );
+        assert_eq!(
+            resolve_request_profile(&settings, Some("nope")).unwrap_err(),
+            ProfileResolutionError::MissingProfile("nope".to_string())
+        );
+        assert_eq!(
+            resolve_request_profile(&SettingsJson::default(), Some("fast")).unwrap_err(),
+            ProfileResolutionError::MissingSettings
+        );
+        // The session's effort default is the routed profile's own.
+        assert_eq!(profile_default_effort(&settings, None), Some(Effort::High));
+        assert_eq!(
+            profile_default_effort(&settings, Some("fast")),
+            Some(Effort::Off)
+        );
+        // An unresolvable profile means the model default, not an error.
+        assert_eq!(profile_default_effort(&settings, Some("nope")), None);
+        assert_eq!(profile_default_effort(&SettingsJson::default(), None), None);
     }
 
     #[test]

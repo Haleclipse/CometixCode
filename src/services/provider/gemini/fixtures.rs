@@ -14,8 +14,8 @@ use super::wire;
 use crate::services::provider::adapter::{Cancel, ResolvedTarget};
 use crate::services::provider::ir::{
     AssistantPart, BlockStart, Delta, Effort, JsonSchemaOutput, MediaSource, Message, ModelRequest,
-    Protocol, ProviderErrorKind, SYSTEM_BOUNDARY, StopReason, StreamEventKind, ThinkingPreference,
-    ToolChoice, ToolResultContent, ToolResultPart, ToolSpec, Usage, UserPart,
+    Protocol, ProviderErrorKind, SYSTEM_BOUNDARY, StopReason, StreamEventKind, ToolChoice,
+    ToolResultContent, ToolResultPart, ToolSpec, Usage, UserPart,
 };
 use crate::services::provider::openai::adapter::Machine;
 use crate::services::provider::openai::transport::Frame;
@@ -63,6 +63,7 @@ fn test_target() -> ResolvedTarget {
             streaming: true,
         },
         cache_retention: Default::default(),
+        extra: None,
     }
 }
 
@@ -73,8 +74,7 @@ fn minimal_request(messages: Vec<Message>) -> ModelRequest {
         messages,
         tools: Vec::new(),
         tool_choice: ToolChoice::Auto,
-        thinking: ThinkingPreference::Disabled,
-        effort: None,
+        effort: Effort::Off,
         max_output_tokens: 4096,
         temperature: None,
         structured_output: None,
@@ -265,7 +265,7 @@ fn test_wire_structured_output_and_thinking_budget() {
     req.structured_output = Some(JsonSchemaOutput {
         schema: json!({ "type": "object" }),
     });
-    req.thinking = ThinkingPreference::Budget { tokens: Some(2048) };
+    req.effort = Effort::Medium;
     req.temperature = Some(0.7);
 
     let wire = wire::build_request(&req, &target);
@@ -281,7 +281,43 @@ fn test_wire_structured_output_and_thinking_budget() {
     );
 
     let think = gen_config.thinking_config.expect("thinking_config present");
-    assert_eq!(think.thinking_budget, Some(2048));
+    assert_eq!(think.thinking_budget, Some(8192));
+}
+
+#[tokio::test]
+async fn a_profiles_extra_reaches_the_gemini_request_body() {
+    let _env = env("fake-api-key");
+    let server = MockGemini::start(vec![Reply::sse_data(vec![json!({
+        "candidates": [{
+            "content": {"parts": [{"text": "ok"}]},
+            "finishReason": "STOP"
+        }],
+        "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1}
+    })])])
+    .await;
+    super::install_test_main_profile(&server.base_url, "TEST_GEMINI_KEY", Default::default());
+    let mut profile = crate::utils::model::profile::resolve_main_profile(
+        &crate::utils::settings::get_initial_settings(),
+    )
+    .unwrap();
+    profile.extra = Some(json!({
+        "generationConfig": {"temperature": 0.1},
+        "safetySettings": [{"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"}]
+    }));
+    let req = minimal_request(vec![Message::User {
+        parts: vec![UserPart::Text { text: "Hi".into() }],
+    }]);
+
+    let opened = super::open_stream(&profile, &req, &Cancel::new())
+        .await
+        .unwrap();
+    let _: Vec<_> = opened.events.collect().await;
+
+    let sent = &server.requests()[0].body;
+    // The profile's key replaces the computed one whole, and adds new ones.
+    assert_eq!(sent["generationConfig"], json!({"temperature": 0.1}));
+    assert_eq!(sent["safetySettings"][0]["threshold"], "BLOCK_NONE");
+    assert!(sent.get("contents").is_some(), "the request body is kept");
 }
 
 #[test]
@@ -307,68 +343,83 @@ fn test_wire_gemini_3_thinking_level_and_effort_mapping() {
     let mut target = test_target();
     target.model = "gemini-3.8-flash".into();
 
-    // 1. Adaptive with no effort hint defaults to HIGH for Gemini 3
     let mut req = minimal_request(vec![Message::User {
         parts: vec![UserPart::Text {
             text: "Solve math".into(),
         }],
     }]);
-    req.thinking = ThinkingPreference::Adaptive;
+
+    for (effort, expected) in [
+        (Effort::Medium, "MEDIUM"),
+        (Effort::High, "HIGH"),
+        (Effort::Max, "HIGH"),
+    ] {
+        req.effort = effort;
+        let wire = wire::build_request(&req, &target);
+        let think = wire
+            .generation_config
+            .as_ref()
+            .and_then(|g| g.thinking_config.as_ref())
+            .expect("thinking_config present");
+        assert_eq!(think.thinking_level.as_deref(), Some(expected));
+        assert_eq!(think.include_thoughts, Some(true));
+        assert_eq!(think.thinking_budget, None);
+    }
+
+    // Off clamps to the lowest level every Gemini 3 text model lists, and asks
+    // for no thought summaries.
+    req.effort = Effort::Off;
     let wire = wire::build_request(&req, &target);
     let think = wire
         .generation_config
         .as_ref()
         .and_then(|g| g.thinking_config.as_ref())
         .expect("thinking_config present");
-    assert_eq!(think.thinking_level.as_deref(), Some("HIGH"));
-    assert_eq!(think.include_thoughts, Some(true));
+    assert_eq!(think.thinking_level.as_deref(), Some("LOW"));
+    assert_eq!(think.include_thoughts, None);
     assert_eq!(think.thinking_budget, None);
+}
 
-    // 2. Named efforts: minimal, low, medium, high, and clamp xhigh/max to HIGH
-    for (name, expected) in [
-        ("minimal", "MINIMAL"),
-        ("low", "LOW"),
-        ("medium", "MEDIUM"),
-        ("high", "HIGH"),
-        ("xhigh", "HIGH"),
-        ("max", "HIGH"),
+#[test]
+fn test_wire_gemini_25_thinking_budget_follows_effort_and_clamps_off() {
+    let mut target = test_target();
+    let mut req = minimal_request(vec![Message::User {
+        parts: vec![UserPart::Text {
+            text: "Solve math".into(),
+        }],
+    }]);
+    let budget = |req: &ModelRequest, target: &ResolvedTarget| {
+        let wire = wire::build_request(req, target);
+        let think = wire
+            .generation_config
+            .and_then(|g| g.thinking_config)
+            .expect("thinking_config present");
+        assert_eq!(think.thinking_level, None);
+        (think.thinking_budget, think.include_thoughts)
+    };
+
+    for (effort, expected) in [
+        (Effort::Medium, Some(8192)),
+        (Effort::High, Some(24576)),
+        (Effort::Max, Some(-1)),
     ] {
-        req.effort = Some(Effort::Named(name.into()));
-        let wire = wire::build_request(&req, &target);
-        let think = wire
-            .generation_config
-            .as_ref()
-            .and_then(|g| g.thinking_config.as_ref())
-            .expect("thinking_config present");
-        assert_eq!(think.thinking_level.as_deref(), Some(expected));
-        assert_eq!(think.include_thoughts, Some(true));
-        assert_eq!(think.thinking_budget, None);
+        req.effort = effort;
+        assert_eq!(budget(&req, &target), (expected, Some(true)));
     }
 
-    // 3. Budget preference mapped to discrete levels for Gemini 3
-    req.effort = None;
-    for (tokens, expected) in [(1000, "LOW"), (4096, "MEDIUM"), (32768, "HIGH")] {
-        req.thinking = ThinkingPreference::Budget {
-            tokens: Some(tokens),
-        };
-        let wire = wire::build_request(&req, &target);
-        let think = wire
-            .generation_config
-            .as_ref()
-            .and_then(|g| g.thinking_config.as_ref())
-            .expect("thinking_config present");
-        assert_eq!(think.thinking_level.as_deref(), Some(expected));
-        assert_eq!(think.include_thoughts, Some(true));
-        assert_eq!(think.thinking_budget, None);
-    }
+    // Off is budget 0 on Flash, and the 128-token floor on Pro (which rejects 0).
+    req.effort = Effort::Off;
+    assert_eq!(budget(&req, &target), (Some(0), None));
+    target.model = "gemini-2.5-pro".into();
+    assert_eq!(budget(&req, &target), (Some(128), None));
 
-    // 4. Disabled thinking produces no thinking_config
-    req.thinking = ThinkingPreference::Disabled;
-    let wire = wire::build_request(&req, &target);
+    // A model without the thinking capability gets no thinking configuration.
+    target.capabilities.thinking = false;
+    req.effort = Effort::High;
     assert!(
-        wire.generation_config
-            .as_ref()
-            .and_then(|g| g.thinking_config.as_ref())
+        wire::build_request(&req, &target)
+            .generation_config
+            .and_then(|g| g.thinking_config)
             .is_none()
     );
 }

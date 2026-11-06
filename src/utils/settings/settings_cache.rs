@@ -62,6 +62,15 @@ pub fn set_session_settings_cache(value: SettingsWithErrors) {
     caches().session = Some(value);
 }
 
+/// Test support: make `settings` the session's settings, as launch would.
+#[cfg(test)]
+pub(crate) fn install_test_settings(settings: SettingsJson) {
+    set_session_settings_cache(SettingsWithErrors {
+        settings,
+        ..Default::default()
+    });
+}
+
 /// Maps to: CC `getCachedSettingsForSource` (:22-27). The outer `Option` is
 /// CC's miss (`undefined`); the inner one is the cached "no settings"
 /// (`null`).

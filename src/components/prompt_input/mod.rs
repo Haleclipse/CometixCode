@@ -436,7 +436,7 @@ fn restore_stash_or_clear(
     }
 }
 
-/// Maps to PromptInput.tsx `handleModelSelect`: model changes clear the
+/// Maps to PromptInput.tsx `handleModelSelect`: model changes update the
 /// session override and disable Fast mode when the selected model cannot use it.
 /// Effort apply is official ModelPicker `handleSelect` / `bt`.
 fn apply_prompt_model_selection(
@@ -3844,8 +3844,8 @@ mod tests {
             false,
         ));
         assert!(!state.fast_mode);
-        assert_eq!(state.main_loop_model.as_deref(), Some("sonnet"));
-        assert!(state.main_loop_model_for_session.is_none());
+        assert_eq!(state.main_loop_model.as_deref(), Some("opus"));
+        assert_eq!(state.main_loop_model_for_session.as_deref(), Some("sonnet"));
     }
 
     #[test]
@@ -4325,7 +4325,11 @@ mod tests {
                 key(KeyCode::Enter),
             ],
         );
-        assert!(model_store.get().main_loop_model.is_some());
+        assert!(model_store.get().main_loop_model_for_session.is_some());
+        assert!(
+            model_store.get().main_loop_model.is_none(),
+            "Enter must only change the session, never the configured model"
+        );
 
         let max_effort_store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
@@ -4337,16 +4341,20 @@ mod tests {
                 key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT),
                 key(KeyCode::Down),
                 key(KeyCode::Right),
+                key(KeyCode::Right),
                 key(KeyCode::Enter),
             ],
         );
         assert_eq!(
             max_effort_store.get().effort_value,
-            Some(crate::utils::effort::EffortValue::Named("max".to_string())),
-            "ModelPicker High → Max on Opus 4.6 must apply Max to AppState"
+            Some(crate::utils::effort::Effort::Max),
+            "ModelPicker Medium → High → Max must apply Max to AppState"
         );
         assert_eq!(
-            max_effort_store.get().main_loop_model.as_deref(),
+            max_effort_store
+                .get()
+                .main_loop_model_for_session
+                .as_deref(),
             Some("opus[1m]")
         );
 

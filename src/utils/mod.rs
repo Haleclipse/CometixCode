@@ -209,7 +209,6 @@ pub mod tool_schema_cache;
 pub mod tool_search;
 pub mod treeify;
 pub mod truncate;
-pub mod ultracode;
 pub mod undici;
 pub mod user_agent;
 pub mod which;

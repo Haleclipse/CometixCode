@@ -42,8 +42,6 @@ pub use crate::utils::permissions::permission_mode::{EXTERNAL_PERMISSION_MODES, 
 
 pub const CUSTOMIZATION_SURFACES: &[&str] = &["skills", "agents", "hooks", "mcp"];
 
-pub const EFFORT_LEVELS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
-
 pub const DEFAULT_SHELLS: &[&str] = &["bash", "powershell"];
 
 pub const LOGIN_METHODS: &[&str] = &["claudeai", "console"];
@@ -194,9 +192,6 @@ pub struct SettingsJson {
     pub show_clear_context_on_plan_accept: Option<bool>,
     pub agent: Option<String>,
     pub company_announcements: Option<Vec<String>>,
-    pub effort_level: Option<String>,
-    /// Session seed consumed at startup by the 2.1.198 ultracode chain.
-    pub ultracode: Option<bool>,
 
     pub voice_enabled: Option<bool>,
     pub assistant: Option<bool>,
@@ -634,8 +629,8 @@ fn extra_known_marketplaces_settings_key_check(
 /// Build-time gates, frozen at first access exactly as CC's memoized
 /// lazySchema freezes module-load state:
 /// - `CLAUDE_CODE_ENABLE_XAA` env → `xaaIdp`
-/// - `USER_TYPE=ant` → `classifierPermissionsEnabled`, the `max` effort
-///   level, and the `autoMode.deny` back-compat alias
+/// - `USER_TYPE=ant` → `classifierPermissionsEnabled` and the
+///   `autoMode.deny` back-compat alias
 /// - `feature('TRANSCRIPT_CLASSIFIER')` (on) → `skipAutoPermissionPrompt`,
 ///   `useAutoModeDuringPlan`, `autoMode`
 /// - `feature('KAIROS') || feature('KAIROS_BRIEF')` (Brief on) → `defaultView`
@@ -663,7 +658,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             feature_enabled(FeatureFlag::Kairos) || feature_enabled(FeatureFlag::KairosBrief);
         // USER_TYPE is a build-time define in CC. Keep the same axis for the
         // remaining internal-only schema fields.
-        // @nyan: persist `max` as a production effortLevel (CC 2.1.88: ant-only).
         let is_ant = crate::utils::build_profile::build_audience().is_internal();
         let xaa = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_ENABLE_XAA").as_deref());
 
@@ -1053,19 +1047,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ),
             ),
             (
-                "effortLevel",
-                zod::enumeration(vec!["low", "medium", "high", "xhigh", "max"])
-                .optional()
-                .catch_undefined()
-                .describe("Persisted effort level for supported models."),
-            ),
-            (
-                "ultracode",
-                zod::boolean()
-                    .optional()
-                    .describe("Start this session with ultracode enabled."),
-            ),
-            (
                 "advisorModel",
                 zod::string()
                     .optional()
@@ -1451,26 +1432,6 @@ mod zod_schema_tests {
         }
     }
 
-    /// Maps to: zod/v4 `.catch(undefined)` (`settings/types.ts:540,710`) — a
-    /// failing parse resolves to undefined (the key vanishes), issues never
-    /// surface, and the projection stays the inner schema.
-    #[test]
-    fn catch_undefined_swallows_failures_like_official() {
-        use crate::utils::zod;
-        let schema = zod::object(vec![(
-            "effortLevel",
-            zod::enumeration(vec!["low", "medium", "high"])
-                .catch_undefined()
-                .optional(),
-        )]);
-        let parsed = zod::safe_parse(&schema, &serde_json::json!({"effortLevel": "bogus"}))
-            .expect("catch swallows the enum failure");
-        assert!(parsed.get("effortLevel").is_none(), "the key vanishes");
-        let parsed = zod::safe_parse(&schema, &serde_json::json!({"effortLevel": "high"}))
-            .expect("valid value parses");
-        assert_eq!(parsed["effortLevel"], "high");
-    }
-
     /// Maps to: zod/v4 `.check(ctx)` (`settings/types.ts:571-596`) — the
     /// checker pushes multiple custom issues with their own paths and
     /// formatted messages.
@@ -1658,8 +1619,7 @@ mod zod_schema_tests {
 
     /// Maps to: CC `strictPluginOnlyCustomization` — the preprocess drops
     /// unknown surfaces (forwards-compat) and `.catch(undefined)` swallows
-    /// invalid raw values instead of nulling the whole file. `effortLevel`
-    /// shares the catch behavior.
+    /// invalid gated values instead of nulling the whole file.
     #[test]
     fn settings_schema_degrades_gated_fields_like_official() {
         let filtered = crate::utils::zod::safe_parse(
@@ -1679,20 +1639,6 @@ mod zod_schema_tests {
         .expect("invalid raw value swallowed by catch");
         assert!(swallowed.get("strictPluginOnlyCustomization").is_none());
         assert_eq!(swallowed["language"], "zh");
-
-        let effort = crate::utils::zod::safe_parse(
-            settings_schema(),
-            &serde_json::json!({"effortLevel": "ultra"}),
-        )
-        .expect("invalid effort level swallowed");
-        assert!(effort.get("effortLevel").is_none());
-        // @nyan: persist `max` as a production effortLevel (CC 2.1.88: ant-only).
-        let max = crate::utils::zod::safe_parse(
-            settings_schema(),
-            &serde_json::json!({"effortLevel": "max"}),
-        )
-        .expect("max is a production effortLevel");
-        assert_eq!(max["effortLevel"], "max");
     }
 
     /// Maps to: CC `extraKnownMarketplaces` `.check` — a settings-sourced

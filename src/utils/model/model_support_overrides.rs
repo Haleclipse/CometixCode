@@ -11,9 +11,6 @@ use crate::utils::process_env::JsTruthy;
 /// Maps to: CC `modelSupportOverrides.ts:4-9` `ModelCapabilityOverride`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ModelCapabilityOverride {
-    Effort,
-    MaxEffort,
-    XhighEffort,
     Thinking,
     AdaptiveThinking,
     InterleavedThinking,
@@ -24,9 +21,6 @@ impl ModelCapabilityOverride {
     /// `*_SUPPORTED_CAPABILITIES` list.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Effort => "effort",
-            Self::MaxEffort => "max_effort",
-            Self::XhighEffort => "xhigh_effort",
             Self::Thinking => "thinking",
             Self::AdaptiveThinking => "adaptive_thinking",
             Self::InterleavedThinking => "interleaved_thinking",
@@ -138,10 +132,6 @@ mod tests {
                 ModelCapabilityOverride::InterleavedThinking
             ),
             Some(true)
-        );
-        assert_eq!(
-            get_3p_model_capability_override("my-sonnet", ModelCapabilityOverride::Effort),
-            Some(false)
         );
         // Unpinned model → undefined, not false.
         assert_eq!(

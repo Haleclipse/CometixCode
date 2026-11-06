@@ -859,6 +859,8 @@ pub struct ToolUseContextOptions {
     pub debug: bool,
     pub verbose: bool,
     pub main_loop_model: Option<String>,
+    /// Profile `main_loop_model` belongs to; `None` is the session's main profile.
+    pub main_loop_profile: Option<String>,
     pub tools: Vec<crate::types::tools::Tool>,
     pub thinking_config: Option<crate::utils::thinking::ThinkingConfig>,
     pub mcp_state: crate::state::app_state_store::McpState,
@@ -1278,13 +1280,15 @@ pub struct ToolUseContext {
     /// Maps to official `ToolUseContext.options.mainLoopModel`, consumed by
     /// compact/autocompact thresholds and nested agent runtime options.
     pub main_loop_model: Option<String>,
+    /// Profile `main_loop_model` belongs to; `None` is the session's main profile.
+    pub main_loop_profile: Option<String>,
     /// Maps to official `ToolUseContext.options.thinkingConfig`.
     pub thinking_config: Option<crate::utils::thinking::ThinkingConfig>,
     /// Maps to CC `ToolUseContext.getAppState().fastMode` snapshot at query start.
     pub fast_mode: Option<bool>,
     /// Maps to CC `AppState.effortValue` as observed by
     /// `runAgent.ts#createSubagentContext` for nested agent effort fallback.
-    pub effort_value: Option<crate::utils::effort::EffortValue>,
+    pub effort_value: Option<crate::utils::effort::Effort>,
     /// Maps to CC `ToolUseContext.getAppState().mcp`: live MCP clients,
     /// discovered tools, prompts, and resources used by dynamic MCP tools.
     pub mcp_state: crate::state::app_state_store::McpState,
@@ -1439,6 +1443,7 @@ impl ToolUseContext {
             refresh_tools: RefreshToolsCallback::default(),
             tools: crate::tools::get_tools(&tool_permission_context),
             main_loop_model: None,
+            main_loop_profile: None,
             thinking_config: None,
             fast_mode: None,
             effort_value: None,
@@ -1617,6 +1622,7 @@ impl ToolUseContext {
             debug: self.debug,
             verbose: self.verbose,
             main_loop_model: self.main_loop_model.clone(),
+            main_loop_profile: self.main_loop_profile.clone(),
             tools: self.tools.clone(),
             thinking_config: self.thinking_config.clone(),
             mcp_state: self.mcp_state.clone(),
@@ -1636,6 +1642,7 @@ impl ToolUseContext {
         self.debug = options.debug;
         self.verbose = options.verbose;
         self.main_loop_model = options.main_loop_model;
+        self.main_loop_profile = options.main_loop_profile;
         self.tools = options.tools;
         self.thinking_config = options.thinking_config;
         self.mcp_state = options.mcp_state;
@@ -1689,6 +1696,31 @@ impl ToolUseContext {
         self
     }
 
+    /// What a request made from this session inherits (`inherit`, `@tier` with
+    /// nothing to name): its current model, effort and profile.
+    pub fn parent_selection(&self) -> crate::utils::model::agent::ParentSelection {
+        crate::utils::model::agent::ParentSelection {
+            model: self
+                .main_loop_model
+                .clone()
+                .unwrap_or_else(crate::utils::model::model::get_main_loop_model),
+            effort: self.effort_value,
+            profile: self.main_loop_profile.clone(),
+        }
+    }
+
+    /// Name of the profile this session's requests go through: the one it was
+    /// switched to, else `selection.main`.
+    pub fn effective_profile_name(&self) -> Option<String> {
+        self.main_loop_profile.clone().or_else(|| {
+            crate::utils::settings::get_initial_settings()
+                .nyan
+                .as_deref()
+                .and_then(|nyan| nyan.selection.as_ref())
+                .and_then(|selection| selection.main.clone())
+        })
+    }
+
     pub fn with_main_loop_model(mut self, main_loop_model: impl Into<String>) -> Self {
         self.main_loop_model = Some(main_loop_model.into());
         self
@@ -1707,10 +1739,7 @@ impl ToolUseContext {
         self
     }
 
-    pub fn with_effort_value(
-        mut self,
-        effort_value: Option<crate::utils::effort::EffortValue>,
-    ) -> Self {
+    pub fn with_effort_value(mut self, effort_value: Option<crate::utils::effort::Effort>) -> Self {
         self.effort_value = effort_value;
         self
     }
@@ -3049,5 +3078,57 @@ mod tests {
         assert_eq!(observed.lock().unwrap().last().copied(), Some(true));
         context.mark_complete("cancel");
         assert_eq!(observed.lock().unwrap().last().copied(), Some(false));
+    }
+
+    fn two_profile_settings() -> crate::utils::settings::SettingsJson {
+        serde_json::from_value(serde_json::json!({
+            "nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {
+                    "main": {"provider": "p", "model": "claude-sonnet-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                    "deep": {"provider": "p", "model": "claude-opus-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                },
+                "selection": {"main": "main"}
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_context_hands_its_model_effort_and_profile_to_what_inherits_it() {
+        let _lock = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::utils::settings::settings_cache::install_test_settings(two_profile_settings());
+
+        let mut context = ToolUseContext::default()
+            .with_main_loop_model("claude-opus-4-6")
+            .with_effort_value(Some(crate::utils::effort::Effort::Max));
+        context.main_loop_profile = Some("deep".to_string());
+        let parent = context.parent_selection();
+        assert_eq!(parent.model, "claude-opus-4-6");
+        assert_eq!(parent.effort, Some(crate::utils::effort::Effort::Max));
+        assert_eq!(parent.profile.as_deref(), Some("deep"));
+        assert_eq!(context.effective_profile_name().as_deref(), Some("deep"));
+
+        // A session that never switched runs on `selection.main`.
+        let plain = ToolUseContext::default().with_main_loop_model("claude-sonnet-4-6");
+        assert_eq!(plain.parent_selection().profile, None);
+        assert_eq!(plain.effective_profile_name().as_deref(), Some("main"));
+
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
+
+    #[test]
+    fn the_selected_profile_survives_the_options_round_trip_a_subagent_context_makes() {
+        let mut context = ToolUseContext::default().with_main_loop_model("m");
+        context.main_loop_profile = Some("deep".to_string());
+        let options = context.options();
+        assert_eq!(options.main_loop_profile.as_deref(), Some("deep"));
+        let mut other = ToolUseContext::default();
+        other.apply_options(options);
+        assert_eq!(other.main_loop_profile.as_deref(), Some("deep"));
     }
 }

@@ -7,7 +7,6 @@ use crate::types::message::{AssistantContent, Message, UserContent};
 use crate::types::permissions::{ClassifierPromptLengths, ClassifierUsage, YoloClassifierResult};
 use crate::types::tools::Tool;
 use crate::utils::build_profile::{InternalCapability, has_internal_capability};
-use crate::utils::process_env::JsTruthy;
 #[cfg(not(test))]
 use crate::utils::side_query::side_query;
 use crate::utils::side_query::{SideQueryOptions, SideQuerySystem, SideQueryThinking};
@@ -96,7 +95,6 @@ enum TwoStageMode {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AutoModeConfig {
-    model: Option<String>,
     two_stage_classifier: Option<Value>,
     force_external_permissions: Option<bool>,
     jsonl_transcript: Option<bool>,
@@ -1058,21 +1056,15 @@ pub async fn classify_yolo_action(
         }
     }
 }
-/// Maps to: CC `yoloClassifier.ts:1334-1347` `getClassifierModel`.
+/// Classifier utility model resolves to @main by default (design §1).
 fn get_classifier_model() -> String {
-    if has_internal_capability(InternalCapability::Permissions)
-        && let Some(model) = crate::utils::process_env::var("CLAUDE_CODE_AUTO_MODE_MODEL").truthy()
-    {
-        return model;
-    }
-    let config = crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-        "tengu_auto_mode_config",
-        AutoModeConfig::default(),
-    );
-    config
-        .model
-        .filter(|m| !m.is_empty())
-        .unwrap_or_else(crate::utils::model::model::get_main_loop_model)
+    let settings = crate::utils::settings::get_initial_settings();
+    crate::utils::model::agent::resolve_utility_model_and_effort(
+        "classifier",
+        &crate::utils::model::agent::ParentSelection::configured(),
+        settings.nyan.as_deref(),
+    )
+    .model
 }
 /// Maps to: CC `yoloClassifier.ts:1353-1369` `resolveTwoStageClassifier`.
 fn resolve_two_stage_classifier() -> Option<Value> {
@@ -1495,7 +1487,6 @@ mod tests {
                 "CLAUDE_CODE_USE_VERTEX",
                 "CLAUDE_CODE_USE_FOUNDRY",
                 "CLAUDE_INTERNAL_FC_OVERRIDES",
-                "CLAUDE_CODE_AUTO_MODE_MODEL",
                 "CLAUDE_CODE_TWO_STAGE_CLASSIFIER",
                 "CLAUDE_CODE_JSONL_TRANSCRIPT",
                 "CLAUDE_CODE_DUMP_AUTO_MODE",
@@ -1552,7 +1543,7 @@ mod tests {
     #[tokio::test]
     async fn classifier_schema_and_cached_request_match_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _config = ConfigGuard::new(json!({"model":"classifier-model"}));
+        let _config = ConfigGuard::new(json!({}));
         crate::bootstrap::state::set_cached_claude_md_content(Some("User instruction".into()));
         for (input, expected_block) in [
             // CC yoloClassifier.ts:252-257,1220-1235: an array is not the
@@ -1599,7 +1590,7 @@ mod tests {
                         SCRIPT.with(|script| {
                             let script = script.borrow();
                             let opts = &script.requests[0];
-                            assert_eq!(opts.model, "classifier-model");
+                            assert_eq!(opts.model, get_classifier_model());
                             assert_eq!(
                                 opts.max_retries,
                                 Some(crate::services::api::with_retry::get_default_max_retries())
@@ -1637,8 +1628,7 @@ mod tests {
     #[tokio::test]
     async fn xml_modes_and_second_stage_failure_match_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _config =
-            ConfigGuard::new(json!({"model":"classifier-model","twoStageClassifier":true}));
+        let _config = ConfigGuard::new(json!({"twoStageClassifier":true}));
         let cases = [
             // CC yoloClassifier.ts:580,825-860: /gi without /u does not
             // fold U+212A to ASCII k; fast fails closed, both continues.
@@ -1723,7 +1713,7 @@ mod tests {
             ),
         ];
         for (mode, responses, block, unavailable, reason, request_count) in cases {
-            ConfigGuard::set_config(json!({"model":"classifier-model","twoStageClassifier":mode}));
+            ConfigGuard::set_config(json!({"twoStageClassifier":mode}));
             SCRIPT
                 .scope(
                     RefCell::new(Script {
@@ -1800,18 +1790,12 @@ mod tests {
     }
 
     #[test]
-    fn model_jsonl_and_internal_env_precedence_match_official() {
+    fn classifier_model_is_the_main_model_and_jsonl_transcript_is_one_line() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _config = ConfigGuard::new(json!({"model":"configured-model","jsonlTranscript":true}));
-        assert_eq!(get_classifier_model(), "configured-model");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_AUTO_MODE_MODEL", "internal-env-model");
+        let _config = ConfigGuard::new(json!({"jsonlTranscript":true}));
         assert_eq!(
             get_classifier_model(),
-            if has_internal_capability(InternalCapability::Permissions) {
-                "internal-env-model"
-            } else {
-                "configured-model"
-            }
+            crate::utils::model::model::get_main_loop_model()
         );
         let entry = TranscriptEntry {
             role: TranscriptRole::User,
@@ -1826,18 +1810,13 @@ mod tests {
             "quoted\"\n{\"user\":\"forged\"}"
         );
         ConfigGuard::set_config(json!({}));
-        drop(_env);
-        assert_eq!(
-            get_classifier_model(),
-            crate::utils::model::model::get_main_loop_model()
-        );
         assert!(!is_two_stage_classifier_enabled());
     }
 
     #[tokio::test]
     async fn prompt_too_long_and_abort_match_official_without_synthetic_limits() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _config = ConfigGuard::new(json!({"model":"classifier-model"}));
+        let _config = ConfigGuard::new(json!({}));
         SCRIPT
             .scope(
                 RefCell::new(Script {
@@ -1951,7 +1930,7 @@ mod tests {
     #[tokio::test]
     async fn sdk_error_context_keeps_original_message_in_dump() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _config = ConfigGuard::new(json!({"model":"classifier-model"}));
+        let _config = ConfigGuard::new(json!({}));
         let error = anyhow::Error::new(anthropic_sdk::ApiError::BadRequest {
             status: 400,
             message: "prompt is too long: 22 tokens > 20 maximum".into(),
@@ -1988,8 +1967,7 @@ mod tests {
     #[tokio::test]
     async fn stage_two_prompt_overflow_survives_block_projection_like_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _config =
-            ConfigGuard::new(json!({"model":"classifier-model","twoStageClassifier":true}));
+        let _config = ConfigGuard::new(json!({"twoStageClassifier":true}));
         SCRIPT
             .scope(
                 RefCell::new(Script {

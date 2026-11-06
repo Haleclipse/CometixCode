@@ -23,7 +23,6 @@ use crate::types::permissions::{
     PermissionRequest,
 };
 use crate::types::tools::Tool;
-use crate::utils::model::agent::get_agent_model;
 use crate::utils::thinking::ThinkingConfig;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -690,17 +689,22 @@ fn agent_read_file_state(
     }
 }
 
-/// Maps to CC `runAgent(...)` foreground path.
-/// Maps to CC `runAgent.ts#createSubagentContext` `effortValue =
-/// agentDefinition.effort !== undefined ? agentDefinition.effort : state.effortValue`.
-fn effective_agent_effort(
+/// The model, effort and profile this agent run resolves to, along the unified
+/// chain: call parameter, agent definition, `selection.subagents.<type>`,
+/// `selection.subagent`, then the type default.
+fn resolve_agent_selection(
     agent_definition: &AgentDefinition,
+    model_override: Option<&str>,
     context: &ToolUseContext,
-) -> Option<crate::utils::effort::EffortValue> {
-    agent_definition
-        .effort
-        .clone()
-        .or_else(|| context.effort_value.clone())
+) -> crate::utils::model::agent::ResolvedAgentModel {
+    let settings = crate::utils::settings::get_initial_settings();
+    crate::utils::model::agent::resolve_subagent_model_and_effort(
+        model_override,
+        agent_definition.model.as_deref(),
+        &agent_definition.agent_type,
+        &context.parent_selection(),
+        settings.nyan.as_deref(),
+    )
 }
 
 pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutcome> {
@@ -730,7 +734,9 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
             description: input.description.map(ToOwned::to_owned),
         },
     );
-    let model = resolve_agent_model(input.agent_definition, input.model_override, input.context);
+    let selection =
+        resolve_agent_selection(input.agent_definition, input.model_override, input.context);
+    let model = selection.model.clone();
     let caller_prompt_messages = input.prompt_messages.clone().unwrap_or_else(|| {
         vec![Message::User(crate::types::message::UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -995,6 +1001,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     agent_options.commands = std::sync::Arc::new(Vec::new());
     agent_options.tools = resolved_tools;
     agent_options.main_loop_model = Some(model);
+    agent_options.main_loop_profile = selection.profile.clone();
     // Maps to CC `runAgent.ts:679-684`: "For fork children (useExactTools),
     // inherit thinking config to match the parent's API request prefix for
     // prompt cache hits. For regular sub-agents, disable thinking to control
@@ -1064,8 +1071,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
         .agent_definition
         .critical_system_reminder_experimental
         .clone();
-    agent_tool_use_context.effort_value =
-        effective_agent_effort(input.agent_definition, input.context);
+    agent_tool_use_context.effort_value = selection.effort;
     agent_tool_use_context.fast_mode = Some(false);
     agent_tool_use_context.channel_permission_callbacks =
         input.context.channel_permission_callbacks.clone();
@@ -1981,24 +1987,6 @@ fn forward_subagent_progress_from_message(
     }
 }
 
-/// Maps to CC `runAgent.ts` call to `utils/model/agent.ts#getAgentModel`.
-pub fn resolve_agent_model(
-    agent_definition: &AgentDefinition,
-    model_override: Option<&str>,
-    context: &ToolUseContext,
-) -> String {
-    let parent_model = context
-        .main_loop_model
-        .clone()
-        .unwrap_or_else(crate::utils::model::model::get_main_loop_model);
-    get_agent_model(
-        agent_definition.model.as_deref(),
-        &parent_model,
-        model_override,
-        Some(context.tool_permission_context.mode),
-    )
-}
-
 /// Maps to: CC `runAgent.ts:906-933` `getAgentSystemPrompt`.
 /// The existing Option-valued provider carrier represents unavailable prompts
 /// with None; successful empty strings remain successful. Dynamic thrown JS
@@ -2286,26 +2274,39 @@ mod tests {
         );
     }
 
-    #[test]
-    fn effective_agent_effort_prefers_agent_definition_over_parent_context() {
+    fn general_agent(model: Option<&str>) -> AgentDefinition {
         let mut agent = AgentDefinition::new(
-            "custom",
-            "Use custom",
+            "general-purpose",
+            "Use general",
             AgentDefinitionSource::ProjectSettings,
         );
-        let context = ToolUseContext::default().with_effort_value(Some(
-            crate::utils::effort::EffortValue::Named("low".to_string()),
-        ));
-        assert_eq!(
-            effective_agent_effort(&agent, &context),
-            Some(crate::utils::effort::EffortValue::Named("low".to_string()))
-        );
+        agent.model = model.map(str::to_string);
+        agent
+    }
 
-        agent.effort = Some(crate::utils::effort::EffortValue::Named("high".to_string()));
+    #[test]
+    fn effort_prefers_the_explicit_layer_then_inherits_the_parent() {
+        use crate::utils::effort::Effort;
+        let context = ToolUseContext::default()
+            .with_main_loop_model("parent-model")
+            .with_effort_value(Some(Effort::High));
+        let effort = |agent: &AgentDefinition, model_override: Option<&str>| {
+            resolve_agent_selection(agent, model_override, &context).effort
+        };
+        // No layer names a model: inherit, with the parent's effort.
+        assert_eq!(effort(&general_agent(None), None), Some(Effort::High));
+        // `ref:effort` on the agent definition.
         assert_eq!(
-            effective_agent_effort(&agent, &context),
-            Some(crate::utils::effort::EffortValue::Named("high".to_string()))
+            effort(&general_agent(Some("inherit:max")), None),
+            Some(Effort::Max)
         );
+        // The call parameter beats the agent definition.
+        assert_eq!(
+            effort(&general_agent(Some("inherit:max")), Some(":off")),
+            Some(Effort::Off)
+        );
+        // A temporary model takes the model default, not the parent's depth.
+        assert_eq!(effort(&general_agent(Some("provider/other")), None), None);
     }
 
     #[test]
@@ -2313,19 +2314,32 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
 
         let context = ToolUseContext::default().with_main_loop_model("parent-sonnet-model");
-        let mut agent = AgentDefinition::new(
-            "custom",
-            "Use custom",
-            AgentDefinitionSource::ProjectSettings,
-        );
-        agent.model = Some("haiku".to_string());
-        assert!(resolve_agent_model(&agent, Some("opus"), &context).contains("opus"));
-        assert!(resolve_agent_model(&agent, None, &context).contains("haiku"));
-        agent.model = Some("inherit".to_string());
+        let model = |agent: &AgentDefinition, model_override: Option<&str>| {
+            resolve_agent_selection(agent, model_override, &context).model
+        };
+        let agent = general_agent(Some("provider/fast-model"));
         assert_eq!(
-            resolve_agent_model(&agent, None, &context),
+            model(&agent, Some("provider/override-model")),
+            "provider/override-model"
+        );
+        assert_eq!(model(&agent, None), "provider/fast-model");
+        assert_eq!(
+            model(&general_agent(Some("inherit")), None),
             "parent-sonnet-model"
         );
+    }
+
+    #[test]
+    fn an_inheriting_agent_follows_the_parents_profile() {
+        let mut context = ToolUseContext::default().with_main_loop_model("parent-model");
+        context.main_loop_profile = Some("deep".to_string());
+        let inherited = resolve_agent_selection(&general_agent(None), None, &context);
+        assert_eq!(inherited.model, "parent-model");
+        assert_eq!(inherited.profile.as_deref(), Some("deep"));
+        // A temporary model leaves the parent's profile behind.
+        let temporary =
+            resolve_agent_selection(&general_agent(Some("provider/other")), None, &context);
+        assert_eq!(temporary.profile, None);
     }
 
     #[test]

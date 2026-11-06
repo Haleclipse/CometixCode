@@ -1848,9 +1848,7 @@ mod tests {
     fn EffortSuffixSpinnerHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let test_store = hooks.use_const(|| {
             let mut initial = crate::state::app_state_store::AppState::default();
-            initial.effort_value = Some(crate::utils::effort::EffortValue::Named(
-                "medium".to_string(),
-            ));
+            initial.effort_value = Some(crate::utils::effort::Effort::Medium);
             crate::state::store::AppStore::new(initial, None)
         });
 

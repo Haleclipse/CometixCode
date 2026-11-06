@@ -175,6 +175,8 @@ mod tests {
             }),
             compat: None,
             cache_retention: Default::default(),
+            effort: None,
+            extra: None,
         };
         let error = target_for_profile(&profile).await.unwrap_err();
         assert!(matches!(error, TargetError::Credential { .. }), "{error}");

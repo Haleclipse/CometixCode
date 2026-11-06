@@ -208,8 +208,29 @@ fn text_block(text: impl Into<String>) -> TextBlockParam {
 /// do not bypass this for side calls).
 pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
     let settings = crate::utils::settings::get_initial_settings();
-    let profile = crate::utils::model::profile::resolve_main_profile(&settings)?;
+    let utility = crate::utils::model::agent::resolve_utility_model_and_effort(
+        "side_query",
+        &crate::utils::model::agent::ParentSelection::configured(),
+        settings.nyan.as_deref(),
+    );
+    // A caller that names no model, or the utility model itself, runs on the
+    // utility selection; any other model id is the caller's own choice and goes
+    // through the main profile as before.
+    let use_utility_selection = opts.model.trim().is_empty() || opts.model == utility.model;
+    let profile = crate::utils::model::profile::resolve_request_profile(
+        &settings,
+        use_utility_selection
+            .then_some(utility.profile.as_deref())
+            .flatten(),
+    )?;
+    let request_model = if use_utility_selection {
+        utility.model.clone()
+    } else {
+        opts.model.clone()
+    };
     if profile.protocol != crate::utils::settings::nyan::ProviderProtocol::AnthropicMessages {
+        let mut opts = opts;
+        opts.model = request_model;
         return side_query_neutral(profile, opts).await;
     }
 
@@ -219,9 +240,10 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
 
     // Maps to: CC `getAnthropicClient({ maxRetries, model, source: 'side_query' })`.
     let client = crate::services::provider::anthropic::client::get_anthropic_client(
-        crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
+        crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_profile(
+            Some(profile.profile.as_str()),
             max_retries,
-            Some(opts.model.clone()),
+            Some(request_model.clone()),
             Some("side_query".to_string()),
         )?,
     )
@@ -230,7 +252,7 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
 
     // Maps to: CC `const betas = [...getModelBetas(model)]` (+ structured-outputs
     // beta when output_format is set and modelSupportsStructuredOutputs).
-    let betas = side_query_betas_for_request(&opts.model, opts.output_format.is_some());
+    let betas = side_query_betas_for_request(&request_model, opts.output_format.is_some());
 
     // Extract first user message text for fingerprint.
     let message_text = extract_first_user_message_text(&opts.messages);
@@ -266,11 +288,28 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
             // CC: budget_tokens: Math.min(thinking, max_tokens - 1)
             budget_tokens: (*budget_tokens).min(max_tokens.saturating_sub(1)),
         }),
-        None => None,
+        None => match profile.effort {
+            Some(crate::utils::effort::Effort::Off) => Some(ThinkingConfig::Disabled),
+            Some(_) => Some(ThinkingConfig::Enabled {
+                budget_tokens: max_tokens.saturating_sub(1) as i64,
+            }),
+            None => None,
+        },
     };
+    let output_effort = (opts.thinking.is_none())
+        .then(|| profile.effort.filter(|effort| !effort.is_off()))
+        .flatten()
+        .map(|effort| match effort {
+            crate::utils::effort::Effort::Medium => {
+                anthropic_sdk::resources::messages::Effort::Medium
+            }
+            crate::utils::effort::Effort::High => anthropic_sdk::resources::messages::Effort::High,
+            crate::utils::effort::Effort::Max => anthropic_sdk::resources::messages::Effort::Max,
+            crate::utils::effort::Effort::Off => unreachable!("off was filtered"),
+        });
 
     // Maps to: CC `normalizeModelStringForAPI(model)`.
-    let normalized_model = normalize_model_string_for_api(&opts.model);
+    let normalized_model = normalize_model_string_for_api(&request_model);
     // Maps to: CC `metadata: getAPIMetadata()`.
     let meta = get_api_metadata();
 
@@ -298,7 +337,7 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
         // Maps to: CC `...(output_format && { output_config: { format: output_format } })`.
         output_config: opts.output_format.as_ref().map(|schema| {
             anthropic_sdk::resources::messages::OutputConfig {
-                effort: None,
+                effort: output_effort.clone(),
                 format: Some(anthropic_sdk::resources::messages::JsonOutputFormat {
                     schema: schema.clone(),
                     type_name: "json_schema".to_string(),
@@ -353,7 +392,7 @@ async fn side_query_neutral(
     opts: SideQueryOptions,
 ) -> anyhow::Result<Message> {
     use crate::services::provider::ir::{
-        ClientContext, JsonSchemaOutput, MediaSource, ModelRequest, ThinkingPreference, ToolChoice,
+        ClientContext, Effort, JsonSchemaOutput, MediaSource, ModelRequest, ToolChoice,
         ToolResultContent, ToolSpec, UserPart,
     };
 
@@ -558,12 +597,9 @@ async fn side_query_neutral(
         }
     };
 
-    let thinking = match &opts.thinking {
-        Some(SideQueryThinking::Disabled) => ThinkingPreference::Disabled,
-        Some(SideQueryThinking::Enabled { budget_tokens }) => ThinkingPreference::Budget {
-            tokens: Some((*budget_tokens).max(0) as u32),
-        },
-        None => ThinkingPreference::Disabled,
+    let effort = match &opts.thinking {
+        Some(SideQueryThinking::Disabled) | None => Effort::Off,
+        Some(SideQueryThinking::Enabled { .. }) => profile.effort.unwrap_or(Effort::Medium),
     };
 
     let request = ModelRequest {
@@ -572,8 +608,7 @@ async fn side_query_neutral(
         messages,
         tools,
         tool_choice,
-        thinking,
-        effort: None,
+        effort,
         max_output_tokens: opts.max_tokens.unwrap_or(1024).max(1) as u32,
         temperature: opts.temperature,
         structured_output: opts.output_format.as_ref().map(|schema| JsonSchemaOutput {

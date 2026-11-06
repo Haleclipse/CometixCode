@@ -12,12 +12,15 @@ pub const DEFAULT_SONNET_MODEL: &str = "claude-sonnet-4-6";
 /// Maps to: CC `utils/model/configs.ts` `CLAUDE_OPUS_4_6_CONFIG.firstParty`.
 pub const DEFAULT_OPUS_MODEL: &str = "claude-opus-4-6";
 
-/// Auxiliary requests (titles, summaries, web fetch) use the main profile's
-/// wire model. `ANTHROPIC_SMALL_FAST_MODEL` and the built-in Haiku default are
-/// no longer read; with no profile this is empty and the request boundary
-/// rejects it with configuration guidance.
+/// Auxiliary requests use the utility model resolution which defaults to @light (design §1).
 pub fn get_small_fast_model() -> String {
-    get_main_loop_model()
+    let settings = crate::utils::settings::get_initial_settings();
+    crate::utils::model::agent::resolve_utility_model_and_effort(
+        "side_query",
+        &crate::utils::model::agent::ParentSelection::configured(),
+        settings.nyan.as_deref(),
+    )
+    .model
 }
 
 /// Maps to: CC `utils/model/model.ts` `getDefaultSonnetModel()`.

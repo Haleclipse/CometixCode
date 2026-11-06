@@ -1597,20 +1597,12 @@ fn sdk_model_infos() -> Vec<serde_json::Value> {
                     serde_json::json!(option.description.unwrap_or_default()),
                 ),
             ]);
-            if crate::utils::effort::model_supports_effort(&resolved) {
-                info.insert("supportsEffort".to_string(), true.into());
-                let mut levels = vec!["low", "medium", "high"];
-                if crate::utils::effort::model_supports_xhigh_effort(&resolved) {
-                    levels.push("xhigh");
-                }
-                if crate::utils::effort::model_supports_max_effort(&resolved) {
-                    levels.push("max");
-                }
-                info.insert(
-                    "supportedEffortLevels".to_string(),
-                    serde_json::json!(levels),
-                );
-            }
+            // Adapters clamp the unified tiers per model, so every model takes all four.
+            info.insert("supportsEffort".to_string(), true.into());
+            info.insert(
+                "supportedEffortLevels".to_string(),
+                serde_json::json!(["off", "medium", "high", "max"]),
+            );
             if crate::utils::thinking::model_supports_adaptive_thinking(&resolved) {
                 info.insert("supportsAdaptiveThinking".to_string(), true.into());
             }

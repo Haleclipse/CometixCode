@@ -26,7 +26,7 @@ use serde_json::Value;
 use super::adapter::{Cancel, OpenedStream, ProviderAdapter, ResolvedTarget};
 use super::ir::{
     Effort, MediaSource, ModelRequest, ProviderError, ProviderErrorKind, SYSTEM_BOUNDARY,
-    ThinkingPreference, ToolResultContent, ToolResultPart, ToolSpec,
+    ToolResultContent, ToolResultPart, ToolSpec,
 };
 use crate::utils::model::profile::ResolvedModelProfile;
 #[cfg(test)]
@@ -196,37 +196,102 @@ pub(crate) fn system_text(request: &ModelRequest) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
 
+/// What an OpenAI reasoning model accepts below and above the portable
+/// `medium` / `high`.
+struct ReasoningTiers {
+    /// Value for `off`: the lowest tier the family takes. `None` leaves the
+    /// field out, for families not known to accept any off-like value.
+    off: Option<&'static str>,
+    /// The family takes `xhigh`; without it `max` clamps to `high`.
+    xhigh: bool,
+}
+
+/// Tiers by model family, from OpenAI's reasoning guide and model pages.
+/// Anything unrecognised (compatible gateways, local servers) is treated as
+/// taking only `medium` / `high`, so no value is sent that it might reject.
+fn reasoning_tiers(model: &str) -> ReasoningTiers {
+    let lower = model.to_ascii_lowercase();
+    // `openai/gpt-5.5` style ids from gateways name the same model.
+    let id = lower.rsplit('/').next().unwrap_or(&lower);
+    // GPT-6.1 Sol and GPT-6 Astra reject both `none` and `minimal`.
+    if id.starts_with("gpt-6.1-sol") || id.starts_with("gpt-6-astra") {
+        return ReasoningTiers {
+            off: Some("low"),
+            xhigh: true,
+        };
+    }
+    if id.starts_with("gpt-6") {
+        return ReasoningTiers {
+            off: Some("none"),
+            xhigh: true,
+        };
+    }
+    if let Some(rest) = id.strip_prefix("gpt-5") {
+        let minor = rest
+            .strip_prefix('.')
+            .map(|rest| {
+                rest.split(|c: char| !c.is_ascii_digit())
+                    .next()
+                    .unwrap_or("")
+            })
+            .and_then(|digits| digits.parse::<u32>().ok());
+        return match minor {
+            // gpt-5 itself starts at `minimal`; its Codex variant at `low`.
+            None if rest.contains("codex") => ReasoningTiers {
+                off: Some("low"),
+                xhigh: false,
+            },
+            None => ReasoningTiers {
+                off: Some("minimal"),
+                xhigh: false,
+            },
+            Some(1) => ReasoningTiers {
+                off: Some("none"),
+                xhigh: false,
+            },
+            Some(_) => ReasoningTiers {
+                off: Some("none"),
+                xhigh: true,
+            },
+        };
+    }
+    // o-series reasoning models cannot turn reasoning off; `low` is the floor.
+    if ["o1", "o3", "o4"]
+        .iter()
+        .any(|prefix| id.starts_with(prefix))
+    {
+        return ReasoningTiers {
+            off: Some("low"),
+            xhigh: false,
+        };
+    }
+    ReasoningTiers {
+        off: None,
+        xhigh: false,
+    }
+}
+
 /// OpenAI `reasoning_effort` / `reasoning.effort` for the request, or `None`
 /// when nothing should be sent.
 ///
-/// Only a request that asks for thinking sends it. A named effort passes
-/// through when OpenAI defines it; `max`/`xhigh` are Anthropic-side names with
-/// no portable OpenAI equivalent and are sent as `high`. A token budget has no
-/// OpenAI counterpart, so it is bucketed. Adaptive without an effort leaves the
-/// model's own default.
-pub(crate) fn reasoning_effort(request: &ModelRequest) -> Option<&'static str> {
-    if request.thinking == ThinkingPreference::Disabled {
+/// The four unified tiers map onto what the model accepts, clamped silently
+/// (provider-redesign §5.2): `off` is the family's lowest tier, `max` is
+/// `xhigh` where the family has it and `high` where not. A profile without the
+/// thinking capability never sends the field.
+pub(crate) fn reasoning_effort(
+    request: &ModelRequest,
+    target: &ResolvedTarget,
+) -> Option<&'static str> {
+    if !target.capabilities.thinking {
         return None;
     }
-    match &request.effort {
-        Some(Effort::Named(name)) => match name.to_ascii_lowercase().as_str() {
-            "minimal" => Some("minimal"),
-            "low" => Some("low"),
-            "medium" => Some("medium"),
-            "high" | "xhigh" | "max" => Some("high"),
-            _ => None,
-        },
-        Some(Effort::Numeric(_)) => None,
-        None => match request.thinking {
-            ThinkingPreference::Budget {
-                tokens: Some(tokens),
-            } => Some(match tokens {
-                0..=2_048 => "low",
-                2_049..=16_384 => "medium",
-                _ => "high",
-            }),
-            _ => None,
-        },
+    let tiers = reasoning_tiers(&target.model);
+    match request.effort {
+        Effort::Off => tiers.off,
+        Effort::Medium => Some("medium"),
+        Effort::High => Some("high"),
+        Effort::Max if tiers.xhigh => Some("xhigh"),
+        Effort::Max => Some("high"),
     }
 }
 
@@ -307,7 +372,7 @@ mod tests {
         CachePolicy, ClientContext, Message, ToolChoice, UserPart,
     };
 
-    fn request(thinking: ThinkingPreference, effort: Option<Effort>) -> ModelRequest {
+    fn request(effort: Effort) -> ModelRequest {
         ModelRequest {
             model: "m".into(),
             system: vec![
@@ -321,7 +386,6 @@ mod tests {
             }],
             tools: vec![],
             tool_choice: ToolChoice::Auto,
-            thinking,
             effort,
             max_output_tokens: 100,
             temperature: None,
@@ -337,50 +401,104 @@ mod tests {
         }
     }
 
-    #[test]
-    fn system_text_drops_the_boundary_marker_and_empty_blocks() {
-        let r = request(ThinkingPreference::Disabled, None);
-        assert_eq!(system_text(&r).as_deref(), Some("a\n\nb"));
+    fn test_target(model: &str, thinking: bool) -> ResolvedTarget {
+        ResolvedTarget {
+            profile: "p".into(),
+            provider: "pr".into(),
+            protocol: crate::services::provider::ir::Protocol::OpenaiChat,
+            model: model.into(),
+            context_window: 100_000,
+            max_output_tokens: 4096,
+            capabilities: crate::utils::model::profile::ResolvedCapabilities {
+                thinking,
+                ..Default::default()
+            },
+            cache_retention: crate::utils::settings::nyan::CacheRetention::None,
+            extra: None,
+        }
     }
 
     #[test]
-    fn effort_is_sent_only_when_thinking_is_requested_and_openai_defines_it() {
-        let named = |n: &str| Some(Effort::Named(n.into()));
-        assert_eq!(
-            reasoning_effort(&request(ThinkingPreference::Disabled, named("high"))),
-            None
-        );
-        for (given, sent) in [("low", "low"), ("medium", "medium"), ("max", "high")] {
+    fn system_text_drops_the_boundary_marker_and_empty_blocks() {
+        let r = request(Effort::Off);
+        assert_eq!(system_text(&r).as_deref(), Some("a\n\nb"));
+    }
+
+    fn sent(model: &str, effort: Effort) -> Option<&'static str> {
+        reasoning_effort(&request(effort), &test_target(model, true))
+    }
+
+    #[test]
+    fn a_profile_without_the_thinking_capability_never_sends_effort() {
+        for effort in Effort::ALL {
             assert_eq!(
-                reasoning_effort(&request(ThinkingPreference::Adaptive, named(given))),
-                Some(sent)
+                reasoning_effort(&request(effort), &test_target("gpt-5.5", false)),
+                None,
+                "{effort}"
             );
         }
-        assert_eq!(
-            reasoning_effort(&request(ThinkingPreference::Adaptive, named("weird"))),
-            None
-        );
-        assert_eq!(
-            reasoning_effort(&request(ThinkingPreference::Adaptive, None)),
-            None
-        );
-        assert_eq!(
-            reasoning_effort(&request(
-                ThinkingPreference::Budget {
-                    tokens: Some(1_000)
-                },
-                None
-            )),
-            Some("low")
-        );
-        assert_eq!(
-            reasoning_effort(&request(
-                ThinkingPreference::Budget {
-                    tokens: Some(30_000)
-                },
-                None
-            )),
-            Some("high")
-        );
+    }
+
+    #[test]
+    fn medium_and_high_pass_through_on_every_model() {
+        for model in ["gpt-6.1-sol", "gpt-5.5", "gpt-5", "o3-mini", "qwen3:32b"] {
+            assert_eq!(sent(model, Effort::Medium), Some("medium"), "{model}");
+            assert_eq!(sent(model, Effort::High), Some("high"), "{model}");
+        }
+    }
+
+    #[test]
+    fn off_is_the_lowest_tier_each_family_accepts() {
+        // GPT-6.1 Sol and Astra reject `none` and `minimal` with a 400.
+        assert_eq!(sent("gpt-6.1-sol", Effort::Off), Some("low"));
+        assert_eq!(sent("gpt-6-astra", Effort::Off), Some("low"));
+        assert_eq!(sent("gpt-6-sol", Effort::Off), Some("none"));
+        assert_eq!(sent("gpt-6-luna", Effort::Off), Some("none"));
+        assert_eq!(sent("gpt-5.5", Effort::Off), Some("none"));
+        assert_eq!(sent("gpt-5.2", Effort::Off), Some("none"));
+        assert_eq!(sent("gpt-5.1", Effort::Off), Some("none"));
+        assert_eq!(sent("gpt-5", Effort::Off), Some("minimal"));
+        assert_eq!(sent("gpt-5-mini", Effort::Off), Some("minimal"));
+        assert_eq!(sent("gpt-5-codex", Effort::Off), Some("low"));
+        assert_eq!(sent("o3", Effort::Off), Some("low"));
+        assert_eq!(sent("o4-mini", Effort::Off), Some("low"));
+    }
+
+    #[test]
+    fn off_sends_nothing_for_families_not_known_to_accept_a_value() {
+        for model in ["deepseek-reasoner", "qwen3:32b", "kimi-k2", "mystery-model"] {
+            assert_eq!(sent(model, Effort::Off), None, "{model}");
+        }
+    }
+
+    #[test]
+    fn max_is_xhigh_where_the_family_has_it_and_high_elsewhere() {
+        for model in ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.5", "gpt-5.2"] {
+            assert_eq!(sent(model, Effort::Max), Some("xhigh"), "{model}");
+        }
+        for model in [
+            "gpt-5.1",
+            "gpt-5",
+            "gpt-5-codex",
+            "o3",
+            "o3-mini",
+            "qwen3:32b",
+        ] {
+            assert_eq!(sent(model, Effort::Max), Some("high"), "{model}");
+        }
+    }
+
+    #[test]
+    fn a_gateway_prefix_names_the_same_family() {
+        assert_eq!(sent("openai/gpt-5.5", Effort::Max), Some("xhigh"));
+        assert_eq!(sent("openai/gpt-6.1-sol", Effort::Off), Some("low"));
+        assert_eq!(sent("OpenAI/GPT-5.5", Effort::Off), Some("none"));
+    }
+
+    #[test]
+    fn minor_versions_are_read_as_numbers_not_prefixes() {
+        // `gpt-5.10` is a later minor than `gpt-5.1`, not a variant of it.
+        assert_eq!(sent("gpt-5.10", Effort::Max), Some("xhigh"));
+        assert_eq!(sent("gpt-5.1-codex", Effort::Max), Some("high"));
     }
 }
