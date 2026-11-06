@@ -6091,31 +6091,31 @@ mod tests {
             PermissionRuleSource::Session,
             vec![PermissionRuleValue::new(
                 crate::tools::agent_tool::constants::AGENT_TOOL_NAME,
-                Some("Explore".to_string()),
+                Some("explore".to_string()),
             )],
         );
 
         let deny = get_deny_rule_for_agent(
             &context,
             crate::tools::agent_tool::constants::AGENT_TOOL_NAME,
-            "Explore",
+            "explore",
         )
         .expect("deny rule");
         assert_eq!(deny.source, PermissionRuleSource::Session);
-        assert_eq!(deny.rule_value.rule_content.as_deref(), Some("Explore"));
+        assert_eq!(deny.rule_value.rule_content.as_deref(), Some("explore"));
 
         let filtered = filter_denied_agents(
             &[
                 AgentStub {
-                    agent_type: "Explore",
+                    agent_type: "explore",
                 },
-                AgentStub { agent_type: "Plan" },
+                AgentStub { agent_type: "plan" },
             ],
             &context,
             crate::tools::agent_tool::constants::AGENT_TOOL_NAME,
             |agent| agent.agent_type,
         );
-        assert_eq!(filtered, vec![AgentStub { agent_type: "Plan" }]);
+        assert_eq!(filtered, vec![AgentStub { agent_type: "plan" }]);
     }
 
     #[test]

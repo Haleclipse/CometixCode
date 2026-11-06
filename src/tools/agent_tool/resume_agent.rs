@@ -20,8 +20,7 @@
 //! [`bump_resumed_worktree_mtime`]) are inline blocks in CC
 //! (`resumeAgent.ts:80-97`, `:99-112`, `:116-148`). They are extracted here as
 //! TEST SEAMS, the pattern this codebase already uses for
-//! `constants/prompts.rs#get_system_prompt_with_settings` and
-//! `agent_tool/mod.rs#validate_required_mcp_servers_for_agent_with_poll`: the
+//! `constants/prompts.rs#get_system_prompt_with_settings`: the
 //! only production entry, `resume_agent_background`, needs a sidechain
 //! transcript on disk, a task registry, a process runtime handle and a detached
 //! spawn before any of these decisions is reachable, so pinning CC's edge cases

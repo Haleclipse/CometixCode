@@ -327,8 +327,8 @@ pub trait ProviderAdapter: Send + Sync {
       "mainFallbacks": [],
       "subagent": "inherit",
       "subagents": {
-        "Explore": "main",
-        "Plan": "main"
+        "explore": "main",
+        "plan": "main"
       },
       "decision": {
         "fast": "commercial-fast",

@@ -1421,37 +1421,16 @@ pub(crate) fn get_agent_listing_delta_attachment(
         return None;
     }
 
-    let mcp_servers = context
-        .tools
-        .iter()
-        .filter_map(|tool| {
-            crate::services::mcp::mcp_string_utils::mcp_info_from_string(&tool.name)
-                .map(|info| info.server_name)
-        })
-        .collect::<Vec<_>>();
-    let filtered = crate::tools::agent_tool::load_agents_dir::filter_agents_by_mcp_requirements(
-        &context.agent_definitions.active_agents,
-        &mcp_servers,
-    );
     let live_permission = context
         .get_app_state()
         .map(|state| (*state.tool_permission_context).clone())
         .unwrap_or_else(|| context.tool_permission_context.clone());
     let mut filtered = crate::utils::permissions::permissions::filter_denied_agents(
-        &filtered,
+        &context.agent_definitions.active_agents,
         &live_permission,
         "Agent",
         |agent| agent.agent_type.as_str(),
     );
-    // Maps to CC `attachments.ts:1503-1504` `const { activeAgents,
-    // allowedAgentTypes } = toolUseContext.options.agentDefinitions` and
-    // `:1519-1521` `if (allowedAgentTypes) filtered = filtered.filter(...)`:
-    // main-thread agent frontmatter may expose Agent(type1,type2) while keeping
-    // Agent itself in the tool pool. Unlike the AgentTool selection chain this
-    // filter runs AFTER `filterDeniedAgents`.
-    if let Some(allowed) = context.agent_definitions.allowed_agent_types.as_ref() {
-        filtered.retain(|agent| allowed.contains(&agent.agent_type));
-    }
     let announced = announced_agent_types(messages);
     let current_types = filtered
         .iter()
@@ -2887,7 +2866,6 @@ mod tests {
             active_agents: vec![agent.clone()],
             all_agents: vec![agent],
             failed_files: Vec::new(),
-            allowed_agent_types: None,
         };
         let mut context = ToolUseContext::default()
             .with_cwd_override(Some(root.clone()))
@@ -4084,69 +4062,6 @@ mod tests {
         }
         assert_eq!(get_pending_lsp_diagnostic_count(), 0);
         reset_all_lsp_diagnostic_state();
-    }
-
-    /// CC `attachments.ts:1503-1521` reads `allowedAgentTypes` straight off
-    /// `toolUseContext.options.agentDefinitions` and applies it AFTER
-    /// `filterDeniedAgents`. The value is the one `REPL.tsx:3206-3208` merged in
-    /// for the turn — this consumer never re-derives it from the agent files.
-    #[test]
-    fn agent_listing_delta_applies_selected_agent_type_restrictions() {
-        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _gate = EnvVarGuard::set("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES", "true");
-        let mut selected = crate::tools::agent_tool::load_agents_dir::AgentDefinition::new(
-            "reviewer",
-            "Reviews changes",
-            crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource::ProjectSettings,
-        );
-        selected.tools = Some(vec!["Agent(Explore)".to_string()]);
-        let explore = crate::tools::agent_tool::load_agents_dir::AgentDefinition::new(
-            "Explore",
-            "Explores code",
-            crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource::BuiltIn,
-        );
-        let plan = crate::tools::agent_tool::load_agents_dir::AgentDefinition::new(
-            "Plan",
-            "Plans work",
-            crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource::BuiltIn,
-        );
-        let definitions = crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult {
-            active_agents: vec![explore.clone(), plan.clone()],
-            all_agents: vec![selected.clone(), explore.clone(), plan.clone()],
-            failed_files: Vec::new(),
-            allowed_agent_types: Some(vec!["Explore".to_string()]),
-        };
-        let mut context = ToolUseContext::default()
-            .with_tools(vec![crate::tools::agent_tool::agent_tool_schema()])
-            .with_agent_definitions(std::sync::Arc::new(definitions));
-        context.agent_type = Some(selected.agent_type.clone());
-
-        let attachment =
-            get_agent_listing_delta_attachment(&context, &[]).expect("agent listing delta");
-        assert_eq!(
-            attachment.attachment.to_wire()["addedTypes"],
-            serde_json::json!(["Explore"])
-        );
-
-        // Absent field → CC's `if (allowedAgentTypes)` is false and the listing
-        // stays unrestricted, even though the selected agent's own frontmatter
-        // still says `Agent(Explore)`: only the per-turn carrier decides.
-        let unrestricted = crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult {
-            active_agents: vec![explore.clone(), plan.clone()],
-            all_agents: vec![selected.clone(), explore, plan],
-            failed_files: Vec::new(),
-            allowed_agent_types: None,
-        };
-        let mut context = ToolUseContext::default()
-            .with_tools(vec![crate::tools::agent_tool::agent_tool_schema()])
-            .with_agent_definitions(std::sync::Arc::new(unrestricted));
-        context.agent_type = Some(selected.agent_type);
-        let attachment =
-            get_agent_listing_delta_attachment(&context, &[]).expect("agent listing delta");
-        assert_eq!(
-            attachment.attachment.to_wire()["addedTypes"],
-            serde_json::json!(["Explore", "Plan"])
-        );
     }
 
     /// CC `getMcpInstructionsDeltaAttachment` reads `instructions` off the

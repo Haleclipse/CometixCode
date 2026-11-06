@@ -145,8 +145,6 @@ pub struct ToolToApiSchemaOptions<'a> {
     pub tools: &'a [Tool],
     /// Maps to CC `options.agents` (api.ts:124,174).
     pub agents: &'a [crate::tools::agent_tool::load_agents_dir::AgentDefinition],
-    /// Maps to CC `options.allowedAgentTypes` (api.ts:125,175).
-    pub allowed_agent_types: Option<&'a [String]>,
 }
 
 /// Maps to: CC `utils/api.ts:68-76,119-261` `BetaToolWithExtras` and
@@ -188,7 +186,7 @@ pub fn tool_to_api_schema(
             let base = crate::utils::tool_schema_cache::CachedSchema {
                 name: tool.name.clone(),
                 // Maps to CC `api.ts:171-176` `description: await tool.prompt({
-                // getToolPermissionContext, tools, agents, allowedAgentTypes
+                // getToolPermissionContext, tools, agents
                 // })` — kept inline like CC: the lazy read runs only inside
                 // this cache-miss branch, so mid-session churn in the prompt
                 // inputs cannot re-serialize the tool block (see the
@@ -198,7 +196,6 @@ pub fn tool_to_api_schema(
                     tool_permission_context: options.tool_permission_context,
                     tools: options.tools,
                     agents: options.agents,
-                    allowed_agent_types: options.allowed_agent_types,
                 }),
                 input_schema,
                 strict: (strict_tools_enabled
@@ -540,7 +537,6 @@ mod tests {
             tool_permission_context: &DEFAULT_PERMISSION_CONTEXT,
             tools: &[],
             agents: &[],
-            allowed_agent_types: None,
         }
     }
 

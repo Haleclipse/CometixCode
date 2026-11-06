@@ -47,7 +47,6 @@ fn save(agent: &AgentWizardFinal) -> Result<(), String> {
         agent.color.as_deref(),
         agent.model.as_deref(),
         memory(agent.memory.as_deref()),
-        None,
         &crate::bootstrap::state::get_original_cwd(),
         &crate::utils::env_utils::get_claude_config_home_dir(),
     )

@@ -93,18 +93,8 @@ fn current_examples() -> String {
 /// note. That identity lives in an AsyncLocalStorage store CC reads ambiently;
 /// this port carries it on `ToolUseContext.agent_id`, which the schema builder
 /// has no access to, so only the `isTeammate()` branch is reachable here.
-pub fn get_prompt(
-    agent_definitions: &[AgentDefinition],
-    is_coordinator: bool,
-    allowed_agent_types: Option<&[String]>,
-) -> String {
-    let effective_agents = match allowed_agent_types {
-        Some(allowed) => agent_definitions
-            .iter()
-            .filter(|agent| allowed.contains(&agent.agent_type))
-            .collect::<Vec<_>>(),
-        None => agent_definitions.iter().collect::<Vec<_>>(),
-    };
+pub fn get_prompt(agent_definitions: &[AgentDefinition], is_coordinator: bool) -> String {
+    let effective_agents = agent_definitions.iter().collect::<Vec<_>>();
 
     let fork_enabled = crate::tools::agent_tool::fork_subagent::is_fork_subagent_enabled();
     let when_to_fork = if fork_enabled {
@@ -277,7 +267,6 @@ mod tests {
                 agent("code-reviewer", "Use after writing code"),
             ],
             false,
-            None,
         );
 
         assert!(prompt.contains("Available agent types and the tools they have access to:"));
@@ -292,11 +281,7 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let prompt = {
             let _list_in_messages = EnvVarGuard::set("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES", "true");
-            get_prompt(
-                &[agent("general-purpose", "Use for general tasks")],
-                false,
-                None,
-            )
+            get_prompt(&[agent("general-purpose", "Use for general tasks")], false)
         };
 
         assert!(prompt.contains(
@@ -304,26 +289,6 @@ mod tests {
         ));
         assert!(!prompt.contains("- general-purpose:"));
         assert!(!prompt.contains("Launch multiple agents concurrently"));
-    }
-
-    #[test]
-    fn allowed_agent_types_restrict_the_inline_listing_like_official() {
-        let _guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let _list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
-
-        let prompt = get_prompt(
-            &[
-                agent("general-purpose", "Use for general tasks"),
-                agent("code-reviewer", "Use after writing code"),
-            ],
-            false,
-            Some(&["code-reviewer".to_string()]),
-        );
-
-        assert!(prompt.contains("- code-reviewer:"));
-        assert!(!prompt.contains("- general-purpose:"));
     }
 
     /// `prompt.ts:78` reads the fork gate once and five sections branch on it.
@@ -338,11 +303,7 @@ mod tests {
         let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
         let _fork_gate = crate::tools::agent_tool::fork_subagent::fork_gate_environment();
 
-        let prompt = get_prompt(
-            &[agent("general-purpose", "Use for general tasks")],
-            false,
-            None,
-        );
+        let prompt = get_prompt(&[agent("general-purpose", "Use for general tasks")], false);
 
         assert!(prompt.contains("\nUsage notes:\n"));
         assert!(prompt.contains("## Writing the prompt"));
@@ -384,11 +345,7 @@ mod tests {
         let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
         let _fork_vetoed = crate::tools::agent_tool::fork_subagent::fork_veto_environment();
 
-        let prompt = get_prompt(
-            &[agent("general-purpose", "Use for general tasks")],
-            false,
-            None,
-        );
+        let prompt = get_prompt(&[agent("general-purpose", "Use for general tasks")], false);
 
         assert!(prompt.contains("When NOT to use the Agent tool:"));
         assert!(prompt.contains("\nUsage notes:\n"));
@@ -414,11 +371,7 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let _list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
 
-        let prompt = get_prompt(
-            &[agent("general-purpose", "Use for general tasks")],
-            true,
-            None,
-        );
+        let prompt = get_prompt(&[agent("general-purpose", "Use for general tasks")], true);
 
         assert!(
             prompt.starts_with(
@@ -442,11 +395,7 @@ mod tests {
         let _fork_vetoed = crate::tools::agent_tool::fork_subagent::fork_veto_environment();
         let prompt = {
             let _background = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
-            get_prompt(
-                &[agent("general-purpose", "Use for general tasks")],
-                false,
-                None,
-            )
+            get_prompt(&[agent("general-purpose", "Use for general tasks")], false)
         };
 
         assert!(!prompt.contains("run_in_background parameter"));

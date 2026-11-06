@@ -40,11 +40,11 @@ pub fn map_tool_result_content(result: &TaskUpdateResultView) -> String {
         content.push_str("\n\nTask completed. Call TaskList now to find your next available task or see if your work unblocked others.");
     }
     if result.verification_nudge_needed {
-        // Maps to: CC `TaskUpdateTool.ts:396-398` — VERIFICATION_AGENT_TYPE
-        // interpolates as "verification" (AgentTool/constants).
+        // Maps to: CC `TaskUpdateTool.ts:396-398` — the verifier's agent type
+        // is `review` in nyan (AgentTool/constants).
         content.push_str(&format!(
-            "\n\nNOTE: You just closed out 3+ tasks and none of them was a verification step. Before writing your final summary, spawn the verification agent (subagent_type=\"{}\"). You cannot self-assign PARTIAL by listing caveats in your summary — only the verifier issues a verdict.",
-            crate::tools::agent_tool::constants::VERIFICATION_AGENT_TYPE
+            "\n\nNOTE: You just closed out 3+ tasks and none of them was a verification step. Before writing your final summary, spawn the review agent (subagent_type=\"{}\"). You cannot self-assign PARTIAL by listing caveats in your summary — only the verifier issues a verdict.",
+            crate::tools::agent_tool::constants::REVIEW_AGENT_TYPE
         ));
     }
     content

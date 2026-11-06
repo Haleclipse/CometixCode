@@ -101,20 +101,17 @@ impl TodoWriteOutput {
                 std::sync::Arc::make_mut(&mut state.todos).insert(todo_key.clone(), stored);
             });
         }
-        // Maps to: CC TodoWriteTool.call verificationNudgeNeeded gate.
-        let verification_nudge_needed =
-            crate::tools::agent_tool::built_in_agents::is_verification_agent_enabled_readonly()
-                && crate::utils::feature_flags::feature_enabled(
-                    crate::utils::feature_flags::FeatureFlag::HiveEvidence,
-                )
-                && context.agent_id.is_none()
-                && all_done
-                && todos.len() >= 3
-                && !todos.iter().any(|item| {
-                    item.get("content")
-                        .and_then(|v| v.as_str())
-                        .is_some_and(|content| content.to_ascii_lowercase().contains("verif"))
-                });
+        // Maps to: CC TodoWrite.call verificationNudgeNeeded gate.
+        let verification_nudge_needed = crate::utils::feature_flags::feature_enabled(
+            crate::utils::feature_flags::FeatureFlag::HiveEvidence,
+        ) && context.agent_id.is_none()
+            && all_done
+            && todos.len() >= 3
+            && !todos.iter().any(|item| {
+                item.get("content")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|content| content.to_ascii_lowercase().contains("verif"))
+            });
         Self {
             old_todos,
             // CC returns the model-provided `todos` here even if all items are
@@ -156,13 +153,13 @@ fn parse_todo_items(values: &[serde_json::Value]) -> Vec<crate::utils::todo::typ
 const TODO_WRITE_BASE_RESULT: &str = "Todos have been modified successfully. Ensure that you continue to use the todo list to track your progress. Please proceed with the current tasks if applicable";
 
 /// Maps to: CC `TodoWriteTool.ts:104-114` `mapToolResultToToolResultBlockParam`
-/// — the nudge interpolates `VERIFICATION_AGENT_TYPE` imported from
-/// `AgentTool/constants.ts`.
+/// — the nudge interpolates the verifier's agent type from
+/// `AgentTool/constants.ts`, which nyan renamed to `REVIEW_AGENT_TYPE`.
 fn todo_write_tool_result_content(output: &TodoWriteOutput) -> String {
     if output.verification_nudge_needed {
         format!(
-            "{TODO_WRITE_BASE_RESULT}\n\nNOTE: You just closed out 3+ tasks and none of them was a verification step. Before writing your final summary, spawn the verification agent (subagent_type=\"{}\"). You cannot self-assign PARTIAL by listing caveats in your summary — only the verifier issues a verdict.",
-            crate::tools::agent_tool::constants::VERIFICATION_AGENT_TYPE
+            "{TODO_WRITE_BASE_RESULT}\n\nNOTE: You just closed out 3+ tasks and none of them was a verification step. Before writing your final summary, spawn the review agent (subagent_type=\"{}\"). You cannot self-assign PARTIAL by listing caveats in your summary — only the verifier issues a verdict.",
+            crate::tools::agent_tool::constants::REVIEW_AGENT_TYPE
         )
     } else {
         TODO_WRITE_BASE_RESULT.to_string()
@@ -410,7 +407,7 @@ mod tests {
         assert!(content.starts_with(TODO_WRITE_BASE_RESULT));
         assert!(content.contains(&format!(
             "subagent_type=\"{}\"",
-            crate::tools::agent_tool::constants::VERIFICATION_AGENT_TYPE
+            crate::tools::agent_tool::constants::REVIEW_AGENT_TYPE
         )));
         assert!(content.ends_with("only the verifier issues a verdict."));
     }

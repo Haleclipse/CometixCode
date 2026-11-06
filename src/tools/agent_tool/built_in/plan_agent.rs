@@ -67,7 +67,7 @@ REMEMBER: You can ONLY explore and plan. You CANNOT and MUST NOT write, edit, or
 
 /// Maps to CC `planAgent.ts#PLAN_AGENT`.
 pub fn plan_agent() -> AgentDefinition {
-    let mut agent = AgentDefinition::new("Plan", PLAN_WHEN_TO_USE, AgentDefinitionSource::BuiltIn);
+    let mut agent = AgentDefinition::new("plan", PLAN_WHEN_TO_USE, AgentDefinitionSource::BuiltIn);
     agent.disallowed_tools = Some(vec![
         crate::tools::agent_tool::constants::AGENT_TOOL_NAME.to_string(),
         crate::tools::exit_plan_mode_tool::constants::EXIT_PLAN_MODE_TOOL_NAME.to_string(),
@@ -76,7 +76,6 @@ pub fn plan_agent() -> AgentDefinition {
         crate::tools::notebook_edit_tool::constants::NOTEBOOK_EDIT_TOOL_NAME.to_string(),
     ]);
     agent.tools = explore_agent().tools;
-    agent.model = Some("inherit".to_string());
     agent.omit_claude_md = true;
     agent.system_prompt = Some(get_plan_v2_system_prompt());
     agent
@@ -89,8 +88,8 @@ mod tests {
     #[test]
     fn plan_agent_matches_official_readonly_metadata() {
         let agent = plan_agent();
-        assert_eq!(agent.agent_type, "Plan");
-        assert_eq!(agent.model.as_deref(), Some("inherit"));
+        assert_eq!(agent.agent_type, "plan");
+        assert_eq!(agent.model, None);
         assert!(agent.omit_claude_md);
         assert!(
             agent

@@ -29,7 +29,7 @@ Pactile `design/context-governance/retrieval/00–13`（以 01 provider 契约�
 |---|---|---|
 | Grep / Glob | 外部 `rg` 即时扫描；Grep 默认 250 条，Glob 100 个 | `tools/grep_tool`、`tools/glob_tool`、`utils/ripgrep.rs` |
 | LSP | 9 种操作；**默认关**（`ENABLE_LSP_TOOL`），服务器只能由插件声明 | `tools/lsp_tool/mod.rs:15`、`services/lsp/config.rs` |
-| Explore 子代理 | 只读、Grep/Glob/Read/Bash；默认 haiku | `tools/agent_tool/built_in/explore_agent.rs:53-74` |
+| explore 子代理 | 只读、Grep/Glob/Read/Bash；默认模型 `@light` | `tools/agent_tool/built_in/explore_agent.rs`、`utils/model/agent.rs` |
 | 索引 / 语义 / BM25 | 无 | — |
 | tree-sitter | 已链接 0.25，仅 bash 语法（用于命令安全分析） | `Cargo.toml:105-106` |
 
@@ -451,7 +451,7 @@ Decision Provider 时完全相同。
   （切片 G0，`services/rerank.rs`；外部搜索切片 F 依赖它）与服务健康状态机（公共切片 H，`services/service_health.rs`）。
   rerank 的服务地址只配在 `nyan.retrieval.rerank.url`，开关各自独立（4.9）。
 - **Decision Provider**：本模块的决策点与回退见 4.11。
-- Explore 子代理由用户后续统一调整。
+- explore 子代理由用户后续统一调整。
 
 ## 六、配置
 

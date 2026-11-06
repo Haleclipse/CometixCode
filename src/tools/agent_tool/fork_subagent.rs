@@ -54,7 +54,6 @@ use crate::types::ids::ToolUseId;
 use crate::types::message::{
     AssistantContent, AssistantMessage, Message, ToolResult, UserContent, UserMessage,
 };
-use crate::types::permissions::PermissionMode;
 #[cfg(test)]
 use crate::utils::test_env::EnvVarGuard;
 
@@ -114,9 +113,6 @@ pub fn fork_agent_definition() -> AgentDefinition {
     agent.tools = Some(vec!["*".to_string()]);
     agent.max_turns = Some(200);
     agent.model = Some("inherit".to_string());
-    // Maps to CC `forkSubagent.ts:67` `permissionMode: 'bubble'` — permission
-    // prompts surface on the parent terminal instead of being auto-denied.
-    agent.permission_mode = Some(PermissionMode::Bubble);
     agent.system_prompt = Some(String::new());
     agent
 }
@@ -255,13 +251,10 @@ mod tests {
     use crate::types::message::{AssistantContent, ToolUseBlock};
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
-    /// CC `forkSubagent.ts:60-71` — the synthetic fork agent runs in `bubble`
-    /// so its permission prompts reach the parent terminal.
     #[test]
-    fn fork_agent_definition_matches_official_bubble_permission_mode() {
+    fn fork_agent_definition_inherits_parent_permissions() {
         let agent = fork_agent_definition();
         assert_eq!(agent.agent_type, FORK_SUBAGENT_TYPE);
-        assert_eq!(agent.permission_mode, Some(PermissionMode::Bubble));
         assert_eq!(agent.tools.as_deref(), Some(["*".to_string()].as_slice()));
         assert_eq!(agent.max_turns, Some(200));
         assert_eq!(agent.model.as_deref(), Some("inherit"));

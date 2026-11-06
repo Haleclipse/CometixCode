@@ -578,12 +578,10 @@ pub fn analyze_context_usage(input: AnalyzeContextUsageInput<'_>) -> ContextData
     let mut mcp_tools = Vec::new();
     // Maps to CC `analyzeContext.ts:652-656`: `getToolPermissionContext` is the
     // caller's live accessor and `agents` is `agentInfo?.activeAgents ?? []`.
-    // `allowedAgentTypes` has no key in that bag, so it stays `None`.
     let tool_prompt_options = crate::tool::ToolPromptOptions {
         tool_permission_context: input.tool_permission_context,
         tools: input.tools,
         agents: &input.agent_definitions.active_agents,
-        allowed_agent_types: None,
     };
     for tool in input.tools {
         let tokens = tool_definition_tokens(tool, &tool_prompt_options);
@@ -935,7 +933,6 @@ mod tests {
                 tool_permission_context: &open,
                 tools: &tools,
                 agents: &agents,
-                allowed_agent_types: None,
             },
         );
 
@@ -953,7 +950,6 @@ mod tests {
                 tool_permission_context: &denied,
                 tools: &tools,
                 agents: &agents,
-                allowed_agent_types: None,
             },
         );
 

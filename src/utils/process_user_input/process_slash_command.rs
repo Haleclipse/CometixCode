@@ -1679,7 +1679,7 @@ mod tests {
             assert!(matches!(&result.messages[1].kind,
                 RenderableMessageKind::User { message }
                     if message.content == vec![UserContent::MetaText(
-                        "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"use model and cwd\"".into()
+                        "Create an Agent with subagent_type \"general-purpose\" and the prompt \"use model and cwd\"".into()
                     )]
             ));
             assert_eq!(result.allowed_tools, Some(expected.clone()));

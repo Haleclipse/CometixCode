@@ -296,18 +296,6 @@ fn get_all_commands(context: &crate::tool::ToolUseContext) -> Vec<crate::command
     commands
 }
 
-/// Maps to CC `SkillTool.ts:209-214` command effort merge.
-fn forked_skill_agent_definition(
-    command: &crate::skills::load_skills_dir::SkillCommand,
-    base_agent: &crate::tools::agent_tool::load_agents_dir::AgentDefinition,
-) -> crate::tools::agent_tool::load_agents_dir::AgentDefinition {
-    let mut agent = base_agent.clone();
-    if let Some(effort) = command.effort.clone() {
-        agent.effort = Some(effort);
-    }
-    agent
-}
-
 /// Maps to CC `executeForkedSkill` (`SkillTool.ts`:122).
 ///
 /// #156: no `canUseTool`/`parentMessage` params — CC hands `canUseTool` to
@@ -331,7 +319,7 @@ async fn execute_forked_skill(
         Err(message) => return skill_tool_error(message),
     };
 
-    let agent_definition = forked_skill_agent_definition(command, &prepared.base_agent);
+    let agent_definition = &prepared.base_agent;
     // Maps to: CC `tools/SkillTool/SkillTool.ts` passing `{ ...context, getAppState:
     // modifiedGetAppState }` into `runAgent`.
     let mut forked_context = context
@@ -354,7 +342,7 @@ async fn execute_forked_skill(
         Some(&agent_id),
     );
     let run_result = run_agent::run_agent(RunAgentInput {
-        agent_definition: &agent_definition,
+        agent_definition,
         prompt: &prepared.skill_content,
         description: Some(command_name),
         model_override: command.model.as_deref(),
@@ -784,7 +772,6 @@ mod tests {
                 active_agents: vec![agent.clone()],
                 all_agents: vec![agent],
                 failed_files: Vec::new(),
-                allowed_agent_types: None,
             },
         ))
     }
@@ -1465,10 +1452,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
 
         assert_eq!(prepared.base_agent.agent_type, "general-purpose");
-        assert_eq!(
-            forked_skill_agent_definition(&command, &prepared.base_agent).effort,
-            Some(crate::utils::effort::EffortValue::Named("high".to_string()))
-        );
         assert!(prepared.skill_content.contains("Deep body"));
         assert!(
             !crate::tool::ToolUseContext::default()

@@ -50,11 +50,6 @@ pub struct ResolvedAgentModel {
     pub profile: Option<String>,
 }
 
-/// Default model reference used by displays that do not have an agent type.
-pub fn get_default_subagent_model() -> &'static str {
-    "inherit"
-}
-
 /// Default subagent spec string by agent type name.
 pub fn default_subagent_spec(agent_type: &str) -> &'static str {
     match agent_type.trim().to_ascii_lowercase().as_str() {

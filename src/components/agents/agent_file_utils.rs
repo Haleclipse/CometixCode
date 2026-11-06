@@ -2,7 +2,6 @@
 
 use crate::tools::agent_tool::agent_memory::AgentMemoryScope;
 use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-use crate::utils::effort::EffortValue;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -29,13 +28,6 @@ fn source_from_definition(source: AgentDefinitionSource) -> AgentFileSource {
     }
 }
 
-fn effort_text(effort: &EffortValue) -> String {
-    match effort {
-        EffortValue::Named(value) => value.clone(),
-        EffortValue::Numeric(value) => value.to_string(),
-    }
-}
-
 pub fn format_agent_as_markdown(
     agent_type: &str,
     when_to_use: &str,
@@ -44,7 +36,6 @@ pub fn format_agent_as_markdown(
     color: Option<&str>,
     model: Option<&str>,
     memory: Option<AgentMemoryScope>,
-    effort: Option<&EffortValue>,
 ) -> String {
     let escaped = when_to_use
         .replace('\\', "\\\\")
@@ -59,9 +50,6 @@ pub fn format_agent_as_markdown(
     let model_line = model
         .map(|value| format!("\nmodel: {value}"))
         .unwrap_or_default();
-    let effort_line = effort
-        .map(|value| format!("\neffort: {}", effort_text(value)))
-        .unwrap_or_default();
     let color_line = color
         .map(|value| format!("\ncolor: {value}"))
         .unwrap_or_default();
@@ -69,7 +57,7 @@ pub fn format_agent_as_markdown(
         .map(|value| format!("\nmemory: {}", value.official_name()))
         .unwrap_or_default();
     format!(
-        "---\nname: {agent_type}\ndescription: \"{escaped}\"{tools_line}{model_line}{effort_line}{color_line}{memory_line}\n---\n\n{system_prompt}\n"
+        "---\nname: {agent_type}\ndescription: \"{escaped}\"{tools_line}{model_line}{color_line}{memory_line}\n---\n\n{system_prompt}\n"
     )
 }
 
@@ -81,11 +69,11 @@ fn agent_directory(
     match source {
         AgentFileSource::UserSettings => Ok(config_home.join("agents")),
         AgentFileSource::ProjectSettings | AgentFileSource::LocalSettings => {
-            Ok(cwd.join(".claude").join("agents"))
+            Ok(cwd.join(".nyan").join("agents"))
         }
         AgentFileSource::PolicySettings => Ok(
             crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".claude")
+                .join(".nyan")
                 .join("agents"),
         ),
         AgentFileSource::FlagSettings => {
@@ -130,7 +118,7 @@ pub fn get_actual_relative_agent_file_path(
         }
         AgentDefinitionSource::FlagSettings => "CLI argument".to_string(),
         AgentDefinitionSource::ProjectSettings => PathBuf::from(".")
-            .join(".claude")
+            .join(".nyan")
             .join("agents")
             .join(format!(
                 "{}.md",
@@ -177,7 +165,6 @@ pub fn save_agent_to_file(
     color: Option<&str>,
     model: Option<&str>,
     memory: Option<AgentMemoryScope>,
-    effort: Option<&EffortValue>,
     cwd: &Path,
     config_home: &Path,
 ) -> Result<PathBuf, String> {
@@ -190,7 +177,6 @@ pub fn save_agent_to_file(
         color,
         model,
         memory,
-        effort,
     );
     write_and_sync(&path, &content, check_exists)?;
     Ok(path)
@@ -205,7 +191,6 @@ pub fn update_agent_file(
     color: Option<&str>,
     model: Option<&str>,
     memory: Option<AgentMemoryScope>,
-    effort: Option<&EffortValue>,
     cwd: &Path,
     config_home: &Path,
 ) -> Result<PathBuf, String> {
@@ -221,7 +206,6 @@ pub fn update_agent_file(
         color,
         model,
         memory,
-        effort,
     );
     write_and_sync(&path, &content, false)?;
     Ok(path)
@@ -256,17 +240,44 @@ mod tests {
             Some(&tools),
             "Review carefully",
             Some("blue"),
-            Some("opus"),
+            Some("@heavy:high"),
             Some(AgentMemoryScope::Project),
-            Some(&EffortValue::Named("high".to_string())),
         );
         assert!(text.contains("description: \"say \\\"yes\\\"\\\\next\\\\nline\""));
-        assert!(text.contains(
-            "\ntools: Read, Edit\nmodel: opus\neffort: high\ncolor: blue\nmemory: project"
-        ));
         assert!(
-            !format_agent_as_markdown("a", "desc", None, "prompt", None, None, None, None)
+            text.contains("\ntools: Read, Edit\nmodel: @heavy:high\ncolor: blue\nmemory: project")
+        );
+        assert!(!text.contains("effort:"));
+        assert!(
+            !format_agent_as_markdown("a", "desc", None, "prompt", None, None, None)
                 .contains("tools:")
+        );
+    }
+
+    /// Every writable tier lives under a `.nyan/agents` directory, the same
+    /// one the loader reads — the managed tier included.
+    #[test]
+    fn writable_tiers_use_the_directories_the_loader_reads() {
+        let _lock = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        let managed =
+            std::env::temp_dir().join(format!("nyan-agent-managed-{}", uuid::Uuid::new_v4()));
+        let _managed =
+            crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
+        let cwd = Path::new("/repo");
+        let config = Path::new("/config");
+        let path = |source| get_new_agent_file_path(source, "a", cwd, config).unwrap();
+
+        assert_eq!(
+            path(AgentFileSource::UserSettings),
+            config.join("agents/a.md")
+        );
+        assert_eq!(
+            path(AgentFileSource::ProjectSettings),
+            cwd.join(".nyan/agents/a.md")
+        );
+        assert_eq!(
+            path(AgentFileSource::PolicySettings),
+            managed.join(".nyan/agents/a.md")
         );
     }
 
@@ -281,7 +292,6 @@ mod tests {
             None,
             "A sufficiently long prompt",
             true,
-            None,
             None,
             None,
             None,
@@ -301,7 +311,6 @@ mod tests {
                 None,
                 None,
                 None,
-                None,
                 &root,
                 &config
             )
@@ -316,7 +325,6 @@ mod tests {
             "updated description",
             Some(&[]),
             "Updated sufficiently long prompt",
-            None,
             None,
             None,
             None,

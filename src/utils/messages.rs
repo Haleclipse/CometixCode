@@ -2616,11 +2616,11 @@ You should build your plan incrementally by writing to or editing this file. NOT
 ## Plan Workflow
 
 ### Phase 1: Initial Understanding
-Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the Explore subagent type.
+Goal: Gain a comprehensive understanding of the user's request by reading through code and asking them questions. Critical: In this phase you should only use the explore subagent type.
 
 1. Focus on understanding the user's request and the code associated with their request. Actively search for existing functions, utilities, and patterns that can be reused — avoid proposing new code when suitable implementations already exist.
 
-2. **Launch up to {explore_agent_count} Explore agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
+2. **Launch up to {explore_agent_count} explore agents IN PARALLEL** (single message, multiple tool calls) to efficiently explore the codebase.
    - Use 1 agent when the task is isolated to known files, the user provided specific file paths, or you're making a small targeted change.
    - Use multiple agents when: the scope is uncertain, multiple areas of the codebase are involved, or you need to understand existing patterns before planning.
    - Quality over quantity - {explore_agent_count} agents maximum, but you should try to use the minimum number of agents necessary (usually just 1)
@@ -2629,12 +2629,12 @@ Goal: Gain a comprehensive understanding of the user's request by reading throug
 ### Phase 2: Design
 Goal: Design an implementation approach.
 
-Launch Plan agent(s) to design the implementation based on the user's intent and your exploration results from Phase 1.
+Launch plan agent(s) to design the implementation based on the user's intent and your exploration results from Phase 1.
 
 You can launch up to {agent_count} agent(s) in parallel.
 
 **Guidelines:**
-- **Default**: Launch at least 1 Plan agent for most tasks - it helps validate your understanding and consider alternatives
+- **Default**: Launch at least 1 plan agent for most tasks - it helps validate your understanding and consider alternatives
 - **Skip agents**: Only for truly trivial tasks (typo fixes, single-line changes, simple renames)
 {multiple_agents_section}
 In the agent prompt:
@@ -2701,7 +2701,7 @@ fn get_plan_mode_interview_instructions(
     let read_only_tools = get_read_only_tool_names();
     let explore_agent_clause =
         if crate::tools::agent_tool::built_in_agents::are_explore_plan_agents_enabled() {
-            " You can use the Explore agent type to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler."
+            " You can use the explore agent type to parallelize complex searches without filling your context, though for straightforward queries direct tools are simpler."
         } else {
             ""
         };
@@ -5756,7 +5756,7 @@ mod plan_instruction_tests {
         let messages = get_plan_mode_instructions("full", false, "/plans/change.md", false);
         assert_source_digest(
             &messages,
-            "e57ce3431bf9270676b4234b5187eac1e402e63118bd06b7c890e31bd9b5fea7",
+            "9255f4bac60f32adbf92f1a2a10262ce6e6ebb0eba4ad53dc9fb587a91edb6e8",
         );
     }
 
@@ -5770,11 +5770,11 @@ mod plan_instruction_tests {
         for (count, digest) in [
             (
                 "2",
-                "35d80c917b17959b7d533d1252070960d907945bcae078dbd57d851172018b0b",
+                "239aa86bdbc69d3e3e552fadb3468c36d849f95aee9168eb7a1a74b98d1e19c6",
             ),
             (
                 "1",
-                "6899e99f026bfefe82cb57a93fc30d0302c6d319481a6d4eb754a854a1749683",
+                "65507c793a150a5bcfb48297d6206d942c4ac51d3954a72a663c8524fa0c13b0",
             ),
         ] {
             let _count = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", count);

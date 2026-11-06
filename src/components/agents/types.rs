@@ -2,7 +2,7 @@
 
 use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
 
-pub const AGENT_FOLDER_NAME: &str = ".claude";
+pub const AGENT_FOLDER_NAME: &str = ".nyan";
 pub const AGENTS_DIR: &str = "agents";
 
 #[derive(Clone, Debug, PartialEq, Eq)]

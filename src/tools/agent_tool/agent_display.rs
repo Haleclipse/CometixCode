@@ -4,7 +4,7 @@
 //! Used by CLI `agents` handler and interactive `/agents` UI.
 
 use super::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-use crate::utils::model::agent::get_default_subagent_model;
+use crate::utils::model::agent::default_subagent_spec;
 
 /// Maps to: CC `agentDisplay.ts` `AgentSource`.
 pub type AgentSource = AgentDefinitionSource;
@@ -90,7 +90,7 @@ pub fn resolve_agent_model_display(agent: &AgentDefinition) -> Option<String> {
         .model
         .as_deref()
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| get_default_subagent_model());
+        .unwrap_or_else(|| default_subagent_spec(&agent.agent_type));
     if model.is_empty() {
         return None;
     }
@@ -168,7 +168,19 @@ mod tests {
             resolve_agent_model_display(&agent).as_deref(),
             Some("inherit")
         );
+        // No model of its own: the type default is what the agent runs on.
         agent.model = None;
-        assert!(resolve_agent_model_display(&agent).is_some());
+        assert_eq!(
+            resolve_agent_model_display(&agent).as_deref(),
+            Some("inherit")
+        );
+        for (agent_type, expected) in [("explore", "@light"), ("review", "@heavy")] {
+            let agent = AgentDefinition::new(agent_type, "use", AgentDefinitionSource::BuiltIn);
+            assert_eq!(
+                resolve_agent_model_display(&agent).as_deref(),
+                Some(expected),
+                "{agent_type}"
+            );
+        }
     }
 }

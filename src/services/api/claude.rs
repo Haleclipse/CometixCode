@@ -273,7 +273,6 @@ pub struct Options {
     pub output_format: Option<JsonOutputFormat>,
     pub fast_mode: Option<bool>,
     pub advisor_model: Option<String>,
-    pub allowed_agent_types: Option<Vec<String>>,
     /// Maps to: CC `services/api/claude.ts:677`
     /// `getToolPermissionContext: () => Promise<ToolPermissionContext>` — a
     /// REQUIRED member of CC's Options, consumed only by `toolToAPISchema`
@@ -1686,7 +1685,6 @@ impl Options {
             output_format: None,
             fast_mode: None,
             advisor_model: None,
-            allowed_agent_types: None,
             tool_permission_context: None,
             task_budget: None,
             cache_retention: None,
@@ -2179,7 +2177,6 @@ fn build_sdk_message_create_plan(
                     tool_permission_context: &prompt_permission_context,
                     tools: request_tools,
                     agents: &options.agents,
-                    allowed_agent_types: options.allowed_agent_types.as_deref(),
                 },
             )
         })

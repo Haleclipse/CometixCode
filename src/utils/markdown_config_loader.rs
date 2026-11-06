@@ -165,7 +165,7 @@ fn find_markdown_files_native(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
-fn load_markdown_files_from_dir(
+pub(crate) fn load_markdown_files_from_dir(
     base_dir: &Path,
     source: MarkdownConfigSource,
 ) -> Vec<MarkdownFile> {

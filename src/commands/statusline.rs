@@ -19,7 +19,7 @@ pub fn get_prompt_for_command(
         prompt
     };
     Ok(vec![UserContent::Text(format!(
-        "Create an {AGENT_TOOL_NAME} with subagent_type \"statusline-setup\" and the prompt \"{prompt}\""
+        "Create an {AGENT_TOOL_NAME} with subagent_type \"general-purpose\" and the prompt \"{prompt}\""
     ))])
 }
 
@@ -76,39 +76,39 @@ mod tests {
         for (args, expected) in [
             (
                 "",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
             ),
             (
                 "   ",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
             ),
             (
                 " use model and cwd ",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"use model and cwd\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"use model and cwd\"",
             ),
             (
                 "\t\r\n",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
             ),
             (
                 "\u{feff}",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
             ),
             (
                 "\u{85}",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"\u{85}\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"\u{85}\"",
             ),
             (
                 "\u{feff} 中文 🌙 \u{feff}",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"中文 🌙\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"中文 🌙\"",
             ),
             (
                 "say \"hello\"\nnext",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"say \"hello\"\nnext\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"say \"hello\"\nnext\"",
             ),
             (
                 "\u{2028}\u{2029}",
-                "Create an Agent with subagent_type \"statusline-setup\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
+                "Create an Agent with subagent_type \"general-purpose\" and the prompt \"Configure my statusLine from my shell PS1 configuration\"",
             ),
         ] {
             assert_eq!(

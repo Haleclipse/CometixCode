@@ -26,8 +26,9 @@ pub enum Effort {
     Max,
 }
 
-/// Legacy frontmatter value retained for the agent-loader surface owned by
-/// PR9b. Runtime model selection and provider requests use [`Effort`] only.
+/// The `effort:` frontmatter value of a skill or plugin command. Agents have no
+/// such field (their depth is the `:effort` of `model:`), and runtime model
+/// selection and provider requests use [`Effort`] only.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum EffortValue {
@@ -46,7 +47,7 @@ impl EffortValue {
 
 pub type ModelEffortLevel = Effort;
 
-/// Effort names accepted by the still-unmigrated agent frontmatter parser.
+/// Effort names accepted by the skill and plugin command frontmatter parsers.
 pub const EFFORT_LEVELS: &[&str] = &["off", "medium", "high", "max"];
 
 impl Effort {
@@ -114,8 +115,8 @@ impl fmt::Display for Effort {
     }
 }
 
-/// Parse the legacy agent-frontmatter value without consulting global effort
-/// settings. PR9b removes this parser together with the independent field.
+/// Parse a skill or plugin command `effort:` frontmatter value without
+/// consulting global effort settings.
 pub fn parse_effort_value(value: &str) -> Option<EffortValue> {
     if value.is_empty() {
         return None;

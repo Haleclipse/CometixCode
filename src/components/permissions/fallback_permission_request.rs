@@ -363,8 +363,8 @@ mod tests {
         serde_json::json!({
             "description": "Explore workdir files",
             "prompt": "List the files under the working directory and summarise them.",
-            "subagent_type": "Explore",
-            "model": "haiku"
+            "subagent_type": "explore",
+            "model": "@light"
         })
     }
 
@@ -466,7 +466,7 @@ mod tests {
     /// Maps to: CC `FallbackPermissionRequest.tsx:164-179`.
     /// - `:164` title is the literal `"Tool use"`.
     /// - `:166-172` body is `userFacingName(renderToolUseMessage(input, {verbose:true}))`,
-    ///   i.e. `AgentTool/UI.tsx:1000-1007` + `UI.tsx:472-483` → `Explore(Explore workdir files)`.
+    ///   i.e. `AgentTool/UI.tsx:1000-1007` + `UI.tsx:472-483` → `explore(Explore workdir files)`.
     /// - `:179` dim description is `AgentTool.tsx:376-378` → `Launch a new agent`.
     #[test]
     fn fallback_permission_request_matches_official_agent_tool_use_line() {
@@ -484,7 +484,7 @@ mod tests {
 
         assert!(text.contains("Tool use"), "canvas=\n{text}");
         assert!(
-            text.contains("Explore(Explore workdir files)"),
+            text.contains("explore(Explore workdir files)"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Launch a new agent"), "canvas=\n{text}");
@@ -502,14 +502,14 @@ mod tests {
     fn fallback_permission_options_matches_official_agent_always_allow_label() {
         let request = agent_request(explore_input());
         let (user_facing_name, is_mcp) = fallback_user_facing_names(&request);
-        assert_eq!(user_facing_name, "Explore");
+        assert_eq!(user_facing_name, "explore");
         assert!(!is_mcp);
 
         let cwd = original_cwd_for_label();
         let options = fallback_prompt_options(&user_facing_name, &cwd, true);
         assert_eq!(
             options[1].label,
-            format!("Yes, and don't ask again for Explore commands in {cwd}")
+            format!("Yes, and don't ask again for explore commands in {cwd}")
         );
 
         let text = element! {
@@ -521,7 +521,7 @@ mod tests {
         .render(Some(200))
         .to_string();
         assert!(
-            text.contains("Yes, and don't ask again for Explore commands in"),
+            text.contains("Yes, and don't ask again for explore commands in"),
             "canvas=\n{text}"
         );
         assert!(
@@ -553,27 +553,27 @@ mod tests {
 
     /// Maps to: CC `AgentTool/UI.tsx:478-480` — `if (!description || !prompt)
     /// return null`. A `null` renderer contributes no children inside the
-    /// dialog's `<Text>`, so the line is `Explore()`.
+    /// dialog's `<Text>`, so the line is `explore()`.
     #[test]
     fn fallback_tool_preview_matches_official_null_render_tool_use_message() {
         let no_prompt = agent_request(serde_json::json!({
             "description": "Explore workdir files",
-            "subagent_type": "Explore"
+            "subagent_type": "explore"
         }));
-        assert_eq!(fallback_tool_preview(&no_prompt), "Explore()");
+        assert_eq!(fallback_tool_preview(&no_prompt), "explore()");
 
         let no_description = agent_request(serde_json::json!({
             "prompt": "do the thing",
-            "subagent_type": "Explore"
+            "subagent_type": "explore"
         }));
-        assert_eq!(fallback_tool_preview(&no_description), "Explore()");
+        assert_eq!(fallback_tool_preview(&no_description), "explore()");
 
         let empty_description = agent_request(serde_json::json!({
             "description": "",
             "prompt": "do the thing",
-            "subagent_type": "Explore"
+            "subagent_type": "explore"
         }));
-        assert_eq!(fallback_tool_preview(&empty_description), "Explore()");
+        assert_eq!(fallback_tool_preview(&empty_description), "explore()");
     }
 
     /// Maps to: CC `PermissionRuleExplanation.tsx:91-97` reached from
@@ -604,7 +604,7 @@ mod tests {
                 rule: crate::types::permissions::PermissionRule {
                     source: crate::types::permissions::PermissionRuleSource::LocalSettings,
                     rule_behavior: crate::types::permissions::PermissionBehavior::Ask,
-                    rule_value: PermissionRuleValue::new("Agent", Some("Explore".to_string())),
+                    rule_value: PermissionRuleValue::new("Agent", Some("explore".to_string())),
                 },
             },
         );
@@ -617,7 +617,7 @@ mod tests {
         .render(Some(140))
         .to_string();
         assert!(
-            text.contains("Permission rule Agent(Explore) requires confirmation for this tool."),
+            text.contains("Permission rule Agent(explore) requires confirmation for this tool."),
             "canvas=\n{text}"
         );
         assert!(

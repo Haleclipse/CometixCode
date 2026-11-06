@@ -1109,7 +1109,19 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                     // difference (a reset can only cost one disk read).
                     crate::utils::settings::settings_cache::reset_settings_cache();
                     let fresh = Arc::new(crate::utils::settings::get_initial_settings());
-                    store.replace_with(|state| state.settings = fresh);
+                    // @nyan: the launch snapshot of agent definitions was taken
+                    // before the trust dialog, when `.nyan/agents` is still
+                    // withheld. Re-read after setup so an accepted workspace's
+                    // project agents are available in this session.
+                    let agent_definitions = Arc::new(
+                        crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
+                            &crate::bootstrap::state::get_original_cwd(),
+                        ),
+                    );
+                    store.replace_with(|state| {
+                        state.settings = fresh;
+                        state.agent_definitions = agent_definitions;
+                    });
 
                     // Maps to CC main.tsx background startup prefetches: quota
                     // traffic starts only after setup/trust and remains off the
@@ -2745,7 +2757,6 @@ mod tests {
                     active_agents: vec![agent.as_ref().clone()],
                     all_agents: vec![agent.as_ref().clone()],
                     failed_files: Vec::new(),
-                    allowed_agent_types: None,
                 },
             ),
             main_thread_agent_definition: Some(agent.clone()),

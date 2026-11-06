@@ -19,8 +19,8 @@ pub fn LocationStep(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         ) {
             WizardChoice(
                 options: vec![
-                    SelectOptionData { label: "Project (.claude/agents/)".to_string(), value: "projectSettings".to_string(), ..Default::default() },
-                    SelectOptionData { label: "Personal (~/.claude/agents/)".to_string(), value: "userSettings".to_string(), ..Default::default() },
+                    SelectOptionData { label: "Project (.nyan/agents/)".to_string(), value: "projectSettings".to_string(), ..Default::default() },
+                    SelectOptionData { label: "Personal (~/.nyan/agents/)".to_string(), value: "userSettings".to_string(), ..Default::default() },
                 ],
                 on_select: move |value| { next.update_wizard_data(update("location", json!(value))); next.go_next(); },
                 on_cancel: move |_| cancel.cancel(),

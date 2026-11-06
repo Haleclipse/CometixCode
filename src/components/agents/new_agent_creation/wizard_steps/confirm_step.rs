@@ -42,7 +42,7 @@ fn source(value: &str) -> AgentDefinitionSource {
 
 fn location(agent: &AgentWizardFinal) -> String {
     if agent.source == "projectSettings" {
-        format!(".claude/agents/{}.md", agent.agent_type)
+        format!(".nyan/agents/{}.md", agent.agent_type)
     } else {
         crate::utils::env_utils::get_claude_config_home_dir()
             .join("agents")

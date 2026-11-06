@@ -1,13 +1,15 @@
-//! Maps to CC `tools/AgentTool/built-in/verificationAgent.ts`.
+//! Built-in review agent definition.
+//!
+//! Renamed from CC's verification agent to `review` per nyan design.
 
 use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
 
-pub const VERIFICATION_WHEN_TO_USE: &str = "Use this agent to verify that implementation work is correct before reporting completion. Invoke after non-trivial tasks (3+ file edits, backend/API changes, infrastructure changes). Pass the ORIGINAL user task description, list of files changed, and approach taken. The agent runs builds, tests, linters, and checks to produce a PASS/FAIL/PARTIAL verdict with evidence.";
+pub const REVIEW_WHEN_TO_USE: &str = "Use this agent to review and verify that implementation work is correct before reporting completion. Invoke after non-trivial tasks (3+ file edits, backend/API changes, infrastructure changes). Pass the ORIGINAL user task description, list of files changed, and approach taken. The agent runs builds, tests, linters, and checks to produce a PASS/FAIL/PARTIAL verdict with evidence.";
 
-pub const VERIFICATION_CRITICAL_SYSTEM_REMINDER: &str = "CRITICAL: This is a VERIFICATION-ONLY task. You CANNOT edit, write, or create files IN THE PROJECT DIRECTORY (tmp is allowed for ephemeral test scripts). You MUST end with VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL.";
+pub const REVIEW_CRITICAL_SYSTEM_REMINDER: &str = "CRITICAL: This is a REVIEW-ONLY task. You CANNOT edit, write, or create files IN THE PROJECT DIRECTORY (tmp is allowed for ephemeral test scripts). You MUST end with VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL.";
 
-/// Maps to CC `verificationAgent.ts#VERIFICATION_SYSTEM_PROMPT`.
-pub const VERIFICATION_SYSTEM_PROMPT: &str = r#"You are a verification specialist. Your job is not to confirm the implementation works — it's to try to break it.
+/// Maps to review agent system prompt (renamed from CC verification agent).
+pub const REVIEW_SYSTEM_PROMPT: &str = r#"You are a verification and review specialist. Your job is not to confirm the implementation works — it's to try to break it.
 
 You have two documented failure patterns. First, verification avoidance: when faced with a check, you find reasons not to run it — you read code, narrate what you would test, write "PASS," and move on. Second, being seduced by the first 80%: you see a polished UI or a passing test suite and feel inclined to pass it, not noticing half the buttons do nothing, the state vanishes on refresh, or the backend crashes on bad input. The first 80% is the easy part. Your entire value is in finding the last 20%. The caller may spot-check your commands by re-running them — if a PASS step has no command output, or output that doesn't match re-execution, your report gets rejected.
 
@@ -128,13 +130,10 @@ Use the literal string `VERDICT: ` followed by exactly one of `PASS`, `FAIL`, `P
 - **FAIL**: include what failed, exact error output, reproduction steps.
 - **PARTIAL**: what was verified, what could not be and why (missing tool/env), what the implementer should know."#;
 
-/// Maps to CC `verificationAgent.ts#VERIFICATION_AGENT`.
-pub fn verification_agent() -> AgentDefinition {
-    let mut agent = AgentDefinition::new(
-        "verification",
-        VERIFICATION_WHEN_TO_USE,
-        AgentDefinitionSource::BuiltIn,
-    );
+/// Maps to nyan built-in review agent (renamed from verification).
+pub fn review_agent() -> AgentDefinition {
+    let mut agent =
+        AgentDefinition::new("review", REVIEW_WHEN_TO_USE, AgentDefinitionSource::BuiltIn);
     agent.color = Some("red".to_string());
     agent.background = true;
     agent.disallowed_tools = Some(vec![
@@ -144,10 +143,8 @@ pub fn verification_agent() -> AgentDefinition {
         crate::tools::file_write_tool::prompt::FILE_WRITE_TOOL_NAME.to_string(),
         crate::tools::notebook_edit_tool::constants::NOTEBOOK_EDIT_TOOL_NAME.to_string(),
     ]);
-    agent.model = Some("inherit".to_string());
-    agent.system_prompt = Some(VERIFICATION_SYSTEM_PROMPT.to_string());
-    agent.critical_system_reminder_experimental =
-        Some(VERIFICATION_CRITICAL_SYSTEM_REMINDER.to_string());
+    agent.system_prompt = Some(REVIEW_SYSTEM_PROMPT.to_string());
+    agent.critical_system_reminder_experimental = Some(REVIEW_CRITICAL_SYSTEM_REMINDER.to_string());
     agent
 }
 
@@ -156,17 +153,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn verification_agent_matches_official_background_metadata() {
-        let agent = verification_agent();
-        assert_eq!(agent.agent_type, "verification");
+    fn review_agent_matches_expected_metadata() {
+        let agent = review_agent();
+        assert_eq!(agent.agent_type, "review");
         assert!(agent.background);
         assert_eq!(agent.color.as_deref(), Some("red"));
-        assert_eq!(agent.model.as_deref(), Some("inherit"));
+        // No model of its own: the type default (`@heavy`) decides.
+        assert_eq!(agent.model, None);
         assert!(
             agent
                 .critical_system_reminder_experimental
                 .as_deref()
-                .is_some_and(|prompt| prompt.contains("VERIFICATION-ONLY"))
+                .is_some_and(|prompt| prompt.contains("REVIEW-ONLY"))
         );
         assert!(
             agent

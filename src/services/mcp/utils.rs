@@ -8,9 +8,7 @@ use super::normalization::normalize_name_for_mcp;
 use super::types::McpServerConnection;
 use super::types::{ConfigScope, ScopedMcpServerConfig, ServerResource, Transport};
 use crate::commands::Command;
-use crate::components::mcp::types::AgentMcpServerInfo;
 use crate::state::app_state_store::McpState;
-use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentMcpServerSpec};
 use crate::types::tools::Tool;
 use crate::utils::settings::types::SettingsJson;
 use serde_json::{Map, Value};
@@ -521,69 +519,6 @@ pub fn get_project_mcp_server_status(server_name: &str) -> ProjectMcpServerStatu
     )
 }
 
-/// Maps to: CC `services/mcp/utils.ts#extractAgentMcpServers`.
-pub fn extract_agent_mcp_servers(agents: &[AgentDefinition]) -> Vec<AgentMcpServerInfo> {
-    #[derive(Clone)]
-    struct Entry {
-        transport: Transport,
-        command: Option<String>,
-        url: Option<String>,
-        source_agents: Vec<String>,
-    }
-
-    let mut servers = BTreeMap::<String, Entry>::new();
-    for agent in agents {
-        let Some(specs) = agent.mcp_servers.as_ref() else {
-            continue;
-        };
-        for spec in specs {
-            let AgentMcpServerSpec::Inline { name, config } = spec else {
-                // String references point at globally configured MCP servers,
-                // which are already listed from AppState/config.
-                continue;
-            };
-            if !agent_mcp_server_transport_is_display_supported(config.transport) {
-                continue;
-            }
-            servers
-                .entry(name.clone())
-                .and_modify(|entry| {
-                    if !entry.source_agents.contains(&agent.agent_type) {
-                        entry.source_agents.push(agent.agent_type.clone());
-                    }
-                })
-                .or_insert_with(|| Entry {
-                    transport: config.transport,
-                    command: config.command.clone(),
-                    url: config.url.clone(),
-                    source_agents: vec![agent.agent_type.clone()],
-                });
-        }
-    }
-
-    servers
-        .into_iter()
-        .map(|(name, entry)| AgentMcpServerInfo {
-            name,
-            transport: entry.transport,
-            url: entry.url,
-            command: entry.command,
-            source_agents: entry.source_agents,
-            needs_auth: matches!(entry.transport, Transport::Sse | Transport::Http),
-            is_authenticated: false,
-        })
-        .collect()
-}
-
-fn agent_mcp_server_transport_is_display_supported(transport: Transport) -> bool {
-    // Maps to CC `extractAgentMcpServers(...)`: stdio/sse/http/ws are displayed;
-    // sdk, claudeai-proxy, and IDE transports are internal and skipped.
-    matches!(
-        transport,
-        Transport::Stdio | Transport::Sse | Transport::Http | Transport::Ws
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -944,58 +879,5 @@ mod tests {
             id: None,
             plugin_source: None,
         }
-    }
-
-    #[test]
-    fn extract_agent_mcp_servers_groups_inline_servers_and_skips_references() {
-        let mut reviewer = AgentDefinition::new(
-            "reviewer",
-            "review code",
-            crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource::ProjectSettings,
-        );
-        reviewer.mcp_servers = Some(vec![
-            AgentMcpServerSpec::Reference("global-docs".to_string()),
-            AgentMcpServerSpec::Inline {
-                name: "docs".to_string(),
-                config: scoped_config(Transport::Stdio),
-            },
-            AgentMcpServerSpec::Inline {
-                name: "remote".to_string(),
-                config: scoped_config(Transport::Http),
-            },
-            AgentMcpServerSpec::Inline {
-                name: "internal".to_string(),
-                config: scoped_config(Transport::Sdk),
-            },
-        ]);
-        let mut planner = AgentDefinition::new(
-            "planner",
-            "plan work",
-            crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource::ProjectSettings,
-        );
-        planner.mcp_servers = Some(vec![AgentMcpServerSpec::Inline {
-            name: "docs".to_string(),
-            config: scoped_config(Transport::Stdio),
-        }]);
-
-        let servers = extract_agent_mcp_servers(&[reviewer, planner]);
-        assert_eq!(
-            servers
-                .iter()
-                .map(|server| server.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["docs", "remote"]
-        );
-        let docs = servers.iter().find(|server| server.name == "docs").unwrap();
-        assert_eq!(docs.transport, Transport::Stdio);
-        assert_eq!(docs.command.as_deref(), Some("agent-mcp"));
-        assert_eq!(docs.source_agents, vec!["reviewer", "planner"]);
-        assert!(!docs.needs_auth);
-        let remote = servers
-            .iter()
-            .find(|server| server.name == "remote")
-            .unwrap();
-        assert_eq!(remote.transport, Transport::Http);
-        assert!(remote.needs_auth);
     }
 }

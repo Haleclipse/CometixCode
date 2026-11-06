@@ -359,19 +359,9 @@ mod repl_prompt_tools {
     use crate::types::tools::Tool;
     use std::sync::Arc;
 
-    /// Maps to: CC `REPL.tsx:1216-1220` — the inline object the
-    /// `resolveAgentTools` memo (`REPL.tsx:1203-1221`) returns. CC's memo yields
-    /// BOTH halves of one `resolveAgentTools` call: the narrowed tool pool and
-    /// the `Agent(x,y)` restriction parsed out of the same frontmatter spec.
-    /// Rust needs a name for the anonymous object; the two fields keep CC's
-    /// names.
+    /// Maps to CC `REPL.tsx:1218` `tools: resolved.resolvedTools`.
     struct ReplPromptTools {
-        /// Maps to CC `REPL.tsx:1218` `tools: resolved.resolvedTools`.
         tools: Vec<Tool>,
-        /// Maps to CC `REPL.tsx:1219`
-        /// `allowedAgentTypes: resolved.allowedAgentTypes` (and `:1208`,
-        /// `undefined` when there is no main-thread agent).
-        allowed_agent_types: Option<Vec<String>>,
     }
 
     /// Maps to: CC `REPL.tsx:3192` `tools: computeTools()` together with
@@ -405,18 +395,14 @@ mod repl_prompt_tools {
         initial_tools: &[Tool],
         main_thread_agent_definition: Option<&AgentDefinition>,
     ) {
-        let ReplPromptTools {
-            tools,
-            allowed_agent_types,
-        } = assemble_repl_prompt_tools(
+        context.agent_definitions = store_definitions.clone();
+        context.tools = assemble_repl_prompt_tools(
             initial_tools,
             &context.tool_permission_context,
             &context.mcp_state,
             main_thread_agent_definition,
-        );
-        context.tools = tools;
-        context.agent_definitions =
-            merge_allowed_agent_types(store_definitions, allowed_agent_types);
+        )
+        .tools;
     }
 
     /// Maps to: CC `REPL.tsx:5821` / `:6162` `<Messages tools={tools} …>` —
@@ -447,28 +433,6 @@ mod repl_prompt_tools {
         )
     }
 
-    /// Maps to CC `REPL.tsx:3206-3208`:
-    /// `agentDefinitions: allowedAgentTypes ? { ...s.agentDefinitions,
-    /// allowedAgentTypes } : s.agentDefinitions`.
-    ///
-    /// When the memo produced no restriction the store object passes through
-    /// untouched (same identity); when it did, a shallow copy carries it for
-    /// this turn only, so `AppState.agentDefinitions` never gains the field —
-    /// matching `AppStateStore.ts:505`.
-    fn merge_allowed_agent_types(
-        store_definitions: &Arc<AgentDefinitionsResult>,
-        allowed_agent_types: Option<Vec<String>>,
-    ) -> Arc<AgentDefinitionsResult> {
-        match allowed_agent_types {
-            Some(allowed_agent_types) => {
-                let mut merged = store_definitions.as_ref().clone();
-                merged.allowed_agent_types = Some(allowed_agent_types);
-                Arc::new(merged)
-            }
-            None => store_definitions.clone(),
-        }
-    }
-
     /// Maps to: CC REPL `mergedTools` + `resolveAgentTools(..., isMainThread=true)`
     /// (`REPL.tsx:1203-1221`).
     fn assemble_repl_prompt_tools(
@@ -487,12 +451,9 @@ mod repl_prompt_tools {
             permission_context.mode,
         );
 
-        // Maps to CC `REPL.tsx:1205-1212`: no main-thread agent → the merged pool
-        // as-is and `allowedAgentTypes: undefined`.
         let Some(agent) = main_thread_agent_definition else {
             return ReplPromptTools {
                 tools: prompt_tools,
-                allowed_agent_types: None,
             };
         };
         let resolved = crate::tools::agent_tool::agent_tool_utils::resolve_agent_tools(
@@ -500,10 +461,10 @@ mod repl_prompt_tools {
             &prompt_tools,
             false,
             true,
+            Some(permission_context.mode),
         );
         ReplPromptTools {
             tools: resolved.resolved_tools,
-            allowed_agent_types: resolved.allowed_agent_types,
         }
     }
 }
@@ -11492,9 +11453,6 @@ mod tests {
             ..Default::default()
         };
 
-        // `ReplPromptTools` is not reachable from here by design (see the
-        // `repl_prompt_tools` module doc), so the memo is exercised the only way
-        // production can reach it: through the installer, on a context.
         let store_definitions = std::sync::Arc::new(
             crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult::default(),
         );
@@ -11505,13 +11463,6 @@ mod tests {
             &[override_tool, injected_mcp],
             None,
         );
-        // CC `REPL.tsx:1205-1211`: no main-thread agent → `allowedAgentTypes`
-        // is `undefined`, and `:3208` hands back the store object by identity.
-        assert_eq!(context.agent_definitions.allowed_agent_types, None);
-        assert!(std::sync::Arc::ptr_eq(
-            &context.agent_definitions,
-            &store_definitions
-        ));
         let merged = context.tools;
         let matching = merged
             .iter()
@@ -12259,7 +12210,6 @@ mod tests {
                 active_agents: vec![agent.clone()],
                 all_agents: vec![agent.clone()],
                 failed_files: Vec::new(),
-                allowed_agent_types: None,
             },
         );
         let store = crate::state::store::AppStore::new(app_state, None);
@@ -12314,103 +12264,6 @@ mod tests {
         assert_eq!(context.agent_definitions.active_agents, vec![agent]);
     }
 
-    /// Maps to CC `REPL.tsx:3206-3208`
-    /// `agentDefinitions: allowedAgentTypes ? { ...s.agentDefinitions,
-    /// allowedAgentTypes } : s.agentDefinitions`, fed by the `resolveAgentTools`
-    /// memo at `REPL.tsx:1203-1221`. This is the only site in CC that puts
-    /// `allowedAgentTypes` on an `agentDefinitions` object, so it is the only
-    /// place the `Agent(x,y)` frontmatter restriction can enter a turn.
-    #[test]
-    fn process_input_context_merges_allowed_agent_types_like_official_repl() {
-        use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-        let mut lead = AgentDefinition::new(
-            "lead",
-            "Main thread agent",
-            AgentDefinitionSource::ProjectSettings,
-        );
-        lead.tools = Some(vec![
-            format!(
-                "{}(reviewer)",
-                crate::tools::agent_tool::constants::AGENT_TOOL_NAME
-            ),
-            crate::tools::bash_tool::tool_name::BASH_TOOL_NAME.to_string(),
-        ]);
-        let reviewer = AgentDefinition::new(
-            "reviewer",
-            "Reviews code",
-            AgentDefinitionSource::ProjectSettings,
-        );
-        let auditor = AgentDefinition::new(
-            "auditor",
-            "Audits code",
-            AgentDefinitionSource::ProjectSettings,
-        );
-
-        let mut app_state = crate::state::app_state_store::AppState::default();
-        app_state.agent_definitions = std::sync::Arc::new(
-            crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult {
-                active_agents: vec![reviewer.clone(), auditor.clone()],
-                all_agents: vec![lead.clone(), reviewer, auditor],
-                failed_files: Vec::new(),
-                allowed_agent_types: None,
-            },
-        );
-        let store = crate::state::store::AppStore::new(app_state, None);
-
-        let build = |agent: Option<&AgentDefinition>| {
-            build_repl_process_user_input_context(
-                ToolPermissionContext::default(),
-                &store,
-                Vec::new(),
-                ResumeRestoreStores::default(),
-                std::collections::HashSet::new(),
-                crate::state::app_state_store::McpState::default(),
-                &[],
-                std::sync::Arc::new(Vec::new()),
-                false,
-                &crate::utils::system_prompt::CliSystemPromptOverrides::default(),
-                agent,
-                None,
-                &crate::tool::InteractivePermissionSink::default(),
-                &crate::utils::thinking::ThinkingConfig::Adaptive,
-                crate::tool::ResponseLengthSink::default(),
-            )
-        };
-
-        let restricted = build(Some(&lead));
-        assert_eq!(
-            restricted.agent_definitions.allowed_agent_types,
-            Some(vec!["reviewer".to_string()])
-        );
-        // The same memo call also narrows the pool (CC `REPL.tsx:1218`), so the
-        // restriction and the tool list come from one `resolveAgentTools`.
-        let mut tool_names = restricted
-            .tools
-            .iter()
-            .map(|tool| tool.name.clone())
-            .collect::<Vec<_>>();
-        tool_names.sort();
-        assert_eq!(
-            tool_names,
-            vec![
-                crate::tools::agent_tool::constants::AGENT_TOOL_NAME.to_string(),
-                crate::tools::bash_tool::tool_name::BASH_TOOL_NAME.to_string(),
-            ]
-        );
-        // CC merges into a fresh shallow copy; `AppState.agentDefinitions` never
-        // gains the field (`AppStateStore.ts:505` has no `allowedAgentTypes`).
-        assert_eq!(store.get().agent_definitions.allowed_agent_types, None);
-
-        // No main-thread agent → CC's falsy branch hands back `s.agentDefinitions`
-        // itself, untouched.
-        let unrestricted = build(None);
-        assert_eq!(unrestricted.agent_definitions.allowed_agent_types, None);
-        assert!(std::sync::Arc::ptr_eq(
-            &unrestricted.agent_definitions,
-            &store.get().agent_definitions
-        ));
-    }
-
     /// The MCP-prompt slash path does not use the builder above: its context
     /// comes from `submit_processed_prompt_deferred_query`
     /// (`handle_prompt_submit.rs:110-127`), which calls
@@ -12450,7 +12303,6 @@ mod tests {
                 active_agents: vec![reviewer.clone(), auditor.clone()],
                 all_agents: vec![lead.clone(), reviewer, auditor],
                 failed_files: Vec::new(),
-                allowed_agent_types: None,
             },
         );
 
@@ -12472,10 +12324,6 @@ mod tests {
             context.agent_definitions.active_agents.len(),
             2,
             "the definitions snapshot must reach the turn"
-        );
-        assert_eq!(
-            context.agent_definitions.allowed_agent_types,
-            Some(vec!["reviewer".to_string()])
         );
         assert_eq!(context.agent_type.as_deref(), Some("lead"));
         // The other builder-owned field the shell context lacks
@@ -12554,7 +12402,6 @@ mod tests {
                 active_agents: vec![reviewer.clone(), auditor.clone()],
                 all_agents: vec![lead.clone(), reviewer, auditor],
                 failed_files: Vec::new(),
-                allowed_agent_types: None,
             },
         );
         let store = crate::state::store::AppStore::new(app_state, None);
@@ -12676,30 +12523,12 @@ mod tests {
             .as_ref()
             .expect("owner installs sink for shell context"))(false);
         assert!(!has_interruptible_tool_in_progress.load(std::sync::atomic::Ordering::SeqCst));
-        // The regression itself: the definitions snapshot and the `Agent(x,y)`
-        // restriction must reach the MCP-prompt turn too.
         assert_eq!(
             shell.agent_definitions.active_agents,
             builder.agent_definitions.active_agents
         );
         assert_eq!(shell.agent_definitions.active_agents.len(), 2);
         assert_eq!(shell.agent_type, builder.agent_type);
-        // The `Agent(x,y)` restriction is now the owner's, not the shell seed's:
-        // `attach_app_store` re-reads `agent_definitions` from a store that
-        // deliberately never holds the overlay (`AppStateStore.ts:505` has no
-        // `allowedAgentTypes`; asserted by
-        // `process_input_context_merges_allowed_agent_types_like_official_repl`),
-        // so the owner re-applies it for BOTH shapes afterwards — CC's
-        // `:3206-3208`, re-run by the second builder call at `:3674-3679`.
-        assert_eq!(
-            shell.agent_definitions.allowed_agent_types,
-            builder.agent_definitions.allowed_agent_types,
-            "the frontmatter restriction cannot depend on which path submitted"
-        );
-        assert_eq!(
-            shell.agent_definitions.allowed_agent_types,
-            Some(vec!["reviewer".to_string()])
-        );
         assert_eq!(
             shell.loaded_nested_memory_paths,
             builder.loaded_nested_memory_paths
@@ -12889,7 +12718,6 @@ mod tests {
             active_agents: vec![reviewer.clone(), auditor.clone()],
             all_agents: vec![lead.clone(), reviewer.clone(), auditor.clone()],
             failed_files: Vec::new(),
-            allowed_agent_types: None,
         });
         let store = crate::state::store::AppStore::new(app_state, None);
 
@@ -12988,13 +12816,6 @@ mod tests {
                 "builder-fed"
             };
             let definitions = &params.tool_use_context.agent_definitions;
-            // restriction on every path — CC `REPL.tsx:3206-3208`.
-            assert_eq!(
-                definitions.allowed_agent_types,
-                Some(vec!["reviewer".to_string()]),
-                "{path} path dropped the Agent(x,y) frontmatter restriction"
-            );
-            // store refresh must reach the turn — CC `REPL.tsx:3165` + `:3207-3208`.
             assert_eq!(
                 definitions
                     .active_agents
@@ -13005,10 +12826,6 @@ mod tests {
                 "{path} path carried a stale definitions snapshot"
             );
         }
-
-        // The overlay is turn-local: `AppStateStore.ts:505` has no
-        // `allowedAgentTypes`, so two turns must not accumulate it.
-        assert_eq!(store.get().agent_definitions.allowed_agent_types, None);
 
         // No main-thread agent → CC's falsy branch (`:3208`) hands back
         // `s.agentDefinitions` itself, so the owner must not manufacture a copy.

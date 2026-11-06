@@ -174,7 +174,6 @@ pub fn agent_tool_schema() -> crate::types::tools::Tool {
         description: prompt::get_prompt(
             &agent_definitions.active_agents,
             crate::coordinator::coordinator_mode::is_coordinator_mode(),
-            None,
         ),
         input_schema: crate::utils::zod_to_json_schema::zod_to_json_schema(input_schema()),
         ..Default::default()
@@ -229,6 +228,51 @@ pub struct AgentOutput {
     pub task_id: Option<String>,
     /// Maps to CC `RemoteLaunchedOutput.sessionUrl`.
     pub session_url: Option<String>,
+}
+
+static ACTIVE_SUBAGENTS_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+pub fn active_subagents_count() -> usize {
+    ACTIVE_SUBAGENTS_COUNT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+pub fn reset_active_subagents_count_for_testing() {
+    ACTIVE_SUBAGENTS_COUNT.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// @nyan: RAII slot in the process-wide cap on concurrently running subagents
+/// (`NYAN_MAX_CONCURRENT_SUBAGENTS`, default 20).
+#[derive(Debug)]
+pub struct SubagentConcurrencyGuard;
+
+impl SubagentConcurrencyGuard {
+    pub fn try_acquire() -> Result<Self, String> {
+        let max = constants::max_concurrent_subagents();
+        let mut current = ACTIVE_SUBAGENTS_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+        loop {
+            if current >= max {
+                return Err(format!(
+                    "Concurrent subagent limit of {max} reached. Please wait for running agents to complete; do not retry immediately."
+                ));
+            }
+            match ACTIVE_SUBAGENTS_COUNT.compare_exchange_weak(
+                current,
+                current + 1,
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            ) {
+                Ok(_) => return Ok(Self),
+                Err(actual) => current = actual,
+            }
+        }
+    }
+}
+
+impl Drop for SubagentConcurrencyGuard {
+    fn drop(&mut self) {
+        ACTIVE_SUBAGENTS_COUNT.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// Behavioral half of CC `AgentTool` — dispatched via `crate::tool::ToolCall`.
@@ -990,6 +1034,7 @@ fn continue_backgrounded_agent(
     model_override: Option<&str>,
     context: &crate::tool::ToolUseContext,
     worktree_info: Option<crate::utils::worktree::AgentWorktreeInfo>,
+    concurrency_guard: SubagentConcurrencyGuard,
 ) -> crate::tool::ToolResult {
     let cleanup_metadata = WorktreeCleanupMetadata::new(
         &backgrounded.agent_id,
@@ -1051,6 +1096,7 @@ fn continue_backgrounded_agent(
     );
 
     handle.spawn(async move {
+        let _guard = concurrency_guard;
         crate::utils::agent_context::run_with_agent_context(agent_context, || async move {
             let result = run_agent::run_agent(run_agent::RunAgentInput {
                 agent_definition: &background_agent,
@@ -1134,43 +1180,6 @@ fn continue_backgrounded_agent(
     )
 }
 
-fn mcp_server_name_from_tool_name(tool_name: &str) -> Option<String> {
-    // Maps to CC `AgentTool.tsx` extraction from `mcp__serverName__toolName`.
-    let mut parts = tool_name.split("__");
-    if parts.next()? != "mcp" {
-        return None;
-    }
-    let server = parts.next()?;
-    if server.is_empty() || parts.next().is_none() {
-        return None;
-    }
-    Some(server.to_string())
-}
-
-fn push_unique_mcp_server_name(servers: &mut Vec<String>, server_name: String) {
-    if !server_name.is_empty() && !servers.contains(&server_name) {
-        servers.push(server_name);
-    }
-}
-
-/// Maps to CC `AgentTool.tsx:572` `let currentAppState = appState` — the MCP
-/// slice the required-server check consumes, taken from the LIVE store
-/// (`AgentTool.tsx:407` `const appState = toolUseContext.getAppState()`) and
-/// re-taken on every poll iteration (`:580`).
-///
-/// `None` when the context carries neither an `AppStore` nor a `getAppState`
-/// override — tests and the headless call sites that build a `ToolUseContext`
-/// directly. CC always has a store, so it has no such branch; callers here
-/// fall back to the query-start `context.mcp_state` snapshot and must not
-/// poll, since nothing can change what an immutable snapshot reports.
-fn live_mcp_state(
-    context: &crate::tool::ToolUseContext,
-) -> Option<std::sync::Arc<crate::state::app_state_store::McpState>> {
-    context
-        .get_app_state()
-        .map(|state| std::sync::Arc::clone(&state.mcp))
-}
-
 /// Maps to CC `toolUseContext.getAppState().toolPermissionContext` as read by
 /// BOTH handoff-classifier call sites at agent completion time — the
 /// foreground return (`AgentTool.tsx:1643`) and the async lifecycle tail
@@ -1192,182 +1201,36 @@ fn live_tool_permission_context(
         .map(|state| std::sync::Arc::clone(&state.tool_permission_context))
 }
 
-/// Maps to CC `AgentTool.tsx:604-615`:
+/// Whether a fork may run on `model_override`: no override, `inherit`, or a
+/// model that resolves to the profile the parent session is routed through.
 ///
-/// ```ts
-/// for (const tool of currentAppState.mcp.tools) {
-///   if (tool.name?.startsWith('mcp__')) { … parts[1] … }
-/// }
-/// ```
-///
-/// `McpState.tools` is this port's `currentAppState.mcp.tools` — the same
-/// flat, model-facing list the connection flush writes, with the
-/// `mcp__server__tool` names `fetchToolsForClient` builds. So the scan is
-/// CC's scan, one field, one loop.
-///
-/// This used to walk `mcp_state.clients` and then MERGE `context.tools` as a
-/// "fallback for tests/headless call sites". That merge defeated the poll it
-/// sits behind: `context.tools` is the query-start snapshot, so a server that
-/// the live state reports as `failed` still counted as available if the stale
-/// tool list named it — CC's failed-server early exit (`:584-591`) could not
-/// change the outcome. CC reads the live projection and nothing else.
-fn mcp_servers_with_tools(mcp_state: &crate::state::app_state_store::McpState) -> Vec<String> {
-    let mut servers = Vec::new();
-    for tool in &mcp_state.tools {
-        // CC `:607` `tool.name?.startsWith('mcp__')` — a prefix-skipped SDK
-        // tool (CLAUDE_AGENT_SDK_MCP_NO_PREFIX) fails this test upstream too.
-        if let Some(server_name) = mcp_server_name_from_tool_name(&tool.name) {
-            push_unique_mcp_server_name(&mut servers, server_name);
-        }
-    }
-    servers
-}
-
-/// Maps to CC `AgentTool.tsx:574` `const MAX_WAIT_MS = 30_000`.
-const REQUIRED_MCP_MAX_WAIT_MS: u64 = 30_000;
-/// Maps to CC `AgentTool.tsx:575` `const POLL_INTERVAL_MS = 500`.
-const REQUIRED_MCP_POLL_INTERVAL_MS: u64 = 500;
-
-/// Maps to CC `AgentTool.tsx:564-570` `hasPendingRequiredServers` and its two
-/// in-loop twins (`:584-590` failed, `:593-599` still pending): a client whose
-/// `type` is `status` and whose NAME CONTAINS one of the patterns, both
-/// lowercased. Containment, not equality, and the client name is the haystack —
-/// `requiredMcpServers: [docs]` matches a client named `company-docs`.
-fn has_required_mcp_server_with_status(
-    mcp_state: &crate::state::app_state_store::McpState,
-    required: &[String],
-    status: crate::services::mcp::types::McpServerConnectionType,
+/// A fork replays the parent's history, which only the parent's own profile
+/// can read, and the child runs on the parent's model, so a request that
+/// resolves to a different model (a temporary `provider/model`) is not a fork
+/// even when it routes through the same profile.
+fn fork_matches_parent_profile(
+    model_override: Option<&str>,
+    context: &crate::tool::ToolUseContext,
 ) -> bool {
-    mcp_state.clients.iter().any(|server| {
-        server.connection_type() == status && {
-            let name = server.name().to_lowercase();
-            required
-                .iter()
-                .any(|pattern| name.contains(&pattern.to_lowercase()))
-        }
-    })
-}
-
-/// Maps to CC `AgentTool.tsx:558-630`.
-async fn validate_required_mcp_servers_for_agent(
-    agent: &crate::tools::agent_tool::load_agents_dir::AgentDefinition,
-    context: &crate::tool::ToolUseContext,
-) -> Result<(), String> {
-    validate_required_mcp_servers_for_agent_with_poll(
-        agent,
-        context,
-        std::time::Duration::from_millis(REQUIRED_MCP_MAX_WAIT_MS),
-        std::time::Duration::from_millis(REQUIRED_MCP_POLL_INTERVAL_MS),
-    )
-    .await
-}
-
-/// Timing seam for [`validate_required_mcp_servers_for_agent`], same shape as
-/// `in_process_runner.rs#wait_for_next_prompt_or_shutdown_with_interval`: the
-/// production entry passes CC's constants, tests pass short ones so the suite
-/// does not spend a 500ms interval (or the 30s deadline) per assertion. No env
-/// var and no global — the wait is a pure argument, so nothing about it can
-/// leak between test processes.
-async fn validate_required_mcp_servers_for_agent_with_poll(
-    agent: &crate::tools::agent_tool::load_agents_dir::AgentDefinition,
-    context: &crate::tool::ToolUseContext,
-    max_wait: std::time::Duration,
-    poll_interval: std::time::Duration,
-) -> Result<(), String> {
-    // Maps to CC `AgentTool.tsx:560` `if (requiredMcpServers?.length)`.
-    let Some(required) = agent
-        .required_mcp_servers
-        .as_ref()
-        .filter(|v| !v.is_empty())
-    else {
-        return Ok(());
+    let Some(model) = truthy(model_override) else {
+        return true;
     };
-
-    // Maps to CC `AgentTool.tsx:572` `let currentAppState = appState` —
-    // declared OUTSIDE the loop, so the availability check below consumes the
-    // last state the loop read, not the one the call started with.
-    let live = live_mcp_state(context);
-    let can_reread = live.is_some();
-    let mut current_mcp = live.unwrap_or_else(|| {
-        std::sync::Arc::new(
-            // No live read entry: degrade to the query-start snapshot and skip
-            // the poll entirely. Polling here would burn the full deadline
-            // re-reading a value that cannot change.
-            context.mcp_state.clone(),
-        )
-    });
-
-    // Maps to CC `AgentTool.tsx:561-563`: "If any required servers are still
-    // pending (connecting), wait for them before checking tool availability.
-    // This avoids a race condition where the agent is invoked before MCP
-    // servers finish connecting."
-    if can_reread
-        && has_required_mcp_server_with_status(
-            &current_mcp,
-            required,
-            crate::services::mcp::types::McpServerConnectionType::Pending,
-        )
-    {
-        let deadline = std::time::Instant::now() + max_wait;
-        while std::time::Instant::now() < deadline {
-            // Maps to CC `:579` `await sleep(POLL_INTERVAL_MS)` — the sleep
-            // comes FIRST, so the state is never re-read at t=0.
-            tokio::time::sleep(poll_interval).await;
-            // Maps to CC `:580` `currentAppState = toolUseContext.getAppState()`.
-            if let Some(next) = live_mcp_state(context) {
-                current_mcp = next;
-            }
-
-            // Maps to CC `:582-591`: "Early exit: if any required server has
-            // already failed, no point waiting for other pending servers — the
-            // check will fail regardless."
-            if has_required_mcp_server_with_status(
-                &current_mcp,
-                required,
-                crate::services::mcp::types::McpServerConnectionType::Failed,
-            ) {
-                break;
-            }
-
-            // Maps to CC `:593-600` `if (!stillPending) break`.
-            if !has_required_mcp_server_with_status(
-                &current_mcp,
-                required,
-                crate::services::mcp::types::McpServerConnectionType::Pending,
-            ) {
-                break;
-            }
-        }
+    let resolved = run_agent::resolve_agent_selection(
+        &fork_subagent::fork_agent_definition(),
+        Some(model),
+        context,
+    );
+    if resolved.model != context.parent_selection().model {
+        return false;
     }
-
-    let servers_with_tools = mcp_servers_with_tools(&current_mcp);
-    if crate::tools::agent_tool::load_agents_dir::has_required_mcp_servers(
-        agent,
-        &servers_with_tools,
-    ) {
-        return Ok(());
-    }
-
-    let missing = required
-        .iter()
-        .filter(|pattern| {
-            let needle = pattern.to_lowercase();
-            !servers_with_tools
-                .iter()
-                .any(|server| server.to_lowercase().contains(&needle))
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    Err(format!(
-        "Agent '{}' requires MCP servers matching: {}. MCP servers with tools: {}. Use /mcp to configure and authenticate the required MCP servers.",
-        agent.agent_type,
-        missing.join(", "),
-        if servers_with_tools.is_empty() {
-            "none".to_string()
-        } else {
-            servers_with_tools.join(", ")
-        }
-    ))
+    let settings = crate::utils::settings::get_initial_settings();
+    let routed_profile = |profile: Option<&str>| {
+        crate::utils::model::profile::resolve_request_profile(&settings, profile)
+            .ok()
+            .map(|profile| profile.profile)
+    };
+    routed_profile(resolved.profile.as_deref())
+        == routed_profile(context.main_loop_profile.as_deref())
 }
 
 /// Maps to CC `AgentTool.tsx:483` `const isForkPath = effectiveType ===
@@ -1433,7 +1296,13 @@ fn selected_agent_definition(
                     .to_string(),
             );
         }
-        return Ok((fork_subagent::fork_agent_definition(), true));
+
+        // @nyan: a fork replays the parent's conversation, which only the
+        // parent's own profile can read. Any other profile falls through to a
+        // fresh `general-purpose` agent below, silently.
+        if fork_matches_parent_profile(input_string(args, "model"), context) {
+            return Ok((fork_subagent::fork_agent_definition(), true));
+        }
     }
     let requested = requested_subagent_type.unwrap_or("general-purpose");
     // Maps to CC `AgentTool.tsx:504-505` `const allAgents =
@@ -1441,26 +1310,11 @@ fn selected_agent_definition(
     // definitions snapshot, not a fresh disk read. A mid-turn edit to an agent
     // file must not change which agents this turn can spawn.
     let active_agents = &context.agent_definitions.active_agents;
-    // Maps to CC `AgentTool.tsx:506-514`: `const { allowedAgentTypes } =
-    // toolUseContext.options.agentDefinitions` narrows the candidate set BEFORE
-    // `filterDeniedAgents`, so an `Agent(x,y)` restriction reaches execution and
-    // not only the prompt listing. `allAgents` below stays unrestricted, exactly
-    // as CC's `agentExistsButDenied` lookup does. The field is the parent's:
-    // `runAgent.ts:687` hands the whole `agentDefinitions` object to subagent
-    // contexts, so a subagent still sees the main thread's restriction while its
-    // own `Agent(x)` frontmatter shapes only its tool pool (`runAgent.ts:501`).
-    let candidate_agents = match context.agent_definitions.allowed_agent_types.as_ref() {
-        Some(allowed) => active_agents
-            .iter()
-            .filter(|agent| allowed.contains(&agent.agent_type))
-            .cloned()
-            .collect::<Vec<_>>(),
-        None => active_agents.clone(),
-    };
     // Maps to CC `AgentTool.tsx:507-515` selected-agent filtering via
-    // `permissions.ts#filterDeniedAgents` and `getDenyRuleForAgent`.
+    // `permissions.ts#filterDeniedAgents` and `getDenyRuleForAgent`. The
+    // `Agent(type)` allow-list narrowing CC applies before this is gone.
     let agents = crate::utils::permissions::permissions::filter_denied_agents(
-        &candidate_agents,
+        active_agents,
         &context.tool_permission_context,
         constants::AGENT_TOOL_NAME,
         |agent| agent.agent_type.as_str(),
@@ -1646,6 +1500,7 @@ fn launch_background_agent(
     parent_tool_use_id: Option<&str>,
     worktree_info: Option<crate::utils::worktree::AgentWorktreeInfo>,
     plan: AgentSpawnPlan,
+    concurrency_guard: SubagentConcurrencyGuard,
 ) -> crate::tool::ToolResult {
     let cleanup_metadata =
         WorktreeCleanupMetadata::new(&agent_id, &agent_definition.agent_type, description);
@@ -1707,6 +1562,7 @@ fn launch_background_agent(
     );
 
     handle.spawn(async move {
+        let _guard = concurrency_guard;
         crate::utils::agent_context::run_with_agent_context(agent_context, || async move {
             let result = run_agent::run_agent(run_agent::RunAgentInput {
                 agent_definition: &background_agent,
@@ -1792,62 +1648,23 @@ impl crate::tool::ToolCall for AgentTool {
         "Agent"
     }
 
-    /// Maps to: CC `AgentTool.tsx:339-371` `async prompt({ agents, tools,
-    /// getToolPermissionContext, allowedAgentTypes })` — the ONE genuinely
-    /// dynamic tool description in CC:
-    /// 1. `:340` resolve the permission context;
-    /// 2. `:343-352` collect MCP server names from the request tool pool
-    ///    (`name?.startsWith('mcp__')`, `split('__')[1]`, empty string is
-    ///    falsy and skipped, `includes` dedup preserves first-seen order);
-    /// 3. `:355-358` `filterAgentsByMcpRequirements(agents, servers)`;
-    /// 4. `:359-363` `filterDeniedAgents(filtered, context, AGENT_TOOL_NAME)`;
-    /// 5. `:365-369` coordinator = `feature('COORDINATOR_MODE') ?
-    ///    isEnvTruthy(CLAUDE_CODE_COORDINATOR_MODE) : false`
-    ///    (`is_coordinator_mode()` is that exact expression);
-    /// 6. `:370` `getPrompt(filteredAgents, isCoordinator, allowedAgentTypes)`
-    ///    (`prompt.ts:66-80`: allowedAgentTypes narrows the listing).
-    ///
-    /// These are the same filters the execution path and the
-    /// `agent_listing_delta` attachment already apply
-    /// (`utils/attachments.rs#get_agent_listing_delta_attachment`); reused,
-    /// not duplicated.
+    /// Maps to: CC `AgentTool.tsx:339-371` `async prompt({ agents,
+    /// getToolPermissionContext })`. Agent-specific MCP requirements and
+    /// `Agent(type)` restrictions are not supported in nyan.
     fn prompt(
         &self,
         _tool: &crate::types::tools::Tool,
         options: &crate::tool::ToolPromptOptions<'_>,
     ) -> String {
-        let mut mcp_servers_with_tools: Vec<String> = Vec::new();
-        for tool in options.tools {
-            if tool.name.starts_with("mcp__") {
-                let mut parts = tool.name.split("__");
-                let server_name = parts.nth(1).unwrap_or_default();
-                if !server_name.is_empty()
-                    && !mcp_servers_with_tools
-                        .iter()
-                        .any(|existing| existing == server_name)
-                {
-                    mcp_servers_with_tools.push(server_name.to_string());
-                }
-            }
-        }
-
-        let agents_with_mcp_requirements_met = load_agents_dir::filter_agents_by_mcp_requirements(
-            options.agents,
-            &mcp_servers_with_tools,
-        );
         let filtered_agents = crate::utils::permissions::permissions::filter_denied_agents(
-            &agents_with_mcp_requirements_met,
+            options.agents,
             options.tool_permission_context,
             constants::AGENT_TOOL_NAME,
             |agent| agent.agent_type.as_str(),
         );
 
         let is_coordinator = crate::coordinator::coordinator_mode::is_coordinator_mode();
-        prompt::get_prompt(
-            &filtered_agents,
-            is_coordinator,
-            options.allowed_agent_types,
-        )
+        prompt::get_prompt(&filtered_agents, is_coordinator)
     }
 
     /// Maps to: CC `AgentTool.tsx:373` `searchHint`.
@@ -2108,15 +1925,28 @@ impl crate::tool::ToolCall for AgentTool {
             let requested_isolation = input_string(args, "isolation");
             let explicit_cwd = input_string(args, "cwd");
 
+            // @nyan: nesting depth cap. Fresh agents at the cap are not given the
+            // Agent tool at all (`run_agent.rs#remove_agent_tool_at_max_depth`);
+            // a fork keeps the full tool list for cache identity, so its call
+            // is refused here instead.
+            let max_depth = constants::max_subagent_spawn_depth();
+            if context.subagent_depth >= max_depth {
+                return agent_tool_error(format!(
+                    "Maximum subagent nesting depth of {max_depth} reached. Complete your task directly using your tools."
+                ));
+            }
+
+            // @nyan: concurrent-subagent cap, held until the agent finishes.
+            // Resume does not go through here, so it can exceed the cap.
+            let concurrency_guard = match SubagentConcurrencyGuard::try_acquire() {
+                Ok(guard) => guard,
+                Err(error) => return agent_tool_error(error),
+            };
+
             let (agent_definition, is_fork_path) = match selected_agent_definition(args, context) {
                 Ok(selected) => selected,
                 Err(error) => return agent_tool_error(error),
             };
-            if let Err(error) =
-                validate_required_mcp_servers_for_agent(&agent_definition, context).await
-            {
-                return agent_tool_error(error);
-            }
             let effective_isolation =
                 effective_isolation_for_agent_tool(requested_isolation, &agent_definition);
             // Not-implemented notice, not a validation rule. Unreachable on an
@@ -2248,6 +2078,7 @@ impl crate::tool::ToolCall for AgentTool {
                     Some(&request.tool_use_id),
                     worktree_info,
                     spawn_plan,
+                    concurrency_guard,
                 );
             }
             // Everything below is CC's SYNCHRONOUS branch (`:1045-1150`). It is
@@ -2474,6 +2305,7 @@ impl crate::tool::ToolCall for AgentTool {
                         model_override,
                         &run_context,
                         worktree_info,
+                        concurrency_guard,
                     )
                 }
                 Err(error) => {
@@ -2519,7 +2351,7 @@ impl crate::tool::ToolCall for AgentTool {
                     .unwrap_or_default();
 
                 // Maps to CC `AgentTool.tsx#mapToolResultToToolResultBlockParam`
-                // one-shot built-in branch: Explore/Plan are report-only agents
+                // one-shot built-in branch: explore/plan are report-only agents
                 // and omit the SendMessage/usage trailer unless a worktree notice
                 // must be surfaced.
                 if output
@@ -2595,6 +2427,25 @@ impl crate::tool::ToolCall for AgentTool {
 mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+
+    #[test]
+    fn concurrency_guard_enforces_the_limit_and_releases_on_drop() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _limit = EnvVarGuard::set("NYAN_MAX_CONCURRENT_SUBAGENTS", "1");
+        reset_active_subagents_count_for_testing();
+
+        let guard = SubagentConcurrencyGuard::try_acquire().expect("first slot");
+        assert_eq!(active_subagents_count(), 1);
+        let error = SubagentConcurrencyGuard::try_acquire().unwrap_err();
+        assert!(error.contains("Concurrent subagent limit of 1 reached"));
+
+        drop(guard);
+        assert_eq!(active_subagents_count(), 0);
+        let guard = SubagentConcurrencyGuard::try_acquire().expect("released slot");
+        assert_eq!(active_subagents_count(), 1);
+        drop(guard);
+        assert_eq!(active_subagents_count(), 0);
+    }
 
     #[test]
     fn agent_tool_schema_matches_official_base_input_shape() {
@@ -2912,128 +2763,6 @@ mod tests {
         assert!(cwd_override_path_for_agent_tool(None, None).is_none());
     }
 
-    /// A connection attempt for the `requiredMcpServers` chain: the server and
-    /// the tools fetched from it (CC `onConnectionAttempt({ client, tools })`).
-    /// A `Pending` server carries no tools, mirroring a real connection that
-    /// has not finished — which is exactly why CC waits for it instead of
-    /// failing.
-    fn mcp_server_fixture(
-        name: &str,
-        status: crate::services::mcp::types::McpServerConnectionType,
-        tool_names: &[&str],
-    ) -> crate::services::mcp::client::McpConnectionDiscovery {
-        use crate::services::mcp::types::{
-            McpServerConnection, McpServerConnectionType, ScopedMcpServerConfig,
-        };
-        let config = ScopedMcpServerConfig::stdio_for_test(name);
-        let server = match status {
-            McpServerConnectionType::Connected => {
-                McpServerConnection::connected_for_test(name, config)
-            }
-            McpServerConnectionType::Failed => McpServerConnection::failed(name, config, None),
-            McpServerConnectionType::NeedsAuth => McpServerConnection::needs_auth(name, config),
-            McpServerConnectionType::Pending => McpServerConnection::pending(name, config),
-            McpServerConnectionType::Disabled => McpServerConnection::disabled(name, config),
-        };
-        let mut discovery = crate::services::mcp::client::McpConnectionDiscovery::from(server);
-        discovery.tools = tool_names
-            .iter()
-            .map(|tool_name| {
-                crate::services::mcp::client::mcp_tool_for_test(
-                    name,
-                    serde_json::json!({
-                        "name": tool_name,
-                        "inputSchema": {"type": "object"},
-                        "annotations": {"readOnlyHint": true}
-                    }),
-                )
-            })
-            .collect();
-        discovery
-    }
-
-    fn agent_requiring_mcp_servers(
-        patterns: &[&str],
-    ) -> crate::tools::agent_tool::load_agents_dir::AgentDefinition {
-        let mut agent = crate::tools::agent_tool::load_agents_dir::AgentDefinition::new(
-            "docs-reader",
-            "read docs",
-            crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource::ProjectSettings,
-        );
-        agent.required_mcp_servers = Some(
-            patterns
-                .iter()
-                .map(|p| (*p).to_string())
-                .collect::<Vec<_>>(),
-        );
-        agent
-    }
-
-    #[tokio::test]
-    async fn required_mcp_servers_check_uses_official_mcp_tool_server_names() {
-        use crate::services::mcp::types::McpServerConnectionType;
-        let mut agent = agent_requiring_mcp_servers(&["docs", "jira"]);
-        let mut context = crate::tool::ToolUseContext::default();
-        context.mcp_state = mcp_state_with_servers(vec![
-            mcp_server_fixture(
-                "company-docs",
-                McpServerConnectionType::Connected,
-                &["search"],
-            ),
-            mcp_server_fixture("jira-cloud", McpServerConnectionType::Connected, &["issue"]),
-        ]);
-
-        assert!(
-            validate_required_mcp_servers_for_agent(&agent, &context)
-                .await
-                .is_ok()
-        );
-        agent.required_mcp_servers = Some(vec!["docs".to_string(), "linear".to_string()]);
-        let error = validate_required_mcp_servers_for_agent(&agent, &context)
-            .await
-            .unwrap_err();
-        assert!(error.contains("Agent 'docs-reader' requires MCP servers matching: linear"));
-        assert!(error.contains("MCP servers with tools: company-docs, jira-cloud"));
-        assert!(error.contains("Use /mcp to configure and authenticate"));
-    }
-
-    /// CC's availability scan reads ONLY `currentAppState.mcp.tools`
-    /// (`AgentTool.tsx:604-615`). The port used to merge `context.tools` — the
-    /// query-start snapshot — into the server list, so a server the LIVE state
-    /// reports as failed still counted as available if the stale tool list
-    /// named it, defeating the failed-server early exit the poll exists for.
-    #[tokio::test]
-    async fn required_mcp_scan_ignores_the_stale_query_start_tool_snapshot() {
-        use crate::services::mcp::types::McpServerConnectionType;
-        let agent = agent_requiring_mcp_servers(&["docs"]);
-        let mut context = crate::tool::ToolUseContext::default();
-        // Live state: the required server has FAILED (no tools).
-        context.mcp_state = mcp_state_with_servers(vec![mcp_server_fixture(
-            "company-docs",
-            McpServerConnectionType::Failed,
-            &[],
-        )]);
-        // Stale query-start snapshot: still lists the server's tool.
-        context.tools = vec![crate::types::tools::Tool {
-            name: "mcp__company-docs__search".to_string(),
-            ..Default::default()
-        }];
-
-        let error = validate_required_mcp_servers_for_agent(&agent, &context)
-            .await
-            .expect_err("a failed required server is unavailable regardless of stale tools");
-        assert!(error.contains("requires MCP servers matching: docs"));
-    }
-
-    /// The production entry must carry CC's own numbers; the `_with_poll` seam
-    /// below exists so tests can shorten the wait, not so the wait can drift.
-    /// Maps to: CC `AgentTool.tsx:574-575`.
-    #[test]
-    fn required_mcp_poll_constants_match_official() {
-        assert_eq!(REQUIRED_MCP_MAX_WAIT_MS, 30_000);
-        assert_eq!(REQUIRED_MCP_POLL_INTERVAL_MS, 500);
-    }
-
     fn listed_agent(
         agent_type: &str,
         when_to_use: &str,
@@ -3049,13 +2778,11 @@ mod tests {
         tool_permission_context: &'a crate::tool::ToolPermissionContext,
         tools: &'a [crate::types::tools::Tool],
         agents: &'a [crate::tools::agent_tool::load_agents_dir::AgentDefinition],
-        allowed_agent_types: Option<&'a [String]>,
     ) -> crate::tool::ToolPromptOptions<'a> {
         crate::tool::ToolPromptOptions {
             tool_permission_context,
             tools,
             agents,
-            allowed_agent_types,
         }
     }
 
@@ -3079,7 +2806,7 @@ mod tests {
         let wire_tool = crate::types::tools::Tool::default();
 
         let open = crate::tool::ToolPermissionContext::default();
-        let listing = AgentTool.prompt(&wire_tool, &prompt_options(&open, &[], &agents, None));
+        let listing = AgentTool.prompt(&wire_tool, &prompt_options(&open, &[], &agents));
         assert!(listing.contains("- reviewer: review code"));
         assert!(listing.contains("- test-runner: run tests"));
 
@@ -3091,238 +2818,9 @@ mod tests {
                 Some("reviewer".to_string()),
             )],
         );
-        let filtered = AgentTool.prompt(&wire_tool, &prompt_options(&denied, &[], &agents, None));
+        let filtered = AgentTool.prompt(&wire_tool, &prompt_options(&denied, &[], &agents));
         assert!(!filtered.contains("- reviewer:"));
         assert!(filtered.contains("- test-runner: run tests"));
-    }
-
-    /// Maps to: CC `AgentTool.tsx:370` → `prompt.ts:72-74` — the
-    /// `allowedAgentTypes` option narrows the listed agent types. Old eager
-    /// shape's failure: no channel existed from the per-turn
-    /// `agentDefinitions.allowedAgentTypes` into the description
-    /// (`agent_tool_schema()` always passed `None`), so an `Agent(x,y)`
-    /// frontmatter restriction never reached the model-facing listing.
-    #[test]
-    fn prompt_allowed_agent_types_narrows_the_rendered_listing() {
-        use crate::tool::ToolCall as _;
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::utils::process_env::remove("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
-        let agents = vec![
-            listed_agent("reviewer", "review code"),
-            listed_agent("test-runner", "run tests"),
-        ];
-        let wire_tool = crate::types::tools::Tool::default();
-        let open = crate::tool::ToolPermissionContext::default();
-        let allowed = vec!["test-runner".to_string()];
-
-        let narrowed = AgentTool.prompt(
-            &wire_tool,
-            &prompt_options(&open, &[], &agents, Some(&allowed)),
-        );
-        assert!(!narrowed.contains("- reviewer:"));
-        assert!(narrowed.contains("- test-runner: run tests"));
-    }
-
-    /// Maps to: CC `AgentTool.tsx:343-358` — MCP server names are extracted
-    /// from the per-request tool pool (`mcp__<server>__<tool>` split) and
-    /// `filterAgentsByMcpRequirements` drops agents whose required servers
-    /// have no tools this turn. Old eager shape's failure: the description was
-    /// rendered with no tool pool at all, so an agent requiring an
-    /// unavailable MCP server stayed listed.
-    #[test]
-    fn prompt_filters_agents_with_unmet_mcp_requirements_from_the_listing() {
-        use crate::tool::ToolCall as _;
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::utils::process_env::remove("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
-        let mut github_agent = listed_agent("issue-filer", "file issues");
-        github_agent.required_mcp_servers = Some(vec!["github".to_string()]);
-        let agents = vec![github_agent, listed_agent("test-runner", "run tests")];
-        let wire_tool = crate::types::tools::Tool::default();
-        let open = crate::tool::ToolPermissionContext::default();
-
-        let without_server =
-            AgentTool.prompt(&wire_tool, &prompt_options(&open, &[], &agents, None));
-        assert!(!without_server.contains("- issue-filer:"));
-        assert!(without_server.contains("- test-runner: run tests"));
-
-        let github_tool = crate::types::tools::Tool {
-            name: "mcp__github__create_issue".to_string(),
-            is_mcp: true,
-            ..Default::default()
-        };
-        let with_server = AgentTool.prompt(
-            &wire_tool,
-            &prompt_options(&open, std::slice::from_ref(&github_tool), &agents, None),
-        );
-        assert!(with_server.contains("- issue-filer: file issues"));
-    }
-
-    /// The availability scan reads the flat `McpState.tools` (CC
-    /// `currentAppState.mcp.tools`), so fixtures must build it the way
-    /// production does — each connection attempt through the flush — not
-    /// hand-fill `clients` alone.
-    fn mcp_state_with_servers(
-        attempts: Vec<crate::services::mcp::client::McpConnectionDiscovery>,
-    ) -> crate::state::app_state_store::McpState {
-        let mut state = crate::state::app_state_store::McpState::default();
-        for attempt in attempts {
-            crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
-                &mut state, attempt,
-            );
-        }
-        state
-    }
-
-    fn store_with_mcp_clients(
-        clients: Vec<crate::services::mcp::client::McpConnectionDiscovery>,
-    ) -> crate::state::store::AppStore {
-        let mut initial = crate::state::app_state_store::AppState::default();
-        initial.mcp = std::sync::Arc::new(mcp_state_with_servers(clients));
-        crate::state::store::AppStore::new(initial, None)
-    }
-
-    /// Maps to: CC `AgentTool.tsx:561-601` — the poll, and specifically the
-    /// half that the poll is worthless without: `currentAppState` is reassigned
-    /// inside the loop (`:580`) and the availability scan at `:606` reads THAT,
-    /// not the `appState` the call started with.
-    ///
-    /// The store starts with `company-docs` pending and toolless, which is what
-    /// a legitimately-configured agent sees when it is spawned while MCP
-    /// servers are still connecting. Deleting the poll fails the call outright;
-    /// keeping the poll but scanning `context.mcp_state` afterwards fails it
-    /// just as hard, only slower — `context.mcp_state` is the query-start
-    /// snapshot and stays pending forever.
-    #[tokio::test]
-    async fn required_mcp_server_poll_rereads_state_and_admits_a_late_connection() {
-        use crate::services::mcp::types::McpServerConnectionType;
-        let agent = agent_requiring_mcp_servers(&["docs"]);
-        let store = store_with_mcp_clients(vec![mcp_server_fixture(
-            "company-docs",
-            McpServerConnectionType::Pending,
-            &[],
-        )]);
-        let context = crate::tool::ToolUseContext::default().with_app_store(store.clone());
-        // `with_app_store` copied the pending snapshot into `context.mcp_state`
-        // (tool.rs:1334) and nothing below ever refreshes it, so a check that
-        // reads the snapshot instead of the re-read state cannot pass.
-        assert_eq!(
-            context.mcp_state.clients[0].connection_type(),
-            McpServerConnectionType::Pending
-        );
-
-        let writer = crate::state::app_state_store::McpWriter::new(store);
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-            writer.apply_server_update(mcp_server_fixture(
-                "company-docs",
-                McpServerConnectionType::Connected,
-                &["search"],
-            ));
-        });
-
-        let started = std::time::Instant::now();
-        let result = validate_required_mcp_servers_for_agent_with_poll(
-            &agent,
-            &context,
-            std::time::Duration::from_secs(5),
-            std::time::Duration::from_millis(100),
-        )
-        .await;
-
-        assert_eq!(result, Ok(()));
-        // CC sleeps BEFORE the first re-read (`:579` precedes `:580`), so the
-        // success cannot arrive earlier than one interval.
-        assert!(
-            started.elapsed() >= std::time::Duration::from_millis(100),
-            "poll returned before its first sleep elapsed: {:?}",
-            started.elapsed()
-        );
-    }
-
-    /// Maps to: CC `AgentTool.tsx:582-591` — "if any required server has
-    /// already failed, no point waiting for other pending servers".
-    ///
-    /// Two required servers are needed to isolate this exit from the
-    /// `!stillPending` one at `:600`: with a single server, failing it also
-    /// clears the pending set and both breaks fire together. Here `jira-cloud`
-    /// stays pending for the whole run, so without the failed check the loop
-    /// would burn the entire deadline before reporting the same error.
-    #[tokio::test]
-    async fn required_mcp_server_poll_exits_early_on_a_failed_required_server() {
-        use crate::services::mcp::types::McpServerConnectionType;
-        let agent = agent_requiring_mcp_servers(&["docs", "jira"]);
-        let store = store_with_mcp_clients(vec![
-            mcp_server_fixture("company-docs", McpServerConnectionType::Pending, &[]),
-            mcp_server_fixture("jira-cloud", McpServerConnectionType::Pending, &[]),
-        ]);
-        let context = crate::tool::ToolUseContext::default().with_app_store(store.clone());
-
-        let writer = crate::state::app_state_store::McpWriter::new(store);
-        tokio::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_millis(30)).await;
-            writer.apply_server_update(mcp_server_fixture(
-                "company-docs",
-                McpServerConnectionType::Failed,
-                &[],
-            ));
-        });
-
-        let started = std::time::Instant::now();
-        let error = validate_required_mcp_servers_for_agent_with_poll(
-            &agent,
-            &context,
-            std::time::Duration::from_secs(4),
-            std::time::Duration::from_millis(50),
-        )
-        .await
-        .unwrap_err();
-        let elapsed = started.elapsed();
-
-        assert!(error.contains("Agent 'docs-reader' requires MCP servers matching: docs, jira"));
-        assert!(
-            elapsed < std::time::Duration::from_secs(2),
-            "failed required server did not short-circuit the poll: {elapsed:?}"
-        );
-    }
-
-    /// A context with neither an `AppStore` nor a `getAppState` override has no
-    /// live channel, so there is nothing for the poll to observe. It must
-    /// degrade to the pre-poll behaviour — report immediately against the
-    /// query-start snapshot — rather than burn CC's 30s deadline re-reading an
-    /// immutable value. CC has no counterpart branch because CC always has a
-    /// store; the seam is `live_mcp_state` returning `None`.
-    #[tokio::test]
-    async fn required_mcp_server_check_without_a_live_store_does_not_poll() {
-        use crate::services::mcp::types::McpServerConnectionType;
-        let agent = agent_requiring_mcp_servers(&["docs"]);
-        let mut context = crate::tool::ToolUseContext::default();
-        context.mcp_state = mcp_state_with_servers(vec![mcp_server_fixture(
-            "company-docs",
-            McpServerConnectionType::Pending,
-            &[],
-        )]);
-        assert!(!context.app_store.is_some());
-
-        let started = std::time::Instant::now();
-        let error = validate_required_mcp_servers_for_agent_with_poll(
-            &agent,
-            &context,
-            std::time::Duration::from_secs(4),
-            std::time::Duration::from_millis(50),
-        )
-        .await
-        .unwrap_err();
-
-        assert!(error.contains("MCP servers with tools: none"));
-        assert!(
-            started.elapsed() < std::time::Duration::from_millis(500),
-            "storeless context polled anyway: {:?}",
-            started.elapsed()
-        );
     }
 
     /// CC `AgentTool.tsx:504-505` takes the candidate set from
@@ -3337,7 +2835,6 @@ mod tests {
                 active_agents: agents.clone(),
                 all_agents: agents,
                 failed_files: Vec::new(),
-                allowed_agent_types: None,
             },
         ))
     }
@@ -3751,6 +3248,77 @@ mod tests {
         ));
     }
 
+    async fn call_with_basic_input(
+        context: &crate::tool::ToolUseContext,
+    ) -> crate::tool::ToolResult {
+        use crate::tool::ToolCall;
+        let request = crate::utils::permissions::permissions::mock_permission_request_with_input(
+            "perm-agent".to_string(),
+            "toolu_agent".to_string(),
+            "Agent".to_string(),
+            "nested".to_string(),
+            serde_json::json!({
+                "description": "nested",
+                "prompt": "inspect",
+                "subagent_type": "general-purpose"
+            }),
+            crate::types::permissions::PermissionMode::Default,
+        );
+        AgentTool
+            .call(&request.input, &request, context, None, None, None)
+            .await
+    }
+
+    fn assert_agent_tool_error(result: crate::tool::ToolResult, expected: &str) {
+        assert!(matches!(
+            result.data,
+            crate::tool::ToolOutput::Composed { content, status, .. }
+                if status == crate::types::message::ToolResultStatus::Error
+                    && content.contains(expected)
+        ));
+    }
+
+    #[tokio::test]
+    async fn agent_tool_refuses_a_spawn_at_the_nesting_depth_cap() {
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _depth = EnvVarGuard::set("NYAN_MAX_SUBAGENT_SPAWN_DEPTH", "3");
+        reset_active_subagents_count_for_testing();
+        let mut context = context_with_agent_definitions(vec![
+            crate::tools::agent_tool::built_in::general_purpose_agent::general_purpose_agent(),
+        ]);
+        context.subagent_depth = 3;
+
+        assert_agent_tool_error(
+            call_with_basic_input(&context).await,
+            "Maximum subagent nesting depth of 3 reached",
+        );
+        assert_eq!(
+            active_subagents_count(),
+            0,
+            "a refused spawn must not hold a concurrency slot"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_tool_refuses_a_spawn_when_all_concurrency_slots_are_taken() {
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _limit = EnvVarGuard::set("NYAN_MAX_CONCURRENT_SUBAGENTS", "1");
+        reset_active_subagents_count_for_testing();
+        let held = SubagentConcurrencyGuard::try_acquire().expect("the only slot");
+        let context = context_with_agent_definitions(vec![
+            crate::tools::agent_tool::built_in::general_purpose_agent::general_purpose_agent(),
+        ]);
+
+        assert_agent_tool_error(
+            call_with_basic_input(&context).await,
+            "Concurrent subagent limit of 1 reached",
+        );
+        assert_eq!(active_subagents_count(), 1, "the held slot is untouched");
+
+        drop(held);
+        assert_eq!(active_subagents_count(), 0);
+    }
+
     fn assistant_text_message(text: &str) -> crate::types::message::Message {
         crate::types::message::Message::Assistant(crate::types::message::AssistantMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -3974,7 +3542,7 @@ mod tests {
         let output = crate::tool::ToolOutput::Agent(AgentOutput {
             status: "completed".to_string(),
             agent_id: Some("agent-plan".to_string()),
-            agent_type: Some("Plan".to_string()),
+            agent_type: Some("plan".to_string()),
             description: Some("plan".to_string()),
             prompt: Some("plan".to_string()),
             output_file: None,
@@ -4015,7 +3583,7 @@ mod tests {
         let output = crate::tool::ToolOutput::Agent(AgentOutput {
             status: "completed".to_string(),
             agent_id: Some("agent-plan".to_string()),
-            agent_type: Some("Plan".to_string()),
+            agent_type: Some("plan".to_string()),
             description: Some("plan".to_string()),
             prompt: Some("plan".to_string()),
             output_file: None,
@@ -4212,6 +3780,98 @@ mod tests {
             .unwrap(),
             ("general-purpose".to_string(), false)
         );
+    }
+
+    fn install_main_and_fast_profiles() {
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({
+                "nyan": {
+                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                    "models": {
+                        "main": {"provider": "p", "model": "claude-sonnet-4-6",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                        "alias": {"provider": "p", "model": "claude-sonnet-4-6",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                        "fast": {"provider": "p", "model": "claude-haiku-4-5",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                    },
+                    "selection": {"main": "main", "light": "fast"}
+                }
+            }))
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn fork_matches_parent_profile_only_for_inherit_or_the_parents_own_profile() {
+        let _env_lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        install_main_and_fast_profiles();
+        let context =
+            crate::tool::ToolUseContext::default().with_main_loop_model("claude-sonnet-4-6");
+
+        assert!(fork_matches_parent_profile(None, &context));
+        assert!(fork_matches_parent_profile(Some(""), &context));
+        assert!(fork_matches_parent_profile(Some("inherit"), &context));
+        assert!(fork_matches_parent_profile(Some(":high"), &context));
+        // The session runs on `selection.main`; naming it, or a tier that
+        // falls back to it, is the same profile.
+        assert!(fork_matches_parent_profile(Some("main"), &context));
+        assert!(fork_matches_parent_profile(Some("@main:max"), &context));
+        // `light` is another profile, and a temporary model is not the parent's.
+        assert!(!fork_matches_parent_profile(Some("@light"), &context));
+        assert!(!fork_matches_parent_profile(Some("fast"), &context));
+        // The same model id under another profile is still another profile.
+        assert!(!fork_matches_parent_profile(Some("alias"), &context));
+        assert!(!fork_matches_parent_profile(Some("other/model"), &context));
+
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
+
+    #[test]
+    fn a_session_switched_to_another_profile_forks_only_onto_that_profile() {
+        let _env_lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        install_main_and_fast_profiles();
+        let mut context =
+            crate::tool::ToolUseContext::default().with_main_loop_model("claude-haiku-4-5");
+        context.main_loop_profile = Some("fast".to_string());
+
+        assert!(fork_matches_parent_profile(Some("inherit"), &context));
+        assert!(fork_matches_parent_profile(Some("fast"), &context));
+        assert!(fork_matches_parent_profile(Some("@light"), &context));
+        assert!(!fork_matches_parent_profile(Some("main"), &context));
+
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
+
+    #[test]
+    fn a_fork_onto_another_profile_falls_back_to_a_fresh_general_purpose_agent() {
+        let _env_lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _fork_gate = fork_subagent::fork_gate_environment();
+        install_main_and_fast_profiles();
+        let context = context_with_agent_definitions(vec![
+            crate::tools::agent_tool::built_in::general_purpose_agent::general_purpose_agent(),
+        ])
+        .with_main_loop_model("claude-sonnet-4-6");
+        let select = |model: &str| {
+            selected_agent_definition(
+                &serde_json::json!({"description": "d", "prompt": "p", "model": model}),
+                &context,
+            )
+            .map(|(agent, is_fork_path)| (agent.agent_type, is_fork_path))
+            .unwrap()
+        };
+
+        assert_eq!(select("inherit"), ("fork".to_string(), true));
+        assert_eq!(select("main"), ("fork".to_string(), true));
+        assert_eq!(select("fast"), ("general-purpose".to_string(), false));
+
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     /// CC `AgentTool.tsx:487-500` — a fork child keeps the Agent tool in its
@@ -4432,117 +4092,6 @@ mod tests {
         assert_eq!(
             error,
             "Agent type 'general-purpose' not found. Available agents: context-only"
-        );
-    }
-
-    /// CC `AgentTool.tsx:506-514` narrows the candidate set by
-    /// `allowedAgentTypes` BEFORE `filterDeniedAgents`, so an `Agent(x,y)` tool
-    /// declaration restricts what can actually run — not just what the prompt
-    /// lists. The value comes off the request's own `agentDefinitions` object
-    /// (`:506`), which `REPL.tsx:3206-3208` merged for the turn; this chain
-    /// never re-reads agent frontmatter.
-    #[test]
-    fn allowed_agent_types_restrict_execution_not_only_the_listing() {
-        use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-        let reviewer = AgentDefinition::new(
-            "reviewer",
-            "Reviews code",
-            AgentDefinitionSource::ProjectSettings,
-        );
-        let auditor = AgentDefinition::new(
-            "auditor",
-            "Audits code",
-            AgentDefinitionSource::ProjectSettings,
-        );
-        let mut context = context_with_agent_definitions(vec![reviewer.clone(), auditor.clone()]);
-        let mut definitions = context.agent_definitions.as_ref().clone();
-        definitions.allowed_agent_types = Some(vec!["reviewer".to_string()]);
-        context.agent_definitions = std::sync::Arc::new(definitions);
-
-        assert_eq!(
-            selected_agent_definition(
-                &serde_json::json!({"description": "d", "prompt": "p", "subagent_type": "reviewer"}),
-                &context,
-            )
-            .unwrap()
-            .0
-            .agent_type,
-            "reviewer"
-        );
-        // CC `:533-536` lists the RESTRICTED set in the error.
-        let error = selected_agent_definition(
-            &serde_json::json!({"description": "d", "prompt": "p", "subagent_type": "auditor"}),
-            &context,
-        )
-        .unwrap_err();
-        assert_eq!(
-            error,
-            "Agent type 'auditor' not found. Available agents: reviewer"
-        );
-
-        // Absent field → CC's ternary at `:509` takes `allAgents` as-is.
-        let unrestricted = context_with_agent_definitions(vec![reviewer, auditor]);
-        assert_eq!(unrestricted.agent_definitions.allowed_agent_types, None);
-        assert_eq!(
-            selected_agent_definition(
-                &serde_json::json!({"description": "d", "prompt": "p", "subagent_type": "auditor"}),
-                &unrestricted,
-            )
-            .unwrap()
-            .0
-            .agent_type,
-            "auditor"
-        );
-    }
-
-    /// CC `runAgent.ts:687` `agentDefinitions: toolUseContext.options
-    /// .agentDefinitions` — the PARENT's object reaches the subagent context
-    /// unchanged, so inside a subagent the restriction is still the main
-    /// thread's. The subagent's own `Agent(x)` frontmatter shapes only its tool
-    /// pool (`runAgent.ts:501` keeps `.resolvedTools`).
-    #[test]
-    fn subagent_context_inherits_the_main_thread_allowed_agent_types() {
-        use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-        let reviewer = AgentDefinition::new(
-            "reviewer",
-            "Reviews code",
-            AgentDefinitionSource::ProjectSettings,
-        );
-        let auditor = AgentDefinition::new(
-            "auditor",
-            "Audits code",
-            AgentDefinitionSource::ProjectSettings,
-        );
-        let mut parent = context_with_agent_definitions(vec![reviewer.clone(), auditor.clone()]);
-        let mut definitions = parent.agent_definitions.as_ref().clone();
-        definitions.allowed_agent_types = Some(vec!["reviewer".to_string()]);
-        parent.agent_definitions = std::sync::Arc::new(definitions);
-
-        // Mirrors `run_agent.rs` building `agent_options` from the parent's
-        // options and handing them to `create_subagent_context`.
-        let agent_options = parent.options();
-        let child = crate::utils::forked_agent::create_subagent_context(
-            &parent,
-            crate::utils::forked_agent::SubagentContextOverrides {
-                options: Some(agent_options),
-                agent_id: Some("agent-1".to_string()),
-                agent_type: Some("reviewer".to_string()),
-                ..Default::default()
-            },
-        );
-
-        assert_eq!(
-            child.agent_definitions.allowed_agent_types,
-            Some(vec!["reviewer".to_string()])
-        );
-        let error = selected_agent_definition(
-            &serde_json::json!({"description": "d", "prompt": "p", "subagent_type": "auditor"}),
-            &child,
-        )
-        .unwrap_err();
-        assert_eq!(
-            error,
-            "Agent type 'auditor' not found. Available agents: reviewer"
         );
     }
 
@@ -5388,7 +4937,6 @@ mod tests {
         let prompt = crate::tools::agent_tool::prompt::get_prompt(
             &[crate::tools::agent_tool::built_in::general_purpose_agent::general_purpose_agent()],
             false,
-            None,
         );
         assert!(!prompt.contains("## When to fork"));
         assert!(prompt.contains("<example_agent_descriptions>"));
@@ -5438,7 +4986,6 @@ mod tests {
         let prompt = crate::tools::agent_tool::prompt::get_prompt(
             &[crate::tools::agent_tool::built_in::general_purpose_agent::general_purpose_agent()],
             false,
-            None,
         );
         assert!(prompt.contains("## When to fork"));
 

@@ -340,7 +340,6 @@ mod tests {
             tool_permission_context,
             tools: &[],
             agents,
-            allowed_agent_types: None,
         }
     }
 

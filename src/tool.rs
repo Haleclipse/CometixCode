@@ -1304,6 +1304,8 @@ pub struct ToolUseContext {
     pub agent_type: Option<String>,
     pub require_can_use_tool: bool,
     pub preserve_tool_use_results: bool,
+    /// Subagent nesting depth (main session = 0, child subagent = parent depth + 1).
+    pub subagent_depth: usize,
     /// Last successfully validated StructuredOutput payload for headless/SDK
     /// result projection. Out-of-band: never enters Anthropic prompt content.
     pub structured_output: Option<serde_json::Value>,
@@ -1453,6 +1455,7 @@ impl ToolUseContext {
             agent_type: None,
             require_can_use_tool: false,
             preserve_tool_use_results: false,
+            subagent_depth: 0,
             structured_output: None,
             cwd_override: None,
             query_tracking: None,
@@ -2132,13 +2135,11 @@ pub type PermissionPatternMatcher = Box<dyn Fn(&str) -> bool + Send + Sync>;
 /// - `tools: Tools` → `tools` (the FULL request tool list, not the
 ///   defer-filtered one — `services/api/claude.ts:1231-1239`).
 /// - `agents: AgentDefinition[]` → `agents`.
-/// - `allowedAgentTypes?: string[]` → `allowed_agent_types`.
 #[derive(Clone, Copy)]
 pub struct ToolPromptOptions<'a> {
     pub tool_permission_context: &'a ToolPermissionContext,
     pub tools: &'a [crate::types::tools::Tool],
     pub agents: &'a [crate::tools::agent_tool::load_agents_dir::AgentDefinition],
-    pub allowed_agent_types: Option<&'a [String]>,
 }
 
 /// Behavioral half of the CC `Tool` interface.

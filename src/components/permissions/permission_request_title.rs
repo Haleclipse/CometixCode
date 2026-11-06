@@ -30,8 +30,15 @@ pub fn PermissionRequestTitle(
         View(flex_direction: FlexDirection::Column) {
             View(flex_direction: FlexDirection::Row, column_gap: 1u32) {
                 Text(content: props.title.clone(), color: color, weight: Weight::Bold, wrap: TextWrap::NoWrap)
-                #(props.worker_badge.as_ref().map(|badge| element! {
-                    Text(content: format!("· @{}", badge.name), dim: true, wrap: TextWrap::NoWrap)
+                #(props.worker_badge.as_ref().map(|badge| {
+                    let display_badge = if badge.name.starts_with('[') {
+                        format!("· {}", badge.name)
+                    } else {
+                        format!("· @{}", badge.name)
+                    };
+                    element! {
+                        Text(content: display_badge, dim: true, wrap: TextWrap::NoWrap)
+                    }
                 }))
             }
             #(props.subtitle.as_ref().map(|subtitle| element! {
@@ -63,5 +70,22 @@ mod tests {
         assert!(text.contains("Bash command"), "canvas=\n{text}");
         assert!(text.contains("/very/long/path"), "canvas=\n{text}");
         assert!(text.contains("· @agent-a"), "canvas=\n{text}");
+    }
+
+    #[test]
+    fn bracketed_subagent_badge_is_not_prefixed_with_at() {
+        let text = element! {
+            ContextProvider(value: Context::owned(*theme::current())) {
+                PermissionRequestTitle(
+                    title: "Bash command".to_string(),
+                    worker_badge: Some(WorkerBadgeProps { name: "[explore]".to_string(), color: None }),
+                )
+            }
+        }
+        .render(Some(80))
+        .to_string();
+
+        assert!(text.contains("· [explore]"), "canvas=\n{text}");
+        assert!(!text.contains("@["), "canvas=\n{text}");
     }
 }

@@ -7,7 +7,7 @@ use crate::keybindings::keybinding_context::KeybindingRuntime;
 use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::use_keybinding;
 use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-use crate::utils::model::agent::get_default_subagent_model;
+use crate::utils::model::agent::default_subagent_spec;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
@@ -293,7 +293,7 @@ pub fn AgentsList<'a>(
             .agent
             .model
             .clone()
-            .unwrap_or_else(|| get_default_subagent_model().to_string());
+            .unwrap_or_else(|| default_subagent_spec(&resolved.agent.agent_type).to_string());
         let memory = resolved
             .agent
             .memory
@@ -412,7 +412,7 @@ mod tests {
                 AgentsList(
                     source: Some(AgentsListSource::All),
                     agents: vec![
-                        resolved("Explore", AgentDefinitionSource::BuiltIn),
+                        resolved("explore", AgentDefinitionSource::BuiltIn),
                         resolved("zeta", AgentDefinitionSource::ProjectSettings),
                         shadowed,
                     ],
@@ -438,7 +438,7 @@ mod tests {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
                 AgentsList(
                     source: Some(AgentsListSource::Source(AgentDisplaySource::Project)),
-                    agents: vec![resolved("Explore", AgentDefinitionSource::BuiltIn)],
+                    agents: vec![resolved("explore", AgentDefinitionSource::BuiltIn)],
                     on_create_new: move |_| {},
                 )
             }

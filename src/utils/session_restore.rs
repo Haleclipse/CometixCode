@@ -945,7 +945,6 @@ mod tests {
             active_agents: vec![test_agent("resume-agent", Some("sonnet"))],
             all_agents: vec![test_agent("resume-agent", Some("sonnet"))],
             failed_files: Vec::new(),
-            allowed_agent_types: None,
         };
 
         let (resolved, resumed_type) =
@@ -1113,7 +1112,6 @@ mod tests {
                 active_agents: vec![resume_agent.clone()],
                 all_agents: vec![resume_agent],
                 failed_files: Vec::new(),
-                allowed_agent_types: None,
             },
         );
         let target = crate::commands::resume::ResumeTarget {

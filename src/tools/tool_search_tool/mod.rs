@@ -262,7 +262,6 @@ fn tool_search_description(tool_name: &str, tools: &[crate::types::tools::Tool])
         tool_permission_context: &search_permission_context,
         tools,
         agents: &[],
-        allowed_agent_types: None,
     })
 }
 

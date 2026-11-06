@@ -127,7 +127,6 @@ pub fn AgentEditor<'a>(
             color.as_deref(),
             model.as_deref(),
             agent.memory,
-            agent.effort.as_ref(),
             &crate::bootstrap::state::get_original_cwd(),
             &crate::utils::env_utils::get_claude_config_home_dir(),
         );

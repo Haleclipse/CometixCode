@@ -52,7 +52,7 @@ Complete the user's search request efficiently and report your findings clearly.
 /// Maps to CC `exploreAgent.ts#EXPLORE_AGENT`.
 pub fn explore_agent() -> AgentDefinition {
     let mut agent = AgentDefinition::new(
-        "Explore",
+        "explore",
         EXPLORE_WHEN_TO_USE,
         AgentDefinitionSource::BuiltIn,
     );
@@ -63,15 +63,6 @@ pub fn explore_agent() -> AgentDefinition {
         crate::tools::file_write_tool::prompt::FILE_WRITE_TOOL_NAME.to_string(),
         crate::tools::notebook_edit_tool::constants::NOTEBOOK_EDIT_TOOL_NAME.to_string(),
     ]);
-    agent.model = Some(
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Models,
-        ) {
-            "inherit".to_string()
-        } else {
-            "haiku".to_string()
-        },
-    );
     agent.omit_claude_md = true;
     agent.system_prompt = Some(get_explore_system_prompt());
     agent
@@ -84,7 +75,10 @@ mod tests {
     #[test]
     fn explore_agent_matches_official_readonly_metadata() {
         let agent = explore_agent();
-        assert_eq!(agent.agent_type, "Explore");
+        assert_eq!(agent.agent_type, "explore");
+        // No model of its own: `selection.subagents.explore` and the type
+        // default (`@light`) decide.
+        assert_eq!(agent.model, None);
         assert!(agent.omit_claude_md);
         assert!(
             agent

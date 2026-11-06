@@ -216,17 +216,7 @@ pub fn MCPSettings(props: &MCPSettingsProps, mut hooks: Hooks) -> impl Into<AnyE
         crate::state::app_state::use_app_state(&mut hooks, |state| (*state.mcp).clone());
     // Maps to: CC `MCPSettings.tsx` reading `useAppState(s => s.mcp)`.
     let servers = server_infos_from_mcp_state(&runtime_mcp);
-    // Maps to CC `MCPSettings.tsx` `extractAgentMcpServers(agentDefinitions.allAgents)`.
-    let agent_servers = std::env::current_dir()
-        .ok()
-        .map(|cwd| {
-            let definitions =
-                crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
-                    &cwd,
-                );
-            crate::services::mcp::utils::extract_agent_mcp_servers(&definitions.all_agents)
-        })
-        .unwrap_or_default();
+    let agent_servers = Vec::new();
 
     let no_servers = servers.is_empty() && agent_servers.is_empty();
     hooks.use_effect(

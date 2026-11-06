@@ -978,7 +978,6 @@ mod tests {
             tool_permission_context: &default_context,
             tools: &[],
             agents: &[],
-            allowed_agent_types: None,
         };
 
         // Default-env registry output plus the gate-hidden schema fns, so the

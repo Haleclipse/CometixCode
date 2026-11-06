@@ -58,8 +58,8 @@ mod tests {
         .render(Some(100))
         .to_string();
         assert!(location.contains("Choose location"));
-        assert!(location.contains("Project (.claude/agents/)"));
-        assert!(location.contains("Personal (~/.claude/agents/)"));
+        assert!(location.contains("Project (.nyan/agents/)"));
+        assert!(location.contains("Personal (~/.nyan/agents/)"));
         let kind = provider(
             WizardStep::new(|| element! { TypeStep }.into_any()),
             WizardData::new(),
@@ -157,7 +157,7 @@ mod tests {
         .to_string();
         assert!(text.contains("Create new agent"));
         assert!(text.contains("Choose location"));
-        assert!(text.contains("Project (.claude/agents/)"));
+        assert!(text.contains("Project (.nyan/agents/)"));
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod tests {
         ).render(Some(120)).to_string();
         assert!(text.contains("Confirm and save"));
         assert!(text.contains("Name: reviewer"));
-        assert!(text.contains("Location: .claude/agents/reviewer.md"));
+        assert!(text.contains("Location: .nyan/agents/reviewer.md"));
         assert!(text.contains("Tools: Read and Missing"));
         assert!(text.contains("Invalid tools: Missing"));
         assert!(text.contains("Press s or Enter to save"));

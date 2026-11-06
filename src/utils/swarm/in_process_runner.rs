@@ -27,7 +27,6 @@ use crate::tasks::in_process_teammate_task::{
 use crate::tool::{AbortController, ToolUseContext};
 use crate::tools::agent_tool::load_agents_dir::AgentDefinition;
 use crate::types::message::{Message, UserContent, UserMessage};
-use crate::types::permissions::PermissionMode;
 use crate::utils::teammate_context::TeammateContext;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -804,7 +803,6 @@ fn teammate_system_prompt(
 /// per-iteration permission-mode override from the teammate task state.
 fn teammate_iteration_agent_definition(
     identity: &TeammateIdentity,
-    task_id: &str,
     tool_use_context: &ToolUseContext,
     model: Option<&str>,
     custom_agent: Option<&AgentDefinition>,
@@ -822,11 +820,6 @@ fn teammate_iteration_agent_definition(
     ));
     definition.tools = Some(teammate_allowed_tools(custom_agent));
     definition.model = custom_agent.and_then(|agent| agent.model.clone());
-    definition.permission_mode = Some(
-        crate::tasks::in_process_teammate_task::get_in_process_teammate_task(task_id)
-            .map(|task| task.permission_mode)
-            .unwrap_or(PermissionMode::Default),
-    );
     definition
 }
 
@@ -1330,7 +1323,6 @@ pub async fn run_in_process_teammate(config: InProcessRunnerConfig) -> anyhow::R
         // A4: the sync prompt reader waits on plugin command promises; this
         // runner itself lives on the published process executor.
         let prompt_identity = identity.clone();
-        let prompt_task_id = task_id.clone();
         let prompt_context = tool_use_context.clone();
         let prompt_model = model.clone();
         let prompt_agent = agent_definition.clone();
@@ -1341,7 +1333,6 @@ pub async fn run_in_process_teammate(config: InProcessRunnerConfig) -> anyhow::R
                 || {
                     teammate_iteration_agent_definition(
                         &prompt_identity,
-                        &prompt_task_id,
                         &prompt_context,
                         prompt_model.as_deref(),
                         prompt_agent.as_ref(),
@@ -1481,6 +1472,7 @@ pub async fn run_in_process_teammate(config: InProcessRunnerConfig) -> anyhow::R
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::permissions::PermissionMode;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     fn identity(name: &str) -> TeammateIdentity {
@@ -1587,16 +1579,11 @@ mod tests {
 
     #[test]
     fn teammate_iteration_agent_definition_matches_official_default_and_custom_shape() {
-        let _task_lock = crate::tasks::in_process_teammate_task::TEST_IN_PROCESS_TEAMMATE_TASK_LOCK
-            .lock()
-            .unwrap();
-        crate::tasks::in_process_teammate_task::clear_in_process_teammate_tasks_for_test();
         let identity = identity("reviewer");
-        let task_id = register_task("reviewer");
         let context = ToolUseContext::default().with_main_loop_model("claude-sonnet-4-6");
 
         let default_definition =
-            teammate_iteration_agent_definition(&identity, &task_id, &context, None, None);
+            teammate_iteration_agent_definition(&identity, &context, None, None);
         assert_eq!(default_definition.agent_type, "reviewer");
         assert_eq!(
             default_definition.tools.as_deref(),
@@ -1609,11 +1596,6 @@ mod tests {
                 .unwrap_or_default()
                 .contains("# Agent Teammate Communication")
         );
-        assert_eq!(
-            default_definition.permission_mode,
-            Some(PermissionMode::Default)
-        );
-
         let mut custom = AgentDefinition::new(
             "critic",
             "review changes",
@@ -1622,13 +1604,8 @@ mod tests {
         custom.system_prompt = Some("Use the project's review rubric.".to_string());
         custom.tools = Some(vec!["Bash".to_string()]);
         custom.model = Some("haiku".to_string());
-        let custom_definition = teammate_iteration_agent_definition(
-            &identity,
-            &task_id,
-            &context,
-            Some("opus"),
-            Some(&custom),
-        );
+        let custom_definition =
+            teammate_iteration_agent_definition(&identity, &context, Some("opus"), Some(&custom));
         let tools = custom_definition.tools.unwrap();
         assert!(tools.contains(&"Bash".to_string()));
         assert!(tools.contains(

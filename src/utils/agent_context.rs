@@ -203,13 +203,13 @@ mod tests {
 
     #[tokio::test]
     async fn run_with_agent_context_isolates_task_local_store() {
-        let outer = subagent_spawn_context("agent-outer", "Explore", true, None);
+        let outer = subagent_spawn_context("agent-outer", "explore", true, None);
         run_with_agent_context(outer.clone(), || async {
             assert_eq!(
                 get_agent_context().as_ref().map(AgentContext::agent_id),
                 Some("agent-outer")
             );
-            assert_eq!(get_subagent_log_name().as_deref(), Some("Explore"));
+            assert_eq!(get_subagent_log_name().as_deref(), Some("explore"));
 
             let inner = subagent_spawn_context("agent-inner", "reviewer", false, None);
             run_with_agent_context(inner, || async {
@@ -234,7 +234,7 @@ mod tests {
     #[tokio::test]
     async fn consume_invoking_request_id_is_once_per_invocation() {
         let context =
-            subagent_spawn_context("agent-1", "Explore", true, Some("req_spawn".to_string()));
+            subagent_spawn_context("agent-1", "explore", true, Some("req_spawn".to_string()));
         run_with_agent_context(context, || async {
             let first = consume_invoking_request_id();
             assert_eq!(

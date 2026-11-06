@@ -4519,13 +4519,8 @@ fn build_call_model_request(
     // (see `Options::tool_permission_context`).
     options.tool_permission_context = Some(permission_context.clone());
     // Maps to CC `query.ts:682-684`:
-    //   `agents: toolUseContext.options.agentDefinitions.activeAgents`
-    //   `allowedAgentTypes: toolUseContext.options.agentDefinitions.allowedAgentTypes`.
+    //   `agents: toolUseContext.options.agentDefinitions.activeAgents`.
     options.agents = tool_use_context.agent_definitions.active_agents.clone();
-    options.allowed_agent_types = tool_use_context
-        .agent_definitions
-        .allowed_agent_types
-        .clone();
     // Maps to CC `query.ts:689` `mcpTools: appState.mcp.tools` — the RAW,
     // un-deny-filtered `appState.mcp.tools`. CC declares the option
     // (`services/api/claude.ts:694`) and never reads it: every request-side tool

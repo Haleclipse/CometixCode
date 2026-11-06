@@ -13,14 +13,13 @@
 use super::agent_tool_utils::{
     CompletedAgentRun, finalize_agent_tool_result_from_messages, resolve_agent_tools,
 };
-use super::load_agents_dir::{AgentDefinition, AgentMcpServerSpec};
+use super::load_agents_dir::AgentDefinition;
 use crate::constants::query_source::QuerySource;
 use crate::services::api::claude::SystemPrompt;
 use crate::tool::{ToolCallProgressFn, ToolUseContext};
 use crate::types::message::{AssistantContent, Message, TokenUsage, UserContent};
 use crate::types::permissions::{
-    PermissionBehavior, PermissionMode, PermissionPromptChoice, PermissionPromptResponse,
-    PermissionRequest,
+    PermissionPromptChoice, PermissionPromptResponse, PermissionRequest,
 };
 use crate::types::tools::Tool;
 use crate::utils::thinking::ThinkingConfig;
@@ -284,180 +283,6 @@ fn initial_agent_content_replacement_state(
         .or_else(|| input.context.content_replacement_state.clone())
 }
 
-#[derive(Debug, Default)]
-struct AgentMcpInitialization {
-    mcp_state: crate::state::app_state_store::McpState,
-    tools: Vec<Tool>,
-    cleanup: AgentMcpCleanup,
-}
-
-/// Maps to: CC `runAgent.ts:194-210`, the `cleanup` `initializeAgentMcpServers`
-/// returns: closes the inline servers' connections — CC's
-/// `newlyCreatedClients` — and never a referenced server's, which is the
-/// parent's memoized connection.
-///
-/// CC calls it from `runAgent`'s `finally` (`:816-818`), however the agent
-/// ends. Each return path here runs it; dropping the agent's future runs it
-/// too. CC's `finally` cannot run while a connect is pending, so an inline
-/// server still being connected then is closed once it is made.
-#[derive(Debug, Default)]
-struct AgentMcpCleanup {
-    newly_created_clients: Vec<crate::services::mcp::types::McpServerConnection>,
-    connecting: Option<(String, crate::services::mcp::types::ScopedMcpServerConfig)>,
-}
-
-impl AgentMcpCleanup {
-    fn run(&mut self) {
-        if let Some((name, config)) = self.connecting.take() {
-            crate::services::mcp::client::cleanup_memoized_connection(&name, &config);
-        }
-        for client in self.newly_created_clients.drain(..) {
-            if let Some(connected) = client.as_connected() {
-                crate::services::mcp::client::cleanup_connection(&connected.client);
-            }
-        }
-    }
-}
-
-impl Drop for AgentMcpCleanup {
-    fn drop(&mut self) {
-        self.run();
-    }
-}
-
-/// Maps to: CC `runAgent.ts:95-217` `initializeAgentMcpServers`.
-async fn initialize_agent_mcp_servers(
-    agent_definition: &AgentDefinition,
-    parent_state: &crate::state::app_state_store::McpState,
-) -> AgentMcpInitialization {
-    let Some(specs) = agent_definition.mcp_servers.as_ref() else {
-        return AgentMcpInitialization {
-            mcp_state: parent_state.clone(),
-            ..AgentMcpInitialization::default()
-        };
-    };
-    if specs.is_empty() {
-        return AgentMcpInitialization {
-            mcp_state: parent_state.clone(),
-            ..AgentMcpInitialization::default()
-        };
-    }
-
-    // Maps to: CC `isRestrictedToPluginOnly('mcp') && !isSourceAdminTrusted(...)`.
-    if crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("mcp")
-        && !crate::utils::settings::plugin_only_policy::is_source_admin_trusted(
-            agent_definition.source.official_name(),
-        )
-    {
-        tracing::debug!(
-            agent_type = %agent_definition.agent_type,
-            source = %agent_definition.source.official_name(),
-            "skipping user-controlled agent MCP servers due to strict plugin-only MCP policy"
-        );
-        return AgentMcpInitialization {
-            mcp_state: parent_state.clone(),
-            ..AgentMcpInitialization::default()
-        };
-    }
-
-    let mut state = parent_state.clone();
-    let mut tools = Vec::new();
-    let mut cleanup = AgentMcpCleanup::default();
-
-    for spec in specs {
-        let (name, config, is_newly_created) = match spec {
-            AgentMcpServerSpec::Reference(name) => {
-                let Some(config) =
-                    crate::services::mcp::config::get_mcp_config_by_name_readonly(name)
-                else {
-                    tracing::warn!(
-                        agent_type = %agent_definition.agent_type,
-                        server = %name,
-                        "agent MCP server reference was not found"
-                    );
-                    continue;
-                };
-                (name.clone(), config, false)
-            }
-            AgentMcpServerSpec::Inline { name, config } => (name.clone(), config.clone(), true),
-        };
-
-        // CC's memoized `connectToServer`: a referenced server the parent
-        // already holds comes back as that same connection.
-        if is_newly_created {
-            cleanup.connecting = Some((name.clone(), config.clone()));
-        }
-        let client = crate::services::mcp::client::connect_to_server(&name, &config).await;
-        if is_newly_created {
-            cleanup.connecting = None;
-            cleanup.newly_created_clients.push(client.clone());
-        }
-
-        if client.connection_type()
-            != crate::services::mcp::types::McpServerConnectionType::Connected
-        {
-            tracing::warn!(
-                agent_type = %agent_definition.agent_type,
-                server = %name,
-                status = ?client.connection_type(),
-                "failed to connect to agent MCP server"
-            );
-            // CC appends the agent's clients to the parent's
-            // (`runAgent.ts:213-214`): an entry the parent already holds stays
-            // as it is, with any tools it carries.
-            if !state.clients.iter().any(|server| server.name() == name) {
-                state.clients.push(client);
-            }
-            continue;
-        }
-        // CC `fetchToolsForClient(client)`: memoized by name and refreshed on
-        // `list_changed`, so a shared connection's tools are the parent's
-        // current ones.
-        let server_tools = crate::services::mcp::client::fetch_tools_for_client(&client).await;
-        tracing::debug!(
-            agent_type = %agent_definition.agent_type,
-            server = %name,
-            tools = server_tools.len(),
-            "connected to agent MCP server"
-        );
-        tools.extend(server_tools.iter().cloned());
-        // The agent fetches the tools only; the prompts and resources state
-        // already holds for the server stay.
-        crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
-            &mut state,
-            crate::services::mcp::use_manage_mcp_connections::McpPendingUpdate {
-                server: client,
-                tools: Some(server_tools),
-                commands: None,
-                resources: None,
-            },
-        );
-    }
-
-    AgentMcpInitialization {
-        mcp_state: state,
-        tools,
-        cleanup,
-    }
-}
-
-fn merge_agent_mcp_tools(mut resolved_tools: Vec<Tool>, agent_mcp_tools: Vec<Tool>) -> Vec<Tool> {
-    // Maps to: CC `uniqBy([...resolvedTools, ...agentMcpTools], 'name')`.
-    if agent_mcp_tools.is_empty() {
-        return resolved_tools;
-    }
-    let mut seen = resolved_tools
-        .iter()
-        .map(|tool| tool.name.clone())
-        .collect::<HashSet<_>>();
-    for tool in agent_mcp_tools {
-        if seen.insert(tool.name.clone()) {
-            resolved_tools.push(tool);
-        }
-    }
-    resolved_tools
-}
-
 /// Maps to: CC `runAgent.ts:524-528` — "Override takes precedence; async
 /// agents get a new unlinked controller (runs independently); sync agents
 /// share parent's controller".
@@ -509,50 +334,22 @@ fn release_agent_registrations(agent_id: &str, root_context: &ToolUseContext) {
     }
 }
 
-/// Maps to: CC `runAgent.ts:436-445` `shouldAvoidPrompts` — the exact ternary
-/// chain: explicit `canShowPermissionPrompts` wins when provided
-/// (`!canShowPermissionPrompts`); otherwise `bubble` mode always shows prompts
-/// (they surface on the parent terminal); otherwise the `isAsync` default
-/// (sync agents show prompts, async agents don't).
-fn agent_should_avoid_permission_prompts(
-    can_show_permission_prompts: Option<bool>,
-    agent_permission_mode: Option<PermissionMode>,
-    is_async: bool,
-) -> bool {
-    if let Some(can_show) = can_show_permission_prompts {
-        return !can_show;
-    }
-    if agent_permission_mode == Some(PermissionMode::Bubble) {
-        return false;
-    }
-    is_async
+/// Differs from CC `runAgent.ts:436-445` `shouldAvoidPrompts`: nyan has no
+/// `isAsync` default, so a background agent's permission request is shown on
+/// the main session like a foreground one. Only an explicit
+/// `canShowPermissionPrompts: false` still avoids prompts.
+fn agent_should_avoid_permission_prompts(can_show_permission_prompts: Option<bool>) -> bool {
+    can_show_permission_prompts == Some(false)
 }
 
-/// Maps to: CC `runAgent.ts` `agentGetAppState` permission-mode override.
+/// Subagents run under the main session's current permission mode and rules;
+/// `allowed_tools` (SDK `allowedTools`) only replaces the session-scope allow
+/// rules.
 fn agent_permission_context_for_run(
     parent: &crate::tool::ToolPermissionContext,
-    agent_permission_mode: Option<PermissionMode>,
     allowed_tools: Option<&[String]>,
 ) -> crate::tool::ToolPermissionContext {
     let mut context = parent.clone();
-    // Maps to CC `runAgent.ts:421-434`: the RUNTIME context only overrides
-    // when the agent DEFINES a permissionMode, and never against a parent in
-    // `bypassPermissions`, `acceptEdits`, or (under TRANSCRIPT_CLASSIFIER)
-    // `auto`. An agent without one keeps the parent mode — the
-    // `?? 'acceptEdits'` fallback lives solely in AgentTool.tsx:838-841's
-    // workerPermissionContext, which feeds assembleToolPool (the tool POOL),
-    // never the runtime context.
-    let parent_mode_wins = matches!(
-        parent.mode,
-        PermissionMode::BypassPermissions | PermissionMode::AcceptEdits
-    ) || (parent.mode == PermissionMode::Auto
-        && crate::utils::permissions::permission_setup::is_transcript_classifier_feature_enabled());
-    if !parent_mode_wins && let Some(mode) = agent_permission_mode {
-        context.mode = mode;
-    }
-    // Maps to CC `tools/AgentTool/runAgent.ts:465-478`: this is replacement, not a merge.
-    // Parent approvals from user/project/local/flag/policy/command/session must
-    // not leak when an explicit child allowlist is supplied.
     if let Some(allowed_tools) = allowed_tools {
         let cli_rules = parent
             .always_allow_rules
@@ -692,7 +489,7 @@ fn agent_read_file_state(
 /// The model, effort and profile this agent run resolves to, along the unified
 /// chain: call parameter, agent definition, `selection.subagents.<type>`,
 /// `selection.subagent`, then the type default.
-fn resolve_agent_selection(
+pub(super) fn resolve_agent_selection(
     agent_definition: &AgentDefinition,
     model_override: Option<&str>,
     context: &ToolUseContext,
@@ -705,6 +502,16 @@ fn resolve_agent_selection(
         &context.parent_selection(),
         settings.nyan.as_deref(),
     )
+}
+
+/// @nyan: a fresh agent whose own depth (`parent_depth + 1`) reaches the cap
+/// is the last level that may run, so it is not given the Agent tool at all;
+/// `AgentTool::call` refuses any spawn that still gets through (a fork keeps
+/// the full tool list for cache identity).
+fn remove_agent_tool_at_max_depth(tools: &mut Vec<Tool>, parent_depth: usize) {
+    if parent_depth + 1 >= crate::tools::agent_tool::constants::max_subagent_spawn_depth() {
+        tools.retain(|tool| tool.name != crate::tools::agent_tool::constants::AGENT_TOOL_NAME);
+    }
 }
 
 pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutcome> {
@@ -760,7 +567,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
 
     // Maps to: CC `runAgent.ts:380-410`: explicit maps (including empty maps)
     // win over the memoized parent context. Only the implicit user context is
-    // eligible for omitClaudeMd; Explore/Plan always discard stale gitStatus.
+    // eligible for omitClaudeMd; explore/plan always discard stale gitStatus.
     let mut resolved_user_context = input
         .r#override
         .user_context
@@ -791,25 +598,21 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     }
     if matches!(
         input.agent_definition.agent_type.as_str(),
-        "Explore" | "Plan"
+        "explore" | "plan"
     ) {
         resolved_system_context.remove("gitStatus");
     }
 
     let mut permission_context = agent_permission_context_for_run(
         &input.context.tool_permission_context,
-        input.agent_definition.permission_mode,
         input.allowed_tools,
     );
 
     // Maps to CC `runAgent.ts:275` — `isAsync` is the caller's explicit flag,
     // never derived from background bookkeeping fields.
     let is_async = input.is_async;
-    let should_avoid_permission_prompts = agent_should_avoid_permission_prompts(
-        input.can_show_permission_prompts,
-        input.agent_definition.permission_mode,
-        is_async,
-    );
+    let should_avoid_permission_prompts =
+        agent_should_avoid_permission_prompts(input.can_show_permission_prompts);
     // Maps to: CC `runAgent.ts:446-451` — `agentGetAppState` stamps
     // `shouldAvoidPermissionPrompts: true` onto the permission context the
     // agent's tools are evaluated against, which is what makes
@@ -827,18 +630,12 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     }
     // Maps to CC `runAgent.ts:292-296` `availableTools` — the caller-computed
     // pool when provided. `None` runs the same workerTools computation CC's
-    // AgentTool.tsx performs at 838-845 (`assembleToolPool` under a pool
-    // context whose mode is `permissionMode ?? 'acceptEdits'`, separate from
-    // the runtime context which keeps the parent mode when the agent defines
-    // none).
+    // AgentTool.tsx performs at 838-845 (`assembleToolPool`), under the main
+    // session's current permission context: agents have no `permissionMode`.
     let available_tools = match input.available_tools.clone() {
         Some(tools) => tools,
         None => {
-            let mut worker_pool_context = input.context.tool_permission_context.clone();
-            worker_pool_context.mode = input
-                .agent_definition
-                .permission_mode
-                .unwrap_or(PermissionMode::AcceptEdits);
+            let worker_pool_context = input.context.tool_permission_context.clone();
             // Maps to: CC AgentTool.tsx:838-845 synchronous assembleToolPool.
             // A4: our eager Agent schema additionally reads plugin promises;
             // source tool metadata is lazy. Keep that existing native catalog
@@ -862,8 +659,17 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     let resolved_tools = if input.use_exact_tools {
         available_tools.clone()
     } else {
-        resolve_agent_tools(input.agent_definition, &available_tools, is_async, false)
-            .resolved_tools
+        let mut tools = resolve_agent_tools(
+            input.agent_definition,
+            &available_tools,
+            is_async,
+            false,
+            Some(input.context.tool_permission_context.mode),
+        )
+        .resolved_tools;
+        // At max depth, take away the Agent tool for fresh subagents.
+        remove_agent_tool_at_max_depth(&mut tools, input.context.subagent_depth);
+        tools
     };
     // Maps to: CC `runAgent.ts:504-506` appState permission-directory keys.
     let app_state = input.context.get_app_state();
@@ -980,10 +786,6 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
         &run_cwd,
     );
 
-    let mut agent_mcp =
-        initialize_agent_mcp_servers(input.agent_definition, &input.context.mcp_state).await;
-    let resolved_tools = merge_agent_mcp_tools(resolved_tools, agent_mcp.tools.clone());
-
     let mut agent_content_replacement_state = initial_agent_content_replacement_state(&input);
 
     // Maps to: CC `runAgent.ts:694,755`: one required parameter feeds both
@@ -1011,7 +813,6 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     } else {
         Some(ThinkingConfig::Disabled)
     };
-    agent_options.mcp_state = agent_mcp.mcp_state.clone();
     // Maps to CC `runAgent.ts:668-672` `isNonInteractiveSession: useExactTools
     // ? toolUseContext.options.isNonInteractiveSession : isAsync ? true :
     // (toolUseContext.options.isNonInteractiveSession ?? false)` — fork
@@ -1075,6 +876,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     agent_tool_use_context.fast_mode = Some(false);
     agent_tool_use_context.channel_permission_callbacks =
         input.context.channel_permission_callbacks.clone();
+    agent_tool_use_context.subagent_depth = input.context.subagent_depth + 1;
     // Maps to CC `runAgent.ts:716-719`: preserve tool use results for
     // subagents with viewable transcripts (in-process teammates).
     if input.preserve_tool_use_results {
@@ -1129,7 +931,6 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
                 // CC's write queue drains on its own 100 ms timer regardless of
                 // how `runAgent` returns, so a parked record still lands.
                 sidechain.flush();
-                agent_mcp.cleanup.run();
                 release_agent_registrations(&agent_id, input.context);
                 return Ok(RunAgentOutcome::Backgrounded(BackgroundedAgentRun {
                     agent_id,
@@ -1149,8 +950,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
                         handle.abort_controller.abort();
                         let _ = handle.commands.send(crate::query::QueryCommand::Abort).await;
                         sidechain.flush();
-                        agent_mcp.cleanup.run();
-                        release_agent_registrations(&agent_id, input.context);
+                                release_agent_registrations(&agent_id, input.context);
                         return Ok(RunAgentOutcome::Backgrounded(BackgroundedAgentRun {
                             agent_id,
                             agent_type: input.agent_definition.agent_type.clone(),
@@ -1175,7 +975,6 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
                 .send(crate::query::QueryCommand::Abort)
                 .await;
             sidechain.flush();
-            agent_mcp.cleanup.run();
             release_agent_registrations(&agent_id, input.context);
             crate::tasks::local_shell_task::kill_shell_tasks::kill_shell_tasks_for_agent(&agent_id);
             return Err(anyhow::Error::new(AgentExecutionAborted {
@@ -1319,8 +1118,6 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     // user commands (`services/hooks/teammate.rs`), and CC's queue would have
     // drained it on its own timer.
     sidechain.flush();
-
-    agent_mcp.cleanup.run();
 
     execute_subagent_stop_hooks_from_settings(
         &agent_id,
@@ -1689,12 +1486,12 @@ fn available_tools_for_agent(
 /// event already match that: `repl.rs:4051` only queues a dialog,
 /// `query_engine.rs:925` only asks the SDK resolver.
 ///
-/// The prompt is skipped in exactly the two cases CC skips it:
-/// `shouldAvoidPermissionPrompts` — set for async agents by
-/// `runAgent.ts:446-451` and consumed by `permissions.ts:932-952`, which denies
-/// with `decisionReason: { type: 'asyncAgent' }` rather than waiting for a
-/// terminal nobody is watching — and a context with no dialog leg at all
+/// The prompt is skipped in two cases: an explicit
+/// `canShowPermissionPrompts: false` (`shouldAvoidPermissionPrompts`, consumed
+/// by `permissions.ts:932-952`) and a context with no dialog leg at all
 /// (print/SDK, tests), where CC has no `setToolUseConfirmQueue` to close over.
+/// Unlike CC, a background agent is not skipped: its request is shown on the
+/// main session.
 ///
 /// A skipped prompt is a Deny carrying [`PermissionRequest::message`] — the
 /// SYSTEM decision `toolExecution.ts:1023` gives the model — not a hang.
@@ -1716,14 +1513,11 @@ async fn resolve_agent_permission_request(
 /// (CC `hooks/useCanUseTool.tsx:189-327`): raise the parent terminal's dialog
 /// and leave the subagent's call pending until the user answers.
 ///
-/// `None` means CC would not have shown a dialog either:
+/// `None` means no dialog is shown:
 ///
-/// - `should_avoid_permission_prompts` — `runAgent.ts:446-451` sets it for
-///   every async agent (and `forkedAgent.ts:362-374` for isolated forks), and
-///   `permissions.ts:932-952` converts the ask into
-///   `{ behavior: 'deny', decisionReason: { type: 'asyncAgent' } }` *before*
-///   `useCanUseTool` ever reaches its switch. Nobody is watching the terminal
-///   for a background agent, and CC does not park on one.
+/// - `should_avoid_permission_prompts` — only an explicit
+///   `canShowPermissionPrompts: false` sets it for an agent; the main session
+///   is watched, so background agents are not auto-denied.
 /// - no sink installed — the context has no dialog leg (print/SDK headless,
 ///   direct test callers). CC's equivalent is `getCanUseToolFn`'s no-prompt-tool
 ///   arm (`cli/print.ts:4276-4293`), a bare `hasPermissionsToUseTool` whose
@@ -1781,15 +1575,24 @@ async fn ask_parent_for_agent_permission(
     // Maps to: CC `inProcessRunner.ts:229-232` `workerBadge: identity.color ?
     // { name: identity.agentName, color: identity.color } : undefined` — the
     // standard leader-dialog leg carries the asking teammate's badge.
-    let worker_badge = teammate.as_ref().and_then(|identity| {
-        identity
-            .color
-            .clone()
-            .map(|color| crate::types::permissions::PermissionWorkerBadge {
+    // @nyan: any other subagent's ask reaches the main session tagged
+    // `[agent_type]` (no colour), so the user can tell who is asking.
+    let worker_badge = teammate
+        .as_ref()
+        .map(
+            |identity| crate::types::permissions::PermissionWorkerBadge {
                 name: identity.agent_name.clone(),
-                color: Some(color),
+                color: identity.color.clone(),
+            },
+        )
+        .or_else(|| {
+            context.agent_type.as_ref().map(|agent_type| {
+                crate::types::permissions::PermissionWorkerBadge {
+                    name: format!("[{agent_type}]"),
+                    color: None,
+                }
             })
-    });
+        });
     context
         .interactive_permission_sink
         .ask(
@@ -2021,6 +1824,7 @@ mod tests {
     use crate::types::message::{
         AssistantContent, AssistantMessage, StopReason, ToolResult, ToolUseBlock, UserMessage,
     };
+    use crate::types::permissions::{PermissionBehavior, PermissionMode};
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::io::Write;
 
@@ -2031,6 +1835,74 @@ mod tests {
             strict: Some(true),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn fresh_subagent_loses_agent_tool_at_the_depth_limit() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _depth = EnvVarGuard::set("NYAN_MAX_SUBAGENT_SPAWN_DEPTH", "3");
+
+        let mut at_limit = vec![tool("Agent"), tool("Read")];
+        remove_agent_tool_at_max_depth(&mut at_limit, 2);
+        assert_eq!(
+            at_limit
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Read"]
+        );
+
+        let mut below_limit = vec![tool("Agent"), tool("Read")];
+        remove_agent_tool_at_max_depth(&mut below_limit, 1);
+        assert_eq!(
+            below_limit
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Agent", "Read"]
+        );
+    }
+
+    #[test]
+    fn the_depth_cap_stops_a_chain_of_nested_spawns_at_the_configured_level() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _depth = EnvVarGuard::set("NYAN_MAX_SUBAGENT_SPAWN_DEPTH", "3");
+        let pool = || vec![tool("Agent"), tool("Read")];
+        let has_agent = |tools: &[Tool]| tools.iter().any(|tool| tool.name == "Agent");
+
+        // Main session is depth 0; every spawn runs one level deeper than its
+        // caller, and the level that reaches the cap loses the Agent tool.
+        let mut context = ToolUseContext::default();
+        let mut levels = Vec::new();
+        for _ in 0..4 {
+            let mut tools = pool();
+            remove_agent_tool_at_max_depth(&mut tools, context.subagent_depth);
+            levels.push((context.subagent_depth + 1, has_agent(&tools)));
+            context.subagent_depth += 1;
+        }
+
+        assert_eq!(
+            levels,
+            vec![(1, true), (2, true), (3, false), (4, false)],
+            "levels 1 and 2 may still spawn; level 3 is the cap"
+        );
+    }
+
+    #[test]
+    fn a_lower_depth_cap_from_the_environment_applies() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _depth = EnvVarGuard::set("NYAN_MAX_SUBAGENT_SPAWN_DEPTH", "1");
+        let mut tools = vec![tool("Agent"), tool("Read")];
+
+        remove_agent_tool_at_max_depth(&mut tools, 0);
+
+        assert_eq!(
+            tools
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Read"]
+        );
     }
 
     /// CC `runAgent.ts:524-528`. Every CC async caller supplies the override
@@ -2090,67 +1962,26 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&before.todos, &store.get().todos));
     }
 
-    /// CC `runAgent.ts:436-445`: explicit `canShowPermissionPrompts` wins;
-    /// otherwise an async agent auto-denies prompts it cannot show, except in
-    /// `bubble` mode where the prompt reaches the parent terminal.
     #[test]
-    fn bubble_agents_keep_permission_prompts_alive_while_async_agents_avoid_them() {
-        assert!(agent_should_avoid_permission_prompts(None, None, true));
-        assert!(!agent_should_avoid_permission_prompts(None, None, false));
-        assert!(agent_should_avoid_permission_prompts(
-            None,
-            Some(PermissionMode::Plan),
-            true
-        ));
-        assert!(!agent_should_avoid_permission_prompts(
-            None,
-            Some(PermissionMode::Bubble),
-            true
-        ));
-        assert!(!agent_should_avoid_permission_prompts(
-            None,
-            Some(PermissionMode::Bubble),
-            false
-        ));
-        // Explicit canShowPermissionPrompts overrides BOTH the bubble branch
-        // and the isAsync default (CC `canShowPermissionPrompts !== undefined
-        // ? !canShowPermissionPrompts : ...`).
-        assert!(!agent_should_avoid_permission_prompts(
-            Some(true),
-            None,
-            true
-        ));
-        assert!(agent_should_avoid_permission_prompts(
-            Some(false),
-            Some(PermissionMode::Bubble),
-            false
-        ));
+    fn subagents_do_not_silently_avoid_permission_prompts() {
+        assert!(!agent_should_avoid_permission_prompts(None));
+        assert!(!agent_should_avoid_permission_prompts(Some(true)));
+        assert!(agent_should_avoid_permission_prompts(Some(false)));
     }
 
-    /// CC `runAgent.ts:420-434`: the fork agent's `bubble` becomes the child's
-    /// mode, but a parent in bypassPermissions / acceptEdits / auto wins.
     #[test]
-    fn fork_agent_bubble_mode_yields_to_the_parents_stronger_modes() {
-        let child_mode = |parent_mode| {
+    fn subagent_permission_context_inherits_the_parent_mode() {
+        for mode in [
+            PermissionMode::Default,
+            PermissionMode::Plan,
+            PermissionMode::BypassPermissions,
+            PermissionMode::AcceptEdits,
+        ] {
             let parent = crate::tool::ToolPermissionContext {
-                mode: parent_mode,
+                mode,
                 ..crate::tool::ToolPermissionContext::default()
             };
-            agent_permission_context_for_run(&parent, Some(PermissionMode::Bubble), None).mode
-        };
-
-        assert_eq!(child_mode(PermissionMode::Default), PermissionMode::Bubble);
-        assert_eq!(child_mode(PermissionMode::Plan), PermissionMode::Bubble);
-        assert_eq!(
-            child_mode(PermissionMode::BypassPermissions),
-            PermissionMode::BypassPermissions
-        );
-        assert_eq!(
-            child_mode(PermissionMode::AcceptEdits),
-            PermissionMode::AcceptEdits
-        );
-        if crate::utils::permissions::permission_setup::is_transcript_classifier_feature_enabled() {
-            assert_eq!(child_mode(PermissionMode::Auto), PermissionMode::Auto);
+            assert_eq!(agent_permission_context_for_run(&parent, None).mode, mode);
         }
     }
 
@@ -2448,31 +2279,22 @@ mod tests {
         );
     }
 
-    /// Maps to: CC `interactiveHandler.ts:97` / `inProcessRunner.ts:230` —
-    /// `toolUseContext` on the pushed `ToolUseConfirm`
-    /// (`PermissionRequest.tsx:142`) is the ASKER's, and for a subagent that is
-    /// the context `agentGetAppState` produces (`runAgent.ts:416-497`), not the
-    /// parent's. The leader's recheck sweep
-    /// (`interactiveHandler.ts:204-231`, fired from `REPL.tsx:3114-3126`) reads
-    /// exactly that field, so a `plan` agent's row must not be re-evaluated
-    /// against a `default` leader.
-    ///
-    /// OLD SHAPE: `InteractivePermissionSink::ask_with_badge` took only the
-    /// request and the badge, so nothing could ride the row and the field did
-    /// not exist. Both assertions below failed.
+    /// The queued permission row carries the subagent's inherited context so
+    /// the parent recheck uses the same current mode and rules.
     #[test]
-    fn a_subagents_queued_row_records_the_agents_own_permission_context() {
+    fn a_subagent_queued_row_records_the_inherited_permission_context() {
         let (confirm_tx, confirm_rx) = async_channel::unbounded();
         let mut context = context_with_bash_tool();
         context.interactive_permission_sink =
             crate::hooks::tool_permission::handlers::interactive_handler::create_repl_interactive_permission_sink(
                 confirm_tx,
             );
-        // CC `runAgent.ts:421-434`: a `plan` agent under a `default` parent —
-        // NARROWER than the leader, the direction #179 assumed impossible.
+        let parent_permission_context = crate::tool::ToolPermissionContext {
+            mode: PermissionMode::Plan,
+            ..Default::default()
+        };
         let agent_permission_context = agent_permission_context_for_run(
-            &crate::tool::ToolPermissionContext::default(),
-            Some(PermissionMode::Plan),
+            &parent_permission_context,
             Some(&["Read".to_string()]),
         );
         let answered = answer_first_queued_prompt(
@@ -2608,12 +2430,10 @@ mod tests {
     }
 
     #[test]
-    fn async_agent_ask_is_denied_without_raising_a_dialog_like_official() {
-        // Maps to: CC `runAgent.ts:446-451` setting `shouldAvoidPermissionPrompts`
-        // for an async agent, and `permissions.ts:932-952` converting the ask to
-        // `{ behavior: 'deny', decisionReason: { type: 'asyncAgent' } }` before
-        // `useCanUseTool` reaches its switch. Nobody is watching the terminal for
-        // a background agent, so CC never queues one — and never parks on one.
+    fn agent_ask_with_prompts_disabled_is_denied_without_raising_a_dialog() {
+        // An explicit `canShowPermissionPrompts: false` (the only way left to
+        // set `shouldAvoidPermissionPrompts` on an agent) denies the ask before
+        // any dialog is queued on the main session.
         let (confirm_tx, confirm_rx) = async_channel::unbounded();
         let mut context = context_with_bash_tool();
         context.interactive_permission_sink =
@@ -2648,8 +2468,48 @@ mod tests {
         drop(context);
         assert!(
             answered.join().expect("prompt answerer panicked").is_none(),
-            "an async agent must not queue a prompt on the parent terminal"
+            "an agent with prompts disabled must not queue a prompt on the main session"
         );
+    }
+
+    #[test]
+    fn background_agent_ask_raises_the_main_session_dialog_tagged_with_the_agent_name() {
+        let (confirm_tx, confirm_rx) = async_channel::unbounded();
+        let mut context = context_with_bash_tool();
+        context.agent_type = Some("explore".to_string());
+        context.interactive_permission_sink =
+            crate::hooks::tool_permission::handlers::interactive_handler::create_repl_interactive_permission_sink(
+                confirm_tx,
+            );
+        let answered = answer_first_queued_prompt(
+            confirm_rx,
+            PermissionPromptResponse::new(PermissionPromptChoice::Deny),
+        );
+        // Background agents get the same permission context as foreground
+        // ones: `agent_should_avoid_permission_prompts(None)` is false.
+        let mut agent_permission_context = crate::tool::ToolPermissionContext::default();
+        agent_permission_context.should_avoid_permission_prompts =
+            agent_should_avoid_permission_prompts(None);
+
+        let response = futures::executor::block_on(resolve_agent_permission_request(
+            &bash_permission_request(),
+            &context,
+            &agent_permission_context,
+        ));
+        drop(context);
+
+        let queued = answered
+            .join()
+            .expect("prompt answerer panicked")
+            .expect("a background agent's ask must reach the main session");
+        assert_eq!(
+            queued
+                .worker_badge
+                .as_ref()
+                .map(|badge| badge.name.as_str()),
+            Some("[explore]")
+        );
+        assert_eq!(response.choice, PermissionPromptChoice::Deny);
     }
 
     #[test]
@@ -2896,506 +2756,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
-    struct SettingsCacheGuard;
-
-    impl Drop for SettingsCacheGuard {
-        fn drop(&mut self) {
-            crate::utils::settings::settings_cache::reset_settings_cache();
-        }
-    }
-
-    #[test]
-    fn agent_mcp_initialization_skips_user_frontmatter_when_policy_locks_mcp() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root =
-            std::env::temp_dir().join(format!("nyan-agent-mcp-policy-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(
-            root.join("managed-settings.json"),
-            serde_json::json!({"strictPluginOnlyCustomization": ["mcp"]}).to_string(),
-        )
-        .unwrap();
-        // Declared before the env guard so the settings cache is reset after
-        // the managed settings path has been restored.
-        let _settings_cache = SettingsCacheGuard;
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
-        // The policy source is served from the process-global settings cache,
-        // so an earlier test that read settings pins the managed layer this
-        // test just wrote to disk (`settings_cache.rs:10-12`).
-        crate::utils::settings::settings_cache::reset_settings_cache();
-
-        let mut agent =
-            AgentDefinition::new("custom", "Use custom", AgentDefinitionSource::UserSettings);
-        let config = crate::utils::config::McpServerConfig {
-            command: Some("definitely-not-executed".to_string()),
-            ..crate::utils::config::McpServerConfig::default()
-        };
-        agent.mcp_servers = Some(vec![AgentMcpServerSpec::Inline {
-            name: "local-agent".to_string(),
-            config: crate::services::mcp::types::ScopedMcpServerConfig::from_config(
-                crate::services::mcp::types::ConfigScope::Dynamic,
-                &config,
-            ),
-        }]);
-        let parent_state = crate::state::app_state_store::McpState {
-            clients: vec![crate::services::mcp::types::McpServerConnection::pending(
-                "parent",
-                crate::services::mcp::types::ScopedMcpServerConfig::stdio_for_test("parent"),
-            )],
-            ..crate::state::app_state_store::McpState::default()
-        };
-
-        let initialized =
-            futures::executor::block_on(initialize_agent_mcp_servers(&agent, &parent_state));
-
-        let _ = std::fs::remove_dir_all(root);
-        assert_eq!(initialized.mcp_state, parent_state);
-        assert!(initialized.tools.is_empty());
-        assert!(initialized.cleanup.newly_created_clients.is_empty());
-    }
-
-    /// The connection a record holds, if it is connected.
-    fn connection_id(server: &crate::services::mcp::types::McpServerConnection) -> Option<u64> {
-        server
-            .as_connected()
-            .map(|connected| connected.client.connection_id())
-    }
-
-    /// CC `runAgent.ts:140-151` with the memoized `connectToServer` and
-    /// `fetchToolsForClient`: a subagent that references a server by name
-    /// gets the parent's connection — not connected again — and the tools the
-    /// fetch cache holds for it, refreshed since the parent's snapshot. Its
-    /// cleanup leaves the parent's connection alone.
-    #[test]
-    fn a_referenced_mcp_server_shares_the_parents_connection_and_tools() {
-        use crate::services::mcp::types::McpServerConnectionType;
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
-        let config_dir = fixture.dir.join("config");
-        let managed_dir = fixture.dir.join("managed");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(&managed_dir).unwrap();
-        std::fs::write(
-            config_dir.join(".claude.json"),
-            serde_json::json!({
-                "mcpServers": {
-                    "shared": {
-                        "command": "node",
-                        "args": [fixture.script.to_string_lossy(), fixture.log.to_string_lossy()]
-                    }
-                }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
-        crate::utils::config::clear_global_config_cache_for_testing();
-        crate::utils::process_runtime::initialize_test_process_runtime();
-
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let config =
-                    crate::services::mcp::config::get_mcp_config_by_name_readonly("shared")
-                        .expect("the server is configured");
-                let parent =
-                    crate::services::mcp::client::reconnect_mcp_server_impl("shared", &config)
-                        .await;
-                assert_eq!(
-                    parent.server.connection_type(),
-                    McpServerConnectionType::Connected,
-                    "{:?}",
-                    parent.server
-                );
-                let parent_connection_id = connection_id(&parent.server);
-                let parent_record = parent.server.clone();
-                let mut parent_state = crate::state::app_state_store::McpState::default();
-                crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
-                    &mut parent_state,
-                    parent,
-                );
-                // `tools/list_changed` after the parent's snapshot was taken.
-                crate::services::mcp::client::refresh_mcp_tools_for_client(&parent_record).await;
-
-                let mut agent = AgentDefinition::new(
-                    "custom",
-                    "Use custom",
-                    AgentDefinitionSource::UserSettings,
-                );
-                agent.mcp_servers = Some(vec![AgentMcpServerSpec::Reference("shared".to_string())]);
-                let initialized = initialize_agent_mcp_servers(&agent, &parent_state).await;
-
-                assert_eq!(fixture.count("initialize"), 1);
-                assert_eq!(fixture.count("tools/list"), 2);
-                assert!(initialized.cleanup.newly_created_clients.is_empty());
-                assert_eq!(
-                    initialized
-                        .tools
-                        .iter()
-                        .map(|tool| tool.name.as_str())
-                        .collect::<Vec<_>>(),
-                    ["mcp__shared__lookup_2"]
-                );
-                let shared = initialized
-                    .mcp_state
-                    .clients
-                    .iter()
-                    .find(|server| server.name() == "shared")
-                    .expect("the agent's state holds the server");
-                assert_eq!(connection_id(shared), parent_connection_id);
-                drop(initialized);
-
-                assert_eq!(
-                    connection_id(
-                        &crate::services::mcp::client::connect_to_server("shared", &config).await
-                    ),
-                    parent_connection_id
-                );
-                crate::services::mcp::client::clear_server_cache("shared", None).await;
-            });
-        crate::utils::config::clear_global_config_cache_for_testing();
-    }
-
-    /// CC `runAgent.ts:153-210`: an inline server is the agent's own. Its
-    /// tools are the agent's only when it connected, and its connection is
-    /// closed when the agent ends — here by dropping the initialization, as
-    /// an abandoned agent future would — so the next connect makes a new one.
-    #[test]
-    fn an_inline_mcp_server_is_closed_when_the_agent_ends() {
-        use crate::services::mcp::types::{ConfigScope, McpServerConnectionType};
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
-        let managed_dir = fixture.dir.join("managed");
-        std::fs::create_dir_all(&managed_dir).unwrap();
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        crate::utils::process_runtime::initialize_test_process_runtime();
-
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let config = crate::services::mcp::types::ScopedMcpServerConfig {
-                    scope: ConfigScope::Dynamic,
-                    ..fixture.config(&[])
-                };
-                let broken = crate::services::mcp::types::ScopedMcpServerConfig {
-                    command: Some("nyan-definitely-not-a-command".to_string()),
-                    args: Vec::new(),
-                    ..config.clone()
-                };
-                let mut agent = AgentDefinition::new(
-                    "custom",
-                    "Use custom",
-                    AgentDefinitionSource::UserSettings,
-                );
-                agent.mcp_servers = Some(vec![
-                    AgentMcpServerSpec::Inline {
-                        name: "inline".to_string(),
-                        config: config.clone(),
-                    },
-                    AgentMcpServerSpec::Inline {
-                        name: "broken".to_string(),
-                        config: broken,
-                    },
-                ]);
-                let initialized = initialize_agent_mcp_servers(
-                    &agent,
-                    &crate::state::app_state_store::McpState::default(),
-                )
-                .await;
-
-                assert_eq!(
-                    initialized
-                        .tools
-                        .iter()
-                        .map(|tool| tool.name.as_str())
-                        .collect::<Vec<_>>(),
-                    ["mcp__inline__lookup_1"]
-                );
-                assert_eq!(initialized.cleanup.newly_created_clients.len(), 2);
-                let broken = initialized
-                    .mcp_state
-                    .clients
-                    .iter()
-                    .find(|server| server.name() == "broken")
-                    .expect("the agent's state holds the failed server");
-                assert_eq!(broken.connection_type(), McpServerConnectionType::Failed);
-                let inline = initialized
-                    .mcp_state
-                    .clients
-                    .iter()
-                    .find_map(|server| {
-                        server
-                            .as_connected()
-                            .filter(|connected| connected.name == "inline")
-                    })
-                    .expect("the agent's state holds the inline connection")
-                    .client
-                    .clone();
-                assert!(!inline.is_closed());
-
-                drop(initialized);
-                assert!(inline.is_closed());
-                assert!(crate::services::mcp::client::memoized_connection_ids("inline").is_empty());
-                let again =
-                    crate::services::mcp::client::connect_to_server("inline", &config).await;
-                assert_eq!(again.connection_type(), McpServerConnectionType::Connected);
-                assert_eq!(fixture.count("initialize"), 2);
-                crate::services::mcp::client::clear_server_cache("inline", None).await;
-                crate::services::mcp::client::clear_server_cache("broken", None).await;
-            });
-    }
-
-    /// An agent dropped while its inline server is still connecting: the
-    /// connection, made on the process runtime, is closed once it is made,
-    /// as CC's `finally` cleanup would close it after the connect.
-    #[test]
-    fn an_inline_mcp_server_connecting_when_the_agent_is_dropped_is_closed_once_made() {
-        use crate::services::mcp::types::ConfigScope;
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
-        let managed_dir = fixture.dir.join("managed");
-        std::fs::create_dir_all(&managed_dir).unwrap();
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        crate::utils::process_runtime::initialize_test_process_runtime();
-
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let config = crate::services::mcp::types::ScopedMcpServerConfig {
-                    scope: ConfigScope::Dynamic,
-                    ..fixture.config(&["slow-first"])
-                };
-                let mut agent = AgentDefinition::new(
-                    "custom",
-                    "Use custom",
-                    AgentDefinitionSource::UserSettings,
-                );
-                agent.mcp_servers = Some(vec![AgentMcpServerSpec::Inline {
-                    name: "slow-inline".to_string(),
-                    config: config.clone(),
-                }]);
-                let parent_state = crate::state::app_state_store::McpState::default();
-                let initializing = initialize_agent_mcp_servers(&agent, &parent_state);
-                tokio::select! {
-                    _ = initializing => panic!("the fixture answers its first initialize late"),
-                    _ = fixture.until("the first initialize", |fixture| {
-                        fixture.count("initialize") == 1
-                    }) => {}
-                }
-
-                // The connection still being made, as the memo hands it to
-                // any caller.
-                let made =
-                    crate::services::mcp::client::connect_to_server("slow-inline", &config).await;
-                let made = &made.as_connected().expect("the connection is made").client;
-                fixture
-                    .until("the connection to be closed and leave the memo", |_| {
-                        crate::services::mcp::client::memoized_connection_ids("slow-inline")
-                            .is_empty()
-                    })
-                    .await;
-                assert!(made.is_closed());
-                assert_eq!(fixture.count("initialize"), 1);
-            });
-    }
-
-    /// CC's `connectToServer` memo is keyed by name and config
-    /// (`client.ts:581-595`), and an inline server's config is scoped
-    /// `dynamic` (`runAgent.ts:166-169`): the parent's `github` and the
-    /// agent's inline `github` are two connections. The agent's end closes
-    /// its own only, and the parent's tool still calls the parent's.
-    #[test]
-    fn an_inline_mcp_server_named_like_the_parents_closes_only_its_own() {
-        use crate::services::mcp::client::session_http_fixture::{
-            SESSION_NOT_FOUND, SessionHttpFixture,
-        };
-        use crate::services::mcp::types::{ConfigScope, McpServerConnectionType};
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let managed_dir =
-            std::env::temp_dir().join(format!("nyan-agent-mcp-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&managed_dir).unwrap();
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        crate::utils::process_runtime::initialize_test_process_runtime();
-
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let fixture = SessionHttpFixture::spawn(|_, _| false, SESSION_NOT_FOUND).await;
-                let parent_config = fixture.config();
-                let parent = crate::services::mcp::client::reconnect_mcp_server_impl(
-                    "github",
-                    &parent_config,
-                )
-                .await;
-                assert_eq!(
-                    parent.server.connection_type(),
-                    McpServerConnectionType::Connected,
-                    "{:?}",
-                    parent.server
-                );
-                let parent_client = parent
-                    .server
-                    .as_connected()
-                    .expect("the parent's connection")
-                    .client
-                    .clone();
-                let Some(crate::types::tools::McpToolConnection::Connected(parent_binding)) =
-                    parent.tools[0].mcp_connection.clone()
-                else {
-                    panic!("the parent's tool carries its client");
-                };
-                let mut parent_state = crate::state::app_state_store::McpState::default();
-                crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
-                    &mut parent_state,
-                    parent,
-                );
-
-                let mut agent = AgentDefinition::new(
-                    "custom",
-                    "Use custom",
-                    AgentDefinitionSource::UserSettings,
-                );
-                agent.mcp_servers = Some(vec![AgentMcpServerSpec::Inline {
-                    name: "github".to_string(),
-                    config: crate::services::mcp::types::ScopedMcpServerConfig {
-                        scope: ConfigScope::Dynamic,
-                        ..parent_config.clone()
-                    },
-                }]);
-                let initialized = initialize_agent_mcp_servers(&agent, &parent_state).await;
-                let inline = initialized.cleanup.newly_created_clients[0]
-                    .as_connected()
-                    .expect("the agent's connection")
-                    .client
-                    .clone();
-                assert_ne!(inline, parent_client);
-                assert!(!inline.is_closed());
-                assert!(!parent_client.is_closed());
-                // Connected outside `onConnectionAttempt` (`runAgent.ts:173`):
-                // its close, should it end on its own, reaches no session
-                // handler.
-                assert!(inline.onclose().is_none());
-
-                drop(initialized);
-                assert!(inline.is_closed());
-                assert!(!parent_client.is_closed());
-
-                // The parent's tool `call`: `ensureConnectedClient(client)`
-                // (`client.ts:1858-1862`), then the request on it.
-                let connected =
-                    crate::services::mcp::client::ensure_connected_client(&parent_binding)
-                        .await
-                        .expect("the parent's connection");
-                assert_eq!(connected.client, parent_client);
-                let value = crate::services::mcp::client::call_mcp_tool_with_elicitation(
-                    &connected.client,
-                    "lookup",
-                    serde_json::Map::new(),
-                    None,
-                    crate::tool::HandleElicitationCallback::default(),
-                )
-                .await
-                .expect("the call succeeds");
-                assert_eq!(value["content"][0]["text"].as_str(), Some("ok:s1"));
-                assert_eq!(
-                    fixture.log(),
-                    ["initialize s1", "initialize s2", "tools/call s1"]
-                );
-
-                crate::services::mcp::client::clear_server_cache("github", None).await;
-            });
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        let _ = std::fs::remove_dir_all(&managed_dir);
-    }
-
-    /// CC `runAgent.ts:213-214` appends the agent's clients to the parent's:
-    /// a referenced server that does not connect leaves the parent's entry for
-    /// it — here a needs-auth one with its authenticate tool — as it is.
-    #[test]
-    fn a_referenced_mcp_server_that_fails_leaves_the_parents_entry() {
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let fixture = crate::services::mcp::client::counting_fixture::CountingFixture::new();
-        let config_dir = fixture.dir.join("config");
-        let managed_dir = fixture.dir.join("managed");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(&managed_dir).unwrap();
-        std::fs::write(
-            config_dir.join(".claude.json"),
-            serde_json::json!({
-                "mcpServers": {
-                    "shared": {
-                        "command": "node",
-                        "args": [
-                            fixture.script.to_string_lossy(),
-                            fixture.log.to_string_lossy(),
-                            "exit-on-initialize"
-                        ]
-                    }
-                }
-            })
-            .to_string(),
-        )
-        .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
-        crate::utils::config::clear_global_config_cache_for_testing();
-        crate::utils::process_runtime::initialize_test_process_runtime();
-
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                let config =
-                    crate::services::mcp::config::get_mcp_config_by_name_readonly("shared")
-                        .expect("the server is configured");
-                let mut parent_state = crate::state::app_state_store::McpState::default();
-                crate::services::mcp::use_manage_mcp_connections::apply_mcp_server_update(
-                    &mut parent_state,
-                    crate::services::mcp::client::McpConnectionDiscovery::needs_auth(
-                        "shared", &config,
-                    ),
-                );
-                assert_eq!(parent_state.tools.len(), 1);
-
-                let mut agent = AgentDefinition::new(
-                    "custom",
-                    "Use custom",
-                    AgentDefinitionSource::UserSettings,
-                );
-                agent.mcp_servers = Some(vec![AgentMcpServerSpec::Reference("shared".to_string())]);
-                let initialized = initialize_agent_mcp_servers(&agent, &parent_state).await;
-
-                assert_eq!(fixture.count("initialize"), 1);
-                assert!(initialized.tools.is_empty());
-                assert_eq!(initialized.mcp_state, parent_state);
-                crate::services::mcp::client::clear_server_cache("shared", None).await;
-            });
-        crate::utils::config::clear_global_config_cache_for_testing();
-    }
-
     /// CC `AgentTool.tsx:833-845`: the worker pool is
     /// `assembleToolPool(workerPermissionContext, appState.mcp.tools)` —
     /// deny-filtered MCP tools are out, and the pool comes from the LIVE app
@@ -3462,20 +2822,6 @@ mod tests {
             names.iter().any(|name| name == "Bash"),
             "the worker pool is rebuilt from getTools, not inherited from the \
              parent's narrowed tools, got {names:?}"
-        );
-    }
-
-    #[test]
-    fn merge_agent_mcp_tools_deduplicates_by_model_visible_name_like_official() {
-        let existing = vec![tool("Read"), tool("mcp__docs__search")];
-        let incoming = vec![tool("mcp__docs__search"), tool("mcp__agent__lookup")];
-        let merged = merge_agent_mcp_tools(existing, incoming);
-        assert_eq!(
-            merged
-                .iter()
-                .map(|tool| tool.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["Read", "mcp__docs__search", "mcp__agent__lookup"]
         );
     }
 
@@ -3709,41 +3055,19 @@ mod tests {
     }
 
     #[test]
-    fn agent_permission_context_preserves_parent_accept_and_bypass_like_official() {
-        let mut parent = crate::tool::ToolPermissionContext {
-            mode: PermissionMode::AcceptEdits,
-            ..Default::default()
-        };
-        let context = agent_permission_context_for_run(&parent, Some(PermissionMode::Plan), None);
-        assert_eq!(context.mode, PermissionMode::AcceptEdits);
-
-        parent.mode = PermissionMode::BypassPermissions;
-        let context = agent_permission_context_for_run(&parent, Some(PermissionMode::Plan), None);
-        assert_eq!(context.mode, PermissionMode::BypassPermissions);
-    }
-
-    #[test]
-    fn agent_permission_context_runtime_keeps_parent_mode_when_agent_defines_none() {
-        // CC runAgent.ts:421-434 — the RUNTIME context only overrides when
-        // the agent DEFINES a permissionMode; the `?? 'acceptEdits'` fallback
-        // belongs to the worker TOOL POOL (AgentTool.tsx:838-841), not here.
-        let parent = crate::tool::ToolPermissionContext {
-            mode: PermissionMode::Default,
-            ..Default::default()
-        };
-        let explicit = agent_permission_context_for_run(&parent, Some(PermissionMode::Plan), None);
-        assert_eq!(explicit.mode, PermissionMode::Plan);
-        let implicit = agent_permission_context_for_run(&parent, None, None);
-        assert_eq!(implicit.mode, PermissionMode::Default);
-
-        let plan_parent = crate::tool::ToolPermissionContext {
-            mode: PermissionMode::Plan,
-            ..Default::default()
-        };
-        assert_eq!(
-            agent_permission_context_for_run(&plan_parent, None, None).mode,
-            PermissionMode::Plan
-        );
+    fn agent_permission_context_inherits_every_parent_mode() {
+        for mode in [
+            PermissionMode::Default,
+            PermissionMode::AcceptEdits,
+            PermissionMode::BypassPermissions,
+            PermissionMode::Plan,
+        ] {
+            let parent = crate::tool::ToolPermissionContext {
+                mode,
+                ..Default::default()
+            };
+            assert_eq!(agent_permission_context_for_run(&parent, None).mode, mode);
+        }
     }
 
     #[test]
@@ -3769,7 +3093,7 @@ mod tests {
         );
         let allowed = vec!["Bash(git status)".to_string()];
 
-        let scoped = agent_permission_context_for_run(&parent, None, Some(&allowed));
+        let scoped = agent_permission_context_for_run(&parent, Some(&allowed));
 
         assert_eq!(scoped.always_allow_rules.len(), 2);
         assert_eq!(
@@ -5003,7 +4327,7 @@ mod input_contract_tests {
 
     /// The real runAgent → query → API request, with only the HTTP endpoint replaced.
     /// CC `runAgent.ts:391` preserves explicitly provided user maps, including {};
-    /// `:408-410` drops gitStatus for Explore/Plan even from an explicit system map.
+    /// `:408-410` drops gitStatus for explore/plan even from an explicit system map.
     #[tokio::test]
     // Keep the process-wide fixture environment pinned until the async request ends.
     #[allow(clippy::await_holding_lock)]
@@ -5117,7 +4441,7 @@ mod input_contract_tests {
         }));
         for (agent_type, user_context, expected_claude, expected_git) in [
             (
-                "Explore",
+                "explore",
                 BTreeMap::from([(
                     "claudeMd".to_string(),
                     "CLAUDE_OVERRIDE_SENTINEL".to_string(),
@@ -5125,7 +4449,7 @@ mod input_contract_tests {
                 true,
                 false,
             ),
-            ("Plan", BTreeMap::new(), false, false),
+            ("plan", BTreeMap::new(), false, false),
             (
                 "reviewer",
                 BTreeMap::from([(
