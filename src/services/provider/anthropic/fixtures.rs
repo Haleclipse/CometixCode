@@ -670,6 +670,45 @@ async fn a_streamed_request_is_accounted_once_and_attributed_to_its_source() {
     crate::cost_tracker::reset_cost_state();
 }
 
+/// With no effort on the profile or the session, the default adaptive launch
+/// still reaches Anthropic as adaptive thinking with no effort parameter.
+#[tokio::test]
+async fn an_unset_effort_keeps_the_adaptive_default_on_the_wire() {
+    let mock = MockAnthropic::start(vec![Reply::Sse(message_stream(StreamSpec::default()))]).await;
+    let _env = Env::new(&mock.base_url);
+
+    let context =
+        crate::tool::ToolUseContext::default().with_thinking_config(Some(ThinkingConfig::Adaptive));
+    let request = crate::query::build_call_model_request(
+        vec![user("hello")],
+        crate::tool::ToolPermissionContext::default(),
+        &crate::constants::query_source::QuerySource::Prompt,
+        &["You are a test.".to_string()],
+        &std::collections::BTreeMap::new(),
+        &crate::state::app_state_store::McpState::default(),
+        &context,
+    );
+    assert_eq!(request.options.effort_value, None);
+    let mut rx = query_model_with_streaming(
+        &request.messages,
+        &request.system_prompt,
+        &request.thinking_config,
+        &[],
+        &request.options,
+    )
+    .await
+    .expect("stream opens");
+    while tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
+        .await
+        .expect("stream item before deadline")
+        .is_some()
+    {}
+
+    let body = &mock.requests()[0].body;
+    assert_eq!(body["thinking"], json!({"type": "adaptive"}), "{body}");
+    assert!(body.pointer("/output_config/effort").is_none(), "{body}");
+}
+
 /// `/model deep:off` really switches the session: the next main-loop request
 /// goes to the `deep` profile's provider, credential and model, at the effort
 /// the switch named, and nothing reaches the previous profile's endpoint.

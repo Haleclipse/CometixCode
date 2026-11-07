@@ -2355,12 +2355,12 @@ fn build_model_request(
                 .and_then(|value| value.get("disable_parallel_tool_use"))
                 .and_then(JsonValue::as_bool)
                 .unwrap_or(false),
-            effort: options
-                .effort_value
-                .unwrap_or_else(|| match thinking_config {
-                    ThinkingConfig::Disabled => Effort::Off,
-                    ThinkingConfig::Adaptive | ThinkingConfig::Enabled { .. } => Effort::Medium,
-                }),
+            // No effort on the session or profile: a caller that turned thinking
+            // off still means off; otherwise the model keeps its own default.
+            effort: options.effort_value.or(match thinking_config {
+                ThinkingConfig::Disabled => Some(Effort::Off),
+                ThinkingConfig::Adaptive | ThinkingConfig::Enabled { .. } => None,
+            }),
             output_schema: options.output_format.as_ref().map(|format| {
                 format
                     .get("schema")

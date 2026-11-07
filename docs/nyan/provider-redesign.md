@@ -596,7 +596,7 @@ partialStream
 | `ServerToolCall` / `ServerToolResult` | 丢弃（Anthropic 概念） | 丢弃 |
 | `ToolSpec` | `tools[].function`，不带 `strict`；`ToolSearch` 不发送 | `tools[]`，显式 `strict: false`；`ToolSearch` 不发送 |
 | `tool_choice` / `disable_parallel_tools` | `tool_choice` / `parallel_tool_calls: false` | 同名 |
-| `thinking` + `effort` | `reasoning_effort`（`max`/`xhigh` 发 `high`；token 预算按档位折算；Adaptive 无 effort 不发） | `reasoning: {effort, summary: auto}` |
+| `thinking` + `effort` | `reasoning_effort`（`max`/`xhigh` 发 `high`；token 预算按档位折算；Adaptive 无 effort 不发） | `reasoning: {effort, summary: auto}`（无 effort 只发 `summary`） |
 | `structured_output` | `response_format: json_schema`（`strict: false`） | `text.format: json_schema`（`strict: false`） |
 | `max_output_tokens` | `max_completion_tokens`，取 profile 上限的较小值 | `max_output_tokens`（≥16）；ChatGPT 后端不发 |
 | `temperature` | 仅在 profile 未声明 thinking 时发送 | 同左；ChatGPT 后端不发 |

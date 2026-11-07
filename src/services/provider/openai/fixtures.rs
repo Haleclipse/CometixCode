@@ -115,7 +115,7 @@ fn request(messages: Vec<Message>) -> ModelRequest {
         messages,
         tools: vec![read_tool()],
         tool_choice: ToolChoice::Auto,
-        effort: Effort::Medium,
+        effort: Some(Effort::Medium),
         max_output_tokens: 4_000,
         temperature: None,
         structured_output: None,

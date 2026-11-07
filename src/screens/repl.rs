@@ -9563,6 +9563,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             keybinding_customization_enabled: crate::keybindings::load_user_bindings::is_keybinding_customization_enabled(),
                             keybindings_path: crate::keybindings::load_user_bindings::get_keybindings_path().display().to_string(),
                             keybinding_warnings: crate::keybindings::load_user_bindings::get_cached_keybinding_warnings(),
+                            agent_parse_errors: app_store.get().agent_definitions.failed_files.clone(),
                         )
                     }.into_any()),
                     LocalCommandPanel::Diff => Some(element! {
@@ -9757,6 +9758,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             keybinding_customization_enabled: crate::keybindings::load_user_bindings::is_keybinding_customization_enabled(),
                             keybindings_path: crate::keybindings::load_user_bindings::get_keybindings_path().display().to_string(),
                             keybinding_warnings: crate::keybindings::load_user_bindings::get_cached_keybinding_warnings(),
+                            agent_parse_errors: app_store.get().agent_definitions.failed_files.clone(),
                         )
                     }.into_any()),
                     LocalCommandPanel::Diff => Some(element! {
@@ -12540,6 +12542,88 @@ mod tests {
             store.revision(),
             before + 1,
             "an unchanged list touches nothing"
+        );
+    }
+
+    /// `/doctor` in the running REPL lists the agents the session failed to
+    /// load. The definitions come from the real loader and reach the session
+    /// the way closing /agents adopts them, so an invalid `model:` shows in
+    /// Doctor as it does at the top of /agents.
+    #[test]
+    fn doctor_lists_the_sessions_failed_agents() {
+        crate::utils::process_runtime::initialize_test_process_runtime();
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let _doctor = EnvVarGuard::unset("DISABLE_DOCTOR_COMMAND");
+        // Simple mode: built-ins plus `--agents` only, so no host agent file
+        // or plugin reaches the test.
+        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                crate::bootstrap::state::set_cli_agents_json(None);
+                crate::utils::settings::settings_cache::reset_settings_cache();
+            }
+        }
+        let _reset = Reset;
+        crate::utils::settings::settings_cache::install_test_settings(Default::default());
+        crate::bootstrap::state::set_cli_agents_json(Some(json!({
+            "reviewer": {"description": "d", "prompt": "p", "model": "sonnet"}
+        })));
+        let loaded =
+            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
+                &crate::bootstrap::state::get_original_cwd(),
+            );
+        assert!(
+            loaded
+                .active_agents
+                .iter()
+                .all(|agent| agent.agent_type != "reviewer"),
+            "an invalid agent is not loaded"
+        );
+        let store = crate::state::store::AppStore::new(
+            crate::state::app_state_store::AppState::default(),
+            None,
+        );
+        assert!(adopt_agent_definitions(&store, loaded));
+
+        #[component]
+        fn Harness(props: &DoctorHarnessProps) -> impl Into<AnyElement<'static>> {
+            element! {
+                ContextProvider(value: Context::owned(
+                    crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
+                )) {
+                    ContextProvider(value: Context::owned(*theme::current())) {
+                        IsolatedAuthRepl(app_store: props.store.clone())
+                    }
+                }
+            }
+        }
+        #[derive(Default, Props)]
+        struct DoctorHarnessProps {
+            store: Option<crate::state::store::AppStore>,
+        }
+
+        let canvases = run_repl_script(
+            element!(Harness(store: Some(store))).into_any(),
+            vec![
+                script_step(&[], text_input_events("/doctor")),
+                script_step(&["Agent Parse Errors"], Vec::new()),
+            ],
+        );
+        let text = canvases
+            .iter()
+            .map(canvas_lines)
+            .map(|lines| lines.join("\n"))
+            .find(|text| text.contains("Agent Parse Errors"))
+            .expect("doctor shows the agent section");
+        let compact: String = text.split_whitespace().collect();
+        assert!(
+            compact.contains("Failedtoload1agent(s):"),
+            "canvas=\n{text}"
+        );
+        assert!(
+            compact.contains("--agentsagentreviewer:Invalid\"model\"field:Unknownmodel\"sonnet\""),
+            "canvas=\n{text}"
         );
     }
 

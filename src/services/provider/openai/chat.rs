@@ -283,16 +283,16 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: &Comp
             "strict": false,
         }});
     }
-    if target.cache_retention != CacheRetention::None {
+    if compat.openai_prompt_cache && target.cache_retention != CacheRetention::None {
         let session_id = crate::bootstrap::state::get_session_id();
         if !session_id.is_empty() {
             body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
         }
-    }
-    // Pi `openai-completions.ts` sends "24h" for long retention on Chat,
-    // whatever the model's cache mode.
-    if compat.openai_prompt_cache && target.cache_retention == CacheRetention::Long {
-        body["prompt_cache_retention"] = json!("24h");
+        // Pi `openai-completions.ts` sends "24h" for long retention on Chat,
+        // whatever the model's cache mode.
+        if target.cache_retention == CacheRetention::Long {
+            body["prompt_cache_retention"] = json!("24h");
+        }
     }
 
     if compat.cache_control_format.as_deref() == Some("anthropic")
@@ -813,7 +813,7 @@ mod tests {
             messages,
             tools: vec![],
             tool_choice: ToolChoice::Auto,
-            effort: Effort::Off,
+            effort: Some(Effort::Off),
             max_output_tokens: 32_000,
             temperature: None,
             structured_output: None,
@@ -913,7 +913,7 @@ mod tests {
     #[test]
     fn thinking_effort_and_temperature_follow_the_declared_capabilities() {
         let mut r = request(vec![user_text("hi")]);
-        r.effort = Effort::High;
+        r.effort = Some(Effort::High);
         r.temperature = Some(0.2);
         let reasoning = build_body(&target(all()), &r);
         assert_eq!(reasoning["reasoning_effort"], "high");
@@ -1427,12 +1427,14 @@ mod tests {
         t.cache_retention = CacheRetention::Long;
         for kind in [
             ProviderKind::Gateway,
+            ProviderKind::Openrouter,
             ProviderKind::Vllm,
             ProviderKind::Ollama,
         ] {
             let compat = Compat::resolve_full(kind, Some("deepseek"), Some(&t.model), None);
             let body = super::build_body(&t, &req, &compat);
             // DeepSeek caches automatically; only OpenAI takes these.
+            assert!(body.get("prompt_cache_key").is_none(), "{kind:?}");
             assert!(body.get("prompt_cache_retention").is_none(), "{kind:?}");
             assert!(body.get("prompt_cache_options").is_none(), "{kind:?}");
             assert!(!body.to_string().contains("cache_control"), "{kind:?}");

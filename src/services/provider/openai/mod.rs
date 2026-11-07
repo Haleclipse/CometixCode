@@ -277,12 +277,12 @@ fn reasoning_tiers(model: &str) -> ReasoningTiers {
 }
 
 /// OpenAI `reasoning_effort` / `reasoning.effort` for the request, or `None`
-/// when nothing should be sent.
+/// when no depth should be sent.
 ///
 /// The four unified tiers map onto what the model accepts, clamped silently
 /// (provider-redesign §5.2): `off` is the family's lowest tier, `max` is
 /// `xhigh` where the family has it and `high` where not. A profile without the
-/// thinking capability never sends the field.
+/// thinking capability, or a request with no effort, never sends the field.
 pub(crate) fn reasoning_effort(
     request: &ModelRequest,
     target: &ResolvedTarget,
@@ -291,7 +291,7 @@ pub(crate) fn reasoning_effort(
         return None;
     }
     let tiers = reasoning_tiers(&target.model);
-    match request.effort {
+    match request.effort? {
         Effort::Off => tiers.off,
         Effort::Medium => Some("medium"),
         Effort::High => Some("high"),
@@ -391,7 +391,7 @@ mod tests {
             }],
             tools: vec![],
             tool_choice: ToolChoice::Auto,
-            effort,
+            effort: Some(effort),
             max_output_tokens: 100,
             temperature: None,
             structured_output: None,
@@ -441,6 +441,15 @@ mod tests {
                 None,
                 "{effort}"
             );
+        }
+    }
+
+    #[test]
+    fn no_effort_leaves_the_depth_to_the_model() {
+        let mut r = request(Effort::Medium);
+        r.effort = None;
+        for model in ["gpt-5.5", "o3", "deepseek-reasoner"] {
+            assert_eq!(reasoning_effort(&r, &test_target(model, true)), None);
         }
     }
 

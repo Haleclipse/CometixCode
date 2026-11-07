@@ -1143,6 +1143,234 @@ async fn a_missing_key_is_reported_as_configuration_not_sent() {
     assert!(mock.requests().is_empty());
 }
 
+/// A thinking-capable profile of `kind` on `protocol` whose `effort` may be
+/// unset, aimed at the mock.
+fn thinking_env(
+    base_url: &str,
+    kind: ProviderKind,
+    protocol: ProviderProtocol,
+    model: &str,
+    effort: Option<crate::utils::effort::Effort>,
+) -> Env {
+    let base_url = base_url.to_string();
+    let model = model.to_string();
+    Env::with(Vec::new, move || {
+        let nyan = NyanSettings {
+            providers: Some(BTreeMap::from([(
+                "p".to_string(),
+                ProviderSettings {
+                    kind: Some(kind),
+                    protocols: Some(vec![protocol]),
+                    base_url: Some(base_url),
+                    credential: Some(CredentialReference {
+                        env: Some(KEY_VAR.into()),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )])),
+            models: Some(BTreeMap::from([(
+                "main".to_string(),
+                ModelProfileSettings {
+                    provider: Some("p".to_string()),
+                    model: Some(model),
+                    protocol: Some(protocol),
+                    capabilities: Some(ModelCapabilities {
+                        context_window: Some(128_000),
+                        max_output_tokens: Some(8_000),
+                        thinking: Some("adaptive".into()),
+                        streaming: Some(true),
+                        ..Default::default()
+                    }),
+                    effort,
+                    ..Default::default()
+                },
+            )])),
+            selection: Some(SelectionSettings {
+                main: Some("main".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        set_session_settings_cache(SettingsWithErrors {
+            settings: SettingsJson {
+                nyan: Some(Box::new(nyan)),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+    })
+}
+
+/// The body the main loop sends: the request is built the way `query` builds
+/// it (session context, launch thinking default) and goes out through
+/// `query_model_with_streaming`.
+async fn main_loop_body(
+    mock: &MockOpenAi,
+    thinking: ThinkingConfig,
+    session_effort: Option<crate::utils::effort::Effort>,
+) -> Value {
+    let context = crate::tool::ToolUseContext::default()
+        .with_thinking_config(Some(thinking))
+        .with_effort_value(session_effort);
+    let request = crate::query::build_call_model_request(
+        vec![user("go")],
+        crate::tool::ToolPermissionContext::default(),
+        &crate::constants::query_source::QuerySource::Prompt,
+        &["You are a test.".to_string()],
+        &BTreeMap::new(),
+        &crate::state::app_state_store::McpState::default(),
+        &context,
+    );
+    let mut rx = query_model_with_streaming(
+        &request.messages,
+        &request.system_prompt,
+        &request.thinking_config,
+        &[],
+        &request.options,
+    )
+    .await
+    .expect("stream opens");
+    while tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
+        .await
+        .expect("stream item before deadline")
+        .is_some()
+    {}
+    mock.requests().pop().expect("one request").body
+}
+
+fn chat_reply() -> Reply {
+    Reply::sse_data([chat_chunk(json!({"content": "ok"}), json!("stop"))])
+}
+
+fn responses_reply() -> Reply {
+    Reply::sse_data([
+        json!({"type": "response.created", "response": {"id": "resp_1", "model": "m"}}),
+        json!({"type": "response.completed", "response": {"id": "resp_1", "status": "completed",
+            "usage": {"input_tokens": 1, "output_tokens": 1}}}),
+    ])
+}
+
+/// No effort on the profile or the session leaves the depth to the model: the
+/// default adaptive launch must not turn into `medium` on its way to a
+/// non-Anthropic provider. Responses still asks for the reasoning summary.
+#[tokio::test]
+async fn an_unset_effort_sends_no_reasoning_depth_on_chat_or_responses() {
+    for (kind, model) in [
+        (ProviderKind::Openai, "deepseek-reasoner"),
+        (ProviderKind::Openai, "kimi-k2"),
+        (ProviderKind::Vllm, "qwen3:32b"),
+    ] {
+        let mock = MockOpenAi::start(vec![chat_reply()]).await;
+        let _env = thinking_env(
+            &mock.base_url,
+            kind,
+            ProviderProtocol::OpenaiChat,
+            model,
+            None,
+        );
+        let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
+        assert!(body.get("reasoning_effort").is_none(), "{model}: {body}");
+    }
+
+    let mock = MockOpenAi::start(vec![responses_reply()]).await;
+    let _env = thinking_env(
+        &mock.base_url,
+        ProviderKind::Openai,
+        ProviderProtocol::OpenaiResponses,
+        "gpt-5.5",
+        None,
+    );
+    let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
+    assert!(body["reasoning"].get("effort").is_none(), "{body}");
+    assert_eq!(body["reasoning"]["summary"], "auto", "{body}");
+}
+
+/// A configured depth still maps per family, and an explicit `off` on a
+/// family with no known off value (DeepSeek, Kimi, unknown gateways) sends
+/// nothing rather than a guess.
+#[tokio::test]
+async fn a_configured_effort_maps_per_family_and_off_is_omitted_where_unknown() {
+    use crate::utils::effort::Effort;
+
+    let mock = MockOpenAi::start(vec![chat_reply()]).await;
+    let _env = thinking_env(
+        &mock.base_url,
+        ProviderKind::Openai,
+        ProviderProtocol::OpenaiChat,
+        "deepseek-reasoner",
+        Some(Effort::High),
+    );
+    let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
+    assert_eq!(body["reasoning_effort"], "high", "profile effort: {body}");
+    drop(_env);
+
+    for model in ["deepseek-reasoner", "kimi-k2", "mystery-model"] {
+        let mock = MockOpenAi::start(vec![chat_reply()]).await;
+        let _env = thinking_env(
+            &mock.base_url,
+            ProviderKind::Openai,
+            ProviderProtocol::OpenaiChat,
+            model,
+            None,
+        );
+        let body = main_loop_body(&mock, ThinkingConfig::Adaptive, Some(Effort::Off)).await;
+        assert!(body.get("reasoning_effort").is_none(), "{model}: {body}");
+    }
+
+    let mock = MockOpenAi::start(vec![responses_reply()]).await;
+    let _env = thinking_env(
+        &mock.base_url,
+        ProviderKind::Openai,
+        ProviderProtocol::OpenaiResponses,
+        "gpt-5.5",
+        None,
+    );
+    let body = main_loop_body(&mock, ThinkingConfig::Adaptive, Some(Effort::Max)).await;
+    assert_eq!(
+        body["reasoning"],
+        json!({"effort": "xhigh", "summary": "auto"}),
+        "session effort: {body}"
+    );
+}
+
+/// Only the OpenAI kind takes OpenAI's cache parameters; with the default long
+/// retention a local server gets no `prompt_cache_key` either, while the
+/// OpenAI kind keeps its key and retention.
+#[tokio::test]
+async fn the_default_long_retention_sends_a_cache_key_only_to_the_openai_kind() {
+    for kind in [ProviderKind::Vllm, ProviderKind::Ollama] {
+        let mock = MockOpenAi::start(vec![chat_reply()]).await;
+        let _env = thinking_env(
+            &mock.base_url,
+            kind,
+            ProviderProtocol::OpenaiChat,
+            "qwen3:32b",
+            None,
+        );
+        let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
+        for field in [
+            "prompt_cache_key",
+            "prompt_cache_retention",
+            "prompt_cache_options",
+        ] {
+            assert!(body.get(field).is_none(), "{kind:?}: {body}");
+        }
+    }
+
+    let mock = MockOpenAi::start(vec![chat_reply()]).await;
+    let _env = thinking_env(
+        &mock.base_url,
+        ProviderKind::Openai,
+        ProviderProtocol::OpenaiChat,
+        "gpt-5",
+        None,
+    );
+    let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
+    assert!(body["prompt_cache_key"].is_string(), "{body}");
+    assert_eq!(body["prompt_cache_retention"], "24h", "{body}");
+}
+
 #[tokio::test]
 async fn a_streamed_request_is_accounted_exactly_once_with_its_catalog_price() {
     let mock = MockOpenAi::start(vec![Reply::sse_data([

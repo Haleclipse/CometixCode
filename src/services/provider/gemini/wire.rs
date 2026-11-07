@@ -609,8 +609,9 @@ pub fn build_request(request: &ModelRequest, target: &ResolvedTarget) -> Generat
     }
 
     if target.capabilities.thinking {
-        gen_config.thinking_config =
-            Some(thinking_config(request.effort, is_gemini_3, &target.model));
+        gen_config.thinking_config = request
+            .effort
+            .map(|effort| thinking_config(effort, is_gemini_3, &target.model));
     }
 
     let generation_config = if gen_config != GenerationConfig::default() {

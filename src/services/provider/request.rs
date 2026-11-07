@@ -27,7 +27,7 @@ pub struct RequestParams {
     pub temperature: Option<f64>,
     pub tool_choice: ToolChoice,
     pub disable_parallel_tools: bool,
-    pub effort: Effort,
+    pub effort: Option<Effort>,
     pub output_schema: Option<serde_json::Value>,
     pub enable_prompt_caching: bool,
     pub skip_cache_write: bool,
@@ -348,7 +348,7 @@ mod tests {
             temperature: None,
             tool_choice: ToolChoice::Auto,
             disable_parallel_tools: false,
-            effort: Effort::Medium,
+            effort: Some(Effort::Medium),
             output_schema: None,
             enable_prompt_caching: true,
             skip_cache_write: false,
@@ -461,10 +461,10 @@ mod tests {
     #[test]
     fn effort_is_carried_into_the_provider_request() {
         let mut p = params();
-        p.effort = Effort::Max;
+        p.effort = Some(Effort::Max);
         assert_eq!(
             build_request(&[], &[], &[], Vec::new(), p).effort,
-            Effort::Max
+            Some(Effort::Max)
         );
     }
 

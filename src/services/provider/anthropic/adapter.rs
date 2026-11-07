@@ -243,7 +243,7 @@ mod tests {
             }],
             tools: vec![],
             tool_choice: ToolChoice::Auto,
-            effort: Effort::Off,
+            effort: Some(Effort::Off),
             max_output_tokens: 1024,
             temperature: None,
             structured_output: None,

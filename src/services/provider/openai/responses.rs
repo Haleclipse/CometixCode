@@ -240,8 +240,12 @@ pub fn build_body(
         body["parallel_tool_calls"] = json!(!request.disable_parallel_tools);
     }
     if target.capabilities.thinking {
-        if let Some(effort) = reasoning_effort(request, target) {
-            body["reasoning"] = json!({"effort": effort, "summary": "auto"});
+        match (reasoning_effort(request, target), request.effort) {
+            (Some(effort), _) => body["reasoning"] = json!({"effort": effort, "summary": "auto"}),
+            // No effort leaves the depth to the model; the summary is still wanted.
+            (None, None) => body["reasoning"] = json!({"summary": "auto"}),
+            // `off` on a family with no known off tier sends nothing.
+            (None, Some(_)) => {}
         }
     }
     if let Some(output) = &request.structured_output {
@@ -252,7 +256,11 @@ pub fn build_body(
             "strict": false,
         }});
     }
-    if target.cache_retention != crate::utils::settings::nyan::CacheRetention::None {
+    // Only the OpenAI kind takes OpenAI's cache parameters. The ChatGPT
+    // backend (always that kind) keeps the key but refuses the TTL fields.
+    if compat.openai_prompt_cache
+        && target.cache_retention != crate::utils::settings::nyan::CacheRetention::None
+    {
         let session_id = crate::bootstrap::state::get_session_id();
         if !session_id.is_empty() {
             body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
@@ -845,7 +853,7 @@ mod tests {
             messages,
             tools: vec![],
             tool_choice: ToolChoice::Auto,
-            effort: Effort::Off,
+            effort: Some(Effort::Off),
             max_output_tokens: 32_000,
             temperature: None,
             structured_output: None,
@@ -936,7 +944,7 @@ mod tests {
         r.tools = vec![tool()];
         r.tool_choice = ToolChoice::Any;
         r.disable_parallel_tools = true;
-        r.effort = Effort::Medium;
+        r.effort = Some(Effort::Medium);
         let body = build_body(&target(all()), &r, Backend::Api);
         assert_eq!(body["tools"][0]["strict"], false);
         assert_eq!(body["tools"][0]["name"], "Read");
@@ -952,6 +960,48 @@ mod tests {
         no_tools.thinking = false;
         let body = build_body(&target(no_tools), &r, Backend::Api);
         assert!(body.get("tools").is_none() && body.get("reasoning").is_none());
+    }
+
+    #[test]
+    fn the_reasoning_summary_is_sent_unless_thinking_is_off_or_unsupported() {
+        let mut r = request(vec![user_text("hi")]);
+        let gpt5 = target(all());
+        let mut no_off_tier = target(all());
+        no_off_tier.model = "mystery-model".into();
+
+        // No effort leaves the depth to the model but still asks for the summary.
+        r.effort = None;
+        for backend in [Backend::Api, Backend::Codex] {
+            let body = build_body(&gpt5, &r, backend);
+            assert_eq!(body["reasoning"], json!({"summary": "auto"}), "{backend:?}");
+        }
+        let body = build_body(&no_off_tier, &r, Backend::Api);
+        assert_eq!(body["reasoning"], json!({"summary": "auto"}));
+
+        r.effort = Some(Effort::High);
+        let body = build_body(&gpt5, &r, Backend::Api);
+        assert_eq!(
+            body["reasoning"],
+            json!({"effort": "high", "summary": "auto"})
+        );
+
+        // `off` sends the family's off tier, or no reasoning where it has none.
+        r.effort = Some(Effort::Off);
+        let body = build_body(&gpt5, &r, Backend::Api);
+        assert_eq!(
+            body["reasoning"],
+            json!({"effort": "minimal", "summary": "auto"})
+        );
+        let body = build_body(&no_off_tier, &r, Backend::Api);
+        assert!(body.get("reasoning").is_none(), "{body}");
+
+        let mut no_thinking = all();
+        no_thinking.thinking = false;
+        for effort in [None, Some(Effort::High)] {
+            r.effort = effort;
+            let body = build_body(&target(no_thinking), &r, Backend::Api);
+            assert!(body.get("reasoning").is_none(), "{effort:?}: {body}");
+        }
     }
 
     #[test]
@@ -1427,6 +1477,7 @@ mod tests {
         ] {
             let compat = Compat::resolve_full(kind, Some("other"), Some(&t.model), None);
             let body = super::build_body(&t, &req, Backend::Api, &compat);
+            assert!(body.get("prompt_cache_key").is_none(), "{kind:?}");
             assert!(body.get("prompt_cache_retention").is_none(), "{kind:?}");
             assert!(body.get("prompt_cache_options").is_none(), "{kind:?}");
         }

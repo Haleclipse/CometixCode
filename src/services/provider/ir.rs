@@ -79,8 +79,9 @@ pub struct ModelRequest {
     pub messages: Vec<Message>,
     pub tools: Vec<ToolSpec>,
     pub tool_choice: ToolChoice,
-    /// Unified reasoning-effort depth (`off < medium < high < max`); `off` disables reasoning.
-    pub effort: Effort,
+    /// Unified reasoning-effort depth (`off < medium < high < max`); `off`
+    /// disables reasoning, `None` leaves the depth to the model's default.
+    pub effort: Option<Effort>,
     pub max_output_tokens: u32,
     pub temperature: Option<f64>,
     pub structured_output: Option<JsonSchemaOutput>,
@@ -551,7 +552,7 @@ mod tests {
             tool_choice: ToolChoice::Tool {
                 name: "Read".into(),
             },
-            effort: Effort::High,
+            effort: Some(Effort::High),
             max_output_tokens: 1000,
             temperature: None,
             structured_output: None,

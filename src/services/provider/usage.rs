@@ -546,7 +546,7 @@ mod tests {
             messages: Vec::new(),
             tools: tools.clone(),
             tool_choice: ToolChoice::Auto,
-            effort: crate::utils::effort::Effort::Off,
+            effort: Some(crate::utils::effort::Effort::Off),
             max_output_tokens: 1000,
             temperature: None,
             structured_output: None,

@@ -74,7 +74,7 @@ fn minimal_request(messages: Vec<Message>) -> ModelRequest {
         messages,
         tools: Vec::new(),
         tool_choice: ToolChoice::Auto,
-        effort: Effort::Off,
+        effort: Some(Effort::Off),
         max_output_tokens: 4096,
         temperature: None,
         structured_output: None,
@@ -287,7 +287,7 @@ fn test_wire_structured_output_and_thinking_budget() {
     req.structured_output = Some(JsonSchemaOutput {
         schema: json!({ "type": "object" }),
     });
-    req.effort = Effort::Medium;
+    req.effort = Some(Effort::Medium);
     req.temperature = Some(0.7);
 
     let wire = wire::build_request(&req, &target);
@@ -376,7 +376,7 @@ fn test_wire_gemini_3_thinking_level_and_effort_mapping() {
         (Effort::High, "HIGH"),
         (Effort::Max, "HIGH"),
     ] {
-        req.effort = effort;
+        req.effort = Some(effort);
         let wire = wire::build_request(&req, &target);
         let think = wire
             .generation_config
@@ -390,7 +390,7 @@ fn test_wire_gemini_3_thinking_level_and_effort_mapping() {
 
     // Off clamps to the lowest level every Gemini 3 text model lists, and asks
     // for no thought summaries.
-    req.effort = Effort::Off;
+    req.effort = Some(Effort::Off);
     let wire = wire::build_request(&req, &target);
     let think = wire
         .generation_config
@@ -425,19 +425,28 @@ fn test_wire_gemini_25_thinking_budget_follows_effort_and_clamps_off() {
         (Effort::High, Some(24576)),
         (Effort::Max, Some(-1)),
     ] {
-        req.effort = effort;
+        req.effort = Some(effort);
         assert_eq!(budget(&req, &target), (expected, Some(true)));
     }
 
     // Off is budget 0 on Flash, and the 128-token floor on Pro (which rejects 0).
-    req.effort = Effort::Off;
+    req.effort = Some(Effort::Off);
     assert_eq!(budget(&req, &target), (Some(0), None));
     target.model = "gemini-2.5-pro".into();
     assert_eq!(budget(&req, &target), (Some(128), None));
 
+    // No effort leaves thinking to the model's own default.
+    req.effort = None;
+    assert!(
+        wire::build_request(&req, &target)
+            .generation_config
+            .and_then(|g| g.thinking_config)
+            .is_none()
+    );
+
     // A model without the thinking capability gets no thinking configuration.
     target.capabilities.thinking = false;
-    req.effort = Effort::High;
+    req.effort = Some(Effort::High);
     assert!(
         wire::build_request(&req, &target)
             .generation_config
@@ -1307,6 +1316,46 @@ async fn test_gemini_503_unavailable_retries_and_recovers() {
     assert_eq!(server.requests().len(), 2, "503 retried once and recovered");
 }
 
+/// The main loop on a Gemini profile with no effort anywhere: the default
+/// adaptive launch must not become a fixed budget; the model keeps its own
+/// thinking default.
+#[tokio::test]
+async fn test_gemini_main_loop_without_effort_sends_no_thinking_config() {
+    let server = MockGemini::start(vec![Reply::sse_data(vec![gemini_chunk("ok")])]).await;
+    let _env = QueryEnv::new(&server.base_url);
+
+    let context = crate::tool::ToolUseContext::default()
+        .with_thinking_config(Some(crate::utils::thinking::ThinkingConfig::Adaptive));
+    let request = crate::query::build_call_model_request(
+        vec![user_msg("go")],
+        crate::tool::ToolPermissionContext::default(),
+        &crate::constants::query_source::QuerySource::Prompt,
+        &[],
+        &std::collections::BTreeMap::new(),
+        &crate::state::app_state_store::McpState::default(),
+        &context,
+    );
+    assert_eq!(request.options.effort_value, None);
+    let mut rx = crate::services::api::claude::query_model_with_streaming(
+        &request.messages,
+        &request.system_prompt,
+        &request.thinking_config,
+        &[],
+        &request.options,
+    )
+    .await
+    .expect("stream opens");
+    while rx.recv().await.is_some() {}
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let body = &requests[0].body;
+    assert!(
+        body.pointer("/generationConfig/thinkingConfig").is_none(),
+        "{body}"
+    );
+}
+
 #[tokio::test]
 async fn test_gemini_401_unauthenticated_fails_fast_without_retry() {
     let err_body = json!({
@@ -1644,7 +1693,7 @@ fn test_wire_after_a_claude_or_openai_turn_carries_no_foreign_signature() {
             temperature: None,
             tool_choice: ToolChoice::Auto,
             disable_parallel_tools: false,
-            effort: Effort::Off,
+            effort: Some(Effort::Off),
             output_schema: None,
             enable_prompt_caching: false,
             skip_cache_write: false,

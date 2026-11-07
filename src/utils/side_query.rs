@@ -601,10 +601,10 @@ async fn side_query_neutral(
         }
     };
 
-    let effort = match &opts.thinking {
+    let effort = Some(match &opts.thinking {
         Some(SideQueryThinking::Disabled) | None => Effort::Off,
         Some(SideQueryThinking::Enabled { .. }) => profile.effort.unwrap_or(Effort::Medium),
-    };
+    });
 
     let request = ModelRequest {
         model,
