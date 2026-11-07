@@ -634,3 +634,36 @@ async fn an_overloaded_529_retries_under_the_unified_budget_and_recovers() {
         "overloaded 529 was retried once and recovered"
     );
 }
+
+#[tokio::test]
+async fn a_streamed_request_is_accounted_once_and_attributed_to_its_source() {
+    crate::cost_tracker::reset_cost_state();
+    run(
+        StreamSpec {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_read_tokens: 1_000_000,
+            cache_write_tokens: 1_000_000,
+            ..StreamSpec::default()
+        },
+        vec![user("go")],
+        vec![],
+        |options| options.query_source = "agent:builtin:general-purpose".to_string(),
+    )
+    .await;
+
+    let total = crate::cost_tracker::get_total_usage();
+    assert_eq!(
+        total.requests, 1,
+        "message_start and message_delta make one record"
+    );
+    assert_eq!(total.output_tokens, 1_000_000);
+    // claude-sonnet-4-6: $3 input, $15 output, $0.30 read, $3.75 5m write.
+    assert!((crate::cost_tracker::get_total_cost() - (3.0 + 15.0 + 0.3 + 3.75)).abs() < 1e-9);
+    let by_source = crate::cost_tracker::get_source_usage();
+    assert_eq!(
+        by_source.keys().collect::<Vec<_>>(),
+        [&crate::cost_tracker::CostSource::Subagent]
+    );
+    crate::cost_tracker::reset_cost_state();
+}

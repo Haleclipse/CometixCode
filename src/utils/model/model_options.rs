@@ -16,9 +16,6 @@ use crate::utils::model::model::{
 };
 use crate::utils::model::model_strings::get_model_strings;
 use crate::utils::model::providers::{ApiProvider, get_api_provider};
-use crate::utils::model_cost::{
-    COST_HAIKU_35, COST_HAIKU_45, COST_TIER_3_15, format_model_pricing,
-};
 use crate::utils::process_env::JsTruthy;
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
@@ -63,14 +60,6 @@ fn is_3p() -> bool {
     get_api_provider() != ApiProvider::FirstParty
 }
 
-fn tier_3_15_suffix() -> String {
-    if is_3p() {
-        String::new()
-    } else {
-        format!(" · {}", format_model_pricing(COST_TIER_3_15))
-    }
-}
-
 /// Maps to: CC `utils/model/modelOptions.ts:45-74` `getDefaultOptionForUser`.
 pub fn get_default_option_for_user() -> ModelOption {
     get_default_option_for_user_for_audience(crate::utils::build_profile::build_audience())
@@ -111,13 +100,12 @@ pub fn get_default_option_for_user_for_audience(
         None,
         "Default (recommended)",
         format!(
-            "Use the default model (currently {}){}",
+            "Use the default model (currently {})",
             // The audience must flow into this arm too: the nullary
             // `get_default_main_loop_model_setting()` resolves the COMPILED
             // audience, so under `--features anthropic_internal` a caller
             // asking for the External option still saw the ant default model.
             render_default_model_setting_for_audience_display(audience),
-            tier_3_15_suffix()
         ),
     )
 }
@@ -165,7 +153,7 @@ fn get_sonnet_46_option() -> ModelOption {
     ModelOption::new(
         Some(&value),
         "Sonnet",
-        format!("Sonnet 4.6 · Best for everyday tasks{}", tier_3_15_suffix()),
+        "Sonnet 4.6 · Best for everyday tasks".to_string(),
     )
     .with_description_for_model(
         "Sonnet 4.6 - best for everyday tasks. Generally recommended for most coding tasks",
@@ -237,7 +225,7 @@ pub fn get_sonnet_46_1m_option() -> ModelOption {
     ModelOption::new(
         Some(&value),
         "Sonnet (1M context)",
-        format!("Sonnet 4.6 for long sessions{}", tier_3_15_suffix()),
+        "Sonnet 4.6 for long sessions".to_string(),
     )
     .with_description_for_model(
         "Sonnet 4.6 with 1M context window - for long sessions with large codebases",
@@ -290,15 +278,10 @@ fn get_custom_haiku_option() -> Option<ModelOption> {
 
 /// Maps to: CC `utils/model/modelOptions.ts:181-190` `getHaiku45Option`.
 fn get_haiku_45_option() -> ModelOption {
-    let pricing = if is_3p() {
-        String::new()
-    } else {
-        format!(" · {}", format_model_pricing(COST_HAIKU_45))
-    };
     ModelOption::new(
         Some("haiku"),
         "Haiku",
-        format!("Haiku 4.5 · Fastest for quick answers{pricing}"),
+        "Haiku 4.5 · Fastest for quick answers".to_string(),
     )
     .with_description_for_model(
         "Haiku 4.5 - fastest for quick answers. Lower cost but less capable than Sonnet 4.6.",
@@ -307,15 +290,10 @@ fn get_haiku_45_option() -> ModelOption {
 
 /// Maps to: CC `utils/model/modelOptions.ts:192-201` `getHaiku35Option`.
 fn get_haiku_35_option() -> ModelOption {
-    let pricing = if is_3p() {
-        String::new()
-    } else {
-        format!(" · {}", format_model_pricing(COST_HAIKU_35))
-    };
     ModelOption::new(
         Some("haiku"),
         "Haiku",
-        format!("Haiku 3.5 for simple tasks{pricing}"),
+        "Haiku 3.5 for simple tasks".to_string(),
     )
     .with_description_for_model(
         "Haiku 3.5 - faster and lower cost, but less capable than Sonnet. Use for simple tasks.",
@@ -696,10 +674,7 @@ mod tests {
             options[0].description,
             "no model profile configured — set settings.nyan.selection.main"
         );
-        assert_eq!(
-            options[1].description,
-            "Sonnet 4.6 for long sessions · $3/$15 per Mtok"
-        );
+        assert_eq!(options[1].description, "Sonnet 4.6 for long sessions");
         assert_eq!(
             options[1].description_for_model.as_deref(),
             Some("Sonnet 4.6 with 1M context window - for long sessions with large codebases")
@@ -710,7 +685,7 @@ mod tests {
         );
         assert_eq!(
             options[3].description,
-            "Haiku 4.5 · Fastest for quick answers · $1/$5 per Mtok"
+            "Haiku 4.5 · Fastest for quick answers"
         );
     }
 
@@ -726,7 +701,7 @@ mod tests {
         assert_eq!(values(&options), [None, Some("opus"), Some("haiku")]);
         assert_eq!(
             options[1].description,
-            "Opus 4.6 · Most capable for complex work · $5/$25 per Mtok"
+            "Opus 4.6 · Most capable for complex work"
         );
 
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_1M_CONTEXT");
@@ -959,10 +934,10 @@ mod tests {
     }
 
     /// Maps to: CC `utils/model/modelOptions.ts:154-163, 229-236` and
-    /// `model.ts:307-312` — fast mode swaps in the 30/150 tier and prefixes the
-    /// lightning bolt.
+    /// `model.ts:307-312` — fast mode adds the lightning bolt; the hardcoded
+    /// price is not shown (@nyan).
     #[test]
-    fn fast_mode_applies_the_official_opus_pricing_suffix() {
+    fn fast_mode_applies_the_opus_fast_mode_suffix() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fixture = OptionsFixture::new(serde_json::json!({}));
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1");
@@ -971,7 +946,7 @@ mod tests {
         assert_eq!(
             options[1].description,
             format!(
-                "Opus 4.6 · Most capable for complex work · ({}) $30/$150 per Mtok",
+                "Opus 4.6 · Most capable for complex work · ({})",
                 crate::constants::figures::LIGHTNING_BOLT
             )
         );

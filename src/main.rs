@@ -1850,9 +1850,9 @@ pub fn run(config: crate::cli::CliConfig) {
                     stats_for_callback.lock().unwrap().record(&event);
                 })
                 .await;
-            if let Err(error) = crate::cost_tracker::save_current_session_costs() {
+            if let Err(error) = crate::cost_tracker::save_current_session_stats() {
                 utils::debug::log_for_debugging(&format!(
-                    "Failed to save current session costs during shutdown: {error}"
+                    "Failed to save current session stats during shutdown: {error}"
                 ));
             }
             if let Err(error) = utils::session_storage::flush_session_storage().await {
@@ -1896,9 +1896,9 @@ pub fn run(config: crate::cli::CliConfig) {
                 .ignore_ctrl_c()
                 .stdout(utils::asciicast::RecordingStdout(std::io::stdout()))
                 .await;
-            if let Err(error) = crate::cost_tracker::save_current_session_costs() {
+            if let Err(error) = crate::cost_tracker::save_current_session_stats() {
                 utils::debug::log_for_debugging(&format!(
-                    "Failed to save current session costs during shutdown: {error}"
+                    "Failed to save current session stats during shutdown: {error}"
                 ));
             }
             if let Err(error) = utils::session_storage::flush_session_storage().await {

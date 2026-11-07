@@ -705,35 +705,23 @@ pub(crate) fn open_local_command_ui(
 }
 
 fn format_cost_summary() -> String {
-    // Maps to CC `cost-tracker.ts::formatTotalCost`; unlike the old preview,
-    // every value comes from the live/restored process cost state.
-    let cost = crate::cost_tracker::get_total_cost();
-    let cost = if cost > 0.5 {
-        format!("${cost:.2}")
+    // Maps to CC `cost-tracker.ts::formatTotalCost` + `formatModelUsage`.
+    // @nyan: adds a by-source breakdown; requests without a known price make
+    // the total a lower bound ("at least") and show "$?" on their row.
+    let total = crate::cost_tracker::get_total_usage();
+    let total_cost = if total.cost_unknown {
+        format!("at least {}", format_usd(total.cost_usd))
     } else {
-        format!("${cost:.4}")
+        format_usd(total.cost_usd)
     };
-    let input = crate::cost_tracker::get_total_input_tokens();
-    let output = crate::cost_tracker::get_total_output_tokens();
-    let model_usage = crate::cost_tracker::get_model_usage();
-    let cache_read = model_usage
-        .values()
-        .map(|usage| usage.cache_read_input_tokens)
-        .sum::<u64>();
-    let cache_write = model_usage
-        .values()
-        .map(|usage| usage.cache_creation_input_tokens)
-        .sum::<u64>();
     let lines_added = crate::cost_tracker::get_total_lines_added();
     let lines_removed = crate::cost_tracker::get_total_lines_removed();
 
-    [
-        format!("Total cost:            {cost}"),
+    let mut lines = vec![
+        format!("Total cost:            {total_cost}"),
         format!(
             "Total duration (API):  {}",
-            crate::utils::format::format_duration(
-                crate::cost_tracker::get_total_api_duration()
-            )
+            crate::utils::format::format_duration(crate::cost_tracker::get_total_api_duration())
         ),
         format!(
             "Total duration (wall): {}",
@@ -744,11 +732,58 @@ fn format_cost_summary() -> String {
             if lines_added == 1 { "line" } else { "lines" },
             if lines_removed == 1 { "line" } else { "lines" },
         ),
-        format!(
-            "Usage:                 {input} input, {output} output, {cache_read} cache read, {cache_write} cache write"
-        ),
-    ]
-    .join("\n")
+        format!("Usage:                 {}", format_usage_tokens(&total)),
+    ];
+    let by_model = crate::cost_tracker::get_model_usage();
+    if !by_model.is_empty() {
+        lines.push("Usage by model:".to_string());
+        for (model, usage) in &by_model {
+            lines.push(format_usage_row(model, usage));
+        }
+    }
+    let by_source = crate::cost_tracker::get_source_usage();
+    if !by_source.is_empty() {
+        lines.push("Usage by source:".to_string());
+        for (source, usage) in &by_source {
+            lines.push(format_usage_row(&source.label(), usage));
+        }
+    }
+    lines.join("\n")
+}
+
+/// Maps to: CC `cost-tracker.ts::formatCost`.
+fn format_usd(cost: f64) -> String {
+    if cost > 0.5 {
+        format!("${cost:.2}")
+    } else {
+        format!("${cost:.4}")
+    }
+}
+
+fn format_usage_tokens(usage: &crate::cost_tracker::UsageTotals) -> String {
+    let mut text = format!(
+        "{} input, {} output, {} cache read, {} cache write",
+        usage.input_tokens, usage.output_tokens, usage.cache_read_tokens, usage.cache_write_tokens
+    );
+    if usage.reasoning_tokens > 0 {
+        text.push_str(&format!(" ({} reasoning)", usage.reasoning_tokens));
+    }
+    text
+}
+
+fn format_usage_row(name: &str, usage: &crate::cost_tracker::UsageTotals) -> String {
+    let cost = if usage.cost_unknown && usage.cost_usd == 0.0 {
+        "$?".to_string()
+    } else if usage.cost_unknown {
+        format!("at least {}", format_usd(usage.cost_usd))
+    } else {
+        format_usd(usage.cost_usd)
+    };
+    format!(
+        "{:>21}  {} ({cost})",
+        format!("{name}:"),
+        format_usage_tokens(usage)
+    )
 }
 
 fn invocation(command: &Command, args: &str) -> SlashCommandInvocation {
@@ -1992,19 +2027,87 @@ mod tests {
         );
     }
 
+    fn cost_record(
+        model: &str,
+        source: crate::cost_tracker::CostSource,
+        cost_usd: Option<f64>,
+    ) -> crate::cost_tracker::UsageRecord {
+        crate::cost_tracker::UsageRecord {
+            profile: "main".to_string(),
+            provider: "anthropic".to_string(),
+            model: model.to_string(),
+            source,
+            input_tokens: 7,
+            output_tokens: 3,
+            cache_read_tokens: 0,
+            cache_write_5m_tokens: 0,
+            cache_write_1h_tokens: 0,
+            reasoning_tokens: 0,
+            cost_usd,
+            duration_ms: 2_100,
+        }
+    }
+
     #[test]
     fn process_slash_command_cost_reads_live_cost_tracker_state() {
-        crate::cost_tracker::reset_cost_state_for_tests();
-        crate::cost_tracker::add_to_total_cost(1.25, 4_200);
-        crate::cost_tracker::add_to_total_tokens(7, 3);
+        let _guard = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        crate::cost_tracker::reset_cost_state();
+        let main = crate::cost_tracker::CostSource::Main;
+        crate::cost_tracker::add_record_for_tests(&cost_record("opus", main.clone(), Some(1.0)));
+        crate::cost_tracker::add_record_for_tests(&cost_record("opus", main, Some(0.25)));
         let result = process_slash_command("/cost", Some("cmd-1".to_string()), get_commands());
 
         assert!(!result.should_query);
         assert!(result.local_action.is_none());
-        assert!(local_output(&result).contains("Total cost:            $1.25"));
-        assert!(local_output(&result).contains("Total duration (API):  4s"));
-        assert!(local_output(&result).contains("7 input, 3 output"));
-        crate::cost_tracker::reset_cost_state_for_tests();
+        let output = local_output(&result);
+        assert!(output.contains("Total cost:            $1.25"), "{output}");
+        assert!(output.contains("Total duration (API):  4s"), "{output}");
+        assert!(output.contains("14 input, 6 output"), "{output}");
+        assert!(output.contains("Usage by model:\n"), "{output}");
+        assert!(
+            output.contains(
+                "               opus:  14 input, 6 output, 0 cache read, 0 cache write ($1.25)"
+            ),
+            "{output}"
+        );
+        assert!(output.contains("Usage by source:\n"), "{output}");
+        assert!(output.contains("main:  14 input"), "{output}");
+        crate::cost_tracker::reset_cost_state();
+    }
+
+    #[test]
+    fn process_slash_command_cost_marks_unknown_prices() {
+        let _guard = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        crate::cost_tracker::reset_cost_state();
+        crate::cost_tracker::add_record_for_tests(&cost_record(
+            "opus",
+            crate::cost_tracker::CostSource::Main,
+            Some(2.0),
+        ));
+        crate::cost_tracker::add_record_for_tests(&cost_record(
+            "gateway-model",
+            crate::cost_tracker::CostSource::Subagent,
+            None,
+        ));
+        let result = process_slash_command("/cost", Some("cmd-1".to_string()), get_commands());
+        let output = local_output(&result);
+        assert!(
+            output.contains("Total cost:            at least $2.00"),
+            "{output}"
+        );
+        assert!(
+            output.contains("gateway-model:  7 input, 3 output, 0 cache read, 0 cache write ($?)"),
+            "{output}"
+        );
+        assert!(
+            output.contains("subagent:  7 input, 3 output, 0 cache read, 0 cache write ($?)"),
+            "{output}"
+        );
+        assert!(
+            output.contains("opus:  7 input, 3 output, 0 cache read, 0 cache write ($2.00)"),
+            "{output}"
+        );
+        crate::cost_tracker::reset_cost_state();
     }
 
     #[test]

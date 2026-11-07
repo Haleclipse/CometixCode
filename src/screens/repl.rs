@@ -3421,8 +3421,7 @@ fn resume(
 
     // CC :2465-2489: read target before save/reset, switch, reset pointer,
     // then clear/restore metadata. Worktree restoration follows the switch.
-    let target_session_costs = crate::cost_tracker::get_stored_session_costs(&session_id);
-    let _ = crate::cost_tracker::save_current_session_costs();
+    let _ = crate::cost_tracker::save_current_session_stats();
     crate::cost_tracker::reset_cost_state();
     let project_dir = target
         .metadata
@@ -3476,8 +3475,8 @@ fn resume(
             },
         );
     }
-    if let Some(costs) = target_session_costs.as_ref() {
-        crate::cost_tracker::set_cost_state_for_restore(costs);
+    if let Some(path) = target.metadata.full_path.as_deref() {
+        crate::cost_tracker::restore_cost_state_from_transcript(std::path::Path::new(path));
     }
     Ok(processed)
 }

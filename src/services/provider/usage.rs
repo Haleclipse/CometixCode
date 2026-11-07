@@ -142,6 +142,7 @@ impl Usage {
             output_tokens,
             cache_read_tokens: cache_read,
             cache_write_tokens: cache_write,
+            cache_write_1h_tokens: 0,
             cache_deleted_tokens: 0,
             reasoning_tokens: reasoning,
         }
@@ -185,6 +186,7 @@ impl Usage {
             output_tokens,
             cache_read_tokens: cache_read,
             cache_write_tokens: cache_write,
+            cache_write_1h_tokens: 0,
             cache_deleted_tokens: 0,
             reasoning_tokens: reasoning,
         }
@@ -204,13 +206,14 @@ impl Usage {
         let output = candidates_token_count.unwrap_or(0);
         let thoughts = thoughts_token_count.unwrap_or(0);
 
+        // @nyan: Gemini bills thoughts as output but reports them apart from
+        // `candidatesTokenCount`; fold them in so output is the billed count.
         Self {
             input_tokens: prompt.saturating_sub(cached),
-            output_tokens: output,
+            output_tokens: output.saturating_add(thoughts),
             cache_read_tokens: cached,
-            cache_write_tokens: 0,
-            cache_deleted_tokens: 0,
             reasoning_tokens: thoughts,
+            ..Self::default()
         }
     }
 
@@ -250,6 +253,7 @@ impl Usage {
             output_tokens: output,
             cache_read_tokens: cache_read,
             cache_write_tokens: cache_write,
+            cache_write_1h_tokens: u64_at(value, "/cache_creation/ephemeral_1h_input_tokens"),
             cache_deleted_tokens: cache_deleted,
             reasoning_tokens: 0,
         }
@@ -290,6 +294,7 @@ mod tests {
             output_tokens: 25,
             cache_read_tokens: 80,
             cache_write_tokens: 10,
+            cache_write_1h_tokens: 0,
             cache_deleted_tokens: 0,
             reasoning_tokens: 15,
         };
@@ -396,7 +401,8 @@ mod tests {
     fn parse_gemini_metadata_and_json() {
         let meta_usage = Usage::from_gemini_metadata(Some(1000), Some(200), Some(700), Some(50));
         assert_eq!(meta_usage.input_tokens, 300);
-        assert_eq!(meta_usage.output_tokens, 200);
+        // Thoughts are billed as output.
+        assert_eq!(meta_usage.output_tokens, 250);
         assert_eq!(meta_usage.cache_read_tokens, 700);
         assert_eq!(meta_usage.reasoning_tokens, 50);
 
@@ -435,6 +441,7 @@ mod tests {
             output_tokens: 50,
             cache_read_tokens: 1500,
             cache_write_tokens: 0,
+            cache_write_1h_tokens: 0,
             cache_deleted_tokens: 0,
             reasoning_tokens: 0,
         };
@@ -452,6 +459,7 @@ mod tests {
             output_tokens: 50,
             cache_read_tokens: 1000,
             cache_write_tokens: 0,
+            cache_write_1h_tokens: 0,
             cache_deleted_tokens: 0,
             reasoning_tokens: 0,
         };

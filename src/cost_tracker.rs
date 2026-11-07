@@ -1,27 +1,186 @@
 //! Maps to: CC `cost-tracker.ts` getters used by StatusLine / session stats.
 //!
-//! Totals live in process state (CC `bootstrap/state.ts`). Accumulation,
-//! project-config save, and session-matched resume restoration are live for the
-//! counters represented here; live per-model accumulation and restored
-//! context-window/max-output enrichment remain outside this Rust subset.
+//! @nyan: every completed model request is recorded once, at the request layer
+//! (`services/api/claude.rs` and `utils/side_query.rs`), through
+//! [`record_request`]. Each record is priced from the model catalog / profile
+//! (`utils/model/pricing.rs`), added to the process totals, and appended to the
+//! main session transcript as a `usage` entry. Resume replays those entries
+//! instead of reading CC's per-project `lastCost` config fields; lines changed
+//! and wall clock are kept in a last-wins `session-stats` entry.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::Instant;
 
+use serde::{Deserialize, Serialize};
+
+use crate::services::provider::ir::Usage;
+
+/// Transcript entry type of one request's usage.
+pub const USAGE_ENTRY_TYPE: &str = "usage";
+/// Transcript entry type of the session's lines changed and durations.
+pub const SESSION_STATS_ENTRY_TYPE: &str = "session-stats";
+
+/// Who a request was made for, grouped for `/cost`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CostSource {
+    Main,
+    Subagent,
+    Compaction,
+    KeepAlive,
+    SideQuery,
+    Utility(String),
+}
+
+impl CostSource {
+    /// Groups CC's open query-source vocabulary.
+    pub fn from_query_source(query_source: &str) -> Self {
+        match query_source {
+            source if source.starts_with("repl_main_thread") || source == "sdk" => Self::Main,
+            source if source == "agent" || source.starts_with("agent:") => Self::Subagent,
+            "compact" => Self::Compaction,
+            "cache_warm" => Self::KeepAlive,
+            "side_query" => Self::SideQuery,
+            other => Self::Utility(other.to_string()),
+        }
+    }
+
+    pub fn label(&self) -> String {
+        match self {
+            Self::Main => "main".to_string(),
+            Self::Subagent => "subagent".to_string(),
+            Self::Compaction => "compaction".to_string(),
+            Self::KeepAlive => "keep-alive".to_string(),
+            Self::SideQuery => "side-query".to_string(),
+            Self::Utility(role) => format!("utility:{role}"),
+        }
+    }
+
+    fn from_label(label: &str) -> Self {
+        match label {
+            "main" => Self::Main,
+            "subagent" => Self::Subagent,
+            "compaction" => Self::Compaction,
+            "keep-alive" => Self::KeepAlive,
+            "side-query" => Self::SideQuery,
+            other => Self::Utility(other.strip_prefix("utility:").unwrap_or(other).to_string()),
+        }
+    }
+}
+
+impl Serialize for CostSource {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.label())
+    }
+}
+
+impl<'de> Deserialize<'de> for CostSource {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(Self::from_label(&String::deserialize(deserializer)?))
+    }
+}
+
+/// One completed request, as appended to the transcript.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageRecord {
+    pub profile: String,
+    pub provider: String,
+    pub model: String,
+    pub source: CostSource,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_5m_tokens: u64,
+    pub cache_write_1h_tokens: u64,
+    /// Display only; already inside `output_tokens`.
+    pub reasoning_tokens: u64,
+    /// `None` when no price is known for this profile/model.
+    pub cost_usd: Option<f64>,
+    pub duration_ms: u64,
+}
+
+/// Token and cost totals for one `/cost` row.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct UsageTotals {
+    pub requests: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_write_tokens: u64,
+    pub reasoning_tokens: u64,
+    /// Sum of the requests whose price is known.
+    pub cost_usd: f64,
+    /// At least one request had no price, so `cost_usd` is a lower bound.
+    pub cost_unknown: bool,
+}
+
+impl UsageTotals {
+    fn add(&mut self, record: &UsageRecord) {
+        self.requests += 1;
+        self.input_tokens = self.input_tokens.saturating_add(record.input_tokens);
+        self.output_tokens = self.output_tokens.saturating_add(record.output_tokens);
+        self.cache_read_tokens = self
+            .cache_read_tokens
+            .saturating_add(record.cache_read_tokens);
+        self.cache_write_tokens = self
+            .cache_write_tokens
+            .saturating_add(record.cache_write_5m_tokens)
+            .saturating_add(record.cache_write_1h_tokens);
+        self.reasoning_tokens = self
+            .reasoning_tokens
+            .saturating_add(record.reasoning_tokens);
+        match record.cost_usd {
+            Some(cost) => self.cost_usd += cost,
+            None => self.cost_unknown = true,
+        }
+    }
+}
+
+/// Lines changed and wall clock, persisted per session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SessionStats {
+    pub lines_added: u64,
+    pub lines_removed: u64,
+    pub wall_duration_ms: u64,
+}
+
 #[derive(Debug, Default)]
 struct CostState {
-    total_cost_usd: f64,
+    total: UsageTotals,
+    by_model: BTreeMap<String, UsageTotals>,
+    by_source: BTreeMap<CostSource, UsageTotals>,
     total_api_duration_ms: u64,
-    total_api_duration_without_retries_ms: u64,
-    total_tool_duration_ms: u64,
     total_lines_added: u64,
     total_lines_removed: u64,
-    total_input_tokens: u64,
-    total_output_tokens: u64,
-    model_usage: HashMap<String, crate::utils::config::ModelUsageStats>,
     restored_duration_ms: u64,
     session_started_at: Option<Instant>,
+}
+
+impl CostState {
+    fn add(&mut self, record: &UsageRecord) {
+        self.total.add(record);
+        self.by_model
+            .entry(record.model.clone())
+            .or_default()
+            .add(record);
+        self.by_source
+            .entry(record.source.clone())
+            .or_default()
+            .add(record);
+        self.total_api_duration_ms = self
+            .total_api_duration_ms
+            .saturating_add(record.duration_ms);
+    }
+
+    fn wall_duration_ms(&self) -> u64 {
+        self.restored_duration_ms.saturating_add(
+            self.session_started_at
+                .map(|started| started.elapsed().as_millis() as u64)
+                .unwrap_or(0),
+        )
+    }
 }
 
 static COST_STATE: LazyLock<Mutex<CostState>> = LazyLock::new(|| Mutex::new(CostState::default()));
@@ -36,41 +195,89 @@ fn with_state<T>(f: impl FnOnce(&mut CostState) -> T) -> T {
     f(&mut guard)
 }
 
-/// Maps to: CC `getTotalCost` / `getTotalCostUSD`.
+/// The one accounting point: price a completed request, add it to the
+/// session totals and append it to the main session transcript.
+///
+/// `profile` is the request's profile (`None` = main). A profile that does not
+/// resolve leaves the provider unknown, so the cost is unknown.
+pub fn record_request(
+    profile: Option<&str>,
+    model: &str,
+    source: CostSource,
+    usage: &Usage,
+    duration_ms: u64,
+) {
+    let settings = crate::utils::settings::get_initial_settings();
+    let resolved = crate::utils::model::profile::resolve_request_profile(&settings, profile).ok();
+    let profile_cost = resolved.as_ref().and_then(|resolved| {
+        crate::utils::model::profile::model_profile(settings.nyan.as_deref()?, &resolved.profile)?
+            .cost
+            .as_ref()
+    });
+    let price = crate::utils::model::pricing::resolve_price(
+        resolved.as_ref().map(|resolved| resolved.provider_kind),
+        model,
+        profile_cost,
+    );
+    let cache_write_1h = usage.cache_write_1h_tokens.min(usage.cache_write_tokens);
+    let record = UsageRecord {
+        profile: resolved
+            .as_ref()
+            .map(|resolved| resolved.profile.clone())
+            .unwrap_or_default(),
+        provider: resolved
+            .as_ref()
+            .map(|resolved| resolved.provider.clone())
+            .unwrap_or_default(),
+        model: model.to_string(),
+        source,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_read_tokens: usage.cache_read_tokens,
+        cache_write_5m_tokens: usage.cache_write_tokens - cache_write_1h,
+        cache_write_1h_tokens: cache_write_1h,
+        reasoning_tokens: usage.reasoning_tokens,
+        cost_usd: price.map(|price| price.cost_usd(usage)),
+        duration_ms,
+    };
+    with_state(|state| state.add(&record));
+    if let Err(error) = crate::utils::session_storage::append_usage_entry(&record) {
+        crate::utils::debug::log_for_debugging(&format!("Failed to record usage: {error}"));
+    }
+}
+
+/// Maps to: CC `getTotalCost` / `getTotalCostUSD`. Requests without a price
+/// contribute nothing, so this is a lower bound when [`has_unknown_cost`].
 pub fn get_total_cost() -> f64 {
-    with_state(|state| state.total_cost_usd)
+    with_state(|state| state.total.cost_usd)
+}
+
+/// Maps to: CC `hasUnknownModelCost`.
+pub fn has_unknown_cost() -> bool {
+    with_state(|state| state.total.cost_unknown)
+}
+
+pub fn get_total_usage() -> UsageTotals {
+    with_state(|state| state.total.clone())
+}
+
+/// Maps to: CC `getModelUsage`.
+pub fn get_model_usage() -> BTreeMap<String, UsageTotals> {
+    with_state(|state| state.by_model.clone())
+}
+
+pub fn get_source_usage() -> BTreeMap<CostSource, UsageTotals> {
+    with_state(|state| state.by_source.clone())
 }
 
 /// Maps to: CC `getTotalDuration`.
 pub fn get_total_duration() -> u64 {
-    with_state(|state| {
-        state.restored_duration_ms.saturating_add(
-            state
-                .session_started_at
-                .map(|started| started.elapsed().as_millis() as u64)
-                .unwrap_or(0),
-        )
-    })
+    with_state(|state| state.wall_duration_ms())
 }
 
 /// Maps to: CC `getTotalAPIDuration`.
 pub fn get_total_api_duration() -> u64 {
     with_state(|state| state.total_api_duration_ms)
-}
-
-/// Maps to: CC `getTotalAPIDurationWithoutRetries`.
-pub fn get_total_api_duration_without_retries() -> u64 {
-    with_state(|state| state.total_api_duration_without_retries_ms)
-}
-
-/// Maps to: CC `getTotalToolDuration`.
-pub fn get_total_tool_duration() -> u64 {
-    with_state(|state| state.total_tool_duration_ms)
-}
-
-/// Maps to: CC `getModelUsage`.
-pub fn get_model_usage() -> HashMap<String, crate::utils::config::ModelUsageStats> {
-    with_state(|state| state.model_usage.clone())
 }
 
 /// Maps to: CC `getTotalLinesAdded`.
@@ -85,20 +292,12 @@ pub fn get_total_lines_removed() -> u64 {
 
 /// Maps to: CC `getTotalInputTokens`.
 pub fn get_total_input_tokens() -> u64 {
-    with_state(|state| state.total_input_tokens)
+    with_state(|state| state.total.input_tokens)
 }
 
 /// Maps to: CC `getTotalOutputTokens`.
 pub fn get_total_output_tokens() -> u64 {
-    with_state(|state| state.total_output_tokens)
-}
-
-/// Maps to: CC `addToTotalCostState`.
-pub fn add_to_total_cost(cost_usd: f64, api_duration_ms: u64) {
-    with_state(|state| {
-        state.total_cost_usd += cost_usd;
-        state.total_api_duration_ms = state.total_api_duration_ms.saturating_add(api_duration_ms);
-    });
+    with_state(|state| state.total.output_tokens)
 }
 
 /// Maps to: CC `addToTotalLinesChanged`.
@@ -109,136 +308,69 @@ pub fn add_to_total_lines_changed(added: u64, removed: u64) {
     });
 }
 
-/// Accumulate token totals (StatusLine `context_window.total_*_tokens`).
-pub fn add_to_total_tokens(input: u64, output: u64) {
-    with_state(|state| {
-        state.total_input_tokens = state.total_input_tokens.saturating_add(input);
-        state.total_output_tokens = state.total_output_tokens.saturating_add(output);
-    });
+/// Current lines changed and wall clock, for the `session-stats` entry.
+pub fn current_session_stats() -> SessionStats {
+    with_state(|state| SessionStats {
+        lines_added: state.total_lines_added,
+        lines_removed: state.total_lines_removed,
+        wall_duration_ms: state.wall_duration_ms(),
+    })
 }
 
-/// @nyan: per-model token accounting for requests that never enter the model
-/// context (cache warming). Prices are unknown for gateway models, so only
-/// token counts are recorded and `cost_usd` is left untouched.
-pub fn add_to_model_usage(
-    model: &str,
-    input: u64,
-    output: u64,
-    cache_read: u64,
-    cache_creation: u64,
+/// Maps to: CC `saveCurrentSessionCosts()`. Usage is already in the
+/// transcript; only the session stats are written here.
+pub fn save_current_session_stats() -> anyhow::Result<()> {
+    crate::utils::session_storage::append_session_stats_entry(&current_session_stats())
+}
+
+/// Rebuild the totals of a resumed session from its transcript entries:
+/// every `usage` entry is replayed, the last `session-stats` entry wins.
+/// Replaces the current state (CC `setCostStateForRestore`).
+pub fn restore_from_transcript_entries<'a>(
+    entries: impl IntoIterator<Item = &'a serde_json::Value>,
 ) {
-    with_state(|state| {
-        let entry = state.model_usage.entry(model.to_string()).or_default();
-        entry.input_tokens = entry.input_tokens.saturating_add(input);
-        entry.output_tokens = entry.output_tokens.saturating_add(output);
-        entry.cache_read_input_tokens = entry.cache_read_input_tokens.saturating_add(cache_read);
-        entry.cache_creation_input_tokens = entry
-            .cache_creation_input_tokens
-            .saturating_add(cache_creation);
-    });
-}
-
-/// Maps to: CC `cost-tracker.ts` `StoredCostState`.
-#[derive(Clone, Debug)]
-pub struct StoredCostState {
-    pub total_cost_usd: f64,
-    pub total_api_duration: u64,
-    pub total_api_duration_without_retries: u64,
-    pub total_tool_duration: u64,
-    pub total_lines_added: u64,
-    pub total_lines_removed: u64,
-    pub last_duration: Option<u64>,
-    pub model_usage: Option<HashMap<String, crate::utils::config::ModelUsageStats>>,
-}
-
-/// Maps to: CC `getStoredSessionCosts(sessionId)`.
-pub fn get_stored_session_costs(session_id: &str) -> Option<StoredCostState> {
-    let project = crate::utils::config::get_current_project_config();
-    if project.last_session_id.as_deref() != Some(session_id) {
-        return None;
+    let mut state = CostState::default();
+    for entry in entries {
+        match entry.get("type").and_then(serde_json::Value::as_str) {
+            Some(USAGE_ENTRY_TYPE) => {
+                if let Some(record) = entry
+                    .get("usage")
+                    .and_then(|usage| UsageRecord::deserialize(usage).ok())
+                {
+                    state.add(&record);
+                }
+            }
+            Some(SESSION_STATS_ENTRY_TYPE) => {
+                if let Some(stats) = entry
+                    .get("stats")
+                    .and_then(|stats| SessionStats::deserialize(stats).ok())
+                {
+                    state.total_lines_added = stats.lines_added;
+                    state.total_lines_removed = stats.lines_removed;
+                    state.restored_duration_ms = stats.wall_duration_ms;
+                }
+            }
+            _ => {}
+        }
     }
-    Some(StoredCostState {
-        total_cost_usd: project.last_cost.unwrap_or(0.0),
-        total_api_duration: project.last_api_duration.unwrap_or(0.0).max(0.0) as u64,
-        total_api_duration_without_retries: project
-            .last_api_duration_without_retries
-            .unwrap_or(0.0)
-            .max(0.0) as u64,
-        total_tool_duration: project.last_tool_duration.unwrap_or(0.0).max(0.0) as u64,
-        total_lines_added: project.last_lines_added.unwrap_or(0),
-        total_lines_removed: project.last_lines_removed.unwrap_or(0),
-        last_duration: project.last_duration.map(|value| value.max(0.0) as u64),
-        model_usage: project.last_model_usage,
-    })
-}
-
-/// Maps to: CC bootstrap `setCostStateForRestore(data)`.
-pub fn set_cost_state_for_restore(data: &StoredCostState) {
-    let mut guard = COST_STATE
+    state.session_started_at = Some(Instant::now());
+    *COST_STATE
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    guard.total_cost_usd = data.total_cost_usd;
-    guard.total_api_duration_ms = data.total_api_duration;
-    guard.total_api_duration_without_retries_ms = data.total_api_duration_without_retries;
-    guard.total_tool_duration_ms = data.total_tool_duration;
-    guard.total_lines_added = data.total_lines_added;
-    guard.total_lines_removed = data.total_lines_removed;
-    if let Some(model_usage) = data.model_usage.as_ref() {
-        guard.model_usage = model_usage.clone();
-    }
-    guard.restored_duration_ms = data.last_duration.unwrap_or(0);
-    guard.session_started_at = Some(Instant::now());
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = state;
 }
 
-/// Maps to: CC `restoreCostStateForSession(sessionId)`.
-pub fn restore_cost_state_for_session(session_id: &str) -> bool {
-    let Some(data) = get_stored_session_costs(session_id) else {
-        return false;
-    };
-    set_cost_state_for_restore(&data);
-    true
-}
-
-/// Maps to: CC `saveCurrentSessionCosts()` for Rust-owned counters.
-pub fn save_current_session_costs() -> anyhow::Result<()> {
-    let session_id = crate::bootstrap::state::get_session_id();
-    let (snapshot, total_input_tokens, total_output_tokens) = with_state(|state| {
-        (
-            StoredCostState {
-                total_cost_usd: state.total_cost_usd,
-                total_api_duration: state.total_api_duration_ms,
-                total_api_duration_without_retries: state.total_api_duration_without_retries_ms,
-                total_tool_duration: state.total_tool_duration_ms,
-                total_lines_added: state.total_lines_added,
-                total_lines_removed: state.total_lines_removed,
-                last_duration: Some(
-                    state.restored_duration_ms.saturating_add(
-                        state
-                            .session_started_at
-                            .map(|started| started.elapsed().as_millis() as u64)
-                            .unwrap_or(0),
-                    ),
-                ),
-                model_usage: Some(state.model_usage.clone()),
-            },
-            state.total_input_tokens,
-            state.total_output_tokens,
-        )
-    });
-    crate::utils::config::save_current_project_config(|project| {
-        project.last_session_id = Some(session_id);
-        project.last_cost = Some(snapshot.total_cost_usd);
-        project.last_api_duration = Some(snapshot.total_api_duration as f64);
-        project.last_api_duration_without_retries =
-            Some(snapshot.total_api_duration_without_retries as f64);
-        project.last_tool_duration = Some(snapshot.total_tool_duration as f64);
-        project.last_duration = snapshot.last_duration.map(|value| value as f64);
-        project.last_lines_added = Some(snapshot.total_lines_added);
-        project.last_lines_removed = Some(snapshot.total_lines_removed);
-        project.last_total_input_tokens = Some(total_input_tokens);
-        project.last_total_output_tokens = Some(total_output_tokens);
-        project.last_model_usage = snapshot.model_usage;
-    })
+/// Maps to: CC `restoreCostStateForSession`: rebuild the totals from the
+/// resumed session's transcript file.
+pub fn restore_cost_state_from_transcript(path: &std::path::Path) {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let entries = content
+        .lines()
+        .filter(|line| {
+            line.contains("\"type\":\"usage\"") || line.contains("\"type\":\"session-stats\"")
+        })
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .collect::<Vec<_>>();
+    restore_from_transcript_entries(&entries);
 }
 
 /// Maps to: CC `resetCostState`.
@@ -249,9 +381,20 @@ pub fn reset_cost_state() {
     *guard = CostState::default();
 }
 
-/// Test alias retained for existing callers.
-pub fn reset_cost_state_for_tests() {
-    reset_cost_state();
+/// Start the per-session stats (lines changed, wall clock) over for a new
+/// session, keeping the process-wide cost and usage totals (`/clear`).
+pub fn reset_session_stats() {
+    with_state(|state| {
+        state.total_lines_added = 0;
+        state.total_lines_removed = 0;
+        state.restored_duration_ms = 0;
+        state.session_started_at = Some(Instant::now());
+    });
+}
+
+#[cfg(test)]
+pub(crate) fn add_record_for_tests(record: &UsageRecord) {
+    with_state(|state| state.add(record));
 }
 
 #[cfg(test)]
@@ -259,89 +402,128 @@ mod tests {
     use super::*;
     use crate::utils::test_env::TEST_ENV_LOCK;
 
-    #[test]
-    fn restore_cost_state_for_session_matches_saved_project_session_only() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let previous_cwd = crate::bootstrap::state::get_original_cwd();
-        let root = std::env::temp_dir().join(format!("nyan-cost-restore-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&root).unwrap();
-        let root = std::fs::canonicalize(root).unwrap();
-        crate::bootstrap::state::set_original_cwd(&root);
-
-        let mut project = crate::utils::config::ProjectConfig::default();
-        project.last_session_id = Some("target-session".to_string());
-        project.last_cost = Some(1.25);
-        project.last_api_duration = Some(420.0);
-        project.last_api_duration_without_retries = Some(300.0);
-        project.last_tool_duration = Some(55.0);
-        project.last_duration = Some(1_200.0);
-        project.last_lines_added = Some(7);
-        project.last_lines_removed = Some(3);
-        project.last_total_input_tokens = Some(111);
-        project.last_total_output_tokens = Some(22);
-        project.last_model_usage = Some(HashMap::from([(
-            "claude-test".to_string(),
-            crate::utils::config::ModelUsageStats {
-                input_tokens: 10,
-                output_tokens: 4,
-                cost_usd: 0.25,
-                ..crate::utils::config::ModelUsageStats::default()
-            },
-        )]));
-        let mut global = crate::utils::config::GlobalConfig::default();
-        global.projects.insert(
-            crate::utils::config::normalize_project_path(&root.to_string_lossy()),
-            project,
-        );
-        crate::utils::config::set_test_global_config(Some(global));
-        reset_cost_state();
-
-        assert!(!restore_cost_state_for_session("other-session"));
-        assert!(restore_cost_state_for_session("target-session"));
-        assert_eq!(get_total_cost(), 1.25);
-        assert_eq!(get_total_api_duration(), 420);
-        assert_eq!(get_total_api_duration_without_retries(), 300);
-        assert_eq!(get_total_tool_duration(), 55);
-        assert_eq!(get_total_lines_added(), 7);
-        assert_eq!(get_total_lines_removed(), 3);
-        // Official StoredCostState restores modelUsage, not these aggregate
-        // config fields directly; model-usage accumulation remains separate.
-        assert_eq!(get_total_input_tokens(), 0);
-        assert_eq!(get_total_output_tokens(), 0);
-        let model_usage = get_model_usage();
-        assert_eq!(model_usage["claude-test"].input_tokens, 10);
-        assert_eq!(model_usage["claude-test"].output_tokens, 4);
-        assert_eq!(model_usage["claude-test"].cost_usd, 0.25);
-        assert!(get_total_duration() >= 1_200);
-
-        reset_cost_state();
-        crate::utils::config::set_test_global_config(None);
-        crate::bootstrap::state::set_original_cwd(previous_cwd);
-        let _ = std::fs::remove_dir_all(root);
+    fn record(model: &str, source: CostSource, cost_usd: Option<f64>) -> UsageRecord {
+        UsageRecord {
+            profile: "main".to_string(),
+            provider: "anthropic".to_string(),
+            model: model.to_string(),
+            source,
+            input_tokens: 10,
+            output_tokens: 5,
+            cache_read_tokens: 100,
+            cache_write_5m_tokens: 20,
+            cache_write_1h_tokens: 30,
+            reasoning_tokens: 2,
+            cost_usd,
+            duration_ms: 40,
+        }
     }
 
     #[test]
-    fn set_cost_state_for_restore_replaces_instead_of_accumulating() {
+    fn query_sources_group_into_cost_sources() {
+        let cases = [
+            ("repl_main_thread", CostSource::Main),
+            ("repl_main_thread:outputStyle:x", CostSource::Main),
+            ("sdk", CostSource::Main),
+            ("agent:builtin:general-purpose", CostSource::Subagent),
+            ("agent:custom", CostSource::Subagent),
+            ("compact", CostSource::Compaction),
+            ("cache_warm", CostSource::KeepAlive),
+            ("side_query", CostSource::SideQuery),
+            (
+                "extract_memories",
+                CostSource::Utility("extract_memories".to_string()),
+            ),
+        ];
+        for (query_source, expected) in cases {
+            let source = CostSource::from_query_source(query_source);
+            assert_eq!(source, expected, "{query_source}");
+            assert_eq!(CostSource::from_label(&source.label()), source);
+        }
+        assert_eq!(
+            CostSource::Utility("agent_summary".to_string()).label(),
+            "utility:agent_summary"
+        );
+    }
+
+    #[test]
+    fn record_request_prices_and_accumulates_once() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::services::provider::anthropic::target::install_test_main_profile(
+            "http://127.0.0.1:1",
+            "NYAN_COST_TEST_KEY",
+        );
         reset_cost_state();
-        add_to_total_cost(9.0, 900);
-        set_cost_state_for_restore(&StoredCostState {
-            total_cost_usd: 2.0,
-            total_api_duration: 20,
-            total_api_duration_without_retries: 18,
-            total_tool_duration: 7,
-            total_lines_added: 4,
-            total_lines_removed: 1,
-            last_duration: Some(30),
-            model_usage: None,
-        });
-        assert_eq!(get_total_cost(), 2.0);
-        assert_eq!(get_total_api_duration(), 20);
-        assert_eq!(get_total_api_duration_without_retries(), 18);
-        assert_eq!(get_total_tool_duration(), 7);
-        assert_eq!(get_total_lines_added(), 4);
-        assert_eq!(get_total_lines_removed(), 1);
-        assert_eq!(get_total_input_tokens(), 0);
-        assert_eq!(get_total_output_tokens(), 0);
+        let usage = Usage {
+            input_tokens: 1_000_000,
+            output_tokens: 1_000_000,
+            cache_write_tokens: 1_000_000,
+            cache_write_1h_tokens: 1_000_000,
+            reasoning_tokens: 500_000,
+            ..Usage::default()
+        };
+        record_request(None, "claude-opus-4-5", CostSource::Main, &usage, 12);
+        // 5 input + 25 output + 10 (1h write = 2 × input); reasoning not re-priced.
+        assert!((get_total_cost() - 40.0).abs() < 1e-9);
+        assert!(!has_unknown_cost());
+        assert_eq!(get_total_api_duration(), 12);
+        let by_model = get_model_usage();
+        assert_eq!(by_model["claude-opus-4-5"].requests, 1);
+        assert_eq!(by_model["claude-opus-4-5"].cache_write_tokens, 1_000_000);
+
+        record_request(None, "no-such-model", CostSource::Subagent, &usage, 0);
+        assert!((get_total_cost() - 40.0).abs() < 1e-9);
+        assert!(has_unknown_cost());
+        assert!(get_source_usage()[&CostSource::Subagent].cost_unknown);
+        assert_eq!(get_total_usage().requests, 2);
+
+        reset_cost_state();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
+
+    #[test]
+    fn replay_rebuilds_totals_and_breakdowns() {
+        reset_cost_state();
+        add_record_for_tests(&record("stale", CostSource::Main, Some(9.0)));
+        let entries = [
+            serde_json::json!({
+                "type": USAGE_ENTRY_TYPE,
+                "usage": record("a", CostSource::Main, Some(1.5)),
+            }),
+            serde_json::json!({
+                "type": USAGE_ENTRY_TYPE,
+                "usage": record("b", CostSource::Utility("agent_summary".into()), None),
+            }),
+            serde_json::json!({
+                "type": SESSION_STATS_ENTRY_TYPE,
+                "stats": SessionStats { lines_added: 1, ..Default::default() },
+            }),
+            serde_json::json!({
+                "type": SESSION_STATS_ENTRY_TYPE,
+                "stats": SessionStats {
+                    lines_added: 7,
+                    lines_removed: 3,
+                    wall_duration_ms: 1_200,
+                },
+            }),
+            serde_json::json!({"type": "user"}),
+        ];
+        restore_from_transcript_entries(&entries);
+        assert_eq!(get_total_cost(), 1.5);
+        assert!(has_unknown_cost());
+        assert_eq!(get_total_input_tokens(), 20);
+        assert_eq!(get_total_api_duration(), 80);
+        let by_model = get_model_usage();
+        assert_eq!(by_model.keys().collect::<Vec<_>>(), ["a", "b"]);
+        assert_eq!(by_model["a"].cache_write_tokens, 50);
+        let by_source = get_source_usage();
+        assert_eq!(
+            by_source[&CostSource::Utility("agent_summary".into())].requests,
+            1
+        );
+        assert_eq!(get_total_lines_added(), 7);
+        assert_eq!(get_total_lines_removed(), 3);
+        assert!(get_total_duration() >= 1_200);
         reset_cost_state();
     }
 }

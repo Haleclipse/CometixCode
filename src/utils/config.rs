@@ -278,22 +278,8 @@ pub struct ProjectConfig {
     pub disabled_mcp_servers: Option<Vec<String>>,
     pub enabled_mcp_servers: Option<Vec<String>>,
 
-    pub last_api_duration: Option<f64>,
-    pub last_api_duration_without_retries: Option<f64>,
-    pub last_tool_duration: Option<f64>,
-    pub last_cost: Option<f64>,
-    pub last_duration: Option<f64>,
-    pub last_lines_added: Option<u64>,
-    pub last_lines_removed: Option<u64>,
-    pub last_total_input_tokens: Option<u64>,
-    pub last_total_output_tokens: Option<u64>,
-    pub last_total_cache_creation_input_tokens: Option<u64>,
-    pub last_total_cache_read_input_tokens: Option<u64>,
-    pub last_total_web_search_requests: Option<u64>,
     pub last_fps_average: Option<f64>,
     pub last_fps_low_1_pct: Option<f64>,
-    pub last_session_id: Option<String>,
-    pub last_model_usage: Option<HashMap<String, ModelUsageStats>>,
     pub last_session_metrics: Option<HashMap<String, f64>>,
 
     pub example_files: Option<Vec<String>>,
@@ -315,31 +301,6 @@ pub struct ProjectConfig {
     /// be a behavioral mismatch.
     #[serde(flatten)]
     pub other_project_fields: HashMap<String, serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(default)]
-pub struct ModelUsageStats {
-    pub input_tokens: u64,
-    pub output_tokens: u64,
-    pub cache_read_input_tokens: u64,
-    pub cache_creation_input_tokens: u64,
-    pub web_search_requests: u64,
-    pub cost_usd: f64,
-}
-
-impl Default for ModelUsageStats {
-    fn default() -> Self {
-        Self {
-            input_tokens: 0,
-            output_tokens: 0,
-            cache_read_input_tokens: 0,
-            cache_creation_input_tokens: 0,
-            web_search_requests: 0,
-            cost_usd: 0.0,
-        }
-    }
 }
 
 // ════════════════════════════════════════════════════════════

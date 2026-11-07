@@ -367,21 +367,17 @@ pub fn render_default_model_setting(setting: &str) -> String {
 }
 
 /// Maps to: CC `utils/model/model.ts:307-312#getOpus46PricingSuffix`.
+///
+/// @nyan: the hardcoded Anthropic price is dropped (prices come from the model
+/// catalog and are only used for `/cost`); only the fast-mode marker remains.
 pub fn get_opus_46_pricing_suffix(fast_mode: bool) -> String {
-    if crate::utils::model::providers::get_api_provider()
-        != crate::utils::model::providers::ApiProvider::FirstParty
+    if !fast_mode
+        || crate::utils::model::providers::get_api_provider()
+            != crate::utils::model::providers::ApiProvider::FirstParty
     {
         return String::new();
     }
-    let pricing = crate::utils::model_cost::format_model_pricing(
-        crate::utils::model_cost::get_opus_46_cost_tier(fast_mode),
-    );
-    let fast_mode_indicator = if fast_mode {
-        format!(" ({})", crate::constants::figures::LIGHTNING_BOLT)
-    } else {
-        String::new()
-    };
-    format!(" ·{fast_mode_indicator} {pricing}")
+    format!(" · ({})", crate::constants::figures::LIGHTNING_BOLT)
 }
 
 /// Maps to: CC `utils/model/model.ts:508-536#resolveSkillModelOverride`.

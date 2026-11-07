@@ -2318,9 +2318,10 @@ fn emit_result(
             let value = serde_json::json!({
                 "inputTokens": usage.input_tokens,
                 "outputTokens": usage.output_tokens,
-                "cacheReadInputTokens": usage.cache_read_input_tokens,
-                "cacheCreationInputTokens": usage.cache_creation_input_tokens,
-                "webSearchRequests": usage.web_search_requests,
+                "cacheReadInputTokens": usage.cache_read_tokens,
+                "cacheCreationInputTokens": usage.cache_write_tokens,
+                // @nyan: web search requests are not tracked.
+                "webSearchRequests": 0,
                 "costUSD": usage.cost_usd,
                 "contextWindow": crate::utils::context::get_context_window_for_model(&model, &[]),
                 "maxOutputTokens": crate::services::api::claude::get_max_output_tokens_for_model(&model),
@@ -2361,6 +2362,14 @@ fn emit_result(
             serde_json::json!(uuid::Uuid::new_v4().to_string()),
         ),
     ]);
+    // @nyan: requests without a known price add nothing to `total_cost_usd`,
+    // so flag it as a lower bound.
+    if crate::cost_tracker::has_unknown_cost() {
+        result.insert(
+            "total_cost_usd_is_lower_bound".to_string(),
+            serde_json::json!(true),
+        );
+    }
     if is_error {
         result.insert("errors".to_string(), serde_json::json!(errors));
     } else {

@@ -1006,10 +1006,13 @@ mod tests {
         // Actual outcome should still have cleared candidates according to C2 status quo
         assert!(result.masked_count >= 1);
 
-        // Poll briefly until the background shadow task writes the log file
+        // Poll briefly until the background shadow task writes a full line:
+        // the file is created before the record is written into it.
         let log_file = temp_dir.join("decision/compaction.keep.jsonl");
         let start = std::time::Instant::now();
-        while !log_file.exists() && start.elapsed() < std::time::Duration::from_secs(3) {
+        while !std::fs::read_to_string(&log_file).is_ok_and(|content| content.ends_with('\n'))
+            && start.elapsed() < std::time::Duration::from_secs(3)
+        {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         assert!(

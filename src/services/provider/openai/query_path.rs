@@ -685,6 +685,7 @@ async fn a_404_at_open_falls_back_to_non_streaming_on_openai_endpoint() {
     ])
     .await;
     let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
+    crate::cost_tracker::reset_cost_state();
 
     let items = run(vec![user("go")], vec![]).await;
     assert!(
@@ -693,6 +694,13 @@ async fn a_404_at_open_falls_back_to_non_streaming_on_openai_endpoint() {
             .any(|i| matches!(i, QueryModelStreamItem::StreamingFallback)),
         "expected StreamingFallback signal: {items:?}"
     );
+    // The failed stream produced no usage; the fallback is accounted once.
+    let total = crate::cost_tracker::get_total_usage();
+    assert_eq!(
+        (total.requests, total.input_tokens, total.output_tokens),
+        (1, 10, 5)
+    );
+    crate::cost_tracker::reset_cost_state();
     let messages = assistants(&items);
     assert_eq!(messages.len(), 1);
     assert_eq!(
@@ -1133,4 +1141,77 @@ async fn a_missing_key_is_reported_as_configuration_not_sent() {
         "names the variable to set: {message}"
     );
     assert!(mock.requests().is_empty());
+}
+
+#[tokio::test]
+async fn a_streamed_request_is_accounted_exactly_once_with_its_catalog_price() {
+    let mock = MockOpenAi::start(vec![Reply::sse_data([
+        chat_chunk(json!({"content": "hi"}), Value::Null),
+        chat_chunk(json!({}), json!("stop")),
+        json!({"id": "chatcmpl-1", "choices": [], "usage": {
+            "prompt_tokens": 1_000_000, "completion_tokens": 100_000,
+            "prompt_tokens_details": {"cached_tokens": 400_000}}}),
+    ])])
+    .await;
+    let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
+    crate::cost_tracker::reset_cost_state();
+
+    run(vec![user("go")], vec![]).await;
+
+    let total = crate::cost_tracker::get_total_usage();
+    assert_eq!(total.requests, 1, "one record per request: {total:?}");
+    assert_eq!(
+        (
+            total.input_tokens,
+            total.cache_read_tokens,
+            total.output_tokens
+        ),
+        (600_000, 400_000, 100_000)
+    );
+    // gpt-5: $1.25 input, $0.125 cache read, $10 output per Mtok.
+    let expected = 0.6 * 1.25 + 0.4 * 0.125 + 0.1 * 10.0;
+    assert!((crate::cost_tracker::get_total_cost() - expected).abs() < 1e-9);
+    assert_eq!(
+        crate::cost_tracker::get_source_usage()[&crate::cost_tracker::CostSource::Main].requests,
+        1
+    );
+    crate::cost_tracker::reset_cost_state();
+}
+
+#[tokio::test]
+async fn a_side_query_is_accounted_once_under_the_side_query_source() {
+    let mock = MockOpenAi::start(vec![Reply::json(json!({
+        "id": "chatcmpl-sq",
+        "model": "gpt-5",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "ok"},
+            "finish_reason": "stop"
+        }],
+        "usage": {"prompt_tokens": 5, "completion_tokens": 1}
+    }))])
+    .await;
+    let _env = Env::new(&mock.base_url, ProviderProtocol::OpenaiChat);
+    crate::cost_tracker::reset_cost_state();
+
+    crate::utils::side_query::side_query(crate::utils::side_query::SideQueryOptions {
+        model: "gpt-5".to_string(),
+        messages: vec![crate::utils::side_query::user_text_message("Hi")],
+        max_tokens: Some(1),
+        max_retries: Some(0),
+        query_source: "model_validation".to_string(),
+        ..Default::default()
+    })
+    .await
+    .expect("side query");
+
+    let by_source = crate::cost_tracker::get_source_usage();
+    assert_eq!(by_source.len(), 1, "{by_source:?}");
+    let side = &by_source[&crate::cost_tracker::CostSource::SideQuery];
+    assert_eq!(
+        (side.requests, side.input_tokens, side.output_tokens),
+        (1, 5, 1)
+    );
+    assert!(!side.cost_unknown);
+    crate::cost_tracker::reset_cost_state();
 }

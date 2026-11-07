@@ -378,12 +378,16 @@ pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
         .await
         .map_err(|e| anyhow::Error::new(e).context("side_query failed"))?;
 
-    // Maps to: CC `logEvent('tengu_api_success', { requestId, querySource, model, ... })`
-    // + `setLastApiCompletionTimestamp(now)`. Full analytics wiring is a follow-up;
-    // duration/query_source kept so the hook site is obvious.
-    let _ = (start.elapsed(), &opts.query_source);
-
-    serde_json::from_value(serde_json::to_value(response)?)
+    let response = serde_json::to_value(response)?;
+    if let Some(usage) = response.get("usage") {
+        record_side_query_usage(
+            &profile.profile,
+            &request_model,
+            &crate::services::provider::ir::Usage::from_anthropic_json(usage),
+            start,
+        );
+    }
+    serde_json::from_value(response)
         .map_err(|error| anyhow::anyhow!("side_query response: {error}"))
 }
 
@@ -636,6 +640,7 @@ async fn side_query_neutral(
         opts.max_retries,
     );
 
+    let start = std::time::Instant::now();
     let response =
         crate::services::provider::execute_non_streaming(&profile, &request, &cancel, &limits)
             .await
@@ -648,8 +653,25 @@ async fn side_query_neutral(
                     anyhow::Error::new(error)
                 }
             })?;
-
+    record_side_query_usage(&profile.profile, &profile.model, &response.usage, start);
     Ok(response.to_api_message())
+}
+
+/// @nyan: side queries bypass `query_model_with_streaming`, so they record
+/// through the same accounting point here.
+fn record_side_query_usage(
+    profile: &str,
+    model: &str,
+    usage: &crate::services::provider::ir::Usage,
+    started_at: std::time::Instant,
+) {
+    crate::cost_tracker::record_request(
+        Some(profile),
+        model,
+        crate::cost_tracker::CostSource::SideQuery,
+        usage,
+        started_at.elapsed().as_millis() as u64,
+    );
 }
 
 /// Build a custom `ToolUnion` from name + JSON schema (e.g. classifier tools).

@@ -292,8 +292,13 @@ pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_write_tokens: u64,
+    /// The part of `cache_write_tokens` written with a 1h TTL (Anthropic
+    /// `cache_creation.ephemeral_1h_input_tokens`); billed differently.
+    #[serde(default)]
+    pub cache_write_1h_tokens: u64,
     pub cache_read_tokens: u64,
     pub cache_deleted_tokens: u64,
+    /// Display only: already counted inside `output_tokens`.
     pub reasoning_tokens: u64,
 }
 

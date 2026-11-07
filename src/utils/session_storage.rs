@@ -633,6 +633,37 @@ pub fn record_memory_extract_cursor(uuid: &str, at_ms: i64) -> anyhow::Result<()
     )
 }
 
+/// @nyan: append one request's `usage` entry to the main session transcript.
+/// Sub-agent and background requests land here too: their cost is part of
+/// the session total that resume rebuilds.
+pub fn append_usage_entry(record: &crate::cost_tracker::UsageRecord) -> anyhow::Result<()> {
+    append_main_session_entry(serde_json::json!({
+        "type": crate::cost_tracker::USAGE_ENTRY_TYPE,
+        "usage": record,
+    }))
+}
+
+/// @nyan: append the session's lines changed and wall clock (last wins).
+pub fn append_session_stats_entry(stats: &crate::cost_tracker::SessionStats) -> anyhow::Result<()> {
+    append_main_session_entry(serde_json::json!({
+        "type": crate::cost_tracker::SESSION_STATS_ENTRY_TYPE,
+        "stats": stats,
+    }))
+}
+
+fn append_main_session_entry(mut entry: serde_json::Value) -> anyhow::Result<()> {
+    if !is_session_write_enabled() {
+        return Ok(());
+    }
+    let session_id = crate::bootstrap::state::get_session_id();
+    entry["sessionId"] = serde_json::Value::String(session_id.clone());
+    append_entry(
+        &crate::bootstrap::state::get_original_cwd().to_string_lossy(),
+        &session_id,
+        &entry,
+    )
+}
+
 /// @nyan: last `memory-extract-cursor` entry of the current session transcript.
 /// Scans the whole file (not only the tail) so a cursor written before a large
 /// compact boundary is still found on resume.
@@ -2963,6 +2994,9 @@ pub fn load_session_structured_from_path(path: &Path) -> LoadedSession {
             }
 
             "queue-operation" => {}
+
+            // @nyan: cost accounting; replayed by `cost_tracker` on resume.
+            "usage" | "session-stats" => {}
 
             other => {
                 tracing::debug!("Unknown JSONL entry type: {other}");
@@ -6733,6 +6767,101 @@ mod tests {
                     && line.contains("\"uuid\":\"u1\"")),
             "cursor must survive the pre-boundary scan: {metadata:?}"
         );
+    }
+
+    #[test]
+    fn usage_entries_append_to_the_transcript_and_resume_replays_them() {
+        struct Restore {
+            session_id: String,
+            project_dir: Option<PathBuf>,
+            meta: CurrentSessionMeta,
+            root: PathBuf,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                *get_project().current_session_meta.write().unwrap() = self.meta.clone();
+                crate::bootstrap::state::switch_session(&self.session_id, self.project_dir.clone());
+                crate::cost_tracker::reset_cost_state();
+                let _ = fs::remove_dir_all(&self.root);
+            }
+        }
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        crate::bootstrap::state::set_session_persistence_disabled(false);
+        let restore = Restore {
+            session_id: crate::bootstrap::state::get_session_id(),
+            project_dir: crate::bootstrap::state::get_session_project_dir(),
+            meta: get_project().current_session_meta.read().unwrap().clone(),
+            root: std::env::temp_dir().join(format!("nyan-usage-{}", Uuid::new_v4())),
+        };
+        let path = restore.root.join("usage-active.jsonl");
+        fs::create_dir_all(&restore.root).unwrap();
+        fs::write(
+            &path,
+            "{\"type\":\"user\",\"uuid\":\"u1\",\"message\":{}}\n",
+        )
+        .unwrap();
+        crate::bootstrap::state::switch_session("usage-active", Some(restore.root.clone()));
+        get_project()
+            .current_session_meta
+            .write()
+            .unwrap()
+            .session_file = Some(path.clone());
+
+        let record = |model: &str, source, cost_usd| crate::cost_tracker::UsageRecord {
+            profile: "main".to_string(),
+            provider: "anthropic".to_string(),
+            model: model.to_string(),
+            source,
+            input_tokens: 10,
+            output_tokens: 4,
+            cache_read_tokens: 0,
+            cache_write_5m_tokens: 0,
+            cache_write_1h_tokens: 2,
+            reasoning_tokens: 0,
+            cost_usd,
+            duration_ms: 5,
+        };
+        append_usage_entry(&record(
+            "a",
+            crate::cost_tracker::CostSource::Main,
+            Some(0.5),
+        ))
+        .unwrap();
+        append_usage_entry(&record(
+            "b",
+            crate::cost_tracker::CostSource::Subagent,
+            None,
+        ))
+        .unwrap();
+        crate::cost_tracker::reset_cost_state();
+        crate::cost_tracker::add_to_total_lines_changed(3, 1);
+        crate::cost_tracker::save_current_session_stats().unwrap();
+        let flushed = std::thread::spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(flush_session_storage())
+        })
+        .join()
+        .unwrap();
+        flushed.unwrap();
+
+        crate::cost_tracker::reset_cost_state();
+        crate::cost_tracker::restore_cost_state_from_transcript(&path);
+        let total = crate::cost_tracker::get_total_usage();
+        assert_eq!((total.requests, total.input_tokens), (2, 20));
+        assert_eq!(total.cost_usd, 0.5);
+        assert!(total.cost_unknown);
+        assert_eq!(crate::cost_tracker::get_model_usage().len(), 2);
+        assert_eq!(crate::cost_tracker::get_source_usage().len(), 2);
+        assert_eq!(crate::cost_tracker::get_total_lines_added(), 3);
+        assert_eq!(crate::cost_tracker::get_total_lines_removed(), 1);
+        // Usage entries are metadata, not conversation messages.
+        let loaded = load_session_structured_from_path(&path);
+        assert_eq!(loaded.messages.len(), 1);
     }
 
     #[test]

@@ -1098,11 +1098,7 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
                 }
                 _ => {}
             }
-            if let Some(max_budget_usd) = config
-                .max_budget_usd
-                .as_deref()
-                .and_then(|value| value.parse::<f64>().ok())
-                && crate::cost_tracker::get_total_cost() >= max_budget_usd
+            if let Some(max_budget_usd) = exceeded_max_budget_usd(config.max_budget_usd.as_deref())
             {
                 handle.abort_controller.abort();
                 outcome.reason = "max_budget_usd".to_string();
@@ -1639,10 +1635,46 @@ fn user_content_value(content: &crate::types::message::UserContent) -> serde_jso
     }
 }
 
+/// `--max-budget-usd`, when the session total has reached it. The total is
+/// every request's known cost (`cost_tracker`); unpriced requests add nothing.
+fn exceeded_max_budget_usd(max_budget_usd: Option<&str>) -> Option<f64> {
+    max_budget_usd
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|max_budget_usd| crate::cost_tracker::get_total_cost() >= *max_budget_usd)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, IsolatedProjectSettings, TEST_ENV_LOCK};
+
+    #[test]
+    fn max_budget_triggers_once_recorded_cost_reaches_it() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        crate::cost_tracker::reset_cost_state();
+        let record = |cost_usd| crate::cost_tracker::UsageRecord {
+            profile: "main".to_string(),
+            provider: "anthropic".to_string(),
+            model: "m".to_string(),
+            source: crate::cost_tracker::CostSource::Main,
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_5m_tokens: 0,
+            cache_write_1h_tokens: 0,
+            reasoning_tokens: 0,
+            cost_usd,
+            duration_ms: 0,
+        };
+        crate::cost_tracker::add_record_for_tests(&record(Some(0.4)));
+        crate::cost_tracker::add_record_for_tests(&record(None));
+        assert_eq!(exceeded_max_budget_usd(Some("0.5")), None);
+        assert_eq!(exceeded_max_budget_usd(None), None);
+        crate::cost_tracker::add_record_for_tests(&record(Some(0.1)));
+        assert_eq!(exceeded_max_budget_usd(Some("0.5")), Some(0.5));
+        assert_eq!(exceeded_max_budget_usd(Some("NaN")), None);
+        crate::cost_tracker::reset_cost_state();
+    }
 
     fn mcp_tool(server: &str, name: &str) -> crate::types::tools::Tool {
         crate::types::tools::Tool {

@@ -29,6 +29,19 @@ fn cache_deleted_tokens(usage: Option<&Value>) -> u64 {
         .unwrap_or(0)
 }
 
+/// `cache_creation.ephemeral_1h_input_tokens`, read from the raw wire usage
+/// for the same reason as `cache_deleted_tokens`.
+fn cache_write_1h_tokens(usage: Option<&Value>) -> u64 {
+    usage
+        .and_then(|usage| {
+            usage
+                .pointer("/cache_creation/ephemeral_1h_input_tokens")?
+                .as_i64()
+        })
+        .map(non_negative)
+        .unwrap_or(0)
+}
+
 pub fn usage_from_message(usage: &sdk::Usage, raw_usage: Option<&Value>) -> Usage {
     Usage {
         input_tokens: non_negative(usage.input_tokens),
@@ -37,6 +50,7 @@ pub fn usage_from_message(usage: &sdk::Usage, raw_usage: Option<&Value>) -> Usag
             .cache_creation_input_tokens
             .map(non_negative)
             .unwrap_or(0),
+        cache_write_1h_tokens: cache_write_1h_tokens(raw_usage),
         cache_read_tokens: usage.cache_read_input_tokens.map(non_negative).unwrap_or(0),
         cache_deleted_tokens: cache_deleted_tokens(raw_usage),
         reasoning_tokens: 0,
@@ -63,6 +77,10 @@ pub fn merge_delta_usage(
             delta.cache_creation_input_tokens,
             current.cache_write_tokens,
         ),
+        cache_write_1h_tokens: match cache_write_1h_tokens(raw_usage) {
+            0 => current.cache_write_1h_tokens,
+            value => value,
+        },
         cache_read_tokens: keep_unless_positive(
             delta.cache_read_input_tokens,
             current.cache_read_tokens,
@@ -300,6 +318,33 @@ mod tests {
                           "cache_read_input_tokens": 40, "cache_creation_input_tokens": 7}
             }
         })
+    }
+
+    #[test]
+    fn one_hour_cache_writes_are_split_out_of_the_cache_write_count() {
+        let mut start = message_start(10);
+        start["message"]["usage"]["cache_creation"] =
+            serde_json::json!({"ephemeral_5m_input_tokens": 3, "ephemeral_1h_input_tokens": 4});
+        let kinds = events(&[
+            start,
+            serde_json::json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},
+                               "usage":{"output_tokens":9}}),
+        ]);
+        let usages = kinds
+            .iter()
+            .filter_map(|kind| match kind {
+                StreamEventKind::MessageStart { usage, .. }
+                | StreamEventKind::MessageDelta { usage, .. } => Some(*usage),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(usages.len(), 2);
+        for usage in usages {
+            assert_eq!(
+                (usage.cache_write_tokens, usage.cache_write_1h_tokens),
+                (7, 4)
+            );
+        }
     }
 
     #[test]

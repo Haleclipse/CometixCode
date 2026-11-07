@@ -457,7 +457,6 @@ pub(crate) async fn run_extract_memories_with_deps<D: crate::query::deps::QueryD
         }
     };
     let usage = result.total_usage;
-    crate::cost_tracker::add_to_total_tokens(usage.input_tokens, usage.output_tokens);
     // `run_forked_agent` returns Ok on an aborted query; abort must not look
     // like success or the cursor would advance over unextracted messages.
     if fork_abort.is_aborted() {

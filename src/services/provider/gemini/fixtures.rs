@@ -765,6 +765,7 @@ fn test_stream_text_and_usage() {
                     output_tokens: 4,
                     cache_read_tokens: 5,
                     cache_write_tokens: 0,
+                    cache_write_1h_tokens: 0,
                     cache_deleted_tokens: 0,
                     reasoning_tokens: 0,
                 },

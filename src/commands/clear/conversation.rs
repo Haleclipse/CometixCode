@@ -212,6 +212,16 @@ pub fn clear_conversation(store: &AppStore) -> ClearConversationOutcome {
 
     crate::utils::session_storage::clear_session_metadata();
 
+    // The cleared session's lines changed / wall clock go into its own
+    // transcript; the new session starts them over. Cost totals stay
+    // process-wide, as in CC.
+    if let Err(error) = crate::cost_tracker::save_current_session_stats() {
+        crate::utils::debug::log_for_debugging(&format!(
+            "Failed to save current session stats on clear: {error}"
+        ));
+    }
+    crate::cost_tracker::reset_session_stats();
+
     let new_session_id = crate::bootstrap::state::regenerate_session_id(true);
     // Update the environment variable so subprocesses use the new session ID.
     // Maps to: CC `commands/clear/conversation.ts:204-207` — gated on
@@ -549,6 +559,35 @@ mod tests {
         assert_eq!(store.get().mcp.plugin_reconnect_key, 7);
         assert_eq!(store.get().auth_version, 3);
         clear_pending_callbacks_for_test();
+    }
+
+    #[test]
+    fn clear_conversation_restarts_session_stats_and_keeps_cost_totals() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::cost_tracker::reset_cost_state();
+        crate::cost_tracker::add_to_total_lines_changed(5, 2);
+        crate::cost_tracker::add_record_for_tests(&crate::cost_tracker::UsageRecord {
+            profile: "main".into(),
+            provider: "anthropic".into(),
+            model: "m".into(),
+            source: crate::cost_tracker::CostSource::Main,
+            input_tokens: 10,
+            output_tokens: 0,
+            cache_read_tokens: 0,
+            cache_write_5m_tokens: 0,
+            cache_write_1h_tokens: 0,
+            reasoning_tokens: 0,
+            cost_usd: Some(0.5),
+            duration_ms: 0,
+        });
+
+        clear_conversation(&AppStore::new(AppState::default(), None));
+
+        assert_eq!(crate::cost_tracker::get_total_lines_added(), 0);
+        assert_eq!(crate::cost_tracker::get_total_lines_removed(), 0);
+        assert_eq!(crate::cost_tracker::get_total_cost(), 0.5);
+        assert_eq!(crate::cost_tracker::get_total_input_tokens(), 10);
+        crate::cost_tracker::reset_cost_state();
     }
 
     #[test]

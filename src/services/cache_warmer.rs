@@ -170,9 +170,8 @@ fn warming_message() -> crate::types::message::Message {
     })
 }
 
-async fn run_one(
-    cache: &CacheSafeParams,
-) -> anyhow::Result<crate::services::api::claude::NonNullableUsage> {
+/// The keep-alive request is accounted at the request layer like any other.
+async fn run_one(cache: &CacheSafeParams) -> anyhow::Result<()> {
     let result = run_forked_agent(ForkedAgentParams {
         prompt_messages: vec![warming_message()],
         cache_safe_params: cache.clone(),
@@ -188,18 +187,7 @@ async fn run_one(
         skip_transcript: true,
     })
     .await?;
-    Ok(result.total_usage)
-}
-
-fn add_warm_usage(model: &str, usage: &crate::services::api::claude::NonNullableUsage) {
-    crate::cost_tracker::add_to_total_tokens(usage.input_tokens, usage.output_tokens);
-    crate::cost_tracker::add_to_model_usage(
-        model,
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.cache_read_input_tokens,
-        usage.cache_creation_input_tokens,
-    );
+    Ok(())
 }
 
 /// Entry point shared by both lifecycle sites: the query loop (a response that
@@ -282,7 +270,6 @@ pub fn observe_real_request(
     };
     let started = Instant::now();
     let max_duration = Duration::from_secs(u64::from(max_minutes) * 60);
-    let model = model.to_string();
     let task = tokio::spawn(async move {
         let mut next_delay = delay;
         loop {
@@ -297,8 +284,7 @@ pub fn observe_real_request(
                 return;
             }
             match run_one(&cache).await {
-                Ok(usage) => {
-                    add_warm_usage(&model, &usage);
+                Ok(()) => {
                     next_delay = eligibility.ttl.saturating_sub(margin);
                 }
                 Err(_) => return,

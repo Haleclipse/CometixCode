@@ -114,7 +114,6 @@ pub mod memory_file_detection;
 pub mod message_queue_manager;
 pub mod messages;
 pub mod model;
-pub mod model_cost;
 pub mod mtls;
 pub mod native_installer;
 pub mod node_os;
