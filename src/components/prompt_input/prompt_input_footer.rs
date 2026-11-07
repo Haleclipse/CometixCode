@@ -493,7 +493,6 @@ fn indicator_color(color: Option<NotificationColor>, theme: &Theme) -> Color {
         Some(NotificationColor::Text) => theme.text,
         Some(NotificationColor::Ide) => theme.ide,
         Some(NotificationColor::Suggestion) => theme.suggestion,
-        Some(NotificationColor::FastMode) => theme.fast_mode,
         None => theme.inactive,
     }
 }

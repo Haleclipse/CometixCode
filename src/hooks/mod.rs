@@ -29,7 +29,6 @@ pub mod use_history_search;
 pub mod use_ide_selection;
 pub mod use_inbox_poller;
 pub mod use_log_messages;
-pub mod use_main_loop_model;
 pub mod use_memory_usage;
 pub mod use_merged_commands;
 pub mod use_plugin_recommendation_base;

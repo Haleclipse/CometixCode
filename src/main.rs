@@ -202,13 +202,12 @@ fn build_interactive_launch_with_system_prompts(
 ) -> anyhow::Result<InteractiveLaunch> {
     let thinking = resolve_thinking_launch(settings, cli);
     let agents = resolve_agent_launch(settings, cli);
-    apply_launch_model_override(cli, &agents);
-    let initial_state = build_initial_app_state_with_thinking(
+    apply_launch_model_override(cli, &agents)?;
+    let initial_state = build_initial_app_state_with_agents(
         settings,
         settings_errors,
         workspace_trusted,
         cli,
-        thinking.enabled,
         &agents,
     )?;
     Ok(InteractiveLaunch {
@@ -249,47 +248,55 @@ pub(crate) fn build_headless_initial_app_state(
     workspace_trusted: bool,
     cli: &crate::cli::CliConfig,
 ) -> anyhow::Result<AppState> {
-    let thinking = resolve_thinking_launch(settings, cli);
     let agents = resolve_agent_launch(settings, cli);
-    build_initial_app_state_with_thinking(
-        settings,
-        settings_errors,
-        workspace_trusted,
-        cli,
-        thinking.enabled,
-        &agents,
-    )
+    build_initial_app_state_with_agents(settings, settings_errors, workspace_trusted, cli, &agents)
 }
 
-/// Resolve only explicit temporary launch overrides; persistent selection is
-/// resolved from the provider profile.
+/// The session's launch selection: the profile `--model` names (else the main
+/// thread agent's), with the `:effort` it carries.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LaunchModel {
+    pub profile: Option<String>,
+    pub effort: Option<crate::utils::effort::Effort>,
+}
+
+/// Resolve `--model ref[:effort]` (else the main thread agent's `model:`) and
+/// install it as the session profile. `--model` accepts a profile name,
+/// `@main` / `@light` / `@heavy`, `inherit` or `default`; anything else is a
+/// startup error.
+///
+/// @nyan: CC takes any model string or alias here.
 fn apply_launch_model_override(
     cli: &crate::cli::CliConfig,
     agents: &ResolvedAgentLaunch,
-) -> Option<String> {
-    let effective_model = match cli.model.as_deref() {
-        Some("default") => None,
-        Some(model) => crate::utils::model::profile::resolve_model_input(
-            &crate::utils::settings::get_initial_settings(),
-            model,
-        )
-        .ok(),
-        None => agents
+) -> anyhow::Result<LaunchModel> {
+    let settings = crate::utils::settings::get_initial_settings();
+    let nyan = settings.nyan.as_deref();
+    let choice = match cli.model.as_deref().map(str::trim) {
+        None | Some("") | Some("default") => agents
             .main_thread_agent_definition
             .as_ref()
             .and_then(|agent| agent.model.as_deref())
-            .filter(|model| *model != "inherit")
-            .map(crate::utils::model::model::parse_user_specified_model),
+            // An agent's unknown model is reported where agents are loaded;
+            // the session then runs on `selection.main`.
+            .and_then(|spec| crate::utils::model::profile::resolve_model_ref(nyan, spec).ok()),
+        Some(spec) => Some(crate::utils::model::profile::resolve_model_ref(nyan, spec)?),
     };
-    crate::bootstrap::state::set_main_loop_model_override(effective_model.clone().map(Some));
-    // Maps to: CC `main.tsx:3068`
-    // `setInitialMainLoopModel(getUserSpecifiedModelSetting() || null)` — `||`
-    // rather than `??`, so an empty setting is captured as unset.
-    crate::bootstrap::state::set_initial_main_loop_model(
-        crate::utils::model::model::get_user_specified_model_setting()
-            .filter(|model| !model.is_empty()),
-    );
-    effective_model
+    let launch = match choice {
+        Some((crate::utils::model::profile::ModelChoice::Profile(profile), effort)) => {
+            LaunchModel {
+                profile: Some(profile),
+                effort,
+            }
+        }
+        Some((crate::utils::model::profile::ModelChoice::Inherit, effort)) => LaunchModel {
+            profile: None,
+            effort,
+        },
+        None => LaunchModel::default(),
+    };
+    crate::bootstrap::state::set_session_profile(launch.profile.clone());
+    Ok(launch)
 }
 
 /// [`apply_launch_model_override`] for the headless launch, before
@@ -298,43 +305,39 @@ fn apply_launch_model_override(
 pub(crate) fn apply_headless_launch_model(
     settings: &SettingsJson,
     cli: &crate::cli::CliConfig,
-) -> Option<String> {
+) -> anyhow::Result<LaunchModel> {
     apply_launch_model_override(cli, &resolve_agent_launch(settings, cli))
 }
 
-fn build_initial_app_state_with_thinking(
+fn build_initial_app_state_with_agents(
     settings: &SettingsJson,
     settings_errors: &[ValidationError],
     workspace_trusted: bool,
     cli: &crate::cli::CliConfig,
-    thinking_enabled: bool,
     agents: &ResolvedAgentLaunch,
 ) -> anyhow::Result<AppState> {
     let mut initial = AppState::default();
-    // Maps to: CC `main.tsx` initialState `thinkingEnabled`.
-    initial.thinking_enabled = Some(thinking_enabled);
     // Maps to: CC AppStateStore.ts:469 `settings: getInitialSettings()`.
     initial.settings = std::sync::Arc::new(settings.clone());
 
-    // The launch model override is already in place
-    // ([`apply_launch_model_override`]).
-    initial.main_loop_model = crate::utils::model::model::get_user_specified_model_setting();
+    // The launch profile is already in place ([`apply_launch_model_override`]).
+    initial.main_loop_profile = crate::bootstrap::state::get_session_profile();
     // Maps to CC `main.tsx` initial AppState projection through
     // `getInitialAdvisorSetting()`. The feature gate intentionally keeps this
     // unset for ordinary external builds.
     initial.advisor_model = crate::utils::advisor::get_initial_advisor_setting();
 
-    // Maps to CC main.tsx:4153 initialState assembly.
-    initial.fast_mode = crate::utils::fast_mode::get_initial_fast_mode_setting(
-        initial.main_loop_model.as_deref(),
-        settings.fast_mode,
-        settings.fast_mode_per_session_opt_in,
-    );
-
+    // `--effort` wins over the `:effort` on `--model`; without either the
+    // profile's own effort applies at request time (design §5.2).
     initial.effort_value = cli
         .effort
         .as_deref()
-        .and_then(crate::utils::effort::Effort::from_str_loose);
+        .and_then(crate::utils::effort::Effort::from_str_loose)
+        .or_else(|| {
+            cli.model
+                .as_deref()
+                .and_then(|spec| crate::utils::effort::parse_model_ref_and_effort(spec).1)
+        });
 
     let loaded_permission_rules =
         crate::utils::permissions::permissions_loader::load_all_permission_rules_from_disk();
@@ -1025,6 +1028,12 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                 match restored {
                     Ok(Some(processed)) => {
                         app_store.replace_with(|state| processed.apply_to_app_state(state));
+                        if let Some(notice) = processed.missing_profile_notice() {
+                            crate::context::notifications::NotificationsWriter::new(
+                                app_store.clone(),
+                            )
+                            .add_notification(notice);
+                        }
                         let mut repl_props = base_repl_props.clone();
                         repl_props.apply_processed_resume(&processed);
                         resumed_repl_props.set(Some(repl_props));
@@ -2590,31 +2599,40 @@ mod tests {
         crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
     }
 
-    #[test]
-    fn headless_initial_app_state_leaves_the_launch_override_alone() {
-        // CC `main.tsx:3701-3731` builds the headless store without touching
-        // the override `:3065` set; a control request may have moved it.
-        let _lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let original = crate::bootstrap::state::get_main_loop_model_override();
-        let cli = crate::cli::parse_cli_config(&argv(&["--model", "sonnet"]));
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some("moved".into())));
-        let state =
-            build_headless_initial_app_state(&SettingsJson::default(), &[], true, &cli).unwrap();
-        assert_eq!(
-            crate::bootstrap::state::get_main_loop_model_override(),
-            Some(Some("moved".to_string()))
+    fn install_launch_profiles() {
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({
+                "nyan": {
+                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                    "models": {
+                        "main": {"provider": "p", "model": "claude-sonnet-4-6",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                        "fast": {"provider": "p", "model": "claude-haiku-4-5",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                    },
+                    "selection": {"main": "main", "light": "fast"}
+                }
+            }))
+            .unwrap(),
         );
-        assert_eq!(state.main_loop_model.as_deref(), Some("moved"));
-        crate::bootstrap::state::set_main_loop_model_override(original);
+    }
+
+    fn no_agents() -> ResolvedAgentLaunch {
+        ResolvedAgentLaunch {
+            definitions: Arc::new(
+                crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult::default(),
+            ),
+            main_thread_agent_definition: None,
+        }
     }
 
     #[test]
     fn build_initial_app_state_applies_cli_model_effort_verbose_and_permissions() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        install_launch_profiles();
         let cli = crate::cli::parse_cli_config(&argv(&[
             "--model",
-            "sonnet",
+            "fast",
             "--effort",
             "medium",
             "--verbose",
@@ -2628,7 +2646,7 @@ mod tests {
         let settings = SettingsJson::default();
         let state = build_initial_app_state(&settings, &[], true, &cli).unwrap();
 
-        assert_eq!(state.main_loop_model.as_deref(), Some("sonnet"));
+        assert_eq!(state.main_loop_profile.as_deref(), Some("fast"));
         assert_eq!(
             state.effort_value,
             Some(crate::utils::effort::Effort::Medium)
@@ -2650,106 +2668,85 @@ mod tests {
                 .always_deny_rules
                 .contains_key(&crate::types::permissions::PermissionRuleSource::CliArg)
         );
+        crate::bootstrap::state::set_session_profile(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]
-    fn initial_state_without_profile_has_no_model() {
+    fn launch_model_takes_profiles_tiers_and_inherit_with_an_optional_effort() {
+        use crate::utils::effort::Effort;
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let previous_override = crate::bootstrap::state::get_main_loop_model_override();
-        let settings = SettingsJson::default();
-        let agents = ResolvedAgentLaunch {
-            definitions: Arc::new(
-                crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult::default(),
-            ),
-            main_thread_agent_definition: None,
+        install_launch_profiles();
+        let launch = |args: &[&str]| {
+            apply_launch_model_override(&crate::cli::parse_cli_config(&argv(args)), &no_agents())
+                .unwrap()
         };
-
-        let state = build_initial_app_state_with_thinking(
-            &settings,
-            &[],
-            true,
-            &crate::cli::CliConfig::default(),
-            false,
-            &agents,
-        )
-        .unwrap();
-
-        assert_eq!(state.main_loop_model, None);
+        let profile = |name: &str, effort| LaunchModel {
+            profile: Some(name.to_string()),
+            effort,
+        };
+        assert_eq!(launch(&["--model", "fast"]), profile("fast", None));
         assert_eq!(
-            crate::bootstrap::state::get_main_loop_model_override(),
-            None,
-            "saved settings must not be installed as a runtime override"
+            crate::bootstrap::state::get_session_profile().as_deref(),
+            Some("fast")
         );
-
-        crate::bootstrap::state::set_main_loop_model_override(previous_override);
+        assert_eq!(
+            crate::utils::model::model::get_main_loop_model(),
+            "claude-haiku-4-5"
+        );
+        assert_eq!(
+            launch(&["--model", "@light:max"]),
+            profile("fast", Some(Effort::Max))
+        );
+        assert_eq!(launch(&["--model", "@main"]), profile("main", None));
+        assert_eq!(launch(&["--model", "default"]), LaunchModel::default());
+        assert_eq!(crate::bootstrap::state::get_session_profile(), None);
+        assert_eq!(launch(&[]), LaunchModel::default());
+        assert_eq!(
+            launch(&["--model", "inherit:off"]),
+            LaunchModel {
+                profile: None,
+                effort: Some(Effort::Off)
+            }
+        );
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
-    /// Maps to: CC `main.tsx:3068`
-    /// `setInitialMainLoopModel(getUserSpecifiedModelSetting() || null)` — the
-    /// launch-time capture `modelOptions.ts:490` falls back to once `/model`
-    /// clears the live setting. `||` rather than `??`, so an empty setting is
-    /// captured as unset.
     #[test]
-    fn startup_captures_the_launch_model_setting_like_official() {
+    fn launch_rejects_a_model_that_names_no_profile() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let previous_override = crate::bootstrap::state::get_main_loop_model_override();
-        let previous_initial = crate::bootstrap::state::get_initial_main_loop_model();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-initial-model-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        fs::create_dir_all(&root).unwrap();
-        fs::write(root.join("settings.json"), "{}").unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        utils::settings::settings_cache::reset_settings_cache();
-
-        let agents = ResolvedAgentLaunch {
-            definitions: Arc::new(
-                crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult::default(),
-            ),
-            main_thread_agent_definition: None,
-        };
-        let launch = |cli: &crate::cli::CliConfig| {
-            crate::bootstrap::state::set_initial_main_loop_model(Some("stale".to_string()));
-            apply_launch_model_override(cli, &agents);
-            build_initial_app_state_with_thinking(
-                &SettingsJson::default(),
-                &[],
-                true,
-                cli,
-                false,
-                &agents,
-            )
-            .unwrap();
-            crate::bootstrap::state::get_initial_main_loop_model()
-        };
-
-        let pinned = launch(&crate::cli::parse_cli_config(&argv(&[
-            "--model",
-            "claude-sonnet-4-5-20250929",
-        ])));
-        assert_eq!(pinned.as_deref(), Some("claude-sonnet-4-5-20250929"));
-        assert_eq!(
-            launch(&crate::cli::parse_cli_config(&argv(&["--model", ""]))),
-            None
-        );
-        assert_eq!(launch(&crate::cli::CliConfig::default()), None);
-
-        crate::bootstrap::state::set_main_loop_model_override(previous_override);
-        crate::bootstrap::state::set_initial_main_loop_model(previous_initial);
-        drop(_config);
-        utils::settings::settings_cache::reset_settings_cache();
-        let _ = fs::remove_dir_all(&root);
+        install_launch_profiles();
+        for model in [
+            "sonnet",
+            "opus[1m]",
+            "anthropic/claude-opus-4-6",
+            "claude-sonnet-4-6",
+        ] {
+            let cli = crate::cli::parse_cli_config(&argv(&["--model", model]));
+            let error = build_interactive_launch(&SettingsJson::default(), &[], true, &cli)
+                .err()
+                .unwrap_or_else(|| panic!("{model} must be rejected"));
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("Unknown model {model:?}")),
+                "{error}"
+            );
+        }
+        crate::bootstrap::state::set_session_profile(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]
     fn initial_state_uses_resolved_main_thread_agent_object_and_model_like_official() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        install_launch_profiles();
         let mut agent = crate::tools::agent_tool::load_agents_dir::AgentDefinition::new(
             "reviewer",
             "reviews code",
             crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource::ProjectSettings,
         );
-        agent.model = Some("sonnet".to_string());
+        agent.model = Some("fast".to_string());
         let agent = Arc::new(agent);
         let agents = ResolvedAgentLaunch {
             definitions: Arc::new(
@@ -2763,25 +2760,26 @@ mod tests {
         };
 
         assert_eq!(
-            apply_launch_model_override(&crate::cli::CliConfig::default(), &agents).as_deref(),
-            Some(crate::utils::model::model::DEFAULT_SONNET_MODEL)
+            apply_launch_model_override(&crate::cli::CliConfig::default(), &agents)
+                .unwrap()
+                .profile
+                .as_deref(),
+            Some("fast")
         );
-        let state = build_initial_app_state_with_thinking(
+        let state = build_initial_app_state_with_agents(
             &SettingsJson::default(),
             &[],
             true,
             &crate::cli::CliConfig::default(),
-            true,
             &agents,
         )
         .unwrap();
 
         assert_eq!(state.agent.as_deref(), Some("reviewer"));
-        assert_eq!(
-            state.main_loop_model.as_deref(),
-            Some(crate::utils::model::model::DEFAULT_SONNET_MODEL)
-        );
+        assert_eq!(state.main_loop_profile.as_deref(), Some("fast"));
         assert_eq!(state.agent_definitions.active_agents.len(), 1);
+        crate::bootstrap::state::set_session_profile(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]
@@ -2880,13 +2878,11 @@ mod tests {
         let cli = crate::cli::CliConfig::default();
 
         let enabled = build_interactive_launch(&SettingsJson::default(), &[], true, &cli).unwrap();
-        assert_eq!(enabled.initial_state.thinking_enabled, Some(true));
         assert_eq!(enabled.repl_props.thinking_config, ThinkingConfig::Adaptive);
 
         let mut settings = SettingsJson::default();
         settings.always_thinking_enabled = Some(false);
         let disabled = build_interactive_launch(&settings, &[], true, &cli).unwrap();
-        assert_eq!(disabled.initial_state.thinking_enabled, Some(false));
         assert_eq!(
             disabled.repl_props.thinking_config,
             ThinkingConfig::Disabled
@@ -2900,7 +2896,6 @@ mod tests {
         let settings = SettingsJson::default();
         let cli = crate::cli::parse_cli_config(&argv(&["--max-thinking-tokens", "8000"]));
         let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
-        assert_eq!(launch.initial_state.thinking_enabled, Some(true));
         assert_eq!(
             launch.repl_props.thinking_config,
             ThinkingConfig::Enabled {
@@ -2916,7 +2911,6 @@ mod tests {
             "8000",
         ]));
         let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
-        assert_eq!(launch.initial_state.thinking_enabled, Some(false));
         assert_eq!(launch.repl_props.thinking_config, ThinkingConfig::Disabled);
     }
 
@@ -2927,7 +2921,6 @@ mod tests {
         let settings = SettingsJson::default();
         let cli = crate::cli::parse_cli_config(&argv(&["--max-thinking-tokens", "8000"]));
         let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
-        assert_eq!(launch.initial_state.thinking_enabled, Some(true));
         assert_eq!(
             launch.repl_props.thinking_config,
             ThinkingConfig::Enabled {
@@ -2939,7 +2932,6 @@ mod tests {
         // still prevents falling back to the CLI max-token value.
         crate::utils::process_env::set("MAX_THINKING_TOKENS", "invalid");
         let launch = build_interactive_launch(&settings, &[], true, &cli).unwrap();
-        assert_eq!(launch.initial_state.thinking_enabled, Some(false));
         assert_eq!(launch.repl_props.thinking_config, ThinkingConfig::Disabled);
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
     }

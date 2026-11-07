@@ -4436,7 +4436,7 @@ fn query_tool_use_context(
     context
 }
 
-fn build_call_model_request(
+pub(crate) fn build_call_model_request(
     messages: Vec<Message>,
     permission_context: ToolPermissionContext,
     query_source: &QuerySource,
@@ -4449,23 +4449,13 @@ fn build_call_model_request(
     // systemPrompt, thinkingConfig, tools, options })` request object at the
     // API-loop boundary. Options come from the seeded ToolUseContext (CC
     // `toolUseContext.options` / getAppState snapshots).
-    // Maps to CC `query.ts`:
-    // `currentModel = getRuntimeMainLoopModel({ mainLoopModel:
-    //   toolUseContext.options.mainLoopModel, ... })`.
-    // REPL seeds `mainLoopModel` via `useMainLoopModel()` (already resolved).
-    let configured_main_loop_model = crate::utils::model::model::get_main_loop_model();
-    let exceeds_200k_tokens = permission_context.mode
-        == crate::types::permissions::PermissionMode::Plan
-        && crate::utils::tokens::does_most_recent_assistant_message_exceed_200k(&messages);
-    let main_loop_model = tool_use_context
+    // Maps to CC `query.ts` `currentModel = getRuntimeMainLoopModel(...)`.
+    // @nyan: no `opusplan` plan-mode switch; the model is the session
+    // profile's, seeded on the context.
+    let model = tool_use_context
         .main_loop_model
         .clone()
-        .unwrap_or(configured_main_loop_model);
-    let model = crate::utils::model::model::get_runtime_main_loop_model(
-        permission_context.mode,
-        main_loop_model,
-        exceeds_200k_tokens,
-    );
+        .unwrap_or_else(crate::utils::model::model::get_main_loop_model);
     let mut options =
         crate::services::api::claude::Options::new(model, query_source.as_api_source().to_string());
     options.profile = tool_use_context.main_loop_profile.clone();
@@ -4502,9 +4492,6 @@ fn build_call_model_request(
             options.profile.as_deref(),
         )
     });
-    options.fast_mode = tool_use_context
-        .fast_mode
-        .map(|enabled| enabled && crate::utils::fast_mode::is_fast_mode_enabled());
     // Maps to CC `query.ts` → `services/api/claude.ts` advisor option. Read
     // the live AppState slot so `/advisor` takes effect on the next turn;
     // headless contexts fall back to the merged settings snapshot.
@@ -5827,6 +5814,21 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "anthropic_internal")]
+    fn install_primary_model_profile() {
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({
+                "nyan": {
+                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                    "models": {"primary": {"provider": "p", "model": "claude-primary-model",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}},
+                    "selection": {"main": "primary"}
+                }
+            }))
+            .unwrap(),
+        );
+    }
+
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
@@ -6489,7 +6491,6 @@ mod tests {
                 streaming_tool_execution: false,
                 emit_tool_use_summaries: true,
                 is_ant: false,
-                fast_mode_enabled: true,
             },
         };
         let block = crate::types::message::ToolUseBlock {
@@ -7022,9 +7023,7 @@ mod tests {
     fn query_actor_retries_call_model_after_model_fallback_and_strips_signature_blocks() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NODE_ENV", "test");
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-primary-model".to_string(),
-        )));
+        install_primary_model_profile();
 
         #[derive(Clone, Debug)]
         struct FallbackDeps {
@@ -7148,7 +7147,7 @@ mod tests {
             ));
 
         crate::utils::process_env::remove("NODE_ENV");
-        crate::bootstrap::state::set_main_loop_model_override(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
 
         assert_eq!(terminal.reason, "completed");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
@@ -7193,9 +7192,7 @@ mod tests {
     fn query_actor_retries_after_streaming_non_streaming_model_fallback_signal() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NODE_ENV", "test");
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-primary-model".to_string(),
-        )));
+        install_primary_model_profile();
 
         #[derive(Clone, Debug)]
         struct StreamModelFallbackDeps {
@@ -7347,7 +7344,7 @@ mod tests {
             ));
 
         crate::utils::process_env::remove("NODE_ENV");
-        crate::bootstrap::state::set_main_loop_model_override(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
 
         assert_eq!(terminal.reason, "completed");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
@@ -7394,9 +7391,7 @@ mod tests {
     fn query_actor_keeps_fallback_model_for_tool_result_continuation() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NODE_ENV", "test");
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-primary-model".to_string(),
-        )));
+        install_primary_model_profile();
 
         #[derive(Clone, Debug)]
         struct FallbackContinuationDeps {
@@ -7514,7 +7509,7 @@ mod tests {
             ));
 
         crate::utils::process_env::remove("NODE_ENV");
-        crate::bootstrap::state::set_main_loop_model_override(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
 
         assert_eq!(terminal.reason, "completed");
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
@@ -8331,8 +8326,7 @@ mod tests {
             .with_non_interactive_session(true)
             .with_cwd_override(Some(std::path::PathBuf::from("/tmp/agent-cwd")))
             .with_critical_system_reminder_experimental(Some("Stay focused".to_string()))
-            .with_effort_value(Some(crate::utils::effort::Effort::Medium))
-            .with_fast_mode(Some(false));
+            .with_effort_value(Some(crate::utils::effort::Effort::Medium));
 
         let request = build_call_model_request(
             Vec::new(),
@@ -8356,78 +8350,6 @@ mod tests {
             Some(crate::utils::effort::Effort::Medium)
         );
         assert!(request.options.is_non_interactive_session);
-        assert_eq!(request.options.fast_mode, Some(false));
-    }
-
-    #[test]
-    fn build_call_model_request_forwards_explicit_fast_mode_owner_state() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_FAST_MODE");
-        let seeded = crate::tool::ToolUseContext::default().with_fast_mode(Some(true));
-        let request = build_call_model_request(
-            Vec::new(),
-            ToolPermissionContext::default(),
-            &QuerySource::Prompt,
-            &[],
-            &std::collections::BTreeMap::new(),
-            &crate::state::app_state_store::McpState::default(),
-            &seeded,
-        );
-        assert_eq!(request.options.fast_mode, Some(true));
-    }
-
-    #[test]
-    fn build_call_model_request_uses_runtime_plan_model_selection_like_official() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some("opusplan".to_string())));
-        crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "default-opus");
-        crate::utils::process_env::set("ANTHROPIC_DEFAULT_SONNET_MODEL", "default-sonnet");
-
-        let mut plan_context = ToolPermissionContext::default();
-        plan_context.mode = crate::types::permissions::PermissionMode::Plan;
-        let request = build_call_model_request(
-            Vec::new(),
-            plan_context.clone(),
-            &QuerySource::Prompt,
-            &[],
-            &std::collections::BTreeMap::new(),
-            &crate::state::app_state_store::McpState::default(),
-            &crate::tool::ToolUseContext::default(),
-        );
-        assert_eq!(request.options.model, "default-opus");
-
-        let over_200k_messages = vec![crate::types::message::Message::Assistant(
-            crate::types::message::AssistantMessage {
-                uuid: uuid::Uuid::new_v4().to_string(),
-                timestamp: chrono::Utc::now(),
-                content: vec![crate::types::message::AssistantContent::Text(
-                    "large plan context".to_string(),
-                )],
-                model: Some("default-sonnet".to_string()),
-                stop_reason: Some(crate::types::message::StopReason::EndTurn),
-                usage: Some(crate::types::message::TokenUsage {
-                    input_tokens: 200_001,
-                    output_tokens: 0,
-                    cache_creation_input_tokens: 0,
-                    cache_read_input_tokens: 0,
-                    ..Default::default()
-                }),
-            },
-        )];
-        let guarded_request = build_call_model_request(
-            over_200k_messages,
-            plan_context,
-            &QuerySource::Prompt,
-            &[],
-            &std::collections::BTreeMap::new(),
-            &crate::state::app_state_store::McpState::default(),
-            &crate::tool::ToolUseContext::default(),
-        );
-        assert_eq!(guarded_request.options.model, "default-sonnet");
-
-        crate::bootstrap::state::set_main_loop_model_override(None);
-        crate::utils::process_env::remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
-        crate::utils::process_env::remove("ANTHROPIC_DEFAULT_SONNET_MODEL");
     }
 
     #[test]
@@ -14622,7 +14544,6 @@ mod prompt_context_contract_tests {
                         "streaming_tool_execution:",
                         "emit_tool_use_summaries:",
                         "is_ant:",
-                        "fast_mode_enabled:",
                     ] {
                         assert!(
                             !prompt.contains(gate),

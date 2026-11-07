@@ -4,7 +4,6 @@ pub mod auto_mode_unavailable;
 pub mod deprecation_warning;
 pub mod env_hook;
 pub mod external_editor_hint;
-pub mod fast_mode;
 pub mod ide_status_indicator;
 pub mod install_messages;
 pub mod mcp_connectivity_status;

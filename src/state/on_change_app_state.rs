@@ -14,8 +14,6 @@ use std::sync::Arc;
 
 use super::app_state_store::{AppState, ExpandedView};
 use crate::utils::config::save_global_config;
-use crate::utils::settings::SettingSource;
-use crate::utils::settings::update_settings_for_source;
 
 /// Maps to: CC `onChangeAppState.ts:24-40 externalMetadataToAppState` — the
 /// inverse of the push below, applied on worker restart.
@@ -68,42 +66,12 @@ pub fn on_change_app_state(new: &AppState, old: &AppState) {
         );
     }
 
-    // mainLoopModel — persist to userSettings and update the bootstrap override.
-    // Maps to: onChangeAppState.ts:94-112.
-    if new.main_loop_model != old.main_loop_model {
-        // The outer Some records CC's explicit null when /model clears the
-        // setting, so env/settings do not become active again during the same
-        // session. This in-memory update is independent of the write gate.
-        crate::bootstrap::state::set_main_loop_model_override(Some(new.main_loop_model.clone()));
-
-        // Settings persistence respects NYAN_WRITE_ENABLED like
-        // save_global_config.
-        if crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("NYAN_WRITE_ENABLED").as_deref(),
-        ) {
-            let mut updates = serde_json::Map::new();
-            match &new.main_loop_model {
-                Some(model) => {
-                    updates.insert(
-                        "model".to_string(),
-                        serde_json::Value::String(model.clone()),
-                    );
-                }
-                None => {
-                    // CC passes `undefined` to remove; JSON null clears the key
-                    // value in our patch writer (preserve-unknowns path).
-                    updates.insert("model".to_string(), serde_json::Value::Null);
-                }
-            }
-            if let Err(error) = update_settings_for_source(SettingSource::User, &updates) {
-                tracing::warn!(%error, "failed to persist mainLoopModel to userSettings");
-            }
-        } else {
-            tracing::debug!(
-                model = ?new.main_loop_model,
-                "mainLoopModel changed (write gate closed; userSettings not persisted)"
-            );
-        }
+    // mainLoopProfile — mirror into bootstrap state so non-AppState readers
+    // (`get_main_loop_model`) follow the session. Maps to the override half of
+    // onChangeAppState.ts:94-112. @nyan: never persisted; the picker's Ctrl+S
+    // writes `selection.main` explicitly.
+    if new.main_loop_profile != old.main_loop_profile {
+        crate::bootstrap::state::set_session_profile(new.main_loop_profile.clone());
     }
 
     // expandedView — persist as showExpandedTodos + showSpinnerTree for
@@ -283,26 +251,16 @@ mod tests {
     }
 
     #[test]
-    fn model_changes_update_runtime_override_matches_official_even_when_writes_are_disabled() {
+    fn profile_changes_update_the_session_profile_without_writing_settings() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _write = EnvVarGuard::unset("NYAN_WRITE_ENABLED");
-        let previous_override = crate::bootstrap::state::get_main_loop_model_override();
-
         let store = AppStore::new(AppState::default(), Some(default_on_change()));
-        store.replace_with(|state| state.main_loop_model = Some("sonnet".to_string()));
+        store.replace_with(|state| state.main_loop_profile = Some("deep".to_string()));
         assert_eq!(
-            crate::bootstrap::state::get_main_loop_model_override(),
-            Some(Some("sonnet".to_string()))
+            crate::bootstrap::state::get_session_profile().as_deref(),
+            Some("deep")
         );
-
-        store.replace_with(|state| state.main_loop_model = None);
-        assert_eq!(
-            crate::bootstrap::state::get_main_loop_model_override(),
-            Some(None),
-            "clearing /model must retain CC's explicit-null override identity"
-        );
-
-        crate::bootstrap::state::set_main_loop_model_override(previous_override);
+        store.replace_with(|state| state.main_loop_profile = None);
+        assert_eq!(crate::bootstrap::state::get_session_profile(), None);
     }
 
     #[test]

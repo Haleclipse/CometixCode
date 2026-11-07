@@ -1,5 +1,5 @@
 //! Retry logic for Anthropic API calls with exponential backoff, jitter,
-//! fast-mode cooldown, 529 fallback, and persistent-retry keep-alive.
+//! 529 fallback, and persistent-retry keep-alive.
 //!
 //! Maps to: CC `services/api/withRetry.ts:1-823`
 //!
@@ -7,7 +7,6 @@
 
 use crate::constants::query_source::RetryQuerySource;
 use crate::types::message::SystemMessage;
-use crate::utils::fast_mode::{is_fast_mode_cooldown, is_fast_mode_enabled};
 use crate::utils::messages::create_system_api_error_message;
 use crate::utils::model::model::is_non_custom_opus_model;
 use crate::utils::process_env::JsTruthy;
@@ -217,15 +216,6 @@ const PERSISTENT_RESET_CAP_MS: u64 = 6 * 60 * 60 * 1000;
 /// Maps to: CC `services/api/withRetry.ts:98`
 const HEARTBEAT_INTERVAL_MS: u64 = 30_000;
 
-/// Maps to: CC `services/api/withRetry.ts:799`
-const DEFAULT_FAST_MODE_FALLBACK_HOLD_MS: u64 = 30 * 60 * 1000;
-
-/// Maps to: CC `services/api/withRetry.ts:800`
-const SHORT_RETRY_THRESHOLD_MS: u64 = 20 * 1000;
-
-/// Maps to: CC `services/api/withRetry.ts:801`
-const MIN_COOLDOWN_MS: u64 = 10 * 60 * 1000;
-
 /// Maps to: CC `services/api/withRetry.ts:47`
 const REPEATED_529_ERROR_MESSAGE: &str = "Repeated 529 Overloaded errors";
 
@@ -265,19 +255,17 @@ static FOREGROUND_529_RETRY_SOURCES: LazyLock<HashSet<RetryQuerySource>> = LazyL
 // ---------------------------------------------------------------------------
 
 /// Mutable context threaded through retry attempts so the operation can adapt
-/// (e.g. reduced max_tokens after overflow, model swap after fast-mode cooldown).
+/// (e.g. reduced max_tokens after overflow).
 ///
 /// Maps to: CC `services/api/withRetry.ts:120-125`
 #[derive(Debug, Clone)]
 pub struct RetryContext {
     /// Override max_tokens after a context-overflow 400 error.
     pub max_tokens_override: Option<u64>,
-    /// Model name for this attempt (may change on fast-mode fallback).
+    /// Model name for this attempt.
     pub model: String,
     /// Thinking configuration.
     pub thinking_config: ThinkingConfig,
-    /// Whether fast mode is requested for this attempt.
-    pub fast_mode: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -293,7 +281,6 @@ pub struct RetryOptions {
     pub model: String,
     pub fallback_model: Option<String>,
     pub thinking_config: ThinkingConfig,
-    pub fast_mode: Option<bool>,
     /// Cancellation token. When the receiver is dropped or a message is sent,
     /// the retry loop will abort.
     pub abort_rx: Option<tokio::sync::watch::Receiver<bool>>,
@@ -520,16 +507,6 @@ fn handle_gcp_credential_error(error: &RetryableError) -> bool {
     }
 }
 
-/// Whether the API error indicates fast mode is not enabled for the org.
-///
-/// Maps to: CC `services/api/withRetry.ts:600-608`
-fn is_fast_mode_not_enabled_error(error: &RetryableError) -> bool {
-    match error.as_api() {
-        Some(api) => api.status == Some(400) && api.message.contains("Fast mode is not enabled"),
-        None => false,
-    }
-}
-
 /// Whether the error is retryable (standard retry predicate).
 ///
 /// Maps to: CC `services/api/withRetry.ts:696-787`
@@ -714,15 +691,6 @@ fn get_retry_after(error: &RetryableError) -> Option<String> {
     error.as_api()?.header("retry-after").map(|s| s.to_string())
 }
 
-/// Parse retry-after header into milliseconds.
-///
-/// Maps to: CC `services/api/withRetry.ts:803-812`
-fn get_retry_after_ms(error: &RetryableError) -> Option<u64> {
-    let header = get_retry_after(error)?;
-    let seconds: u64 = header.parse().ok()?;
-    Some(seconds * 1000)
-}
-
 /// Parse the `anthropic-ratelimit-unified-reset` header to compute how long
 /// until the rate limit window resets.
 ///
@@ -829,7 +797,7 @@ fn format_api_error(error: &ApiError) -> String {
 // ---------------------------------------------------------------------------
 
 /// Core retry loop that wraps an async API operation with exponential backoff,
-/// jitter, 529/429 handling, fast-mode cooldown, persistent retry, and
+/// jitter, 529/429 handling, persistent retry, and
 /// heartbeat keep-alive.
 ///
 /// CC uses `async function* : AsyncGenerator<SystemAPIErrorMessage, T>`
@@ -861,11 +829,6 @@ where
     let mut retry_context = RetryContext {
         model: options.model.clone(),
         thinking_config: options.thinking_config.clone(),
-        fast_mode: if is_fast_mode_enabled() {
-            options.fast_mode
-        } else {
-            None
-        },
         max_tokens_override: None,
     };
 
@@ -887,18 +850,10 @@ where
             .into());
         }
 
-        // Capture fast-mode state before this attempt
-        let was_fast_mode_active = if is_fast_mode_enabled() {
-            retry_context.fast_mode.unwrap_or(false) && !is_fast_mode_cooldown()
-        } else {
-            false
-        };
         // Maps to CC `withRetry.ts:201-211`: mock rejection occurs before
         // client construction, so mock scenarios never make a network call.
-        let mock_error = crate::services::rate_limit_mocking::check_mock_rate_limit_error(
-            &retry_context.model,
-            was_fast_mode_active,
-        );
+        let mock_error =
+            crate::services::rate_limit_mocking::check_mock_rate_limit_error(&retry_context.model);
 
         // Maps to CC `withRetry.ts:217-230`: after a stale keep-alive socket,
         // behind its gate, stop pooling so the retry opens a fresh connection.
@@ -996,71 +951,6 @@ where
                         "error": error.to_string(),
                     }),
                 );
-
-                // --- Fast mode fallback on 429/529 ---
-                // Maps to: CC services/api/withRetry.ts:267-305
-                if was_fast_mode_active
-                    && !is_persistent_retry_enabled()
-                    && let Some(api_err) = error.as_api()
-                    && (api_err.status == Some(429) || is_529_error(api_err))
-                {
-                    // Check overage-disabled header
-                    if let Some(overage_reason) =
-                        api_err.header("anthropic-ratelimit-unified-overage-disabled-reason")
-                        && !overage_reason.is_empty()
-                    {
-                        // TODO: handleFastModeOverageRejection once fast_mode is ported.
-                        // See CC `utils/fastMode.ts:handleFastModeOverageRejection`.
-                        retry_context.fast_mode = Some(false);
-                        last_error = Some(error);
-                        attempt += 1;
-                        continue;
-                    }
-
-                    let retry_after_ms = get_retry_after_ms(&error);
-                    if let Some(ms) = retry_after_ms
-                        && ms < SHORT_RETRY_THRESHOLD_MS
-                    {
-                        // Short retry-after: wait with fast mode still active
-                        if cancellable_sleep(Duration::from_millis(ms), &mut options.abort_rx)
-                            .await
-                            .is_err()
-                        {
-                            return Err(CannotRetryError {
-                                original_error: RetryableError::Aborted,
-                                retry_context,
-                            }
-                            .into());
-                        }
-                        last_error = Some(error);
-                        attempt += 1;
-                        continue;
-                    }
-
-                    // Long or unknown retry-after: enter cooldown
-                    let _cooldown_ms = retry_after_ms
-                        .unwrap_or(DEFAULT_FAST_MODE_FALLBACK_HOLD_MS)
-                        .max(MIN_COOLDOWN_MS);
-                    // TODO: triggerFastModeCooldown once fast_mode module is ported.
-                    // See CC `utils/fastMode.ts:triggerFastModeCooldown`.
-                    if is_fast_mode_enabled() {
-                        retry_context.fast_mode = Some(false);
-                    }
-                    last_error = Some(error);
-                    attempt += 1;
-                    continue;
-                }
-
-                // --- Fast mode not enabled error ---
-                // Maps to: CC services/api/withRetry.ts:310-314
-                if was_fast_mode_active && is_fast_mode_not_enabled_error(&error) {
-                    // TODO: handleFastModeRejectedByAPI once fast_mode is ported.
-                    // See CC `utils/fastMode.ts:handleFastModeRejectedByAPI`.
-                    retry_context.fast_mode = Some(false);
-                    last_error = Some(error);
-                    attempt += 1;
-                    continue;
-                }
 
                 // --- Non-foreground 529 bail ---
                 // Maps to: CC services/api/withRetry.ts:318-324
@@ -1514,7 +1404,6 @@ mod tests {
                 model: String::new(),
                 fallback_model: None,
                 thinking_config: ThinkingConfig::Disabled,
-                fast_mode: None,
                 abort_rx: None,
                 query_source: None,
                 initial_consecutive_529_errors: None,
@@ -1545,7 +1434,6 @@ mod tests {
             model: String::new(),
             fallback_model: None,
             thinking_config: ThinkingConfig::Disabled,
-            fast_mode: None,
             abort_rx: None,
             query_source: None,
             initial_consecutive_529_errors: None,
@@ -1588,7 +1476,6 @@ mod tests {
                 model: "m".into(),
                 fallback_model: None,
                 thinking_config: ThinkingConfig::Disabled,
-                fast_mode: None,
                 abort_rx: None,
                 query_source: Some(RetryQuerySource::ReplMainThread),
                 initial_consecutive_529_errors: None,
@@ -1639,7 +1526,6 @@ mod tests {
                 max_tokens_override: None,
                 model: "claude-sonnet-4-20250514".to_string(),
                 thinking_config: ThinkingConfig::Disabled,
-                fast_mode: None,
             },
         };
         let display = format!("{}", err);
@@ -1688,7 +1574,6 @@ mod tests {
                 model: "claude-sonnet-4-20250514".to_string(),
                 fallback_model: None,
                 thinking_config: ThinkingConfig::Disabled,
-                fast_mode: None,
                 abort_rx: None,
                 query_source: Some(RetryQuerySource::ReplMainThread),
                 initial_consecutive_529_errors: None,
@@ -1735,7 +1620,6 @@ mod tests {
                 model: "claude-opus-4-20250514".to_string(),
                 fallback_model: Some("claude-sonnet-4-20250514".to_string()),
                 thinking_config: ThinkingConfig::Disabled,
-                fast_mode: None,
                 abort_rx: None,
                 query_source: Some(RetryQuerySource::ReplMainThread),
                 initial_consecutive_529_errors: Some(MAX_529_RETRIES - 1),
@@ -1787,7 +1671,6 @@ mod tests {
                 model: "claude-sonnet-4-6".to_string(),
                 fallback_model: None,
                 thinking_config: ThinkingConfig::Disabled,
-                fast_mode: None,
                 abort_rx: None,
                 query_source: Some(RetryQuerySource::ReplMainThread),
                 initial_consecutive_529_errors: None,
@@ -1868,7 +1751,6 @@ mod tests {
                     model: "claude-sonnet-4-20250514".to_string(),
                     fallback_model: None,
                     thinking_config: ThinkingConfig::Disabled,
-                    fast_mode: None,
                     abort_rx: None,
                     query_source: Some(RetryQuerySource::ReplMainThread),
                     initial_consecutive_529_errors: None,

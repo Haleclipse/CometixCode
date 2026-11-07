@@ -6,31 +6,19 @@
 //! - Level changes are recorded as session events and restored on resume.
 //! - Global effortLevel setting, CLAUDE_CODE_EFFORT_LEVEL env, launch pinning,
 //!   and ultracode are removed.
+//!
+//! @nyan: `/effort` with no argument prints the current effort and the valid
+//! values; CC opens an effort picker. The model picker's ←/→ is the
+//! interactive control.
 
 use crate::constants::xml::COMMON_HELP_ARGS;
-use crate::state::store::AppStore;
 use crate::tool::ToolUseContext;
 use crate::utils::effort::{Effort, get_effort_description};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EffortCommandResult {
     pub message: String,
-    pub effort_update: Option<Option<Effort>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EffortCall {
-    OpenPicker,
-    Result(EffortCommandResult),
-}
-
-impl EffortCall {
-    pub fn into_result(self) -> Option<EffortCommandResult> {
-        match self {
-            Self::Result(result) => Some(result),
-            Self::OpenPicker => None,
-        }
-    }
+    pub effort_update: Option<Effort>,
 }
 
 impl EffortCommandResult {
@@ -38,13 +26,6 @@ impl EffortCommandResult {
         Self {
             message: message.into(),
             effort_update: None,
-        }
-    }
-
-    pub fn with_update(message: impl Into<String>, value: Option<Effort>) -> Self {
-        Self {
-            message: message.into(),
-            effort_update: Some(value),
         }
     }
 }
@@ -61,24 +42,22 @@ pub fn usage_text() -> String {
     text
 }
 
-pub fn handle_cancel_output() -> String {
-    "Cancelled".to_string()
-}
-
-pub fn show_current_effort(current: Option<&Effort>) -> EffortCommandResult {
-    let level = current.copied().unwrap_or_default();
-    EffortCommandResult::message(format!(
-        "Current session effort: {} ({})",
-        level.as_str(),
-        get_effort_description(level)
-    ))
+/// The current effort line: the session's, else the profile's configured
+/// effort, else the model default.
+pub fn show_current_effort(current: Option<Effort>) -> EffortCommandResult {
+    let current = match current {
+        Some(level) => format!(
+            "Current effort: {} ({})",
+            level.as_str(),
+            get_effort_description(level)
+        ),
+        None => "Current effort: model default".to_string(),
+    };
+    EffortCommandResult::message(format!("{current}\n\n{}", usage_text()))
 }
 
 pub fn execute_effort(args: &str) -> EffortCommandResult {
     let trimmed = args.trim();
-    if trimmed.is_empty() {
-        return EffortCommandResult::message(usage_text());
-    }
     let Some(effort) = Effort::from_str_loose(trimmed) else {
         return EffortCommandResult::message(format!(
             "Invalid argument: {trimmed}. Valid options are: off, medium, high, max\n\n{}",
@@ -88,78 +67,67 @@ pub fn execute_effort(args: &str) -> EffortCommandResult {
 
     let _ = crate::utils::session_storage::save_session_effort(effort);
 
-    EffortCommandResult::with_update(
-        format!(
+    EffortCommandResult {
+        message: format!(
             "Effort set to '{}' for this session: {}",
             effort.as_str(),
             get_effort_description(effort)
         ),
-        Some(effort),
-    )
-}
-
-pub fn execute_effort_for_model(args: &str, _model: &str) -> EffortCommandResult {
-    execute_effort(args)
-}
-
-fn current_effort_and_model(context: &ToolUseContext) -> (Option<Effort>, String) {
-    if let Some(state) = context.get_app_state() {
-        let model = crate::hooks::use_main_loop_model::use_main_loop_model(
-            state.main_loop_model.as_deref(),
-            state.main_loop_model_for_session.as_deref(),
-        );
-        return (state.effort_value, model);
+        effort_update: Some(effort),
     }
-    let model = context
-        .main_loop_model
-        .clone()
-        .unwrap_or_else(|| crate::hooks::use_main_loop_model::use_main_loop_model(None, None));
-    (context.effort_value, model)
 }
 
-fn apply_effort_and_close(
-    result: EffortCommandResult,
-    context: &ToolUseContext,
-) -> EffortCommandResult {
+fn current_effort(context: &ToolUseContext) -> Option<Effort> {
+    let (session, profile) = match context.get_app_state() {
+        Some(state) => (state.effort_value, state.main_loop_profile.clone()),
+        None => (context.effort_value, context.main_loop_profile.clone()),
+    };
+    session.or_else(|| {
+        crate::utils::model::profile::profile_default_effort(
+            &crate::utils::settings::get_initial_settings(),
+            profile.as_deref(),
+        )
+    })
+}
+
+pub fn call(args: &str, context: &ToolUseContext) -> EffortCommandResult {
+    let args = args.trim();
+    if COMMON_HELP_ARGS.contains(&args) {
+        return EffortCommandResult::message(usage_text());
+    }
+    if args.is_empty() || matches!(args, "current" | "status") {
+        return show_current_effort(current_effort(context));
+    }
+    let result = execute_effort(args);
     if let Some(update) = result.effort_update {
         context.set_app_state(|state| {
-            state.effort_value = update;
+            state.effort_value = Some(update);
         });
     }
     result
 }
 
-pub fn apply_effort_command(args: &str, store: &AppStore) -> String {
-    let result = execute_effort(args);
-    if let Some(update) = result.effort_update {
-        store.replace_with(|state| {
-            state.effort_value = update;
-        });
-    }
-    result.message
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-pub fn normalize_effort_picker_arg(args: &str, _model: &str) -> Option<Option<Effort>> {
-    let trimmed = args.trim();
-    if matches!(trimmed.to_ascii_lowercase().as_str(), "auto" | "unset") {
-        Some(None)
-    } else {
-        Effort::from_str_loose(trimmed).map(|e| Some(e))
+    #[test]
+    fn no_argument_prints_the_current_effort_and_the_valid_values() {
+        let context = ToolUseContext::default().with_effort_value(Some(Effort::High));
+        let message = call("", &context).message;
+        assert!(message.starts_with("Current effort: high"), "{message}");
+        for level in ["off", "medium", "high", "max"] {
+            assert!(message.contains(&format!("- {level}: ")), "{message}");
+        }
+        assert_eq!(call("", &context).effort_update, None);
     }
-}
 
-pub fn call(args: &str, context: &ToolUseContext) -> EffortCall {
-    let args = args.trim();
-    if COMMON_HELP_ARGS.contains(&args) {
-        return EffortCall::Result(EffortCommandResult::message(usage_text()));
+    #[test]
+    fn a_level_sets_the_session_effort_and_anything_else_is_refused() {
+        let context = ToolUseContext::default();
+        assert_eq!(call("max", &context).effort_update, Some(Effort::Max));
+        let invalid = call("low", &context);
+        assert_eq!(invalid.effort_update, None);
+        assert!(invalid.message.starts_with("Invalid argument: low."));
     }
-    if matches!(args, "current" | "status") {
-        let (effort, _) = current_effort_and_model(context);
-        return EffortCall::Result(show_current_effort(effort.as_ref()));
-    }
-    if args.is_empty() {
-        return EffortCall::OpenPicker;
-    }
-    let result = execute_effort(args);
-    EffortCall::Result(apply_effort_and_close(result, context))
 }

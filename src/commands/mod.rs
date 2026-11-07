@@ -26,7 +26,6 @@ pub mod diff;
 pub mod doctor;
 pub mod effort;
 pub mod export;
-pub mod fast;
 pub mod help;
 pub mod hooks;
 pub mod ide;
@@ -556,14 +555,6 @@ fn desktop_supported() -> bool {
         || cfg!(all(target_os = "windows", target_arch = "x86_64"))
 }
 
-fn fast_enabled() -> bool {
-    crate::utils::fast_mode::is_fast_mode_enabled()
-}
-
-fn fast_hidden() -> bool {
-    !fast_enabled()
-}
-
 fn cost_hidden() -> bool {
     false
 }
@@ -704,15 +695,6 @@ fn commands() -> Vec<Command> {
             .aliases(&["quit"])
             .immediate()
             .executable(execution::call_exit),
-        Command::local_ui("fast", "Toggle fast mode (Opus 4.6 only)")
-            .argument_hint("[on|off]")
-            .availability(&[ClaudeAi, Console])
-            .enabled_when(fast_enabled)
-            .hidden_when(fast_hidden)
-            .immediate_when(
-                crate::utils::immediate_command::should_inference_config_command_be_immediate,
-            )
-            .executable(execution::call_fast),
         Command::local("files", "List all files currently in context")
             .enabled_when(is_internal_build)
             .supports_non_interactive(),
@@ -1460,7 +1442,7 @@ mod tests {
         let expected =
             crate::utils::immediate_command::should_inference_config_command_be_immediate();
         let catalog = commands();
-        for name in ["model", "fast", effort::NAME] {
+        for name in ["model", effort::NAME] {
             let command = catalog
                 .iter()
                 .find(|command| command.name == name)
@@ -1476,11 +1458,12 @@ mod tests {
 
         let catalog = commands();
         // 71 direct descriptors + internal /version, plus @nyan `/retrieval`.
-        // `/login` and `/logout` are gone: Anthropic is API-key only.
+        // `/login` and `/logout` are gone: Anthropic is API-key only; `/fast`
+        // is gone with Fast mode.
         let base_len = if crate::utils::build_profile::build_audience().is_internal() {
-            73
-        } else {
             72
+        } else {
+            71
         };
         assert_eq!(catalog.len(), base_len);
         for removed in ["login", "logout"] {
@@ -1513,7 +1496,6 @@ mod tests {
             "doctor",
             "effort",
             "exit",
-            "fast",
             "files",
             "heapdump",
             "help",

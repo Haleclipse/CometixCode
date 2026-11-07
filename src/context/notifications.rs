@@ -44,7 +44,6 @@ pub enum NotificationColor {
     Text,
     Ide,
     Suggestion,
-    FastMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

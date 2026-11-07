@@ -52,7 +52,6 @@ pub enum SettingType {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncableAppStateKey {
     Verbose,
-    ThinkingEnabled,
 }
 
 /// Maps to: CC `supportedSettings.ts:23-24`
@@ -223,8 +222,7 @@ pub fn supported_settings() -> Vec<SettingConfig> {
             Settings,
             Boolean,
             "Enable extended thinking (false to disable)",
-        )
-        .app_state_key(SyncableAppStateKey::ThinkingEnabled),
+        ),
         SettingConfig::new(
             "permissions.defaultMode",
             Settings,

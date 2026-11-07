@@ -33,20 +33,16 @@ pub mod sandbox_prompt_footer_hint;
 pub mod shimmered_input;
 pub mod use_maybe_truncate_input;
 pub mod use_prompt_input_placeholder;
-pub mod use_show_fast_icon_hint;
 pub mod use_swarm_banner;
 pub mod utils;
 pub mod voice_indicator;
 
 use crate::commands::Command;
-use crate::commands::fast::FastModePicker;
 use crate::components::base_text_input::{BaseInputState, BaseTextInput};
 use crate::components::bridge_dialog::{BridgeDialog, BridgeDialogSnapshot};
 use crate::components::global_search_dialog::GlobalSearchDialog;
 use crate::components::history_search_dialog::HistorySearchDialog;
-use crate::components::model_picker::{
-    ModelEffortLevel, ModelPicker, ModelPickerSelection, apply_model_picker_selection,
-};
+use crate::components::model_picker::{ModelPicker, ModelPickerResult};
 use crate::components::prompt_input::input_modes::PromptInputMode;
 use crate::components::prompt_input::prompt_input_help_menu::{
     PROMPT_INPUT_HELP_MENU_HEIGHT, PromptInputHelpMenu,
@@ -66,7 +62,6 @@ use crate::components::tasks::task_status_utils::TaskStatus;
 use crate::components::teams::teams_dialog::{
     TeammateStatusData, TeamsDialog, TeamsDialogAction, TeamsDialogData,
 };
-use crate::components::thinking_toggle::ThinkingToggle;
 use crate::components::vim_text_input::{VimMode, VimTextInput};
 use crate::context::notifications::use_notifications;
 use crate::hooks::notifs::external_editor_hint::{
@@ -217,42 +212,6 @@ fn prompt_border_color(mode: PromptInputMode, theme: &Theme) -> Color {
         .and_then(|name| parse_agent_color_name(&name))
         .map(|color| theme.color(color.theme_key()))
         .unwrap_or(theme.prompt_border)
-}
-
-/// Maps to CC PromptInput.tsx `buildBorderText(showFastIcon,
-/// showFastIconHint, fastModeCooldown)`.
-fn build_fast_border_text(
-    show_fast_icon: bool,
-    show_fast_icon_hint: bool,
-    fast_mode_cooldown: bool,
-    theme: &Theme,
-) -> Option<BorderText> {
-    show_fast_icon.then(|| {
-        let fast_segment = if show_fast_icon_hint {
-            format!(
-                "{} \x1b[2m/fast\x1b[0m",
-                crate::components::fast_icon::get_fast_icon_string(true, fast_mode_cooldown, theme,)
-            )
-        } else {
-            crate::components::fast_icon::get_fast_icon_string(true, fast_mode_cooldown, theme)
-        };
-        BorderText {
-            content: format!(" {fast_segment} "),
-            position: BorderTextPosition::Top,
-            align: BorderTextAlign::End,
-            offset: 0,
-        }
-    })
-}
-
-/// Maps to CC PromptInput.tsx `showFastIcon`.
-fn should_show_fast_icon(
-    feature_enabled: bool,
-    user_enabled: bool,
-    available: bool,
-    cooldown: bool,
-) -> bool {
-    feature_enabled && user_enabled && (available || cooldown)
 }
 
 /// Maps to: PromptInput.tsx `imageRefPositions` — `[Image #N]` chip ranges as
@@ -434,25 +393,6 @@ fn restore_stash_or_clear(
         pasted_contents.set(std::collections::BTreeMap::new());
         input_mode.set(PromptInputMode::Prompt);
     }
-}
-
-/// Maps to PromptInput.tsx `handleModelSelect`: model changes update the
-/// session override and disable Fast mode when the selected model cannot use it.
-/// Effort apply is official ModelPicker `handleSelect` / `bt`.
-fn apply_prompt_model_selection(
-    state: &mut crate::state::app_state_store::AppState,
-    model: Option<String>,
-    selected_value: &str,
-    picked_effort: ModelEffortLevel,
-    has_toggled_effort: bool,
-) -> bool {
-    apply_model_picker_selection(
-        state,
-        model,
-        selected_value,
-        picked_effort,
-        has_toggled_effort,
-    )
 }
 
 fn external_editor_api_key_status(status: VerificationStatus) -> ApiKeyVerificationStatus {
@@ -657,30 +597,10 @@ pub fn PromptInput<'a>(
     // branches, which is a render-time "Unexpected hook type!" panic the moment
     // the hook owns a slot.
     let notifications = crate::context::notifications::use_notifications(&mut hooks);
-    let initial_app_state = app_store.as_ref().map(|store| store.get());
     let prompt_suggestion_state =
         use_app_state(&mut hooks, |state| state.prompt_suggestion.clone());
     let prompt_suggestion_viewing_agent =
         use_app_state(&mut hooks, |state| state.viewing_agent_task_id.is_some());
-    let initial_model = initial_app_state
-        .as_ref()
-        .and_then(|state| state.main_loop_model.clone());
-    let fast_mode_on = initial_app_state
-        .as_ref()
-        .is_some_and(|state| state.fast_mode);
-    let fast_mode_feature_enabled = crate::utils::fast_mode::is_fast_mode_enabled();
-    let fast_mode_cooldown =
-        fast_mode_feature_enabled && crate::utils::fast_mode::is_fast_mode_cooldown();
-    // Maps to CC PromptInput.tsx `showFastIcon`: user state alone is not
-    // sufficient; the feature must be available (or currently cooling down).
-    let show_fast_icon = should_show_fast_icon(
-        fast_mode_feature_enabled,
-        fast_mode_on,
-        crate::utils::fast_mode::is_fast_mode_available(),
-        fast_mode_cooldown,
-    );
-    let fast_icon_hint =
-        use_show_fast_icon_hint::use_show_fast_icon_hint(&mut hooks, show_fast_icon);
     let initial_input = props.initial_input.clone().unwrap_or_default();
     let initial_cursor_offset = initial_input.len();
     let initial_edit_snapshot = PromptEditSnapshot {
@@ -729,8 +649,6 @@ pub fn PromptInput<'a>(
     let mut last_edit_snapshot = hooks.use_ref(move || initial_edit_snapshot);
     let mut stashed_prompt = hooks.use_state(|| Option::<PromptStash>::None);
     let mut show_model_picker = hooks.use_state(|| false);
-    let mut show_fast_mode_picker = hooks.use_state(|| false);
-    let mut show_thinking_toggle = hooks.use_state(|| false);
     let mut is_external_editor_active = hooks.use_state(|| false);
     let mut editor_result = hooks.use_state(|| Option::<EditorResult>::None);
     let mut clipboard_image_result =
@@ -941,8 +859,6 @@ pub fn PromptInput<'a>(
     let teams_dialog_data = prompt_teams_data();
     let prompt_dialog_active = search_dialog_active
         || show_model_picker.get()
-        || show_fast_mode_picker.get()
-        || show_thinking_toggle.get()
         || show_background_tasks.get()
         || show_teams_dialog.get()
         || show_bridge_dialog.get()
@@ -1460,39 +1376,9 @@ pub fn PromptInput<'a>(
             let mut show_model_picker = show_model_picker;
             move || {
                 show_model_picker.set(!show_model_picker.get());
-                show_fast_mode_picker.set(false);
-                show_thinking_toggle.set(false);
                 help_open.set(false);
                 true
             }
-        },
-    );
-    use_keybinding(
-        &mut hooks,
-        keybinding_runtime.clone(),
-        "chat:fastMode",
-        ContextName::Chat,
-        move || prompt_actions_active && crate::utils::fast_mode::is_fast_mode_enabled(),
-        move || {
-            show_fast_mode_picker.set(!show_fast_mode_picker.get());
-            show_model_picker.set(false);
-            show_thinking_toggle.set(false);
-            help_open.set(false);
-            true
-        },
-    );
-    use_keybinding(
-        &mut hooks,
-        keybinding_runtime.clone(),
-        "chat:thinkingToggle",
-        ContextName::Chat,
-        move || prompt_actions_active,
-        move || {
-            show_thinking_toggle.set(!show_thinking_toggle.get());
-            show_model_picker.set(false);
-            show_fast_mode_picker.set(false);
-            help_open.set(false);
-            true
         },
     );
     use_keybinding(
@@ -1618,12 +1504,6 @@ pub fn PromptInput<'a>(
         input_mode.get() == PromptInputMode::Bash,
         history_search_active || arrow_history.history_index.get() > 0,
     );
-    let thinking_toggle_shortcut =
-        crate::keybindings::shortcut_format::get_shortcut_display_for_context_name(
-            "chat:thinkingToggle",
-            "Chat",
-            "alt+t",
-        );
     let has_suggestions = !history_search_active
         && typeahead.has_suggestions
         && (input_mode.get() == PromptInputMode::Prompt
@@ -1831,7 +1711,6 @@ pub fn PromptInput<'a>(
     let prompt_suggestion_for_keys = prompt_suggestion_state.clone();
     let app_store_for_suggestion_keys = app_store.clone();
     let mut input_mode_for_suggestion_keys = input_mode;
-    let mut notifications_for_typeahead = notifications.clone();
     let keybinding_runtime_for_events = keybinding_runtime.clone();
     hooks.use_propagated_terminal_events({
         move |event| match event.event() {
@@ -1897,7 +1776,6 @@ pub fn PromptInput<'a>(
                     *modifiers,
                     &scope,
                     prompt_suggestion_can_accept,
-                    &thinking_toggle_shortcut,
                     has_pending_chord,
                 ) {
                     Some(crate::hooks::use_typeahead::KeyDownEffect::AcceptPromptSuggestion) => {
@@ -1915,13 +1793,6 @@ pub fn PromptInput<'a>(
                         input_mode_for_suggestion_keys.set(mode);
                         cursor_offset.set(value.len());
                         input.set(value);
-                        event.stop_propagation();
-                        return;
-                    }
-                    Some(crate::hooks::use_typeahead::KeyDownEffect::AddNotification(
-                        notification,
-                    )) => {
-                        notifications_for_typeahead.add_notification(notification);
                         event.stop_propagation();
                         return;
                     }
@@ -2479,9 +2350,7 @@ pub fn PromptInput<'a>(
         || show_background_tasks.get()
         || show_teams_dialog.get()
         || show_bridge_dialog.get()
-        || show_fast_mode_picker.get()
         || show_model_picker.get()
-        || show_thinking_toggle.get()
         || is_external_editor_active.get();
     if input_child_unmounted && text_input.escape.is_pending() {
         text_input.escape.clear();
@@ -2654,145 +2523,17 @@ pub fn PromptInput<'a>(
         .into_any();
     }
 
-    if show_fast_mode_picker.get() {
-        let mut show_for_done = show_fast_mode_picker;
-        let store_for_done = app_store.clone();
-        let mut notifications_for_done = notifications.clone();
-        let initial_enabled = app_store
-            .as_ref()
-            .is_some_and(|store| store.get().fast_mode);
-        let unavailable_reason = crate::utils::fast_mode::get_fast_mode_unavailable_reason();
-        let unavailable = unavailable_reason.is_some();
-        return element! {
-            View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
-                FastModePicker(
-                    initial_enabled: initial_enabled,
-                    unavailable_reason: unavailable_reason,
-                    on_done: move |selection: Option<bool>| {
-                        show_for_done.set(false);
-                        if let Some(enabled) = selection {
-                            // Maps to: CC fast.tsx:35-58 applyFastMode —
-                            // clearFastModeCooldown (:39), persist to
-                            // userSettings (:40-42, `fastMode: enable ? true
-                            // : undefined`; Null carries the undefined
-                            // delete), then the setAppState toggle. P5-gap
-                            // persist realized 2026-08-02 (P4 batch).
-                            crate::utils::fast_mode::clear_fast_mode_cooldown();
-                            let _ = crate::utils::settings::update_settings_for_source(
-                                crate::utils::settings::SettingSource::User,
-                                &serde_json::Map::from_iter([(
-                                    "fastMode".to_string(),
-                                    if enabled {
-                                        serde_json::Value::Bool(true)
-                                    } else {
-                                        serde_json::Value::Null
-                                    },
-                                )]),
-                            );
-                            if let Some(store) = store_for_done.as_ref() {
-                                store.replace_with(|state| {
-                                    if enabled
-                                        && !crate::utils::fast_mode::is_fast_mode_supported_by_model(
-                                            state.main_loop_model.as_deref(),
-                                        )
-                                    {
-                                        state.main_loop_model =
-                                            Some(crate::utils::fast_mode::get_fast_mode_model());
-                                        state.main_loop_model_for_session = None;
-                                    }
-                                    state.fast_mode = enabled;
-                                });
-                            }
-                            {
-                                let context = &mut notifications_for_done;
-                                context.add_notification(crate::context::notifications::Notification::text(
-                                    "fast-mode-toggled",
-                                    format!("Fast mode {}", if enabled { "ON" } else { "OFF" }),
-                                    crate::context::notifications::NotificationPriority::Immediate,
-                                ).with_color(if enabled {
-                                    crate::context::notifications::NotificationColor::FastMode
-                                } else {
-                                    crate::context::notifications::NotificationColor::Text
-                                }));
-                            }
-                        } else if unavailable && initial_enabled {
-                            // Source FastModePicker normalizes an unavailable
-                            // previously-on session to OFF when it closes.
-                            // Maps to: CC fast.tsx:100-104 handleCancel —
-                            // gated by `if (initialFastMode)` (:102), then
-                            // applyFastMode(false): clearFastModeCooldown
-                            // (:39), persist `fastMode: undefined` (:40-42;
-                            // Null carries the undefined delete), and the
-                            // setAppState OFF write (:56). P4 batch
-                            // (2026-08-02): SEAM realized — this branch now
-                            // clears the cooldown and persists like CC.
-                            crate::utils::fast_mode::clear_fast_mode_cooldown();
-                            let _ = crate::utils::settings::update_settings_for_source(
-                                crate::utils::settings::SettingSource::User,
-                                &serde_json::Map::from_iter([(
-                                    "fastMode".to_string(),
-                                    serde_json::Value::Null,
-                                )]),
-                            );
-                            if let Some(store) = store_for_done.as_ref() {
-                                // In-updater guard kept: fast_mode cannot
-                                // change while the picker is open, so this is
-                                // the same `initialFastMode` gate.
-                                store.set_state(|prev| {
-                                    if !prev.fast_mode {
-                                        return crate::state::store::UpdateDecision::Same(());
-                                    }
-                                    let mut next = (**prev).clone();
-                                    next.fast_mode = false;
-                                    crate::state::store::UpdateDecision::Replace {
-                                        next: std::sync::Arc::new(next),
-                                        result: (),
-                                    }
-                                });
-                            }
-                        }
-                    },
-                )
-            }
-        }
-        .into_any();
-    }
-
     if show_model_picker.get() {
         let mut notifications_for_model = notifications.clone();
         return element! {
             View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
                 ModelPicker(
-                    initial: initial_model.clone(),
-                    header_text: None,
-                    session_model_label: None,
                     is_standalone_command: true,
-                    skip_settings_write: false,
-                    show_fast_mode_notice: show_fast_icon
-                        && crate::utils::fast_mode::is_fast_mode_supported_by_model(
-                            initial_model.as_deref(),
-                        ),
-                    show_fast_mode_available_hint: false,
-                    fast_mode_is_on: fast_mode_on,
-                    exit_pending: false,
-                    exit_key_name: None,
-                    on_select: move |selection: ModelPickerSelection| {
-                        let effort_suffix = selection
-                            .effort
-                            .map(|effort| format!(" with {} effort", effort.label()))
-                            .unwrap_or_default();
-                        let suffix = if selection.fast_mode_disabled {
-                            " · Fast mode OFF"
-                        } else {
-                            ""
-                        };
+                    on_select: move |result: ModelPickerResult| {
                         notifications_for_model.add_notification(
                             crate::context::notifications::Notification::text(
                                 "model-switched",
-                                format!(
-                                    "Model set to {}{effort_suffix}{suffix}",
-                                    selection.display_label()
-                                ),
+                                result.message(),
                                 crate::context::notifications::NotificationPriority::Immediate,
                             ),
                         );
@@ -2801,54 +2542,6 @@ pub fn PromptInput<'a>(
                     on_cancel: move |_| {
                         show_model_picker.set(false);
                     },
-                )
-            }
-        }
-        .into_any();
-    }
-
-    // CC :2740-2758, returned in place of the input (:2856-2858). The toggle
-    // owns its keys; this only handles the result.
-    if show_thinking_toggle.get() {
-        let current = app_store
-            .as_ref()
-            .and_then(|store| store.get().thinking_enabled)
-            .unwrap_or(true);
-        let select_store = app_store.clone();
-        let mut select_notifications = notifications.clone();
-        return element! {
-            View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
-                ThinkingToggle(
-                    current_value: current,
-                    is_mid_conversation: props.has_assistant_messages,
-                    // CC :2713-2733 `handleThinkingSelect`.
-                    on_select: move |enabled: bool| {
-                        if let Some(store) = select_store.as_ref() {
-                            store.replace_with(|state| state.thinking_enabled = Some(enabled));
-                        }
-                        show_thinking_toggle.set(false);
-                        crate::services::analytics::log_event(
-                            "tengu_thinking_toggled_hotkey",
-                            serde_json::json!({ "enabled": enabled }),
-                        );
-                        // `<Text color={enabled ? 'suggestion' : undefined}
-                        // dimColor={!enabled}>`: no colour renders inactive.
-                        let notification = crate::context::notifications::Notification::text(
-                            "thinking-toggled-hotkey",
-                            format!("Thinking {}", if enabled { "on" } else { "off" }),
-                            crate::context::notifications::NotificationPriority::Immediate,
-                        )
-                        .with_timeout_ms(3000);
-                        select_notifications.add_notification(if enabled {
-                            notification.with_color(
-                                crate::context::notifications::NotificationColor::Suggestion,
-                            )
-                        } else {
-                            notification
-                        });
-                    },
-                    // CC :2735-2737 `handleThinkingCancel`.
-                    on_cancel: move |_| show_thinking_toggle.set(false),
                 )
             }
         }
@@ -3262,8 +2955,6 @@ pub fn PromptInput<'a>(
         }
     }
     .into_any();
-    let fast_border_text =
-        build_fast_border_text(show_fast_icon, fast_icon_hint, fast_mode_cooldown, &theme);
     let prompt_input_box = if let Some(banner) = swarm_banner {
         let banner_color = theme.color(banner.bg_color);
         let banner_width = UnicodeWidthStr::width(banner.text.as_str());
@@ -3301,7 +2992,6 @@ pub fn PromptInput<'a>(
                 border_right: false,
                 border_top: true,
                 border_bottom: true,
-                border_text: fast_border_text,
                 overflow: Overflow::Hidden,
             ) {
                 #(prompt_input_row)
@@ -3613,36 +3303,6 @@ mod tests {
         }
     }
 
-    #[derive(Default, Props)]
-    struct PromptFastIconHarnessProps {
-        enabled: bool,
-    }
-
-    #[component]
-    fn PromptFastIconHarness(
-        props: &PromptFastIconHarnessProps,
-        mut hooks: Hooks,
-    ) -> impl Into<AnyElement<'static>> {
-        let enabled = props.enabled;
-        let store = hooks.use_const(move || {
-            let mut initial = crate::state::app_state_store::AppState::default();
-            initial.fast_mode = enabled;
-            crate::state::store::AppStore::new(initial, None)
-        });
-        element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                crate::state::app_state::AppStateProvider(
-                    prebuilt_store: Some(store.clone()),
-                    children: crate::state::app_state::ProviderChildren::new(|| element! {
-                        View(width: 80u32) {
-                            PromptInput(on_submit: move |_| {}, on_exit: move |_| {})
-                        }
-                    }.into_any()),
-                )
-            }
-        }
-    }
-
     #[component]
     fn PromptWithClipboardImage() -> impl Into<AnyElement<'static>> {
         element! {
@@ -3806,87 +3466,6 @@ mod tests {
                 )
             }
         }
-    }
-
-    #[test]
-    fn build_fast_border_text_matches_official_top_end_shape_and_hint() {
-        let theme = *theme::current();
-        assert!(build_fast_border_text(false, true, false, &theme).is_none());
-
-        let border = build_fast_border_text(true, true, false, &theme).expect("border text");
-        assert_eq!(border.position, BorderTextPosition::Top);
-        assert_eq!(border.align, BorderTextAlign::End);
-        assert_eq!(border.offset, 0);
-        assert!(border.content.starts_with(' '));
-        assert!(border.content.ends_with(' '));
-        assert!(
-            border
-                .content
-                .contains(crate::constants::figures::LIGHTNING_BOLT)
-        );
-        assert!(border.content.contains("\x1b[2m/fast\x1b[0m"));
-
-        let cooldown = build_fast_border_text(true, false, true, &theme).expect("cooldown");
-        assert!(cooldown.content.contains("\x1b[2m"));
-        assert!(!cooldown.content.contains("/fast"));
-    }
-
-    #[test]
-    fn model_selection_disables_fast_mode_for_unsupported_model_like_official() {
-        let mut state = crate::state::app_state_store::AppState::default();
-        state.fast_mode = true;
-        state.main_loop_model = Some("opus".to_string());
-        assert!(apply_prompt_model_selection(
-            &mut state,
-            Some("sonnet".to_string()),
-            "sonnet",
-            ModelEffortLevel::High,
-            false,
-        ));
-        assert!(!state.fast_mode);
-        assert_eq!(state.main_loop_model.as_deref(), Some("opus"));
-        assert_eq!(state.main_loop_model_for_session.as_deref(), Some("sonnet"));
-    }
-
-    #[test]
-    fn fast_icon_condition_matches_official_feature_user_availability_gate() {
-        assert!(!should_show_fast_icon(false, true, true, false));
-        assert!(!should_show_fast_icon(true, false, true, false));
-        assert!(!should_show_fast_icon(true, true, false, false));
-        assert!(should_show_fast_icon(true, true, true, false));
-        assert!(should_show_fast_icon(true, true, false, true));
-    }
-
-    #[test]
-    fn fast_icon_renders_once_in_top_right_border_only_when_fast_mode_is_on() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_FAST_MODE");
-
-        let off = element! { PromptFastIconHarness(enabled: false) }.render(Some(80));
-        assert!(
-            !off.to_string()
-                .contains(crate::constants::figures::LIGHTNING_BOLT)
-        );
-
-        let on = element! { PromptFastIconHarness(enabled: true) }.render(Some(80));
-        let lines = canvas_lines(&on);
-        let icon_rows = lines
-            .iter()
-            .enumerate()
-            .filter(|(_, line)| line.contains(crate::constants::figures::LIGHTNING_BOLT))
-            .collect::<Vec<_>>();
-        assert_eq!(icon_rows.len(), 1, "canvas=\n{}", lines.join("\n"));
-        let (row, line) = icon_rows[0];
-        assert!(
-            row <= 2,
-            "icon must be in the top prompt border: canvas=\n{}",
-            lines.join("\n")
-        );
-        assert!(line.contains('─'), "icon row must be a border row: {line}");
-        let icon_column = line
-            .find(crate::constants::figures::LIGHTNING_BOLT)
-            .expect("fast icon");
-        assert!(icon_column >= 70, "icon must be right-aligned: {line}");
     }
 
     #[test]
@@ -4310,138 +3889,72 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn prompt_input_model_and_thinking_actions_update_runtime_owner_state() {
-        crate::utils::process_runtime::initialize_test_process_runtime();
-        let model_store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
+    fn install_prompt_profiles() {
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {
+                    "main": {"provider": "p", "model": "claude-sonnet-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                    "deep": {"provider": "p", "model": "claude-opus-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                },
+                "selection": {"main": "main"}
+            }}))
+            .unwrap(),
         );
-        drive_prompt_with_store(
-            model_store.clone(),
-            vec![
-                key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT),
-                key(KeyCode::Down),
-                key(KeyCode::Enter),
-            ],
-        );
-        assert!(model_store.get().main_loop_model_for_session.is_some());
-        assert!(
-            model_store.get().main_loop_model.is_none(),
-            "Enter must only change the session, never the configured model"
-        );
-
-        let max_effort_store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
-        );
-        drive_prompt_with_store(
-            max_effort_store.clone(),
-            vec![
-                key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT),
-                key(KeyCode::Down),
-                key(KeyCode::Right),
-                key(KeyCode::Right),
-                key(KeyCode::Enter),
-            ],
-        );
-        assert_eq!(
-            max_effort_store.get().effort_value,
-            Some(crate::utils::effort::Effort::Max),
-            "ModelPicker Medium → High → Max must apply Max to AppState"
-        );
-        assert_eq!(
-            max_effort_store
-                .get()
-                .main_loop_model_for_session
-                .as_deref(),
-            Some("opus[1m]")
-        );
-
-        let thinking_store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
-        );
-        drive_prompt_with_store(
-            thinking_store.clone(),
-            vec![
-                key_with_modifiers(KeyCode::Char('t'), KeyModifiers::ALT),
-                key(KeyCode::Down),
-                key(KeyCode::Enter),
-            ],
-        );
-        assert_eq!(thinking_store.get().thinking_enabled, Some(false));
-
-        // CC PromptInput.tsx:2735-2737: cancelling leaves the mode alone.
-        let cancelled_thinking_store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
-        );
-        drive_prompt_with_store(
-            cancelled_thinking_store.clone(),
-            vec![
-                key_with_modifiers(KeyCode::Char('t'), KeyModifiers::ALT),
-                key(KeyCode::Down),
-                key(KeyCode::Esc),
-            ],
-        );
-        assert_eq!(cancelled_thinking_store.get().thinking_enabled, None);
-
-        let fast_store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
-        );
-        drive_prompt_with_store(
-            fast_store.clone(),
-            vec![
-                key_with_modifiers(KeyCode::Char('o'), KeyModifiers::ALT),
-                key(KeyCode::Tab),
-                key(KeyCode::Enter),
-            ],
-        );
-        assert!(fast_store.get().fast_mode);
     }
 
     #[test]
-    fn prompt_input_chat_actions_open_model_and_thinking_boundaries() {
-        // Selecting a thinking mode posts a timed notification.
+    fn prompt_input_model_picker_switches_the_session_profile_and_effort() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::utils::process_runtime::initialize_test_process_runtime();
+        install_prompt_profiles();
+        let store = crate::state::store::AppStore::new(
+            crate::state::app_state_store::AppState::default(),
+            None,
+        );
+        // main (the current default), deep — Down, Right twice (model default
+        // → high → max), Enter.
+        drive_prompt_with_store(
+            store.clone(),
+            vec![
+                key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT),
+                key(KeyCode::Down),
+                key(KeyCode::Right),
+                key(KeyCode::Right),
+                key(KeyCode::Enter),
+            ],
+        );
+        assert_eq!(store.get().main_loop_profile.as_deref(), Some("deep"));
+        assert_eq!(
+            store.get().effort_value,
+            Some(crate::utils::effort::Effort::Max)
+        );
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
+
+    #[test]
+    fn prompt_input_alt_p_opens_the_model_picker_and_alt_t_alt_o_do_nothing() {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let model = prompt_after_events(
             false,
             vec![key_with_modifiers(KeyCode::Char('p'), KeyModifiers::ALT)],
         );
         assert!(model.contains("Select model"), "canvas=\n{model}");
-
-        let thinking = prompt_after_events(
-            false,
-            vec![key_with_modifiers(KeyCode::Char('t'), KeyModifiers::ALT)],
-        );
-        assert!(
-            thinking.contains("Toggle thinking mode"),
-            "canvas=\n{thinking}"
-        );
-        // CC :2713-2737: selecting and cancelling both close the toggle.
-        for closing in [
-            vec![key(KeyCode::Down), key(KeyCode::Enter)],
-            vec![key(KeyCode::Esc)],
-        ] {
-            let mut events = vec![key_with_modifiers(KeyCode::Char('t'), KeyModifiers::ALT)];
-            events.extend(closing);
-            let closed = prompt_after_events(false, events);
-            assert!(
-                !closed.contains("Toggle thinking mode"),
-                "canvas=\n{closed}"
+        for removed in ['t', 'o'] {
+            let text = prompt_after_events(
+                false,
+                vec![key_with_modifiers(
+                    KeyCode::Char(removed),
+                    KeyModifiers::ALT,
+                )],
             );
+            assert!(!text.contains("Toggle thinking mode"), "canvas=\n{text}");
+            assert!(!text.contains("Fast mode"), "canvas=\n{text}");
         }
-
-        let fast = prompt_after_events(
-            false,
-            vec![key_with_modifiers(KeyCode::Char('o'), KeyModifiers::ALT)],
-        );
-        assert!(
-            fast.contains("Fast mode (research preview)"),
-            "canvas=\n{fast}"
-        );
     }
 
     #[test]

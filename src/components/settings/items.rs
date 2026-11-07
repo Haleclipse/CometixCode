@@ -166,14 +166,6 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
             search_text: "thinking extended",
             visible: true,
         },
-        // condition: isFastModeEnabled() && isFastModeAvailable()
-        SettingItem {
-            id: "fastMode",
-            label: "Fast mode (Opus 4.6 only)",
-            value: SettingValue::Bool(settings.fast_mode.unwrap_or(false)),
-            search_text: "fast mode speed opus",
-            visible: true,
-        },
         // condition: tengu_chomp_inflection feature
         SettingItem {
             id: "promptSuggestionEnabled",
@@ -423,8 +415,18 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
         SettingItem {
             id: "model",
             label: "Model",
-            value: SettingValue::Display(crate::utils::model::model::get_session_main_loop_model()),
-            search_text: "model ai claude sonnet opus haiku",
+            value: SettingValue::Display(
+                crate::bootstrap::state::get_session_profile()
+                    .or_else(|| {
+                        settings
+                            .nyan
+                            .as_deref()
+                            .and_then(|nyan| nyan.selection.as_ref())
+                            .and_then(|selection| selection.main.clone())
+                    })
+                    .unwrap_or_default(),
+            ),
+            search_text: "model profile",
             visible: true,
         },
         // condition: hasAccessToIDEExtensionDiffFeature()

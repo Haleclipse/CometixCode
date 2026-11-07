@@ -5043,10 +5043,9 @@ rl.on('line', line => {
             }
         }
         let _reset_settings = ResetSettings;
-        let previous_model = crate::bootstrap::state::get_main_loop_model_override();
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "anthropic.claude-sonnet-4-5-20250929-v1:0".to_string(),
-        )));
+        crate::services::provider::anthropic::target::install_test_model_profile(
+            "anthropic.claude-sonnet-4-5-20250929-v1:0",
+        );
 
         let result = process_mcp_result(
             &serde_json::json!({ "structuredContent": { "items": ["abcdef".repeat(80)] } }),
@@ -5087,7 +5086,6 @@ rl.on('line', line => {
 
         crate::bootstrap::state::set_original_cwd(previous_cwd);
         crate::bootstrap::state::set_session_id(previous_session_id);
-        crate::bootstrap::state::set_main_loop_model_override(previous_model);
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -1,9 +1,11 @@
 //! Maps to: CC `components/ModelPicker.tsx`:54-363.
 //!
-//! Official ModelPicker owns options, focus, effort cycling, Select chords,
-//! and optional fast-mode notices. Callers only supply `initial` plus
-//! `onSelect` / `onCancel`. Persist + `AppState` writes stay in
-//! [`apply_model_picker_selection`] unless `skipSettingsWrite`.
+//! @nyan: the picker lists configured model profiles only (design §5.1): the
+//! session's current profile first, the configured default (`selection.main`)
+//! second, then the rest by name. ←/→ adjusts effort, Enter switches this
+//! session's profile, Ctrl+S makes the focused profile the default. With no
+//! profile configured it only shows a configuration hint. CC's model aliases,
+//! "no preference" row and Fast mode notices are gone.
 
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::pane::Pane;
@@ -12,84 +14,73 @@ use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::{KeybindingHandlers, use_keybindings};
 use crate::state::store::AppStore;
 use crate::utils::effort::Effort;
+use crate::utils::settings::nyan::NyanSettings;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
-pub(crate) const MODEL_NO_PREFERENCE: &str = "__NO_PREFERENCE__";
 pub(crate) const MODEL_PICKER_VISIBLE_COUNT: usize = 10;
-pub(crate) const MODEL_PICKER_HEADER_TEXT: &str = "Switch between Claude models. Applies to this session and future nyan sessions. For other/previous model names, specify with --model.";
-pub(crate) use crate::utils::fast_mode::FAST_MODE_MODEL_DISPLAY;
-// Maps to: CC `components/ModelPicker.tsx:20` importing `type EffortLevel`
-// from `utils/effort.js`.
-pub(crate) use crate::utils::effort::ModelEffortLevel;
+pub(crate) const MODEL_PICKER_HEADER_TEXT: &str = "Switch between model profiles. Enter applies to this session; Ctrl+S makes it the default for future sessions.";
+pub(crate) const NO_PROFILES_HINT: &str = "No model profiles configured. Add profiles under settings.nyan.models and pick the default with settings.nyan.selection.main.";
 
-fn truncate_chars(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-    if max_chars <= 1 {
-        return "…".to_string();
-    }
-    let mut out = text
-        .chars()
-        .take(max_chars.saturating_sub(1))
-        .collect::<String>();
-    out.push('…');
-    out
+/// One picker row: a configured profile.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ProfileRow {
+    pub name: String,
+    /// The provider model id, or empty when the profile does not resolve.
+    pub model: String,
+    /// The profile's configured effort; `None` is the model default.
+    pub effort: Option<Effort>,
 }
 
-fn model_option(
-    label: &str,
-    value: &str,
-    description: &str,
-    max_description_chars: usize,
-) -> SelectOptionData {
+/// Profiles in picker order: `current` first, `default` second, then the rest
+/// by name. Either may be absent or name a profile that is not configured.
+pub(crate) fn profile_rows(
+    nyan: Option<&NyanSettings>,
+    current: Option<&str>,
+    default: Option<&str>,
+) -> Vec<ProfileRow> {
+    let mut names = crate::utils::model::profile::profile_names(nyan).collect::<Vec<_>>();
+    names.sort_unstable();
+    for leading in [default, current].into_iter().flatten() {
+        if let Some(index) = names.iter().position(|name| *name == leading) {
+            let name = names.remove(index);
+            names.insert(0, name);
+        }
+    }
+    names
+        .into_iter()
+        .map(|name| {
+            let settings =
+                nyan.and_then(|nyan| crate::utils::model::profile::model_profile(nyan, name));
+            ProfileRow {
+                name: name.to_string(),
+                model: nyan
+                    .and_then(|nyan| crate::utils::model::profile::resolve_profile(nyan, name).ok())
+                    .map(|profile| profile.model)
+                    .unwrap_or_default(),
+                effort: settings.and_then(|profile| profile.effort),
+            }
+        })
+        .collect()
+}
+
+fn row_option(row: &ProfileRow, default: Option<&str>) -> SelectOptionData {
+    let mut description = row.model.clone();
+    if default == Some(row.name.as_str()) {
+        description.push_str(if description.is_empty() {
+            "default"
+        } else {
+            " · default"
+        });
+    }
     SelectOptionData {
-        label: label.to_string(),
-        value: value.to_string(),
-        description: Some(truncate_chars(description, max_description_chars)),
+        label: row.name.clone(),
+        value: row.name.clone(),
+        description: Some(description),
         dim_description: true,
         disabled: false,
         input: None,
     }
-}
-
-/// Profile-specific picker entries are added in the profile selector stage.
-fn gateway_model_options(
-    _max_description_chars: usize,
-    _builtin: &[SelectOptionData],
-) -> Vec<SelectOptionData> {
-    Vec::new()
-}
-
-pub(crate) fn model_picker_options(max_description_chars: usize) -> Vec<SelectOptionData> {
-    let mut options = vec![
-        // @nyan offset: the official picker lists Sonnet and Opus twice, once
-        // plain and once with 1M context. A gateway serves one model per family,
-        // so only the 1M entry is kept — the plain one is the same model with a
-        // smaller window.
-        model_option(
-            "Sonnet (1M context)",
-            "sonnet[1m]",
-            "Sonnet 4.6 for long sessions",
-            max_description_chars,
-        ),
-        model_option(
-            "Opus (1M context)",
-            "opus[1m]",
-            "Opus 4.6 for long sessions",
-            max_description_chars,
-        ),
-        model_option(
-            "Haiku",
-            "haiku",
-            "Haiku 4.5 · Fastest for quick answers",
-            max_description_chars,
-        ),
-    ];
-    let extra = gateway_model_options(max_description_chars, &options);
-    options.extend(extra);
-    options
 }
 
 fn next_index(index: usize, count: usize) -> usize {
@@ -118,27 +109,6 @@ fn previous_page_index(index: usize, visible_count: usize) -> usize {
     index.saturating_sub(visible_count.max(1))
 }
 
-pub(crate) fn focused_index_for_initial(
-    options: &[SelectOptionData],
-    initial: Option<&str>,
-) -> usize {
-    let Some(initial) = initial.map(str::trim).filter(|value| !value.is_empty()) else {
-        return 0;
-    };
-    if initial.eq_ignore_ascii_case(MODEL_NO_PREFERENCE)
-        || initial.eq_ignore_ascii_case("Default (recommended)")
-        || initial.eq_ignore_ascii_case("default")
-    {
-        return 0;
-    }
-    options
-        .iter()
-        .position(|option| {
-            option.value.eq_ignore_ascii_case(initial) || option.label.eq_ignore_ascii_case(initial)
-        })
-        .unwrap_or(0)
-}
-
 pub(crate) fn visible_from_index(
     focused_index: usize,
     count: usize,
@@ -154,87 +124,129 @@ pub(crate) fn visible_from_index(
         .min(count.saturating_sub(visible_count))
 }
 
-/// Maps to: CC `components/ModelPicker.tsx` initializing effort from
-/// `AppState.effortValue` / `sessionEffort`.
-pub(crate) fn model_effort_from_value(value: Option<&Effort>) -> ModelEffortLevel {
-    value.copied().unwrap_or(Effort::Medium)
-}
-
-/// Maps to: CC `components/ModelPicker.tsx`:132-133
-/// `getDefaultEffortLevelForOption(...)`.
-pub(crate) fn default_effort_level_for_option(_value: &str) -> ModelEffortLevel {
-    Effort::Medium
-}
-
-pub(crate) fn displayed_effort(effort: ModelEffortLevel, _focused_value: &str) -> ModelEffortLevel {
-    effort
-}
-
-/// Maps to: CC `components/ModelPicker.tsx` `cycleEffortLevel` / `lmg`.
+/// Maps to: CC `components/ModelPicker.tsx` `cycleEffortLevel`.
 ///
 /// Cycles through the four unified effort levels: `off < medium < high < max`.
-pub(crate) fn cycle_effort(
-    current: ModelEffortLevel,
-    direction: KeyCode,
-    _focused_value: &str,
-) -> ModelEffortLevel {
+/// The model default (`None`) starts the cycle from medium.
+pub(crate) fn cycle_effort(current: Option<Effort>, direction: KeyCode) -> Option<Effort> {
     let levels = Effort::ALL;
-    let current_index = levels
+    let index = levels
         .iter()
-        .position(|level| *level == current)
+        .position(|level| Some(*level) == current)
         .unwrap_or(1);
     match direction {
-        KeyCode::Right => levels[(current_index + 1) % levels.len()],
-        KeyCode::Left => levels[(current_index + levels.len() - 1) % levels.len()],
+        KeyCode::Right => Some(levels[(index + 1) % levels.len()]),
+        KeyCode::Left => Some(levels[(index + levels.len() - 1) % levels.len()]),
         _ => current,
     }
 }
 
-/// Maps to: CC `components/ModelPicker.tsx` `handleSelect` selected-effort
-/// gate (`hasToggledEffort && modelSupportsEffort`).
-pub(crate) fn selected_picker_effort(
-    effort: ModelEffortLevel,
-    _selected_value: &str,
-    has_toggled: bool,
-) -> Option<ModelEffortLevel> {
-    if !has_toggled {
-        return None;
+/// The effort a row starts at: the session's for the current profile, else
+/// the profile's own (design §5.2: a switch never carries the old effort).
+fn initial_row_effort(
+    row: &ProfileRow,
+    current: Option<&str>,
+    session: Option<Effort>,
+) -> Option<Effort> {
+    if current == Some(row.name.as_str()) {
+        session.or(row.effort)
+    } else {
+        row.effort
     }
-    Some(effort)
 }
 
-/// Enter only changes the current session.
-pub(crate) fn apply_model_picker_selection(
+/// Switch the session to `profile` at `effort` (Enter). `effort` is `None`
+/// when the user did not adjust it: the profile's own effort applies.
+pub(crate) fn apply_session_profile(
     state: &mut crate::state::app_state_store::AppState,
-    model: Option<String>,
-    _selected_value: &str,
-    picked_effort: ModelEffortLevel,
-    has_toggled_effort: bool,
-) -> bool {
-    let fast_mode_disabled = crate::utils::fast_mode::is_fast_mode_enabled()
-        && state.fast_mode
-        && !crate::utils::fast_mode::is_fast_mode_supported_by_model(model.as_deref());
-    state.main_loop_model_for_session = model.clone();
-    let _ = crate::utils::session_storage::save_session_model(model.as_deref());
-    if fast_mode_disabled {
-        state.fast_mode = false;
-    }
-    if has_toggled_effort {
-        state.effort_value = Some(picked_effort);
-        let _ = crate::utils::session_storage::save_session_effort(picked_effort);
-    }
-    fast_mode_disabled
+    profile: &str,
+    effort: Option<Effort>,
+) {
+    state.main_loop_profile = switch_session_profile(profile, effort);
+    state.effort_value = effort;
 }
 
-/// Maps to: CC `ModelPicker`'s effort `useKeybindings` registration.
-pub(crate) fn use_model_picker_effort_keybindings<Decrease, Increase>(
+/// The one session switch every path shares (picker Enter, `/model`, headless
+/// `set_model`): moves the session to `profile`, stops the warmer and records
+/// the switch. Returns the stored profile — `None` when `profile` is
+/// `selection.main`, so a session back on the default keeps following it.
+///
+/// The caller sets the session effort to `effort` (design §5.2): `None` is the
+/// profile's own effort, resolved at request time, never the previous one.
+pub(crate) fn switch_session_profile(profile: &str, effort: Option<Effort>) -> Option<String> {
+    let main = crate::utils::settings::get_initial_settings()
+        .nyan
+        .as_deref()
+        .and_then(|nyan| nyan.selection.as_ref())
+        .and_then(|selection| selection.main.clone());
+    let stored = (main.as_deref() != Some(profile)).then(|| profile.to_string());
+    crate::bootstrap::state::set_session_profile(stored.clone());
+    // @nyan (compaction C12): prompt cache is per-model, so a switch must stop
+    // a warmer that is still refreshing the previous model's prefix.
+    crate::services::cache_warmer::invalidate();
+    let _ = crate::utils::session_storage::save_session_profile(stored.as_deref(), effort);
+    stored
+}
+
+/// What Ctrl+S reports: the new default, and the project override that still
+/// wins in this directory, if any.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SetDefaultOutcome {
+    pub profile: String,
+    pub project_main: Option<String>,
+}
+
+/// Make `profile` the default (Ctrl+S): user settings `nyan.selection.main`
+/// and that profile's `effort` (`None` removes it, the model default).
+pub(crate) fn set_default_profile(
+    profile: &str,
+    effort: Option<Effort>,
+) -> anyhow::Result<SetDefaultOutcome> {
+    use crate::utils::settings::SettingSource;
+    let updates = serde_json::Map::from_iter([(
+        "nyan".to_string(),
+        serde_json::json!({
+            "selection": {"main": profile},
+            "models": {profile: {"effort": effort.map(Effort::as_str)}},
+        }),
+    )]);
+    crate::utils::settings::update_settings_for_source(SettingSource::User, &updates)?;
+    let project_main = [SettingSource::Local, SettingSource::Project]
+        .into_iter()
+        .find_map(|source| {
+            crate::utils::settings::get_settings_for_source(source)?
+                .nyan?
+                .selection?
+                .main
+        });
+    Ok(SetDefaultOutcome {
+        profile: profile.to_string(),
+        project_main,
+    })
+}
+
+pub(crate) fn set_default_message(outcome: &SetDefaultOutcome) -> String {
+    match outcome.project_main.as_deref() {
+        Some(project) if project != outcome.profile => format!(
+            "Default model set to {}. This project still uses {project}.",
+            outcome.profile
+        ),
+        _ => format!("Default model set to {}", outcome.profile),
+    }
+}
+
+/// Maps to: CC `ModelPicker`'s effort `useKeybindings` registration, plus the
+/// nyan `modelPicker:setDefault` action.
+fn use_model_picker_keybindings<Decrease, Increase, SetDefault>(
     hooks: &mut Hooks,
     is_active: bool,
     mut on_decrease: Decrease,
     mut on_increase: Increase,
+    mut on_set_default: SetDefault,
 ) where
     Decrease: FnMut() + Send + 'static,
     Increase: FnMut() + Send + 'static,
+    SetDefault: FnMut() + Send + 'static,
 {
     let runtime = hooks
         .try_use_context::<KeybindingRuntime>()
@@ -254,6 +266,13 @@ pub(crate) fn use_model_picker_effort_keybindings<Decrease, Increase>(
                 true
             }),
         ),
+        (
+            "modelPicker:setDefault".to_string(),
+            Box::new(move || {
+                on_set_default();
+                true
+            }),
+        ),
     ];
     use_keybindings(
         hooks,
@@ -264,37 +283,38 @@ pub(crate) fn use_model_picker_effort_keybindings<Decrease, Increase>(
     );
 }
 
+/// What the picker hands back.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ModelPickerSelection {
-    pub value: String,
-    pub label: String,
-    pub effort: Option<ModelEffortLevel>,
-    pub fast_mode_disabled: bool,
+pub(crate) enum ModelPickerResult {
+    /// Enter: the session now runs on `profile`.
+    Session {
+        profile: String,
+        effort: Option<Effort>,
+    },
+    /// Ctrl+S: `profile` is the configured default.
+    Default(Result<SetDefaultOutcome, String>),
 }
 
-impl ModelPickerSelection {
-    pub(crate) fn display_label(&self) -> &str {
-        if self.value == MODEL_NO_PREFERENCE {
-            "Default (recommended)"
-        } else {
-            &self.label
+impl ModelPickerResult {
+    pub(crate) fn message(&self) -> String {
+        match self {
+            Self::Session { profile, effort } => {
+                let mut message = format!("Set model to {profile}");
+                if let Some(effort) = effort {
+                    message.push_str(&crate::utils::effort::get_effort_suffix("", Some(effort)));
+                }
+                message
+            }
+            Self::Default(Ok(outcome)) => set_default_message(outcome),
+            Self::Default(Err(error)) => format!("Failed to save the default model: {error}"),
         }
     }
 }
 
 #[derive(Default, Props)]
 pub(crate) struct ModelPickerProps<'a> {
-    pub initial: Option<String>,
-    pub header_text: Option<String>,
-    pub session_model_label: Option<String>,
     pub is_standalone_command: bool,
-    pub skip_settings_write: bool,
-    pub show_fast_mode_notice: bool,
-    pub show_fast_mode_available_hint: bool,
-    pub fast_mode_is_on: bool,
-    pub exit_pending: bool,
-    pub exit_key_name: Option<String>,
-    pub on_select: HandlerMut<'a, ModelPickerSelection>,
+    pub on_select: HandlerMut<'a, ModelPickerResult>,
     pub on_cancel: HandlerMut<'a, ()>,
 }
 
@@ -302,48 +322,31 @@ struct ModelPickerView {
     options: Vec<SelectOptionData>,
     focused_index: usize,
     selected_value: Option<String>,
-    visible_from_index: usize,
-    effort: ModelEffortLevel,
-    header_text: Option<String>,
-    session_model_label: Option<String>,
+    effort: Option<Effort>,
     is_standalone_command: bool,
-    show_fast_mode_notice: bool,
-    show_fast_mode_available_hint: bool,
-    fast_mode_is_on: bool,
-    exit_pending: bool,
-    exit_key_name: Option<String>,
 }
 
 fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElement<'static> {
     let count = props.options.len();
-    let focused_index = props.focused_index.min(count.saturating_sub(1));
-    let focused_value = props
-        .options
-        .get(focused_index)
-        .map(|option| option.value.as_str())
-        .unwrap_or(MODEL_NO_PREFERENCE);
-    let visible_option_count = count.min(MODEL_PICKER_VISIBLE_COUNT).max(1);
-    let visible_from = props
-        .visible_from_index
-        .min(count.saturating_sub(visible_option_count));
+    if count == 0 {
+        return element! {
+            View(flex_direction: FlexDirection::Column) {
+                Text(content: "Select model".to_string(), color: theme.remember, weight: Weight::Bold)
+                Text(content: NO_PROFILES_HINT.to_string(), dim: true)
+                #(props.is_standalone_command.then(|| element! {
+                    Text(content: "Esc to exit".to_string(), dim: true, italic: true)
+                }))
+            }
+        }
+        .into_any();
+    }
+    let focused_index = props.focused_index.min(count - 1);
+    let visible_option_count = count.min(MODEL_PICKER_VISIBLE_COUNT);
+    let visible_from = visible_from_index(focused_index, count, visible_option_count);
     let hidden_count = count.saturating_sub(visible_option_count);
-    let display_effort = displayed_effort(props.effort, focused_value);
-    let focused_default_effort = default_effort_level_for_option(focused_value);
-    let header_text = props
-        .header_text
-        .clone()
-        .unwrap_or_else(|| MODEL_PICKER_HEADER_TEXT.to_string());
-    let exit_footer = if props.exit_pending {
-        format!(
-            "Press {} again to exit",
-            props
-                .exit_key_name
-                .as_deref()
-                .filter(|name| !name.is_empty())
-                .unwrap_or("Ctrl-C")
-        )
-    } else {
-        "Enter to confirm · Esc to exit".to_string()
+    let (symbol, effort_label) = match props.effort {
+        Some(effort) => (effort.symbol(), format!(" {} effort", effort.title_label())),
+        None => (Effort::Medium.symbol(), " Model default effort".to_string()),
     };
 
     element! {
@@ -351,10 +354,7 @@ fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElem
             View(flex_direction: FlexDirection::Column) {
                 View(margin_bottom: 1u32, flex_direction: FlexDirection::Column) {
                     Text(content: "Select model".to_string(), color: theme.remember, weight: Weight::Bold)
-                    Text(content: header_text, dim: true)
-                    #(props.session_model_label.as_ref().map(|label| element! {
-                        Text(content: format!("Currently using {label} for this session (set by plan mode). Selecting a model will undo this."), dim: true)
-                    }))
+                    Text(content: MODEL_PICKER_HEADER_TEXT.to_string(), dim: true)
                 }
                 View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
                     Select(
@@ -367,49 +367,21 @@ fn render_model_picker_content(props: &ModelPickerView, theme: Theme) -> AnyElem
                         visible_from_index: visible_from,
                         layout: SelectLayout::Compact,
                     )
-                    #(if hidden_count > 0 {
-                        Some(element! {
-                            View(padding_left: 3u32) {
-                                Text(content: format!("and {hidden_count} more…"), dim: true)
-                            }
-                        })
-                    } else {
-                        None
-                    })
-                }
-                View(margin_bottom: 1u32, flex_direction: FlexDirection::Column) {
-                    View(flex_direction: FlexDirection::Row) {
-                        Text(content: display_effort.symbol().to_string(), color: theme.claude, wrap: TextWrap::NoWrap)
-                        Text(content: format!(" {} effort", display_effort.title_label()), dim: true, wrap: TextWrap::NoWrap)
-                        #(if display_effort == focused_default_effort {
-                            Some(element! { Text(content: " (default) ".to_string(), dim: true, wrap: TextWrap::NoWrap) })
-                        } else {
-                            Some(element! { Text(content: " ".to_string(), dim: true, wrap: TextWrap::NoWrap) })
-                        })
-                        Text(content: "← → to adjust".to_string(), color: theme.subtle, wrap: TextWrap::NoWrap)
-                    }
-                }
-                #(if props.show_fast_mode_notice {
-                    Some(element! {
-                        View(margin_bottom: 1u32) {
-                            Text(content: format!("Fast mode is ON and available with {FAST_MODE_MODEL_DISPLAY} only (/fast). Switching to other models turn off fast mode."), dim: true)
+                    #((hidden_count > 0).then(|| element! {
+                        View(padding_left: 3u32) {
+                            Text(content: format!("and {hidden_count} more…"), dim: true)
                         }
-                    })
-                } else if props.show_fast_mode_available_hint && !props.fast_mode_is_on {
-                    Some(element! {
-                        View(margin_bottom: 1u32) {
-                            Text(content: format!("Use /fast to turn on Fast mode ({FAST_MODE_MODEL_DISPLAY} only)."), dim: true)
-                        }
-                    })
-                } else {
-                    None
-                })
+                    }))
+                }
+                View(margin_bottom: 1u32, flex_direction: FlexDirection::Row) {
+                    Text(content: symbol.to_string(), color: theme.claude, wrap: TextWrap::NoWrap)
+                    Text(content: format!("{effort_label} "), dim: true, wrap: TextWrap::NoWrap)
+                    Text(content: "← → to adjust".to_string(), color: theme.subtle, wrap: TextWrap::NoWrap)
+                }
             }
-            #(if props.is_standalone_command {
-                Some(element! { Text(content: exit_footer, dim: true, italic: true) })
-            } else {
-                None
-            })
+            #(props.is_standalone_command.then(|| element! {
+                Text(content: "Enter to confirm · Ctrl+S to set as default · Esc to exit".to_string(), dim: true, italic: true)
+            }))
         }
     }
     .into_any()
@@ -425,61 +397,76 @@ pub(crate) fn ModelPicker<'a>(
         .try_use_context::<Theme>()
         .map(|theme| *theme)
         .unwrap_or_else(|| *crate::utils::theme::current());
-    let (columns, _) = hooks.use_terminal_size();
-    let max_description_chars = usize::from(columns).saturating_sub(10).max(1);
-    let options = model_picker_options(max_description_chars);
-    let option_count = options.len();
-    let visible_count = MODEL_PICKER_VISIBLE_COUNT.min(option_count.max(1));
-    let initial_focus = focused_index_for_initial(&options, props.initial.as_deref());
     let app_store = hooks
         .try_use_context::<AppStore>()
         .map(|store| store.clone());
-    let initial_effort_value = app_store
+    let settings = crate::utils::settings::get_initial_settings();
+    let nyan = settings.nyan.as_deref();
+    let default = nyan
+        .and_then(|nyan| nyan.selection.as_ref())
+        .and_then(|selection| selection.main.clone());
+    let snapshot = app_store.as_ref().map(|store| store.get());
+    let current = snapshot
         .as_ref()
-        .and_then(|store| store.get().effort_value.clone());
-    let has_app_effort = initial_effort_value.is_some();
-    let initial_effort = model_effort_from_value(initial_effort_value.as_ref());
-    let mut focused_index = hooks.use_state(move || initial_focus);
-    let mut effort = hooks.use_state(|| initial_effort);
-    let has_toggled_effort = hooks.use_state(|| false);
-    let mut should_close = hooks.use_state(|| false);
-    let mut pending_selection = hooks.use_state(|| Option::<ModelPickerSelection>::None);
-    let skip_settings_write = props.skip_settings_write;
-    let event_options = options.clone();
+        .and_then(|state| state.main_loop_profile.clone())
+        .or_else(|| default.clone());
+    let session_effort = snapshot.as_ref().and_then(|state| state.effort_value);
+    let rows = profile_rows(nyan, current.as_deref(), default.as_deref());
+    let options = rows
+        .iter()
+        .map(|row| row_option(row, default.as_deref()))
+        .collect::<Vec<_>>();
+    let row_count = rows.len();
+    let visible_count = MODEL_PICKER_VISIBLE_COUNT.min(row_count.max(1));
 
-    use_model_picker_effort_keybindings(
+    let mut focused_index = hooks.use_state(|| 0usize);
+    let initial_effort = rows
+        .first()
+        .and_then(|row| initial_row_effort(row, current.as_deref(), session_effort));
+    let mut effort = hooks.use_state(move || initial_effort);
+    let mut has_toggled_effort = hooks.use_state(|| false);
+    let mut should_close = hooks.use_state(|| false);
+    let mut pending = hooks.use_state(|| Option::<ModelPickerResult>::None);
+
+    let row_effort = {
+        let rows = rows.clone();
+        let current = current.clone();
+        move |index: usize| {
+            rows.get(index)
+                .and_then(|row| initial_row_effort(row, current.as_deref(), session_effort))
+        }
+    };
+
+    use_model_picker_keybindings(
         &mut hooks,
-        true,
-        {
-            let options = options.clone();
-            let mut effort = effort;
-            let mut has_toggled_effort = has_toggled_effort;
-            move || {
-                let focused = focused_index.get().min(options.len().saturating_sub(1));
-                let value = options
-                    .get(focused)
-                    .map(|option| option.value.as_str())
-                    .unwrap_or(MODEL_NO_PREFERENCE);
-                effort.set(cycle_effort(effort.get(), KeyCode::Left, value));
-                has_toggled_effort.set(true);
-            }
+        row_count > 0,
+        move || {
+            effort.set(cycle_effort(effort.get(), KeyCode::Left));
+            has_toggled_effort.set(true);
+        },
+        move || {
+            effort.set(cycle_effort(effort.get(), KeyCode::Right));
+            has_toggled_effort.set(true);
         },
         {
-            let options = options.clone();
-            let mut effort = effort;
-            let mut has_toggled_effort = has_toggled_effort;
+            let rows = rows.clone();
             move || {
-                let focused = focused_index.get().min(options.len().saturating_sub(1));
-                let value = options
-                    .get(focused)
-                    .map(|option| option.value.as_str())
-                    .unwrap_or(MODEL_NO_PREFERENCE);
-                effort.set(cycle_effort(effort.get(), KeyCode::Right, value));
-                has_toggled_effort.set(true);
+                if let Some(row) = rows.get(focused_index.get()) {
+                    let effort = if has_toggled_effort.get() {
+                        effort.get()
+                    } else {
+                        row.effort
+                    };
+                    pending.set(Some(ModelPickerResult::Default(
+                        set_default_profile(&row.name, effort).map_err(|error| error.to_string()),
+                    )));
+                }
             }
         },
     );
 
+    let event_rows = rows.clone();
+    let event_current = current.clone();
     hooks.use_propagated_terminal_events(move |event| {
         let TerminalEvent::Key(KeyEvent { code, kind, .. }) = event.event() else {
             return;
@@ -487,79 +474,44 @@ pub(crate) fn ModelPicker<'a>(
         if *kind == KeyEventKind::Release {
             return;
         }
-        let focused = focused_index.get().min(option_count.saturating_sub(1));
-        match code {
-            KeyCode::Esc => should_close.set(true),
-            KeyCode::Down => {
-                let next = next_index(focused, option_count);
-                focused_index.set(next);
-                if !has_toggled_effort.get()
-                    && !has_app_effort
-                    && let Some(option) = event_options.get(next)
-                {
-                    effort.set(default_effort_level_for_option(&option.value));
-                }
+        let focused = focused_index.get().min(row_count.saturating_sub(1));
+        let next = match code {
+            KeyCode::Esc => {
+                should_close.set(true);
+                None
             }
-            KeyCode::Up => {
-                let next = previous_index(focused, option_count);
-                focused_index.set(next);
-                if !has_toggled_effort.get()
-                    && !has_app_effort
-                    && let Some(option) = event_options.get(next)
-                {
-                    effort.set(default_effort_level_for_option(&option.value));
-                }
-            }
-            KeyCode::PageDown => {
-                let next = next_page_index(focused, option_count, visible_count);
-                focused_index.set(next);
-                if !has_toggled_effort.get()
-                    && !has_app_effort
-                    && let Some(option) = event_options.get(next)
-                {
-                    effort.set(default_effort_level_for_option(&option.value));
-                }
-            }
-            KeyCode::PageUp => {
-                let next = previous_page_index(focused, visible_count);
-                focused_index.set(next);
-                if !has_toggled_effort.get()
-                    && !has_app_effort
-                    && let Some(option) = event_options.get(next)
-                {
-                    effort.set(default_effort_level_for_option(&option.value));
-                }
-            }
+            KeyCode::Down => Some(next_index(focused, row_count)),
+            KeyCode::Up => Some(previous_index(focused, row_count)),
+            KeyCode::PageDown => Some(next_page_index(focused, row_count, visible_count)),
+            KeyCode::PageUp => Some(previous_page_index(focused, visible_count)),
             KeyCode::Enter => {
-                if let Some(option) = event_options.get(focused) {
-                    let selected_effort = selected_picker_effort(
-                        effort.get(),
-                        &option.value,
-                        has_toggled_effort.get(),
-                    );
-                    let mut fast_mode_disabled = false;
-                    if !skip_settings_write && let Some(store) = app_store.as_ref() {
-                        let model =
-                            (option.value != MODEL_NO_PREFERENCE).then(|| option.value.clone());
-                        fast_mode_disabled = store.replace_with(|state| {
-                            apply_model_picker_selection(
-                                state,
-                                model,
-                                &option.value,
-                                effort.get(),
-                                has_toggled_effort.get(),
-                            )
-                        });
+                if let Some(row) = event_rows.get(focused) {
+                    // An untouched effort is the profile's own (or, staying
+                    // on the current profile, the session's).
+                    let picked = if has_toggled_effort.get() {
+                        effort.get()
+                    } else if event_current.as_deref() == Some(row.name.as_str()) {
+                        session_effort
+                    } else {
+                        None
+                    };
+                    if let Some(store) = app_store.as_ref() {
+                        store.replace_with(|state| apply_session_profile(state, &row.name, picked));
                     }
-                    pending_selection.set(Some(ModelPickerSelection {
-                        value: option.value.clone(),
-                        label: option.label.clone(),
-                        effort: selected_effort,
-                        fast_mode_disabled,
+                    pending.set(Some(ModelPickerResult::Session {
+                        profile: row.name.clone(),
+                        effort: picked,
                     }));
                 }
+                None
             }
-            _ => {}
+            _ => None,
+        };
+        if let Some(next) = next {
+            focused_index.set(next);
+            if !has_toggled_effort.get() {
+                effort.set(row_effort(next));
+            }
         }
         event.stop_propagation();
     });
@@ -568,31 +520,19 @@ pub(crate) fn ModelPicker<'a>(
         should_close.set(false);
         (props.on_cancel)(());
     }
-    let selected = { pending_selection.read().clone() };
-    if let Some(selection) = selected {
-        pending_selection.set(None);
-        (props.on_select)(selection);
+    let result = { pending.read().clone() };
+    if let Some(result) = result {
+        pending.set(None);
+        (props.on_select)(result);
     }
 
-    let focused = focused_index.get().min(option_count.saturating_sub(1));
     let content = render_model_picker_content(
         &ModelPickerView {
             options,
-            focused_index: focused,
-            selected_value: props
-                .initial
-                .clone()
-                .or_else(|| Some(MODEL_NO_PREFERENCE.to_string())),
-            visible_from_index: visible_from_index(focused, option_count, visible_count),
+            focused_index: focused_index.get(),
+            selected_value: current,
             effort: effort.get(),
-            header_text: props.header_text.clone(),
-            session_model_label: props.session_model_label.clone(),
             is_standalone_command: props.is_standalone_command,
-            show_fast_mode_notice: props.show_fast_mode_notice,
-            show_fast_mode_available_hint: props.show_fast_mode_available_hint,
-            fast_mode_is_on: props.fast_mode_is_on,
-            exit_pending: props.exit_pending,
-            exit_key_name: props.exit_key_name.clone(),
         },
         theme,
     );
@@ -612,137 +552,145 @@ pub(crate) fn ModelPicker<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::theme;
+    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
-    fn render_picker(props: ModelPickerProps) -> String {
-        element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                ModelPicker(
-                    initial: props.initial,
-                    header_text: props.header_text,
-                    session_model_label: props.session_model_label,
-                    is_standalone_command: props.is_standalone_command,
-                    skip_settings_write: props.skip_settings_write,
-                    show_fast_mode_notice: props.show_fast_mode_notice,
-                    show_fast_mode_available_hint: props.show_fast_mode_available_hint,
-                    fast_mode_is_on: props.fast_mode_is_on,
-                    exit_pending: props.exit_pending,
-                    exit_key_name: props.exit_key_name,
-                )
-            }
-        }
-        .render(Some(120))
-        .to_string()
+    fn nyan(json: serde_json::Value) -> NyanSettings {
+        serde_json::from_value(json).unwrap()
+    }
+
+    fn three_profiles() -> serde_json::Value {
+        serde_json::json!({
+            "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+            "models": {
+                "zeta": {"provider": "p", "model": "claude-haiku-4-5",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                "main": {"provider": "p", "model": "claude-sonnet-4-6", "effort": "high",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                "alpha": {"provider": "p", "model": "claude-opus-4-6", "effort": "max",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                "beta": {"provider": "p", "model": "claude-opus-4-6",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+            },
+            "selection": {"main": "main"}
+        })
     }
 
     #[test]
-    fn model_picker_options_and_effort_cycle_match_official_shape() {
-        let options = model_picker_options(120);
+    fn rows_put_the_current_profile_first_and_the_default_second() {
+        let nyan = nyan(three_profiles());
+        let names = |current: Option<&str>| {
+            profile_rows(Some(&nyan), current, Some("main"))
+                .into_iter()
+                .map(|row| row.name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(Some("zeta")), ["zeta", "main", "alpha", "beta"]);
+        // On the default: it is first, the rest follow by name.
+        assert_eq!(names(Some("main")), ["main", "alpha", "beta", "zeta"]);
+        // A current profile that is gone does not reorder anything else.
+        assert_eq!(names(Some("gone")), ["main", "alpha", "beta", "zeta"]);
+        let rows = profile_rows(Some(&nyan), None, Some("main"));
+        assert_eq!(rows[0].model, "claude-sonnet-4-6");
+        assert_eq!(rows[0].effort, Some(Effort::High));
+        assert!(profile_rows(None, None, None).is_empty());
+    }
+
+    #[test]
+    fn effort_cycles_through_the_four_tiers_from_the_model_default() {
+        assert_eq!(cycle_effort(None, KeyCode::Right), Some(Effort::High));
+        assert_eq!(cycle_effort(None, KeyCode::Left), Some(Effort::Off));
         assert_eq!(
-            options
-                .iter()
-                .map(|option| option.value.as_str())
-                .collect::<Vec<_>>(),
-            ["sonnet[1m]", "opus[1m]", "haiku"]
-        );
-        assert_eq!(options[0].label, "Sonnet (1M context)");
-        assert_eq!(
-            cycle_effort(ModelEffortLevel::High, KeyCode::Right, "opus"),
-            ModelEffortLevel::Max
-        );
-        assert_eq!(
-            cycle_effort(ModelEffortLevel::Max, KeyCode::Right, "opus"),
-            ModelEffortLevel::Off
-        );
-        assert_eq!(
-            cycle_effort(ModelEffortLevel::High, KeyCode::Right, "sonnet"),
-            ModelEffortLevel::Max
-        );
-        assert_eq!(
-            cycle_effort(ModelEffortLevel::Max, KeyCode::Right, "sonnet"),
-            ModelEffortLevel::Off
-        );
-        assert_eq!(
-            displayed_effort(ModelEffortLevel::Max, "sonnet"),
-            ModelEffortLevel::Max
+            cycle_effort(Some(Effort::Max), KeyCode::Right),
+            Some(Effort::Off)
         );
         assert_eq!(
-            selected_picker_effort(ModelEffortLevel::Max, "sonnet", true),
-            Some(ModelEffortLevel::Max)
+            cycle_effort(Some(Effort::Off), KeyCode::Left),
+            Some(Effort::Max)
+        );
+    }
+
+    #[test]
+    fn a_row_starts_at_its_own_effort_and_only_the_current_one_keeps_the_session_effort() {
+        let row = |name: &str, effort| ProfileRow {
+            name: name.to_string(),
+            model: String::new(),
+            effort,
+        };
+        assert_eq!(
+            initial_row_effort(
+                &row("main", Some(Effort::High)),
+                Some("main"),
+                Some(Effort::Off)
+            ),
+            Some(Effort::Off)
         );
         assert_eq!(
-            selected_picker_effort(ModelEffortLevel::Max, "sonnet", false),
+            initial_row_effort(
+                &row("alpha", Some(Effort::Max)),
+                Some("main"),
+                Some(Effort::Off)
+            ),
+            Some(Effort::Max)
+        );
+        assert_eq!(
+            initial_row_effort(&row("beta", None), Some("main"), Some(Effort::Off)),
             None
         );
+    }
 
+    #[test]
+    fn the_session_switch_routes_through_the_profile_and_follows_main_when_back_on_it() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": three_profiles()})).unwrap(),
+        );
+        let dir = std::env::temp_dir().join(format!("nyan-picker-switch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        let original_session = crate::bootstrap::state::get_session_id();
+        crate::bootstrap::state::switch_session("picker-switch", Some(dir.clone()));
         let mut state = crate::state::app_state_store::AppState::default();
-        apply_model_picker_selection(
-            &mut state,
-            Some("sonnet".to_string()),
-            "sonnet",
-            ModelEffortLevel::Max,
-            true,
+        apply_session_profile(&mut state, "alpha", None);
+        assert_eq!(state.main_loop_profile.as_deref(), Some("alpha"));
+        assert_eq!(state.effort_value, None);
+        apply_session_profile(&mut state, "main", Some(Effort::Off));
+        assert_eq!(state.main_loop_profile, None);
+        assert_eq!(state.effort_value, Some(Effort::Off));
+        // The default is recorded as `null` too, so resume keeps following it.
+        let events = std::fs::read_to_string(dir.join("picker-switch.jsonl")).unwrap();
+        let profiles: Vec<serde_json::Value> = events
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap()["profile"].clone())
+            .collect();
+        assert_eq!(
+            profiles,
+            [serde_json::json!("alpha"), serde_json::Value::Null]
         );
-        assert_eq!(state.effort_value, Some(Effort::Max));
+        crate::bootstrap::state::switch_session(original_session, None);
+        crate::bootstrap::state::set_session_profile(None);
+        let _ = std::fs::remove_dir_all(dir);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]
-    fn model_picker_keeps_the_unified_effort_control_for_any_model() {
-        let text = render_picker(ModelPickerProps {
-            initial: Some("haiku".to_string()),
-            ..ModelPickerProps::default()
-        });
-
-        assert!(text.contains("effort"), "canvas=\n{text}");
-        assert!(text.contains("← → to adjust"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn model_picker_renders_official_header_select_effort_and_footer() {
-        let text = render_picker(ModelPickerProps {
-            is_standalone_command: true,
-            ..ModelPickerProps::default()
-        });
-        assert!(text.contains("Select model"), "canvas=\n{text}");
-        assert!(
-            text.contains("Switch between Claude models."),
-            "canvas=\n{text}"
+    fn the_set_default_message_names_a_project_override() {
+        let outcome = |project: Option<&str>| SetDefaultOutcome {
+            profile: "alpha".to_string(),
+            project_main: project.map(str::to_string),
+        };
+        assert_eq!(
+            set_default_message(&outcome(None)),
+            "Default model set to alpha"
         );
-        assert!(text.contains("specify with --model."), "canvas=\n{text}");
-        assert!(text.contains("Sonnet (1M context)"), "canvas=\n{text}");
-        assert!(
-            text.contains("Sonnet 4.6 for long sessions"),
-            "canvas=\n{text}"
+        assert_eq!(
+            set_default_message(&outcome(Some("alpha"))),
+            "Default model set to alpha"
         );
-        assert!(
-            text.contains("◐ Medium effort (default)"),
-            "canvas=\n{text}"
-        );
-        assert!(text.contains("← → to adjust"), "canvas=\n{text}");
-        assert_eq!(ModelEffortLevel::Off.symbol(), "○");
-        assert_eq!(ModelEffortLevel::Off.title_label(), "Off");
-        assert_eq!(ModelEffortLevel::Max.symbol(), "◈");
-        assert_eq!(ModelEffortLevel::Max.title_label(), "Max");
-        assert!(
-            text.contains("Enter to confirm · Esc to exit"),
-            "canvas=\n{text}"
-        );
-    }
-
-    #[test]
-    fn model_picker_renders_plan_mode_and_fast_mode_notices() {
-        let text = render_picker(ModelPickerProps {
-            session_model_label: Some("Opus".to_string()),
-            show_fast_mode_notice: true,
-            ..ModelPickerProps::default()
-        });
-        assert!(
-            text.contains("Currently using Opus for this session"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("Fast mode is ON and available with Opus 4.6 only (/fast)."),
-            "canvas=\n{text}"
+        assert_eq!(
+            set_default_message(&outcome(Some("beta"))),
+            "Default model set to alpha. This project still uses beta."
         );
     }
 }

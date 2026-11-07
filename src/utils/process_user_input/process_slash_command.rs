@@ -46,7 +46,6 @@ pub enum LocalCommandUi {
     Help,
     Hooks,
     Model,
-    Fast,
     Theme,
     Export {
         data: crate::commands::export::export::ExportDialogData,
@@ -76,11 +75,6 @@ pub enum LocalCommandUi {
     /// Maps to CC `commands/ide/ide.tsx` local JSX flow.
     Ide {
         args: String,
-    },
-    /// Maps to: CC `/effort` empty-args EffortPicker (`Zsm`).
-    Effort {
-        args: Option<String>,
-        has_conversation_messages: bool,
     },
 }
 
@@ -823,7 +817,6 @@ define_local_ui_call!(
 );
 define_local_ui_call!(call_help, LocalCommandUi::Help);
 define_local_ui_call!(call_hooks, LocalCommandUi::Hooks);
-define_local_ui_call!(call_fast, LocalCommandUi::Fast);
 define_local_ui_call!(call_theme, LocalCommandUi::Theme);
 pub(crate) fn call_export(
     command: &Command,
@@ -1017,20 +1010,25 @@ pub(crate) fn call_model(
     command: &Command,
     args: &str,
     uuid: Option<String>,
-    _context: &crate::tool::ToolUseContext,
+    context: &crate::tool::ToolUseContext,
 ) -> ProcessUserInputBaseResult {
-    if let Some(output) = commands::model::inline_output_for_args(args) {
-        local_command_result(
-            uuid,
-            commands::get_command_name(command),
-            args,
-            output,
-            false,
-            None,
-        )
-    } else {
-        open_local_command_ui(LocalCommandUi::Model, invocation(command, args))
-    }
+    // @nyan: `/model <profile>[:effort]` switches the session here; an
+    // unknown ref only prints the error.
+    let output = match commands::model::parse_args(args) {
+        None => return open_local_command_ui(LocalCommandUi::Model, invocation(command, args)),
+        Some(commands::model::ModelArgs::Message(message)) => message,
+        Some(commands::model::ModelArgs::Switch { profile, effort }) => {
+            commands::model::apply_switch(context.app_store.store.as_ref(), profile, effort)
+        }
+    };
+    local_command_result(
+        uuid,
+        commands::get_command_name(command),
+        args,
+        output,
+        false,
+        None,
+    )
 }
 
 pub(crate) fn call_sandbox(
@@ -1062,23 +1060,14 @@ pub(crate) fn call_effort(
     uuid: Option<String>,
     context: &crate::tool::ToolUseContext,
 ) -> ProcessUserInputBaseResult {
-    match commands::effort::effort::call(args, context) {
-        commands::effort::effort::EffortCall::OpenPicker => open_local_command_ui(
-            LocalCommandUi::Effort {
-                args: None,
-                has_conversation_messages: !context.messages.is_empty(),
-            },
-            invocation(command, args),
-        ),
-        commands::effort::effort::EffortCall::Result(result) => local_command_result(
-            uuid,
-            commands::get_command_name(command),
-            args,
-            result.message,
-            false,
-            None,
-        ),
-    }
+    local_command_result(
+        uuid,
+        commands::get_command_name(command),
+        args,
+        commands::effort::effort::call(args, context).message,
+        false,
+        None,
+    )
 }
 
 /// Maps to: CC `commands/vim/vim.ts:8-38::call`.
@@ -2280,21 +2269,13 @@ mod tests {
     }
 
     #[test]
-    fn process_slash_command_effort_without_args_opens_ui_panel() {
+    fn process_slash_command_effort_without_args_prints_the_current_effort() {
         let result =
             process_slash_command("/effort", Some("cmd-effort".to_string()), get_commands());
 
         assert!(!result.should_query);
-        assert_eq!(
-            result.local_action,
-            Some(SlashCommandAction::OpenLocalCommandUi {
-                command: LocalCommandUi::Effort {
-                    args: None,
-                    has_conversation_messages: false,
-                },
-                invocation: SlashCommandInvocation::new("effort", ""),
-            })
-        );
+        assert!(result.local_action.is_none());
+        assert!(local_output(&result).contains("Current effort: "));
     }
 
     #[test]

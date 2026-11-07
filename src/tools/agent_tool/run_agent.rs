@@ -493,7 +493,10 @@ pub(super) fn resolve_agent_selection(
     agent_definition: &AgentDefinition,
     model_override: Option<&str>,
     context: &ToolUseContext,
-) -> crate::utils::model::agent::ResolvedAgentModel {
+) -> Result<
+    crate::utils::model::agent::ResolvedAgentModel,
+    crate::utils::model::profile::UnknownModelRef,
+> {
     let settings = crate::utils::settings::get_initial_settings();
     crate::utils::model::agent::resolve_subagent_model_and_effort(
         model_override,
@@ -542,7 +545,7 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
         },
     );
     let selection =
-        resolve_agent_selection(input.agent_definition, input.model_override, input.context);
+        resolve_agent_selection(input.agent_definition, input.model_override, input.context)?;
     let model = selection.model.clone();
     let caller_prompt_messages = input.prompt_messages.clone().unwrap_or_else(|| {
         vec![Message::User(crate::types::message::UserMessage {
@@ -873,7 +876,6 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
         .critical_system_reminder_experimental
         .clone();
     agent_tool_use_context.effort_value = selection.effort;
-    agent_tool_use_context.fast_mode = Some(false);
     agent_tool_use_context.channel_permission_callbacks =
         input.context.channel_permission_callbacks.clone();
     agent_tool_use_context.subagent_depth = input.context.subagent_depth + 1;
@@ -2122,7 +2124,9 @@ mod tests {
             .with_main_loop_model("parent-model")
             .with_effort_value(Some(Effort::High));
         let effort = |agent: &AgentDefinition, model_override: Option<&str>| {
-            resolve_agent_selection(agent, model_override, &context).effort
+            resolve_agent_selection(agent, model_override, &context)
+                .unwrap()
+                .effort
         };
         // No layer names a model: inherit, with the parent's effort.
         assert_eq!(effort(&general_agent(None), None), Some(Effort::High));
@@ -2136,41 +2140,19 @@ mod tests {
             effort(&general_agent(Some("inherit:max")), Some(":off")),
             Some(Effort::Off)
         );
-        // A temporary model takes the model default, not the parent's depth.
-        assert_eq!(effort(&general_agent(Some("provider/other")), None), None);
-    }
-
-    #[test]
-    fn resolves_model_override_before_agent_model_before_parent_inherit() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-
-        let context = ToolUseContext::default().with_main_loop_model("parent-sonnet-model");
-        let model = |agent: &AgentDefinition, model_override: Option<&str>| {
-            resolve_agent_selection(agent, model_override, &context).model
-        };
-        let agent = general_agent(Some("provider/fast-model"));
-        assert_eq!(
-            model(&agent, Some("provider/override-model")),
-            "provider/override-model"
-        );
-        assert_eq!(model(&agent, None), "provider/fast-model");
-        assert_eq!(
-            model(&general_agent(Some("inherit")), None),
-            "parent-sonnet-model"
-        );
     }
 
     #[test]
     fn an_inheriting_agent_follows_the_parents_profile() {
         let mut context = ToolUseContext::default().with_main_loop_model("parent-model");
         context.main_loop_profile = Some("deep".to_string());
-        let inherited = resolve_agent_selection(&general_agent(None), None, &context);
+        let inherited = resolve_agent_selection(&general_agent(None), None, &context).unwrap();
         assert_eq!(inherited.model, "parent-model");
         assert_eq!(inherited.profile.as_deref(), Some("deep"));
-        // A temporary model leaves the parent's profile behind.
-        let temporary =
+        // A model that names no profile is an error, not a temporary model.
+        let unknown =
             resolve_agent_selection(&general_agent(Some("provider/other")), None, &context);
-        assert_eq!(temporary.profile, None);
+        assert!(unknown.is_err());
     }
 
     #[test]

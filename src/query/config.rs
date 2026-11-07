@@ -16,7 +16,6 @@ pub struct QueryConfigGates {
     pub streaming_tool_execution: bool,
     pub emit_tool_use_summaries: bool,
     pub is_ant: bool,
-    pub fast_mode_enabled: bool,
 }
 
 /// Maps to official `buildQueryConfig()`.
@@ -82,7 +81,6 @@ fn build_query_config_from_env_and_session(
             is_ant: crate::utils::build_profile::has_internal_capability(
                 crate::utils::build_profile::InternalCapability::Api,
             ),
-            fast_mode_enabled: !is_truthy(get_env("CLAUDE_CODE_DISABLE_FAST_MODE")),
         },
     }
 }
@@ -118,6 +116,5 @@ mod tests {
             config.gates.is_ant,
             crate::utils::build_profile::build_audience().is_internal()
         );
-        assert!(config.gates.fast_mode_enabled);
     }
 }

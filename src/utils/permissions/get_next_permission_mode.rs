@@ -183,15 +183,14 @@ mod tests {
         auto_mode_state::reset_for_testing();
         // The auto gate needs a supported main model. Without a profile the
         // model is unset (no Anthropic default), so pin one explicitly.
-        let previous_override = crate::bootstrap::state::get_main_loop_model_override();
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-sonnet-4-6".to_string(),
-        )));
+        crate::services::provider::anthropic::target::install_test_model_profile(
+            "claude-sonnet-4-6",
+        );
         let mut context = ToolPermissionContext::default();
         context = transition_into_auto_mode(&context);
         assert!(auto_mode_state::is_auto_mode_active());
         let (next, next_ctx) = cycle_permission_mode(&context);
-        crate::bootstrap::state::set_main_loop_model_override(previous_override);
+        crate::utils::settings::settings_cache::reset_settings_cache();
         assert_eq!(next, PermissionMode::Default);
         assert_eq!(next_ctx.mode, PermissionMode::Auto);
         assert!(!auto_mode_state::is_auto_mode_active());

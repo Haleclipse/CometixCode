@@ -85,7 +85,7 @@ impl fmt::Display for ProfileResolutionError {
         match self {
             Self::MissingSettings => write!(
                 f,
-                "No provider profiles configured. Configure settings.nyan.providers, settings.nyan.models, and settings.nyan.selection.main, or pass an explicit temporary model."
+                "No provider profiles configured. Configure settings.nyan.providers, settings.nyan.models, and settings.nyan.selection.main."
             ),
             Self::MissingSelection => write!(
                 f,
@@ -448,20 +448,57 @@ pub fn resolve_ref_profile(
     resolve_profile(nyan, profile_name)
 }
 
-pub fn resolve_model_input(
-    settings: &SettingsJson,
-    input: &str,
-) -> Result<String, ProfileResolutionError> {
-    let Some(nyan) = settings.nyan.as_ref() else {
-        return Ok(input.to_string());
-    };
-    let Some(models) = nyan.models.as_ref() else {
-        return Ok(input.to_string());
-    };
-    if !models.contains_key(input) {
-        return Ok(input.to_string());
+/// What a model ref picks: the profile it names, or the session's (`inherit`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelChoice {
+    Inherit,
+    Profile(String),
+}
+
+/// A model ref that names no configured profile, tier or `inherit`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownModelRef(pub String);
+
+impl fmt::Display for UnknownModelRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Unknown model {:?}. Use a profile name from settings.nyan.models, @main, @light, @heavy or inherit, optionally with :off, :medium, :high or :max.",
+            self.0
+        )
     }
-    resolve_profile(nyan, input).map(|profile| profile.model)
+}
+
+impl std::error::Error for UnknownModelRef {}
+
+/// Reads `ref[:effort]` where ref is a profile name, `@main`, `@light`,
+/// `@heavy` or `inherit` (design §1). Nothing else is a model: an unknown
+/// name is an error, never a temporary model id.
+///
+/// A tier that names no profile (no `selection`, no `main`) follows the
+/// session like `inherit`.
+pub fn resolve_model_ref(
+    nyan: Option<&NyanSettings>,
+    spec: &str,
+) -> Result<(ModelChoice, Option<crate::utils::effort::Effort>), UnknownModelRef> {
+    let (model_ref, effort) = crate::utils::effort::parse_model_ref_and_effort(spec);
+    let unknown = || UnknownModelRef(spec.trim().to_string());
+    let choice = match model_ref {
+        "" => return Err(unknown()),
+        "inherit" => ModelChoice::Inherit,
+        "@main" | "@light" | "@heavy" => match nyan
+            .and_then(|nyan| nyan.selection.as_ref())
+            .and_then(|selection| resolve_selection_profile_name(selection, model_ref).ok())
+        {
+            Some(name) => ModelChoice::Profile(name.to_string()),
+            None => ModelChoice::Inherit,
+        },
+        name if nyan.and_then(|nyan| model_profile(nyan, name)).is_some() => {
+            ModelChoice::Profile(name.to_string())
+        }
+        _ => return Err(unknown()),
+    };
+    Ok((choice, effort))
 }
 
 pub fn profile_names(nyan: Option<&NyanSettings>) -> impl Iterator<Item = &str> {
@@ -814,14 +851,6 @@ mod tests {
         let resolved = resolve_main_profile(&settings).unwrap();
         assert_eq!(resolved.profile, "main");
         assert_eq!(resolved.model, "claude-sonnet-4-6");
-        assert_eq!(
-            resolve_model_input(&settings, "main").unwrap(),
-            "claude-sonnet-4-6"
-        );
-        assert_eq!(
-            resolve_model_input(&settings, "provider/model").unwrap(),
-            "provider/model"
-        );
         assert!(validate_decision_profile(settings.nyan.as_ref().unwrap(), "main").is_ok());
     }
 
@@ -850,6 +879,87 @@ mod tests {
             }
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn model_refs_accept_profiles_tiers_and_inherit_only() {
+        use crate::utils::effort::Effort;
+        let settings = tiered_settings();
+        let nyan = settings.nyan.as_deref();
+        let profile = |name: &str| ModelChoice::Profile(name.to_string());
+        assert_eq!(resolve_model_ref(nyan, "main"), Ok((profile("main"), None)));
+        assert_eq!(
+            resolve_model_ref(nyan, "fast:max"),
+            Ok((profile("fast"), Some(Effort::Max)))
+        );
+        assert_eq!(
+            resolve_model_ref(nyan, "@light"),
+            Ok((profile("fast"), None))
+        );
+        // `heavy` is unset: it is `main`.
+        assert_eq!(
+            resolve_model_ref(nyan, "@heavy:off"),
+            Ok((profile("main"), Some(Effort::Off)))
+        );
+        assert_eq!(
+            resolve_model_ref(nyan, "@main"),
+            Ok((profile("main"), None))
+        );
+        assert_eq!(
+            resolve_model_ref(nyan, "inherit"),
+            Ok((ModelChoice::Inherit, None))
+        );
+        assert_eq!(
+            resolve_model_ref(nyan, ":high"),
+            Ok((ModelChoice::Inherit, Some(Effort::High)))
+        );
+        for unknown in [
+            "",
+            "sonnet",
+            "opus",
+            "haiku",
+            "best",
+            "opusplan",
+            "opus[1m]",
+            "anthropic/claude-sonnet-4-6",
+            "claude-sonnet-4-6",
+            "@nope",
+            "main:low",
+        ] {
+            assert_eq!(
+                resolve_model_ref(nyan, unknown),
+                Err(UnknownModelRef(unknown.to_string())),
+                "{unknown:?}"
+            );
+        }
+        // No settings at all: tiers follow the session, names are unknown.
+        assert_eq!(
+            resolve_model_ref(None, "@light"),
+            Ok((ModelChoice::Inherit, None))
+        );
+        assert!(resolve_model_ref(None, "main").is_err());
+    }
+
+    #[test]
+    fn a_profile_name_with_a_colon_keeps_it() {
+        use crate::utils::effort::Effort;
+        let mut settings = tiered_settings();
+        let nyan = settings.nyan.as_mut().unwrap();
+        let fast = nyan.models.as_ref().unwrap()["fast"].clone();
+        nyan.models
+            .as_mut()
+            .unwrap()
+            .insert("qwen3:32b".to_string(), fast);
+        let nyan = settings.nyan.as_deref();
+        let profile = ModelChoice::Profile("qwen3:32b".to_string());
+        assert_eq!(
+            resolve_model_ref(nyan, "qwen3:32b"),
+            Ok((profile.clone(), None))
+        );
+        assert_eq!(
+            resolve_model_ref(nyan, "qwen3:32b:high"),
+            Ok((profile, Some(Effort::High)))
+        );
     }
 
     #[test]

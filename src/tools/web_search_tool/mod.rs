@@ -879,7 +879,7 @@ mod tests {
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::bootstrap::state::set_main_loop_model_override(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
         assert!(is_web_search_tool_enabled());
 
         crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
@@ -887,20 +887,20 @@ mod tests {
         crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
 
         crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-3-5-sonnet-20241022".to_string(),
-        )));
+        crate::services::provider::anthropic::target::install_test_model_profile(
+            "claude-3-5-sonnet-20241022",
+        );
         assert!(!is_web_search_tool_enabled());
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-sonnet-4-5-20250929".to_string(),
-        )));
+        crate::services::provider::anthropic::target::install_test_model_profile(
+            "claude-sonnet-4-5-20250929",
+        );
         assert!(is_web_search_tool_enabled());
         crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
 
         crate::utils::process_env::set("CLAUDE_CODE_USE_FOUNDRY", "1");
         assert!(is_web_search_tool_enabled());
         crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::bootstrap::state::set_main_loop_model_override(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     // ════════════════════════════════════════════════════════

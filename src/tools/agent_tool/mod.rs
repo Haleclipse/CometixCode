@@ -1205,9 +1205,7 @@ fn live_tool_permission_context(
 /// model that resolves to the profile the parent session is routed through.
 ///
 /// A fork replays the parent's history, which only the parent's own profile
-/// can read, and the child runs on the parent's model, so a request that
-/// resolves to a different model (a temporary `provider/model`) is not a fork
-/// even when it routes through the same profile.
+/// can read, and the child runs on the parent's model.
 fn fork_matches_parent_profile(
     model_override: Option<&str>,
     context: &crate::tool::ToolUseContext,
@@ -1215,11 +1213,13 @@ fn fork_matches_parent_profile(
     let Some(model) = truthy(model_override) else {
         return true;
     };
-    let resolved = run_agent::resolve_agent_selection(
+    let Ok(resolved) = run_agent::resolve_agent_selection(
         &fork_subagent::fork_agent_definition(),
         Some(model),
         context,
-    );
+    ) else {
+        return false;
+    };
     if resolved.model != context.parent_selection().model {
         return false;
     }
@@ -1806,6 +1806,18 @@ impl crate::tool::ToolCall for AgentTool {
             } else {
                 input_string(args, "model")
             };
+            // @nyan: the model parameter names a profile, tier or `inherit`;
+            // anything else is refused here, before any request is made.
+            if let Some(model) = truthy(model_override)
+                && let Err(error) = crate::utils::model::profile::resolve_model_ref(
+                    crate::utils::settings::get_initial_settings()
+                        .nyan
+                        .as_deref(),
+                    model,
+                )
+            {
+                return agent_tool_error(error.to_string());
+            }
             // CC `:422`/`:437` test `name` for truthiness, so an empty name
             // never reaches the spawn branch — a whitespace-only one does.
             let requested_name = truthy(input_string(args, "name"));
@@ -3819,13 +3831,49 @@ mod tests {
         // falls back to it, is the same profile.
         assert!(fork_matches_parent_profile(Some("main"), &context));
         assert!(fork_matches_parent_profile(Some("@main:max"), &context));
-        // `light` is another profile, and a temporary model is not the parent's.
+        // `light` is another profile.
         assert!(!fork_matches_parent_profile(Some("@light"), &context));
         assert!(!fork_matches_parent_profile(Some("fast"), &context));
         // The same model id under another profile is still another profile.
         assert!(!fork_matches_parent_profile(Some("alias"), &context));
         assert!(!fork_matches_parent_profile(Some("other/model"), &context));
 
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
+
+    #[tokio::test]
+    async fn an_unknown_model_parameter_is_a_tool_error_and_sends_no_request() {
+        use crate::tool::ToolCall;
+        let _env_lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        install_main_and_fast_profiles();
+        reset_active_subagents_count_for_testing();
+        let context = context_with_agent_definitions(vec![
+            crate::tools::agent_tool::built_in::general_purpose_agent::general_purpose_agent(),
+        ]);
+        for model in ["sonnet", "anthropic/claude-opus-4-6", "nope:high"] {
+            let request =
+                crate::utils::permissions::permissions::mock_permission_request_with_input(
+                    "perm-agent".to_string(),
+                    "toolu_agent".to_string(),
+                    "Agent".to_string(),
+                    "nested".to_string(),
+                    serde_json::json!({
+                        "description": "nested",
+                        "prompt": "inspect",
+                        "subagent_type": "general-purpose",
+                        "model": model
+                    }),
+                    crate::types::permissions::PermissionMode::Default,
+                );
+            // No mock endpoint is installed: reaching the request path would
+            // fail differently (or hang), so the error text proves it stopped.
+            let result = AgentTool
+                .call(&request.input, &request, &context, None, None, None)
+                .await;
+            assert_agent_tool_error(result, &format!("Unknown model {model:?}"));
+        }
         crate::utils::settings::settings_cache::reset_settings_cache();
     }
 

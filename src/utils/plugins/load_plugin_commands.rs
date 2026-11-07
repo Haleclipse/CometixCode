@@ -326,9 +326,8 @@ fn create_plugin_command(
         ),
         when_to_use: field("when_to_use"),
         version: field("version"),
-        model: field("model")
-            .filter(|model| !model.is_empty() && model != "inherit")
-            .map(|model| crate::utils::model::model::parse_user_specified_model(&model)),
+        // @nyan: a profile ref, resolved where the command runs.
+        model: field("model").filter(|model| !model.is_empty() && model != "inherit"),
         effort,
         disable_model_invocation: parse_boolean_frontmatter(
             frontmatter.get("disable-model-invocation"),

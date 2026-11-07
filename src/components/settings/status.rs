@@ -36,7 +36,7 @@ pub fn Status(props: &StatusProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
     let settings_snapshot =
         crate::state::app_state::use_app_state(&mut hooks, |state| state.settings.clone());
     let settings = settings_snapshot.as_ref();
-    let resolved_model = crate::utils::model::model::get_session_main_loop_model();
+    let resolved_model = crate::utils::model::model::get_main_loop_model();
     let model_display_name = render_model_name(&resolved_model);
     let cwd = std::env::current_dir()
         .map(|path| path.display().to_string())
@@ -777,10 +777,20 @@ mod tests {
 
     #[test]
     fn status_reads_readonly_runtime_model_and_session_metadata() {
+        let _env_guard = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::config::set_test_global_config(Some(GlobalConfig::default()));
         let settings = SettingsJson::default();
-        let previous_model = crate::bootstrap::state::get_initial_main_loop_model();
-        crate::bootstrap::state::set_initial_main_loop_model(Some("opus".to_string()));
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {"main": {"provider": "p", "model": "claude-opus-4-6",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}},
+                "selection": {"main": "main"}
+            }}))
+            .unwrap(),
+        );
         let mut initial = crate::state::app_state_store::AppState::default();
         initial.settings = Arc::new(settings);
         let test_store = crate::state::store::AppStore::new(initial, None);
@@ -807,7 +817,7 @@ mod tests {
         assert!(text.contains("session-123"), "canvas=\n{text}");
         assert!(text.contains("Model"), "canvas=\n{text}");
         assert!(text.contains("Opus"), "canvas=\n{text}");
-        crate::bootstrap::state::set_initial_main_loop_model(previous_model);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]

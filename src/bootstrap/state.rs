@@ -246,22 +246,12 @@ static ORIGINAL_CWD: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
             .collect::<String>(),
     ))
 });
-/// Maps to: CC `bootstrap/state.ts:68,297,838-850` `mainLoopModelOverride`.
+/// The profile this session's main loop runs on; `None` is `selection.main`.
 ///
-/// The outer option is JavaScript `undefined`; the inner option is the
-/// source's explicit `null` model setting.
-static MAIN_LOOP_MODEL_OVERRIDE: LazyLock<RwLock<Option<Option<String>>>> =
-    LazyLock::new(|| RwLock::new(None));
-/// Maps to: CC `bootstrap/state.ts:69,298,842-844,852-854` `initialMainLoopModel`
-/// — the user-specified model setting captured once at launch
-/// (`main.tsx:3068`) and read back by `modelOptions.ts:490`, so a model pinned
-/// at startup still appears in the picker after `/model` clears it.
-///
-/// A single option, unlike `MAIN_LOOP_MODEL_OVERRIDE`: the source types this
-/// field `ModelSetting` (two states, `null` = unset), not
-/// `ModelSetting | undefined`.
-static INITIAL_MAIN_LOOP_MODEL: LazyLock<RwLock<Option<String>>> =
-    LazyLock::new(|| RwLock::new(None));
+/// @nyan: replaces CC's `mainLoopModelOverride` / `initialMainLoopModel` model
+/// strings. A session picks a profile (`--model`, `/model`, the picker, a
+/// resumed session) and the wire model is that profile's.
+static SESSION_PROFILE: LazyLock<RwLock<Option<String>>> = LazyLock::new(|| RwLock::new(None));
 /// Maps to: CC `bootstrap/state.ts` `sessionTrustAccepted`.
 static SESSION_TRUST_ACCEPTED: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(false));
 /// Maps to: CC `bootstrap/state.ts` `sessionPersistenceDisabled`.
@@ -311,33 +301,17 @@ pub fn set_system_prompt_section_cache_entry(name: impl Into<String>, value: Opt
     }
 }
 
-/// Maps to: CC `bootstrap/state.ts:838-840#getMainLoopModelOverride`.
-pub fn get_main_loop_model_override() -> Option<Option<String>> {
-    MAIN_LOOP_MODEL_OVERRIDE
+/// The profile the session's main loop runs on; `None` is `selection.main`.
+pub fn get_session_profile() -> Option<String> {
+    SESSION_PROFILE
         .read()
-        .map(|model| model.clone())
+        .map(|profile| profile.clone())
         .unwrap_or(None)
 }
 
-/// Maps to: CC `bootstrap/state.ts:842-844#getInitialMainLoopModel`.
-pub fn get_initial_main_loop_model() -> Option<String> {
-    INITIAL_MAIN_LOOP_MODEL
-        .read()
-        .map(|model| model.clone())
-        .unwrap_or(None)
-}
-
-/// Maps to: CC `bootstrap/state.ts:846-850#setMainLoopModelOverride`.
-pub fn set_main_loop_model_override(model: Option<Option<String>>) {
-    if let Ok(mut current) = MAIN_LOOP_MODEL_OVERRIDE.write() {
-        *current = model;
-    }
-}
-
-/// Maps to: CC `bootstrap/state.ts:852-854#setInitialMainLoopModel`.
-pub fn set_initial_main_loop_model(model: Option<String>) {
-    if let Ok(mut current) = INITIAL_MAIN_LOOP_MODEL.write() {
-        *current = model;
+pub fn set_session_profile(profile: Option<String>) {
+    if let Ok(mut current) = SESSION_PROFILE.write() {
+        *current = profile;
     }
 }
 

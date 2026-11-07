@@ -50,7 +50,6 @@ pub fn reset_bypass_permissions_check() {
 pub async fn check_and_disable_auto_mode_if_needed(
     tool_permission_context: &ToolPermissionContext,
     store: &AppStore,
-    fast_mode: Option<bool>,
 ) {
     if !super::permission_setup::is_transcript_classifier_feature_enabled() {
         return;
@@ -59,8 +58,7 @@ pub async fn check_and_disable_auto_mode_if_needed(
         return;
     }
     let result =
-        super::permission_setup::verify_auto_mode_gate_access(tool_permission_context, fast_mode)
-            .await;
+        super::permission_setup::verify_auto_mode_gate_access(tool_permission_context).await;
     store.set_state(|prev| {
         let context = (result.update_context)(&prev.tool_permission_context);
         if Arc::ptr_eq(&context, &prev.tool_permission_context) && result.notification.is_none() {
@@ -117,14 +115,8 @@ pub fn use_kick_off_check_and_disable_bypass_permissions_if_needed(hooks: &mut H
 /// Maps to: CC `bypassPermissionsKillswitch.ts:138-172#useKickOffCheckAndDisableAutoModeIfNeeded`.
 /// L1 useRef is an Arc atomic; model dependencies trigger a fresh check.
 pub fn use_kick_off_check_and_disable_auto_mode_if_needed(hooks: &mut Hooks) {
-    let dependencies = crate::state::app_state::use_app_state(hooks, |s| {
-        (
-            s.main_loop_model.clone(),
-            s.main_loop_model_for_session.clone(),
-            s.fast_mode,
-        )
-    });
-    let fast_mode = dependencies.2;
+    let dependencies =
+        crate::state::app_state::use_app_state(hooks, |s| s.main_loop_profile.clone());
     let store = crate::state::app_state::use_app_state_store(hooks);
     let first_run = hooks.use_const(|| Arc::new(AtomicBool::new(true))).clone();
     hooks.use_effect(
@@ -139,7 +131,7 @@ pub fn use_kick_off_check_and_disable_auto_mode_if_needed(hooks: &mut Hooks) {
             if let Some(runtime) = crate::utils::process_runtime::runtime_handle_for_detached_work()
             {
                 runtime.spawn(async move {
-                    check_and_disable_auto_mode_if_needed(&context, &store, Some(fast_mode)).await;
+                    check_and_disable_auto_mode_if_needed(&context, &store).await;
                 });
             }
         },
@@ -229,14 +221,14 @@ mod tests {
         });
         let store = AppStore::new(state, None);
         reset_auto_mode_gate_check();
-        check_and_disable_auto_mode_if_needed(&store.tool_permission_context(), &store, None).await;
+        check_and_disable_auto_mode_if_needed(&store.tool_permission_context(), &store).await;
         assert_eq!(store.revision(), 0);
         reset_auto_mode_gate_check();
         let stale = ToolPermissionContext {
             mode: PermissionMode::Auto,
             ..Default::default()
         };
-        check_and_disable_auto_mode_if_needed(&stale, &store, None).await;
+        check_and_disable_auto_mode_if_needed(&stale, &store).await;
         assert_eq!(
             store.tool_permission_context().mode,
             PermissionMode::Default

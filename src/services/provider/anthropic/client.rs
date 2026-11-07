@@ -105,19 +105,10 @@ pub struct GetAnthropicClientOptions {
 }
 
 impl GetAnthropicClientOptions {
-    /// Options aimed at the selected main profile's provider. Fails with the
-    /// profile / credential configuration error (never an ambient fallback)
-    /// when no usable profile or key is configured.
-    pub fn for_main_profile(
-        max_retries: u32,
-        model: Option<String>,
-        source: Option<String>,
-    ) -> Result<Self, super::target::TargetError> {
-        Self::for_profile(None, max_retries, model, source)
-    }
-
     /// Options aimed at the provider of the profile a request names; `None` is
-    /// the main profile.
+    /// the main profile. Fails with the profile / credential configuration
+    /// error (never an ambient fallback) when no usable profile or key is
+    /// configured.
     pub fn for_profile(
         profile: Option<&str>,
         max_retries: u32,

@@ -24,7 +24,7 @@ use crate::types::status_line::{
     StatusLineWorktree,
 };
 use crate::utils::context::{calculate_context_percentages, get_context_window_for_model};
-use crate::utils::model::model::{get_runtime_main_loop_model, render_model_name};
+use crate::utils::model::model::render_model_name;
 use crate::utils::settings::types::SettingsJson;
 use crate::utils::tokens::{does_most_recent_assistant_message_exceed_200k, get_current_usage};
 use iocraft::prelude::*;
@@ -106,11 +106,9 @@ pub fn build_status_line_command_input(
     main_loop_model: &str,
     vim_mode: Option<&str>,
 ) -> StatusLineCommandInput {
-    let runtime_model = get_runtime_main_loop_model(
-        permission_mode,
-        main_loop_model.to_string(),
-        exceeds_200k_tokens,
-    );
+    // @nyan: no `opusplan` plan-mode switch; the session profile's model.
+    let _ = permission_mode;
+    let runtime_model = main_loop_model.to_string();
     let output_style_name = settings
         .output_style
         .as_deref()
@@ -343,10 +341,7 @@ fn use_status_line_update(hooks: &mut Hooks, inputs: StatusLineUpdateInputs) {
     let permission_mode =
         crate::state::app_state::use_app_state(hooks, |state| state.tool_permission_context.mode);
     let main_loop_model = crate::state::app_state::use_app_state(hooks, |state| {
-        crate::hooks::use_main_loop_model::use_main_loop_model(
-            state.main_loop_model.as_deref(),
-            state.main_loop_model_for_session.as_deref(),
-        )
+        crate::utils::model::model::profile_model(state.main_loop_profile.as_deref())
     });
 
     // The render side only PUBLISHES the current trigger values; the long-lived
@@ -537,7 +532,6 @@ mod tests {
     use super::*;
     use crate::types::message::{AssistantContent, AssistantMessage, StopReason};
     use crate::utils::settings::types::StatusLineSettings;
-    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
     use chrono::Utc;
 
@@ -603,15 +597,11 @@ mod tests {
 
     #[test]
     fn build_status_line_command_input_resolves_model_and_null_usage_like_official() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "grok-4.5");
-
         let settings = SettingsJson {
             output_style: Some("explanatory".to_string()),
             ..Default::default()
         };
-        let main_loop_model =
-            crate::hooks::use_main_loop_model::use_main_loop_model(Some("opus"), None);
+        let main_loop_model = "grok-4.5".to_string();
         let input = build_status_line_command_input(
             PermissionMode::Default,
             false,
@@ -630,8 +620,6 @@ mod tests {
         assert_eq!(input.workspace.added_dirs, vec!["/tmp/extra".to_string()]);
         assert!(!input.exceeds_200k_tokens);
         assert!(input.permission_mode.is_none());
-
-        crate::utils::process_env::remove("ANTHROPIC_DEFAULT_OPUS_MODEL");
     }
 
     #[test]

@@ -25,10 +25,7 @@ pub fn should_process_rate_limits(is_subscriber: bool) -> bool {
 }
 
 /// Maps to CC `checkMockRateLimitError(...)`.
-pub fn check_mock_rate_limit_error(
-    current_model: &str,
-    is_fast_mode_active: bool,
-) -> Option<MockRateLimitError> {
+pub fn check_mock_rate_limit_error(current_model: &str) -> Option<MockRateLimitError> {
     if !crate::services::mock_rate_limits::should_process_mock_limits() {
         return None;
     }
@@ -51,15 +48,6 @@ pub fn check_mock_rate_limit_error(
 
     if claim == Some("seven_day_opus") && !current_model.contains("opus") {
         return None;
-    }
-    if crate::services::mock_rate_limits::is_mock_fast_mode_rate_limit_scenario() {
-        return crate::services::mock_rate_limits::check_mock_fast_mode_rate_limit(
-            is_fast_mode_active,
-        )
-        .map(|headers| MockRateLimitError {
-            message: "Rate limit exceeded".to_string(),
-            headers,
-        });
     }
     (status == Some("rejected") && overage_status.is_none_or(|overage| overage == "rejected")).then(
         || MockRateLimitError {
@@ -90,8 +78,8 @@ mod tests {
         crate::services::mock_rate_limits::set_mock_rate_limit_scenario(
             crate::services::mock_rate_limits::MockScenario::OpusLimit,
         );
-        assert!(check_mock_rate_limit_error("claude-opus-4-6", false).is_some());
-        assert!(check_mock_rate_limit_error("claude-sonnet-4-6", false).is_none());
+        assert!(check_mock_rate_limit_error("claude-opus-4-6").is_some());
+        assert!(check_mock_rate_limit_error("claude-sonnet-4-6").is_none());
         crate::services::mock_rate_limits::reset_for_test();
     }
 }

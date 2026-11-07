@@ -472,7 +472,10 @@ pub async fn check_quota_status() {
     }
 
     let settings = crate::utils::settings::get_initial_settings();
-    let profile = match crate::utils::model::profile::resolve_main_profile(&settings) {
+    let profile = match crate::utils::model::profile::resolve_request_profile(
+        &settings,
+        crate::bootstrap::state::get_session_profile().as_deref(),
+    ) {
         Ok(profile) => profile,
         Err(error) => {
             crate::utils::debug::log_for_debugging(&format!(
@@ -491,7 +494,8 @@ pub async fn check_quota_status() {
 
     let model = crate::utils::model::model::get_small_fast_model();
     let options =
-        match crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_main_profile(
+        match crate::services::provider::anthropic::client::GetAnthropicClientOptions::for_profile(
+            crate::bootstrap::state::get_session_profile().as_deref(),
             0,
             Some(model.clone()),
             Some("quota_check".to_string()),

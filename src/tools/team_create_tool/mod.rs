@@ -132,24 +132,14 @@ pub(crate) fn team_create_output(
         .map(str::to_string);
     // CC `parseUserSpecifiedModel(appState.mainLoopModelForSession ??
     // appState.mainLoopModel ?? getDefaultMainLoopModel())` (:149-153).
-    let app_state = context
+    // @nyan: the lead's profile, else `selection.main`.
+    let lead_model = context
         .app_store
         .store
         .as_ref()
         .or(context.app_store.tasks_store.as_ref())
-        .map(|store| store.get());
-    let lead_model_raw = app_state
-        .as_ref()
-        .and_then(|state| state.main_loop_model_for_session.clone())
-        .or_else(|| {
-            app_state
-                .as_ref()
-                .and_then(|state| state.main_loop_model.clone())
-        })
-        .unwrap_or_else(crate::utils::model::model::get_default_main_loop_model);
-    let lead_model = Some(crate::utils::model::model::parse_user_specified_model(
-        &lead_model_raw,
-    ));
+        .and_then(|store| store.get().main_loop_profile.clone())
+        .or_else(|| context.effective_profile_name());
     let record = create_team_record(
         final_team_name.clone(),
         description,

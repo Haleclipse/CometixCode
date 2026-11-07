@@ -24,8 +24,6 @@ pub const EFFORT_BETA_HEADER: &str = "effort-2025-11-24";
 pub const TASK_BUDGETS_BETA_HEADER: &str = "task-budgets-2026-03-13";
 /// Maps to CC `constants/betas.ts` `PROMPT_CACHING_SCOPE_BETA_HEADER`.
 pub const PROMPT_CACHING_SCOPE_BETA_HEADER: &str = "prompt-caching-scope-2026-01-05";
-/// Maps to CC `constants/betas.ts` `FAST_MODE_BETA_HEADER`.
-pub const FAST_MODE_BETA_HEADER: &str = "fast-mode-2026-02-01";
 /// Maps to CC `constants/betas.ts` `REDACT_THINKING_BETA_HEADER`.
 pub const REDACT_THINKING_BETA_HEADER: &str = "redact-thinking-2026-02-12";
 /// Maps to CC `constants/betas.ts` `ADVISOR_BETA_HEADER`.

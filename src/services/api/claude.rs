@@ -31,8 +31,7 @@ use crate::utils::content_array::insert_block_after_tool_results;
 use crate::utils::context::{CAPPED_DEFAULT_MAX_TOKENS, get_model_max_output_tokens};
 use crate::utils::effort::Effort;
 use crate::utils::model::model::{
-    get_default_opus_model, get_default_sonnet_model, get_main_loop_model, get_small_fast_model,
-    normalize_model_string_for_api,
+    get_main_loop_model, get_small_fast_model, normalize_model_string_for_api,
 };
 use crate::utils::process_env::JsTruthy;
 use crate::utils::thinking::{
@@ -272,7 +271,6 @@ pub struct Options {
     pub query_tracking: Option<QueryChainTracking>,
     pub agent_id: Option<AgentId>,
     pub output_format: Option<JsonOutputFormat>,
-    pub fast_mode: Option<bool>,
     pub advisor_model: Option<String>,
     /// Maps to: CC `services/api/claude.ts:677`
     /// `getToolPermissionContext: () => Promise<ToolPermissionContext>` — a
@@ -1683,7 +1681,6 @@ impl Options {
             query_tracking: None,
             agent_id: None,
             output_format: None,
-            fast_mode: None,
             advisor_model: None,
             tool_permission_context: None,
             task_budget: None,
@@ -3174,8 +3171,9 @@ pub async fn open_model_stream_with_context(
 ) -> anyhow::Result<tokio::sync::mpsc::Receiver<QueryModelStreamItem>> {
     let model = get_main_loop_model();
     if model.trim().is_empty() {
-        let reason = match crate::utils::model::profile::resolve_main_profile(
+        let reason = match crate::utils::model::profile::resolve_request_profile(
             &crate::utils::settings::get_initial_settings(),
+            crate::bootstrap::state::get_session_profile().as_deref(),
         ) {
             Err(reason) => reason.to_string(),
             Ok(_) => "No main model is selected for this request.".to_string(),
@@ -3953,7 +3951,6 @@ async fn open_sdk_message_stream_with_retry(
             model: options_for_retry.model.clone(),
             fallback_model: options_for_retry.fallback_model.clone(),
             thinking_config: thinking_config_for_retry,
-            fast_mode: options_for_retry.fast_mode,
             // Maps to CC `withRetry({ signal })` — same AbortSignal as fetch.
             abort_rx: options_for_retry
                 .abort_signal
@@ -4954,7 +4951,6 @@ async fn execute_non_streaming_request_with_initial_consecutive_529_errors(
             model: model.to_string(),
             fallback_model: fallback_model.map(str::to_string),
             thinking_config: thinking_config.clone(),
-            fast_mode: None,
             abort_rx,
             query_source: Some(retry_query_source_from_api_source(&source_for_retry)),
             initial_consecutive_529_errors,
@@ -8948,7 +8944,6 @@ mod tests {
             thinking_config: ThinkingConfig::Enabled {
                 budget_tokens: Some(5000),
             },
-            fast_mode: None,
             max_tokens_override: Some(3000),
         };
 
@@ -9050,7 +9045,6 @@ mod tests {
         let retry_context = crate::services::api::with_retry::RetryContext {
             model: "fallback-model".to_string(),
             thinking_config: ThinkingConfig::Disabled,
-            fast_mode: None,
             max_tokens_override: Some(4096),
         };
 

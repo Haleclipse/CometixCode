@@ -85,8 +85,7 @@ pub(super) mod tests {
 
             crate::utils::settings::settings_cache::reset_settings_cache();
             crate::utils::config::set_test_global_config(Some(Default::default()));
-            crate::bootstrap::state::set_main_loop_model_override(None);
-            crate::bootstrap::state::set_initial_main_loop_model(None);
+            crate::bootstrap::state::set_session_profile(None);
 
             Self {
                 root,

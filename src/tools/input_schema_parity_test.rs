@@ -307,7 +307,7 @@ fn strip_nyan_extensions(tool_dir: &str, mut schema: Value) -> Value {
         schema["required"] = serde_json::json!(["url", "prompt"]);
     }
     // @nyan: Agent's `model` is a free `ref[:effort]` string (profile name,
-    // `@light` / `@heavy` / `@main`, `inherit`, or a temporary `provider/model`)
+    // `@light` / `@heavy` / `@main` or `inherit`)
     // instead of CC's sonnet/opus/haiku enum (provider-redesign §5.1). The
     // oracle's schema is restored before the diff.
     if tool_dir == "AgentTool"

@@ -105,8 +105,8 @@ pub struct ResumeLoadResult {
     pub pr_url: Option<String>,
     pub pr_repository: Option<String>,
     pub full_path: Option<String>,
-    /// Last session-scoped model/effort events, when present in the transcript.
-    pub session_model: Option<Option<String>>,
+    /// Last session-scoped profile/effort events, when present in the transcript.
+    pub session_profile: Option<Option<String>>,
     pub session_effort: Option<Option<crate::utils::effort::Effort>>,
     /// Rust typed restore-store payloads derived at the same load boundary.
     pub skill_restore: crate::utils::conversation::SkillRestoreState,
@@ -156,7 +156,7 @@ impl TryFrom<&crate::commands::resume::ResumeTarget> for ResumeLoadResult {
             pr_url: metadata.pr_url.clone(),
             pr_repository: metadata.pr_repository.clone(),
             full_path: metadata.full_path.clone(),
-            session_model: None,
+            session_profile: None,
             session_effort: None,
             skill_restore: metadata.skill_restore.clone(),
             read_file_state: metadata.read_file_state.clone(),
@@ -180,8 +180,11 @@ pub struct ProcessedResume {
     pub restored_agent_def: Option<Arc<crate::tools::agent_tool::load_agents_dir::AgentDefinition>>,
     pub agent_definitions: Arc<crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult>,
     pub resume_restore_stores: Arc<ResumeRestoreStores>,
-    pub session_model: Option<Option<String>>,
+    pub session_profile: Option<Option<String>>,
     pub session_effort: Option<Option<crate::utils::effort::Effort>>,
+    /// The recorded profile no longer exists; the session falls back to
+    /// `selection.main`.
+    pub missing_profile: Option<String>,
     restored_agent_type: Option<String>,
     restored_file_history: Option<Arc<crate::utils::file_history::FileHistoryState>>,
 }
@@ -197,35 +200,64 @@ impl ProcessedResume {
             .map(|agent| agent.agent_type.clone());
         state.standalone_agent_context =
             self.resume_restore_stores.standalone_agent_context.clone();
-        if let Some(model) = self.session_model.as_ref() {
-            state.main_loop_model_for_session = model.clone();
-        }
-        if let Some(effort) = self.session_effort.as_ref() {
-            state.effort_value = effort.clone();
+        if let Some(notice) = self.missing_profile_notice() {
+            // The configured main runs at its own effort (design §5.2). The
+            // notice waits in the startup queue; a live REPL promotes it.
+            state.main_loop_profile = None;
+            state.effort_value = None;
+            crate::bootstrap::state::set_session_profile(None);
+            Arc::make_mut(&mut state.notifications).queue.push(notice);
+        } else {
+            if let Some(profile) = self.session_profile.as_ref() {
+                state.main_loop_profile = profile.clone();
+                crate::bootstrap::state::set_session_profile(profile.clone());
+            }
+            if let Some(effort) = self.session_effort.as_ref() {
+                state.effort_value = *effort;
+            }
         }
         if let Some(file_history) = self.restored_file_history.as_ref() {
             state.file_history = file_history.clone();
         }
 
-        // Maps to `restoreAgentFromSession`: a resumed agent supplies its model
-        // when the bootstrap override is falsey (undefined, null, or the empty
-        // string). A model inherited from env/settings may already be present in AppState, but
-        // unlike an explicit CLI/session override it must not block the agent.
+        // Maps to `restoreAgentFromSession`: a resumed agent supplies its
+        // model when nothing else chose the session's profile.
         if self.restored_agent_type.is_some()
-            && match crate::bootstrap::state::get_main_loop_model_override() {
-                None | Some(None) => true,
-                Some(Some(model)) => model.is_empty(),
-            }
-            && let Some(model) = self
+            && self.session_profile.is_none()
+            && crate::bootstrap::state::get_session_profile().is_none()
+            && let Some(crate::utils::model::profile::ModelChoice::Profile(profile)) = self
                 .restored_agent_def
                 .as_ref()
                 .and_then(|agent| agent.model.as_deref())
-                .filter(|model| *model != "inherit")
+                .and_then(|spec| {
+                    crate::utils::model::profile::resolve_model_ref(
+                        crate::utils::settings::get_initial_settings()
+                            .nyan
+                            .as_deref(),
+                        spec,
+                    )
+                    .ok()
+                })
+                .map(|(choice, _)| choice)
         {
-            let resolved = crate::utils::model::model::parse_user_specified_model(model);
-            crate::bootstrap::state::set_main_loop_model_override(Some(Some(resolved)));
-            state.main_loop_model = Some(model.to_string());
+            crate::bootstrap::state::set_session_profile(Some(profile.clone()));
+            state.main_loop_profile = Some(profile);
         }
+    }
+
+    /// The visible notice for a recorded profile that no longer exists.
+    pub fn missing_profile_notice(&self) -> Option<crate::context::notifications::Notification> {
+        self.missing_profile.as_ref().map(|profile| {
+            crate::context::notifications::Notification::text(
+                "resume-missing-profile",
+                format!(
+                    "Model profile \"{profile}\" no longer exists; using the configured main profile"
+                ),
+                crate::context::notifications::NotificationPriority::High,
+            )
+            .with_color(crate::context::notifications::NotificationColor::Warning)
+            .with_timeout_ms(8000)
+        })
     }
 }
 
@@ -401,8 +433,8 @@ pub fn process_resumed_conversation(
     {
         let loaded =
             crate::utils::session_storage::load_session_structured_from_path(Path::new(path));
-        if let Some(model) = loaded.session_models.get(session_id) {
-            result.session_model = Some(model.clone());
+        if let Some(profile) = loaded.session_profiles.get(session_id) {
+            result.session_profile = Some(profile.clone());
         }
         if let Some(effort) = loaded.session_efforts.get(session_id) {
             result.session_effort = Some(effort.clone());
@@ -510,7 +542,19 @@ impl ProcessedResume {
             restored_agent_def,
             agent_definitions,
             resume_restore_stores,
-            session_model: result.session_model,
+            missing_profile: result
+                .session_profile
+                .as_ref()
+                .and_then(Option::as_deref)
+                .filter(|profile| {
+                    crate::utils::settings::get_initial_settings()
+                        .nyan
+                        .as_deref()
+                        .and_then(|nyan| crate::utils::model::profile::model_profile(nyan, profile))
+                        .is_none()
+                })
+                .map(str::to_string),
+            session_profile: result.session_profile,
             session_effort: result.session_effort,
             restored_agent_type,
             restored_file_history,
@@ -1021,17 +1065,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    fn install_resume_profiles() {
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(json!({
+                "nyan": {
+                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                    "models": {
+                        "main": {"provider": "p", "model": "claude-sonnet-4-6", "effort": "high",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                        "deep": {"provider": "p", "model": "claude-opus-4-6",
+                            "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                    },
+                    "selection": {"main": "main"}
+                }
+            }))
+            .unwrap(),
+        );
+    }
+
     #[test]
-    fn a_resumed_session_gets_its_last_model_and_effort_back() {
+    fn a_resumed_session_gets_its_last_profile_and_effort_back() {
         use crate::utils::effort::Effort;
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        install_resume_profiles();
         let previous_session_id = crate::bootstrap::state::get_session_id();
         let previous_project_dir = crate::bootstrap::state::get_session_project_dir();
         let root =
             std::env::temp_dir().join(format!("nyan-resume-model-effort-{}", uuid::Uuid::new_v4()));
         let project_dir = root.join("project-dir");
         let session_id = "resume-model-effort-session";
-        let path = project_dir.join(format!("{session_id}.jsonl"));
         std::fs::create_dir_all(&project_dir).unwrap();
         let line = |value: serde_json::Value| format!("{value}\n");
         let user = json!({
@@ -1039,33 +1101,26 @@ mod tests {
             "timestamp": "2026-07-12T00:00:00Z", "sessionId": session_id,
             "message": {"role": "user", "content": "hi"}
         });
-        // Events as `save_session_model` / `save_session_effort` write them: the
-        // later entry of each kind wins, and a model of `null` is a cleared choice.
-        let transcript = [
-            line(user.clone()),
-            line(json!({"type": "model-change", "sessionId": session_id, "model": "opus"})),
-            line(json!({"type": "effort-change", "sessionId": session_id, "effort": "max"})),
-            line(json!({"type": "model-change", "sessionId": session_id, "model": "haiku"})),
-            line(json!({"type": "effort-change", "sessionId": session_id, "effort": "off"})),
-        ]
-        .concat();
-        std::fs::write(&path, transcript).unwrap();
-        let target = |path: &std::path::Path, entries: Vec<serde_json::Value>| {
-            crate::commands::resume::ResumeTarget {
-                session_id: session_id.to_string(),
-                project_path: None,
-                entries,
-                turn_interruption_state: crate::utils::conversation::TurnInterruptionState::None,
-                metadata: crate::commands::resume::ResumeMetadata {
-                    session_id: Some(session_id.to_string()),
-                    full_path: Some(path.display().to_string()),
-                    ..crate::commands::resume::ResumeMetadata::default()
-                },
-                entrypoint: Some(crate::types::command::ResumeEntrypoint::CliFlag),
-            }
+        let target = |path: &std::path::Path| crate::commands::resume::ResumeTarget {
+            session_id: session_id.to_string(),
+            project_path: None,
+            entries: vec![user.clone()],
+            turn_interruption_state: crate::utils::conversation::TurnInterruptionState::None,
+            metadata: crate::commands::resume::ResumeMetadata {
+                session_id: Some(session_id.to_string()),
+                full_path: Some(path.display().to_string()),
+                ..crate::commands::resume::ResumeMetadata::default()
+            },
+            entrypoint: Some(crate::types::command::ResumeEntrypoint::CliFlag),
         };
-        let resume = |target: &crate::commands::resume::ResumeTarget| {
-            let loaded = ResumeLoadResult::try_from(target).unwrap();
+        let resume = |name: &str, events: &[serde_json::Value]| {
+            let path = project_dir.join(format!("{name}.jsonl"));
+            let transcript = std::iter::once(line(user.clone()))
+                .chain(events.iter().cloned().map(line))
+                .collect::<String>();
+            std::fs::write(&path, transcript).unwrap();
+            crate::bootstrap::state::set_session_profile(None);
+            let loaded = ResumeLoadResult::try_from(&target(&path)).unwrap();
             let processed = process_resumed_conversation(
                 loaded,
                 None,
@@ -1074,41 +1129,84 @@ mod tests {
                 ),
             )
             .unwrap();
-            // The configured model must not be what a resume restores.
             let mut state = crate::state::app_state_store::AppState {
-                main_loop_model: Some("configured".to_string()),
-                effort_value: Some(Effort::High),
+                effort_value: Some(Effort::Medium),
                 ..Default::default()
             };
             processed.apply_to_app_state(&mut state);
-            state
+            (state, processed)
         };
 
-        let state = resume(&target(&path, vec![user.clone()]));
-        assert_eq!(state.main_loop_model_for_session.as_deref(), Some("haiku"));
+        // Events as `save_session_profile` / `save_session_effort` write them.
+        let (state, processed) = resume(
+            "switched",
+            &[
+                json!({"type": "model-change", "sessionId": session_id, "profile": "main", "effort": "max"}),
+                json!({"type": "model-change", "sessionId": session_id, "profile": "deep", "effort": null}),
+                json!({"type": "effort-change", "sessionId": session_id, "effort": "off"}),
+            ],
+        );
+        assert_eq!(state.main_loop_profile.as_deref(), Some("deep"));
+        assert_eq!(
+            crate::bootstrap::state::get_session_profile().as_deref(),
+            Some("deep")
+        );
         assert_eq!(state.effort_value, Some(Effort::Off));
-        // The configured selection stays as the configured one.
-        assert_eq!(state.main_loop_model.as_deref(), Some("configured"));
+        assert!(processed.missing_profile.is_none());
+        assert!(state.notifications.queue.is_empty());
+
+        // A switch back to the default records `null`: resume follows
+        // `selection.main` instead of pinning its name.
+        let (state, _) = resume(
+            "back_to_default",
+            &[
+                json!({"type": "model-change", "sessionId": session_id, "profile": "deep", "effort": "max"}),
+                json!({"type": "model-change", "sessionId": session_id, "profile": null, "effort": null}),
+            ],
+        );
+        assert_eq!(state.main_loop_profile, None);
+        assert_eq!(crate::bootstrap::state::get_session_profile(), None);
+        assert_eq!(state.effort_value, None);
 
         // A session that never recorded either leaves the state as launch set it.
-        let quiet_path = project_dir.join("quiet.jsonl");
-        std::fs::write(&quiet_path, line(user.clone())).unwrap();
-        let state = resume(&target(&quiet_path, vec![user]));
-        assert_eq!(state.main_loop_model_for_session, None);
-        assert_eq!(state.effort_value, Some(Effort::High));
+        let (state, _) = resume("quiet", &[]);
+        assert_eq!(state.main_loop_profile, None);
+        assert_eq!(state.effort_value, Some(Effort::Medium));
+
+        // A profile that no longer exists: the configured main at its own
+        // effort, with a visible notice.
+        let (state, processed) = resume(
+            "gone",
+            &[
+                json!({"type": "model-change", "sessionId": session_id, "profile": "removed", "effort": "max"}),
+            ],
+        );
+        assert_eq!(processed.missing_profile.as_deref(), Some("removed"));
+        assert_eq!(state.main_loop_profile, None);
+        assert_eq!(crate::bootstrap::state::get_session_profile(), None);
+        assert_eq!(state.effort_value, None);
+        assert_eq!(state.notifications.queue.len(), 1);
+        assert!(
+            state.notifications.queue[0]
+                .text
+                .contains("\"removed\" no longer exists"),
+            "{:?}",
+            state.notifications.queue[0]
+        );
 
         crate::utils::session_storage::clear_session_metadata();
         crate::bootstrap::state::switch_session(previous_session_id, previous_project_dir);
+        crate::utils::settings::settings_cache::reset_settings_cache();
         let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
     fn processed_resume_restores_agent_object_and_model_before_mount() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let previous_override = crate::bootstrap::state::get_main_loop_model_override();
-        crate::bootstrap::state::set_main_loop_model_override(None);
+        install_resume_profiles();
+        crate::bootstrap::state::set_session_profile(None);
 
-        let resume_agent = test_agent("resume-agent", Some("sonnet"));
+        let resume_agent = test_agent("resume-agent", Some("deep"));
         let definitions = Arc::new(
             crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult {
                 active_agents: vec![resume_agent.clone()],
@@ -1137,12 +1235,7 @@ mod tests {
         let loaded = ResumeLoadResult::try_from(&target).expect("resume should load");
         let processed =
             process_resumed_conversation(loaded, None, definitions).expect("resume should process");
-        let mut state = crate::state::app_state_store::AppState {
-            // Saved/env state does not have bootstrap-override identity and
-            // therefore must not suppress the resumed agent model.
-            main_loop_model: Some("saved-model".to_string()),
-            ..crate::state::app_state_store::AppState::default()
-        };
+        let mut state = crate::state::app_state_store::AppState::default();
         processed.apply_to_app_state(&mut state);
 
         assert_eq!(
@@ -1153,12 +1246,10 @@ mod tests {
             Some("resume-agent")
         );
         assert_eq!(state.agent.as_deref(), Some("resume-agent"));
-        assert_eq!(state.main_loop_model.as_deref(), Some("sonnet"));
+        assert_eq!(state.main_loop_profile.as_deref(), Some("deep"));
         assert_eq!(
-            crate::bootstrap::state::get_main_loop_model_override(),
-            Some(Some(
-                crate::utils::model::model::parse_user_specified_model("sonnet")
-            ))
+            crate::bootstrap::state::get_session_profile().as_deref(),
+            Some("deep")
         );
         assert_eq!(
             state
@@ -1168,32 +1259,16 @@ mod tests {
             Some(("Restored Name", None))
         );
 
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(String::new())));
-        let mut empty_override_state = crate::state::app_state_store::AppState {
-            main_loop_model: Some("saved-model".to_string()),
-            ..crate::state::app_state_store::AppState::default()
-        };
-        processed.apply_to_app_state(&mut empty_override_state);
-        assert_eq!(
-            empty_override_state.main_loop_model.as_deref(),
-            Some("sonnet"),
-            "CC's falsey empty-string override must not suppress resume metadata"
-        );
-
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "explicit-cli-model".to_string(),
-        )));
+        // An explicit launch profile keeps precedence over the agent's model.
+        crate::bootstrap::state::set_session_profile(Some("main".to_string()));
         let mut explicit_state = crate::state::app_state_store::AppState {
-            main_loop_model: Some("explicit-cli-model".to_string()),
+            main_loop_profile: Some("main".to_string()),
             ..crate::state::app_state_store::AppState::default()
         };
         processed.apply_to_app_state(&mut explicit_state);
-        assert_eq!(
-            explicit_state.main_loop_model.as_deref(),
-            Some("explicit-cli-model"),
-            "an explicit bootstrap model must retain precedence over resume metadata"
-        );
+        assert_eq!(explicit_state.main_loop_profile.as_deref(), Some("main"));
 
-        crate::bootstrap::state::set_main_loop_model_override(previous_override);
+        crate::bootstrap::state::set_session_profile(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 }

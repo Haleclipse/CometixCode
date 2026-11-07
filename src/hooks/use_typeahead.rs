@@ -834,8 +834,6 @@ pub enum KeyDownEffect {
     /// `markAccepted(); acceptSuggestionText(suggestionText)` for the AppState
     /// prompt suggestion (Right arrow, or Tab while no autocomplete is active).
     AcceptPromptSuggestion,
-    /// `addNotification({ key: 'thinking-toggle-hint', … })`.
-    AddNotification(crate::context::notifications::Notification),
     /// Ctrl-N / Ctrl-P → `handleAutocompleteNext` / `handleAutocompletePrevious`.
     SetSelectedSuggestion(i32),
     /// Return → `e.preventDefault(); handleEnter()`. The payload is
@@ -853,7 +851,6 @@ pub fn handle_key_down(
     modifiers: KeyModifiers,
     scope: &TypeaheadHandlerScope<'_>,
     prompt_suggestion_can_accept: bool,
-    thinking_toggle_shortcut: &str,
     has_pending_chord: bool,
 ) -> Option<KeyDownEffect> {
     // Handle right arrow to accept prompt suggestion ghost text
@@ -872,22 +869,8 @@ pub fn handle_key_down(
         if prompt_suggestion_can_accept {
             return Some(KeyDownEffect::AcceptPromptSuggestion);
         }
-        // Remind user about thinking toggle shortcut if empty input
-        if scope.input.trim().is_empty() {
-            use crate::context::notifications::{
-                Notification, NotificationPriority, NotificationSegment,
-            };
-            let text = format!("Use {thinking_toggle_shortcut} to toggle thinking");
-            return Some(KeyDownEffect::AddNotification(
-                Notification::text(
-                    "thinking-toggle-hint",
-                    text.clone(),
-                    NotificationPriority::Immediate,
-                )
-                .with_timeout_ms(3_000)
-                .with_segments(vec![NotificationSegment::text(text).with_dim(true)]),
-            ));
-        }
+        // @nyan: CC reminds about the thinking toggle here; nyan has none
+        // (effort `off` turns thinking off).
         return None;
     }
 
@@ -2367,7 +2350,6 @@ mod tests {
                 KeyModifiers::CONTROL,
                 &scope,
                 false,
-                "alt+t",
                 false
             ),
             Some(KeyDownEffect::SetSelectedSuggestion(1))
@@ -2378,7 +2360,6 @@ mod tests {
                 KeyModifiers::CONTROL,
                 &scope,
                 false,
-                "alt+t",
                 false
             ),
             Some(KeyDownEffect::SetSelectedSuggestion(2))
@@ -2390,22 +2371,13 @@ mod tests {
                 KeyModifiers::CONTROL,
                 &scope,
                 false,
-                "alt+t",
                 true
             )
             .is_none()
         );
         // Plain `n` is text input.
         assert!(
-            handle_key_down(
-                KeyCode::Char('n'),
-                KeyModifiers::NONE,
-                &scope,
-                false,
-                "alt+t",
-                false
-            )
-            .is_none()
+            handle_key_down(KeyCode::Char('n'), KeyModifiers::NONE, &scope, false, false).is_none()
         );
         // Without rows the navigation section is skipped entirely.
         let empty = scope_empty("/", 1);
@@ -2415,7 +2387,6 @@ mod tests {
                 KeyModifiers::CONTROL,
                 &empty,
                 false,
-                "alt+t",
                 false
             )
             .is_none()
@@ -2438,86 +2409,30 @@ mod tests {
 
     #[test]
     fn key_down_tab_fallbacks_match_source_notification_and_prompt_suggestion() {
-        // Empty input → thinking toggle hint.
+        // Empty input: no hint (CC's thinking-toggle reminder is gone).
         let empty = scope_empty("", 0);
-        let Some(KeyDownEffect::AddNotification(notification)) = handle_key_down(
-            KeyCode::Tab,
-            KeyModifiers::NONE,
-            &empty,
-            false,
-            "alt+t",
-            false,
-        ) else {
-            panic!("expected the thinking toggle hint");
-        };
-        assert_eq!(notification.key, "thinking-toggle-hint");
-        assert_eq!(notification.text, "Use alt+t to toggle thinking");
-        assert_eq!(notification.timeout_ms(), 3_000);
-        assert_eq!(notification.segments.len(), 1);
-        assert!(notification.segments[0].dim);
+        assert!(handle_key_down(KeyCode::Tab, KeyModifiers::NONE, &empty, false, false).is_none());
 
-        // Prompt suggestion wins over the hint; Right arrow accepts it too.
+        // A prompt suggestion is accepted; Right arrow accepts it too.
         assert!(matches!(
-            handle_key_down(
-                KeyCode::Tab,
-                KeyModifiers::NONE,
-                &empty,
-                true,
-                "alt+t",
-                false
-            ),
+            handle_key_down(KeyCode::Tab, KeyModifiers::NONE, &empty, true, false),
             Some(KeyDownEffect::AcceptPromptSuggestion)
         ));
         assert!(matches!(
-            handle_key_down(
-                KeyCode::Right,
-                KeyModifiers::NONE,
-                &empty,
-                true,
-                "alt+t",
-                false
-            ),
+            handle_key_down(KeyCode::Right, KeyModifiers::NONE, &empty, true, false),
             Some(KeyDownEffect::AcceptPromptSuggestion)
         ));
 
         // Shift+Tab is the mode cycle; non-empty input without rows is a no-op.
-        assert!(
-            handle_key_down(
-                KeyCode::Tab,
-                KeyModifiers::SHIFT,
-                &empty,
-                false,
-                "alt+t",
-                false
-            )
-            .is_none()
-        );
+        assert!(handle_key_down(KeyCode::Tab, KeyModifiers::SHIFT, &empty, false, false).is_none());
         let typed = scope_empty("inspect", 7);
-        assert!(
-            handle_key_down(
-                KeyCode::Tab,
-                KeyModifiers::NONE,
-                &typed,
-                false,
-                "alt+t",
-                false
-            )
-            .is_none()
-        );
+        assert!(handle_key_down(KeyCode::Tab, KeyModifiers::NONE, &typed, false, false).is_none());
 
         // With rows or ghost text Tab belongs to `autocomplete:accept`.
         let rows = [command_item("help")];
         let with_rows = scope("/he", 3, SuggestionKind::Command, &rows, 0, None, &[]);
         assert!(
-            handle_key_down(
-                KeyCode::Tab,
-                KeyModifiers::NONE,
-                &with_rows,
-                false,
-                "alt+t",
-                false
-            )
-            .is_none()
+            handle_key_down(KeyCode::Tab, KeyModifiers::NONE, &with_rows, false, false).is_none()
         );
     }
 

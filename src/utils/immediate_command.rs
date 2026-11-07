@@ -1,6 +1,6 @@
 //! Maps to: CC `utils/immediateCommand.ts`.
 //!
-//! Whether inference-config commands (`/model`, `/fast`, `/effort`) execute
+//! Whether inference-config commands (`/model`, `/effort`) execute
 //! immediately during a running query rather than waiting for the current turn
 //! to finish.
 

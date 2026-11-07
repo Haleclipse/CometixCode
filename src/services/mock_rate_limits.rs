@@ -34,8 +34,6 @@ pub enum MockScenario {
     OpusWarning,
     SonnetLimit,
     SonnetWarning,
-    FastModeLimit,
-    FastModeShortLimit,
     ExtraUsageRequired,
     Clear,
 }
@@ -72,8 +70,6 @@ struct MockState {
     headerless_429_message: Option<String>,
     subscription_type: Option<String>,
     billing_access_override: Option<bool>,
-    fast_mode_duration_ms: Option<i64>,
-    fast_mode_expires_at_ms: Option<i64>,
     exceeded_limits: Vec<ExceededLimit>,
 }
 
@@ -87,10 +83,6 @@ fn internal_mock_capability() -> bool {
 
 fn now_seconds() -> i64 {
     Utc::now().timestamp()
-}
-
-fn now_millis() -> i64 {
-    Utc::now().timestamp_millis()
 }
 
 fn end_of_current_month_seconds() -> i64 {
@@ -306,14 +298,10 @@ pub fn set_mock_rate_limit_scenario(scenario: MockScenario) {
     };
     let subscription_type = state.subscription_type.take();
     let billing_access_override = state.billing_access_override;
-    let fast_mode_duration_ms = state.fast_mode_duration_ms;
-    let fast_mode_expires_at_ms = state.fast_mode_expires_at_ms;
     *state = MockState {
         enabled: true,
         subscription_type,
         billing_access_override,
-        fast_mode_duration_ms,
-        fast_mode_expires_at_ms,
         exceeded_limits: preserved_exceeded,
         ..MockState::default()
     };
@@ -453,17 +441,6 @@ pub fn set_mock_rate_limit_scenario(scenario: MockScenario) {
                 .into(),
             );
         }
-        MockScenario::FastModeLimit | MockScenario::FastModeShortLimit => {
-            state.headers.insert(
-                "anthropic-ratelimit-unified-status".into(),
-                "rejected".into(),
-            );
-            state.fast_mode_duration_ms = Some(if scenario == MockScenario::FastModeLimit {
-                10 * 60 * 1000
-            } else {
-                10 * 1000
-            });
-        }
         MockScenario::ExtraUsageRequired => {
             state.headerless_429_message =
                 Some("Extra usage is required for long context requests.".to_string());
@@ -566,40 +543,6 @@ pub fn mock_billing_access_override() -> Option<bool> {
         .billing_access_override
 }
 
-pub fn is_mock_fast_mode_rate_limit_scenario() -> bool {
-    internal_mock_capability()
-        && MOCK_STATE
-            .lock()
-            .expect("mock limits lock poisoned")
-            .fast_mode_duration_ms
-            .is_some()
-}
-
-pub fn check_mock_fast_mode_rate_limit(is_fast_mode_active: bool) -> Option<MockHeaders> {
-    if !internal_mock_capability() || !is_fast_mode_active {
-        return None;
-    }
-    let mut state = MOCK_STATE.lock().expect("mock limits lock poisoned");
-    let duration = state.fast_mode_duration_ms?;
-    let now = now_millis();
-    if state
-        .fast_mode_expires_at_ms
-        .is_some_and(|expiry| now >= expiry)
-    {
-        *state = MockState::default();
-        return None;
-    }
-    let expiry = *state
-        .fast_mode_expires_at_ms
-        .get_or_insert_with(|| now.saturating_add(duration));
-    let mut headers = state.headers.clone();
-    headers.insert(
-        "retry-after".to_string(),
-        ((expiry - now).max(1) as f64 / 1000.0).ceil().to_string(),
-    );
-    Some(headers)
-}
-
 /// Maps to CC `getCurrentMockScenario()`.
 pub fn get_current_mock_scenario() -> Option<MockScenario> {
     if !internal_mock_capability() {
@@ -659,8 +602,6 @@ pub fn get_scenario_description(scenario: MockScenario) -> &'static str {
         MockScenario::OpusWarning => "Approaching Opus limit",
         MockScenario::SonnetLimit => "Sonnet limit reached",
         MockScenario::SonnetWarning => "Approaching Sonnet limit",
-        MockScenario::FastModeLimit => "Fast mode rate limit",
-        MockScenario::FastModeShortLimit => "Fast mode rate limit (short)",
         MockScenario::ExtraUsageRequired => "Headerless 429: Extra usage required for 1M context",
         MockScenario::Clear => "Clear mock headers (use real limits)",
     }
@@ -749,19 +690,6 @@ mod tests {
                 .map(String::as_str),
             Some("seven_day_opus")
         );
-        reset_for_test();
-    }
-
-    #[cfg(feature = "anthropic_internal")]
-    #[test]
-    fn fast_mode_mock_starts_countdown_on_first_active_request() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        reset_for_test();
-        set_mock_rate_limit_scenario(MockScenario::FastModeShortLimit);
-        assert!(check_mock_fast_mode_rate_limit(false).is_none());
-        let headers = check_mock_fast_mode_rate_limit(true).expect("active fast mock");
-        let retry_after = headers["retry-after"].parse::<u64>().unwrap();
-        assert!((1..=10).contains(&retry_after));
         reset_for_test();
     }
 }

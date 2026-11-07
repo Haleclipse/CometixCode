@@ -85,8 +85,6 @@ pub fn default_binding_blocks() -> Vec<KeybindingBlock> {
         ("ctrl+x ctrl+k", "chat:killAgents"),
         (mode_cycle_key, "chat:cycleMode"),
         ("meta+p", "chat:modelPicker"),
-        ("meta+o", "chat:fastMode"),
-        ("meta+t", "chat:thinkingToggle"),
         ("enter", "chat:submit"),
         ("up", "history:previous"),
         ("down", "history:next"),
@@ -314,6 +312,8 @@ pub fn default_binding_blocks() -> Vec<KeybindingBlock> {
         &[
             ("left", "modelPicker:decreaseEffort"),
             ("right", "modelPicker:increaseEffort"),
+            // @nyan: make the focused profile the configured default.
+            ("ctrl+s", "modelPicker:setDefault"),
         ],
         &mut bindings,
     );

@@ -162,9 +162,9 @@ pub fn get_effort_description(effort: Effort) -> &'static str {
 /// Split a model spec in `ref[:effort]` format.
 ///
 /// Per design §1:
-/// - ref = profile name | @light | @heavy | @main | inherit | temporary provider/model.
+/// - ref = profile name | @light | @heavy | @main | inherit.
 /// - Only split on the last `:`, and only if the suffix is a valid effort level
-///   (compatible with model IDs like `qwen3:32b`).
+///   (so profile names like `qwen3:32b` survive).
 /// - If only `:effort` is given (e.g. `:high`), it is equivalent to `inherit:high`.
 pub fn parse_model_ref_and_effort(spec: &str) -> (&str, Option<Effort>) {
     let trimmed = spec.trim();

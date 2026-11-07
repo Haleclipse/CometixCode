@@ -108,6 +108,10 @@ pub fn get_context_window_for_model_for_audience(
         return tokens;
     }
 
+    if let Some(tokens) = profile_context_window(model) {
+        return tokens;
+    }
+
     if has_1m_context(model) {
         return 1_000_000;
     }
@@ -121,6 +125,28 @@ pub fn get_context_window_for_model_for_audience(
     }
 
     MODEL_CONTEXT_WINDOW_DEFAULT
+}
+
+/// @nyan: a configured profile knows its model's context window (capabilities
+/// override, else the catalog). Prefer the session profile, then any profile
+/// that runs `model`; `None` falls back to CC's guess from the model string.
+fn profile_context_window(model: &str) -> Option<i64> {
+    use crate::utils::model::profile::{resolve_profile, resolve_request_profile};
+
+    let settings = crate::utils::settings::get_initial_settings();
+    let session = crate::bootstrap::state::get_session_profile();
+    if let Ok(profile) = resolve_request_profile(&settings, session.as_deref())
+        && profile.model == model
+    {
+        return Some(i64::from(profile.context_window));
+    }
+    let nyan = settings.nyan.as_ref()?;
+    nyan.models
+        .as_ref()?
+        .keys()
+        .filter_map(|name| resolve_profile(nyan, name).ok())
+        .find(|profile| profile.model == model)
+        .map(|profile| i64::from(profile.context_window))
 }
 
 /// Maps to CC `utils/context.ts#getContextWindowForModel`.
@@ -167,6 +193,86 @@ mod tests {
                 upper_limit: MAX_OUTPUT_TOKENS_UPPER_LIMIT,
             }
         );
+    }
+
+    fn install_profiles(nyan: serde_json::Value) {
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({ "nyan": nyan })).unwrap(),
+        );
+    }
+
+    fn anthropic_profiles(models: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "providers": {
+                "anthropic": { "kind": "anthropic", "protocol": "anthropicMessages" }
+            },
+            "models": models,
+            "selection": { "main": "main" }
+        })
+    }
+
+    #[test]
+    fn context_window_comes_from_the_profile() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_env::remove("CLAUDE_CODE_MAX_CONTEXT_TOKENS");
+        crate::bootstrap::state::set_session_profile(None);
+
+        install_profiles(anthropic_profiles(serde_json::json!({
+            "main": { "provider": "anthropic", "model": "claude-sonnet-4-6" }
+        })));
+        assert_eq!(
+            get_context_window_for_model("claude-sonnet-4-6", &[]),
+            1_000_000
+        );
+
+        install_profiles(anthropic_profiles(serde_json::json!({
+            "main": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+                "capabilities": { "contextWindow": 300000 }
+            }
+        })));
+        assert_eq!(
+            get_context_window_for_model("claude-sonnet-4-6", &[]),
+            300_000
+        );
+
+        assert_eq!(
+            get_context_window_for_model("unknown-model", &[]),
+            MODEL_CONTEXT_WINDOW_DEFAULT
+        );
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
+
+    #[test]
+    fn context_window_prefers_the_session_profile_for_a_shared_model() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_env::remove("CLAUDE_CODE_MAX_CONTEXT_TOKENS");
+        install_profiles(anthropic_profiles(serde_json::json!({
+            "main": { "provider": "anthropic", "model": "claude-opus-4-6" },
+            "a-small": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+                "capabilities": { "contextWindow": 100000 }
+            },
+            "z-large": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-6",
+                "capabilities": { "contextWindow": 400000 }
+            }
+        })));
+
+        crate::bootstrap::state::set_session_profile(Some("z-large".to_string()));
+        assert_eq!(
+            get_context_window_for_model("claude-sonnet-4-6", &[]),
+            400_000
+        );
+        crate::bootstrap::state::set_session_profile(None);
+        assert_eq!(
+            get_context_window_for_model("claude-sonnet-4-6", &[]),
+            100_000
+        );
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]

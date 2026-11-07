@@ -3433,8 +3433,7 @@ mod tests {
     }
 
     /// CC `AgentTool/UI.tsx:485-512#renderToolUseTag` — the model is a separate
-    /// dim tag beside the row, shown only when it resolves to something other
-    /// than the main-loop model.
+    /// dim tag beside the row, shown only when it names another profile.
     #[test]
     fn assistant_tool_use_agent_model_renders_as_the_official_tag() {
         use crate::tools::agent_tool::ui::render_tool_use_tag;
@@ -3454,24 +3453,21 @@ mod tests {
             render_tool_use_tag(&with_model(serde_json::json!(""))),
             None
         );
-        // `agentModel !== mainModel` — the resolved main-loop model is never
-        // repeated on the row.
-        let main_model = crate::utils::model::model::get_main_loop_model();
+        // `inherit` is the session's own model and is never repeated.
         assert_eq!(
-            render_tool_use_tag(&with_model(serde_json::json!(main_model))),
+            render_tool_use_tag(&with_model(serde_json::json!("inherit"))),
             None
         );
-        // A different alias resolves through `parseUserSpecifiedModel` and
-        // displays through `renderModelName`.
-        let opus_tag = render_tool_use_tag(&with_model(serde_json::json!("opus")))
-            .expect("opus differs from the default main-loop model");
-        assert!(opus_tag.contains("Opus"), "tag={opus_tag}");
+        // Another ref shows as written.
+        let opus_tag = render_tool_use_tag(&with_model(serde_json::json!("deep")))
+            .expect("deep differs from the session profile");
+        assert_eq!(opus_tag, "deep");
 
         let tagged_text = element! {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
                 AssistantToolUseMessage(
                     tool_name: "Agent".to_string(),
-                    input: Some(with_model(serde_json::json!("opus"))),
+                    input: Some(with_model(serde_json::json!("deep"))),
                     status: Some(ToolUseStatus::Running),
                     can_animate: false,
                     verbose: false,

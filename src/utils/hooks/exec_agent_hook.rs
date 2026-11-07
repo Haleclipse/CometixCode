@@ -753,7 +753,7 @@ mod tests {
         for ok in [true, false] {
             let mut definition = hook();
             definition.timeout = Some(60.0);
-            definition.model = Some(crate::utils::model::model::get_default_opus_model());
+            definition.model = Some(crate::utils::model::model::get_main_loop_model());
             definition.prompt = format!(
                 "This is a deterministic hook integration test. Immediately call StructuredOutput exactly once with {{\"ok\":{ok},\"reason\":\"agent-hook-live-check\"}}. Do not inspect files or produce a prose answer."
             );

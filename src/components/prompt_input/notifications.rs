@@ -185,7 +185,9 @@ pub fn direct_footer_row_count_from_app(
         has_current_notification,
         state.verbose,
         state.is_brief_only,
-        state.main_loop_model.as_deref(),
+        Some(&crate::utils::model::model::profile_model(
+            state.main_loop_profile.as_deref(),
+        )),
         api_key_status,
         token_usage,
         api_key_helper_slow,
@@ -256,7 +258,6 @@ fn notification_color(color: Option<NotificationColor>, theme: &Theme) -> Color 
         Some(NotificationColor::Text) => theme.text,
         Some(NotificationColor::Ide) => theme.ide,
         Some(NotificationColor::Suggestion) => theme.suggestion,
-        Some(NotificationColor::FastMode) => theme.fast_mode,
         None => theme.inactive,
     }
 }
@@ -310,10 +311,7 @@ pub fn Notifications(
     let is_brief_only =
         crate::state::app_state::use_app_state(&mut hooks, |state| state.is_brief_only);
     let main_loop_model = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state
-            .main_loop_model
-            .clone()
-            .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+        crate::utils::model::model::profile_model(state.main_loop_profile.as_deref())
     });
     // Maps to: CC Notifications.tsx:75 — ideSelection arrives as a prop from
     // the REPL owner; only the connected status derives from AppState.mcp

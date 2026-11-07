@@ -175,7 +175,6 @@ pub async fn execute_non_streaming(
         model: request.model.clone(),
         fallback_model: None,
         thinking_config: crate::utils::thinking::ThinkingConfig::Disabled,
-        fast_mode: None,
         abort_rx: Some(cancel.watch_receiver()),
         query_source: None,
         initial_consecutive_529_errors: None,

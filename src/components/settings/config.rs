@@ -15,8 +15,7 @@ use crate::components::custom_select::{
 use crate::components::design_system::dialog::Dialog;
 use crate::components::design_system::theme_provider::use_theme;
 use crate::components::language_picker::LanguagePicker;
-use crate::components::model_picker as model;
-use crate::components::model_picker::{ModelPicker, ModelPickerSelection};
+use crate::components::model_picker::{ModelPicker, ModelPickerResult};
 use crate::components::output_style_picker as output_style;
 use crate::components::output_style_picker::OutputStylePicker;
 use crate::components::theme_picker::ThemePicker;
@@ -390,17 +389,6 @@ fn auto_updates_disabled_reason_label() -> &'static str {
     }
 }
 
-fn model_value_for_display(value: &str) -> String {
-    let trimmed = value.trim();
-    if trimmed.eq_ignore_ascii_case("Default (recommended)")
-        || trimmed.eq_ignore_ascii_case("default")
-    {
-        model::MODEL_NO_PREFERENCE.to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
 fn apply_settings_submenu_selection(
     items: &mut [SettingItem],
     menu: SettingsSubmenu,
@@ -431,7 +419,6 @@ fn config_summary_label(item: &SettingItem) -> &'static str {
         "prefersReducedMotion" => "reduce motion",
         "streamingTextDisplay" => "streaming text",
         "thinkingEnabled" => "thinking mode",
-        "fastMode" => "fast mode",
         "promptSuggestionEnabled" => "prompt suggestions",
         "fileCheckpointingEnabled" => "rewind code (checkpoints)",
         "verbose" => "verbose",
@@ -1094,33 +1081,23 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
             }
             .into_any()
         } else if active_submenu == SettingsSubmenu::Model {
-            let initial = items
-                .read()
-                .iter()
-                .find(|item| item.id == active_submenu.setting_id())
-                .map(|item| model_value_for_display(&item.display_value()));
             element! {
                 ContextProvider(value: Context::owned(theme)) {
                     View(flex_direction: FlexDirection::Column) {
                         ModelPicker(
-                            initial: initial,
-                            header_text: None,
-                            session_model_label: None,
                             is_standalone_command: false,
-                            skip_settings_write: true,
-                            show_fast_mode_notice: false,
-                            show_fast_mode_available_hint: false,
-                            fast_mode_is_on: false,
-                            exit_pending: false,
-                            exit_key_name: None,
-                            on_select: move |selection: ModelPickerSelection| {
-                                let mut all = items.read().clone();
-                                apply_settings_submenu_selection(
-                                    &mut all,
-                                    SettingsSubmenu::Model,
-                                    selection.display_label(),
-                                );
-                                items.set(all);
+                            on_select: move |result: ModelPickerResult| {
+                                // @nyan: the row shows the session's profile;
+                                // Ctrl+S changes the default, not the session.
+                                if let ModelPickerResult::Session { profile, .. } = &result {
+                                    let mut all = items.read().clone();
+                                    apply_settings_submenu_selection(
+                                        &mut all,
+                                        SettingsSubmenu::Model,
+                                        profile,
+                                    );
+                                    items.set(all);
+                                }
                                 submenu.set(None);
                                 tabs_hidden_request.set(Some(false));
                             },
@@ -2658,11 +2635,10 @@ mod tests {
 
     #[test]
     fn config_verbose_preview_updates_app_state_for_footer() {
-        // Six Downs from the top reached "Verbose output" before the
-        // Nyan-only "Streaming text" row was added above it.
+        // Six Downs from the top reach "Verbose output": the Nyan-only
+        // "Streaming text" row is above it and the Fast mode row is gone.
         let events = stream::iter([
             press(KeyCode::Enter),
-            press(KeyCode::Down),
             press(KeyCode::Down),
             press(KeyCode::Down),
             press(KeyCode::Down),
@@ -2840,17 +2816,6 @@ mod tests {
         assert!(
             language_text.contains("Korean"),
             "Language submit should update only the in-memory preview; canvas=\n{language_text}"
-        );
-
-        let mut model_events = text_events("model");
-        model_events.push(press(KeyCode::Enter));
-        model_events.push(press(KeyCode::Char(' ')));
-        model_events.push(press(KeyCode::Down));
-        model_events.push(press(KeyCode::Enter));
-        let model_text = drive_config_keys_text(model_events);
-        assert!(
-            model_text.contains("Model") && model_text.contains("Opus"),
-            "Model selection should update only the in-memory preview; canvas=\n{model_text}"
         );
 
         let reduce_motion_events = vec![
@@ -3279,87 +3244,88 @@ mod tests {
         );
     }
 
+    fn install_config_profiles() -> crate::utils::test_env::TestEnvGuard<'static> {
+        let lock = env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::bootstrap::state::set_session_profile(None);
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {
+                    "main": {"provider": "p", "model": "claude-sonnet-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                    "deep": {"provider": "p", "model": "claude-opus-4-6", "effort": "medium",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                },
+                "selection": {"main": "main"}
+            }}))
+            .unwrap(),
+        );
+        lock
+    }
+
     #[test]
-    fn config_model_picker_renders_official_modelpicker_shape() {
+    fn config_model_picker_lists_the_configured_profiles() {
+        let _lock = install_config_profiles();
         let mut events = text_events("model");
         events.push(press(KeyCode::Enter));
         events.push(press(KeyCode::Char(' ')));
         let text = render_text_with_events(events);
+        crate::utils::settings::settings_cache::reset_settings_cache();
 
         assert!(text.contains("Select model"), "canvas=\n{text}");
         assert!(
-            text.contains("Switch between Claude models."),
-            "ModelPicker header copy should match official; canvas=\n{text}"
+            text.contains("Switch between model profiles."),
+            "canvas=\n{text}"
         );
         assert!(
-            text.contains("specify with --model."),
-            "ModelPicker header should include official --model hint; canvas=\n{text}"
+            text.lines()
+                .any(|line| line.contains("main") && line.contains("claude-sonnet-4-6 · default")),
+            "rows show the profile and its model; canvas=\n{text}"
         );
-        assert!(
-            text.lines().any(|line| {
-                line.contains("Sonnet (1M context)")
-                    && line.contains("Sonnet 4.6 for long sessions")
-            }),
-            "ModelPicker should use official compact rows with inline descriptions; canvas=\n{text}"
-        );
-        assert!(
-            text.contains("◐ Medium effort (default)"),
-            "ModelPicker should render the effort indicator; canvas=\n{text}"
-        );
-        assert!(
-            text.contains("← → to adjust"),
-            "ModelPicker should render effort adjustment hint; canvas=\n{text}"
-        );
+        assert!(text.contains("← → to adjust"), "canvas=\n{text}");
         assert!(
             text.contains("Enter to confirm · Esc to cancel"),
-            "Config-owned ModelPicker footer should match official KeyboardShortcutHint copy; canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("Enter confirm · Esc cancel"),
-            "ModelPicker footer should not use the old non-official terse copy; canvas=\n{text}"
+            "Config-owned footer keeps the official KeyboardShortcutHint copy; canvas=\n{text}"
         );
     }
 
     #[test]
-    fn config_model_picker_effort_cycle_updates_visual_preview_only() {
+    fn config_model_picker_effort_follows_the_focused_profile() {
+        let _lock = install_config_profiles();
         let mut events = text_events("model");
         events.push(press(KeyCode::Enter));
         events.push(press(KeyCode::Char(' ')));
         events.push(press(KeyCode::Down));
         events.push(press(KeyCode::Right));
         let text = render_text_with_timed_events(events);
+        crate::utils::settings::settings_cache::reset_settings_cache();
 
         assert!(
             text.contains("● High effort"),
-            "Right should walk Medium → High without confirming the submenu; canvas=\n{text}"
-        );
-        assert!(
-            !crate::utils::session_storage::is_session_write_enabled(),
-            "ModelPicker effort previews must not imply session writes"
+            "deep starts at its own medium; Right walks to high; canvas=\n{text}"
         );
     }
 
     #[test]
-    fn config_model_selection_updates_preview_in_memory_only() {
+    fn config_model_selection_updates_the_row_to_the_session_profile() {
+        let _lock = install_config_profiles();
         let mut events = text_events("model");
         events.push(press(KeyCode::Enter));
         events.push(press(KeyCode::Char(' ')));
         events.push(press(KeyCode::Down));
         events.push(press(KeyCode::Enter));
         let text = render_text_with_events(events);
+        crate::bootstrap::state::set_session_profile(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
 
         assert!(
-            text.contains("Model") && text.contains("Opus"),
-            "selecting a ModelPicker option should update only the in-memory row value; canvas=\n{text}"
+            text.lines()
+                .any(|line| line.contains("Model") && line.contains("deep")),
+            "canvas=\n{text}"
         );
-        assert!(
-            !text.contains("Select model"),
-            "ModelPicker should close after selection; canvas=\n{text}"
-        );
-        assert!(
-            !crate::utils::session_storage::is_session_write_enabled(),
-            "ModelPicker selections must not imply session writes"
-        );
+        assert!(!text.contains("Select model"), "canvas=\n{text}");
     }
 
     #[test]

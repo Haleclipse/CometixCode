@@ -3,20 +3,21 @@
 //! Per design §1 and §2:
 //! - Subagent model resolution chain:
 //!   tool_call parameter -> agent md -> selection.subagents.<type> -> selection.subagent -> inherit (parent model).
-//! - Supported format: `ref[:effort]` where ref is profile name | @light | @heavy | @main | inherit | temporary provider/model.
+//! - Supported format: `ref[:effort]` where ref is profile name | @light | @heavy | @main | inherit.
+//!   Anything else is an error (no temporary provider/model, no CC aliases).
 //! - Default by agent type: general-purpose, plan = inherit; explore = @light; review = @heavy.
 //! - Effort follows the layer that decides the model:
 //!   - That layer has `:effort` -> use it.
 //!   - Otherwise `inherit` -> parent session effort.
 //!   - Otherwise profile/@tier -> that profile's configured effort.
-//!   - Otherwise temporary provider/model -> none.
 //!   No effort anywhere means the model default: callers keep their own thinking config.
 //! - `inherit` follows the whole parent selection: model, effort and profile.
 //! - CC legacy aliases (haiku/sonnet/opus, alias_matches_parent_tier, Bedrock prefixing) are removed.
 
 use crate::utils::effort::Effort;
-pub use crate::utils::effort::parse_model_ref_and_effort;
-use crate::utils::model::profile::{resolve_profile, resolve_selection_profile_name};
+use crate::utils::model::profile::{
+    ModelChoice, UnknownModelRef, model_profile, resolve_model_ref, resolve_profile,
+};
 use crate::utils::settings::nyan::NyanSettings;
 
 /// What a request made from a session inherits: the session's current model,
@@ -30,10 +31,11 @@ pub struct ParentSelection {
 }
 
 impl ParentSelection {
-    /// The configured selection, for callers with no session to inherit from.
+    /// The configured selection (`selection.main`), for callers with no
+    /// session to inherit from.
     pub fn configured() -> Self {
         Self {
-            model: crate::utils::model::model::get_main_loop_model(),
+            model: crate::utils::model::model::profile_model(None),
             effort: None,
             profile: None,
         }
@@ -69,57 +71,43 @@ pub fn default_utility_spec(role: &str) -> &'static str {
     }
 }
 
-/// Resolves a ref (`@light`, `@heavy`, `@main`, `inherit`, profile name, or a
-/// temporary `provider/model`) into the wire model ID, the effort of the layer
-/// that decided it, and the profile to route through.
+/// Resolves one `ref[:effort]` spec into the wire model ID, the effort of the
+/// layer that decided it, and the profile to route through.
 fn resolve_spec_to_agent_model(
-    r_ref: &str,
-    explicit_effort: Option<Effort>,
+    spec: &str,
     parent: &ParentSelection,
     nyan: Option<&NyanSettings>,
-) -> ResolvedAgentModel {
-    let inherited = || ResolvedAgentModel {
-        model: parent.model.clone(),
-        effort: explicit_effort.or(parent.effort),
-        profile: parent.profile.clone(),
-    };
-    if r_ref == "inherit" {
-        return inherited();
-    }
-
-    // A `@tier` never errors and never reaches the wire as a model id: when it
-    // names no usable profile (no `selection`, no `main`, an unknown tier), it
-    // follows the session like `inherit` (design §1).
-    let is_tier = r_ref.starts_with('@');
-    let selection = nyan.and_then(|n| n.selection.as_ref());
-    let profile_name = match (is_tier, selection) {
-        (false, _) => r_ref,
-        (true, None) => return inherited(),
-        (true, Some(selection)) => match resolve_selection_profile_name(selection, r_ref) {
-            Ok(name) => name,
-            Err(_) => return inherited(),
+) -> Result<ResolvedAgentModel, UnknownModelRef> {
+    let (choice, explicit_effort) = resolve_model_ref(nyan, spec)?;
+    let resolved = match choice {
+        ModelChoice::Inherit => ResolvedAgentModel {
+            model: parent.model.clone(),
+            effort: explicit_effort.or(parent.effort),
+            profile: parent.profile.clone(),
         },
+        ModelChoice::Profile(name) => {
+            // A profile that is defined but does not resolve keeps its name, so
+            // the request reports the profile's own configuration error.
+            let (model, effort) = match nyan.map(|nyan| resolve_profile(nyan, &name)) {
+                Some(Ok(profile)) => (profile.model, profile.effort),
+                _ => {
+                    let settings = nyan.and_then(|nyan| model_profile(nyan, &name));
+                    (
+                        settings
+                            .and_then(|profile| profile.model.clone())
+                            .unwrap_or_default(),
+                        settings.and_then(|profile| profile.effort),
+                    )
+                }
+            };
+            ResolvedAgentModel {
+                model,
+                effort: explicit_effort.or(effort),
+                profile: Some(name),
+            }
+        }
     };
-
-    if let Some(nyan) = nyan
-        && let Ok(resolved) = resolve_profile(nyan, profile_name)
-    {
-        return ResolvedAgentModel {
-            model: resolved.model,
-            effort: explicit_effort.or(resolved.effort),
-            profile: Some(profile_name.to_string()),
-        };
-    }
-    if is_tier {
-        return inherited();
-    }
-
-    // A temporary `provider/model` (or bare model id): the model default.
-    ResolvedAgentModel {
-        model: profile_name.to_string(),
-        effort: explicit_effort,
-        profile: None,
-    }
+    Ok(resolved)
 }
 
 /// Resolves a subagent's model and effort along the priority chain:
@@ -128,50 +116,31 @@ fn resolve_spec_to_agent_model(
 /// 3. `selection.subagents.<agent_type>`
 /// 4. `selection.subagent`
 /// 5. default for agent type (explore=@light, review=@heavy, general-purpose/plan=inherit)
+///
+/// The first layer that names a model decides; an unknown ref there is an
+/// error, never a fallback to a later layer.
 pub fn resolve_subagent_model_and_effort(
     tool_specified_model: Option<&str>,
     agent_md_model: Option<&str>,
     agent_type: &str,
     parent: &ParentSelection,
     nyan: Option<&NyanSettings>,
-) -> ResolvedAgentModel {
+) -> Result<ResolvedAgentModel, UnknownModelRef> {
     let selection = nyan.and_then(|n| n.selection.as_ref());
-
-    // 1. Tool-specified model parameter
-    if let Some(spec) = tool_specified_model.filter(|s| !s.trim().is_empty()) {
-        let (r_ref, effort) = parse_model_ref_and_effort(spec);
-        return resolve_spec_to_agent_model(r_ref, effort, parent, nyan);
-    }
-
-    // 2. Agent definition frontmatter model:
-    if let Some(spec) = agent_md_model.filter(|s| !s.trim().is_empty()) {
-        let (r_ref, effort) = parse_model_ref_and_effort(spec);
-        return resolve_spec_to_agent_model(r_ref, effort, parent, nyan);
-    }
-
-    // 3. selection.subagents.<agent_type>
-    if let Some(spec) = selection
-        .and_then(|s| s.subagents.as_ref())
-        .and_then(|map| map.get(agent_type))
-        .filter(|s| !s.trim().is_empty())
-    {
-        let (r_ref, effort) = parse_model_ref_and_effort(spec);
-        return resolve_spec_to_agent_model(r_ref, effort, parent, nyan);
-    }
-
-    // 4. selection.subagent
-    if let Some(spec) = selection
-        .and_then(|s| s.subagent.as_deref())
-        .filter(|s| !s.trim().is_empty())
-    {
-        let (r_ref, effort) = parse_model_ref_and_effort(spec);
-        return resolve_spec_to_agent_model(r_ref, effort, parent, nyan);
-    }
-
-    // 5. Default by agent type
-    let spec = default_subagent_spec(agent_type);
-    let (r_ref, effort) = parse_model_ref_and_effort(spec);
-    resolve_spec_to_agent_model(r_ref, effort, parent, nyan)
+    let spec = [
+        tool_specified_model,
+        agent_md_model,
+        selection
+            .and_then(|s| s.subagents.as_ref())
+            .and_then(|map| map.get(agent_type))
+            .map(String::as_str),
+        selection.and_then(|s| s.subagent.as_deref()),
+    ]
+    .into_iter()
+    .flatten()
+    .find(|spec| !spec.trim().is_empty())
+    .unwrap_or_else(|| default_subagent_spec(agent_type));
+    resolve_spec_to_agent_model(spec, parent, nyan)
 }
 
 /// Resolves a utility role's model and effort along the priority chain:
@@ -198,8 +167,13 @@ pub fn resolve_utility_model_and_effort(
     });
 
     let spec = configured_spec.unwrap_or_else(|| default_utility_spec(role));
-    let (r_ref, effort) = parse_model_ref_and_effort(spec);
-    resolve_spec_to_agent_model(r_ref, effort, parent, nyan)
+    // Settings validation reports an unknown `selection.utility` ref; the
+    // background task itself follows the session rather than failing.
+    resolve_spec_to_agent_model(spec, parent, nyan).unwrap_or_else(|_| ResolvedAgentModel {
+        model: parent.model.clone(),
+        effort: parent.effort,
+        profile: parent.profile.clone(),
+    })
 }
 
 pub fn get_agent_model_display(model: Option<&str>) -> String {
@@ -343,6 +317,7 @@ mod tests {
         nyan: &NyanSettings,
     ) -> ResolvedAgentModel {
         resolve_subagent_model_and_effort(tool, md, agent_type, &parent(parent_effort), Some(nyan))
+            .unwrap()
     }
 
     #[test]
@@ -421,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_without_effort_and_a_temporary_model_use_the_model_default() {
+    fn a_profile_without_effort_uses_the_model_default() {
         let mut nyan = test_nyan_settings();
         nyan.models
             .as_mut()
@@ -432,19 +407,41 @@ mod tests {
         // The parent's depth must not leak onto another vendor's model.
         let profile = subagent(Some("deep-profile"), None, "plan", Some(Effort::Max), &nyan);
         assert_eq!(profile.effort, None);
-        let temporary = subagent(
-            Some("openai/gpt-4o"),
-            None,
-            "plan",
-            Some(Effort::Max),
-            &nyan,
-        );
-        assert_eq!(temporary.model, "openai/gpt-4o");
-        assert_eq!(temporary.effort, None);
-        assert_eq!(temporary.profile, None);
-        let temporary_with_effort = subagent(Some("openai/gpt-4o:high"), None, "plan", None, &nyan);
-        assert_eq!(temporary_with_effort.model, "openai/gpt-4o");
-        assert_eq!(temporary_with_effort.effort, Some(Effort::High));
+    }
+
+    #[test]
+    fn a_ref_that_names_no_profile_is_an_error_at_the_layer_that_wrote_it() {
+        let nyan = test_nyan_settings();
+        for spec in [
+            "openai/gpt-4o",
+            "openai/gpt-4o:high",
+            "ollama/qwen3:32b",
+            "claude-opus-4-6",
+            "sonnet",
+            "opus",
+            "haiku",
+            "best",
+            "opusplan",
+            "@nope",
+        ] {
+            let call = resolve_subagent_model_and_effort(
+                Some(spec),
+                Some("deep-profile"),
+                "plan",
+                &parent(None),
+                Some(&nyan),
+            );
+            assert_eq!(call, Err(UnknownModelRef(spec.to_string())), "{spec}");
+            // An agent definition's own unknown model does not fall through.
+            let md = resolve_subagent_model_and_effort(
+                None,
+                Some(spec),
+                "plan",
+                &parent(None),
+                Some(&nyan),
+            );
+            assert!(md.is_err(), "{spec}");
+        }
     }
 
     #[test]
@@ -455,18 +452,20 @@ mod tests {
             effort: Some(Effort::High),
             profile: Some("deep-profile".to_string()),
         };
-        let r = resolve_subagent_model_and_effort(None, None, "plan", &routed, Some(&nyan));
+        let r =
+            resolve_subagent_model_and_effort(None, None, "plan", &routed, Some(&nyan)).unwrap();
         assert_eq!(r.model, "claude-opus-4-6");
         assert_eq!(r.effort, Some(Effort::High));
         assert_eq!(r.profile.as_deref(), Some("deep-profile"));
         // A tier that names no profile follows the parent just the same.
         let tier = resolve_subagent_model_and_effort(
-            Some("@nope"),
+            Some("@light"),
             None,
             "plan",
             &routed,
             Some(&NyanSettings::default()),
-        );
+        )
+        .unwrap();
         assert_eq!(tier.profile.as_deref(), Some("deep-profile"));
         // Naming a profile replaces it.
         let named = resolve_subagent_model_and_effort(
@@ -475,19 +474,9 @@ mod tests {
             "plan",
             &routed,
             Some(&nyan),
-        );
+        )
+        .unwrap();
         assert_eq!(named.profile.as_deref(), Some("fast-profile"));
-    }
-
-    #[test]
-    fn a_colon_in_a_model_id_is_only_split_for_a_valid_effort() {
-        let nyan = test_nyan_settings();
-        let tag = subagent(Some("ollama/qwen3:32b"), None, "plan", None, &nyan);
-        assert_eq!(tag.model, "ollama/qwen3:32b");
-        assert_eq!(tag.effort, None);
-        let tag_with_effort = subagent(Some("ollama/qwen3:32b:max"), None, "plan", None, &nyan);
-        assert_eq!(tag_with_effort.model, "ollama/qwen3:32b");
-        assert_eq!(tag_with_effort.effort, Some(Effort::Max));
     }
 
     #[test]
@@ -529,7 +518,8 @@ mod tests {
             "explore",
             &parent(Some(Effort::Off)),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(r.model, PARENT);
         assert_eq!(r.effort, Some(Effort::Off));
     }
@@ -538,8 +528,8 @@ mod tests {
     fn a_tier_that_names_no_profile_follows_the_session_and_never_reaches_the_wire() {
         let mut nyan = test_nyan_settings();
         nyan.selection = Some(SelectionSettings::default());
-        // A selection with no `main`, and a tier name nobody defined.
-        for spec in ["@heavy", "@light", "@main", "@nope"] {
+        // A selection with no `main`.
+        for spec in ["@heavy", "@light", "@main"] {
             let r = subagent(Some(spec), None, "plan", Some(Effort::High), &nyan);
             assert_eq!(r.model, PARENT, "{spec}");
             assert_eq!(r.effort, Some(Effort::High), "{spec}");

@@ -154,19 +154,24 @@ fn memory_resolution(
     let initial_settings = crate::utils::settings::get_initial_settings();
     let nyan = initial_settings.nyan.as_deref();
     let parent = context.parent_selection();
-    match settings.extract_model.as_deref() {
-        // The dedicated model reads like any other `ref[:effort]` spec.
-        Some(spec) => crate::utils::model::agent::resolve_subagent_model_and_effort(
-            Some(spec),
-            None,
-            "general-purpose",
-            &parent,
-            nyan,
-        ),
-        None => {
+    // The dedicated model reads like any other `ref[:effort]` spec; an unknown
+    // one is reported by settings validation and the `memory` role applies.
+    settings
+        .extract_model
+        .as_deref()
+        .and_then(|spec| {
+            crate::utils::model::agent::resolve_subagent_model_and_effort(
+                Some(spec),
+                None,
+                "general-purpose",
+                &parent,
+                nyan,
+            )
+            .ok()
+        })
+        .unwrap_or_else(|| {
             crate::utils::model::agent::resolve_utility_model_and_effort("memory", &parent, nyan)
-        }
-    }
+        })
 }
 
 fn read_index() -> String {

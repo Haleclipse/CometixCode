@@ -9,11 +9,10 @@
 
 /// Maps to: CC `utils/swarm/teammateModel.ts#getHardcodedTeammateModelFallback`.
 ///
-/// CC uses provider-specific `CLAUDE_OPUS_4_6_CONFIG[getAPIProvider()]`.
-/// Nyan keeps provider-specific defaults inside `utils/model/model.rs`; the
-/// Opus helper is therefore the equivalent hardcoded teammate fallback.
+/// @nyan: CC falls back to Opus 4.6. A teammate model is a profile ref, and
+/// nyan has no built-in Anthropic default, so a teammate follows its leader.
 pub fn get_hardcoded_teammate_model_fallback() -> String {
-    crate::utils::model::model::get_default_opus_model()
+    "inherit".to_string()
 }
 
 #[cfg(test)]
@@ -21,7 +20,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hardcoded_teammate_model_fallback_is_opus_like_official() {
-        assert!(get_hardcoded_teammate_model_fallback().contains("opus"));
+    fn hardcoded_teammate_model_fallback_follows_the_leader() {
+        assert_eq!(get_hardcoded_teammate_model_fallback(), "inherit");
     }
 }

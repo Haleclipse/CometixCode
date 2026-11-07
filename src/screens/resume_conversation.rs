@@ -402,6 +402,12 @@ pub fn ResumeConversation(
                         // guard exists to violate. Full pre-provider silent
                         // adoption lands with Contract B (P5).
                         app_store.replace_with(|state| processed.apply_to_app_state(state));
+                        if let Some(notice) = processed.missing_profile_notice() {
+                            crate::context::notifications::NotificationsWriter::new(
+                                app_store.clone(),
+                            )
+                            .add_notification(notice);
+                        }
                         let mut repl_props = base_repl_props.clone();
                         repl_props.apply_processed_resume(&processed);
                         selected_repl_props.set(Some(repl_props));

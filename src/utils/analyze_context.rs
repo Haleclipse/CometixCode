@@ -523,11 +523,8 @@ fn create_grid(
 
 /// Maps to: CC `utils/analyzeContext.ts#analyzeContextUsage`.
 pub fn analyze_context_usage(input: AnalyzeContextUsageInput<'_>) -> ContextData {
-    let runtime_model = crate::utils::model::model::get_runtime_main_loop_model(
-        input.tool_permission_context.mode,
-        input.model.to_string(),
-        false,
-    );
+    // @nyan: no `opusplan` plan-mode switch; the session profile's model.
+    let runtime_model = input.model.to_string();
     let betas = crate::services::provider::anthropic::betas::get_model_betas(&runtime_model);
     let context_window =
         crate::utils::context::get_context_window_for_model(&runtime_model, &betas).max(1) as u64;

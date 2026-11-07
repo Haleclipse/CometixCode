@@ -1,13 +1,8 @@
 pub mod agent;
-pub mod aliases;
 pub mod ant_models;
 pub mod bedrock;
-pub mod check_1m_access;
-pub mod configs;
 pub mod metadata;
 pub mod model;
-pub mod model_options;
-pub mod model_strings;
 pub mod model_support_overrides;
 pub mod pricing;
 pub mod profile;

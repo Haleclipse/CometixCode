@@ -23,7 +23,7 @@ normalized stream / usage / error / retry policy
 已确定的核心原则：
 
 1. 新配置统一放在 `settings.nyan.providers`、`settings.nyan.models`、`settings.nyan.selection`；旧模型/provider 字段直接删除，不做兼容迁移（PR 1 的临时 Anthropic 兼容层除外，见决策 22）。
-2. 稳定配置只能引用 profile 名；`provider/model` 直写只允许命令行或单个会话临时使用，会话结束即丢弃，不能写入 project settings。
+2. 凡是选模型的地方都只认 profile：`--model`、`/model`、选择器、Agent 工具 `model` 参数、agent md 与 `selection.*`，写法统一为 profile 名 | `@light` | `@heavy` | `@main` | `inherit`，可带 `:effort`；不认识的报错。没有临时 `provider/model` 入口，也没有 `sonnet`/`opus`/`haiku`/`best`/`opusplan` 别名，新模型靠配置 profile。
 3. 模型能力来自固定的、外部维护的模型元数据快照；不做运行时探测。profile 中显式能力覆盖元数据快照。
 4. 不设默认 provider。没有可解析的 profile 时清晰报错或进入配置引导，绝不偷偷回退 Anthropic。唯一例外是 PR 1 的临时兼容层（决策 22），PR 4 删除。
 5. Provider 协议由 adapter 隔离：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Gemini；vLLM/Ollama 只走 OpenAI-compatible，不做 Ollama native adapter。
@@ -45,7 +45,7 @@ normalized stream / usage / error / retry policy
 
 - provider/profile 定义只来自 user 或 managed settings；
 - project/local settings 只能写 profile 名、选择关系和不含 endpoint/credential 的策略；
-- CLI 可临时指定 profile 或 `provider/model`，不落盘；
+- CLI `--model` 只接受 profile 引用，不落盘；
 - policy 可以定义或限制 profile，并可限制 provider、模型、fallback 和本地 endpoint。
 
 local settings 纳入限制是有意的扩展：它与 project settings 同属项目作用域，不能因为“通常不入库”就允许写 endpoint 或凭据文件。project 与 local 引用的 profile 名若在 user/managed settings 中不存在，启动时直接报错，不忽略、不回退。
@@ -63,11 +63,11 @@ CLI / bootstrap override
 
 入口在 `src/main.rs:264-291`、`src/utils/model/model.rs:77-102,138-163`；`sonnet`、`opus`、`haiku`、`best`、`opusplan` 和 `[1m]` 是 Anthropic 专属别名（`src/utils/model/model.rs:104-135`）。当前 provider 由 `CLAUDE_CODE_USE_BEDROCK`、`CLAUDE_CODE_USE_VERTEX`、`CLAUDE_CODE_USE_FOUNDRY` 环境变量决定（`src/utils/model/providers.rs:7-27`），没有统一 provider trait。
 
-这些旧入口只用于现状审计。目标实现中它们被删除：不再读取 `settings.model`、`ANTHROPIC_MODEL`、`GlobalConfig.modelContextWindows`，也不再保留 Anthropic 默认 provider。
+这些旧入口只用于现状审计。目标实现中它们被删除：不再读取 `settings.model`、`ANTHROPIC_MODEL`、`GlobalConfig.modelContextWindows`，也不再保留 Anthropic 默认 provider。PR #59 已删除这些别名与 `model.rs` 中的对应代码，上文行号仅为历史记录。
 
 ### 1.3 Gateway model picker 与上下文窗口
 
-当前 picker 将 `availableModels` 追加到内置 Sonnet/Opus/Haiku（`src/components/model_picker.rs:57-145`）；`additionalModelOptionsCache` 只提供 label/description。`modelOverrides` 将 Anthropic canonical ID 映射成 provider-specific ID（`src/utils/settings/types.rs:75-77`、`src/utils/model/model_strings.rs:63-103`）。
+当前 picker 将 `availableModels` 追加到内置 Sonnet/Opus/Haiku（`src/components/model_picker.rs:57-145`）；`additionalModelOptionsCache` 只提供 label/description。`modelOverrides` 将 Anthropic canonical ID 映射成 provider-specific ID（`src/utils/settings/types.rs:75-77`、`src/utils/model/model_strings.rs:63-103`）。PR #59 已将 picker 改为只列 profile，并删除内置 Sonnet/Opus/Haiku 与 `model_strings.rs`；此段仅为历史审计。
 
 当前 `GlobalConfig.modelContextWindows` 是 gateway 专用旁路，按 model ID 查上下文长度（`src/utils/context.rs:126-154`，字段在 `src/utils/config.rs:617-621`）。目标设计删除这条旁路，统一使用固定模型元数据 + profile override；不存在“查不到时默认 200k”的隐式行为。
 
@@ -105,7 +105,7 @@ Anthropic 的 beta、cache control、Bedrock/Vertex/Foundry auth 和 Anthropic S
 以下 23 条是本设计的约束，不再作为待选项。1–12 为初始决策，13–23 为评审后新增：
 
 1. **配置位置与替换**：新配置统一在 `settings.nyan.providers` / `models` / `selection`；直接替换旧配置。nyan 当前没有用户，因此不做兼容迁移、导入、deprecated 读取或旧字段警告。例外：PR 1 的临时 Anthropic 兼容层（决策 22）。
-2. **模型引用**：持久化配置以 profile 名为主。`provider/model` 只允许 CLI 或单个 session 临时使用，不能写入 project settings。
+2. **模型引用**：只认 profile。`--model`、`/model`、选择器、Agent 工具 `model` 参数、agent md、`selection.*` 都只接受 profile 名 | `@light` | `@heavy` | `@main` | `inherit`（可带 `:effort`），不认识的报错：CLI 启动报错退出；`/model foo` 显示错误且不改任何状态；Agent 工具参数返回工具错误、不发请求。删除临时 `provider/model` 与 Claude Code 的 `sonnet`/`opus`/`haiku`/`best`/`opusplan`/`[1m]` 别名。
 3. **能力元数据**：不做运行时探测；采用 Pi Agent 维护的固定模型元数据快照，profile 显式字段可覆盖快照。
 4. **无默认 provider**：用户必须配置 provider/profile。没有可解析 profile 时给清晰错误或配置引导，不回退 Anthropic。
 5. **OpenAI 两种协议**：Chat Completions 与 Responses API 在同一阶段实现，分别作为可声明的 adapter protocol。
@@ -152,7 +152,7 @@ pub struct ResolvedModel {
 }
 ```
 
-持久化 `selection` 只写 profile 名。CLI/session 临时输入 `provider/model` 时先解析为一个不可持久化的临时 `ResolvedModel`，会话结束即丢弃。project settings 不能写 provider/model 直写值，也不能定义 profile 内容。
+持久化 `selection` 只写 profile 名。没有临时 `provider/model` 输入；project settings 不能定义 profile 内容。
 
 `commercial` 不由用户写入配置，由 provider `kind` 决定（决策 18）：`kind` 是内置枚举，每个取值在代码中固定 commercial 属性；未列入商业集合的 kind 一律按非商业处理（失败关闭）。
 
@@ -344,7 +344,6 @@ pub trait ProviderAdapter: Send + Sync {
 - `selection.main` 是必填的 profile 名；未配置或 profile 不存在时，启动进入配置引导/返回明确错误；不使用内置 Anthropic default。
 - `mainFallbacks` 是用户显式允许的 fallback profile 列表，默认空；不配置就不跨 provider 自动切换。
 - `selection.subagent` 和 `subagents.*` 只能是 profile 名或 `inherit`；project/local settings 可以引用 user/managed 中存在的名字，但不能定义 provider/profile 内容。引用的名字不存在时直接报错（§1.1）。
-- `provider/model` 直写只接受 CLI/session 临时输入，必须带“不落盘”语义。
 - profile 可以覆盖 Pi snapshot 的全部模型元数据字段；覆盖值必须经 schema 校验，不能把未声明能力自动设为 true。被覆盖的字段在 `nyan doctor` 中列出（决策 15）。
 - profile 定义只能写在 user 或 managed settings。project/local settings 只能写 profile 名、选择关系和 policy，不得写 `baseUrl`、`credential.file`、secret、OAuth client data 或任意新的 provider ID。
 - `commercial` 不是配置字段。provider 的 `kind` 决定商业属性（决策 18），用户写入 `commercial` 会被 schema 拒绝。
@@ -410,34 +409,39 @@ credential reference 只引用来源，不把 secret 写入 settings：
 
 ### 5.1 模型选择与档位
 
-持久化配置统一使用 profile 名与 tier 引用：
+会话的模型就是会话 profile 的模型；只有 profile 能选：
 
 ```text
-CLI --profile / --model provider/model（临时）
-  > session /model profile 选择（只改当前 session）
+CLI --model <ref>[:effort]
+  > session /model <ref>[:effort] 或选择器回车（只改当前 session）
+  > resume 还原的会话 profile
   > settings.nyan.selection.main（profile 名，必填）
-  > 无配置：启动进入配置引导或明确报错，绝不隐式回退 Anthropic
+  > 无配置：明确报错 / 选择器只显示配置引导，绝不隐式回退 Anthropic
 ```
+
+切换会话 profile 后，请求走该 profile 自己的 provider、凭据与协议。
 
 - **档位定义**：`selection.main`、`selection.light`、`selection.heavy` 均为 profile 名；`light`/`heavy` 未显式配置时自动回落 `main`。
 - **统一写法 `ref[:effort]`**：`selection.subagents.<type>`、`selection.utility.<role>`、agent md 的 `model:`、Agent 工具调用参数 `model` 均统一采用 `ref[:effort]` 格式。
-  - `ref` = profile 名 | `@light` | `@heavy` | `@main` | `inherit`；仅 Agent 工具调用参数额外允许临时 `provider/model`（只对本次会话有效，不写配置）。
-  - 只有 `:effort` 时（如 `:high`）等同于 `inherit:high`。按最后一个 `:` 拆分，且只有后缀属于合法 effort 档位时才拆分（兼容 `qwen3:32b` 这类含冒号的模型 ID）。
+  - `ref` = profile 名 | `@light` | `@heavy` | `@main` | `inherit`；其他任何值都是错误。
+  - 只有 `:effort` 时（如 `:high`）等同于 `inherit:high`。按最后一个 `:` 拆分，且只有后缀属于合法 effort 档位时才拆分（兼容 `qwen3:32b` 这类含冒号的 profile 名）。
 - **默认规则**：
   - 子 agent 类型：`general-purpose`、`plan` = `inherit`；`explore` = `@light`；`review` = `@heavy`。
   - Utility 角色（`title`、`summary`、`commit_message`、`webfetch` 摘要、`bash_prefix` 提取、`prompt_suggestions`、`memory` 提取、`side_query`）= `@light`。
   - `compaction`、权限分类器（`classifier`）= `@main`。
-- **未知 profile 校验**：引用未知的 profile 名在启动时报错（`selection.*` 校验）；`@tier`（`@light` / `@heavy` / `@main`）与 `inherit` 属于保留档位/关键字，永不报未知 profile 错误。`@tier` 在没有可指的 profile 时（未配置 `selection.main`）跟随父会话，与 `inherit` 相同。
+- **未知 profile 校验**：引用未知的 profile 名在启动时报错（`selection.*` 校验）；`--model` 不认识时启动报错；Agent 工具调用参数不认识时返回工具错误、不发请求；agent md 的 `model:` 不认识时该 agent 运行报错（加载时校验归 /agents PR）；`@tier`（`@light` / `@heavy` / `@main`）与 `inherit` 属于保留档位/关键字，永不报未知 profile 错误。`@tier` 在没有可指的 profile 时（未配置 `selection.main`）跟随父会话，与 `inherit` 相同。
 - **子 agent 模型解析链**：
   ```text
-  调用参数 model (含 ref[:effort] 或临时 provider/model)
+  调用参数 model (ref[:effort])
     > agent md 的 model: 字段 (ref[:effort])
     > selection.subagents.<type> (ref[:effort])
     > selection.subagent (ref[:effort])
     > 类型默认值 (explore=@light, review=@heavy, general-purpose/plan 及其他类型=inherit)
   ```
-  `inherit` 取父会话**当前**的模型、effort 与 profile（含 `/model` 的会话临时选择）。解析结果同时给出模型、effort 和 profile；请求带着该 profile 走自己的 provider、凭据与协议。`inherit` 时整个 profile 跟随父会话，指定 profile 或 `@tier` 时换用该 profile。
-- **删除 CC 遗留别名**：彻底删除 `haiku`/`sonnet` 等硬编码别名和 Anthropic 专属 tier 匹配（`alias_matches_parent_tier`、Bedrock 前缀继承等）。
+  `inherit` 取父会话**当前**的模型、effort 与 profile（含 `/model` 的会话选择）。决定模型的那一层写了不认识的 ref 即报错，不回落到下一层。解析结果同时给出模型、effort 和 profile；请求带着该 profile 走自己的 provider、凭据与协议。`inherit` 时整个 profile 跟随父会话，指定 profile 或 `@tier` 时换用该 profile。
+- **删除 CC 遗留别名**：彻底删除 `haiku`/`sonnet`/`opus`/`best`/`opusplan`/`[1m]` 等硬编码别名、`ANTHROPIC_DEFAULT_*_MODEL` 默认模型、`opusplan` 的 plan 模式切换和 Anthropic 专属 tier 匹配（`alias_matches_parent_tier`、Bedrock 前缀继承等）。
+- **选择器（`/model` 无参数或 Alt+P）**：只列 profile，当前会话的 profile 第一，默认（`selection.main`）第二，其余按名字排序；每行显示 profile 名与模型 ID，默认 profile 标注 `default`。←/→ 调 effort；回车只改当前会话（切换会话 profile 与 effort）；Ctrl+S 设为默认：写用户 settings 的 `nyan.selection.main` 与该 profile 的 `effort`，若 project/local settings 也设了 `selection.main` 且不同，提示“This project still uses X”。没有 profile 时只显示配置引导（`settings.nyan.models` / `selection.main`）。没有“全部模型”页签。
+- **删除**：Fast mode 全套（`/fast`、Alt+O、设置项、徽标）、Alt+T 思考开关（关思考用 effort `off`）、独立的 effort 选择器（`/effort <level>` 直设保留，`/effort` 无参数只打印当前 effort 与可选值）。
 
 ### 5.2 统一思考深度 Effort
 
@@ -447,7 +451,6 @@ CLI --profile / --model provider/model（临时）
   - 该层显式写了 `:effort` 则使用该 effort；
   - 否则，若该层是 `inherit` → 继承父会话当前 effort；
   - 若指定 profile 或 `@tier` → 使用该 profile 配置的 `effort`（无配置则模型默认）；
-  - 若是临时 `provider/model` → 模型默认。
   - 不单独沿解析链跨层合并 effort，确保父会话的思考深度不会意外落到其它厂商模型上。
 - **各 Adapter 映射与静默就近夹取**：
   - **Anthropic**：支持 `output_config.effort` 的模型（Opus 4.5+、Sonnet 4.6+ 等）发送 `medium` / `high` / `max`（Opus 4.5 没有 `max`，夹取为 `high`）；`off` 关闭 thinking 且不发送该参数。不支持该参数的旧模型（Claude 3.x、Sonnet 4/4.5、Opus 4/4.1、Haiku 4.5）不发送，改按档位设 thinking budget（`medium` 8192、`high` 24576、`max` 取模型上限）。支持 adaptive thinking 的模型由 effort 档位承载深度，不再设 budget。
@@ -457,8 +460,9 @@ CLI --profile / --model provider/model（临时）
   - **不支持推理的模型（含本地模型）**：profile 未声明 thinking 能力时不发送任何推理字段，静默不报错。
 - **会话作用域与持久化**：
   - `/effort` 命令只改当前会话。
-  - `/model` 选择器中通过左右键调节深度，回车确认只修改当前会话；只有显式“设为默认”才将 profile 写入 `selection.main` 并持久化该 profile 的 `effort`（“设为默认”及选择器 UI 重做留给后续 PR，本 PR 只落实“回车只改会话”）。
-  - 模型与 effort 的会话内变化记录为会话事件（`model-change` / `effort-change`），resume 时恢复。
+  - `/model` 选择器中通过左右键调节深度，回车确认只修改当前会话；Ctrl+S（设为默认）将 profile 写入用户 settings 的 `selection.main` 并持久化该 profile 的 `effort`。
+  - **切换 profile 时的 effort**：`/model <profile>:effort` 或在选择器里调过 → 用该值；否则用新 profile 配置的 `effort`；再否则模型默认。绝不沿用切换前的会话 effort。
+  - 会话内的 profile 与 effort 变化记录为会话事件（`model-change` 存 profile 名与该次切换定下的 effort，`effort-change` 存 effort），resume 时按顺序还原；记录的 profile 已不存在时回到配置的 `selection.main`（用它自己的 effort），并显示提示。
   - 删除全局 `effortLevel` 设置、`CLAUDE_CODE_EFFORT_LEVEL` 环境变量、launch pinning、org-limit clamp、ultracode 等 Claude Code 遗留逻辑。
   - Agent md 文件不再包含独立的 `effort:` 字段；Agent 工具调用参数也不再提供独立的 `effort` 参数。
 
@@ -627,7 +631,7 @@ nyan 没有用户，因此实现阶段直接删除旧入口：
 - 删除基于 Anthropic build audience 的隐式默认模型/默认 provider；
 - 删除旧 `availableModels` picker allowlist 的读取；picker 只展示已解析 profile；
 - 不写 migration command、dry-run、旧字段 warning、备份导入或 legacy fallback；
-- 旧环境变量即使存在也不影响新 resolver，错误信息直接指出应配置 `settings.nyan.providers/models/selection` 或 CLI 临时 profile。
+- 旧环境变量即使存在也不影响新 resolver，错误信息直接指出应配置 `settings.nyan.providers/models/selection`。
 
 当前代码中的旧字段和调用链保留在本节之前仅作为审计证据，不是目标行为。
 
@@ -643,7 +647,7 @@ nyan 没有用户，因此实现阶段直接删除旧入口：
 | 6. Gemini adapter | 独立 PR（决策 20），紧接 OpenAI 阶段且不并行；Gemini 仍按商业 kind 处理 | Gemini parts/function/thinking fixture；错误映射 `RESOURCE_EXHAUSTED` 等 | parts 与 thinking 转换、图片 inline data |
 | 7. OpenAI-compatible local | vLLM/Ollama 只走 `openaiChat`；不做 Ollama native；本地 profile 可进 `mainFallbacks`（决策 21）；local profile 不能进 Decision Provider | local endpoint mock；`optionalEnv` 401 报 auth error；本地 profile 出现在 DP tier 时 schema 拒绝 | gateway 方言、本地 timeout |
 | 8. retry/fallback/health | normalized errors、各 adapter rate-limit policy、统一重试控制器（默认 2 次，托管全局硬上限 5）、显式 fallback 列表；禁止隐式跨 provider。**行为变更**：Anthropic 默认重试从 10 降到 2，写入 PR 描述（决策 19、23） | 429/Retry-After/529/503/stream partial fixture；空 fallback 不切 provider；switch receipt；托管上限生效且不得超过 5 | 重复工具调用、provider header drift、默认值变更影响 |
-| 9. selector and subagent | profile-only picker、main/session CLI、`inherit` snapshot、per-agent profile、按 §5.2 优先级解析、project scope enforcement | 无默认 provider；临时 `provider/model` 会话结束即丢弃；子 agent capability validation；优先级用例全部通过 | session snapshot、优先级回归 |
+| 9. selector and subagent | profile-only picker、main/session CLI、`inherit` snapshot、per-agent profile、按 §5.2 优先级解析、project scope enforcement | 无默认 provider；只认 profile 引用（无临时 `provider/model`）；子 agent capability validation；优先级用例全部通过 | session snapshot、优先级回归 |
 | 10. commercial Decision Provider | `fast/accurate` tier 绑定商业 kind 的 profile；拒绝本地 profile；保留 off/shadow/active | local profile schema rejection；down/timeout 回确定性路径；fallback 仍只商业 | classifier 费用/延迟、来源隐私 |
 
 没有 migration/deprecation PR。第 1 PR 完成后，旧字段和旧读取路径应不存在；后续 PR 不得重新引入兼容读取。PR 1 的临时 Anthropic 兼容层只读取 Anthropic 现有凭据来源，不读取旧字段，PR 4 删除。
@@ -659,7 +663,7 @@ nyan 没有用户，因此实现阶段直接删除旧入口：
 | 统一 OAuth broker 误用 token | token scope、刷新、存储和撤销错误 | provider-owned OAuth modules；credential profile 按 provider 隔离 |
 | Windows key file ACL 不可验证 | secret 被同机其他账户读取 | ACL 验证失败即拒绝；提示使用 env/系统凭据 |
 | Project settings 注入 endpoint | 项目文件劫持请求或泄露凭据 | schema/source scope 禁止 endpoint/credential file，只接受 profile name |
-| 无默认 provider | 首次启动体验差 | 清晰配置引导、列出缺失字段和可用 CLI 临时选项；不静默 fallback。PR 1–4 期间临时兼容层例外 |
+| 无默认 provider | 首次启动体验差 | 清晰配置引导、列出缺失字段；不静默 fallback。PR 1–4 期间临时兼容层例外 |
 | 本地模型误进 Decision Provider | 分类数据外发/质量和延迟不可控 | `commercial` 由 provider `kind` 派生、用户不可写 + schema hard gate；tier fallback 同样检查 |
 | OpenAI-compatible gateway 方言 | 请求字段不兼容 | protocol compatibility options 显式配置；adapter fixture；不 runtime probe |
 | OAuth 文件并发写 | token 丢失/refresh race | 参考 Pi 的 file lock；provider owner 按 provider/account 串行化 |
@@ -674,7 +678,7 @@ nyan 没有用户，因此实现阶段直接删除旧入口：
 
 1. `settings.nyan.providers/models/selection` 是唯一持久化模型/provider 配置；无配置时不产生请求且给出明确引导/错误。
 2. `settings.model`、`ANTHROPIC_MODEL`、`GlobalConfig.modelContextWindows` 和旧 alias 不再被读取。
-3. profile 是唯一稳定模型引用；project 与 local settings 只能写已有 profile 名，不能写 endpoint、credential file 或 `provider/model`。
+3. profile 是唯一模型引用；project 与 local settings 只能写已有 profile 名，不能写 endpoint、credential file 或 `provider/model`。
 4. 元数据快照以 checked-in 形式存在，附 Pi commit、models.dev 版本、schema version、hash；根目录 `NOTICE` 同时列出 Pi 与 models.dev 的 MIT 版权声明；运行时不联网，周更只通过 PR 生效。
 5. profile 没有 contextWindow 时解析失败；有值时预请求使用保守估算，事后使用 provider usage，不使用隐式 200k。
 6. Anthropic beta/cache/auth 只由 Anthropic adapter 处理，Anthropic 只接受 API key；OpenAI Chat/Responses、Gemini 不收到 Anthropic beta。

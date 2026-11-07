@@ -1284,8 +1284,6 @@ pub struct ToolUseContext {
     pub main_loop_profile: Option<String>,
     /// Maps to official `ToolUseContext.options.thinkingConfig`.
     pub thinking_config: Option<crate::utils::thinking::ThinkingConfig>,
-    /// Maps to CC `ToolUseContext.getAppState().fastMode` snapshot at query start.
-    pub fast_mode: Option<bool>,
     /// Maps to CC `AppState.effortValue` as observed by
     /// `runAgent.ts#createSubagentContext` for nested agent effort fallback.
     pub effort_value: Option<crate::utils::effort::Effort>,
@@ -1447,7 +1445,6 @@ impl ToolUseContext {
             main_loop_model: None,
             main_loop_profile: None,
             thinking_config: None,
-            fast_mode: None,
             effort_value: None,
             mcp_state: crate::state::app_state_store::McpState::default(),
             is_non_interactive_session: false,
@@ -1500,11 +1497,11 @@ impl ToolUseContext {
         }
         if self.main_loop_model.is_none() {
             // Maps to CC wiring `useMainLoopModel()` into
-            // `toolUseContext.options.mainLoopModel` (API-ready full name).
-            // AppState may still hold aliases like `opus`.
-            self.main_loop_model = Some(crate::hooks::use_main_loop_model::use_main_loop_model(
-                snap.main_loop_model.as_deref(),
-                snap.main_loop_model_for_session.as_deref(),
+            // `toolUseContext.options.mainLoopModel`: the session profile and
+            // its wire model.
+            self.main_loop_profile = snap.main_loop_profile.clone();
+            self.main_loop_model = Some(crate::utils::model::model::profile_model(
+                snap.main_loop_profile.as_deref(),
             ));
         }
         self.app_store = AppStoreRef::new(store);
@@ -1734,11 +1731,6 @@ impl ToolUseContext {
         thinking_config: Option<crate::utils::thinking::ThinkingConfig>,
     ) -> Self {
         self.thinking_config = thinking_config;
-        self
-    }
-
-    pub fn with_fast_mode(mut self, fast_mode: Option<bool>) -> Self {
-        self.fast_mode = fast_mode;
         self
     }
 

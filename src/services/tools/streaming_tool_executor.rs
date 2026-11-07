@@ -1711,9 +1711,17 @@ mod tests {
         std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
         let mut file = std::fs::File::create(&skill_file).unwrap();
         file.write_all(
-            b"---\ndescription: Ship\nallowed-tools: Bash(printf *)\nmodel: opus\n---\nShip body",
+            b"---\ndescription: Ship\nallowed-tools: Bash(printf *)\nmodel: deep\n---\nShip body",
         )
         .unwrap();
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {"deep": {"provider": "p", "model": "claude-opus-4-6",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}}
+            }}))
+            .unwrap(),
+        );
         let old_cwd = crate::bootstrap::state::get_original_cwd();
         crate::bootstrap::state::set_original_cwd(&root);
 
@@ -1765,7 +1773,9 @@ mod tests {
             ),
             "the skill's allowed-tools must widen tools started after it in the turn"
         );
-        assert_eq!(updated.main_loop_model.as_deref(), Some("opus"));
+        assert_eq!(updated.main_loop_model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(updated.main_loop_profile.as_deref(), Some("deep"));
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]

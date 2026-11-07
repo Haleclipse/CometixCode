@@ -669,3 +669,91 @@ async fn a_streamed_request_is_accounted_once_and_attributed_to_its_source() {
     );
     crate::cost_tracker::reset_cost_state();
 }
+
+/// `/model deep:off` really switches the session: the next main-loop request
+/// goes to the `deep` profile's provider, credential and model, at the effort
+/// the switch named, and nothing reaches the previous profile's endpoint.
+#[tokio::test]
+async fn model_command_routes_the_next_request_through_the_new_profile() {
+    let main = MockAnthropic::start(Vec::new()).await;
+    let deep = MockAnthropic::start(vec![Reply::Sse(message_stream(StreamSpec::default()))]).await;
+    let _env = Env::new(&main.base_url);
+    let _deep_key = EnvVarGuard::set("NYAN_FIXTURE_DEEP_KEY", "sk-fixture-deep-key");
+    crate::utils::settings::settings_cache::install_test_settings(
+        serde_json::from_value(json!({"nyan": {
+            "providers": {
+                "main-provider": {"kind": "anthropic", "protocol": "anthropicMessages",
+                    "baseUrl": main.base_url, "credential": {"env": KEY_VAR}},
+                "deep-provider": {"kind": "anthropic", "protocol": "anthropicMessages",
+                    "baseUrl": deep.base_url, "credential": {"env": "NYAN_FIXTURE_DEEP_KEY"}}
+            },
+            "models": {
+                "main": {"provider": "main-provider", "model": "claude-sonnet-4-6", "effort": "high",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000,
+                        "thinking": "adaptive"}},
+                "deep": {"provider": "deep-provider", "model": "claude-opus-4-6", "effort": "max",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000,
+                        "thinking": "adaptive"}}
+            },
+            "selection": {"main": "main"}
+        }}))
+        .unwrap(),
+    );
+    let store = crate::state::store::AppStore::new(
+        crate::state::app_state_store::AppState::default(),
+        None,
+    );
+
+    let Some(crate::commands::model::ModelArgs::Switch { profile, effort }) =
+        crate::commands::model::parse_args("deep:off")
+    else {
+        panic!("deep:off is a profile switch");
+    };
+    assert_eq!(
+        crate::commands::model::apply_switch(Some(&store), profile, effort),
+        "Set model to deep (thinking off)"
+    );
+
+    let context = crate::tool::ToolUseContext::default().with_app_store(store.clone());
+    let request = crate::query::build_call_model_request(
+        vec![user("hello")],
+        crate::tool::ToolPermissionContext::default(),
+        &crate::constants::query_source::QuerySource::Prompt,
+        &["You are a test.".to_string()],
+        &std::collections::BTreeMap::new(),
+        &crate::state::app_state_store::McpState::default(),
+        &context,
+    );
+    assert_eq!(request.options.profile.as_deref(), Some("deep"));
+    assert_eq!(request.options.model, "claude-opus-4-6");
+    let mut rx = query_model_with_streaming(
+        &request.messages,
+        &request.system_prompt,
+        &request.thinking_config,
+        &[],
+        &request.options,
+    )
+    .await
+    .expect("stream opens");
+    while tokio::time::timeout(std::time::Duration::from_secs(10), rx.recv())
+        .await
+        .expect("stream item before deadline")
+        .is_some()
+    {}
+
+    assert!(
+        main.requests().is_empty(),
+        "nothing reaches the old profile"
+    );
+    let requests = deep.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].header("x-api-key"), Some("sk-fixture-deep-key"));
+    assert_eq!(requests[0].body["model"], "claude-opus-4-6");
+    // `:off` is the session effort, not the profile's `max`.
+    assert!(
+        requests[0]
+            .body
+            .get("thinking")
+            .is_none_or(|thinking| thinking["type"] == "disabled")
+    );
+}

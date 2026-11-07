@@ -19,7 +19,6 @@ const ISSUES_EXPLAINER: &str =
 /// Maps to: CC `constants/prompts.ts:758` `DEFAULT_AGENT_PROMPT`.
 pub const DEFAULT_AGENT_PROMPT: &str = "You are an agent for Claude Code, Anthropic's official CLI for Claude. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.";
 
-const FRONTIER_MODEL_NAME: &str = "Claude Opus 4.6";
 const CLAUDE_4_5_OR_4_6_OPUS_MODEL_ID: &str = "claude-opus-4-6";
 const CLAUDE_4_5_OR_4_6_SONNET_MODEL_ID: &str = "claude-sonnet-4-6";
 const CLAUDE_4_5_HAIKU_MODEL_ID: &str = "claude-haiku-4-5-20251001";
@@ -754,9 +753,6 @@ pub fn compute_simple_env_info_with_cwd(
         "The most recent Claude model family is Claude 4.5/4.6. Model IDs — Opus 4.6: '{CLAUDE_4_5_OR_4_6_OPUS_MODEL_ID}', Sonnet 4.6: '{CLAUDE_4_5_OR_4_6_SONNET_MODEL_ID}', Haiku 4.5: '{CLAUDE_4_5_HAIKU_MODEL_ID}'. When building AI applications, default to the latest and most capable Claude models."
         )));
         env_items.push(PromptItem::Text("Claude Code is available as a CLI in the terminal, desktop app (Mac/Windows), web app (claude.ai/code), and IDE extensions (VS Code, JetBrains).".to_string()));
-        env_items.push(PromptItem::Text(format!(
-        "Fast mode for Claude Code uses the same {FRONTIER_MODEL_NAME} model with faster output. It does NOT switch to a different model. It can be toggled with /fast."
-        )));
     }
 
     format!(
@@ -1463,7 +1459,6 @@ mod tests {
             assert!(!actual.contains("You are powered"));
             assert!(!actual.contains("The most recent Claude model family"));
             assert!(!actual.contains("Claude Code is available"));
-            assert!(!actual.contains("Fast mode for Claude Code"));
         } else {
             assert!(actual.contains(
                 "You are powered by the model named Opus 4.5. The exact model ID is claude-opus-4-5."

@@ -713,7 +713,8 @@ pub struct LoadedSession {
     pub agent_colors: HashMap<String, String>,
     pub agent_settings: HashMap<String, String>,
     pub modes: HashMap<String, String>,
-    pub session_models: HashMap<String, Option<String>>,
+    /// Last session profile switch; `None` is `selection.main`.
+    pub session_profiles: HashMap<String, Option<String>>,
     pub session_efforts: HashMap<String, Option<crate::utils::effort::Effort>>,
     pub worktree_states: HashMap<String, serde_json::Value>,
     pub pr_numbers: HashMap<String, u64>,
@@ -2895,29 +2896,25 @@ pub fn load_session_structured_from_path(path: &Path) -> LoadedSession {
                 }
             }
 
-            // ── Session-scoped model and effort changes (last-wins) ──
+            // ── Session-scoped profile and effort changes (last-wins) ──
+            // A profile switch also records the effort it settled on, so a
+            // later `effort-change` and the switch itself replay in order.
             "model-change" => {
-                let model = entry.get("model").and_then(|value| {
-                    (!value.is_null())
-                        .then(|| value.as_str().map(str::to_string))
-                        .flatten()
-                });
-                session.session_models.insert(session_id_val, model);
+                let profile = entry
+                    .get("profile")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string);
+                session
+                    .session_profiles
+                    .insert(session_id_val.clone(), profile);
+                session
+                    .session_efforts
+                    .insert(session_id_val, session_event_effort(&entry));
             }
             "effort-change" => {
-                let effort = entry
-                    .get("effort")
-                    .and_then(|value| {
-                        Some(if value.is_null() {
-                            None
-                        } else {
-                            value
-                                .as_str()
-                                .and_then(crate::utils::effort::Effort::from_str_loose)
-                        })
-                    })
-                    .unwrap_or(None);
-                session.session_efforts.insert(session_id_val, effort);
+                session
+                    .session_efforts
+                    .insert(session_id_val, session_event_effort(&entry));
             }
 
             // ── Metadata: worktree-state (last-wins) ──
@@ -5056,14 +5053,26 @@ fn insert_message_chain(
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
-/// Record a session-only model selection. `None` clears the override.
-pub fn save_session_model(model: Option<&str>) -> anyhow::Result<()> {
+fn session_event_effort(entry: &serde_json::Value) -> Option<crate::utils::effort::Effort> {
+    entry
+        .get("effort")
+        .and_then(serde_json::Value::as_str)
+        .and_then(crate::utils::effort::Effort::from_str_loose)
+}
+
+/// Record a session profile switch and the effort it settled on. `None`
+/// profile is `selection.main`; `None` effort is the profile's own.
+pub fn save_session_profile(
+    profile: Option<&str>,
+    effort: Option<crate::utils::effort::Effort>,
+) -> anyhow::Result<()> {
     let session_id = crate::bootstrap::state::get_session_id();
     append_entry_to_file(
         &get_transcript_path(None),
         &serde_json::json!({
             "type": "model-change",
-            "model": model,
+            "profile": profile,
+            "effort": effort.map(crate::utils::effort::Effort::as_str),
             "sessionId": session_id,
         }),
     )
@@ -5958,26 +5967,39 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn session_model_and_effort_events_are_last_wins_and_preserve_clears() {
+    fn session_profile_and_effort_events_are_last_wins_and_preserve_clears() {
+        use crate::utils::effort::Effort;
         let path =
             std::env::temp_dir().join(format!("nyan-session-events-{}.jsonl", Uuid::new_v4()));
-        fs::write(
-            &path,
-            concat!(
-                "{\"type\":\"model-change\",\"sessionId\":\"s\",\"model\":\"old\"}\n",
-                "{\"type\":\"model-change\",\"sessionId\":\"s\",\"model\":null}\n",
-                "{\"type\":\"effort-change\",\"sessionId\":\"s\",\"effort\":\"high\"}\n",
-                "{\"type\":\"effort-change\",\"sessionId\":\"s\",\"effort\":\"off\"}\n",
-            ),
-        )
-        .unwrap();
-
-        let session = load_session_structured_from_path(&path);
-        assert_eq!(session.session_models.get("s"), Some(&None));
+        let events = |lines: &[&str]| {
+            fs::write(&path, lines.join("\n")).unwrap();
+            load_session_structured_from_path(&path)
+        };
+        let session = events(&[
+            r#"{"type":"model-change","sessionId":"s","profile":"old","effort":"max"}"#,
+            r#"{"type":"effort-change","sessionId":"s","effort":"high"}"#,
+            r#"{"type":"model-change","sessionId":"s","profile":"deep","effort":null}"#,
+        ]);
         assert_eq!(
-            session.session_efforts.get("s"),
-            Some(&Some(crate::utils::effort::Effort::Off))
+            session.session_profiles.get("s"),
+            Some(&Some("deep".to_string()))
         );
+        // The switch settled on the profile's own effort.
+        assert_eq!(session.session_efforts.get("s"), Some(&None));
+
+        let session = events(&[
+            r#"{"type":"model-change","sessionId":"s","profile":"deep","effort":"max"}"#,
+            r#"{"type":"effort-change","sessionId":"s","effort":"off"}"#,
+            r#"{"type":"model-change","sessionId":"s","profile":null,"effort":null}"#,
+        ]);
+        assert_eq!(session.session_profiles.get("s"), Some(&None));
+        assert_eq!(session.session_efforts.get("s"), Some(&None));
+
+        let session = events(&[
+            r#"{"type":"model-change","sessionId":"s","profile":"deep","effort":"max"}"#,
+            r#"{"type":"effort-change","sessionId":"s","effort":"off"}"#,
+        ]);
+        assert_eq!(session.session_efforts.get("s"), Some(&Some(Effort::Off)));
         let _ = fs::remove_file(path);
     }
 

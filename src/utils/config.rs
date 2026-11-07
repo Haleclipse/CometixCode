@@ -510,7 +510,6 @@ pub struct GlobalConfig {
     pub copy_full_response: Option<bool>,
     pub copy_on_select: Option<bool>,
     pub respect_gitignore: Option<bool>,
-    pub fast_mode: Option<bool>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.permissionExplainerEnabled`.
     pub permission_explainer_enabled: Option<bool>,
     pub auto_connect_ide: Option<bool>,
@@ -570,13 +569,6 @@ pub struct GlobalConfig {
     /// Maps to CC `GlobalConfig.growthBookOverrides`, ant-only local overrides
     /// read by `getFeatureValue_CACHED_MAY_BE_STALE(...)` after env overrides.
     pub growth_book_overrides: Option<HashMap<String, serde_json::Value>>,
-    /// Maps to CC `utils/config.ts:563-564`
-    /// `GlobalConfig.additionalModelOptionsCache` — model picker entries
-    /// fetched during bootstrap (`services/api/bootstrap.ts:136`) and appended
-    /// by `utils/model/modelOptions.ts:480`. Absent until that fetch lands;
-    /// each fetch overwrites the whole list rather than invalidating entries.
-    pub additional_model_options_cache:
-        Option<Vec<crate::utils::model::model_options::ModelOption>>,
     pub s1m_access_cache: Option<serde_json::Value>,
     pub s1m_non_subscriber_access_cache: Option<serde_json::Value>,
     pub passes_eligibility_cache: Option<serde_json::Value>,
@@ -731,7 +723,6 @@ impl Default for GlobalConfig {
             copy_full_response: None,
             copy_on_select: None,
             respect_gitignore: None,
-            fast_mode: None,
             permission_explainer_enabled: None,
             auto_connect_ide: None,
             has_ide_auto_connect_dialog_been_shown: None,
@@ -767,7 +758,6 @@ impl Default for GlobalConfig {
             last_shown_emergency_tip: None,
             cached_growth_book_features: None,
             growth_book_overrides: None,
-            additional_model_options_cache: None,
             s1m_access_cache: None,
             s1m_non_subscriber_access_cache: None,
             passes_eligibility_cache: None,

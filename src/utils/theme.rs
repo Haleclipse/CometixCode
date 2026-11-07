@@ -1,12 +1,12 @@
 //! Maps to: CC utils/theme.ts — complete 6-variant color system.
-//! 1:1 port of all 69 theme color keys from CC's Theme type.
+//! Port of CC's Theme type color keys (67; @nyan: the two Fast mode keys are gone).
 //! Every field, every variant, every RGB value matches the CC source.
 //! Source: rebuild/src/utils/theme.ts lines 4-89 (type), 115-596 (6 themes).
 
 use iocraft::Color;
 
 /// Complete theme color palette — maps to CC Theme type (theme.ts:4-89).
-/// All 69 keys ported verbatim.
+/// All CC keys except the two Fast mode ones.
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
     pub auto_accept: Color,
@@ -60,8 +60,6 @@ pub struct Theme {
     pub memory_bg: Color,
     pub rate_limit_fill: Color,
     pub rate_limit_empty: Color,
-    pub fast_mode: Color,
-    pub fast_mode_shimmer: Color,
     pub brief_label_you: Color,
     pub brief_label_claude: Color,
     pub rainbow_red: Color,
@@ -135,8 +133,6 @@ pub enum ThemeColorKey {
     MemoryBg,
     RateLimitFill,
     RateLimitEmpty,
-    FastMode,
-    FastModeShimmer,
     BriefLabelYou,
     BriefLabelClaude,
     RainbowRed,
@@ -156,7 +152,7 @@ pub enum ThemeColorKey {
 }
 
 impl ThemeColorKey {
-    pub const ALL: [Self; 69] = [
+    pub const ALL: [Self; 67] = [
         Self::AutoAccept,
         Self::BashBorder,
         Self::Claude,
@@ -208,8 +204,6 @@ impl ThemeColorKey {
         Self::MemoryBg,
         Self::RateLimitFill,
         Self::RateLimitEmpty,
-        Self::FastMode,
-        Self::FastModeShimmer,
         Self::BriefLabelYou,
         Self::BriefLabelClaude,
         Self::RainbowRed,
@@ -281,8 +275,6 @@ impl ThemeColorKey {
             Self::MemoryBg => "memoryBackgroundColor",
             Self::RateLimitFill => "rate_limit_fill",
             Self::RateLimitEmpty => "rate_limit_empty",
-            Self::FastMode => "fastMode",
-            Self::FastModeShimmer => "fastModeShimmer",
             Self::BriefLabelYou => "briefLabelYou",
             Self::BriefLabelClaude => "briefLabelClaude",
             Self::RainbowRed => "rainbow_red",
@@ -357,8 +349,6 @@ impl Theme {
             ThemeColorKey::MemoryBg => self.memory_bg,
             ThemeColorKey::RateLimitFill => self.rate_limit_fill,
             ThemeColorKey::RateLimitEmpty => self.rate_limit_empty,
-            ThemeColorKey::FastMode => self.fast_mode,
-            ThemeColorKey::FastModeShimmer => self.fast_mode_shimmer,
             ThemeColorKey::BriefLabelYou => self.brief_label_you,
             ThemeColorKey::BriefLabelClaude => self.brief_label_claude,
             ThemeColorKey::RainbowRed => self.rainbow_red,
@@ -378,7 +368,7 @@ impl Theme {
         }
     }
 
-    pub fn palette(self) -> [Color; 69] {
+    pub fn palette(self) -> [Color; 67] {
         ThemeColorKey::ALL.map(|key| self.color(key))
     }
 }
@@ -449,8 +439,6 @@ pub static DARK: Theme = Theme {
     memory_bg: rgb!(55, 65, 70),
     rate_limit_fill: rgb!(177, 185, 249),
     rate_limit_empty: rgb!(80, 83, 112),
-    fast_mode: rgb!(255, 120, 20),
-    fast_mode_shimmer: rgb!(255, 165, 70),
     brief_label_you: rgb!(122, 180, 232),
     brief_label_claude: rgb!(215, 119, 87),
     rainbow_red: rgb!(235, 95, 87),
@@ -524,8 +512,6 @@ pub static LIGHT: Theme = Theme {
     memory_bg: rgb!(230, 245, 250),
     rate_limit_fill: rgb!(87, 105, 247),
     rate_limit_empty: rgb!(39, 47, 111),
-    fast_mode: rgb!(255, 106, 0),
-    fast_mode_shimmer: rgb!(255, 150, 50),
     brief_label_you: rgb!(37, 99, 235),
     brief_label_claude: rgb!(215, 119, 87),
     rainbow_red: rgb!(235, 95, 87),
@@ -599,8 +585,6 @@ pub static DARK_ANSI: Theme = Theme {
     memory_bg: Color::DarkGrey,
     rate_limit_fill: Color::DarkYellow,
     rate_limit_empty: Color::Grey,
-    fast_mode: Color::Red,
-    fast_mode_shimmer: Color::Red,
     brief_label_you: Color::Blue,
     brief_label_claude: Color::Red,
     rainbow_red: Color::DarkRed,
@@ -674,8 +658,6 @@ pub static LIGHT_ANSI: Theme = Theme {
     memory_bg: Color::Grey,
     rate_limit_fill: Color::DarkYellow,
     rate_limit_empty: Color::Black,
-    fast_mode: Color::DarkRed,
-    fast_mode_shimmer: Color::Red,
     brief_label_you: Color::DarkBlue,
     brief_label_claude: Color::Red,
     rainbow_red: Color::DarkRed,
@@ -749,8 +731,6 @@ pub static DARK_DALTONIZED: Theme = Theme {
     memory_bg: rgb!(55, 65, 70),
     rate_limit_fill: rgb!(153, 204, 255),
     rate_limit_empty: rgb!(69, 92, 115),
-    fast_mode: rgb!(255, 120, 20),
-    fast_mode_shimmer: rgb!(255, 165, 70),
     brief_label_you: rgb!(122, 180, 232),
     brief_label_claude: rgb!(255, 153, 51),
     rainbow_red: rgb!(235, 95, 87),
@@ -824,8 +804,6 @@ pub static LIGHT_DALTONIZED: Theme = Theme {
     memory_bg: rgb!(230, 245, 250),
     rate_limit_fill: rgb!(51, 102, 255),
     rate_limit_empty: rgb!(23, 46, 114),
-    fast_mode: rgb!(255, 106, 0),
-    fast_mode_shimmer: rgb!(255, 150, 50),
     brief_label_you: rgb!(37, 99, 235),
     brief_label_claude: rgb!(255, 153, 51),
     rainbow_red: rgb!(235, 95, 87),
@@ -1042,7 +1020,7 @@ mod tests {
 
     #[test]
     fn theme_color_keys_cover_the_full_official_palette() {
-        assert_eq!(ThemeColorKey::ALL.len(), 69);
+        assert_eq!(ThemeColorKey::ALL.len(), 67);
         assert_eq!(ThemeColorKey::ClawdBody.official_key(), "clawd_body");
         assert_eq!(
             ThemeColorKey::RateLimitFill.official_key(),

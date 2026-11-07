@@ -173,15 +173,26 @@ impl SkillContextModifier {
         }
 
         // `if (model)` — JS truthiness, so an empty `model:` is falsy and does
-        // not override. CC resolves against `ctx.options.mainLoopModel`, the
-        // modifier's own argument; the allowed-tools step above never touches
-        // `options`, so reading the running context is the same value.
+        // not override. @nyan: the value is a profile ref; the turn routes
+        // through that profile. An unknown one is ignored (CC's
+        // `resolveSkillModelOverride` 1M-suffix carry is gone with the aliases).
         if let Some(model) = self.model.as_deref().filter(|model| !model.is_empty()) {
-            context.main_loop_model =
-                Some(crate::utils::model::model::resolve_skill_model_override(
-                    model,
-                    context.main_loop_model.as_deref().unwrap_or_default(),
-                ));
+            match crate::utils::model::profile::resolve_model_ref(
+                crate::utils::settings::get_initial_settings()
+                    .nyan
+                    .as_deref(),
+                model,
+            ) {
+                Ok((crate::utils::model::profile::ModelChoice::Profile(profile), _)) => {
+                    context.main_loop_model =
+                        Some(crate::utils::model::model::profile_model(Some(&profile)));
+                    context.main_loop_profile = Some(profile);
+                }
+                Ok((crate::utils::model::profile::ModelChoice::Inherit, _)) => {}
+                Err(error) => {
+                    crate::utils::debug::log_for_debugging(&format!("Skill model ignored: {error}"))
+                }
+            }
         }
 
         // `if (effort !== undefined)` — presence, not truthiness.
@@ -1148,9 +1159,18 @@ mod tests {
         // `contextModifier` at all, so a skill's `allowed-tools`, `model:` and
         // `effort:` reached only the skill's own `!` blocks and were invisible
         // to every tool use the model made afterwards.
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {"deep": {"provider": "p", "model": "claude-opus-4-6",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}}
+            }}))
+            .unwrap(),
+        );
         let modifier = SkillContextModifier::new(
             vec!["Bash(printf *)".to_string()],
-            Some("opus".to_string()),
+            Some("deep".to_string()),
             Some(crate::utils::effort::EffortValue::Named("high".to_string())),
         )
         .expect("frontmatter carries all three captures");
@@ -1166,11 +1186,12 @@ mod tests {
                 Some("printf *".to_string())
             )]
         );
-        assert_eq!(context.main_loop_model.as_deref(), Some("opus"));
+        assert_eq!(context.main_loop_model.as_deref(), Some("claude-opus-4-6"));
         assert_eq!(
             context.effort_value,
             Some(crate::utils::effort::Effort::High)
         );
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]
@@ -1240,35 +1261,36 @@ mod tests {
     }
 
     #[test]
-    fn skill_model_override_carries_the_1m_suffix() {
-        // Maps to CC `SkillTool.ts:806-820` calling `resolveSkillModelOverride`
-        // (`utils/model/model.ts:508-536`): a skill declaring `model: opus` on
-        // an `opus[1m]` session must not silently drop the window to 200K.
-        // `haiku` has no 1M variant, so it still downgrades.
+    fn a_skill_model_routes_the_turn_through_that_profile() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _context = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_1M_CONTEXT");
-
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {"deep": {"provider": "p", "model": "claude-opus-4-6",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}}
+            }}))
+            .unwrap(),
+        );
         let mut context = crate::tool::ToolUseContext::default();
-        context.main_loop_model = Some("opus[1m]".to_string());
-        SkillContextModifier::new(Vec::new(), Some("opus".to_string()), None)
+        context.main_loop_model = Some("claude-sonnet-4-5".to_string());
+        SkillContextModifier::new(Vec::new(), Some("deep".to_string()), None)
             .unwrap()
             .modify_context(&mut context);
-        assert_eq!(context.main_loop_model.as_deref(), Some("opus[1m]"));
+        assert_eq!(context.main_loop_model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(context.main_loop_profile.as_deref(), Some("deep"));
 
-        let mut context = crate::tool::ToolUseContext::default();
-        context.main_loop_model = Some("opus[1m]".to_string());
-        SkillContextModifier::new(Vec::new(), Some("haiku".to_string()), None)
-            .unwrap()
-            .modify_context(&mut context);
-        assert_eq!(context.main_loop_model.as_deref(), Some("haiku"));
-
-        // A non-1M session leaves the skill's alias untouched.
+        // An unknown model leaves the turn on the session's profile.
         let mut context = crate::tool::ToolUseContext::default();
         context.main_loop_model = Some("claude-sonnet-4-5".to_string());
         SkillContextModifier::new(Vec::new(), Some("opus".to_string()), None)
             .unwrap()
             .modify_context(&mut context);
-        assert_eq!(context.main_loop_model.as_deref(), Some("opus"));
+        assert_eq!(
+            context.main_loop_model.as_deref(),
+            Some("claude-sonnet-4-5")
+        );
+        assert_eq!(context.main_loop_profile, None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]

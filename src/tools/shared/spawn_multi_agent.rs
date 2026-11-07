@@ -89,11 +89,9 @@ fn get_default_teammate_model_from_config(
         Some(None) => leader_model
             .map(ToOwned::to_owned)
             .unwrap_or_else(get_hardcoded_teammate_model_fallback),
-        // CC `:78-80` — parseUserSpecifiedModel applies to the CONFIGURED
-        // default only.
-        Some(Some(configured)) => {
-            crate::utils::model::model::parse_user_specified_model(configured)
-        }
+        // CC `:78-80` parses the configured default; a nyan model is a
+        // profile ref, resolved where the teammate runs.
+        Some(Some(configured)) => configured.clone(),
     }
 }
 
@@ -220,7 +218,7 @@ fn build_inherited_cli_flags(
     build_inherited_cli_flags_with_options(BuildInheritedCliFlagsOptions {
         plan_mode_required,
         permission_mode,
-        model_override: crate::bootstrap::state::get_main_loop_model_override().flatten(),
+        model_override: crate::bootstrap::state::get_session_profile(),
         settings_path: crate::bootstrap::state::get_flag_settings_path(),
         inline_plugins: crate::bootstrap::state::get_inline_plugins(),
         ..Default::default()
@@ -347,11 +345,12 @@ fn live_permission_mode(
 /// Maps to: CC `getAppState().mainLoopModel` as read by all three handlers
 /// (`:313`/`:553`/`:848`) when resolving the teammate model. Same live-vs-
 /// snapshot rule as [`live_permission_mode`].
+/// The leader's model as a profile ref: the profile its session runs on.
 fn live_main_loop_model(context: &crate::tool::ToolUseContext) -> Option<String> {
     context
         .get_app_state()
-        .and_then(|state| state.main_loop_model.clone())
-        .or_else(|| context.main_loop_model.clone())
+        .and_then(|state| state.main_loop_profile.clone())
+        .or_else(|| context.effective_profile_name())
 }
 
 /// Maps to the `{ stdout, stderr, code }` result returned by CC
@@ -1420,9 +1419,9 @@ mod tests {
     #[test]
     fn default_teammate_model_respects_config_null_string_and_undefined() {
         let undefined = crate::utils::config::GlobalConfig::default();
-        assert!(
-            get_default_teammate_model_from_config(&undefined, Some("leader-model"))
-                .contains("opus")
+        assert_eq!(
+            get_default_teammate_model_from_config(&undefined, Some("leader-model")),
+            "inherit"
         );
 
         let mut inherit_leader = crate::utils::config::GlobalConfig::default();
@@ -1431,7 +1430,10 @@ mod tests {
             get_default_teammate_model_from_config(&inherit_leader, Some("leader-model")),
             "leader-model"
         );
-        assert!(get_default_teammate_model_from_config(&inherit_leader, None).contains("opus"));
+        assert_eq!(
+            get_default_teammate_model_from_config(&inherit_leader, None),
+            "inherit"
+        );
 
         let mut configured = crate::utils::config::GlobalConfig::default();
         configured.teammate_default_model = Some(Some("haiku".to_string()));

@@ -12,7 +12,7 @@ use crate::commands::diff::diff::DiffCommand;
 use crate::commands::hooks::hooks::HooksCommand;
 use crate::commands::resume::resume::ResumeCommand;
 use crate::commands::skills::skills::SkillsCommand;
-use crate::commands::{doctor, effort, fast, mcp, memory, model, permissions, resume, theme};
+use crate::commands::{doctor, mcp, memory, model, permissions, resume, theme};
 use crate::components::bash_mode_progress::BashModeProgress;
 use crate::components::desktop_handoff::DesktopHandoffState;
 use crate::components::desktop_upsell::{
@@ -20,7 +20,6 @@ use crate::components::desktop_upsell::{
     get_desktop_upsell_config, should_show_desktop_upsell_startup,
 };
 use crate::components::diff::DiffDialogDone;
-use crate::components::effort_picker::EffortPicker;
 use crate::components::exit_flow::{ExitFlow, ExitFlowDone};
 use crate::components::export_dialog::{ExportDialog, ExportDialogResult};
 use crate::components::help_v2::HelpV2;
@@ -244,14 +243,10 @@ fn node_arch_from_rust() -> String {
     .to_string()
 }
 
-/// Maps to: CC `screens/REPL.tsx` `const mainLoopModel = useMainLoopModel()`.
-///
-/// AppState may store aliases (`opus`); this returns the API-ready full name.
+/// Maps to: CC `screens/REPL.tsx` `const mainLoopModel = useMainLoopModel()`:
+/// the wire model of the session profile.
 fn repl_main_loop_model(app_state: &crate::state::app_state_store::AppState) -> String {
-    crate::hooks::use_main_loop_model::use_main_loop_model(
-        app_state.main_loop_model.as_deref(),
-        app_state.main_loop_model_for_session.as_deref(),
-    )
+    crate::utils::model::model::profile_model(app_state.main_loop_profile.as_deref())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -259,17 +254,16 @@ fn apply_repl_tool_use_context_options(
     context: &mut crate::tool::ToolUseContext,
     callbacks: Option<&crate::services::mcp::channel_permissions::ChannelPermissionCallbacks>,
     interactive_permission_sink: &crate::tool::InteractivePermissionSink,
-    fast_mode: bool,
-    thinking_enabled: Option<bool>,
     thinking_config: &crate::utils::thinking::ThinkingConfig,
     model: Option<String>,
+    profile: Option<String>,
     effort_value: Option<crate::utils::effort::Effort>,
 ) {
-    // Maps to CC wiring `getAppState().channelPermissionCallbacks` / fastMode /
-    // thinking / model / effort onto the top-level REPL `toolUseContext` before
+    // Maps to CC wiring `getAppState().channelPermissionCallbacks` / thinking /
+    // model / effort onto the top-level REPL `toolUseContext` before
     // `query(...)`. `model` must already be API-resolved (CC
-    // `useMainLoopModel()`). The launch `thinkingConfig` is required just as it
-    // is in CC's REPL Props; only the live AppState enable switch is optional.
+    // `useMainLoopModel()`). @nyan: no Fast mode and no thinking toggle
+    // (effort `off` turns thinking off); the session profile routes requests.
     context.channel_permission_callbacks = callbacks.cloned();
     // Maps to CC `REPL.tsx:3409` passing `canUseTool` into `query(...)`. CC's
     // `canUseTool` is a call argument; the port carries its dialog half on the
@@ -288,17 +282,11 @@ fn apply_repl_tool_use_context_options(
                     .add_notification(notification);
             }) as Arc<dyn Fn(crate::context::notifications::Notification) + Send + Sync>
         }));
-    context.fast_mode = Some(fast_mode);
-    // Maps to: CC REPL.tsx
-    //   thinkingConfig: s.thinkingEnabled !== false ? thinkingConfig : { type: 'disabled' }
-    context.thinking_config = Some(if thinking_enabled == Some(false) {
-        crate::utils::thinking::ThinkingConfig::Disabled
-    } else {
-        thinking_config.clone()
-    });
+    context.thinking_config = Some(thinking_config.clone());
     if let Some(model) = model {
         context.main_loop_model = Some(model);
     }
+    context.main_loop_profile = profile;
     // This context is reused across turns. Assign `None` as well so
     // `/effort auto|unset` cannot leave the previous explicit value behind.
     context.effort_value = effort_value;
@@ -633,11 +621,10 @@ fn build_repl_process_user_input_context(
         &mut context,
         callbacks,
         interactive_permission_sink,
-        app_snapshot.fast_mode,
-        app_snapshot.thinking_enabled,
         thinking_config,
         Some(main_loop_model),
-        app_snapshot.effort_value.clone(),
+        app_snapshot.main_loop_profile.clone(),
+        app_snapshot.effort_value,
     );
     context
 }
@@ -843,11 +830,10 @@ fn apply_repl_query_turn_context(
         &mut params.tool_use_context,
         channel_permission_callbacks,
         interactive_permission_sink,
-        app_snapshot.fast_mode,
-        app_snapshot.thinking_enabled,
         thinking_config,
         Some(prompt_model),
-        app_snapshot.effort_value.clone(),
+        app_snapshot.main_loop_profile.clone(),
+        app_snapshot.effort_value,
     );
     // Maps to CC `REPL.tsx`'s per-turn `hasInterruptibleToolInProgress` ref
     // installation. Keeping this inside the single context owner prevents
@@ -1019,7 +1005,6 @@ enum LocalCommandPanel {
     Help,
     Hooks,
     Model,
-    Fast,
     Theme,
     Export(
         crate::commands::export::export::ExportDialogData,
@@ -1043,10 +1028,6 @@ enum LocalCommandPanel {
     },
     Ide {
         args: String,
-    },
-    Effort {
-        args: Option<String>,
-        has_conversation_messages: bool,
     },
     It2Setup {
         request: It2SetupPromptRequest,
@@ -2491,7 +2472,6 @@ fn local_command_panel_from_command(command: LocalCommandUi) -> LocalCommandPane
         LocalCommandUi::Help => LocalCommandPanel::Help,
         LocalCommandUi::Hooks => LocalCommandPanel::Hooks,
         LocalCommandUi::Model => LocalCommandPanel::Model,
-        LocalCommandUi::Fast => LocalCommandPanel::Fast,
         LocalCommandUi::Theme => LocalCommandPanel::Theme,
         LocalCommandUi::Export {
             data,
@@ -2509,13 +2489,6 @@ fn local_command_panel_from_command(command: LocalCommandUi) -> LocalCommandPane
         LocalCommandUi::Copy { data } => LocalCommandPanel::Copy(data),
         LocalCommandUi::Mcp { args } => LocalCommandPanel::Mcp { args },
         LocalCommandUi::Ide { args } => LocalCommandPanel::Ide { args },
-        LocalCommandUi::Effort {
-            args,
-            has_conversation_messages,
-        } => LocalCommandPanel::Effort {
-            args,
-            has_conversation_messages,
-        },
     }
 }
 
@@ -2532,10 +2505,8 @@ fn local_command_ui_is_immediate(panel: &LocalCommandPanel) -> bool {
             | LocalCommandPanel::Mcp { .. }
             | LocalCommandPanel::Sandbox
             | LocalCommandPanel::Btw { .. }
-    ) || (matches!(
-        panel,
-        LocalCommandPanel::Model | LocalCommandPanel::Effort { .. }
-    ) && crate::utils::immediate_command::should_inference_config_command_be_immediate())
+    ) || (matches!(panel, LocalCommandPanel::Model)
+        && crate::utils::immediate_command::should_inference_config_command_be_immediate())
 }
 
 fn local_command_ui_dismiss_result(panel: &LocalCommandPanel) -> Option<String> {
@@ -2554,8 +2525,6 @@ fn local_command_ui_dismiss_result(panel: &LocalCommandPanel) -> Option<String> 
         LocalCommandPanel::Help => Some("Help dialog dismissed".to_string()),
         LocalCommandPanel::Hooks => Some("Hooks dialog dismissed".to_string()),
         LocalCommandPanel::Model => Some(model::handle_cancel_output()),
-        LocalCommandPanel::Effort { .. } => Some(effort::effort::handle_cancel_output()),
-        LocalCommandPanel::Fast => Some("Kept Fast mode OFF".to_string()),
         LocalCommandPanel::Theme => Some(theme::handle_cancel_output()),
         LocalCommandPanel::Export(..) => Some("Export cancelled".to_string()),
         LocalCommandPanel::Permissions => Some("Permissions dialog dismissed".to_string()),
@@ -3545,6 +3514,11 @@ fn apply_resume_restore_result(
     // query and render projections switch atomically; startup resume uses the
     // same ProcessedResume before mount.
     app_store.replace_with(|state| result.apply_to_app_state(state));
+    if let Some(notice) = result.missing_profile_notice() {
+        // Already queued by the restore; adding it again shows the queue.
+        crate::context::notifications::NotificationsWriter::new(app_store.clone())
+            .add_notification(notice);
+    }
     // CC REPL.tsx:2548-2558: hot forks preserve the live replacement state
     // (including frozen classification and already-applied tool IDs).
     let replacement_state = (result.resume_restore_stores.entrypoint
@@ -5870,12 +5844,11 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             let entries_snapshot = Arc::clone(&*history_state.read());
             let main_thread_agent_definition = main_thread_agent_definition.read().clone();
             // Maps to: CC REPL.tsx:3703-3714, both checks settle before the query starts.
-            let gate_snapshot = app_store_for_mcp.get();
             tokio::join!(
                 crate::utils::permissions::bypass_permissions_killswitch::check_and_disable_bypass_permissions_if_needed(
                     &command_permission_context, &app_store_for_mcp),
                 crate::utils::permissions::bypass_permissions_killswitch::check_and_disable_auto_mode_if_needed(
-                    &command_permission_context, &app_store_for_mcp, Some(gate_snapshot.fast_mode)),
+                    &command_permission_context, &app_store_for_mcp),
             );
             let next_content_replacement_state = apply_repl_query_turn_context(
                 &mut params,
@@ -6524,12 +6497,11 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         let main_thread_agent_definition =
                             main_thread_agent_definition_for_submit.read().clone();
                         // Maps to: CC REPL.tsx:3703-3714, both checks settle before the query starts.
-                        let gate_snapshot = app_store_for_submit.get();
                         tokio::join!(
                             crate::utils::permissions::bypass_permissions_killswitch::check_and_disable_bypass_permissions_if_needed(
                                 &command_permission_context, &app_store_for_submit),
                             crate::utils::permissions::bypass_permissions_killswitch::check_and_disable_auto_mode_if_needed(
-                                &command_permission_context, &app_store_for_submit, Some(gate_snapshot.fast_mode)),
+                                &command_permission_context, &app_store_for_submit),
                         );
                         let next_content_replacement_state = apply_repl_query_turn_context(
                             &mut params,
@@ -9525,86 +9497,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             on_select: on_local_command_ui_result,
                         )
                     }.into_any()),
-                    LocalCommandPanel::Effort {
-                        args,
-                        has_conversation_messages,
-                    } => Some(element! {
-                        EffortPicker(
-                            args: args.clone(),
-                            has_conversation_messages: has_conversation_messages,
-                            on_close: on_local_command_ui_close,
-                            on_cancel_args: on_local_command_ui_result.clone(),
-                            on_select: on_local_command_ui_result,
-                        )
-                    }.into_any()),
-                    LocalCommandPanel::Fast => {
-                        let initial_enabled = app_store.get().fast_mode;
-                        let mut on_result = on_local_command_ui_result.clone();
-                        let mut on_close = on_local_command_ui_close.clone();
-                        let store_for_fast = app_store.clone();
-                        // Maps to: CC fast.tsx:252-258 — read the real
-                        // unavailable reason before mounting the picker. CC's
-                        // `await prefetchFastModeStatus()` (:238) resolves the
-                        // org status first; Rust reads the synchronously
-                        // cached org status, same as the PromptInput mount.
-                        // P4 review fix (2026-08-02).
-                        let fast_unavailable_reason =
-                            crate::utils::fast_mode::get_fast_mode_unavailable_reason();
-                        Some(element! {
-                            fast::FastModePicker(
-                                initial_enabled: initial_enabled,
-                                unavailable_reason: fast_unavailable_reason,
-                                on_done: move |choice: Option<bool>| {
-                                    match choice {
-                                        Some(enabled) => {
-                                            // Maps to: CC fast.tsx:35-58 applyFastMode —
-                                            // clearFastModeCooldown (:39), persist to
-                                            // userSettings (:40-42, `fastMode: enable ?
-                                            // true : undefined`; Null carries the
-                                            // undefined delete), and the ON-branch model
-                                            // switch when the current model lacks
-                                            // fast-mode support (:44-53). Realized
-                                            // 2026-08-02 (P4 batch).
-                                            crate::utils::fast_mode::clear_fast_mode_cooldown();
-                                            let _ = crate::utils::settings::update_settings_for_source(
-                                                crate::utils::settings::SettingSource::User,
-                                                &serde_json::Map::from_iter([(
-                                                    "fastMode".to_string(),
-                                                    if enabled {
-                                                        serde_json::Value::Bool(true)
-                                                    } else {
-                                                        serde_json::Value::Null
-                                                    },
-                                                )]),
-                                            );
-                                            // @nyan (compaction C12): a fast-mode
-                                            // model swap changes the cache key.
-                                            crate::services::cache_warmer::invalidate();
-                                            store_for_fast.replace_with(|state| {
-                                                if enabled
-                                                    && !crate::utils::fast_mode::is_fast_mode_supported_by_model(
-                                                        state.main_loop_model.as_deref(),
-                                                    )
-                                                {
-                                                    state.main_loop_model =
-                                                        Some(crate::utils::fast_mode::get_fast_mode_model());
-                                                    state.main_loop_model_for_session = None;
-                                                }
-                                                state.fast_mode = enabled;
-                                            });
-                                            let msg = if enabled {
-                                                "Fast mode ON".to_string()
-                                            } else {
-                                                "Fast mode OFF".to_string()
-                                            };
-                                            on_result(msg);
-                                        }
-                                        None => on_close(()),
-                                    }
-                                },
-                            )
-                        }.into_any())
-                    },
                     LocalCommandPanel::Theme => Some(element! {
                         theme::ThemePickerCommand(
                             on_close: on_local_command_ui_close,
@@ -9799,86 +9691,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                             on_select: on_local_command_ui_result,
                         )
                     }.into_any()),
-                    LocalCommandPanel::Effort {
-                        args,
-                        has_conversation_messages,
-                    } => Some(element! {
-                        EffortPicker(
-                            args: args.clone(),
-                            has_conversation_messages: has_conversation_messages,
-                            on_close: on_local_command_ui_close,
-                            on_cancel_args: on_local_command_ui_result.clone(),
-                            on_select: on_local_command_ui_result,
-                        )
-                    }.into_any()),
-                    LocalCommandPanel::Fast => {
-                        let initial_enabled = app_store.get().fast_mode;
-                        let mut on_result = on_local_command_ui_result.clone();
-                        let mut on_close = on_local_command_ui_close.clone();
-                        let store_for_fast = app_store.clone();
-                        // Maps to: CC fast.tsx:252-258 — read the real
-                        // unavailable reason before mounting the picker. CC's
-                        // `await prefetchFastModeStatus()` (:238) resolves the
-                        // org status first; Rust reads the synchronously
-                        // cached org status, same as the PromptInput mount.
-                        // P4 review fix (2026-08-02).
-                        let fast_unavailable_reason =
-                            crate::utils::fast_mode::get_fast_mode_unavailable_reason();
-                        Some(element! {
-                            fast::FastModePicker(
-                                initial_enabled: initial_enabled,
-                                unavailable_reason: fast_unavailable_reason,
-                                on_done: move |choice: Option<bool>| {
-                                    match choice {
-                                        Some(enabled) => {
-                                            // Maps to: CC fast.tsx:35-58 applyFastMode —
-                                            // clearFastModeCooldown (:39), persist to
-                                            // userSettings (:40-42, `fastMode: enable ?
-                                            // true : undefined`; Null carries the
-                                            // undefined delete), and the ON-branch model
-                                            // switch when the current model lacks
-                                            // fast-mode support (:44-53). Realized
-                                            // 2026-08-02 (P4 batch).
-                                            crate::utils::fast_mode::clear_fast_mode_cooldown();
-                                            let _ = crate::utils::settings::update_settings_for_source(
-                                                crate::utils::settings::SettingSource::User,
-                                                &serde_json::Map::from_iter([(
-                                                    "fastMode".to_string(),
-                                                    if enabled {
-                                                        serde_json::Value::Bool(true)
-                                                    } else {
-                                                        serde_json::Value::Null
-                                                    },
-                                                )]),
-                                            );
-                                            // @nyan (compaction C12): a fast-mode
-                                            // model swap changes the cache key.
-                                            crate::services::cache_warmer::invalidate();
-                                            store_for_fast.replace_with(|state| {
-                                                if enabled
-                                                    && !crate::utils::fast_mode::is_fast_mode_supported_by_model(
-                                                        state.main_loop_model.as_deref(),
-                                                    )
-                                                {
-                                                    state.main_loop_model =
-                                                        Some(crate::utils::fast_mode::get_fast_mode_model());
-                                                    state.main_loop_model_for_session = None;
-                                                }
-                                                state.fast_mode = enabled;
-                                            });
-                                            let msg = if enabled {
-                                                "Fast mode ON".to_string()
-                                            } else {
-                                                "Fast mode OFF".to_string()
-                                            };
-                                            on_result(msg);
-                                        }
-                                        None => on_close(()),
-                                    }
-                                },
-                            )
-                        }.into_any())
-                    },
                     LocalCommandPanel::Theme => Some(element! {
                         theme::ThemePickerCommand(
                             on_close: on_local_command_ui_close,
@@ -12138,9 +11950,8 @@ mod tests {
             &mut context,
             Some(&callbacks),
             &crate::tool::InteractivePermissionSink::default(),
-            false,
-            None,
             &crate::utils::thinking::ThinkingConfig::Adaptive,
+            None,
             None,
             None,
         );
@@ -12153,23 +11964,20 @@ mod tests {
             context.thinking_config,
             Some(crate::utils::thinking::ThinkingConfig::Adaptive)
         );
-        assert_eq!(context.fast_mode, Some(false));
 
         let mut context = crate::tool::ToolUseContext::default();
         apply_repl_tool_use_context_options(
             &mut context,
             None,
             &crate::tool::InteractivePermissionSink::default(),
-            true,
-            Some(false),
             &crate::utils::thinking::ThinkingConfig::Adaptive,
-            Some("opus".to_string()),
+            Some("claude-opus-4-6".to_string()),
+            Some("deep".to_string()),
             Some(crate::utils::effort::Effort::High),
         );
-        assert_eq!(context.fast_mode, Some(true));
-        // apply_repl_tool_use_context_options stores the caller-provided model
-        // as-is; REPL callers pass `useMainLoopModel()`-resolved names.
-        assert_eq!(context.main_loop_model.as_deref(), Some("opus"));
+        // The caller passes the session profile's resolved model.
+        assert_eq!(context.main_loop_model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(context.main_loop_profile.as_deref(), Some("deep"));
         assert_eq!(
             context.effort_value,
             Some(crate::utils::effort::Effort::High)
@@ -12178,9 +11986,8 @@ mod tests {
             &mut context,
             None,
             &crate::tool::InteractivePermissionSink::default(),
-            true,
-            Some(false),
             &crate::utils::thinking::ThinkingConfig::Adaptive,
+            None,
             None,
             None,
         );
@@ -12188,11 +11995,7 @@ mod tests {
             context.effort_value.is_none(),
             "a reused context must clear the previous explicit effort"
         );
-        // thinkingEnabled === false → disabled (CC REPL.tsx), ignores config.
-        assert_eq!(
-            context.thinking_config,
-            Some(crate::utils::thinking::ThinkingConfig::Disabled)
-        );
+        assert_eq!(context.main_loop_profile, None);
         assert!(context.channel_permission_callbacks.is_none());
     }
 
@@ -12556,7 +12359,7 @@ mod tests {
                 .map(|tool| tool.name.as_str())
                 .collect::<Vec<_>>()
         );
-        assert_eq!(shell.fast_mode, builder.fast_mode);
+        assert_eq!(shell.main_loop_profile, builder.main_loop_profile);
         assert_eq!(shell.thinking_config, builder.thinking_config);
         assert_eq!(shell.main_loop_model, builder.main_loop_model);
         assert_eq!(shell.effort_value, builder.effort_value);
@@ -12875,11 +12678,10 @@ mod tests {
             &mut context,
             None,
             &crate::tool::InteractivePermissionSink::default(),
-            false,
-            Some(true),
             &crate::utils::thinking::ThinkingConfig::Enabled {
                 budget_tokens: Some(8000),
             },
+            None,
             None,
             None,
         );
@@ -16313,11 +16115,6 @@ mod tests {
             BuildAudience::External,
             false
         ));
-        assert!(model::env_flag_truthy(Some("1")));
-        assert!(model::env_flag_truthy(Some("true")));
-        assert!(model::env_flag_truthy(Some("ON")));
-        assert!(model::env_flag_truthy(Some(" Yes ")));
-        assert!(!model::env_flag_truthy(Some("0")));
     }
 
     #[test]
@@ -16509,14 +16306,6 @@ mod tests {
                 LocalCommandUi::Model,
                 "model",
                 "no model profile configured — set settings.nyan.selection.main",
-            ),
-            (
-                LocalCommandUi::Effort {
-                    args: None,
-                    has_conversation_messages: false,
-                },
-                "effort",
-                "Cancelled",
             ),
             (
                 LocalCommandUi::Permissions,
@@ -16761,11 +16550,27 @@ mod tests {
 
     #[test]
     fn model_command_selection_appends_local_command_output_and_restores_prompt() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {
+                    "main": {"provider": "p", "model": "claude-sonnet-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                    "deep": {"provider": "p", "model": "claude-opus-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                },
+                "selection": {"main": "main"}
+            }}))
+            .unwrap(),
+        );
         // Do not send Down on a fixed timer: the picker is mounted by an
         // async command path, so a loaded machine can consume Down before it
-        // owns the event and Enter then selects the initial Opus row. Gate
+        // owns the event and Enter then selects the initial row. Gate
         // each event on the UI state that is supposed to consume it.
         let canvases = run_repl_script(
             element!(ReplHarness).into_any(),
@@ -16786,7 +16591,7 @@ mod tests {
             "model selection should append the local command row; canvas=\n{text}"
         );
         assert!(
-            text.contains("Set model to Opus 4.6 1M"),
+            text.contains("Set model to deep"),
             "model selection should append the official local command output row; canvas=\n{text}"
         );
         assert!(
@@ -16797,6 +16602,8 @@ mod tests {
             !text.contains("Select model"),
             "model picker should be cleared after selection; canvas=\n{text}"
         );
+        crate::bootstrap::state::set_session_profile(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]

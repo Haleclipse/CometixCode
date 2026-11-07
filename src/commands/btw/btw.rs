@@ -60,7 +60,7 @@ pub async fn build_cache_safe_params(context: &crate::tool::ToolUseContext) -> C
     let model = context
         .main_loop_model
         .clone()
-        .unwrap_or_else(crate::utils::model::model::get_default_main_loop_model);
+        .unwrap_or_else(crate::utils::model::model::get_main_loop_model);
     // Maps to CC `btw.tsx:189-196` `getSystemPrompt(context.options.tools,
     // context.options.mainLoopModel, [], context.options.mcpClients)` — the
     // fallback rebuild passes an EMPTY additionalWorkingDirectories list.

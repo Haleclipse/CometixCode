@@ -35,11 +35,12 @@ pub fn dispatch(
 /// Maps to CC `commands/advisor.ts#call`.
 pub async fn call(args: &str, context: &ToolUseContext) -> Result<String, String> {
     let arg = args.trim().to_ascii_lowercase();
-    let base_model = context
-        .get_app_state()
-        .and_then(|state| state.main_loop_model.clone())
-        .unwrap_or_else(crate::utils::model::model::get_default_main_loop_model_setting);
-    let base_model = crate::utils::model::model::parse_user_specified_model(&base_model);
+    let base_model = crate::utils::model::model::profile_model(
+        context
+            .get_app_state()
+            .and_then(|state| state.main_loop_profile.clone())
+            .as_deref(),
+    );
 
     if arg.is_empty() {
         let current = context
@@ -47,7 +48,7 @@ pub async fn call(args: &str, context: &ToolUseContext) -> Result<String, String
             .and_then(|state| state.advisor_model.clone());
         let Some(current) = current else {
             return Ok(
-                "Advisor: not set\nUse \"/advisor <model>\" to enable (e.g. \"/advisor opus\")."
+                "Advisor: not set\nUse \"/advisor <model>\" to enable (e.g. \"/advisor claude-opus-4-6\")."
                     .to_string(),
             );
         };
@@ -73,7 +74,9 @@ pub async fn call(args: &str, context: &ToolUseContext) -> Result<String, String
     }
 
     let normalized_model = crate::utils::model::model::normalize_model_string_for_api(&arg);
-    let resolved_model = crate::utils::model::model::parse_user_specified_model(&arg);
+    // @nyan: the advisor is a server-side tool parameter; the id is sent as
+    // given (no CC model aliases).
+    let resolved_model = arg.clone();
     // CC returns validation failures as local command text.  They are not
     // rejected promises, so the REPL renders them in the stdout envelope.
     if let Err(error) = crate::utils::model::validate_model::validate_model(&resolved_model).await {

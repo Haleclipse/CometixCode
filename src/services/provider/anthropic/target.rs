@@ -102,19 +102,6 @@ pub fn target_for_profile(profile: &ResolvedModelProfile) -> Result<AnthropicTar
     target_for_profile_with_settings(profile, &crate::utils::settings::get_initial_settings())
 }
 
-/// The target of the selected main profile. Auxiliary requests (titles,
-/// classifiers, quota checks) use the main profile's provider too: there is no
-/// second source of Anthropic credentials.
-pub fn resolve_main_target(settings: &SettingsJson) -> Result<AnthropicTarget, TargetError> {
-    let profile = crate::utils::model::profile::resolve_main_profile(settings)?;
-    target_for_profile_with_settings(&profile, settings)
-}
-
-/// Same as [`resolve_main_target`] against the live settings.
-pub fn current_main_target() -> Result<AnthropicTarget, TargetError> {
-    resolve_main_target(&crate::utils::settings::get_initial_settings())
-}
-
 /// The target of the profile a request names (`None`: the main profile).
 pub fn current_request_target(profile: Option<&str>) -> Result<AnthropicTarget, TargetError> {
     let settings = crate::utils::settings::get_initial_settings();
@@ -202,6 +189,34 @@ pub(crate) fn install_test_profiles_with_retention(
     });
 }
 
+/// Point the installed test `main` profile at wire model `model`, keeping its
+/// provider and credential; installs an endpoint-less one when none is set.
+#[cfg(test)]
+pub(crate) fn install_test_model_profile(model: &str) {
+    let mut settings = crate::utils::settings::get_initial_settings();
+    if crate::utils::model::profile::resolve_main_profile(&settings).is_err() {
+        settings = serde_json::from_value(serde_json::json!({"nyan": {
+            "providers": {"anthropic": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+            "models": {"main": {"provider": "anthropic",
+                "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}},
+            "selection": {"main": "main"}
+        }}))
+        .expect("test model profile");
+    }
+    let nyan = settings.nyan.as_mut().expect("nyan settings");
+    let main = nyan
+        .selection
+        .as_ref()
+        .and_then(|selection| selection.main.clone())
+        .expect("main profile");
+    nyan.models
+        .as_mut()
+        .and_then(|models| models.get_mut(&main))
+        .expect("main profile settings")
+        .model = Some(model.to_string());
+    crate::utils::settings::settings_cache::install_test_settings(settings);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,7 +291,7 @@ mod tests {
             "NYAN_TARGET_TEST_KEY",
             Some(crate::utils::settings::nyan::CacheRetention::Long),
         );
-        let target = current_main_target().unwrap();
+        let target = current_request_target(None).unwrap();
         assert_eq!(
             target.cache_retention,
             crate::utils::settings::nyan::CacheRetention::Long
@@ -287,7 +302,7 @@ mod tests {
             "NYAN_TARGET_TEST_KEY",
             None,
         );
-        let default_target = current_main_target().unwrap();
+        let default_target = current_request_target(None).unwrap();
         assert_eq!(
             default_target.cache_retention,
             crate::utils::settings::nyan::CacheRetention::Long
@@ -343,7 +358,10 @@ mod tests {
 
     #[test]
     fn no_profile_is_the_resolver_error() {
-        let error = resolve_main_target(&SettingsJson::default()).unwrap_err();
+        let _lock = lock();
+        crate::utils::settings::settings_cache::install_test_settings(SettingsJson::default());
+        let error = current_request_target(None).unwrap_err();
+        crate::utils::settings::settings_cache::reset_settings_cache();
         assert!(matches!(
             error,
             TargetError::Profile(ProfileResolutionError::MissingSettings)

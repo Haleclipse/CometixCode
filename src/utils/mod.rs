@@ -62,7 +62,6 @@ pub mod error_log_sink;
 pub mod errors;
 pub mod example_commands;
 pub mod exec_file_no_throw;
-pub mod fast_mode;
 pub mod feature_flags;
 pub mod file;
 pub mod file_history;

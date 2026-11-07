@@ -584,23 +584,16 @@ pub struct AppState {
     /// authoritative factory default (`expandCollapsedReadSearch`,
     /// config.rs `create_official_default_global_config`).
     pub expand_collapsed_read_search: bool,
-    /// Maps to: CC `AppState.mainLoopModel` — alias, full name (as with
-    /// `--model` or env var), or `None` (default). Persisted to userSettings
-    /// on change.
-    pub main_loop_model: Option<String>,
-    /// Maps to: CC `AppState.mainLoopModelForSession` — session-scoped
-    /// override, never persisted.
-    pub main_loop_model_for_session: Option<String>,
+    /// The profile this session's main loop runs on (`--model`, `/model`, the
+    /// picker, a resumed session); `None` is `selection.main`. Never persisted
+    /// to settings: the picker's Ctrl+S writes `selection.main` itself.
+    ///
+    /// @nyan: replaces CC `AppState.mainLoopModel` /
+    /// `mainLoopModelForSession`. The wire model is the profile's.
+    pub main_loop_profile: Option<String>,
     /// Maps to: CC `AppState.advisorModel` — session-visible advisor model,
     /// persisted separately by `/advisor` to user settings when configured.
     pub advisor_model: Option<String>,
-    /// Maps to: CC `AppState.thinkingEnabled`. `None` means the model/default
-    /// policy decides; explicit picker choices set `Some(bool)` for this
-    /// session without adding analytics or settings writes here.
-    pub thinking_enabled: Option<bool>,
-    /// Maps to: CC `AppState.fastMode`; explicit picker state for query/API
-    /// owners. Defaults off.
-    pub fast_mode: bool,
     /// Maps to: CC `AppState.effortValue`.
     pub effort_value: Option<crate::utils::effort::Effort>,
     /// CC cacheMissAckedAtOutputTokens: confirmation watermark.
@@ -844,11 +837,8 @@ impl Default for AppState {
             verbose: false,
             expand_thinking: true,
             expand_collapsed_read_search: true,
-            main_loop_model: None,
-            main_loop_model_for_session: None,
+            main_loop_profile: None,
             advisor_model: None,
-            thinking_enabled: None,
-            fast_mode: false,
             effort_value: None,
             cache_miss_acked_at_output_tokens: -1,
             expanded_view: ExpandedView::None,

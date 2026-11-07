@@ -663,7 +663,6 @@ pub struct AutoModeGateCheckResult {
 /// The returned transform re-checks the fresh AppStore context after the await.
 pub async fn verify_auto_mode_gate_access(
     current_context: &ToolPermissionContext,
-    fast_mode: Option<bool>,
 ) -> AutoModeGateCheckResult {
     let config = crate::services::analytics::growthbook::get_dynamic_config_blocks_on_init(
         "tengu_auto_mode_config",
@@ -685,10 +684,11 @@ pub async fn verify_auto_mode_gate_access(
             serde_json::Value::String(value) => !value.is_empty(),
             serde_json::Value::Array(_) | serde_json::Value::Object(_) => true,
         })
-        && (fast_mode.unwrap_or(false)
-            || (crate::utils::build_profile::has_internal_capability(
-                crate::utils::build_profile::InternalCapability::Permissions,
-            ) && main_model.to_lowercase().contains("-fast")));
+        // @nyan: no Fast mode; only the internal `-fast` model id trips it.
+        && crate::utils::build_profile::has_internal_capability(
+            crate::utils::build_profile::InternalCapability::Permissions,
+        )
+        && main_model.to_lowercase().contains("-fast");
     let model_supported =
         crate::services::provider::anthropic::betas::model_supports_auto_mode(&main_model)
             && !disable_fast;
@@ -1455,13 +1455,21 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join("settings.json"),
-            r#"{"skipAutoPermissionPrompt":true,"useAutoModeDuringPlan":true}"#,
+            serde_json::json!({
+                "skipAutoPermissionPrompt": true,
+                "useAutoModeDuringPlan": true,
+                "nyan": {
+                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                    "models": {"main": {"provider": "p", "model": "claude-sonnet-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}},
+                    "selection": {"main": "main"}
+                }
+            })
+            .to_string(),
         )
         .unwrap();
         let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-sonnet-4-6".to_string(),
-        )));
+        crate::utils::settings::settings_cache::reset_settings_cache();
         crate::utils::permissions::auto_mode_state::reset_for_testing();
 
         let dangerous = PermissionRuleValue::new("Bash", Some("python:*".to_string()));
@@ -1487,7 +1495,7 @@ mod tests {
         );
 
         crate::utils::permissions::auto_mode_state::reset_for_testing();
-        crate::bootstrap::state::set_main_loop_model_override(None);
+        crate::utils::settings::settings_cache::reset_settings_cache();
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -1963,7 +1971,7 @@ mod gate_tests {
         settings(serde_json::json!({"permissions":{"disableAutoMode":"disable"}}));
         super::super::auto_mode_state::reset_for_testing();
         let old = ToolPermissionContext::default();
-        let result = verify_auto_mode_gate_access(&old, None).await;
+        let result = verify_auto_mode_gate_access(&old).await;
         assert!(result.notification.is_none());
         let fresh = Arc::new(ToolPermissionContext {
             mode: PermissionMode::Auto,
@@ -1976,7 +1984,7 @@ mod gate_tests {
         assert!(!super::super::auto_mode_state::is_auto_mode_active());
         assert!(crate::bootstrap::state::needs_auto_mode_exit_attachment());
         assert!(Arc::ptr_eq(&next, &(result.update_context)(&next)));
-        let result = verify_auto_mode_gate_access(&fresh, None).await;
+        let result = verify_auto_mode_gate_access(&fresh).await;
         assert_eq!(
             result.notification,
             Some(get_auto_mode_unavailable_notification(
@@ -2007,7 +2015,7 @@ mod gate_tests {
 
     #[cfg(feature = "anthropic_internal")]
     #[tokio::test]
-    async fn auto_gate_matches_official_opt_in_carousel_and_runtime_fast_breaker() {
+    async fn auto_gate_matches_official_opt_in_carousel() {
         // permissionSetup.ts:1091-1141: opt-in allows explicit entry, but not carousel without consent.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _overrides = EnvVarGuard::set(
@@ -2017,31 +2025,32 @@ mod gate_tests {
         crate::services::analytics::growthbook::reset_growth_book();
         settings(serde_json::json!({}));
         super::super::auto_mode_state::reset_for_testing();
-        let old_model = crate::bootstrap::state::get_main_loop_model_override();
-        crate::bootstrap::state::set_main_loop_model_override(Some(Some(
-            "claude-sonnet-4-6".into(),
-        )));
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({
+                "nyan": {
+                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                    "models": {"main": {"provider": "p", "model": "claude-sonnet-4-6",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}},
+                    "selection": {"main": "main"}
+                }
+            }))
+            .unwrap(),
+        );
         let ctx = Arc::new(ToolPermissionContext {
             mode: PermissionMode::Auto,
             ..Default::default()
         });
-        let result = verify_auto_mode_gate_access(&ctx, Some(false)).await;
+        let result = verify_auto_mode_gate_access(&ctx).await;
         let next = (result.update_context)(&ctx);
         assert_eq!(next.mode, PermissionMode::Auto);
         assert_eq!(next.is_auto_mode_available, Some(false));
         super::super::auto_mode_state::set_auto_mode_flag_cli(true);
-        let result = verify_auto_mode_gate_access(&ctx, Some(false)).await;
+        let result = verify_auto_mode_gate_access(&ctx).await;
         assert_eq!(
             (result.update_context)(&ctx).is_auto_mode_available,
             Some(true)
         );
-        let result = verify_auto_mode_gate_access(&ctx, Some(true)).await;
-        assert_eq!((result.update_context)(&ctx).mode, PermissionMode::Default);
-        assert!(
-            !super::super::auto_mode_state::is_auto_mode_circuit_broken(),
-            "fast breaker is model eligibility, not global disabled"
-        );
-        crate::bootstrap::state::set_main_loop_model_override(old_model);
+        crate::utils::settings::settings_cache::reset_settings_cache();
         crate::services::analytics::growthbook::reset_growth_book();
         super::super::auto_mode_state::reset_for_testing();
     }

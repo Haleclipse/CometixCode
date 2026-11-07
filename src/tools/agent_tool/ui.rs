@@ -930,8 +930,9 @@ pub(crate) fn render_tool_use_message(input: &serde_json::Value) -> Option<Strin
 
 /// Maps to: CC `tools/AgentTool/UI.tsx:485-512#renderToolUseTag`.
 ///
-/// One tag today: the agent's model, shown only when it resolves to something
-/// other than the main-loop model. `input.model` is JS-truthy-gated, so an
+/// One tag today: the agent's model ref as written, shown only when it names
+/// a profile other than the session's (`inherit` and the session's own
+/// profile render nothing). `input.model` is JS-truthy-gated, so an
 /// empty string renders nothing. The dim ` ` + text chrome CC builds with
 /// `marginLeft={1}` lives at the shared tag slot in
 /// `AssistantToolUseMessage`, the same slot `FileReadTool` already uses.
@@ -941,12 +942,23 @@ pub(crate) fn render_tool_use_tag(input: &serde_json::Value) -> Option<String> {
         &["model"],
     )
     .filter(|model| !model.is_empty())?;
-    let main_model = crate::utils::model::model::get_main_loop_model();
-    let agent_model = crate::utils::model::model::parse_user_specified_model(&model);
-    if agent_model == main_model {
-        return None;
+    let settings = crate::utils::settings::get_initial_settings();
+    let session = crate::bootstrap::state::get_session_profile().or_else(|| {
+        settings
+            .nyan
+            .as_deref()
+            .and_then(|nyan| nyan.selection.as_ref())
+            .and_then(|selection| selection.main.clone())
+    });
+    match crate::utils::model::profile::resolve_model_ref(settings.nyan.as_deref(), &model) {
+        Ok((crate::utils::model::profile::ModelChoice::Inherit, _)) => None,
+        Ok((crate::utils::model::profile::ModelChoice::Profile(profile), _))
+            if Some(&profile) == session.as_ref() =>
+        {
+            None
+        }
+        _ => Some(model),
     }
-    Some(crate::utils::model::model::render_model_name(&agent_model))
 }
 
 // ─── Transcript display blocks ───────────────────────────────────────────

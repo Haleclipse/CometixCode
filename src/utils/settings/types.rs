@@ -121,8 +121,6 @@ pub struct SettingsJson {
     pub spinner_verbs: Option<SpinnerVerbsSettings>,
     pub spinner_tips_override: Option<SpinnerTipsOverride>,
     pub always_thinking_enabled: Option<bool>,
-    pub fast_mode: Option<bool>,
-    pub fast_mode_per_session_opt_in: Option<bool>,
     pub prompt_suggestion_enabled: Option<bool>,
     pub terminal_title_from_rename: Option<bool>,
     pub feedback_survey_rate: Option<f64>,
@@ -1037,18 +1035,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 zod::string()
                     .optional()
                     .describe("Advisor model for the server-side advisor tool."),
-            ),
-            (
-                "fastMode",
-                zod::boolean().optional().describe(
-                    "When true, fast mode is enabled. When absent or false, fast mode is off.",
-                ),
-            ),
-            (
-                "fastModePerSessionOptIn",
-                zod::boolean().optional().describe(
-                    "When true, fast mode does not persist across sessions. Each session starts with fast mode off.",
-                ),
             ),
             (
                 "promptSuggestionEnabled",

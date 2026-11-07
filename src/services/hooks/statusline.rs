@@ -131,7 +131,6 @@ fn normalize_status_line_stdout(stdout: &str) -> Option<String> {
 mod tests {
     use super::*;
     use crate::components::status_line::build_status_line_command_input;
-    use crate::hooks::use_main_loop_model::use_main_loop_model;
     use crate::types::permissions::PermissionMode;
 
     #[test]
@@ -248,7 +247,7 @@ mod tests {
             output_style: Some("explanatory".to_string()),
             ..Default::default()
         };
-        let model = use_main_loop_model(Some("sonnet"), None);
+        let model = "claude-sonnet-4-6".to_string();
         let input = build_status_line_command_input(
             PermissionMode::AcceptEdits,
             false,
