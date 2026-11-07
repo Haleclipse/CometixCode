@@ -106,6 +106,9 @@ pub struct AgentDefinition {
     pub filename: Option<String>,
     /// Maps to CC `CustomAgentDefinition.baseDir`.
     pub base_dir: Option<PathBuf>,
+    /// @nyan: the markdown file the agent was loaded from, so /agents opens
+    /// and deletes that file instead of rebuilding a path from the name.
+    pub file_path: Option<PathBuf>,
     /// Maps to CC `PluginAgentDefinition.plugin`.
     pub plugin: Option<String>,
     /// Maps to CC `AgentDefinition.source`.
@@ -175,6 +178,7 @@ impl AgentDefinition {
             pending_snapshot_update: None,
             filename: None,
             base_dir: None,
+            file_path: None,
             plugin: None,
             source,
         }
@@ -187,6 +191,24 @@ pub struct FailedAgentFile {
     pub path: PathBuf,
     /// Maps to CC `AgentDefinitionsResult.failedFiles[].error`.
     pub error: String,
+    /// @nyan: `None` for a markdown file (`path` is that file); `Plugin` or
+    /// `FlagSettings` for an agent dropped for an invalid `model:`, whose
+    /// `path` then holds the agent name.
+    pub source: Option<AgentDefinitionSource>,
+}
+
+impl FailedAgentFile {
+    /// What to show in /doctor and /agents: the file path, or a labelled
+    /// agent name for sources that have no file.
+    pub fn label(&self) -> String {
+        match self.source {
+            Some(AgentDefinitionSource::Plugin) => format!("plugin agent {}", self.path.display()),
+            Some(AgentDefinitionSource::FlagSettings) => {
+                format!("--agents agent {}", self.path.display())
+            }
+            _ => self.path.display().to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -362,23 +384,38 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
     if crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
     ) {
+        let nyan = crate::utils::settings::get_initial_settings().nyan;
+        let mut failed_files = Vec::new();
         let mut all_agents = built_in_agents;
-        all_agents.extend(cli_flag_agents_from_bootstrap());
+        all_agents.extend(retain_valid_models(
+            cli_flag_agents_from_bootstrap(),
+            nyan.as_deref(),
+            &mut failed_files,
+        ));
         let active_agents = get_active_agents_from_list(&all_agents);
         return AgentDefinitionsResult {
             active_agents,
             all_agents,
-            failed_files: Vec::new(),
+            failed_files,
         };
     }
 
     let markdown_files = load_agent_markdown_files(cwd);
     let audience = crate::utils::build_profile::build_audience();
+    let settings = crate::utils::settings::get_initial_settings();
+    let nyan = settings.nyan.as_deref();
     let mut custom_agents = Vec::new();
     let mut failed_files = Vec::new();
     for markdown_file in markdown_files {
         match parse_agent_from_markdown(&markdown_file, audience) {
-            Some(agent) => custom_agents.push(agent),
+            Some(agent) => match validate_agent_model(&agent, nyan) {
+                Ok(()) => custom_agents.push(agent),
+                Err(error) => failed_files.push(FailedAgentFile {
+                    path: markdown_file.file_path,
+                    error,
+                    source: None,
+                }),
+            },
             // CC :324 `if (!frontmatter['name']) return null` — JS truthy:
             // a falsy name (absent, "", 0, false) skips silently; only
             // truthy-name files record a parse failure.
@@ -390,6 +427,7 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
                 failed_files.push(FailedAgentFile {
                     path: markdown_file.file_path,
                     error: parse_error_for_frontmatter(&markdown_file.frontmatter),
+                    source: None,
                 });
             }
             None => {}
@@ -399,7 +437,11 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
     // Maps to CC `getAgentDefinitionsWithOverrides`: built-ins first,
     // enabled plugin agents next, filesystem custom agents after that. CLI/SDK
     // flag agents are merged last by `main.tsx`.
-    let plugin_agents = crate::utils::plugins::load_plugin_agents::load_plugin_agents();
+    let plugin_agents = retain_valid_models(
+        crate::utils::plugins::load_plugin_agents::load_plugin_agents(),
+        nyan,
+        &mut failed_files,
+    );
     // Maps to: CC `loadAgentsDir.ts:347-355`. CC kicks off `loadPluginAgents()`
     // first, then `Promise.all`s it with `initializeAgentMemorySnapshots` so
     // neither becomes a floating promise if the other throws (CC :344-346).
@@ -428,7 +470,8 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
     {
         initialize_agent_memory_snapshots(&mut custom_agents, cwd);
     }
-    let flag_agents = cli_flag_agents_from_bootstrap();
+    let flag_agents =
+        retain_valid_models(cli_flag_agents_from_bootstrap(), nyan, &mut failed_files);
     let mut all_agents = built_in_agents;
     all_agents.extend(plugin_agents);
     all_agents.extend(custom_agents);
@@ -451,6 +494,45 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
         all_agents,
         failed_files,
     }
+}
+
+/// @nyan: an agent's `model:` must be a profile ref (profile name, `@main`,
+/// `@light`, `@heavy` or `inherit`, optionally `:effort`). An agent naming
+/// anything else is not loaded; the error names the bad ref.
+fn validate_agent_model(
+    agent: &AgentDefinition,
+    nyan: Option<&crate::utils::settings::nyan::NyanSettings>,
+) -> Result<(), String> {
+    match agent.model.as_deref() {
+        Some(model) => crate::utils::model::profile::resolve_model_ref(nyan, model)
+            .map(drop)
+            .map_err(|error| format!("Invalid \"model\" field: {error}")),
+        None => Ok(()),
+    }
+}
+
+/// Drops plugin and `--agents` agents whose `model:` is invalid, recording
+/// each in `failed_files` under the agent name and its source (the loaders do
+/// not carry a file path for them).
+fn retain_valid_models(
+    agents: Vec<AgentDefinition>,
+    nyan: Option<&crate::utils::settings::nyan::NyanSettings>,
+    failed_files: &mut Vec<FailedAgentFile>,
+) -> Vec<AgentDefinition> {
+    agents
+        .into_iter()
+        .filter(|agent| match validate_agent_model(agent, nyan) {
+            Ok(()) => true,
+            Err(error) => {
+                failed_files.push(FailedAgentFile {
+                    path: PathBuf::from(&agent.agent_type),
+                    error,
+                    source: Some(agent.source),
+                });
+                false
+            }
+        })
+        .collect()
 }
 
 /// Maps to CC `getActiveAgentsFromList(allAgents)`.
@@ -726,6 +808,7 @@ fn parse_agent_from_markdown(
         .and_then(|stem| stem.to_str())
         .map(ToOwned::to_owned);
     agent.base_dir = Some(markdown_file.base_dir.clone());
+    agent.file_path = Some(markdown_file.file_path.clone());
     // Maps to: CC `loadAgentsDir.ts:713` markdown-only `content.trim()`.
     // ECMAScript trim includes FEFF but excludes Unicode White_Space's 0085;
     // Rust str::trim would change successful prompt bytes at both boundaries.
@@ -1392,6 +1475,95 @@ mod tests {
                 .expect("schema-valid empties keep the agent");
         assert_eq!(empties_agent.skills, None);
         assert!(empties_agent.hooks.is_some());
+    }
+
+    #[test]
+    fn unknown_model_refs_are_not_loaded_and_recorded_as_failed() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                crate::bootstrap::state::set_inline_plugins(Vec::new());
+                crate::bootstrap::state::set_cli_agents_json(None);
+                crate::utils::settings::settings_cache::reset_settings_cache();
+            }
+        }
+        let _reset = Reset;
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({
+                "nyan": {"models": {"ds-flash": {"model": "deepseek-chat"}},
+                    "selection": {"main": "ds-flash"}}
+            }))
+            .unwrap(),
+        );
+        let root = temp_dir("model-validation");
+        let config_home = root.join("config");
+        for (name, model) in [
+            ("profile", "ds-flash"),
+            ("tier", "\"@light\""),
+            ("inherit", "inherit"),
+            ("effort", "\"ds-flash:high\""),
+            ("bad", "sonnet"),
+        ] {
+            write_file(
+                &config_home.join(format!("agents/{name}.md")),
+                &format!("---\nname: {name}\ndescription: d\nmodel: {model}\n---\nBody"),
+            );
+        }
+        let plugin_root = root.join("plugin");
+        write_file(
+            &plugin_root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"pack"}"#,
+        );
+        write_file(
+            &plugin_root.join("agents/ok.md"),
+            "---\nname: ok\ndescription: d\nmodel: \"@heavy\"\n---\nBody",
+        );
+        write_file(
+            &plugin_root.join("agents/broken.md"),
+            "---\nname: broken\ndescription: d\nmodel: opus\n---\nBody",
+        );
+        crate::bootstrap::state::set_inline_plugins(vec![plugin_root]);
+        crate::bootstrap::state::set_cli_agents_json(Some(serde_json::json!({
+            "flag-ok": {"description": "d", "prompt": "p", "model": "@main:off"},
+            "flag-bad": {"description": "d", "prompt": "p", "model": "openai/gpt-5"}
+        })));
+
+        let _env = pin_loader_env(&root, &config_home);
+        let result = get_agent_definitions_with_overrides(&root);
+
+        let loaded = |name: &str| {
+            result
+                .all_agents
+                .iter()
+                .any(|agent| agent.agent_type == name)
+        };
+        for name in ["profile", "tier", "inherit", "effort", "pack:ok", "flag-ok"] {
+            assert!(loaded(name), "{name} loads");
+        }
+        for name in ["bad", "pack:broken", "flag-bad"] {
+            assert!(!loaded(name), "{name} is not loaded");
+        }
+        let failed = result
+            .failed_files
+            .iter()
+            .map(|file| (file.label(), file.error.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(failed.len(), 3, "{failed:?}");
+        assert_eq!(
+            failed[0].0,
+            config_home.join("agents/bad.md").display().to_string()
+        );
+        assert!(failed[0].1.contains("\"sonnet\""), "{}", failed[0].1);
+        assert_eq!(failed[1].0, "plugin agent pack:broken");
+        assert!(failed[1].1.contains("\"opus\""));
+        assert_eq!(failed[2].0, "--agents agent flag-bad");
+        assert!(
+            failed[2]
+                .1
+                .starts_with("Invalid \"model\" field: Unknown model \"openai/gpt-5\"")
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

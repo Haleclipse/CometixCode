@@ -30,6 +30,7 @@ pub fn AgentsCommand<'a>(
     element! {
         AgentsMenu(
             tools: props.tools.clone(), all_agents: snapshot.all_agents, active_agents: snapshot.active_agents,
+            failed_files: snapshot.failed_files,
             on_exit: move |message| exit.set(Some(message)),
         )
     }

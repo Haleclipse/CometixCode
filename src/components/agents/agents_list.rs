@@ -6,8 +6,10 @@ use crate::components::design_system::divider::Divider;
 use crate::keybindings::keybinding_context::KeybindingRuntime;
 use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::use_keybinding;
-use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-use crate::utils::model::agent::default_subagent_spec;
+use crate::tools::agent_tool::load_agents_dir::{
+    AgentDefinition, AgentDefinitionSource, FailedAgentFile,
+};
+use crate::utils::model::agent::effective_subagent_profile;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
@@ -174,6 +176,9 @@ pub struct AgentsListProps<'a> {
     pub on_select: HandlerMut<'a, AgentDefinition>,
     pub on_create_new: HandlerMut<'a, ()>,
     pub changes: Vec<String>,
+    /// @nyan: agents that failed to load (e.g. an unknown `model:`), shown
+    /// above the list.
+    pub failed_files: Vec<FailedAgentFile>,
 }
 
 #[component]
@@ -280,6 +285,8 @@ pub fn AgentsList<'a>(
         );
     }
 
+    let settings = crate::utils::settings::get_initial_settings();
+    let nyan = settings.nyan.as_deref();
     let render_agent = |resolved: &ResolvedAgent| -> AnyElement<'static> {
         let built_in = resolved.display_source == AgentDisplaySource::BuiltIn;
         let selected = !built_in
@@ -289,11 +296,11 @@ pub fn AgentsList<'a>(
             });
         let dim = (built_in || resolved.overridden_by.is_some()) && !selected;
         let color = selected.then_some(theme.suggestion);
-        let model = resolved
-            .agent
-            .model
-            .clone()
-            .unwrap_or_else(|| default_subagent_spec(&resolved.agent.agent_type).to_string());
+        let model = effective_subagent_profile(
+            resolved.agent.model.as_deref(),
+            &resolved.agent.agent_type,
+            nyan,
+        );
         let memory = resolved
             .agent
             .memory
@@ -336,6 +343,19 @@ pub fn AgentsList<'a>(
         )
     };
     let last_change = props.changes.last().cloned();
+    let failed = (!props.failed_files.is_empty()).then(|| {
+        let rows = props
+            .failed_files
+            .iter()
+            .map(|file| element! {
+                Text(content: format!("  └ {}: {}", file.label(), file.error), color: theme.inactive, wrap: TextWrap::Wrap)
+            })
+            .collect::<Vec<_>>();
+        element! { View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
+            Text(content: format!("Failed to load {} agent(s):", props.failed_files.len()), color: theme.error)
+            #(rows)
+        }}
+    });
 
     let body: AnyElement<'static> = if has_no_agents {
         let builtins = sorted
@@ -387,6 +407,7 @@ pub fn AgentsList<'a>(
             on_cancel: move |_| pending_action.set(Some(ListAction::Back)),
         ) {
             #(last_change.map(|change| element! { View(margin_top: 1u32) { Text(content: change, dim: true) } }))
+            #(failed)
             #(vec![body])
         }
     }
@@ -430,6 +451,48 @@ mod tests {
         assert!(text.contains("Built-in agents (always available)"));
         assert!(text.contains("shadowed by project"));
         assert!(text.contains("Saved agent"));
+    }
+
+    #[test]
+    fn failed_files_show_above_the_list_and_rows_show_the_resolved_profile() {
+        let _lock = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({
+                "nyan": {"models": {"ds-flash": {"model": "deepseek-chat"}},
+                    "selection": {"main": "ds-flash"}}
+            }))
+            .unwrap(),
+        );
+        let mut agent = resolved("scout", AgentDefinitionSource::ProjectSettings);
+        agent.agent.model = Some("@light:high".to_string());
+        let text = element! {
+            ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
+                AgentsList(
+                    source: Some(AgentsListSource::All),
+                    agents: vec![agent],
+                    on_create_new: move |_| {},
+                    failed_files: vec![FailedAgentFile {
+                        path: std::path::PathBuf::from("/p/.nyan/agents/bad.md"),
+                        error: "Invalid \"model\" field: Unknown model \"sonnet\"".to_string(),
+                        source: None,
+                    }],
+                )
+            }
+        }
+        .render(Some(140))
+        .to_string();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        let failed_at = text
+            .find("Failed to load 1 agent(s):")
+            .expect("failed header");
+        assert!(
+            text.contains("/p/.nyan/agents/bad.md: Invalid \"model\" field"),
+            "{text}"
+        );
+        assert!(failed_at < text.find("Create new agent").unwrap(), "{text}");
+        assert!(text.contains("scout · ds-flash"), "{text}");
     }
 
     #[test]

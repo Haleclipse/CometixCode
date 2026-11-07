@@ -110,15 +110,72 @@ fn resolve_spec_to_agent_model(
     Ok(resolved)
 }
 
-/// Resolves a subagent's model and effort along the priority chain:
+/// The layer of the subagent chain that decided the model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SubagentModelLayer {
+    CallParameter,
+    AgentDefinition,
+    SelectionSubagents,
+    SelectionSubagent,
+    TypeDefault,
+}
+
+impl SubagentModelLayer {
+    pub fn label(self, agent_type: &str) -> String {
+        match self {
+            Self::CallParameter => "call parameter".to_string(),
+            Self::AgentDefinition => "agent definition".to_string(),
+            Self::SelectionSubagents => format!("selection.subagents.{agent_type}"),
+            Self::SelectionSubagent => "selection.subagent".to_string(),
+            Self::TypeDefault => "type default".to_string(),
+        }
+    }
+}
+
+/// Picks the deciding spec of a subagent's model chain:
 /// 1. tool_specified_model (`RunAgentInput.model_override`)
 /// 2. agent_md_model (`AgentDefinition.model`)
 /// 3. `selection.subagents.<agent_type>`
 /// 4. `selection.subagent`
 /// 5. default for agent type (explore=@light, review=@heavy, general-purpose/plan=inherit)
-///
-/// The first layer that names a model decides; an unknown ref there is an
-/// error, never a fallback to a later layer.
+pub fn subagent_model_spec<'a>(
+    tool_specified_model: Option<&'a str>,
+    agent_md_model: Option<&'a str>,
+    agent_type: &str,
+    nyan: Option<&'a NyanSettings>,
+) -> (&'a str, SubagentModelLayer) {
+    let selection = nyan.and_then(|n| n.selection.as_ref());
+    [
+        (tool_specified_model, SubagentModelLayer::CallParameter),
+        (agent_md_model, SubagentModelLayer::AgentDefinition),
+        (
+            selection
+                .and_then(|s| s.subagents.as_ref())
+                .and_then(|map| map.get(agent_type))
+                .map(String::as_str),
+            SubagentModelLayer::SelectionSubagents,
+        ),
+        (
+            selection.and_then(|s| s.subagent.as_deref()),
+            SubagentModelLayer::SelectionSubagent,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(spec, layer)| {
+        spec.filter(|spec| !spec.trim().is_empty())
+            .map(|spec| (spec, layer))
+    })
+    .unwrap_or_else(|| {
+        (
+            default_subagent_spec(agent_type),
+            SubagentModelLayer::TypeDefault,
+        )
+    })
+}
+
+/// Resolves a subagent's model and effort along the chain of
+/// [`subagent_model_spec`]. The first layer that names a model decides; an
+/// unknown ref there is an error, never a fallback to a later layer.
 pub fn resolve_subagent_model_and_effort(
     tool_specified_model: Option<&str>,
     agent_md_model: Option<&str>,
@@ -126,21 +183,39 @@ pub fn resolve_subagent_model_and_effort(
     parent: &ParentSelection,
     nyan: Option<&NyanSettings>,
 ) -> Result<ResolvedAgentModel, UnknownModelRef> {
-    let selection = nyan.and_then(|n| n.selection.as_ref());
-    let spec = [
-        tool_specified_model,
-        agent_md_model,
-        selection
-            .and_then(|s| s.subagents.as_ref())
-            .and_then(|map| map.get(agent_type))
-            .map(String::as_str),
-        selection.and_then(|s| s.subagent.as_deref()),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|spec| !spec.trim().is_empty())
-    .unwrap_or_else(|| default_subagent_spec(agent_type));
+    let (spec, _) = subagent_model_spec(tool_specified_model, agent_md_model, agent_type, nyan);
     resolve_spec_to_agent_model(spec, parent, nyan)
+}
+
+/// The profile a defined agent runs on, for display: the profile name,
+/// `inherit` when it follows the session, or `unknown` for a bad ref.
+pub fn effective_subagent_profile(
+    agent_md_model: Option<&str>,
+    agent_type: &str,
+    nyan: Option<&NyanSettings>,
+) -> String {
+    let (spec, _) = subagent_model_spec(None, agent_md_model, agent_type, nyan);
+    profile_label(nyan, spec).unwrap_or_else(|_| "unknown".to_string())
+}
+
+fn profile_label(nyan: Option<&NyanSettings>, spec: &str) -> Result<String, UnknownModelRef> {
+    Ok(match resolve_model_ref(nyan, spec)?.0 {
+        ModelChoice::Profile(name) => name,
+        ModelChoice::Inherit => "inherit".to_string(),
+    })
+}
+
+/// `<written value> → <profile> (<layer>)`, e.g. `@light → ds-flash (type default)`;
+/// a bad ref reads `nope → Unknown model "nope" (agent definition)`.
+pub fn describe_effective_subagent_model(
+    agent_md_model: Option<&str>,
+    agent_type: &str,
+    nyan: Option<&NyanSettings>,
+) -> String {
+    let (spec, layer) = subagent_model_spec(None, agent_md_model, agent_type, nyan);
+    let target = profile_label(nyan, spec)
+        .unwrap_or_else(|UnknownModelRef(name)| format!("Unknown model {name:?}"));
+    format!("{} → {target} ({})", spec.trim(), layer.label(agent_type))
 }
 
 /// Resolves a utility role's model and effort along the priority chain:
@@ -273,6 +348,47 @@ mod tests {
             selection: Some(selection),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn effective_model_line_names_the_deciding_layer() {
+        let mut nyan = test_nyan_settings();
+        let describe = |nyan: &NyanSettings, model: Option<&str>, agent_type: &str| {
+            describe_effective_subagent_model(model, agent_type, Some(nyan))
+        };
+        assert_eq!(
+            describe(&nyan, Some("@heavy:high"), "review"),
+            "@heavy:high → deep-profile (agent definition)"
+        );
+        assert_eq!(
+            describe(&nyan, None, "review"),
+            "deep-profile:high → deep-profile (selection.subagents.review)"
+        );
+        assert_eq!(
+            describe(&nyan, None, "explore"),
+            "@light → fast-profile (type default)"
+        );
+        assert_eq!(
+            describe(&nyan, None, "general-purpose"),
+            "inherit → inherit (type default)"
+        );
+        nyan.selection.as_mut().unwrap().subagent = Some("main-profile".to_string());
+        assert_eq!(
+            describe(&nyan, None, "explore"),
+            "main-profile → main-profile (selection.subagent)"
+        );
+        assert_eq!(
+            effective_subagent_profile(Some("nope"), "explore", Some(&nyan)),
+            "unknown"
+        );
+        assert_eq!(
+            describe(&nyan, Some("nope"), "explore"),
+            "nope → Unknown model \"nope\" (agent definition)"
+        );
+        assert_eq!(
+            subagent_model_spec(Some("@light"), Some("@heavy"), "x", Some(&nyan)),
+            ("@light", SubagentModelLayer::CallParameter)
+        );
     }
 
     #[test]

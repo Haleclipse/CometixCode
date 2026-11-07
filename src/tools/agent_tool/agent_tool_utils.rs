@@ -59,6 +59,17 @@ pub fn filter_tools_for_agent(
         .collect()
 }
 
+/// Whether an agent `tools` / `disallowedTools` entry (already reduced to
+/// its tool name) names `tool_name`. @nyan: besides exact names, `mcp__server`
+/// and `mcp__server__*` name every tool of that server, as permission rules do.
+pub fn agent_tool_spec_matches(spec_tool_name: &str, tool_name: &str) -> bool {
+    spec_tool_name == tool_name
+        || crate::services::mcp::mcp_string_utils::mcp_server_spec_matches(
+            spec_tool_name,
+            tool_name,
+        )
+}
+
 /// Maps to: CC `agentToolUtils.ts#resolveAgentTools`.
 ///
 /// When `is_main_thread` is true, skip the sub-agent disallow lists — the main
@@ -83,7 +94,7 @@ pub fn resolve_agent_tools(
                     )
                     .tool_name
                 })
-                .collect::<std::collections::HashSet<_>>()
+                .collect::<Vec<_>>()
         })
         .unwrap_or_default();
 
@@ -96,7 +107,11 @@ pub fn resolve_agent_tools(
 
     let allowed_available: Vec<Tool> = filtered_available
         .into_iter()
-        .filter(|tool| !disallowed_tool_names.contains(&tool.name))
+        .filter(|tool| {
+            !disallowed_tool_names
+                .iter()
+                .any(|spec| agent_tool_spec_matches(spec, &tool.name))
+        })
         .collect();
 
     let Some(agent_tools) = agent_definition.tools.as_ref() else {
@@ -136,14 +151,18 @@ pub fn resolve_agent_tools(
             }
             continue;
         }
-        if let Some(tool) = allowed_available
+        let mut matched = false;
+        for tool in allowed_available
             .iter()
-            .find(|tool| tool.name == parsed.tool_name)
+            .filter(|tool| agent_tool_spec_matches(&parsed.tool_name, &tool.name))
         {
-            valid_tools.push(spec.clone());
+            matched = true;
             if !resolved.iter().any(|existing| existing.name == tool.name) {
                 resolved.push(tool.clone());
             }
+        }
+        if matched {
+            valid_tools.push(spec.clone());
         } else {
             invalid_tools.push(spec.clone());
         }
@@ -574,6 +593,48 @@ mod tests {
             vec!["Read", "Agent(general-purpose)", "Bash"]
         );
         assert_eq!(resolved.invalid_tools, vec!["TaskOutput", "Edit"]);
+    }
+
+    #[test]
+    fn resolve_agent_tools_expands_whole_mcp_server_specs() {
+        let available = [
+            tool("Read"),
+            tool("mcp__srv__a"),
+            tool("mcp__srv__b"),
+            tool("mcp__other__c"),
+        ];
+        let resolve = |tools: &[&str], disallowed: &[&str]| {
+            let mut agent =
+                AgentDefinition::new("custom", "Use", AgentDefinitionSource::ProjectSettings);
+            agent.tools =
+                (!tools.is_empty()).then(|| tools.iter().map(ToString::to_string).collect());
+            agent.disallowed_tools = (!disallowed.is_empty())
+                .then(|| disallowed.iter().map(ToString::to_string).collect());
+            let resolved = resolve_agent_tools(&agent, &available, false, false, None);
+            let names = resolved
+                .resolved_tools
+                .iter()
+                .map(|tool| tool.name.clone())
+                .collect::<Vec<_>>();
+            (names, resolved.valid_tools, resolved.invalid_tools)
+        };
+
+        for spec in ["mcp__srv", "mcp__srv__*"] {
+            let (names, valid, invalid) = resolve(&["Read", spec, "mcp__gone"], &[]);
+            assert_eq!(names, ["Read", "mcp__srv__a", "mcp__srv__b"], "{spec}");
+            assert_eq!(valid, ["Read", spec]);
+            assert_eq!(invalid, ["mcp__gone"]);
+
+            let (names, _, _) = resolve(&[], &[spec]);
+            assert_eq!(names, ["Read", "mcp__other__c"], "{spec}");
+        }
+        // A whole-server deny leaves nothing for a whole-server allow.
+        let (names, valid, invalid) = resolve(&["mcp__srv"], &["mcp__srv__*"]);
+        assert!(names.is_empty());
+        assert!(valid.is_empty());
+        assert_eq!(invalid, ["mcp__srv"]);
+        // A single-tool spec stays exact.
+        assert_eq!(resolve(&["mcp__srv__a"], &[]).0, ["mcp__srv__a"]);
     }
 
     #[test]

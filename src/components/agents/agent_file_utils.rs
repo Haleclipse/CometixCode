@@ -17,17 +17,6 @@ pub enum AgentFileSource {
     Plugin,
 }
 
-fn source_from_definition(source: AgentDefinitionSource) -> AgentFileSource {
-    match source {
-        AgentDefinitionSource::UserSettings => AgentFileSource::UserSettings,
-        AgentDefinitionSource::ProjectSettings => AgentFileSource::ProjectSettings,
-        AgentDefinitionSource::PolicySettings => AgentFileSource::PolicySettings,
-        AgentDefinitionSource::FlagSettings => AgentFileSource::FlagSettings,
-        AgentDefinitionSource::BuiltIn => AgentFileSource::BuiltIn,
-        AgentDefinitionSource::Plugin => AgentFileSource::Plugin,
-    }
-}
-
 pub fn format_agent_as_markdown(
     agent_type: &str,
     when_to_use: &str,
@@ -93,43 +82,46 @@ pub fn get_new_agent_file_path(
     Ok(agent_directory(source, cwd, config_home)?.join(format!("{agent_type}.md")))
 }
 
-pub fn get_actual_agent_file_path(
-    agent: &AgentDefinition,
-    cwd: &Path,
-    config_home: &Path,
-) -> Result<PathBuf, String> {
-    let source = source_from_definition(agent.source);
-    if source == AgentFileSource::BuiltIn {
-        return Ok(PathBuf::from("Built-in"));
+/// The file an editable agent was loaded from. @nyan: uses the loader's
+/// recorded path instead of rebuilding `<dir>/<name>.md`.
+pub fn get_actual_agent_file_path(agent: &AgentDefinition) -> Result<PathBuf, String> {
+    if !is_editable(agent) {
+        return Err(format!(
+            "Cannot get file path for {} agents",
+            agent.source.official_name()
+        ));
     }
-    let filename = agent.filename.as_deref().unwrap_or(&agent.agent_type);
-    Ok(agent_directory(source, cwd, config_home)?.join(format!("{filename}.md")))
+    agent
+        .file_path
+        .clone()
+        .ok_or_else(|| format!("No file recorded for agent {}", agent.agent_type))
 }
 
-pub fn get_actual_relative_agent_file_path(
-    agent: &AgentDefinition,
-    cwd: &Path,
-    config_home: &Path,
-) -> String {
+pub fn get_actual_relative_agent_file_path(agent: &AgentDefinition, cwd: &Path) -> String {
     match agent.source {
         AgentDefinitionSource::BuiltIn => "Built-in".to_string(),
         AgentDefinitionSource::Plugin => {
             format!("Plugin: {}", agent.plugin.as_deref().unwrap_or("Unknown"))
         }
         AgentDefinitionSource::FlagSettings => "CLI argument".to_string(),
-        AgentDefinitionSource::ProjectSettings => PathBuf::from(".")
-            .join(".nyan")
-            .join("agents")
-            .join(format!(
-                "{}.md",
-                agent.filename.as_deref().unwrap_or(&agent.agent_type)
-            ))
-            .display()
-            .to_string(),
-        _ => get_actual_agent_file_path(agent, cwd, config_home)
-            .map(|path| path.display().to_string())
+        _ => agent
+            .file_path
+            .as_deref()
+            .map(|path| match path.strip_prefix(cwd) {
+                Ok(relative) => Path::new(".").join(relative).display().to_string(),
+                Err(_) => path.display().to_string(),
+            })
             .unwrap_or_default(),
     }
+}
+
+/// @nyan: only user and project agents are files the user owns; built-in,
+/// plugin, `--agents` and managed (policy) agents are view-only.
+pub fn is_editable(agent: &AgentDefinition) -> bool {
+    matches!(
+        agent.source,
+        AgentDefinitionSource::UserSettings | AgentDefinitionSource::ProjectSettings
+    )
 }
 
 fn write_and_sync(path: &Path, content: &str, create_new: bool) -> Result<(), String> {
@@ -182,44 +174,14 @@ pub fn save_agent_to_file(
     Ok(path)
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn update_agent_file(
-    agent: &AgentDefinition,
-    when_to_use: &str,
-    tools: Option<&[String]>,
-    system_prompt: &str,
-    color: Option<&str>,
-    model: Option<&str>,
-    memory: Option<AgentMemoryScope>,
-    cwd: &Path,
-    config_home: &Path,
-) -> Result<PathBuf, String> {
-    if agent.source == AgentDefinitionSource::BuiltIn {
-        return Err("Cannot update built-in agents".to_string());
+pub fn delete_agent_from_file(agent: &AgentDefinition) -> Result<(), String> {
+    if !is_editable(agent) {
+        return Err(format!(
+            "Cannot delete {} agents",
+            agent.source.official_name()
+        ));
     }
-    let path = get_actual_agent_file_path(agent, cwd, config_home)?;
-    let content = format_agent_as_markdown(
-        &agent.agent_type,
-        when_to_use,
-        tools,
-        system_prompt,
-        color,
-        model,
-        memory,
-    );
-    write_and_sync(&path, &content, false)?;
-    Ok(path)
-}
-
-pub fn delete_agent_from_file(
-    agent: &AgentDefinition,
-    cwd: &Path,
-    config_home: &Path,
-) -> Result<(), String> {
-    if agent.source == AgentDefinitionSource::BuiltIn {
-        return Err("Cannot delete built-in agents".to_string());
-    }
-    let path = get_actual_agent_file_path(agent, cwd, config_home)?;
+    let path = get_actual_agent_file_path(agent)?;
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -282,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn save_create_new_flush_update_and_delete_use_actual_filename() {
+    fn save_create_new_and_delete_use_loaded_file_path() {
         let root = std::env::temp_dir().join(format!("nyan-agent-files-{}", uuid::Uuid::new_v4()));
         let config = root.join("config");
         let path = save_agent_to_file(
@@ -319,23 +281,33 @@ mod tests {
         );
         let mut agent =
             AgentDefinition::new("renamed", "review", AgentDefinitionSource::ProjectSettings);
-        agent.filename = Some("reviewer".to_string());
-        update_agent_file(
-            &agent,
-            "updated description",
-            Some(&[]),
-            "Updated sufficiently long prompt",
-            None,
-            None,
-            None,
-            &root,
-            &config,
-        )
-        .unwrap();
-        assert!(fs::read_to_string(&path).unwrap().contains("name: renamed"));
-        delete_agent_from_file(&agent, &root, &config).unwrap();
+        agent.file_path = Some(path.clone());
+        assert_eq!(
+            get_actual_relative_agent_file_path(&agent, &root),
+            Path::new(".")
+                .join(".nyan/agents/reviewer.md")
+                .display()
+                .to_string()
+        );
+        delete_agent_from_file(&agent).unwrap();
         assert!(!path.exists());
-        delete_agent_from_file(&agent, &root, &config).unwrap();
+        delete_agent_from_file(&agent).unwrap();
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn delete_refuses_view_only_sources() {
+        let root = std::env::temp_dir().join(format!("nyan-agent-guard-{}", uuid::Uuid::new_v4()));
+        for source in [
+            AgentDefinitionSource::BuiltIn,
+            AgentDefinitionSource::Plugin,
+            AgentDefinitionSource::FlagSettings,
+            AgentDefinitionSource::PolicySettings,
+        ] {
+            let agent = AgentDefinition::new("reviewer", "review", source);
+            let error = delete_agent_from_file(&agent).unwrap_err();
+            assert!(error.starts_with("Cannot delete"), "{source:?}: {error}");
+        }
+        assert!(!root.exists());
     }
 }

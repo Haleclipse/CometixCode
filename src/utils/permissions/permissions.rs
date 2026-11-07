@@ -8,7 +8,7 @@ use super::permission_result::{PermissionDecisionReason, PermissionResult};
 use super::permission_update::apply_permission_updates;
 use super::shell_rule_matching::permission_rule_content_matches;
 use crate::services::mcp::mcp_string_utils::{
-    get_tool_name_for_permission_check, mcp_info_from_string,
+    get_tool_name_for_permission_check, mcp_server_spec_matches,
 };
 use crate::tool::ToolPermissionContext;
 use crate::types::permissions::{
@@ -2568,19 +2568,8 @@ fn tool_matches_rule(
     let resolved_name = get_tool_name_for_permission_check(requested.tool_name.as_str(), mcp_info);
     let name_for_rule_match = resolved_name.as_ref();
 
-    if rule.rule_value.tool_name == name_for_rule_match {
-        return true;
-    }
-
-    let Some(rule_info) = mcp_info_from_string(&rule.rule_value.tool_name) else {
-        return false;
-    };
-    let Some(tool_info) = mcp_info_from_string(name_for_rule_match) else {
-        return false;
-    };
-
-    matches!(rule_info.tool_name.as_deref(), None | Some("*"))
-        && rule_info.server_name == tool_info.server_name
+    rule.rule_value.tool_name == name_for_rule_match
+        || mcp_server_spec_matches(&rule.rule_value.tool_name, name_for_rule_match)
 }
 
 /// Maps to CC `utils/permissions/permissions.ts:275-283#toolAlwaysAllowedRule`.

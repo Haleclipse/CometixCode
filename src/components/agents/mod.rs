@@ -1,7 +1,6 @@
 //! Maps to: CC `components/agents/**`.
 
 pub mod agent_detail;
-pub mod agent_editor;
 pub mod agent_file_utils;
 pub mod agent_navigation_footer;
 pub mod agents_list;
@@ -16,7 +15,6 @@ pub mod utils;
 pub mod validate_agent;
 
 pub use agent_detail::AgentDetail;
-pub use agent_editor::AgentEditor;
 pub use agent_navigation_footer::AgentNavigationFooter;
 pub use agents_list::{AgentDisplaySource, AgentsList, AgentsListSource, ResolvedAgent};
 pub use agents_menu::AgentsMenu;

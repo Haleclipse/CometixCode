@@ -26,6 +26,20 @@ pub fn mcp_info_from_string(tool_string: &str) -> Option<McpNameInfo> {
     })
 }
 
+/// Whether `spec` names the whole MCP server of `tool_name` — `mcp__server`
+/// or `mcp__server__*` — as permission rules do (CC `toolMatchesRule`).
+/// Agent `tools` / `disallowedTools` share this matching.
+pub fn mcp_server_spec_matches(spec: &str, tool_name: &str) -> bool {
+    let Some(spec_info) = mcp_info_from_string(spec) else {
+        return false;
+    };
+    let Some(tool_info) = mcp_info_from_string(tool_name) else {
+        return false;
+    };
+    matches!(spec_info.tool_name.as_deref(), None | Some("*"))
+        && spec_info.server_name == tool_info.server_name
+}
+
 /// Maps to: CC `getMcpPrefix(serverName)`.
 pub fn get_mcp_prefix(server_name: &str) -> String {
     format!("mcp__{}__", normalize_name_for_mcp(server_name))

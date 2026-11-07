@@ -274,6 +274,18 @@ where
     parse_generated_agent_response(&response)
 }
 
+/// @nyan: generation is the `agent_creation` utility role (default `@light`,
+/// `selection.utility.agent_creation` overrides it), routed through the
+/// resolved profile and effort instead of the main loop model.
+fn agent_creation_options() -> crate::services::api::claude::Options {
+    let mut options = crate::services::api::claude::Options::for_utility(
+        "agent_creation",
+        "agent_creation".to_string(),
+    );
+    options.temperature_override = Some(0.0);
+    options
+}
+
 /// Production backend installed at the App root. Construction is side-effect
 /// free; a model request happens only after the user explicitly submits the
 /// generation step. The official analytics event is intentionally omitted.
@@ -286,7 +298,7 @@ pub fn production_agent_generator_runtime() -> AgentGeneratorRuntime {
                 &[],
                 auto_memory_enabled,
                 |user, system| async move {
-                    use crate::services::api::claude::{Options, query_model_without_streaming};
+                    use crate::services::api::claude::query_model_without_streaming;
                     use crate::types::message::{
                         AssistantContent, Message, UserContent, UserMessage,
                     };
@@ -310,11 +322,7 @@ pub fn production_agent_generator_runtime() -> AgentGeneratorRuntime {
                         vec![message],
                         &crate::context::get_user_context(),
                     );
-                    let mut options = Options::new(
-                        crate::utils::model::model::get_main_loop_model(),
-                        "agent_creation".to_string(),
-                    );
-                    options.temperature_override = Some(0.0);
+                    let options = agent_creation_options();
                     let response = query_model_without_streaming(
                         &messages,
                         &vec![system],
@@ -348,6 +356,52 @@ pub fn production_agent_generator_runtime() -> AgentGeneratorRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generation_uses_the_agent_creation_utility_role() {
+        let _lock = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let install = |utility: serde_json::Value| {
+            crate::utils::settings::settings_cache::install_test_settings(
+                serde_json::from_value(serde_json::json!({
+                    "nyan": {
+                        "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                        "models": {
+                            "big": {"provider": "p", "model": "claude-opus-4-6", "effort": "high",
+                                "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                            "small": {"provider": "p", "model": "claude-haiku-4-5", "effort": "off",
+                                "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}
+                        },
+                        "selection": {"main": "big", "light": "small", "utility": utility}
+                    }
+                }))
+                .unwrap(),
+            );
+        };
+
+        install(serde_json::json!({}));
+        let options = agent_creation_options();
+        assert_eq!(options.model, "claude-haiku-4-5");
+        assert_eq!(options.profile.as_deref(), Some("small"));
+        assert_eq!(
+            options.effort_value,
+            Some(crate::utils::effort::Effort::Off)
+        );
+        assert_eq!(options.query_source, "agent_creation");
+        assert_eq!(options.temperature_override, Some(0.0));
+
+        install(serde_json::json!({"agent_creation": "big:medium"}));
+        let options = agent_creation_options();
+        assert_eq!(options.model, "claude-opus-4-6");
+        assert_eq!(options.profile.as_deref(), Some("big"));
+        assert_eq!(
+            options.effort_value,
+            Some(crate::utils::effort::Effort::Medium)
+        );
+
+        crate::utils::settings::settings_cache::reset_settings_cache();
+    }
 
     #[test]
     fn prompt_lists_existing_identifiers_only_when_present() {

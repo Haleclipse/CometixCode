@@ -7,11 +7,11 @@ use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::use_keybinding;
 use crate::tools::agent_tool::agent_color_manager::parse_agent_color_name;
 use crate::tools::agent_tool::agent_memory::get_memory_scope_display;
+use crate::tools::agent_tool::agent_tool_utils::agent_tool_spec_matches;
 use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinitionSource};
-use crate::utils::model::agent::{default_subagent_spec, get_agent_model_display};
+use crate::utils::model::agent::describe_effective_subagent_model;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
-use std::collections::HashSet;
 
 #[derive(Default, Props)]
 pub struct AgentDetailProps<'a> {
@@ -56,40 +56,42 @@ pub fn AgentDetail<'a>(
     }
 
     let cwd = crate::bootstrap::state::get_original_cwd();
-    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
-    let path = get_actual_relative_agent_file_path(&agent, &cwd, &config_home);
-    let available = props
-        .available_tool_names
-        .iter()
-        .cloned()
-        .collect::<HashSet<_>>();
+    let path = get_actual_relative_agent_file_path(&agent, &cwd);
+    let available = |spec: &str| {
+        let name =
+            crate::utils::permissions::permission_rule_parser::permission_rule_value_from_string(
+                spec,
+            )
+            .tool_name;
+        props
+            .available_tool_names
+            .iter()
+            .any(|tool| agent_tool_spec_matches(&name, tool))
+    };
     let has_wildcard = agent.tools.is_none()
         || agent
             .tools
             .as_ref()
             .is_some_and(|tools| tools.iter().any(|tool| tool == "*"));
-    let (valid_tools, invalid_tools) = agent
+    let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) = agent
         .tools
+        .iter()
+        .flatten()
+        .filter(|tool| tool.as_str() != "*")
+        .cloned()
+        .partition(|tool| available(tool));
+    let disallowed_text = agent
+        .disallowed_tools
         .as_ref()
-        .map(|tools| {
-            tools
-                .iter()
-                .filter(|tool| tool.as_str() != "*" && available.contains(*tool))
-                .cloned()
-                .collect::<Vec<_>>()
-        })
-        .map(|valid| {
-            let invalid = agent
-                .tools
-                .as_ref()
-                .unwrap()
-                .iter()
-                .filter(|tool| tool.as_str() != "*" && !available.contains(*tool))
-                .cloned()
-                .collect::<Vec<_>>();
-            (valid, invalid)
-        })
-        .unwrap_or_default();
+        .filter(|tools| !tools.is_empty())
+        .map(|tools| tools.join(", "));
+    let model_text = describe_effective_subagent_model(
+        agent.model.as_deref(),
+        &agent.agent_type,
+        crate::utils::settings::get_initial_settings()
+            .nyan
+            .as_deref(),
+    );
     let tools_text = if has_wildcard {
         "All tools".to_string()
     } else if agent.tools.as_ref().is_none_or(Vec::is_empty) {
@@ -148,11 +150,12 @@ pub fn AgentDetail<'a>(
                 Text(content: tools_text)
             }
             #(invalid_text.map(|text| element! { Text(content: text, color: theme.warning) }))
+            #(disallowed_text.map(|text| element! { MixedText(contents: vec![
+                MixedTextContent::new("Disallowed tools: ").weight(Weight::Bold), MixedTextContent::new(text),
+            ]) }))
             MixedText(contents: vec![
                 MixedTextContent::new("Model: ").weight(Weight::Bold),
-                MixedTextContent::new(get_agent_model_display(Some(
-                    agent.model.as_deref().unwrap_or_else(|| default_subagent_spec(&agent.agent_type)),
-                ))),
+                MixedTextContent::new(model_text),
             ])
             #(memory.map(|memory| element! { MixedText(contents: vec![
                 MixedTextContent::new("Memory: ").weight(Weight::Bold), MixedTextContent::new(memory),
@@ -191,6 +194,8 @@ mod tests {
         agent.tools = Some(vec!["Read".to_string(), "Missing".to_string()]);
         agent.model = Some("@heavy:high".to_string());
         agent.color = Some("blue".to_string());
+        agent.file_path =
+            Some(crate::bootstrap::state::get_original_cwd().join(".nyan/agents/reviewer.md"));
         let text = element! {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
                 AgentDetail(agent: Some(agent), available_tool_names: vec!["Read".to_string()])
@@ -201,7 +206,7 @@ mod tests {
         assert!(text.contains(".nyan/agents/reviewer.md"));
         assert!(text.contains("Tools: Read"));
         assert!(text.contains("Unrecognized: Missing"));
-        assert!(text.contains("Model: @heavy:high"));
+        assert!(text.contains("Model: @heavy:high →"), "canvas=\n{text}");
         assert!(text.contains("System prompt:"));
     }
 
@@ -219,7 +224,39 @@ mod tests {
         assert!(text.contains("Built-in"));
         assert!(text.contains("Tools: All tools"));
         // `explore` carries no model; the detail shows its type default.
-        assert!(text.contains("Model: @light"), "canvas=\n{text}");
+        assert!(text.contains("Model: @light →"), "canvas=\n{text}");
+        assert!(text.contains("(type default)"), "canvas=\n{text}");
         assert!(!text.contains("hidden prompt"));
+    }
+
+    #[test]
+    fn detail_treats_mcp_server_specs_as_valid_and_lists_disallowed_tools() {
+        let mut agent =
+            AgentDefinition::new("mcp-user", "Use MCP", AgentDefinitionSource::UserSettings);
+        agent.tools = Some(vec![
+            "mcp__srv".to_string(),
+            "mcp__other__*".to_string(),
+            "mcp__gone".to_string(),
+        ]);
+        agent.disallowed_tools = Some(vec!["mcp__srv__b".to_string()]);
+        let text = element! {
+            ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
+                AgentDetail(
+                    agent: Some(agent),
+                    available_tool_names: vec!["mcp__srv__a".to_string(), "mcp__other__c".to_string()],
+                )
+            }
+        }
+        .render(Some(120))
+        .to_string();
+        assert!(
+            text.contains("Tools: mcp__srv, mcp__other__*"),
+            "canvas=\n{text}"
+        );
+        assert!(text.contains("Unrecognized: mcp__gone"), "canvas=\n{text}");
+        assert!(
+            text.contains("Disallowed tools: mcp__srv__b"),
+            "canvas=\n{text}"
+        );
     }
 }

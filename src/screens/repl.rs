@@ -671,6 +671,25 @@ fn install_repl_interruptible_tool_sink(
         })));
 }
 
+/// Writes freshly loaded agent definitions into the session, leaving the
+/// store untouched when nothing changed. Returns whether it replaced them.
+fn adopt_agent_definitions(
+    store: &crate::state::store::AppStore,
+    loaded: crate::tools::agent_tool::load_agents_dir::AgentDefinitionsResult,
+) -> bool {
+    store.set_state(|prev| {
+        if *prev.agent_definitions == loaded {
+            return crate::state::store::UpdateDecision::Same(false);
+        }
+        let mut next = (**prev).clone();
+        next.agent_definitions = Arc::new(loaded);
+        crate::state::store::UpdateDecision::Replace {
+            next: Arc::new(next),
+            result: true,
+        }
+    })
+}
+
 /// The per-turn refresh every REPL deferred-query path applies to the context
 /// `handle_prompt_submit` handed back, plus the `QueryParams` fields derived
 /// from it. This is the ONE owner: a field belonging to the turn contract is
@@ -8143,7 +8162,16 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         active_local_command_ui.set(clear_local_command_ui(current));
     };
 
+    let app_store_for_agents = app_store.clone();
     let mut on_agents_done = move |result: String| {
+        // @nyan: creations, deletions and editor changes made in /agents take
+        // effect when the dialog closes.
+        adopt_agent_definitions(
+            &app_store_for_agents,
+            crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides(
+                &crate::bootstrap::state::get_original_cwd(),
+            ),
+        );
         if let Some(active) = active_local_command_ui.read().clone()
             && let Some(invocation) = active.invocation.as_ref()
         {
@@ -9594,7 +9622,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         )
                     }.into_any()),
                     LocalCommandPanel::Agents => Some(element! {
-                        AgentsCommand(tools: agents_tools.clone(), on_done: on_agents_done)
+                        AgentsCommand(tools: agents_tools.clone(), on_done: on_agents_done.clone())
                     }.into_any()),
                     LocalCommandPanel::Skills => Some(element! {
                         SkillsCommand(on_done: on_skills_done)
@@ -9781,7 +9809,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         )
                     }.into_any()),
                     LocalCommandPanel::Agents => Some(element! {
-                        AgentsCommand(tools: agents_tools.clone(), on_done: on_agents_done)
+                        AgentsCommand(tools: agents_tools.clone(), on_done: on_agents_done.clone())
                     }.into_any()),
                     LocalCommandPanel::Skills => Some(element! {
                         SkillsCommand(on_done: on_skills_done)
@@ -12482,6 +12510,39 @@ mod tests {
     /// `shell_context_seed: None`. The MCP-prompt slash path instead gets the
     /// permission-only shell `submit_processed_prompt_deferred_query` mints
     /// (`handle_prompt_submit.rs:110-127`) and calls the owner with `Some(..)`.
+    #[test]
+    fn closing_agents_adopts_reloaded_definitions_only_when_changed() {
+        use crate::tools::agent_tool::load_agents_dir::{
+            AgentDefinition, AgentDefinitionSource, AgentDefinitionsResult,
+        };
+        let reviewer = AgentDefinition::new(
+            "reviewer",
+            "Reviews code",
+            AgentDefinitionSource::ProjectSettings,
+        );
+        let loaded = AgentDefinitionsResult {
+            active_agents: vec![reviewer.clone()],
+            all_agents: vec![reviewer],
+            failed_files: Vec::new(),
+        };
+        let store = crate::state::store::AppStore::new(
+            crate::state::app_state_store::AppState::default(),
+            None,
+        );
+
+        let before = store.revision();
+        assert!(adopt_agent_definitions(&store, loaded.clone()));
+        assert_eq!(*store.get().agent_definitions, loaded);
+        assert_eq!(store.revision(), before + 1);
+
+        assert!(!adopt_agent_definitions(&store, loaded));
+        assert_eq!(
+            store.revision(),
+            before + 1,
+            "an unchanged list touches nothing"
+        );
+    }
+
     #[test]
     fn one_owner_decides_agent_definitions_for_every_query_path() {
         use crate::tools::agent_tool::load_agents_dir::{

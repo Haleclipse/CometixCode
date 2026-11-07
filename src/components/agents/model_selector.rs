@@ -6,50 +6,41 @@ use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::use_keybinding;
 use iocraft::prelude::*;
 
-fn model_options(initial_model: Option<&str>) -> Vec<SelectOptionData> {
+/// @nyan: an agent's `model:` is a profile ref — inherit, a tier or a
+/// configured profile name (sorted). Effort is not chosen here; write
+/// `:effort` in the agent file when needed.
+fn model_options(
+    nyan: Option<&crate::utils::settings::nyan::NyanSettings>,
+    initial_model: Option<&str>,
+) -> Vec<SelectOptionData> {
+    let option = |value: &str, label: &str, description: &str| SelectOptionData {
+        value: value.to_string(),
+        label: label.to_string(),
+        description: Some(description.to_string()),
+        dim_description: true,
+        ..Default::default()
+    };
     let mut options = vec![
-        SelectOptionData {
-            value: "sonnet".to_string(),
-            label: "Sonnet".to_string(),
-            description: Some("Balanced performance - best for most agents".to_string()),
-            dim_description: true,
-            ..Default::default()
-        },
-        SelectOptionData {
-            value: "opus".to_string(),
-            label: "Opus".to_string(),
-            description: Some("Most capable for complex reasoning tasks".to_string()),
-            dim_description: true,
-            ..Default::default()
-        },
-        SelectOptionData {
-            value: "haiku".to_string(),
-            label: "Haiku".to_string(),
-            description: Some("Fast and efficient for simple tasks".to_string()),
-            dim_description: true,
-            ..Default::default()
-        },
-        SelectOptionData {
-            value: "inherit".to_string(),
-            label: "Inherit from parent".to_string(),
-            description: Some("Use the same model as the main conversation".to_string()),
-            dim_description: true,
-            ..Default::default()
-        },
+        option(
+            "inherit",
+            "Inherit from parent",
+            "Use the same model as the main conversation",
+        ),
+        option("@light", "@light", "The light tier (selection.light)"),
+        option("@heavy", "@heavy", "The heavy tier (selection.heavy)"),
+        option("@main", "@main", "The main tier (selection.main)"),
     ];
+    let mut profiles = crate::utils::model::profile::profile_names(nyan).collect::<Vec<_>>();
+    profiles.sort_unstable();
+    options.extend(
+        profiles
+            .into_iter()
+            .map(|name| option(name, name, "Model profile")),
+    );
     if let Some(model) = initial_model
         && !options.iter().any(|option| option.value == model)
     {
-        options.insert(
-            0,
-            SelectOptionData {
-                value: model.to_string(),
-                label: model.to_string(),
-                description: Some("Current model (custom ID)".to_string()),
-                dim_description: true,
-                ..Default::default()
-            },
-        );
+        options.insert(0, option(model, model, "Current model"));
     }
     options
 }
@@ -74,8 +65,9 @@ pub fn ModelSelector<'a>(
     props: &mut ModelSelectorProps<'a>,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
-    let options = model_options(props.initial_model.as_deref());
-    let default_model = props.initial_model.as_deref().unwrap_or("sonnet");
+    let settings = crate::utils::settings::get_initial_settings();
+    let options = model_options(settings.nyan.as_deref(), props.initial_model.as_deref());
+    let default_model = props.initial_model.as_deref().unwrap_or("inherit");
     let initial_index = options
         .iter()
         .position(|option| option.value == default_model)
@@ -166,18 +158,34 @@ mod tests {
     use super::*;
 
     #[test]
-    fn custom_model_is_injected_before_aliases_and_round_trips() {
-        let options = model_options(Some("claude-opus-4-5"));
-        assert_eq!(options[0].value, "claude-opus-4-5");
+    fn options_are_inherit_tiers_then_sorted_profiles() {
+        let nyan: crate::utils::settings::nyan::NyanSettings =
+            serde_json::from_value(serde_json::json!({
+                "models": {"zeta": {"model": "z"}, "alpha": {"model": "a"}}
+            }))
+            .unwrap();
+        let values = model_options(Some(&nyan), None)
+            .into_iter()
+            .map(|option| option.value)
+            .collect::<Vec<_>>();
         assert_eq!(
-            options[0].description.as_deref(),
-            Some("Current model (custom ID)")
+            values,
+            ["inherit", "@light", "@heavy", "@main", "alpha", "zeta"]
         );
-        assert_eq!(model_options(Some("sonnet")).len(), 4);
+        for alias in ["sonnet", "opus", "haiku"] {
+            assert!(!values.iter().any(|value| value == alias));
+        }
+        assert_eq!(model_options(None, None).len(), 4);
+        // A value already in the file that is not an option is shown first.
+        assert_eq!(
+            model_options(Some(&nyan), Some("alpha:high"))[0].value,
+            "alpha:high"
+        );
+        assert_eq!(model_options(Some(&nyan), Some("alpha")).len(), 6);
     }
 
     #[test]
-    fn selector_renders_official_explanation_and_aliases() {
+    fn selector_renders_explanation_and_tiers() {
         let text = element! {
             ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
                 ModelSelector(initial_model: Some("inherit".to_string()))
@@ -186,7 +194,8 @@ mod tests {
         .render(Some(110))
         .to_string();
         assert!(text.contains("Model determines the agent's reasoning capabilities and speed."));
-        assert!(text.contains("Sonnet"));
         assert!(text.contains("Inherit from parent"));
+        assert!(text.contains("@light"));
+        assert!(!text.contains("Sonnet"));
     }
 }

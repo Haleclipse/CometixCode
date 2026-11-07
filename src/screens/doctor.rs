@@ -422,9 +422,9 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
                 Some(element! {
                     View(margin_top: 1u32, flex_direction: FlexDirection::Column) {
                         Text(content: "Agent Parse Errors".to_string(), weight: Weight::Bold, color: theme.error)
-                        Text(content: format!("└ Failed to parse {} agent file(s):", agent_parse_errors.len()), color: theme.error)
+                        Text(content: format!("└ Failed to load {} agent(s):", agent_parse_errors.len()), color: theme.error)
                         #(agent_parse_errors.into_iter().map(|file| element! {
-                            Text(content: format!("  └ {}: {}", file.path.display(), file.error), color: theme.inactive, wrap: TextWrap::Wrap)
+                            Text(content: format!("  └ {}: {}", file.label(), file.error), color: theme.inactive, wrap: TextWrap::Wrap)
                         }))
                     }
                 })
@@ -529,6 +529,7 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::agent_tool::load_agents_dir::AgentDefinitionSource;
     use crate::utils::doctor_context_warnings::{
         ContextWarning, ContextWarningSeverity, ContextWarningType,
     };
@@ -731,6 +732,11 @@ mod tests {
                     agent_parse_errors: vec![FailedAgentFile {
                         path: std::path::PathBuf::from("/repo/.claude/agents/bad.md"),
                         error: "missing required description".to_string(),
+                        source: None,
+                    }, FailedAgentFile {
+                        path: std::path::PathBuf::from("pack:broken"),
+                        error: "Invalid \"model\" field".to_string(),
+                        source: Some(AgentDefinitionSource::Plugin),
                     }],
                     plugin_errors: vec![PluginError::GenericError {
                         source: "github:owner/plugin".to_string(),
@@ -745,11 +751,15 @@ mod tests {
 
         assert!(text.contains("Agent Parse Errors"), "canvas=\n{text}");
         assert!(
-            text.contains("└ Failed to parse 1 agent file(s):"),
+            text.contains("└ Failed to load 2 agent(s):"),
             "canvas=\n{text}"
         );
         assert!(
             text.contains("/repo/.claude/agents/bad.md: missing required description"),
+            "canvas=\n{text}"
+        );
+        assert!(
+            text.contains("plugin agent pack:broken: Invalid \"model\" field"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Plugin Errors"), "canvas=\n{text}");
