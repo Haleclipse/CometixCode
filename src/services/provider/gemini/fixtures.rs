@@ -1660,8 +1660,9 @@ fn test_wire_after_a_claude_or_openai_turn_carries_no_foreign_signature() {
         "nyan-state",
         "thoughtSignature",
         "nyanfc",
+        "anthropic thinks",
+        "openai thinks",
     ] {
         assert!(!text.contains(leaked), "{leaked} leaked: {body}");
     }
-    assert!(text.contains("anthropic thinks") && text.contains("openai thinks"));
 }

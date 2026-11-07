@@ -6197,7 +6197,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_request_after_a_deepseek_turn_carries_its_thinking_as_text_only() {
+    fn claude_request_after_a_deepseek_turn_carries_none_of_its_thinking() {
         use crate::types::message::{AssistantContent, ModelProducer};
         let deepseek = ModelProducer {
             profile: "ds".into(),
@@ -6233,16 +6233,15 @@ mod tests {
         .expect("plan builds");
         let body = serde_json::to_value(&plan.params.messages).unwrap();
         let assistant = &body[1]["content"];
-        assert!(
-            assistant
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|block| block["type"] == "text"),
-            "{assistant}"
+        assert_eq!(
+            assistant,
+            &serde_json::json!([{"type": "text", "text": "answer"}])
         );
-        assert_eq!(assistant[0]["text"], "deepseek reasoning");
-        assert!(!body.to_string().contains("reasoning_content"), "{body}");
+        let text = body.to_string();
+        assert!(
+            !text.contains("deepseek reasoning") && !text.contains("reasoning_content"),
+            "{body}"
+        );
     }
 
     #[test]

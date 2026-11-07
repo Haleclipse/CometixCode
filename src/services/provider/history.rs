@@ -4,11 +4,13 @@
 //! An assistant message produced by the request's own model (same provider,
 //! protocol and model id) is sent unchanged, so its bytes and the prompt-cache
 //! prefix stay exactly as they were. Anything another model produced is
-//! reduced to what every provider accepts: readable thinking becomes plain
-//! text, encrypted/redacted thinking and every replay signature (Anthropic
-//! signatures, Gemini `thoughtSignature`, stored [`ProviderState`]) are
-//! dropped, and tool-call ids are rewritten to one portable form, with the
-//! matching tool results following.
+//! reduced to what every provider accepts: its thinking (readable or
+//! encrypted) and every replay signature (Anthropic signatures, Gemini
+//! `thoughtSignature`, stored [`ProviderState`]) are dropped, and tool-call ids
+//! are rewritten to one portable form, with the matching tool results
+//! following. Readable thinking is dropped rather than sent as text, as Pi
+//! does: a model reads another model's reasoning in its own past turn as part
+//! of the reply it already gave.
 //!
 //! The rewrite is a pure function of the history and the target, so the same
 //! history produces byte-identical requests turn after turn.
@@ -76,11 +78,7 @@ fn transform_foreign_assistant(
     message.content = std::mem::take(&mut message.content)
         .into_iter()
         .filter_map(|block| match block {
-            // @nyan: Pi drops foreign thinking; Yuki's decision keeps it as text.
-            AssistantContent::Thinking { text, .. } => {
-                (!text.trim().is_empty()).then_some(AssistantContent::Text(text))
-            }
-            AssistantContent::RedactedThinking { .. } => None,
+            AssistantContent::Thinking { .. } | AssistantContent::RedactedThinking { .. } => None,
             AssistantContent::ToolUse(mut tool_use) => {
                 let portable = portable_tool_call_id(&tool_use.id.0);
                 if portable != tool_use.id.0 {
@@ -92,6 +90,18 @@ fn transform_foreign_assistant(
             other => Some(other),
         })
         .collect();
+    // A turn that only thought would be left empty, which providers reject;
+    // keep the turn as CC does for an empty reply.
+    if message
+        .content
+        .iter()
+        .all(|block| matches!(block, AssistantContent::MessageIdentity(_)))
+    {
+        message.content.insert(
+            0,
+            AssistantContent::Text(crate::utils::messages::NO_CONTENT_MESSAGE.to_string()),
+        );
+    }
     message
 }
 
@@ -250,20 +260,38 @@ mod tests {
     }
 
     #[test]
-    fn foreign_thinking_becomes_text_and_redacted_thinking_and_signatures_are_dropped() {
+    fn foreign_thinking_and_signatures_are_dropped() {
         let out = transform_for_target(history(deepseek(), "call_1"), &claude());
         assert_eq!(
             content(&out[0]),
-            vec![
-                AssistantContent::Text("let me think".into()),
-                AssistantContent::Text("reading".into()),
-                tool_use("call_1"),
-            ]
+            vec![AssistantContent::Text("reading".into()), tool_use("call_1")]
         );
         let dump = format!("{out:?}");
         assert!(
-            !dump.contains("EqQBsig==") && !dump.contains("opaque"),
+            !dump.contains("let me think")
+                && !dump.contains("EqQBsig==")
+                && !dump.contains("opaque"),
             "{dump}"
+        );
+    }
+
+    #[test]
+    fn a_foreign_turn_that_only_thought_keeps_an_empty_reply() {
+        let out = transform_for_target(
+            vec![assistant(
+                Some(deepseek()),
+                vec![AssistantContent::Thinking {
+                    text: "only thinking".into(),
+                    signature: "reasoning_content".into(),
+                }],
+            )],
+            &claude(),
+        );
+        assert_eq!(
+            content(&out[0]),
+            vec![AssistantContent::Text(
+                crate::utils::messages::NO_CONTENT_MESSAGE.into()
+            )]
         );
     }
 
@@ -306,8 +334,11 @@ mod tests {
         let first = transform_for_target(messages.clone(), &claude());
         let second = transform_for_target(messages, &claude());
         assert_eq!(first, second);
-        let AssistantContent::ToolUse(call) = &content(&first[0])[2] else {
-            panic!()
+        let Some(AssistantContent::ToolUse(call)) = content(&first[0])
+            .into_iter()
+            .find(|c| matches!(c, AssistantContent::ToolUse(_)))
+        else {
+            panic!("tool call kept")
         };
         let id = &call.id.0;
         assert!(id.len() <= MAX_TOOL_CALL_ID, "{id}");
@@ -343,6 +374,11 @@ mod tests {
         let kept = transform_for_target(old.clone(), &claude());
         assert_eq!(kept, old);
         let moved = transform_for_target(old, &deepseek());
-        assert_eq!(content(&moved[0]), vec![AssistantContent::Text("t".into())]);
+        assert!(
+            !content(&moved[0])
+                .iter()
+                .any(|c| matches!(c, AssistantContent::Thinking { .. })),
+            "{moved:?}"
+        );
     }
 }
