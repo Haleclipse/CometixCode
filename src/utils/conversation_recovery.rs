@@ -987,7 +987,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             rendered_tool_result_text(&messages, results[0]),
-            "Successfully loaded skill · 2 tools allowed · opus"
+            "Successfully loaded skill · 2 tools allowed"
         );
         assert_eq!(rendered_tool_result_text(&messages, results[1]), "Done");
     }

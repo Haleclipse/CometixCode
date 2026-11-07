@@ -2409,10 +2409,7 @@ mod tests {
             &[],
             ToolRenderOptions::default(),
         );
-        assert_eq!(
-            inline[0].text,
-            "Successfully loaded skill · 1 tool allowed · opus"
-        );
+        assert_eq!(inline[0].text, "Successfully loaded skill · 1 tool allowed");
         assert_eq!(inline[0].tone, ToolRenderTone::Normal);
 
         let forked_raw = serde_json::json!({

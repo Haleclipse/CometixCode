@@ -464,7 +464,7 @@ mod tests {
         );
         assert!(matches!(&result.messages[2].kind,
             RenderableMessageKind::Attachment(crate::utils::attachments::Attachment::CommandPermissions {
-                allowed_tools, model: None,
+                allowed_tools,
             }) if allowed_tools.is_empty()
         ));
         crate::bootstrap::state::clear_invoked_skills_for_agent(agent);

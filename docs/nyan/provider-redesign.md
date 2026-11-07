@@ -425,6 +425,7 @@ CLI --model <ref>[:effort]
 - **统一写法 `ref[:effort]`**：`selection.subagents.<type>`、`selection.utility.<role>`、agent md 的 `model:`、Agent 工具调用参数 `model` 均统一采用 `ref[:effort]` 格式。
   - `ref` = profile 名 | `@light` | `@heavy` | `@main` | `inherit`；其他任何值都是错误。
   - 只有 `:effort` 时（如 `:high`）等同于 `inherit:high`。按最后一个 `:` 拆分，且只有后缀属于合法 effort 档位时才拆分（兼容 `qwen3:32b` 这类含冒号的 profile 名）。
+- **skill 不选模型**（照 Pi）：skill / plugin command 的 `model:`、`effort:` frontmatter 被忽略；需要特定模型就用带 `model:` 的 agent。理由：inline skill 中途换 profile 会让跨模型缓存前缀失效（Opus 5.5、10 万前缀约 $0.80/次）。
 - **默认规则**：
   - 子 agent 类型：`general-purpose`、`plan` = `inherit`；`explore` = `@light`；`review` = `@heavy`。
   - Utility 角色（`title`、`summary`、`commit_message`、`webfetch` 摘要、`bash_prefix` 提取、`prompt_suggestions`、`memory` 提取、`side_query`）= `@light`。

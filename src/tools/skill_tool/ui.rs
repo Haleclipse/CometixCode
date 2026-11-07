@@ -19,7 +19,7 @@ pub fn render_tool_use_message(
 
 /// The Rust stand-in for CC's `outputSchema.safeParse(toolUseResult)`
 /// (`UserToolSuccessMessage.tsx:80`): a union tried left to right — inline
-/// `{success, commandName, allowedTools?, model?, status?: 'inline'}` first,
+/// `{success, commandName, allowedTools?, status?: 'inline'}` first,
 /// then forked `{success, commandName, status: 'forked', agentId, result}`
 /// (`SkillTool.ts:301-326`).
 pub(crate) fn parse_output(value: &serde_json::Value) -> Option<Output> {
@@ -38,11 +38,6 @@ pub(crate) fn parse_output(value: &serde_json::Value) -> Option<Output> {
             ),
             Some(_) => return None,
         };
-        let model = match map.get("model") {
-            None => None,
-            Some(serde_json::Value::String(model)) => Some(model.clone()),
-            Some(_) => return None,
-        };
         let status = match map.get("status") {
             None => None,
             Some(serde_json::Value::String(status)) if status == "inline" => Some(status.clone()),
@@ -52,7 +47,6 @@ pub(crate) fn parse_output(value: &serde_json::Value) -> Option<Output> {
             success,
             command_name: command_name.clone(),
             allowed_tools,
-            model,
             status,
             // Not part of CC's outputSchema — the recorded `toolUseResult`
             // never carries the `contextModifier` captures back.
@@ -83,7 +77,6 @@ pub(crate) fn output_to_value(output: &Output) -> serde_json::Value {
             success,
             command_name,
             allowed_tools,
-            model,
             status,
             // Rust-only `contextModifier` transport; CC's `toolUseResult` is
             // the `data` object alone, so it is deliberately not serialized.
@@ -103,12 +96,6 @@ pub(crate) fn output_to_value(output: &Output) -> serde_json::Value {
                             .map(|tool| serde_json::Value::String(tool.clone()))
                             .collect(),
                     ),
-                );
-            }
-            if let Some(model) = model {
-                map.insert(
-                    "model".to_string(),
-                    serde_json::Value::String(model.clone()),
                 );
             }
             if let Some(status) = status {
@@ -147,9 +134,9 @@ pub(crate) fn output_to_value(output: &Output) -> serde_json::Value {
 }
 
 /// Maps to: CC `SkillTool/UI.tsx:23-59` `renderToolResultMessage` — forked
-/// renders the "Done" byline; inline joins "Successfully loaded skill",
-/// the tool count, and a truthy model with " · ". An empty-string model is
-/// falsy in JS and drops; whitespace is truthy and renders as-is.
+/// renders the "Done" byline; inline joins "Successfully loaded skill" and
+/// the tool count with " · ". @nyan: CC also appends the skill's `model:`;
+/// skills no longer choose a model (see `SkillContextModifier`).
 pub(crate) fn render_tool_result_message(
     raw_output: Option<&serde_json::Value>,
 ) -> Vec<ToolRenderLine> {
@@ -158,19 +145,12 @@ pub(crate) fn render_tool_result_message(
     };
     match output {
         Output::Forked { .. } => vec![ToolRenderLine::new("Done", ToolRenderTone::Normal)],
-        Output::Inline {
-            allowed_tools,
-            model,
-            ..
-        } => {
+        Output::Inline { allowed_tools, .. } => {
             let mut parts = vec!["Successfully loaded skill".to_string()];
             let count = allowed_tools.as_deref().map_or(0, <[_]>::len);
             if count > 0 {
                 let noun = if count == 1 { "tool" } else { "tools" };
                 parts.push(format!("{count} {noun} allowed"));
-            }
-            if let Some(model) = model.filter(|model| !model.is_empty()) {
-                parts.push(model);
             }
             vec![ToolRenderLine::new(
                 parts.join(" · "),
@@ -220,12 +200,11 @@ mod tests {
             "success": true,
             "commandName": "review-pr",
             "allowedTools": ["Bash", "Read"],
-            "model": "opus",
         });
         let inline = render_tool_result_message(Some(&inline_raw));
         assert_eq!(
             inline[0].text,
-            "Successfully loaded skill · 2 tools allowed · opus"
+            "Successfully loaded skill · 2 tools allowed"
         );
         assert_eq!(inline[0].tone, ToolRenderTone::Normal);
 

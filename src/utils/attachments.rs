@@ -277,13 +277,10 @@ pub enum Attachment {
         /// systematically drop passthrough keys CC preserves.
         content: serde_json::Value,
     },
-    /// CC inline member (utils/attachments.ts:607-611).
+    /// CC inline member (utils/attachments.ts:607-611). @nyan: CC's `model?`
+    /// is dropped — skills no longer choose a model.
     #[serde(rename = "command_permissions", rename_all = "camelCase")]
-    CommandPermissions {
-        allowed_tools: Vec<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        model: Option<String>,
-    },
+    CommandPermissions { allowed_tools: Vec<String> },
     /// CC `AgentMentionAttachment` (utils/attachments.ts:399-402).
     #[serde(rename = "agent_mention", rename_all = "camelCase")]
     AgentMention { agent_type: String },

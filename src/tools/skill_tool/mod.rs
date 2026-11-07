@@ -56,7 +56,6 @@ pub enum Output {
         success: bool,
         command_name: String,
         allowed_tools: Option<Vec<String>>,
-        model: Option<String>,
         status: Option<String>,
         /// Rust transport for CC's sibling `ToolResult.contextModifier`
         /// (`SkillTool.ts:775-839`). CC returns the closure next to `data`;
@@ -82,11 +81,17 @@ pub enum Output {
 /// Maps to: CC `tools/SkillTool/SkillTool.ts:775-839` — the `contextModifier`
 /// closure returned alongside an inline skill's `data`.
 ///
-/// The three fields are exactly the closure's captures (`:651-653`):
-/// `allowedTools` is `processedCommand.allowedTools`, i.e. the
-/// `parseToolListFromCLI`-expanded specs (`processSlashCommand.tsx:1206-1208`);
-/// `model` is the skill's `model:` frontmatter; `effort` is its `effort:`
-/// frontmatter.
+/// `allowed_tools` is `processedCommand.allowedTools`, i.e. the
+/// `parseToolListFromCLI`-expanded specs (`processSlashCommand.tsx:1206-1208`).
+/// CC's closure also captures the skill's `model:` and `effort:` frontmatter
+/// (`:651-653`) and switches the turn's model/effort here; nyan deliberately
+/// does not.
+///
+/// @nyan: skills no longer choose a model or effort (like Pi). An inline skill
+/// switching profile mid-conversation resets the cross-provider cache prefix —
+/// with Opus 5.5 and a 100k-token prefix that is about $0.80 per round trip —
+/// and agent md `model:` plus `selection.subagents` already cover per-task
+/// models.
 ///
 /// This is a THIRD widening rule, not either of the other two:
 /// - fork path `createGetAppStateWithAllowedTools` (`forkedAgent.ts:147-171`):
@@ -99,44 +104,27 @@ pub enum Output {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SkillContextModifier {
     pub allowed_tools: Vec<String>,
-    pub model: Option<String>,
-    pub effort: Option<crate::utils::effort::EffortValue>,
 }
 
 impl SkillContextModifier {
     /// CC `SkillTool.ts:766-773` returns `contextModifier` unconditionally, but
-    /// with all three captures empty the closure is the identity function.
+    /// with no allowed tools the closure is the identity function.
     /// Rust models that as `None` so the carrier stays absent instead of
     /// travelling as a no-op through the orchestration layer.
-    pub(crate) fn new(
-        allowed_tools: Vec<String>,
-        model: Option<String>,
-        effort: Option<crate::utils::effort::EffortValue>,
-    ) -> Option<Self> {
-        let modifier = Self {
-            allowed_tools,
-            model,
-            effort,
-        };
-        (!modifier.is_identity()).then_some(modifier)
-    }
-
-    fn is_identity(&self) -> bool {
-        self.allowed_tools.is_empty()
-            && !self.model.as_deref().is_some_and(|model| !model.is_empty())
-            && self.effort.is_none()
+    pub(crate) fn new(allowed_tools: Vec<String>) -> Option<Self> {
+        (!allowed_tools.is_empty()).then_some(Self { allowed_tools })
     }
 
     /// Maps to: CC `SkillTool.ts:776-838` — the closure body, in order.
     ///
     /// CC chains `getAppState` wrappers and spreads `options`; this port's
-    /// `ToolUseContext` carries `tool_permission_context`, `main_loop_model`
-    /// and `effort_value` as snapshot fields on the context itself, and the
+    /// `ToolUseContext` carries `tool_permission_context` as a snapshot field
+    /// on the context itself, and the
     /// permission engine reads `context.tool_permission_context`
     /// (`hooks/use_can_use_tool.rs:372`) the way CC's reads
     /// `context.getAppState().toolPermissionContext`
     /// (`utils/permissions/permissions.ts:1167-1171`). So the wrapper chain
-    /// becomes a direct write to those fields.
+    /// becomes a direct write to that field.
     ///
     /// The write deliberately does NOT go through
     /// `ToolUseContext::update_permission_context`: that also pushes the
@@ -170,41 +158,6 @@ impl SkillContextModifier {
                 }
             }
             context.tool_permission_context = permission;
-        }
-
-        // `if (model)` — JS truthiness, so an empty `model:` is falsy and does
-        // not override. @nyan: the value is a profile ref; the turn routes
-        // through that profile. An unknown one is ignored (CC's
-        // `resolveSkillModelOverride` 1M-suffix carry is gone with the aliases).
-        if let Some(model) = self.model.as_deref().filter(|model| !model.is_empty()) {
-            match crate::utils::model::profile::resolve_model_ref(
-                crate::utils::settings::get_initial_settings()
-                    .nyan
-                    .as_deref(),
-                model,
-            ) {
-                Ok((crate::utils::model::profile::ModelChoice::Profile(profile), _)) => {
-                    context.main_loop_model =
-                        Some(crate::utils::model::model::profile_model(Some(&profile)));
-                    context.main_loop_profile = Some(profile);
-                }
-                Ok((crate::utils::model::profile::ModelChoice::Inherit, _)) => {}
-                Err(error) => {
-                    crate::utils::debug::log_for_debugging(&format!("Skill model ignored: {error}"))
-                }
-            }
-        }
-
-        // `if (effort !== undefined)` — presence, not truthiness.
-        if let Some(effort) = self.effort.as_ref() {
-            context.effort_value = match effort {
-                crate::utils::effort::EffortValue::Named(value) => {
-                    crate::utils::effort::Effort::from_str_loose(value)
-                }
-                crate::utils::effort::EffortValue::Numeric(_) => {
-                    Some(crate::utils::effort::Effort::Medium)
-                }
-            };
         }
     }
 }
@@ -356,7 +309,7 @@ async fn execute_forked_skill(
         agent_definition,
         prompt: &prepared.skill_content,
         description: Some(command_name),
-        model_override: command.model.as_deref(),
+        model_override: None,
         context: &forked_context,
         query_source: crate::constants::query_source::QuerySource::AgentCustom,
         // Maps to CC `SkillTool.ts:223-234`: the forked skill agent runs
@@ -664,14 +617,6 @@ impl crate::tool::ToolCall for SkillTool {
                 return skill_tool_error("Command processing failed");
             }
             let allowed_tools = processed.allowed_tools.unwrap_or_default();
-            let model = command
-                .prompt_command
-                .as_ref()
-                .and_then(|skill| skill.model.clone());
-            let effort = command
-                .prompt_command
-                .as_ref()
-                .and_then(|skill| skill.effort.clone());
             // CC SkillTool.ts:734-752 drops only the command display row.
             // Rust's existing Meta* carrier distinguishes callback content
             // from that plain string metadata; attachments remain model-visible.
@@ -708,9 +653,8 @@ impl crate::tool::ToolCall for SkillTool {
                     success: true,
                     command_name,
                     allowed_tools: (!allowed_tools.is_empty()).then(|| allowed_tools.clone()),
-                    model: model.clone(),
                     status: None,
-                    context_modifier: SkillContextModifier::new(allowed_tools, model, effort),
+                    context_modifier: SkillContextModifier::new(allowed_tools),
                 }),
                 new_messages,
             }
@@ -835,7 +779,7 @@ mod tests {
         );
         assert!(
             matches!(&result.data, crate::tool::ToolOutput::Skill(Output::Inline {
-            success: true, command_name, allowed_tools: None, model: None, status: None, ..
+            success: true, command_name, allowed_tools: None, status: None, ..
         }) if command_name == "init")
         );
         let expected = crate::commands::init::get_prompt_for_command();
@@ -845,7 +789,7 @@ mod tests {
         assert!(
             matches!(&result.new_messages[1], Message::Attachment(attachment)
             if matches!(&attachment.attachment, crate::utils::attachments::Attachment::CommandPermissions {
-                allowed_tools, model: None,
+                allowed_tools,
             } if allowed_tools.is_empty()))
         );
         let invoked =
@@ -951,7 +895,6 @@ mod tests {
         let crate::tool::ToolOutput::Skill(Output::Inline {
             command_name,
             allowed_tools,
-            model,
             status,
             ..
         }) = result.data
@@ -963,7 +906,6 @@ mod tests {
             allowed_tools.as_deref(),
             Some(&["Bash".to_string(), "Read".to_string()][..])
         );
-        assert_eq!(model.as_deref(), Some("opus"));
         // The inline main shape carries no status (SkillTool.ts:768-773).
         assert_eq!(status, None);
         assert_eq!(result.new_messages.len(), 2);
@@ -978,8 +920,8 @@ mod tests {
         assert!(text.contains("Base directory for this skill:"));
         assert!(
             matches!(&result.new_messages[1], crate::types::message::Message::Attachment(attachment)
-            if matches!(&attachment.attachment, crate::utils::attachments::Attachment::CommandPermissions { allowed_tools, model }
-                if allowed_tools == &vec!["Bash".to_string(), "Read".to_string()] && model.as_deref() == Some("opus")))
+            if matches!(&attachment.attachment, crate::utils::attachments::Attachment::CommandPermissions { allowed_tools }
+                if allowed_tools == &vec!["Bash".to_string(), "Read".to_string()]))
         );
     }
 
@@ -1126,8 +1068,6 @@ mod tests {
             argument_names: Vec::new(),
             when_to_use: None,
             version: None,
-            model: None,
-            effort: None,
             disable_model_invocation: false,
             user_invocable: true,
             execution_context: SkillExecutionContext::Inline,
@@ -1154,29 +1094,15 @@ mod tests {
     }
 
     #[test]
-    fn skill_context_modifier_applies_all_three_frontmatter_overrides() {
+    fn skill_context_modifier_applies_allowed_tools_to_later_tool_uses() {
         // Maps to CC `SkillTool.ts:775-838`. Old shape: the port produced no
-        // `contextModifier` at all, so a skill's `allowed-tools`, `model:` and
-        // `effort:` reached only the skill's own `!` blocks and were invisible
-        // to every tool use the model made afterwards.
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::settings::settings_cache::install_test_settings(
-            serde_json::from_value(serde_json::json!({"nyan": {
-                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
-                "models": {"deep": {"provider": "p", "model": "claude-opus-4-6",
-                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}}
-            }}))
-            .unwrap(),
-        );
-        let modifier = SkillContextModifier::new(
-            vec!["Bash(printf *)".to_string()],
-            Some("deep".to_string()),
-            Some(crate::utils::effort::EffortValue::Named("high".to_string())),
-        )
-        .expect("frontmatter carries all three captures");
+        // `contextModifier` at all, so a skill's `allowed-tools` reached only
+        // the skill's own `!` blocks and was invisible to every tool use the
+        // model made afterwards.
+        let modifier = SkillContextModifier::new(vec!["Bash(printf *)".to_string()])
+            .expect("allowed-tools produces a modifier");
 
         let mut context = crate::tool::ToolUseContext::default();
-        context.main_loop_model = Some("claude-sonnet-4-5".to_string());
         modifier.modify_context(&mut context);
 
         assert_eq!(
@@ -1186,12 +1112,6 @@ mod tests {
                 Some("printf *".to_string())
             )]
         );
-        assert_eq!(context.main_loop_model.as_deref(), Some("claude-opus-4-6"));
-        assert_eq!(
-            context.effort_value,
-            Some(crate::utils::effort::Effort::High)
-        );
-        crate::utils::settings::settings_cache::reset_settings_cache();
     }
 
     #[test]
@@ -1210,12 +1130,9 @@ mod tests {
             )],
         );
 
-        let modifier = SkillContextModifier::new(
-            vec!["Bash(printf *)".to_string(), "Read".to_string()],
-            None,
-            None,
-        )
-        .expect("allowed-tools alone is enough");
+        let modifier =
+            SkillContextModifier::new(vec!["Bash(printf *)".to_string(), "Read".to_string()])
+                .expect("allowed-tools alone is enough");
         modifier.modify_context(&mut context);
 
         // The pre-existing rule survives (union, not replace) and the duplicate
@@ -1246,8 +1163,7 @@ mod tests {
         );
         let mut context = crate::tool::ToolUseContext::default().with_app_store(store.clone());
 
-        let modifier =
-            SkillContextModifier::new(vec!["Bash(printf *)".to_string()], None, None).unwrap();
+        let modifier = SkillContextModifier::new(vec!["Bash(printf *)".to_string()]).unwrap();
         modifier.modify_context(&mut context);
 
         assert_eq!(command_allow_rules(&context).len(), 1);
@@ -1261,56 +1177,10 @@ mod tests {
     }
 
     #[test]
-    fn a_skill_model_routes_the_turn_through_that_profile() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::settings::settings_cache::install_test_settings(
-            serde_json::from_value(serde_json::json!({"nyan": {
-                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
-                "models": {"deep": {"provider": "p", "model": "claude-opus-4-6",
-                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}}
-            }}))
-            .unwrap(),
-        );
-        let mut context = crate::tool::ToolUseContext::default();
-        context.main_loop_model = Some("claude-sonnet-4-5".to_string());
-        SkillContextModifier::new(Vec::new(), Some("deep".to_string()), None)
-            .unwrap()
-            .modify_context(&mut context);
-        assert_eq!(context.main_loop_model.as_deref(), Some("claude-opus-4-6"));
-        assert_eq!(context.main_loop_profile.as_deref(), Some("deep"));
-
-        // An unknown model leaves the turn on the session's profile.
-        let mut context = crate::tool::ToolUseContext::default();
-        context.main_loop_model = Some("claude-sonnet-4-5".to_string());
-        SkillContextModifier::new(Vec::new(), Some("opus".to_string()), None)
-            .unwrap()
-            .modify_context(&mut context);
-        assert_eq!(
-            context.main_loop_model.as_deref(),
-            Some("claude-sonnet-4-5")
-        );
-        assert_eq!(context.main_loop_profile, None);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-    }
-
-    #[test]
-    fn skill_context_modifier_absent_when_every_capture_is_empty() {
-        // CC's closure is the identity function with no allowedTools, a falsy
-        // `model` (empty string is falsy in JS) and `effort === undefined`.
-        assert!(SkillContextModifier::new(Vec::new(), None, None).is_none());
-        assert!(SkillContextModifier::new(Vec::new(), Some(String::new()), None).is_none());
-        assert!(SkillContextModifier::new(Vec::new(), Some("opus".to_string()), None).is_some());
-
-        // A falsy `model` alone does not override, matching `if (model)`.
-        let mut context = crate::tool::ToolUseContext::default();
-        context.main_loop_model = Some("claude-sonnet-4-5".to_string());
-        SkillContextModifier::new(vec!["Read".to_string()], Some(String::new()), None)
-            .unwrap()
-            .modify_context(&mut context);
-        assert_eq!(
-            context.main_loop_model.as_deref(),
-            Some("claude-sonnet-4-5")
-        );
+    fn skill_context_modifier_absent_without_allowed_tools() {
+        // CC's closure is the identity function with no allowedTools; nyan has
+        // no model/effort captures (see `SkillContextModifier`).
+        assert!(SkillContextModifier::new(Vec::new()).is_none());
     }
 
     #[test]
@@ -1367,15 +1237,11 @@ mod tests {
             modifier.allowed_tools,
             vec!["Bash(printf *)".to_string(), "Read".to_string()]
         );
-        assert_eq!(modifier.model.as_deref(), Some("opus"));
-        assert_eq!(
-            modifier.effort,
-            Some(crate::utils::effort::EffortValue::Named("high".to_string()))
-        );
 
         // The carrier never reaches the recorded `toolUseResult`: CC's wire
         // shape is the `data` object alone (`SkillTool.ts:768-773`).
         let recorded = SkillTool.tool_use_result(&result.data).unwrap();
+        assert!(recorded.get("model").is_none());
         assert!(recorded.get("effort").is_none());
         assert!(recorded.get("contextModifier").is_none());
     }

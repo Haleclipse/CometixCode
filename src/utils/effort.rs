@@ -26,29 +26,7 @@ pub enum Effort {
     Max,
 }
 
-/// The `effort:` frontmatter value of a skill or plugin command. Agents have no
-/// such field (their depth is the `:effort` of `model:`), and runtime model
-/// selection and provider requests use [`Effort`] only.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum EffortValue {
-    Named(String),
-    Numeric(i64),
-}
-
-impl EffortValue {
-    pub fn as_str(&self) -> String {
-        match self {
-            Self::Named(value) => value.clone(),
-            Self::Numeric(value) => value.to_string(),
-        }
-    }
-}
-
 pub type ModelEffortLevel = Effort;
-
-/// Effort names accepted by the skill and plugin command frontmatter parsers.
-pub const EFFORT_LEVELS: &[&str] = &["off", "medium", "high", "max"];
 
 impl Effort {
     pub const ALL: [Effort; 4] = [Effort::Off, Effort::Medium, Effort::High, Effort::Max];
@@ -113,35 +91,6 @@ impl fmt::Display for Effort {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
     }
-}
-
-/// Parse a skill or plugin command `effort:` frontmatter value without
-/// consulting global effort settings.
-pub fn parse_effort_value(value: &str) -> Option<EffortValue> {
-    if value.is_empty() {
-        return None;
-    }
-    let lower = value.to_ascii_lowercase();
-    if EFFORT_LEVELS.contains(&lower.as_str()) {
-        return Some(EffortValue::Named(lower));
-    }
-    let trimmed = lower.trim_start();
-    let (sign, digits) = match trimmed.as_bytes().first().copied() {
-        Some(b'-') => (-1_i128, &trimmed[1..]),
-        Some(b'+') => (1_i128, &trimmed[1..]),
-        _ => (1_i128, trimmed),
-    };
-    let digits = digits
-        .bytes()
-        .take_while(u8::is_ascii_digit)
-        .collect::<Vec<_>>();
-    if digits.is_empty() {
-        return None;
-    }
-    let number = digits.into_iter().try_fold(0_i128, |value, digit| {
-        value.checked_mul(10)?.checked_add((digit - b'0') as i128)
-    })? * sign;
-    i64::try_from(number).ok().map(EffortValue::Numeric)
 }
 
 /// Description of each effort level.

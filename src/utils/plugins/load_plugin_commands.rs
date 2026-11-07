@@ -258,48 +258,12 @@ fn create_plugin_command(
         }
         _ => {}
     }
-    // CC calls modelInput.trim() for a truthy model; malformed YAML values
-    // throw into this function's catch instead of silently inheriting a model.
-    if frontmatter.get("model").is_some_and(|value| match value {
-        Value::Null | Value::Bool(false) | Value::String(_) => false,
-        Value::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
-        _ => true,
-    }) {
-        error(format!(
-            "Failed to create command from {}: modelInput.trim is not a function",
-            file.file_path.display()
-        ));
-        return None;
-    }
     let field = |key: &str| {
         frontmatter
             .get(key)
             .and_then(Value::as_str)
             .map(str::to_owned)
     };
-    let effort_raw = frontmatter.get("effort");
-    let effort = if let Some(value) = effort_raw.filter(|value| !value.is_null()) {
-        let raw = match crate::utils::json::JsoncValue::from_json(value.clone()).array_string() {
-            Ok(raw) => raw,
-            Err(()) => {
-                error(format!(
-                    "Failed to create command from {}: TypeError: No default value",
-                    file.file_path.display()
-                ));
-                return None;
-            }
-        };
-        crate::utils::effort::parse_effort_value(&raw)
-    } else {
-        None
-    };
-    if effort_raw.is_some() && effort.is_none() {
-        debug(format!(
-            "Plugin command {command_name} has invalid effort '{}'. Valid options: {} or an integer",
-            effort_raw.unwrap(),
-            crate::utils::effort::EFFORT_LEVELS.join(", ")
-        ));
-    }
     let skill = SkillCommand {
         name: command_name.clone(),
         display_name: field("name").filter(|name| !name.is_empty()),
@@ -326,9 +290,6 @@ fn create_plugin_command(
         ),
         when_to_use: field("when_to_use"),
         version: field("version"),
-        // @nyan: a profile ref, resolved where the command runs.
-        model: field("model").filter(|model| !model.is_empty() && model != "inherit"),
-        effort,
         disable_model_invocation: parse_boolean_frontmatter(
             frontmatter.get("disable-model-invocation"),
         ),
@@ -478,7 +439,6 @@ fn metadata_frontmatter(
         for (key, field) in [
             ("description", "description"),
             ("argumentHint", "argument-hint"),
-            ("model", "model"),
         ] {
             if let Some(value) = metadata
                 .get(key)
@@ -1275,48 +1235,5 @@ mod tests {
         let skills = load_skills_from_directory(&fixture.0.join("direct"), &plugin, paths()).await;
         assert_eq!(skills.len(), 1);
         assert!(text(&skills[0], "").ends_with("skill \u{fffd} body"));
-    }
-
-    #[test]
-    fn plugin_effort_delegates_unknown_coercion_without_panicking() {
-        let fixture = Fixture::new();
-        let plugin = fixture.plugin();
-        for (raw, expected) in [
-            (
-                serde_json::json!(["high"]),
-                Some(crate::utils::effort::EffortValue::Named("high".into())),
-            ),
-            (
-                serde_json::json!([5]),
-                Some(crate::utils::effort::EffortValue::Numeric(5)),
-            ),
-            (serde_json::json!([null, 2]), None),
-        ] {
-            let mut input = file("/p/value.md", "body");
-            input.frontmatter.insert("effort".into(), raw);
-            let command = create_plugin_command(
-                "p:value".into(),
-                input,
-                &plugin,
-                false,
-                LoadConfig::default(),
-            )
-            .unwrap();
-            assert_eq!(command.prompt_command.as_ref().unwrap().effort, expected);
-        }
-        let mut input = file("/p/value.md", "body");
-        input
-            .frontmatter
-            .insert("effort".into(), serde_json::json!({"toString":0}));
-        assert!(
-            create_plugin_command(
-                "p:value".into(),
-                input,
-                &plugin,
-                false,
-                LoadConfig::default()
-            )
-            .is_none()
-        );
     }
 }

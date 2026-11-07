@@ -141,9 +141,8 @@ pub struct SkillCommand {
     pub argument_names: Vec<String>,
     pub when_to_use: Option<String>,
     pub version: Option<String>,
-    pub model: Option<String>,
-    /// Maps to CC prompt-command frontmatter `effort`.
-    pub effort: Option<crate::utils::effort::EffortValue>,
+    // @nyan: CC also carries `model:` / `effort:` frontmatter; skills no
+    // longer choose a model (see `tools::skill_tool::SkillContextModifier`).
     pub disable_model_invocation: bool,
     pub user_invocable: bool,
     pub execution_context: SkillExecutionContext,
@@ -925,8 +924,6 @@ fn create_skill_command(input: CreateSkillCommandInput) -> Option<SkillCommand> 
         argument_names: parsed.argument_names,
         when_to_use: parsed.when_to_use,
         version: parsed.version,
-        model: parsed.model,
-        effort: parsed.effort,
         disable_model_invocation: parsed.disable_model_invocation,
         user_invocable: parsed.user_invocable,
         execution_context: parsed
@@ -953,8 +950,6 @@ struct ParsedSkillFrontmatterFields {
     argument_names: Vec<String>,
     when_to_use: Option<String>,
     version: Option<String>,
-    model: Option<String>,
-    effort: Option<crate::utils::effort::EffortValue>,
     disable_model_invocation: bool,
     user_invocable: bool,
     execution_context: Option<SkillExecutionContext>,
@@ -998,22 +993,6 @@ fn parse_skill_frontmatter_fields(
         extract_description_from_markdown(markdown_content, description_fallback_label)
     });
 
-    let model = string_field(frontmatter, "model").and_then(|model| {
-        let trimmed = model.trim();
-        (!trimmed.is_empty() && trimmed != "inherit").then(|| trimmed.to_string())
-    });
-    let effort_raw = string_field(frontmatter, "effort");
-    let effort = effort_raw
-        .as_deref()
-        .and_then(crate::utils::effort::parse_effort_value);
-    if effort_raw.is_some() && effort.is_none() {
-        tracing::debug!(
-            skill = resolved_name,
-            effort = effort_raw.as_deref().unwrap_or_default(),
-            "skill has invalid effort frontmatter"
-        );
-    }
-
     ParsedSkillFrontmatterFields {
         display_name: string_field(frontmatter, "name"),
         description,
@@ -1026,8 +1005,6 @@ fn parse_skill_frontmatter_fields(
         argument_names: parse_argument_names(frontmatter.get("arguments")),
         when_to_use: string_field(frontmatter, "when_to_use"),
         version: string_field(frontmatter, "version"),
-        model,
-        effort,
         disable_model_invocation: parse_bool(frontmatter.get("disable-model-invocation")),
         user_invocable: frontmatter
             .get("user-invocable")
@@ -1296,8 +1273,6 @@ mod tests {
             argument_names: Vec::new(),
             when_to_use: None,
             version: None,
-            model: None,
-            effort: None,
             disable_model_invocation: false,
             user_invocable: true,
             execution_context: SkillExecutionContext::Inline,
@@ -1460,7 +1435,7 @@ mod tests {
         let skills = root.join("skills");
         write_file(
             &skills.join("review").join("SKILL.md"),
-            "---\nname: Review Display\ndescription: Review code\nallowed-tools: Read, Grep\nargument-hint: [scope]\narguments: scope mode\nmodel: opus\npaths: src/**, tests/**\n---\nUse $scope in $mode. Dir=${CLAUDE_SKILL_DIR} Session=${CLAUDE_SESSION_ID}",
+            "---\nname: Review Display\ndescription: Review code\nallowed-tools: Read, Grep\nargument-hint: [scope]\narguments: scope mode\npaths: src/**, tests/**\n---\nUse $scope in $mode. Dir=${CLAUDE_SKILL_DIR} Session=${CLAUDE_SESSION_ID}",
         );
         write_file(&skills.join("ignored.md"), "# ignored");
 
@@ -1475,7 +1450,6 @@ mod tests {
             skill.paths.as_deref(),
             Some(&["src".to_string(), "tests".to_string()][..])
         );
-        assert_eq!(skill.model.as_deref(), Some("opus"));
         let prompt = skill
             .get_prompt_for_command_without_shell(Some("core quick"), "session-1")
             .unwrap();

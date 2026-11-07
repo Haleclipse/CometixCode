@@ -1773,8 +1773,13 @@ mod tests {
             ),
             "the skill's allowed-tools must widen tools started after it in the turn"
         );
-        assert_eq!(updated.main_loop_model.as_deref(), Some("claude-opus-4-6"));
-        assert_eq!(updated.main_loop_profile.as_deref(), Some("deep"));
+        // @nyan: the skill's `model: deep` is ignored even though the profile
+        // exists — skills no longer switch the turn's profile.
+        assert_eq!(
+            updated.main_loop_model.as_deref(),
+            Some("claude-sonnet-4-5")
+        );
+        assert_eq!(updated.main_loop_profile, None);
         crate::utils::settings::settings_cache::reset_settings_cache();
     }
 

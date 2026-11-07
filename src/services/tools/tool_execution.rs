@@ -7012,10 +7012,8 @@ mod tests {
             !should_ask_permission_request(&bash_request, &result.new_context),
             "the skill's allowed-tools must widen the NEXT tool use of the turn"
         );
-        assert_eq!(
-            result.new_context.effort_value,
-            Some(crate::utils::effort::Effort::High)
-        );
+        // @nyan: the skill's `effort: high` is ignored.
+        assert_eq!(result.new_context.effort_value, context.effort_value);
         // Turn-scoped: the widening lives on the context handed forward, not in
         // the caller's own context (CC never calls `setAppState` here).
         assert!(should_ask_permission_request(&bash_request, &context));

@@ -12921,7 +12921,6 @@ mod tests {
         // actual attachment to messages, not a UI-only projection.
         let attachment = crate::utils::attachments::Attachment::CommandPermissions {
             allowed_tools: Vec::new(),
-            model: None,
         };
         let entries = vec![history_entry_from_row(RenderableMessage {
             uuid: "init-command-permissions".into(),
