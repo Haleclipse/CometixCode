@@ -795,6 +795,10 @@ fn value_to_message(value: serde_json::Value) -> Option<Message> {
                         .get("errorDetails")
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
+                    producer: value
+                        .get("producer")
+                        .cloned()
+                        .and_then(|value| serde_json::from_value(value).ok()),
                 },
             ));
             let model = value

@@ -5,8 +5,9 @@
 //! - **Reasoning items round-trip.** The server returns a reasoning item with
 //!   `encrypted_content`; with `store: false` it must be sent back verbatim for
 //!   the model to keep its chain of thought across tool calls. It is kept as a
-//!   thinking block whose signature is a tagged [`ProviderState`], so only this
-//!   protocol replays it and Anthropic/Chat skip it.
+//!   thinking block whose signature is a tagged [`ProviderState`]; history
+//!   from any other model has it removed before it reaches this adapter
+//!   (`provider::history`).
 //! - **Function calls have two ids.** `call_id` is what the output must echo;
 //!   the `fc_...` item id pairs the call with its reasoning item. The transcript
 //!   has one id slot, so both are kept, joined (see [`super::join_call_id`]).
@@ -37,27 +38,11 @@ pub enum Backend {
     Codex,
 }
 
-const MAX_ID: usize = 64;
-
 fn state_of(data: Value) -> ProviderState {
     ProviderState {
         protocol: Protocol::OpenaiResponses,
         data,
     }
-}
-
-fn own_state(state: &Option<ProviderState>) -> Option<&Value> {
-    state
-        .as_ref()
-        .filter(|s| s.protocol == Protocol::OpenaiResponses)
-        .map(|s| &s.data)
-}
-
-/// An item id the server will accept back: `fc_`-prefixed and at most 64 bytes.
-/// Ids from another provider fail that, and sending them makes the server
-/// reject the pairing with the reasoning item, so they are not sent at all.
-fn replayable_item_id(id: &str) -> Option<&str> {
-    (id.starts_with("fc_") && id.len() <= MAX_ID).then_some(id)
 }
 
 fn user_content(parts: &[UserPart]) -> Vec<Value> {
@@ -126,10 +111,10 @@ fn push_assistant(input: &mut Vec<Value>, parts: &[AssistantPart], backend: Back
             AssistantPart::Text { text: t } => text.push_str(t),
             AssistantPart::Thinking { provider_state, .. }
             | AssistantPart::RedactedThinking { provider_state, .. } => {
-                // Only this protocol's own reasoning item goes back, whole.
-                if let Some(item) = own_state(provider_state) {
+                // The reasoning item goes back whole.
+                if let Some(state) = provider_state {
                     flush(input, &mut text);
-                    input.push(item.clone());
+                    input.push(state.data.clone());
                 }
             }
             AssistantPart::ToolCall {
@@ -149,7 +134,7 @@ fn push_assistant(input: &mut Vec<Value>, parts: &[AssistantPart], backend: Back
                     },
                 });
                 if backend == Backend::Api
-                    && let Some(item_id) = item_part(id).and_then(replayable_item_id)
+                    && let Some(item_id) = item_part(id)
                 {
                     item["id"] = json!(item_id);
                 }
@@ -997,15 +982,6 @@ mod tests {
                         signature: String::new(),
                         provider_state: Some(state_of(reasoning_item())),
                     },
-                    // Another protocol's state must not leak in.
-                    AssistantPart::Thinking {
-                        text: "other".into(),
-                        signature: String::new(),
-                        provider_state: Some(ProviderState {
-                            protocol: Protocol::AnthropicMessages,
-                            data: json!({"type": "thinking", "signature": "S"}),
-                        }),
-                    },
                     AssistantPart::Text {
                         text: "reading".into(),
                     },
@@ -1042,11 +1018,10 @@ mod tests {
             input[4],
             json!({"type": "function_call_output", "call_id": "call_1", "output": "contents"})
         );
-        assert!(!body.to_string().contains("\"S\""), "{body}");
     }
 
     #[test]
-    fn foreign_and_oversized_item_ids_are_not_sent_and_the_chatgpt_backend_never_gets_one() {
+    fn only_composite_ids_carry_an_item_id_and_the_chatgpt_backend_never_gets_one() {
         let call = |id: &str| Message::Assistant {
             parts: vec![AssistantPart::ToolCall {
                 id: id.into(),
@@ -1055,14 +1030,14 @@ mod tests {
                 provider_state: None,
             }],
         };
-        for id in [
-            join_call_id("call_1", "msg_9"),
-            join_call_id("call_1", &format!("fc_{}", "x".repeat(70))),
-            "toolu_01ABC".to_string(),
-        ] {
-            let body = build_body(&target(all()), &request(vec![call(&id)]), Backend::Api);
-            assert!(body["input"][0].get("id").is_none(), "{id}: {body}");
-        }
+        // Another model's ids reach this adapter already reduced to a plain
+        // call id (`provider::history`), so they carry no item id.
+        let body = build_body(
+            &target(all()),
+            &request(vec![call("toolu_01ABC")]),
+            Backend::Api,
+        );
+        assert!(body["input"][0].get("id").is_none(), "{body}");
         let body = build_body(
             &target(all()),
             &request(vec![call(&join_call_id("call_1", "fc_9"))]),

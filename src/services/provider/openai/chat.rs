@@ -11,9 +11,7 @@ use serde_json::{Value, json};
 
 use super::target::Compat;
 use super::transport::Frame;
-use super::{
-    EMPTY_TOOL_OUTPUT, call_part, media_url, reasoning_effort, system_text, tool_result_text,
-};
+use super::{EMPTY_TOOL_OUTPUT, media_url, reasoning_effort, system_text, tool_result_text};
 use crate::services::provider::adapter::ResolvedTarget;
 use crate::services::provider::ir::{
     AssistantPart, BlockStart, Delta, MediaSource, Message, ModelRequest, ProviderError,
@@ -21,33 +19,6 @@ use crate::services::provider::ir::{
     Usage, UserPart,
 };
 use crate::utils::settings::nyan::{CacheRetention, MaxTokensField};
-
-/// OpenAI rejects tool-call ids longer than 40 characters.
-const MAX_CALL_ID: usize = 40;
-
-/// A history id (possibly another protocol's, possibly a Responses composite)
-/// as a Chat `tool_call_id`. Pure, so the assistant's call and the matching
-/// result always agree.
-pub fn chat_call_id(id: &str) -> String {
-    let clean: String = call_part(id)
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if clean.len() <= MAX_CALL_ID {
-        return clean;
-    }
-    // FNV-1a over the original keeps two long ids from colliding after the cut.
-    let hash = id.bytes().fold(0xcbf29ce484222325_u64, |h, b| {
-        (h ^ u64::from(b)).wrapping_mul(0x100000001b3)
-    });
-    format!("{}_{:08x}", &clean[..MAX_CALL_ID - 9], hash as u32)
-}
 
 fn image_part(source: &MediaSource) -> Value {
     json!({"type": "image_url", "image_url": {"url": media_url(source)}})
@@ -86,7 +57,7 @@ fn push_user(messages: &mut Vec<Value>, parts: &[UserPart]) {
                 let text = tool_result_text(content);
                 tool_messages.push(json!({
                     "role": "tool",
-                    "tool_call_id": chat_call_id(tool_call_id),
+                    "tool_call_id": tool_call_id,
                     "content": if text.is_empty() { EMPTY_TOOL_OUTPUT.to_string() } else { text },
                 }));
                 // A tool message carries text only; its images ride in a user
@@ -143,7 +114,7 @@ fn push_assistant(messages: &mut Vec<Value>, parts: &[AssistantPart], compat: &C
             AssistantPart::ToolCall {
                 id, name, input, ..
             } => calls.push(json!({
-                "id": chat_call_id(id),
+                "id": id,
                 "type": "function",
                 "function": {"name": name, "arguments": arguments_json(input)},
             })),
@@ -972,7 +943,7 @@ mod tests {
 
     #[test]
     fn history_maps_tool_calls_results_and_drops_what_chat_cannot_carry() {
-        let call_id = "call_abc-nyanfc-fc_123";
+        let call_id = "call_abc";
         let messages = vec![
             user_text("go"),
             Message::Assistant {
@@ -1021,10 +992,7 @@ mod tests {
         let m = body["messages"].as_array().unwrap();
         assert_eq!(m[2]["role"], "assistant");
         assert_eq!(m[2]["content"], "reading");
-        assert_eq!(
-            m[2]["tool_calls"][0]["id"], "call_abc",
-            "composite id reduced to the call id"
-        );
+        assert_eq!(m[2]["tool_calls"][0]["id"], "call_abc");
         assert_eq!(
             m[2]["tool_calls"][0]["function"]["arguments"],
             "{\"p\":\"a\"}"
@@ -1062,16 +1030,6 @@ mod tests {
             "system + tool; the empty assistant turn is skipped"
         );
         assert_eq!(m[1]["content"], EMPTY_TOOL_OUTPUT);
-    }
-
-    #[test]
-    fn long_and_foreign_call_ids_stay_within_the_limit_and_stay_distinct() {
-        let a = chat_call_id(&format!("{}A", "x".repeat(60)));
-        let b = chat_call_id(&format!("{}B", "x".repeat(60)));
-        assert!(a.len() <= MAX_CALL_ID && b.len() <= MAX_CALL_ID);
-        assert_ne!(a, b);
-        assert_eq!(chat_call_id("toolu_01.A:b"), "toolu_01_A_b");
-        assert_eq!(chat_call_id("call_1"), chat_call_id("call_1"));
     }
 
     fn frame(value: Value) -> Frame {

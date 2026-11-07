@@ -37,9 +37,8 @@ pub enum Protocol {
 
 /// Opaque per-protocol replay state attached to assistant output.
 ///
-/// An adapter only reads state whose `protocol` equals its own and must ignore
-/// the rest, so history produced by one provider never leaks into another's
-/// request.
+/// History from another model never carries it: `provider::history` removes
+/// it before the request is built.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProviderState {
     pub protocol: Protocol,
@@ -52,8 +51,7 @@ impl ProviderState {
 
     /// The transcript keeps one opaque string per thinking block. An adapter
     /// whose replay state is not a plain signature stores this form there, so
-    /// the owning protocol finds it again and every other protocol (including
-    /// Anthropic, which would reject it as a signature) recognizes and skips it.
+    /// the owning protocol finds it again on its next request.
     pub fn to_signature(&self) -> String {
         format!(
             "{}{}",

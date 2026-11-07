@@ -1559,3 +1559,109 @@ async fn test_gemini_non_streaming_fallback_on_404() {
     );
     assert!(requests[1].request_line.contains(":generateContent"));
 }
+
+#[test]
+fn test_wire_after_a_claude_or_openai_turn_carries_no_foreign_signature() {
+    use crate::services::provider::history::transform_for_target;
+    use crate::types::ids::ToolUseId;
+    use crate::types::message::{
+        AssistantContent, Message as NyanMessage, ModelProducer, ToolResult, ToolUseBlock,
+        UserContent,
+    };
+
+    let gpt_state = crate::services::provider::ir::ProviderState {
+        protocol: Protocol::OpenaiResponses,
+        data: json!({"type": "reasoning", "encrypted_content": "GPT_ENC"}),
+    };
+    let turn = |producer: ModelProducer, signature: String, call_id: &str| {
+        let mut assistant = crate::utils::messages::create_assistant_message(String::new());
+        assistant.model = Some(producer.model.clone());
+        assistant.content = vec![
+            AssistantContent::Thinking {
+                text: format!("{} thinks", producer.provider),
+                signature,
+            },
+            AssistantContent::ToolUse(ToolUseBlock {
+                id: ToolUseId(call_id.into()),
+                name: "Read".into(),
+                input: json!({}),
+            }),
+        ];
+        assistant.set_producer(producer);
+        let mut result = crate::utils::messages::create_user_message(String::new());
+        result.content = vec![UserContent::ToolResult(ToolResult {
+            tool_use_id: ToolUseId(call_id.into()),
+            content: "ok".into(),
+            is_error: false,
+            content_blocks: Vec::new(),
+            tool_use_result: None,
+        })];
+        [NyanMessage::Assistant(assistant), NyanMessage::User(result)]
+    };
+    let mut history = vec![NyanMessage::User(
+        crate::utils::messages::create_user_message("go".into()),
+    )];
+    history.extend(turn(
+        ModelProducer {
+            profile: "opus".into(),
+            provider: "anthropic".into(),
+            protocol: Protocol::AnthropicMessages,
+            model: "claude-opus-5-5".into(),
+        },
+        "CLAUDE_SIG".into(),
+        "toolu_01",
+    ));
+    history.extend(turn(
+        ModelProducer {
+            profile: "gpt".into(),
+            provider: "openai".into(),
+            protocol: Protocol::OpenaiResponses,
+            model: "gpt-5.6".into(),
+        },
+        gpt_state.to_signature(),
+        &format!("call_{}-nyanfc-fc_9", "x".repeat(60)),
+    ));
+    let target = test_target();
+    let history = transform_for_target(
+        history,
+        &ModelProducer {
+            profile: target.profile.clone(),
+            provider: target.provider.clone(),
+            protocol: target.protocol,
+            model: target.model.clone(),
+        },
+    );
+    let request = crate::services::provider::request::build_request(
+        &history,
+        &[],
+        &[],
+        Vec::new(),
+        crate::services::provider::request::RequestParams {
+            model: target.model.clone(),
+            query_source: "test".into(),
+            agent_id: None,
+            max_output_tokens: 1000,
+            temperature: None,
+            tool_choice: ToolChoice::Auto,
+            disable_parallel_tools: false,
+            effort: Effort::Off,
+            output_schema: None,
+            enable_prompt_caching: false,
+            skip_cache_write: false,
+            client: Default::default(),
+            tools_pending: false,
+        },
+    );
+    let body = serde_json::to_value(wire::build_request(&request, &target)).unwrap();
+    let text = body.to_string();
+    for leaked in [
+        "CLAUDE_SIG",
+        "GPT_ENC",
+        "nyan-state",
+        "thoughtSignature",
+        "nyanfc",
+    ] {
+        assert!(!text.contains(leaked), "{leaked} leaked: {body}");
+    }
+    assert!(text.contains("anthropic thinks") && text.contains("openai thinks"));
+}

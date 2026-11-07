@@ -375,6 +375,31 @@ pub struct AssistantMessageIdentity {
     /// Maps to: CC `types/message.ts:44` `errorDetails?: string`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_details: Option<String>,
+    /// @nyan: the profile that produced this message. Absent on synthetic
+    /// rows and on rows written before nyan recorded it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<ModelProducer>,
+}
+
+/// @nyan: what a request was sent to, and so what produced its reply. Two
+/// requests target the same model iff `provider`, `protocol` and `model` all
+/// match; `profile` is kept for display and diagnostics only.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModelProducer {
+    pub profile: String,
+    pub provider: String,
+    pub protocol: crate::services::provider::ir::Protocol,
+    /// Requested wire model id. The response may name a dated alias, which
+    /// would make a model's own history look foreign.
+    pub model: String,
+}
+
+impl ModelProducer {
+    pub fn is_same_model(&self, other: &Self) -> bool {
+        self.provider == other.provider
+            && self.protocol == other.protocol
+            && self.model == other.model
+    }
 }
 
 impl AssistantMessageIdentity {
@@ -399,6 +424,7 @@ impl Default for AssistantMessageIdentity {
             is_api_error_message: false,
             api_error: None,
             error_details: None,
+            producer: None,
         }
     }
 }
@@ -411,6 +437,24 @@ impl AssistantMessage {
             AssistantContent::MessageIdentity(identity) => Some(identity),
             _ => None,
         })
+    }
+
+    /// @nyan: record the model that produced this message on its identity
+    /// envelope.
+    pub fn set_producer(&mut self, producer: ModelProducer) {
+        if let Some(identity) = self.content.iter_mut().find_map(|content| match content {
+            AssistantContent::MessageIdentity(identity) => Some(identity),
+            _ => None,
+        }) {
+            identity.producer = Some(producer);
+        } else {
+            self.content.push(AssistantContent::MessageIdentity(
+                AssistantMessageIdentity {
+                    producer: Some(producer),
+                    ..AssistantMessageIdentity::default()
+                },
+            ));
+        }
     }
 
     pub fn request_id(&self) -> Option<&str> {

@@ -308,7 +308,7 @@ async fn chat_stream_with_a_tool_call_becomes_ir_with_usage_and_the_header_reque
 }
 
 #[tokio::test]
-async fn chat_replays_a_tool_round_trip_without_thinking_or_foreign_ids() {
+async fn chat_replays_a_tool_round_trip_without_thinking() {
     let _env = env();
     let mock = MockOpenAi::start(vec![Reply::sse_data([chat_chunk(
         json!({"content": "ok"}),
@@ -328,7 +328,7 @@ async fn chat_replays_a_tool_round_trip_without_thinking_or_foreign_ids() {
                     provider_state: None,
                 },
                 AssistantPart::ToolCall {
-                    id: super::join_call_id("call_1", "fc_1"),
+                    id: "call_1".into(),
                     name: "Read".into(),
                     input: json!({"path": "a"}),
                     provider_state: None,
@@ -337,7 +337,7 @@ async fn chat_replays_a_tool_round_trip_without_thinking_or_foreign_ids() {
         },
         Message::User {
             parts: vec![UserPart::ToolResult {
-                tool_call_id: super::join_call_id("call_1", "fc_1"),
+                tool_call_id: "call_1".into(),
                 content: ToolResultContent::Text("data".into()),
                 is_error: false,
             }],

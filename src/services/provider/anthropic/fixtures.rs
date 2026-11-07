@@ -87,6 +87,8 @@ fn user(text: &str) -> Message {
 fn assistant(content: Vec<AssistantContent>) -> Message {
     let mut message: AssistantMessage =
         crate::utils::messages::create_assistant_message(String::new());
+    // History from the model these fixtures request, so it replays as-is.
+    message.model = Some("claude-sonnet-4-6".to_string());
     message.content = content;
     Message::Assistant(message)
 }

@@ -1162,6 +1162,10 @@ fn agent_transcript_entry_to_message(
                         .get("errorDetails")
                         .and_then(|value| value.as_str())
                         .map(str::to_string),
+                    producer: entry
+                        .get("producer")
+                        .cloned()
+                        .and_then(|value| serde_json::from_value(value).ok()),
                 },
             ));
             Some(crate::types::message::Message::Assistant(
@@ -4788,6 +4792,17 @@ fn typed_message_entry(
                         serde_json::Value::String(request_id),
                     );
             }
+            // @nyan: which profile/model produced the row, for the
+            // cross-model history pass after resume.
+            if let Some(producer) = identity.and_then(|identity| identity.producer.as_ref()) {
+                entry
+                    .as_object_mut()
+                    .expect("typed assistant entry is an object")
+                    .insert(
+                        "producer".to_string(),
+                        serde_json::to_value(producer).unwrap_or_default(),
+                    );
+            }
             Some((entry, assistant_uuid))
         }
         Message::System(message) => Some((system_entry_json(message, &entry_uuid), entry_uuid)),
@@ -6495,6 +6510,34 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn assistant_producer_roundtrips_and_rows_without_one_still_load() {
+        let producer = crate::types::message::ModelProducer {
+            profile: "ds".to_string(),
+            provider: "deepseek".to_string(),
+            protocol: crate::services::provider::ir::Protocol::OpenaiChat,
+            model: "deepseek-v4".to_string(),
+        };
+        let mut assistant = crate::utils::messages::create_assistant_message("answer".into());
+        assistant.set_producer(producer.clone());
+        let (entry, _) = typed_message_entry(&crate::types::message::Message::Assistant(assistant))
+            .expect("loggable message");
+        assert_eq!(entry["producer"]["protocol"], "openaiChat");
+        let mut legacy = entry.clone();
+        legacy.as_object_mut().unwrap().remove("producer");
+
+        let restored = crate::utils::conversation::into_typed_messages(vec![entry, legacy]);
+        let [
+            crate::types::message::Message::Assistant(with),
+            crate::types::message::Message::Assistant(without),
+        ] = restored.as_slice()
+        else {
+            panic!("expected two assistants");
+        };
+        assert_eq!(with.identity().unwrap().producer, Some(producer));
+        assert_eq!(without.identity().unwrap().producer, None);
     }
 
     #[test]
