@@ -191,7 +191,9 @@ impl ProviderAdapter for OpenAiAdapter {
     ) -> BoxFuture<'a, Result<OpenedStream, ProviderError>> {
         Box::pin(async move {
             let body: Value = match self.protocol {
-                Protocol::OpenaiResponses => responses::build_body(target, request, self.backend()),
+                Protocol::OpenaiResponses => {
+                    responses::build_body(target, request, self.backend(), &self.target.compat)
+                }
                 _ => chat::build_body(target, request, &self.target.compat),
             };
             let opened = transport::post_stream(

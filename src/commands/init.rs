@@ -427,8 +427,12 @@ mod tests {
             &result.messages[1],
             false
         ));
-        let api =
-            crate::services::api::claude::user_message_to_message_param(prompt, false, false, None);
+        let api = crate::services::api::claude::user_message_to_message_param(
+            prompt,
+            false,
+            false,
+            crate::utils::settings::nyan::CacheRetention::default(),
+        );
         let api = serde_json::to_value(api).unwrap();
         assert_eq!(api["content"][0]["type"], "image");
         assert_eq!(api["content"][0]["source"]["data"], image);

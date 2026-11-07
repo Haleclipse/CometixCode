@@ -51,10 +51,11 @@ use std::collections::HashMap;
 type ApiQuerySource = crate::constants::query_source::QuerySourceString;
 
 use crate::services::provider::anthropic::cache::{
-    CacheControl, get_cache_control, get_prompt_caching_enabled,
+    CacheControl, get_cache_control_with_retention, get_prompt_caching_enabled,
 };
 /// Maps to: CC `services/api/claude.ts` `import type { CacheScope } from '../../utils/api.js'`.
 pub use crate::utils::api::CacheScope;
+use crate::utils::settings::nyan::CacheRetention;
 
 /// Stub for CC `SystemPrompt` (utils/systemPromptType.ts).
 /// In CC this is `string[]`.
@@ -288,7 +289,7 @@ pub struct Options {
     /// projects to the empty permission context at the serialization site.
     pub tool_permission_context: Option<crate::tool::ToolPermissionContext>,
     pub task_budget: Option<TaskBudget>,
-    pub cache_retention: Option<crate::utils::settings::nyan::CacheRetention>,
+    pub cache_retention: Option<CacheRetention>,
     /// Maps to CC cached microcompact `useCachedMC` request assembly gate.
     pub cached_mc_enabled: bool,
     /// Maps to CC `newCacheEdits` consumed from microCompact before SDK params.
@@ -702,7 +703,7 @@ pub fn user_message_to_message_param(
     message: &UserMessage,
     add_cache: bool,
     enable_prompt_caching: bool,
-    query_source: Option<&str>,
+    cache_retention: CacheRetention,
 ) -> MessageParam {
     use crate::types::message::UserContent;
 
@@ -784,7 +785,7 @@ pub fn user_message_to_message_param(
     if add_cache && enable_prompt_caching {
         if let Some(last_block) = blocks.last_mut() {
             if let Some(obj) = last_block.as_object_mut() {
-                let cc = get_cache_control(None, query_source);
+                let cc = get_cache_control_with_retention(None, cache_retention);
                 obj.insert(
                     "cache_control".to_string(),
                     serde_json::to_value(&cc).unwrap_or_default(),
@@ -812,7 +813,7 @@ pub fn assistant_message_to_message_param(
     message: &AssistantMessage,
     add_cache: bool,
     enable_prompt_caching: bool,
-    query_source: Option<&str>,
+    cache_retention: CacheRetention,
 ) -> MessageParam {
     use crate::types::message::AssistantContent;
 
@@ -951,7 +952,7 @@ pub fn assistant_message_to_message_param(
                 )
                 && let Some(obj) = block.as_object_mut()
             {
-                let cc = get_cache_control(None, query_source);
+                let cc = get_cache_control_with_retention(None, cache_retention);
                 obj.insert(
                     "cache_control".to_string(),
                     serde_json::to_value(&cc).unwrap_or_default(),
@@ -1290,6 +1291,19 @@ pub fn accumulate_usage(
     }
 }
 
+/// The cache TTL of the profile this request is routed through
+/// (`options.profile`, `None`: the main profile); `options.cache_retention`
+/// overrides it.
+fn request_cache_retention(options: &Options) -> CacheRetention {
+    options.cache_retention.unwrap_or_else(|| {
+        crate::services::provider::anthropic::target::current_request_target(
+            options.profile.as_deref(),
+        )
+        .map(|target| target.cache_retention)
+        .unwrap_or_default()
+    })
+}
+
 // ---------------------------------------------------------------------------
 // addCacheBreakpoints
 // ---------------------------------------------------------------------------
@@ -1300,15 +1314,15 @@ pub fn accumulate_usage(
 /// message-level cache_control marker per request. The marker position depends
 /// on `skip_cache_write`: if true, it goes on the second-to-last message
 /// (shared prefix point); otherwise on the last message.
-///
+
 pub fn add_cache_breakpoints(
     messages: &[MessageRef<'_>],
     enable_prompt_caching: bool,
-    query_source: Option<&str>,
     use_cached_mc: bool,
     new_cache_edits: Option<&CachedMcEditsBlock>,
     pinned_edits: &[CachedMcPinnedEdit],
     skip_cache_write: bool,
+    cache_retention: CacheRetention,
 ) -> Vec<MessageParam> {
     let marker_index = if skip_cache_write && messages.len() >= 2 {
         messages.len() - 2
@@ -1328,13 +1342,13 @@ pub fn add_cache_breakpoints(
                     msg,
                     add_cache,
                     enable_prompt_caching,
-                    query_source,
+                    cache_retention,
                 ),
                 MessageRef::Assistant(msg) => assistant_message_to_message_param(
                     msg,
                     add_cache,
                     enable_prompt_caching,
-                    query_source,
+                    cache_retention,
                 ),
             }
         })
@@ -1494,14 +1508,12 @@ pub fn build_system_prompt_blocks(
     system_prompt: &SystemPrompt,
     enable_prompt_caching: bool,
     skip_global_cache_for_system_prompt: bool,
-    query_source: Option<&str>,
 ) -> Vec<TextBlockParam> {
     build_system_prompt_blocks_with_retention(
         system_prompt,
         enable_prompt_caching,
         skip_global_cache_for_system_prompt,
-        query_source,
-        None,
+        CacheRetention::default(),
     )
 }
 
@@ -1509,8 +1521,7 @@ pub fn build_system_prompt_blocks_with_retention(
     system_prompt: &SystemPrompt,
     enable_prompt_caching: bool,
     skip_global_cache_for_system_prompt: bool,
-    query_source: Option<&str>,
-    cache_retention: Option<crate::utils::settings::nyan::CacheRetention>,
+    cache_retention: CacheRetention,
 ) -> Vec<TextBlockParam> {
     crate::utils::api::split_sys_prompt_prefix(system_prompt, skip_global_cache_for_system_prompt)
         .into_iter()
@@ -1519,7 +1530,6 @@ pub fn build_system_prompt_blocks_with_retention(
                 block.cache_scope.map(|scope| {
                     crate::services::provider::anthropic::cache::get_cache_control_with_retention(
                         Some(scope),
-                        query_source,
                         cache_retention,
                     )
                 })
@@ -1967,12 +1977,11 @@ fn build_sdk_message_create_plan(
     let trace =
         super::api_trace::current_trace().unwrap_or_else(|| super::api_trace::ApiTrace::new(1));
     super::api_trace::set_current_trace(Some(trace.clone()));
+    let cache_retention = request_cache_retention(options);
     let enable_prompt_caching = options
         .enable_prompt_caching
         .unwrap_or_else(|| get_prompt_caching_enabled(&options.model))
-        && crate::services::provider::anthropic::cache::is_cache_retention_enabled(
-            options.cache_retention,
-        );
+        && cache_retention != CacheRetention::None;
     let normalized_api_messages = crate::utils::messages::ensure_tool_result_pairing(
         crate::utils::messages::normalize_messages_for_api_with_model(
             messages.to_vec(),
@@ -2016,11 +2025,11 @@ fn build_sdk_message_create_plan(
     let local_messages = add_cache_breakpoints(
         &message_refs,
         enable_prompt_caching,
-        Some(&options.query_source),
         should_use_cached_mc_for_request(options),
         options.cached_mc_new_cache_edits.as_ref(),
         &options.cached_mc_pinned_edits,
         options.skip_cache_write.unwrap_or(false),
+        cache_retention,
     );
     super::api_trace::emit(
         &trace,
@@ -2144,8 +2153,7 @@ fn build_sdk_message_create_plan(
         &system_prompt,
         enable_prompt_caching,
         skip_global_cache_for_system_prompt,
-        Some(&options.query_source),
-        options.cache_retention,
+        cache_retention,
     );
     let private_system = local_system_blocks
         .iter()
@@ -2214,8 +2222,7 @@ fn build_sdk_message_create_plan(
     if enable_prompt_caching && !sdk_tools.is_empty() {
         let cc = crate::services::provider::anthropic::cache::get_cache_control_with_retention(
             None,
-            Some(&options.query_source),
-            options.cache_retention,
+            cache_retention,
         );
         if let Some(last_tool) = sdk_tools.last_mut() {
             add_cache_control_to_tool_union(last_tool, &cc);
@@ -2373,9 +2380,7 @@ fn build_model_request(
             enable_prompt_caching: options
                 .enable_prompt_caching
                 .unwrap_or_else(|| get_prompt_caching_enabled(&options.model))
-                && crate::services::provider::anthropic::cache::is_cache_retention_enabled(
-                    options.cache_retention,
-                ),
+                && request_cache_retention(options) != CacheRetention::None,
             skip_cache_write: options.skip_cache_write.unwrap_or(false),
             client: ClientContext {
                 non_interactive: options.is_non_interactive_session,
@@ -5480,7 +5485,8 @@ mod tests {
             origin: None,
             summarize_metadata: None,
         };
-        let param = user_message_to_message_param(&message, false, false, None);
+        let param =
+            user_message_to_message_param(&message, false, false, CacheRetention::default());
         let MessageContent::Blocks(blocks) = param.content else {
             panic!("expected content blocks");
         };
@@ -5510,7 +5516,8 @@ mod tests {
             usage: None,
         };
 
-        let param = assistant_message_to_message_param(&assistant, true, true, Some("prompt"));
+        let param =
+            assistant_message_to_message_param(&assistant, true, true, CacheRetention::default());
         let MessageContent::Blocks(blocks) = param.content else {
             panic!("assistant should use content blocks");
         };
@@ -5704,11 +5711,11 @@ mod tests {
         let result = add_cache_breakpoints(
             &refs,
             true,
-            Some("prompt"),
             true,
             Some(&cache_edits),
             &[],
             false,
+            CacheRetention::default(),
         );
 
         let MessageContent::Blocks(user_blocks) = &result[0].content else {
@@ -5901,8 +5908,15 @@ mod tests {
         let new_edits = CachedMcEditsBlock::delete_refs(["tool-1", "tool-2"]);
         let refs = vec![MessageRef::User(&user)];
 
-        let result =
-            add_cache_breakpoints(&refs, false, None, true, Some(&new_edits), &[pinned], false);
+        let result = add_cache_breakpoints(
+            &refs,
+            false,
+            true,
+            Some(&new_edits),
+            &[pinned],
+            false,
+            CacheRetention::default(),
+        );
 
         let MessageContent::Blocks(user_blocks) = &result[0].content else {
             panic!("user message should use array content");
@@ -6133,7 +6147,8 @@ mod tests {
                 signature: "sig-anthropic".into(),
             },
         );
-        let param = assistant_message_to_message_param(&message, false, false, None);
+        let param =
+            assistant_message_to_message_param(&message, false, false, CacheRetention::default());
         let MessageContent::Blocks(blocks) = param.content else {
             panic!("blocks expected")
         };
@@ -9105,7 +9120,7 @@ mod tests {
             "You are a helpful assistant.".to_string(),
             "Follow these rules.".to_string(),
         ];
-        let blocks = build_system_prompt_blocks(&prompt, true, false, None);
+        let blocks = build_system_prompt_blocks(&prompt, true, false);
         assert_eq!(blocks.len(), 1);
         assert_eq!(
             blocks[0].text,
@@ -9122,7 +9137,7 @@ mod tests {
     #[test]
     fn build_system_prompt_blocks_without_caching() {
         let prompt = vec!["Hello.".to_string()];
-        let blocks = build_system_prompt_blocks(&prompt, false, false, None);
+        let blocks = build_system_prompt_blocks(&prompt, false, false);
         assert_eq!(blocks.len(), 1);
         assert!(blocks[0].cache_control.is_none());
     }
@@ -9139,7 +9154,7 @@ mod tests {
             "dynamic one".to_string(),
         ];
 
-        let blocks = build_system_prompt_blocks(&prompt, true, false, None);
+        let blocks = build_system_prompt_blocks(&prompt, true, false);
 
         crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
         assert_eq!(blocks.len(), 2);
@@ -9175,7 +9190,7 @@ mod tests {
 
         // Global cache mode (`utils/api.ts:361-405`): header null, prefix null,
         // static global, dynamic null.
-        let blocks = build_system_prompt_blocks(&prompt, true, false, None);
+        let blocks = build_system_prompt_blocks(&prompt, true, false);
         assert_eq!(
             blocks
                 .iter()
@@ -9193,7 +9208,7 @@ mod tests {
 
         // Tool-based cache (`utils/api.ts:326-359`): header null, prefix org,
         // rest org; boundary dropped.
-        let blocks = build_system_prompt_blocks(&prompt, true, true, None);
+        let blocks = build_system_prompt_blocks(&prompt, true, true);
         assert_eq!(
             blocks
                 .iter()
@@ -9218,7 +9233,7 @@ mod tests {
         // Default mode (`utils/api.ts:411-433`): same shape, boundary text kept
         // inside the joined rest because nothing strips it here in CC either.
         let _disable_betas = EnvVarGuard::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
-        let blocks = build_system_prompt_blocks(&prompt, true, false, None);
+        let blocks = build_system_prompt_blocks(&prompt, true, false);
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0].text, header);
         assert!(blocks[0].cache_control.is_none());
@@ -9244,7 +9259,7 @@ mod tests {
             "dynamic".to_string(),
         ];
 
-        let blocks = build_system_prompt_blocks(&prompt, true, true, None);
+        let blocks = build_system_prompt_blocks(&prompt, true, true);
 
         crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
         assert_eq!(blocks.len(), 1);
@@ -9657,7 +9672,7 @@ mod tests {
             "repl_main_thread".to_string(),
         );
         options.enable_prompt_caching = Some(true);
-        options.cache_retention = Some(crate::utils::settings::nyan::CacheRetention::Long);
+        options.cache_retention = Some(CacheRetention::Long);
         let tools = vec![Tool {
             name: "tool_a".to_string(),
             description: "tool a".to_string(),
@@ -9737,7 +9752,8 @@ mod tests {
             summarize_metadata: None,
         };
 
-        let param = user_message_to_message_param(&user_msg, false, false, None);
+        let param =
+            user_message_to_message_param(&user_msg, false, false, CacheRetention::default());
         let value = serde_json::to_value(&param).expect("serialize param");
         let blocks = value["content"].as_array().expect("blocks");
 
@@ -9803,7 +9819,8 @@ mod tests {
             summarize_metadata: None,
         };
 
-        let param = user_message_to_message_param(&user_msg, false, false, None);
+        let param =
+            user_message_to_message_param(&user_msg, false, false, CacheRetention::default());
         let value = serde_json::to_value(&param).expect("serialize param");
         let blocks = value["content"].as_array().expect("blocks");
         assert_eq!(blocks.len(), 1);
@@ -9824,7 +9841,8 @@ mod raw_image_tests {
         let mut user = crate::utils::messages::create_user_message(String::new());
         user.content = vec![UserContent::from_image_block(image.clone(), true)];
         for add_cache in [false, true] {
-            let param = user_message_to_message_param(&user, add_cache, false, None);
+            let param =
+                user_message_to_message_param(&user, add_cache, false, CacheRetention::default());
             assert_eq!(serde_json::to_value(&param).unwrap()["content"][0], image);
             let sdk = local_message_param_to_sdk(&param).unwrap();
             let sdk_value = serde_json::to_value(sdk).unwrap();
@@ -9845,9 +9863,13 @@ mod raw_image_tests {
             content_blocks: vec![ToolResultContentBlock::RawImage(image.clone())],
             tool_use_result: None,
         })];
-        let sdk =
-            local_message_param_to_sdk(&user_message_to_message_param(&nested, false, false, None))
-                .unwrap();
+        let sdk = local_message_param_to_sdk(&user_message_to_message_param(
+            &nested,
+            false,
+            false,
+            CacheRetention::default(),
+        ))
+        .unwrap();
         assert_eq!(
             serde_json::to_value(sdk).unwrap()["content"][0]["content"][0]["source"],
             image["source"]

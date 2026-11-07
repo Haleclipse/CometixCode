@@ -99,7 +99,12 @@ pub async fn execute_non_streaming(
                 .map_err(|error| invalid(error.to_string()))?;
             let url = format!("{}/responses", target.base_url);
             let headers = adapter.headers();
-            let body = responses::build_body_non_streaming(&resolved, request, adapter.backend());
+            let body = responses::build_body_non_streaming(
+                &resolved,
+                request,
+                adapter.backend(),
+                &target.compat,
+            );
             let connect_timeout = adapter.connect_timeout();
 
             let (_headers, request_id, json_response) =

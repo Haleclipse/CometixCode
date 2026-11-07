@@ -94,7 +94,7 @@ Prompt 缓存命中率的核心在于**请求前缀（System Prompt + Tools + �
   - 验证方式：检查返回 `usage.cache_read_input_tokens`，首轮后应立即接近 `system + tools` 的 token 总量。
 
 ### 2.2 缓存 TTL 控制 (5m vs 1h)
-- **nyan 现状** (`src/services/provider/anthropic/cache.rs:119-220`):
+- **nyan 现状**（已由 cache-long-retention PR 取代：TTL 只看 profile `cacheRetention`，默认 long）（`src/services/provider/anthropic/cache.rs:119-220`）:
   - 1h 缓存受限严重：仅在 Bedrock 显式开启环境变量 `ENABLE_PROMPT_CACHING_1H_BEDROCK`，或 1P 且 `PromptCache1hConfig` 开启且在 `promptCache1h.allowlist` 匹配时才设置 `ttl: "1h"`。
   - 普通 API key 用户无法配置 long retention。
 - **Pi 的做法** (`packages/ai/src/api/anthropic-messages.ts:77-101`):

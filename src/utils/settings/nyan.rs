@@ -116,8 +116,11 @@ impl CacheSettings {
     pub fn max_active_minutes(&self) -> u32 {
         self.max_active_minutes.unwrap_or(60)
     }
+    /// @nyan: up to 8h of idle keep-alive (CC has none). With Opus 5.5 and a
+    /// 100k-token prefix, re-writing an expired 1h cache costs about $0.80
+    /// while a keep-alive read costs about $0.02.
     pub fn max_idle_minutes(&self) -> u32 {
-        self.max_idle_minutes.unwrap_or(30)
+        self.max_idle_minutes.unwrap_or(480)
     }
 }
 
@@ -1413,9 +1416,11 @@ pub struct ModelCapabilities {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum CacheRetention {
-    #[default]
     #[serde(alias = "5m")]
     Short,
+    /// @nyan: long by default; a cache re-write costs far more than the
+    /// longer-TTL write premium on agentic sessions.
+    #[default]
     #[serde(alias = "1h")]
     Long,
     None,
@@ -2107,7 +2112,7 @@ mod tests {
         assert_eq!(settings.cache().warming(), CacheWarmingMode::Active);
         assert_eq!(settings.cache().min_cached_tokens(), 20_000);
         assert_eq!(settings.cache().max_active_minutes(), 60);
-        assert_eq!(settings.cache().max_idle_minutes(), 30);
+        assert_eq!(settings.cache().max_idle_minutes(), 480);
 
         assert!(settings.memory().extract());
         assert_eq!(settings.memory().extract_every_turns(), 8);
@@ -2621,9 +2626,9 @@ mod tests {
     }
 
     #[test]
-    fn cache_retention_defaults_to_short_and_accepts_long_none_and_ttl_aliases() {
+    fn cache_retention_defaults_to_long_and_accepts_long_none_and_ttl_aliases() {
         let empty = ModelProfileSettings::default();
-        assert_eq!(empty.cache_retention(), CacheRetention::Short);
+        assert_eq!(empty.cache_retention(), CacheRetention::Long);
 
         for (input, expected) in [
             ("short", CacheRetention::Short),

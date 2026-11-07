@@ -463,16 +463,13 @@ pub fn build_transcript_for_classifier(messages: &[Message], tools: &[Tool]) -> 
         .map(|e| to_compact(e, &lookup))
         .collect()
 }
-/// L1 SDK carrier for source inline TextBlockParam objects (including the
-/// auto_mode query-source cache-control TTL from the canonical API owner).
+/// L1 SDK carrier for source inline TextBlockParam objects (including
+/// the profile cache-control TTL from the canonical API owner).
 fn classifier_text_block(text: impl Into<String>, cached: bool) -> TextBlockParam {
     TextBlockParam {
         text: text.into(),
         cache_control: cached.then(|| {
-            let cache = crate::services::provider::anthropic::cache::get_cache_control(
-                None,
-                Some("auto_mode"),
-            );
+            let cache = crate::services::provider::anthropic::cache::get_cache_control(None);
             CacheControlEphemeral {
                 type_name: cache.cache_type,
                 ttl: cache.ttl,

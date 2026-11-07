@@ -115,11 +115,6 @@ pub enum FeatureFlag {
     ToolResultContentReplacement,
     /// Maps to CC GrowthBook `tengu_hawthorn_window` per-message budget override.
     PerMessageBudgetLimitOverride,
-    /// Maps to CC GrowthBook `tengu_prompt_cache_1h_config`.
-    /// @nyan offset: final 1P `ttl: "1h"` switch. The allowlist itself is
-    /// settings.json `promptCache1h.allowlist`. Vertex / Foundry / Bedrock
-    /// keep the official `should1hCacheTTL` path.
-    PromptCache1hConfig,
     /// Maps to CC GrowthBook `tengu_attribution_header` (fallback true).
     AttributionHeader,
     /// Maps to CC GrowthBook `tengu_quartz_lantern` remote single-file git diff gate.
@@ -469,12 +464,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_attribution_header",
         enabled: true,
         note: "Official fallback is true (constants/system.ts:56 getFeatureValue_CACHED_MAY_BE_STALE('tengu_attribution_header', true)). Production still stays off because CLAUDE_CODE_ATTRIBUTION_HEADER defaults to 0; flip this switch to kill the header even when the env is enabled.",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::PromptCache1hConfig,
-        cc_growthbook_name: "tengu_prompt_cache_1h_config",
-        enabled: false,
-        note: "Official default is an empty config object. @nyan offset: first-party 1h master switch (default off). The query-source allowlist is settings.json promptCache1h.allowlist, not GrowthBook.",
     },
     FeatureSwitch {
         flag: FeatureFlag::RemoteGitDiff,

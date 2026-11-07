@@ -137,6 +137,18 @@ pub(crate) fn install_test_main_profile_with_retention(
     env_name: &str,
     cache_retention: Option<crate::utils::settings::nyan::CacheRetention>,
 ) {
+    install_test_profiles_with_retention(base_url, env_name, cache_retention, None);
+}
+
+/// [`install_test_main_profile_with_retention`] plus, when `side_retention`
+/// is set, a second profile `side` on the same provider with that retention.
+#[cfg(test)]
+pub(crate) fn install_test_profiles_with_retention(
+    base_url: &str,
+    env_name: &str,
+    cache_retention: Option<crate::utils::settings::nyan::CacheRetention>,
+    side_retention: Option<crate::utils::settings::nyan::CacheRetention>,
+) {
     use crate::utils::settings::nyan::{
         CredentialReference, ModelCapabilities, ModelProfileSettings, NyanSettings, ProviderKind,
         ProviderProtocol, ProviderSettings, SelectionSettings,
@@ -145,6 +157,21 @@ pub(crate) fn install_test_main_profile_with_retention(
     use crate::utils::settings::validation::SettingsWithErrors;
     use std::collections::BTreeMap;
 
+    let profile = |cache_retention| ModelProfileSettings {
+        provider: Some("anthropic".to_string()),
+        model: Some("claude-sonnet-4-6".to_string()),
+        capabilities: Some(ModelCapabilities {
+            context_window: Some(200_000),
+            max_output_tokens: Some(64_000),
+            ..Default::default()
+        }),
+        cache_retention,
+        ..Default::default()
+    };
+    let mut models = BTreeMap::from([("main".to_string(), profile(cache_retention))]);
+    if side_retention.is_some() {
+        models.insert("side".to_string(), profile(side_retention));
+    }
     let nyan = NyanSettings {
         providers: Some(BTreeMap::from([(
             "anthropic".to_string(),
@@ -159,20 +186,7 @@ pub(crate) fn install_test_main_profile_with_retention(
                 ..Default::default()
             },
         )])),
-        models: Some(BTreeMap::from([(
-            "main".to_string(),
-            ModelProfileSettings {
-                provider: Some("anthropic".to_string()),
-                model: Some("claude-sonnet-4-6".to_string()),
-                capabilities: Some(ModelCapabilities {
-                    context_window: Some(200_000),
-                    max_output_tokens: Some(64_000),
-                    ..Default::default()
-                }),
-                cache_retention,
-                ..Default::default()
-            },
-        )])),
+        models: Some(models),
         selection: Some(SelectionSettings {
             main: Some("main".to_string()),
             ..Default::default()
@@ -249,7 +263,7 @@ mod tests {
         assert_eq!(target.base_url.as_deref(), Some("https://gw.example"));
         assert_eq!(
             target.cache_retention,
-            crate::utils::settings::nyan::CacheRetention::Short
+            crate::utils::settings::nyan::CacheRetention::Long
         );
     }
 
@@ -276,7 +290,7 @@ mod tests {
         let default_target = current_main_target().unwrap();
         assert_eq!(
             default_target.cache_retention,
-            crate::utils::settings::nyan::CacheRetention::Short
+            crate::utils::settings::nyan::CacheRetention::Long
         );
     }
 

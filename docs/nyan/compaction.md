@@ -230,7 +230,7 @@ nyan: { maskedCount, maskedTokens, summaryModel, summaryStyle, keepRecentTokens,
 | `settings.nyan.cache.warming` | `"active"` | 保活模式：`"off"` / `"active"` / `"idle"`（C12） |
 | `settings.nyan.cache.minCachedTokens` | `20000` | cache 部分低于此值不保活（C12） |
 | `settings.nyan.cache.maxActiveMinutes` | `60` | agent 运行中连续保活的上限（C12） |
-| `settings.nyan.cache.maxIdleMinutes` | `30` | 等待用户输入后保活的上限，仅 `"idle"` 模式（C12） |
+| `settings.nyan.cache.maxIdleMinutes` | `480` | 等待用户输入后保活的上限，仅 `"idle"` 模式（C12） |
 
 ### C12 prompt cache 保活（来自 legacy cache warmer）
 
@@ -278,13 +278,14 @@ legacy 的思想（`packages/coding-agent/src/core/cache-warmer.ts`）：在 cac
   - "thinking 参数是否进入消息级 cache key"（即 adaptive / disabled 时 `max_tokens = 1` 是否仍命中主请求的 cache）
     是切片 F 的**第一步实测**，结果决定上面规则是否需要收紧；不是待定项。
 - **何时停**：上下文一变（新的真实请求、换模型、掩码、摘要）立即停；运行中最长保活 `nyan.cache.maxActiveMinutes`
-  （默认 60 分钟），agent 停下（等待用户输入）后最长 `nyan.cache.maxIdleMinutes`（默认 30 分钟）（legacy 的两个安全上限，
-  保留——它们防的是"人走了还在一直花钱"）。
+  （默认 60 分钟），agent 停下（等待用户输入）后最长 `nyan.cache.maxIdleMinutes`（默认 480 分钟，即 8 小时）（legacy 的两个
+  安全上限，保留——它们防的是"人走了还在一直花钱"）。空闲上限从 legacy 的 30 分钟放宽到 8 小时，依据：Opus 5.5、10 万 token
+  前缀，1h cache 过期后重写约 $0.80，一次续命读取约 $0.02，8 小时内每小时一次续命仍远低于一次重写。
 - **记账**：保活请求的 usage 计入 CC 现有的会话费用统计（`cost_tracker.rs`），不进模型上下文，不写成消息。
 - **开关** `nyan.cache.warming`：`"off"` | `"active"`（默认，仅 agent 运行期间，覆盖长工具调用与长思考）|
-  `"idle"`（等待用户输入时也保活，受 30 分钟上限）。
-- **1 小时 TTL**：CC 已有 `promptCache1h` 开关（`feature_flags.rs:488`，默认关）。不改默认；保活在 1h TTL 下自然
-  变成每 54 分钟一次，开不开交给用户。
+  `"idle"`（等待用户输入时也保活，受 8 小时上限）。
+- **1 小时 TTL**：由 profile 的 `cacheRetention` 决定，默认 `long`（Claude 每个断点显式 `ttl: "1h"`，`short` 显式
+  `ttl: "5m"`）。CC 的 `promptCache1h` / 员工 / Bedrock 环境变量判断已删除。保活在 1h TTL 下自然变成每 54 分钟一次。
 
 ### C13 非 Anthropic 模型的 cache 利用（已查清，2026-10-27）
 

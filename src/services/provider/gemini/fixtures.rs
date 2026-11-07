@@ -94,6 +94,28 @@ fn minimal_request(messages: Vec<Message>) -> ModelRequest {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn test_wire_sends_no_cache_parameters_under_any_retention() {
+    use crate::utils::settings::nyan::CacheRetention;
+
+    // Gemini caches implicitly; no retention maps to a wire field.
+    for retention in [
+        CacheRetention::Long,
+        CacheRetention::Short,
+        CacheRetention::None,
+    ] {
+        let mut target = test_target();
+        target.cache_retention = retention;
+        let req = minimal_request(vec![Message::User {
+            parts: vec![UserPart::Text { text: "hi".into() }],
+        }]);
+        let body = serde_json::to_string(&wire::build_request(&req, &target)).unwrap();
+        for field in ["cache", "Cache", "ttl"] {
+            assert!(!body.contains(field), "{retention:?} sent {field}: {body}");
+        }
+    }
+}
+
+#[test]
 fn test_wire_system_instruction_and_coalescing() {
     let target = test_target();
     let mut req = minimal_request(vec![

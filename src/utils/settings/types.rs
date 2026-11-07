@@ -116,11 +116,6 @@ pub struct SettingsJson {
     /// provider header of the same name. This does not add a provider.
     pub http_headers: Option<IndexMap<String, String>>,
     pub show_thinking_summaries: Option<bool>,
-    /// Official GrowthBook `tengu_prompt_cache_1h_config` payload.
-    ///
-    /// @nyan offset: not an official settings.json key. GrowthBook is not
-    /// ported, so users set `promptCache1h.allowlist` here.
-    pub prompt_cache_1h: Option<PromptCache1hSettings>,
 
     pub spinner_tips_enabled: Option<bool>,
     pub spinner_verbs: Option<SpinnerVerbsSettings>,
@@ -267,15 +262,6 @@ pub struct FileSuggestionSettings {
 pub struct AttributionSettings {
     pub commit: Option<String>,
     pub pr: Option<String>,
-}
-
-/// Official GrowthBook `tengu_prompt_cache_1h_config` object.
-///
-/// @nyan offset: settings-backed replacement for the remote allowlist.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PromptCache1hSettings {
-    pub allowlist: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1218,19 +1204,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ),
             ),
             (
-                "promptCache1h",
-                zod::object(vec![(
-                    "allowlist",
-                    zod::array(zod::string()).optional().describe(
-                        "Query-source prefixes that receive the 1h prompt-cache TTL. A trailing * is a prefix match (for example repl_main_thread*).",
-                    ),
-                )])
-                .optional()
-                .describe(
-                    "1h prompt-cache TTL allowlist. Official nyan receives this from GrowthBook (`tengu_prompt_cache_1h_config`); Nyan reads it from settings.",
-                ),
-            ),
-            (
                 "skipDangerousModePermissionPrompt",
                 zod::boolean()
                     .optional()
@@ -1594,18 +1567,6 @@ mod zod_schema_tests {
         assert_eq!(parsed["someFutureKey"]["kept"], true, "outer passthrough");
         // The env family coerced through the carrier.
         assert_eq!(parsed["env"]["PORT"], "8080");
-
-        let prompt_cache = crate::utils::zod::safe_parse(
-            settings_schema(),
-            &serde_json::json!({
-                "promptCache1h": {"allowlist": ["repl_main_thread*", "sdk"]}
-            }),
-        )
-        .expect("promptCache1h is a first-class settings key");
-        assert_eq!(
-            prompt_cache["promptCache1h"]["allowlist"],
-            serde_json::json!(["repl_main_thread*", "sdk"])
-        );
 
         // A wrong $schema literal fails.
         assert!(

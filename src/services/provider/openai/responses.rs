@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
+use super::target::Compat;
 use super::transport::Frame;
 use super::{
     EMPTY_TOOL_OUTPUT, call_part, item_part, join_call_id, media_url, reasoning_effort,
@@ -170,7 +171,12 @@ fn tool_choice(choice: &ToolChoice) -> Value {
 }
 
 /// The `responses` body for one streaming call.
-pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Backend) -> Value {
+pub fn build_body(
+    target: &ResolvedTarget,
+    request: &ModelRequest,
+    backend: Backend,
+    compat: &Compat,
+) -> Value {
     let mut input = Vec::new();
     for message in &request.messages {
         match message {
@@ -267,10 +273,17 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Back
             body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
         }
     }
+    // Pi `openai-responses.ts` getPromptCacheOptions / getPromptCacheRetention:
+    // explicit-mode models take a 30m TTL option, older ones a 24h retention.
     if backend == Backend::Api
+        && compat.openai_prompt_cache
         && target.cache_retention == crate::utils::settings::nyan::CacheRetention::Long
     {
-        body["prompt_cache_retention"] = json!("24h");
+        if compat.explicit_prompt_cache_mode {
+            body["prompt_cache_options"] = json!({"ttl": "30m"});
+        } else {
+            body["prompt_cache_retention"] = json!("24h");
+        }
     }
     crate::services::provider::adapter::merge_extra(&mut body, target.extra.as_ref());
     body
@@ -281,8 +294,9 @@ pub fn build_body_non_streaming(
     target: &ResolvedTarget,
     request: &ModelRequest,
     backend: Backend,
+    compat: &Compat,
 ) -> Value {
-    let mut body = build_body(target, request, backend);
+    let mut body = build_body(target, request, backend, compat);
     body["stream"] = json!(false);
     body
 }
@@ -802,6 +816,18 @@ mod tests {
         CachePolicy, ClientContext, Effort, JsonSchemaOutput, MediaSource, ToolSpec,
     };
     use crate::utils::model::profile::ResolvedCapabilities;
+    use crate::utils::settings::nyan::ProviderKind;
+
+    /// The body an OpenAI-kind profile on `target.model` gets.
+    fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Backend) -> Value {
+        let compat = Compat::resolve_full(
+            ProviderKind::Openai,
+            Some("openai"),
+            Some(&target.model),
+            None,
+        );
+        super::build_body(target, request, backend, &compat)
+    }
 
     fn target(capabilities: ResolvedCapabilities) -> ResolvedTarget {
         ResolvedTarget {
@@ -1386,5 +1412,48 @@ mod tests {
         let body_codex_none = build_body(&t, &req, Backend::Codex);
         assert!(body_codex_none.get("prompt_cache_key").is_none());
         assert!(body_codex_none.get("prompt_cache_retention").is_none());
+    }
+
+    #[test]
+    fn responses_long_retention_uses_prompt_cache_options_on_explicit_mode_models() {
+        let req = request(vec![user_text("hi")]);
+        let mut t = target(all());
+        t.cache_retention = Default::default();
+
+        // gpt-5 bills no cache writes: legacy 24h retention, no options.
+        let legacy = build_body(&t, &req, Backend::Api);
+        assert_eq!(legacy["prompt_cache_retention"], "24h");
+        assert!(legacy.get("prompt_cache_options").is_none());
+
+        // gpt-5.6 bills cache writes: explicit mode takes a 30m TTL option and
+        // rejects prompt_cache_retention.
+        t.model = "gpt-5.6".into();
+        let explicit = build_body(&t, &req, Backend::Api);
+        assert_eq!(explicit["prompt_cache_options"], json!({"ttl": "30m"}));
+        assert!(explicit.get("prompt_cache_retention").is_none());
+
+        // Short retention sends neither.
+        t.cache_retention = crate::utils::settings::nyan::CacheRetention::Short;
+        let short = build_body(&t, &req, Backend::Api);
+        assert!(short.get("prompt_cache_options").is_none());
+        assert!(short.get("prompt_cache_retention").is_none());
+    }
+
+    #[test]
+    fn responses_non_openai_kinds_get_no_openai_cache_fields() {
+        let req = request(vec![user_text("hi")]);
+        let mut t = target(all());
+        t.model = "gpt-5.6".into();
+        for kind in [
+            ProviderKind::Gateway,
+            ProviderKind::Openrouter,
+            ProviderKind::Vllm,
+            ProviderKind::Ollama,
+        ] {
+            let compat = Compat::resolve_full(kind, Some("other"), Some(&t.model), None);
+            let body = super::build_body(&t, &req, Backend::Api, &compat);
+            assert!(body.get("prompt_cache_retention").is_none(), "{kind:?}");
+            assert!(body.get("prompt_cache_options").is_none(), "{kind:?}");
+        }
     }
 }

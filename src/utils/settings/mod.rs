@@ -649,25 +649,6 @@ pub fn get_auto_mode_config() -> Option<types::AutoModeSettings> {
     })
 }
 
-/// Official GrowthBook `tengu_prompt_cache_1h_config.allowlist`.
-///
-/// @nyan offset: GrowthBook is not ported. Users set
-/// `promptCache1h.allowlist` in settings.json (same `{ allowlist: string[] }`
-/// shape, trailing `*` prefix match). Later enabled sources override earlier
-/// ones so the merged value stays a single payload, not a concatenated union.
-pub fn get_prompt_cache_1h_allowlist() -> Vec<String> {
-    let mut allowlist = Vec::new();
-    for source in get_enabled_setting_sources() {
-        if let Some(list) = get_settings_for_source(source)
-            .and_then(|settings| settings.prompt_cache_1h)
-            .and_then(|config| config.allowlist)
-        {
-            allowlist = list;
-        }
-    }
-    allowlist
-}
-
 fn load_settings_for_source_uncached(source: SettingSource) -> Option<SettingsJson> {
     match source {
         SettingSource::Policy => load_managed_file_settings().0,
@@ -1026,54 +1007,6 @@ mod tests {
             get_auto_mode_config().is_none(),
             "project-only config must not contribute"
         );
-    }
-
-    #[test]
-    fn prompt_cache_1h_allowlist_later_source_overrides() {
-        let _lock = env_lock().lock().unwrap();
-        settings_cache::reset_settings_cache();
-        struct ResetCache;
-        impl Drop for ResetCache {
-            fn drop(&mut self) {
-                settings_cache::reset_settings_cache();
-            }
-        }
-        let _reset = ResetCache;
-        for source in [
-            SettingSource::User,
-            SettingSource::Project,
-            SettingSource::Local,
-            SettingSource::Flag,
-            SettingSource::Policy,
-        ] {
-            settings_cache::set_cached_settings_for_source(source, None);
-        }
-        settings_cache::set_cached_settings_for_source(
-            SettingSource::User,
-            Some(SettingsJson {
-                prompt_cache_1h: Some(types::PromptCache1hSettings {
-                    allowlist: Some(vec!["sdk".into()]),
-                }),
-                ..Default::default()
-            }),
-        );
-        settings_cache::set_cached_settings_for_source(
-            SettingSource::Policy,
-            Some(SettingsJson {
-                prompt_cache_1h: Some(types::PromptCache1hSettings {
-                    allowlist: Some(vec!["repl_main_thread*".into()]),
-                }),
-                ..Default::default()
-            }),
-        );
-        assert_eq!(
-            get_prompt_cache_1h_allowlist(),
-            vec!["repl_main_thread*".to_string()]
-        );
-        settings_cache::set_cached_settings_for_source(SettingSource::Policy, None);
-        assert_eq!(get_prompt_cache_1h_allowlist(), vec!["sdk".to_string()]);
-        settings_cache::set_cached_settings_for_source(SettingSource::User, None);
-        assert!(get_prompt_cache_1h_allowlist().is_empty());
     }
 
     #[test]

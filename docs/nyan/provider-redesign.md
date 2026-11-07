@@ -467,6 +467,11 @@ CLI --profile / --model provider/model（临时）
 - **字段精简（借鉴 Pi Agent）**：Profile 在现有字段（`contextWindow`、`maxOutputTokens`、`capabilities`、`retry`、`cacheRetention` 等）之外，仅扩展：
   - `effort`: 可选统一深度（`off` / `medium` / `high` / `max`）。
   - `extra`: 可选原样 JSON 对象（`Option<serde_json::Value>`），请求时最后合并进底层请求体。
+- `cacheRetention`：`long`（默认）/ `short` / `none`，是缓存时长的唯一来源（照 Pi）：
+  - Anthropic：`long` 在每个断点发 `cache_control.ttl: "1h"`，`short` 发 `"5m"`（显式，避免网关把无时长标记升成 1h），`none` 不打断点。
+  - OpenAI（仅 `openai` kind）：`long` 时，目录 cache 写入价 > 0 的模型（GPT-5.6 起）在 Responses 上发 `prompt_cache_options: {"ttl": "30m"}`，更早的模型发 `prompt_cache_retention: "24h"`；Chat 一律发 `"24h"`。ChatGPT 后端、网关、本地服务不发。
+  - DeepSeek、Gemini：自动缓存，不发任何缓存参数。
+  - 默认 `long` 的依据：Opus 5.5、10 万 token 前缀，1h cache 过期重写约 $0.80，续命读取约 $0.02。
 - 不添加 `temperature` / `top_p` / `stop` / `thinking_budget` 等冗余 profile 字段。
 - 子 agent 选择 `inherit` 时，整个 profile 完整跟随父会话当前生效的 profile（或临时配置）。
 

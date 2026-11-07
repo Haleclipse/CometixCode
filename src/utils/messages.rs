@@ -5152,10 +5152,14 @@ mod api_normalization_tests {
         let Message::User(user) = &normalized[0] else {
             panic!()
         };
-        let wire = serde_json::to_value(
-            crate::services::api::claude::user_message_to_message_param(user, false, false, None),
-        )
-        .unwrap();
+        let wire =
+            serde_json::to_value(crate::services::api::claude::user_message_to_message_param(
+                user,
+                false,
+                false,
+                crate::utils::settings::nyan::CacheRetention::default(),
+            ))
+            .unwrap();
         assert_eq!(
             wire,
             json!({"role":"user","content":[
@@ -5183,10 +5187,14 @@ mod api_normalization_tests {
         let Message::User(user) = &normalized[0] else {
             panic!()
         };
-        let wire = serde_json::to_value(
-            crate::services::api::claude::user_message_to_message_param(user, false, false, None),
-        )
-        .unwrap();
+        let wire =
+            serde_json::to_value(crate::services::api::claude::user_message_to_message_param(
+                user,
+                false,
+                false,
+                crate::utils::settings::nyan::CacheRetention::default(),
+            ))
+            .unwrap();
         // TS :2372/2600: attachment moves immediately after tool result, folds
         // into string content; real next prompt remains a sibling text block.
         assert_eq!(

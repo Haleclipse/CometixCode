@@ -318,7 +318,9 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: &Comp
             body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
         }
     }
-    if target.cache_retention == CacheRetention::Long {
+    // Pi `openai-completions.ts` sends "24h" for long retention on Chat,
+    // whatever the model's cache mode.
+    if compat.openai_prompt_cache && target.cache_retention == CacheRetention::Long {
         body["prompt_cache_retention"] = json!("24h");
     }
 
@@ -1457,6 +1459,26 @@ mod tests {
         let body_none = super::build_body(&t, &req, &Compat::resolve(ProviderKind::Openai, None));
         assert!(body_none.get("prompt_cache_key").is_none());
         assert!(body_none.get("prompt_cache_retention").is_none());
+    }
+
+    #[test]
+    fn build_body_sends_no_openai_cache_fields_to_deepseek_or_local_kinds() {
+        let req = request(vec![user_text("hi")]);
+        let mut t = target(all());
+        t.model = "deepseek-v4-flash".into();
+        t.cache_retention = CacheRetention::Long;
+        for kind in [
+            ProviderKind::Gateway,
+            ProviderKind::Vllm,
+            ProviderKind::Ollama,
+        ] {
+            let compat = Compat::resolve_full(kind, Some("deepseek"), Some(&t.model), None);
+            let body = super::build_body(&t, &req, &compat);
+            // DeepSeek caches automatically; only OpenAI takes these.
+            assert!(body.get("prompt_cache_retention").is_none(), "{kind:?}");
+            assert!(body.get("prompt_cache_options").is_none(), "{kind:?}");
+            assert!(!body.to_string().contains("cache_control"), "{kind:?}");
+        }
     }
 
     #[test]

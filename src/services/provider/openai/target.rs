@@ -30,6 +30,14 @@ pub struct Compat {
     pub include_usage: bool,
     pub cache_control_format: Option<String>,
     pub requires_reasoning_content: bool,
+    /// Whether the endpoint takes OpenAI's own cache parameters
+    /// (`prompt_cache_retention`, `prompt_cache_options`). Only the OpenAI
+    /// kind does; gateways, DeepSeek and local servers get none.
+    pub openai_prompt_cache: bool,
+    /// The model bills prompt-cache writes (catalog `cacheWrite > 0`, GPT-5.6
+    /// on), which is exactly the set that takes `prompt_cache_options` and
+    /// rejects `prompt_cache_retention`. Follows Pi's `openai.ts` catalog.
+    pub explicit_prompt_cache_mode: bool,
 }
 
 impl Compat {
@@ -74,6 +82,18 @@ impl Compat {
                     || p.contains("moonshot")
                     || m.contains("moonshot")
             });
+        let openai_prompt_cache = kind == ProviderKind::Openai;
+        let explicit_prompt_cache_mode = openai_prompt_cache
+            && model
+                .and_then(|model| {
+                    crate::utils::model::metadata::metadata_provider_for_kind(kind).and_then(
+                        |snapshot| {
+                            crate::utils::model::metadata::find_model_metadata(snapshot, model)
+                        },
+                    )
+                })
+                .and_then(|entry| entry.cost.as_ref()?.cache_write)
+                .is_some_and(|price| price > 0.0);
 
         Self {
             max_tokens_field: settings
@@ -82,6 +102,8 @@ impl Compat {
             include_usage: settings.and_then(|s| s.include_usage).unwrap_or(true),
             cache_control_format,
             requires_reasoning_content,
+            openai_prompt_cache,
+            explicit_prompt_cache_mode,
         }
     }
 }
