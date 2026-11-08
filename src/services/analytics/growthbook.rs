@@ -201,9 +201,6 @@ mod tests {
         for key in [
             "CLAUDE_INTERNAL_FC_OVERRIDES",
             "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "DISABLE_TELEMETRY",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
@@ -281,13 +278,7 @@ mod tests {
             Some(true),
         )));
 
-        for (key, value) in [
-            ("NODE_ENV", "test"),
-            ("CLAUDE_CODE_USE_BEDROCK", "1"),
-            ("CLAUDE_CODE_USE_VERTEX", "1"),
-            ("CLAUDE_CODE_USE_FOUNDRY", "1"),
-            ("DISABLE_TELEMETRY", "1"),
-        ] {
+        for (key, value) in [("NODE_ENV", "test"), ("DISABLE_TELEMETRY", "1")] {
             crate::utils::process_env::set(key, value);
             assert!(
                 !check_statsig_feature_gate_cached_may_be_stale("gate"),

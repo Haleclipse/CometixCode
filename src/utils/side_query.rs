@@ -738,15 +738,7 @@ mod tests {
                 EnvVarGuard::set("NO_PROXY", "*"),
                 EnvVarGuard::set("no_proxy", "*"),
             ];
-            for key in [
-                "CLAUDE_CODE_USE_BEDROCK",
-                "CLAUDE_CODE_USE_VERTEX",
-                "CLAUDE_CODE_USE_FOUNDRY",
-                "ANTHROPIC_AUTH_TOKEN",
-                "ANTHROPIC_CUSTOM_HEADERS",
-                "ANTHROPIC_UNIX_SOCKET",
-                "USE_STAGING_OAUTH",
-            ] {
+            for key in ["USE_STAGING_OAUTH"] {
                 env.push(EnvVarGuard::unset(key));
             }
             crate::utils::settings::settings_cache::reset_settings_cache();

@@ -4,8 +4,6 @@
 //! API boundary and reuses the canonical provider/auth client factory.
 
 use crate::types::message::{AssistantContent, Message, UserContent};
-use crate::utils::process_env::JsTruthy;
-use base64::Engine as _;
 use serde_json::Value;
 
 async fn count_tokens_client(
@@ -47,79 +45,6 @@ fn has_thinking_blocks(
                 })
             })
     })
-}
-
-/// Maps to: CC `services/tokenEstimation.ts#countTokensWithBedrock`.
-///
-/// The region is `createBedrockRuntimeClient`'s, `getAWSRegion()`
-/// (`utils/model/bedrock.ts:96-100`), not the handle's, which carries the
-/// small-fast-model override when `model` is that model.
-async fn count_tokens_with_bedrock(
-    handle: &crate::services::provider::anthropic::client::AnthropicClientHandle,
-    model: &str,
-    messages: &[anthropic_sdk::resources::beta::messages::BetaMessageParam],
-    tools: &[anthropic_sdk::resources::beta::messages::BetaToolUnion],
-    betas: &[String],
-    contains_thinking: bool,
-) -> Option<usize> {
-    let crate::services::provider::anthropic::client::ProviderConfig::Bedrock { auth, .. } =
-        &handle.provider
-    else {
-        return None;
-    };
-    let region = crate::utils::env_utils::get_aws_region();
-    let model_id = if crate::utils::model::bedrock::is_foundation_model(model) {
-        model.to_string()
-    } else {
-        crate::utils::model::bedrock::get_inference_profile_backing_model(model, auth).await?
-    };
-    let mut invoke_body = serde_json::json!({
-        "anthropic_version": "bedrock-2023-05-31",
-        "messages": if messages.is_empty() {
-            serde_json::json!([{"role": "user", "content": "foo"}])
-        } else {
-            serde_json::to_value(messages).ok()?
-        },
-        "max_tokens": if contains_thinking { 2048 } else { 1 },
-    });
-    if !tools.is_empty() {
-        invoke_body["tools"] = serde_json::to_value(tools).ok()?;
-    }
-    if !betas.is_empty() {
-        invoke_body["anthropic_beta"] = serde_json::to_value(betas).ok()?;
-    }
-    if contains_thinking {
-        invoke_body["thinking"] = serde_json::json!({
-            "type": "enabled",
-            "budget_tokens": 1024
-        });
-    }
-    let encoded_body =
-        base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&invoke_body).ok()?);
-    let request_body = serde_json::to_vec(&serde_json::json!({
-        "input": {"invokeModel": {"body": encoded_body}}
-    }))
-    .ok()?;
-    let endpoint = crate::utils::process_env::var("ANTHROPIC_BEDROCK_BASE_URL")
-        .truthy()
-        .or_else(|| crate::utils::process_env::var("AWS_ENDPOINT_URL_BEDROCK_RUNTIME").truthy())
-        .unwrap_or_else(|| format!("https://bedrock-runtime.{region}.amazonaws.com"));
-    let response = crate::services::provider::anthropic::client::send_bedrock_request(
-        reqwest::Method::POST,
-        &endpoint,
-        &format!(
-            "/model/{}/count-tokens",
-            crate::services::provider::anthropic::client::aws_uri_encode(&model_id)
-        ),
-        request_body,
-        &region,
-        auth,
-    )
-    .await?;
-    response
-        .get("inputTokens")
-        .and_then(Value::as_u64)
-        .and_then(|tokens| usize::try_from(tokens).ok())
 }
 
 /// Maps to: CC `services/tokenEstimation.ts:203-208` `roughTokenCountEstimation`
@@ -422,19 +347,8 @@ pub async fn count_messages_tokens_with_api(
         return None;
     }
     let normalized_model = crate::utils::model::model::normalize_model_string_for_api(&model);
-    let provider = crate::utils::model::providers::get_api_provider();
     let contains_thinking = has_thinking_blocks(&messages);
-    let mut betas = crate::services::provider::anthropic::betas::get_model_betas(&model);
-    if provider == crate::utils::model::providers::ApiProvider::Vertex {
-        betas.retain(|beta| {
-            matches!(
-                beta.as_str(),
-                "claude-code-20250219"
-                    | "interleaved-thinking-2025-05-14"
-                    | "context-management-2025-06-27"
-            )
-        });
-    }
+    let betas = crate::services::provider::anthropic::betas::get_model_betas(&model);
     let messages = if messages.is_empty() {
         vec![anthropic_sdk::resources::beta::messages::BetaMessageParam {
             role: "user".to_string(),
@@ -459,32 +373,13 @@ pub async fn count_messages_tokens_with_api(
     };
     let handle = count_tokens_client(&model).await?;
 
-    match provider {
-        crate::utils::model::providers::ApiProvider::Bedrock => {
-            count_tokens_with_bedrock(
-                &handle,
-                &normalized_model,
-                &messages,
-                &tools,
-                &betas,
-                contains_thinking,
-            )
-            .await
-        }
-        // CC `anthropic.beta.messages.countTokens` (`tokenEstimation.ts:172`),
-        // through the provider client; Vertex's betas are filtered above.
-        crate::utils::model::providers::ApiProvider::FirstParty
-        | crate::utils::model::providers::ApiProvider::Foundry
-        | crate::utils::model::providers::ApiProvider::Vertex => {
-            let client = handle.build().ok()?;
-            match client.beta().messages().count_tokens(&params).await {
-                Ok(response) if response.input_tokens >= 0 => Some(response.input_tokens as usize),
-                Ok(_) => None,
-                Err(error) => {
-                    tracing::warn!(error = %error, "count_tokens API request failed");
-                    None
-                }
-            }
+    let client = handle.build().ok()?;
+    match client.beta().messages().count_tokens(&params).await {
+        Ok(response) if response.input_tokens >= 0 => Some(response.input_tokens as usize),
+        Ok(_) => None,
+        Err(error) => {
+            tracing::warn!(error = %error, "count_tokens API request failed");
+            None
         }
     }
 }
@@ -628,190 +523,5 @@ mod tests {
         fn drop(&mut self) {
             crate::utils::settings::settings_cache::reset_settings_cache();
         }
-    }
-
-    #[tokio::test]
-    async fn bedrock_count_tokens_uses_runtime_count_tokens_request() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _profile = MainProfileGuard::install();
-        let (endpoint, server) = spawn_json_server(r#"{"inputTokens":23}"#);
-        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
-        let _skip_auth = EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "1");
-        let _endpoint = EnvVarGuard::set("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", &endpoint);
-        crate::services::provider::anthropic::target::install_test_model_profile(
-            "anthropic.claude-sonnet-4-5-20250929-v1:0",
-        );
-
-        assert_eq!(count_tokens_with_api("hello").await, Some(23));
-        let request = server.join().unwrap();
-        assert!(
-            request.starts_with(
-                "POST /model/anthropic.claude-sonnet-4-5-20250929-v1%3A0/count-tokens "
-            )
-        );
-        let body = request.split("\r\n\r\n").nth(1).unwrap();
-        let body: Value = serde_json::from_str(body).unwrap();
-        let encoded = body["input"]["invokeModel"]["body"].as_str().unwrap();
-        let invoke: Value = serde_json::from_slice(
-            &base64::engine::general_purpose::STANDARD
-                .decode(encoded)
-                .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(invoke["anthropic_version"], "bedrock-2023-05-31");
-        assert_eq!(invoke["messages"][0]["content"], "hello");
-    }
-
-    /// CC's side clients take `getAWSRegion()` (`utils/model/bedrock.ts:50-56,
-    /// 96-100`): the inference-profile lookup and the count are signed for
-    /// `AWS_REGION`. The removed `ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION` is no
-    /// longer read. The lookup is memoized (`:141`), so a second count sends
-    /// only the count.
-    #[tokio::test]
-    async fn bedrock_side_calls_sign_for_the_aws_region() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = std::thread::spawn(move || {
-            let mut requests = Vec::new();
-            for _ in 0..3 {
-                let (mut stream, _) = listener.accept().unwrap();
-                let request = read_request(&mut stream);
-                let body = if request.starts_with("GET /inference-profiles/") {
-                    r#"{"models":[{"modelArn":"arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-test"}]}"#
-                } else {
-                    r#"{"inputTokens":3}"#
-                };
-                write_json_response(&mut stream, body);
-                requests.push(request);
-            }
-            requests
-        });
-        let _guards = [
-            EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1"),
-            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
-            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
-            EnvVarGuard::unset("CLAUDE_CODE_SKIP_BEDROCK_AUTH"),
-            EnvVarGuard::unset("AWS_BEARER_TOKEN_BEDROCK"),
-            EnvVarGuard::unset("AWS_PROFILE"),
-            EnvVarGuard::unset("AWS_SESSION_TOKEN"),
-            EnvVarGuard::set("AWS_ACCESS_KEY_ID", "AKIDTEST"),
-            EnvVarGuard::set("AWS_SECRET_ACCESS_KEY", "secret"),
-            EnvVarGuard::set("AWS_REGION", "us-west-2"),
-            EnvVarGuard::unset("AWS_DEFAULT_REGION"),
-            EnvVarGuard::set("ANTHROPIC_BEDROCK_BASE_URL", &endpoint),
-        ];
-        let handle = crate::services::provider::anthropic::client::get_anthropic_client(
-            crate::services::provider::anthropic::client::GetAnthropicClientOptions {
-                model: Some("us.anthropic.claude-test".to_string()),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-        let crate::services::provider::anthropic::client::ProviderConfig::Bedrock {
-            region, ..
-        } = &handle.provider
-        else {
-            panic!("Bedrock expected: {:?}", handle.provider);
-        };
-        assert_eq!(region, "us-west-2");
-
-        let messages = [anthropic_sdk::resources::beta::messages::BetaMessageParam {
-            role: "user".to_string(),
-            content: anthropic_sdk::resources::beta::messages::BetaMessageContent::Text(
-                "hello".to_string(),
-            ),
-        }];
-        for _ in 0..2 {
-            let count = count_tokens_with_bedrock(
-                &handle,
-                "us.anthropic.claude-test",
-                &messages,
-                &[],
-                &[],
-                false,
-            )
-            .await;
-            assert_eq!(count, Some(3));
-        }
-        let requests = server.join().unwrap();
-        assert!(
-            requests[0].starts_with("GET /inference-profiles/us.anthropic.claude-test "),
-            "{}",
-            requests[0]
-        );
-        for request in &requests[1..] {
-            assert!(
-                request.starts_with("POST /model/anthropic.claude-test/count-tokens "),
-                "{request}"
-            );
-        }
-        for request in &requests {
-            assert!(
-                request
-                    .to_ascii_lowercase()
-                    .contains("credential=akidtest/")
-                    && request.contains("/us-west-2/bedrock/aws4_request"),
-                "{request}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn vertex_count_tokens_uses_raw_predict_route() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _profile = MainProfileGuard::install();
-        let (endpoint, server) = spawn_json_server(r#"{"input_tokens":19}"#);
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::set("CLAUDE_CODE_USE_VERTEX", "1");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
-        let _skip_auth = EnvVarGuard::set("CLAUDE_CODE_SKIP_VERTEX_AUTH", "1");
-        let _endpoint = EnvVarGuard::set("ANTHROPIC_VERTEX_BASE_URL", &endpoint);
-        let _project = EnvVarGuard::set("ANTHROPIC_VERTEX_PROJECT_ID", "project-a");
-        let _region = EnvVarGuard::set("CLOUD_ML_REGION", "us-east5");
-        crate::services::provider::anthropic::target::install_test_model_profile(
-            "claude-sonnet-4-5",
-        );
-
-        assert_eq!(count_tokens_with_api("hello").await, Some(19));
-        let request = server.join().unwrap();
-        assert!(request.starts_with(
-            "POST /projects/project-a/locations/us-east5/publishers/anthropic/models/count-tokens:rawPredict "
-        ));
-        assert!(!request.contains("web-search-2025-03-05"));
-        assert!(request.contains("claude-code-20250219"));
-        let body: Value = serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
-        assert_eq!(body["anthropic_version"], "vertex-2023-10-16");
-        assert_eq!(body["messages"][0]["content"], "hello");
-    }
-
-    #[tokio::test]
-    async fn foundry_count_tokens_uses_configured_anthropic_client() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _profile = MainProfileGuard::install();
-        let (endpoint, server) = spawn_json_server(r#"{"input_tokens":17}"#);
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::set("CLAUDE_CODE_USE_FOUNDRY", "1");
-        let _base_url = EnvVarGuard::set(
-            "ANTHROPIC_FOUNDRY_BASE_URL",
-            format!("{endpoint}/anthropic/"),
-        );
-        let _api_key = EnvVarGuard::set("ANTHROPIC_FOUNDRY_API_KEY", "foundry-test-key");
-        crate::services::provider::anthropic::target::install_test_model_profile(
-            "claude-sonnet-4-5",
-        );
-
-        assert_eq!(count_tokens_with_api("hello").await, Some(17));
-        let request = server.join().unwrap();
-        assert!(request.starts_with("POST /anthropic/v1/messages/count_tokens?beta=true "));
-        assert!(
-            request
-                .to_ascii_lowercase()
-                .contains("x-api-key: foundry-test-key")
-        );
     }
 }

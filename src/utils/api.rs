@@ -204,9 +204,7 @@ pub fn tool_to_api_schema(
                         .model
                         .is_some_and(crate::services::provider::anthropic::betas::model_supports_structured_outputs))
                 .then_some(true),
-                eager_input_streaming: (crate::utils::model::providers::get_api_provider()
-                    == crate::utils::model::providers::ApiProvider::FirstParty
-                    && crate::utils::model::providers::is_first_party_anthropic_base_url()
+                eager_input_streaming: (crate::utils::model::providers::is_first_party_anthropic_base_url()
                     && (crate::utils::feature_flags::feature_enabled(
                         crate::utils::feature_flags::FeatureFlag::FineGrainedToolStreaming,
                     ) || crate::utils::env_utils::is_env_truthy(
@@ -754,12 +752,8 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
             "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
             "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING",
-            "ANTHROPIC_BASE_URL",
             "DISABLE_TELEMETRY",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
@@ -794,7 +788,6 @@ mod tests {
         assert!(value.get("output_schema").is_none());
 
         crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING");
-        crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
         let cached = serde_json::to_value(
             tool_to_api_schema(&tool, schema_options(Some("unsupported-model"), false)).unwrap(),
         )
@@ -824,7 +817,6 @@ mod tests {
         assert!(recomputed.get("strict").is_none());
         assert!(recomputed.get("eager_input_streaming").is_none());
 
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::set("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING", "1");
         let still_cached_off = serde_json::to_value(
             tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
@@ -845,15 +837,10 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
             "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
             "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING",
-            "ANTHROPIC_BASE_URL",
             "DISABLE_TELEMETRY",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-            "ANTHROPIC_BETAS",
         ] {
             crate::utils::process_env::remove(key);
         }
@@ -864,8 +851,8 @@ mod tests {
             strict: Some(true),
             ..Default::default()
         };
-        // The provider env is the shared stimulus for both caches now that the
-        // strict-tools gate is a source-controlled constant.
+        // The experimental-betas switch is the shared stimulus for both caches
+        // now that the strict-tools gate is a source-controlled constant.
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
             "tengu_tool_pear".to_string(),
@@ -904,14 +891,23 @@ mod tests {
 
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
         crate::services::provider::anthropic::betas::clear_betas_caches();
-        crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
+        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
         assert!(
             !crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
                 .any(|beta| beta
                     == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
+        let hidden_body = serde_json::to_value(
+            tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
+        )
+        .unwrap();
+        assert!(hidden_body.get("eager_input_streaming").is_none());
+        assert!(hidden_body.get("strict").is_none());
+
+        crate::utils::tool_schema_cache::clear_tool_schema_cache();
+        crate::services::provider::anthropic::betas::clear_betas_caches();
+        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         let eager_body = serde_json::to_value(
             tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
         )
@@ -919,38 +915,11 @@ mod tests {
         assert_eq!(eager_body["eager_input_streaming"], serde_json::json!(true));
         assert!(eager_body.get("strict").is_none());
         assert!(
-            !crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
-                .iter()
-                .any(|beta| beta
-                    == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
-        );
-
-        crate::utils::tool_schema_cache::clear_tool_schema_cache();
-        crate::services::provider::anthropic::betas::clear_betas_caches();
-        crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
-        let non_eager_body = serde_json::to_value(
-            tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
-        )
-        .unwrap();
-        assert!(non_eager_body.get("eager_input_streaming").is_none());
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-        assert!(
             crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
                 .iter()
                 .any(|beta| beta
                     == crate::services::provider::anthropic::betas::CONTEXT_MANAGEMENT_BETA_HEADER)
         );
-        assert!(
-            !crate::services::provider::anthropic::betas::get_all_model_betas("claude-sonnet-4-6")
-                .iter()
-                .any(|beta| beta
-                    == crate::services::provider::anthropic::betas::STRUCTURED_OUTPUTS_BETA_HEADER)
-        );
-        let same_non_eager_body = serde_json::to_value(
-            tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false)).unwrap(),
-        )
-        .unwrap();
-        assert!(same_non_eager_body.get("eager_input_streaming").is_none());
 
         crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING");
         crate::utils::config::set_test_global_config(None);
@@ -965,15 +934,10 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
             "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
             "CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING",
-            "ANTHROPIC_BASE_URL",
             "DISABLE_TELEMETRY",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-            "ANTHROPIC_BETAS",
         ] {
             crate::utils::process_env::remove(key);
         }

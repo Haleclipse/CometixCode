@@ -21,17 +21,7 @@ pub fn is_web_search_tool_enabled() -> bool {
     if crate::services::web::is_configured() {
         return false;
     }
-    match crate::utils::model::providers::get_api_provider() {
-        crate::utils::model::providers::ApiProvider::FirstParty => true,
-        crate::utils::model::providers::ApiProvider::Foundry => true,
-        crate::utils::model::providers::ApiProvider::Vertex => {
-            let model = crate::utils::model::model::get_main_loop_model().to_ascii_lowercase();
-            model.contains("claude-opus-4")
-                || model.contains("claude-sonnet-4")
-                || model.contains("claude-haiku-4")
-        }
-        crate::utils::model::providers::ApiProvider::Bedrock => false,
-    }
+    true
 }
 
 /// Maps to CC `tools/WebSearchTool/WebSearchTool.ts` `call(...)` local
@@ -873,36 +863,6 @@ mod tests {
         assert!(schema.description.contains("current month"));
     }
 
-    #[test]
-    fn web_search_is_enabled_matches_official_provider_and_model_gate() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        assert!(is_web_search_tool_enabled());
-
-        crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        assert!(!is_web_search_tool_enabled());
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-
-        crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
-        crate::services::provider::anthropic::target::install_test_model_profile(
-            "claude-3-5-sonnet-20241022",
-        );
-        assert!(!is_web_search_tool_enabled());
-        crate::services::provider::anthropic::target::install_test_model_profile(
-            "claude-sonnet-4-5-20250929",
-        );
-        assert!(is_web_search_tool_enabled());
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-
-        crate::utils::process_env::set("CLAUDE_CODE_USE_FOUNDRY", "1");
-        assert!(is_web_search_tool_enabled());
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::utils::settings::settings_cache::reset_settings_cache();
-    }
-
     // ════════════════════════════════════════════════════════
     // @nyan: configured providers replace the Anthropic server tool.
     // ════════════════════════════════════════════════════════
@@ -1005,12 +965,10 @@ mod tests {
         }
 
         #[test]
-        fn configured_providers_show_the_tool_even_on_gateway_models() {
-            // The guard already holds TEST_ENV_LOCK; the env write is safe.
+        fn configured_providers_show_the_tool() {
             let _guard = WebSettingsGuard::install(settings(json!({
                 "providers": {"exa": {"enabled": true, "baseUrl": "http://127.0.0.1:1", "apiKeyFile": key_file()}},
             })));
-            let _bedrock = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
             assert!(is_web_search_tool_enabled());
         }
 

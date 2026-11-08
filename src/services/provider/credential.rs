@@ -2,11 +2,11 @@
 //! request: whether the session's profile has one, and which values must never
 //! leave the process in error text.
 
-use crate::utils::provider_auth::reference::{Secret, resolve_env_secret};
+use crate::utils::provider_auth::reference::Secret;
 use crate::utils::provider_auth::resolve::offline_secrets;
 use crate::utils::provider_auth::store::AuthStore;
 use crate::utils::settings::SettingsJson;
-use crate::utils::settings::nyan::{ProviderKind, ProviderSettings};
+use crate::utils::settings::nyan::ProviderSettings;
 
 /// Shorter values are left alone: replacing them would garble unrelated text.
 const MIN_REDACTED_LEN: usize = 8;
@@ -18,20 +18,14 @@ const AMBIENT_SECRET_VARS: [&str; 3] = [
     "CLAUDE_CODE_OAUTH_TOKEN",
 ];
 
-/// The variable the Gemini adapter reads when its provider names no credential.
-const GEMINI_AMBIENT_KEY: &str = "GEMINI_API_KEY";
-
 /// The secrets `provider` would send, or `None` when its credential cannot be
 /// resolved the way a request resolves it.
 fn provider_secrets(provider: &ProviderSettings, store: &AuthStore) -> Option<Vec<Secret>> {
     let kind = provider.kind?;
-    match provider.credential.as_ref() {
-        Some(reference) => offline_secrets(kind, reference, store).ok(),
-        None if kind == ProviderKind::Gemini => resolve_env_secret(GEMINI_AMBIENT_KEY, true)
-            .ok()
-            .map(|secret| secret.into_iter().collect()),
-        None => None,
-    }
+    provider
+        .credential
+        .as_ref()
+        .and_then(|reference| offline_secrets(kind, reference, store).ok())
 }
 
 /// The provider of `profile` (`None`: `selection.main`) when its credential
@@ -110,7 +104,6 @@ mod tests {
             std::fs::create_dir_all(&root).unwrap();
             let guards = AMBIENT_SECRET_VARS
                 .into_iter()
-                .chain([GEMINI_AMBIENT_KEY])
                 .map(EnvVarGuard::unset)
                 .collect();
             Self {

@@ -100,7 +100,7 @@ mod runtime {
     /// CC `makeXaaFetch` (`xaa.ts:42-54`) wraps the global `fetch`, whose
     /// dispatcher carries the proxy and TLS options.
     fn http_client() -> anyhow::Result<reqwest::Client> {
-        Ok(crate::utils::proxy::get_proxy_fetch_options(false)?
+        Ok(crate::utils::proxy::get_proxy_fetch_options()?
             .timeout(std::time::Duration::from_secs(XAA_REQUEST_TIMEOUT_SECS))
             .build()?)
     }

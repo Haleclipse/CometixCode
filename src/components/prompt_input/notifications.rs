@@ -548,17 +548,11 @@ mod tests {
     use std::path::PathBuf;
 
     const NOTIFICATIONS_RUNTIME_ENV_KEYS: &[&str] = &[
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "ANTHROPIC_UNIX_SOCKET",
         "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
         "CLAUDE_CODE_REMOTE",
         "CLAUDE_CODE_SIMPLE",
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_FOUNDRY",
-        "CLAUDE_CODE_USE_VERTEX",
         "NYAN_CONFIG_DIR",
         "NODE_ENV",
     ];

@@ -2182,7 +2182,6 @@ mod tests {
         .unwrap();
         let snapshot = SetupScreensSnapshot {
             show_onboarding: true,
-            api_key_needing_approval: None,
             offer_terminal_setup: false,
             terminal_name: Some("kitty".to_string()),
             show_claude_in_chrome_onboarding: false,

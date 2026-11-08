@@ -525,23 +525,11 @@ fn install_github_app_enabled() -> bool {
     )
 }
 
-fn is_using_3p_services() -> bool {
-    [
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
-    ]
-    .into_iter()
-    .any(|key| {
-        crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref())
-    })
-}
-
 /// There is no claude.ai subscriber: Anthropic is API-key only, so every
 /// first-party API user is a Console user and `ClaudeAi`-only commands are
 /// never available.
 fn is_console_user() -> bool {
-    !is_using_3p_services() && crate::utils::model::providers::is_first_party_anthropic_base_url()
+    crate::utils::model::providers::is_first_party_anthropic_base_url()
 }
 
 fn chrome_enabled() -> bool {
@@ -570,14 +558,11 @@ fn session_enabled() -> bool {
 }
 
 fn feedback_enabled() -> bool {
-    !is_using_3p_services()
-        && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("DISABLE_FEEDBACK_COMMAND").as_deref(),
-        )
-        && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("DISABLE_BUG_COMMAND").as_deref(),
-        )
-        && !is_internal_build()
+    !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_FEEDBACK_COMMAND").as_deref(),
+    ) && !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("DISABLE_BUG_COMMAND").as_deref(),
+    ) && !is_internal_build()
 }
 
 fn remote_env_enabled() -> bool {

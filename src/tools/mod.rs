@@ -618,41 +618,23 @@ mod tests {
     }
 
     #[test]
-    fn web_search_tool_is_always_registered_and_enabled_only_when_gate_allows() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-
-        let first_party = get_all_base_tools()
+    fn web_search_tool_is_always_registered() {
+        let base = get_all_base_tools()
             .into_iter()
             .map(|tool| tool.name)
             .collect::<Vec<_>>();
-        let web_fetch_index = first_party
+        let web_fetch_index = base
             .iter()
             .position(|name| name == "WebFetch")
             .expect("WebFetch should be present");
         assert_eq!(
-            first_party.get(web_fetch_index + 1),
+            base.get(web_fetch_index + 1),
             Some(&"TodoWrite".to_string())
         );
         assert_eq!(
-            first_party.get(web_fetch_index + 2),
+            base.get(web_fetch_index + 2),
             Some(&"WebSearch".to_string())
         );
-
-        crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        let bedrock_base = get_all_base_tools()
-            .into_iter()
-            .map(|tool| tool.name)
-            .collect::<std::collections::BTreeSet<_>>();
-        assert!(bedrock_base.contains("WebSearch"));
-        let bedrock = get_tools(&crate::tool::ToolPermissionContext::default())
-            .into_iter()
-            .map(|tool| tool.name)
-            .collect::<std::collections::BTreeSet<_>>();
-        assert!(!bedrock.contains("WebSearch"));
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
     }
 
     /// Reproduces the startup step CC performs in `maybeActivateBrief`.

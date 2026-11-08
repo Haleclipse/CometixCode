@@ -460,7 +460,7 @@ mod runtime {
     pub(crate) fn oauth_http_client()
     -> anyhow::Result<Arc<dyn rmcp::transport::auth::OAuthHttpClient>> {
         let build = |redirect: reqwest::redirect::Policy| -> anyhow::Result<reqwest::Client> {
-            Ok(crate::utils::proxy::get_proxy_fetch_options(false)?
+            Ok(crate::utils::proxy::get_proxy_fetch_options()?
                 .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
                 .redirect(redirect)
                 .build()?)
@@ -559,7 +559,7 @@ mod runtime {
             }
             // CC `createAuthFetch` (`auth.ts:198-237`) wraps the global
             // `fetch`, whose dispatcher carries the proxy and TLS options.
-            let client = crate::utils::proxy::get_proxy_fetch_options(false)?
+            let client = crate::utils::proxy::get_proxy_fetch_options()?
                 .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
                 .build()?;
             let request = client
@@ -2175,7 +2175,7 @@ mod runtime {
             return Ok(None);
         };
         // The SDK's default `fetch`: the global dispatcher.
-        let client = crate::utils::proxy::get_proxy_fetch_options(false)?
+        let client = crate::utils::proxy::get_proxy_fetch_options()?
             .timeout(Duration::from_millis(AUTH_REQUEST_TIMEOUT_MS))
             .build()?;
         let request = client

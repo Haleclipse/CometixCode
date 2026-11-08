@@ -9,11 +9,9 @@
 pub mod agent_progress_line;
 pub mod agents;
 pub mod app;
-pub mod approve_api_key;
 pub mod auto_mode_opt_in_dialog;
 pub mod auto_updater;
 pub mod auto_updater_wrapper;
-pub mod aws_auth_status_box;
 pub mod base_text_input;
 pub mod bash_mode_progress;
 pub mod bridge_dialog;

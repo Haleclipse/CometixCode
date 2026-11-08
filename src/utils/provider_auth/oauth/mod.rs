@@ -26,9 +26,9 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// request uses, a request timeout, and no redirect following, so a refresh
 /// token in a request body is never replayed to another host.
 pub fn http_client() -> anyhow::Result<reqwest::Client> {
-    Ok(build_client(crate::utils::proxy::get_proxy_fetch_options(
-        false,
-    )?)?)
+    Ok(build_client(
+        crate::utils::proxy::get_proxy_fetch_options()?
+    )?)
 }
 
 /// Applies the token-endpoint rules to any builder; tests pass one without a

@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use indexmap::IndexMap;
 use std::sync::RwLock;
 
-use crate::utils::process_env::{self, EnvSnapshot, EnvUpdate, JsTruthy};
+use crate::utils::process_env::{self, EnvSnapshot, EnvUpdate};
 use crate::utils::settings::{
     SettingSource, get_initial_settings, get_settings_for_source, is_setting_source_enabled,
 };
@@ -33,85 +33,8 @@ pub const DANGEROUS_SHELL_SETTINGS: &[&str] = &[
     "statusLine",
 ];
 
-/// Maps to CC `utils/managedEnvConstants.ts#PROVIDER_MANAGED_ENV_VARS`.
-const PROVIDER_MANAGED_ENV_VARS: &[&str] = &[
-    // The flag itself — settings can't unset it once the host set it
-    "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST",
-    // Provider selection
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_VERTEX",
-    "CLAUDE_CODE_USE_FOUNDRY",
-    // Endpoint config (base URLs, project/resource identifiers)
-    "ANTHROPIC_BASE_URL",
-    "ANTHROPIC_BEDROCK_BASE_URL",
-    "ANTHROPIC_VERTEX_BASE_URL",
-    "ANTHROPIC_FOUNDRY_BASE_URL",
-    "ANTHROPIC_FOUNDRY_RESOURCE",
-    "ANTHROPIC_VERTEX_PROJECT_ID",
-    // Region routing (per-model VERTEX_REGION_CLAUDE_* handled by prefix below)
-    "CLOUD_ML_REGION",
-    // Auth
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "AWS_BEARER_TOKEN_BEDROCK",
-    "ANTHROPIC_FOUNDRY_API_KEY",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
-    "CLAUDE_CODE_SKIP_VERTEX_AUTH",
-    "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
-    // Model defaults — often set to provider-specific ID formats
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
-    "ANTHROPIC_SMALL_FAST_MODEL",
-    "ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION",
-];
-
-/// Maps to CC `utils/managedEnvConstants.ts#PROVIDER_MANAGED_ENV_PREFIXES`.
-const PROVIDER_MANAGED_ENV_PREFIXES: &[&str] = &["VERTEX_REGION_CLAUDE_"];
-
-/// Maps to CC `utils/managedEnvConstants.ts#isProviderManagedEnvVar`.
-pub fn is_provider_managed_env_var(key: &str) -> bool {
-    let upper = key.to_ascii_uppercase();
-    PROVIDER_MANAGED_ENV_VARS.contains(&upper.as_str())
-        || PROVIDER_MANAGED_ENV_PREFIXES
-            .iter()
-            .any(|prefix| upper.starts_with(prefix))
-}
-
 /// Maps to CC `utils/managedEnvConstants.ts#SAFE_ENV_VARS`.
 pub const SAFE_ENV_VARS: &[&str] = &[
-    "ANTHROPIC_CUSTOM_HEADERS",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION",
-    "ANTHROPIC_CUSTOM_MODEL_OPTION_NAME",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
-    "ANTHROPIC_FOUNDRY_API_KEY",
-    "ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION",
-    "ANTHROPIC_SMALL_FAST_MODEL",
-    "AWS_DEFAULT_REGION",
-    "AWS_PROFILE",
-    "AWS_REGION",
     "BASH_DEFAULT_TIMEOUT_MS",
     "BASH_MAX_OUTPUT_LENGTH",
     "BASH_MAX_TIMEOUT_MS",
@@ -124,12 +47,6 @@ pub const SAFE_ENV_VARS: &[&str] = &[
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
     "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
-    "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
-    "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
-    "CLAUDE_CODE_SKIP_VERTEX_AUTH",
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_FOUNDRY",
-    "CLAUDE_CODE_USE_VERTEX",
     "DISABLE_AUTOUPDATER",
     "DISABLE_BUG_COMMAND",
     "DISABLE_COST_WARNINGS",
@@ -161,15 +78,6 @@ pub const SAFE_ENV_VARS: &[&str] = &[
     "OTEL_METRICS_INCLUDE_VERSION",
     "OTEL_RESOURCE_ATTRIBUTES",
     "USE_BUILTIN_RIPGREP",
-    "VERTEX_REGION_CLAUDE_3_5_HAIKU",
-    "VERTEX_REGION_CLAUDE_3_5_SONNET",
-    "VERTEX_REGION_CLAUDE_3_7_SONNET",
-    "VERTEX_REGION_CLAUDE_4_0_OPUS",
-    "VERTEX_REGION_CLAUDE_4_0_SONNET",
-    "VERTEX_REGION_CLAUDE_4_1_OPUS",
-    "VERTEX_REGION_CLAUDE_4_5_SONNET",
-    "VERTEX_REGION_CLAUDE_4_6_SONNET",
-    "VERTEX_REGION_CLAUDE_HAIKU_4_5",
 ];
 
 /// Maps to CC `utils/managedEnvConstants.ts#SAFE_ENV_VARS.has(...)`.
@@ -218,40 +126,18 @@ pub(crate) fn reset_ccd_spawn_env_keys_for_tests() {
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 }
 
-/// Maps to CC `managedEnv.ts:23-36` `withoutSSHTunnelVars` key set.
-fn is_ssh_tunnel_var(key: &str) -> bool {
-    matches!(
-        key,
-        "ANTHROPIC_UNIX_SOCKET"
-            | "ANTHROPIC_BASE_URL"
-            | "ANTHROPIC_API_KEY"
-            | "ANTHROPIC_AUTH_TOKEN"
-            | "CLAUDE_CODE_OAUTH_TOKEN"
-    )
-}
-
 /// Maps to CC `managedEnv.ts:85-91` `filterSettingsEnv` — the composed strip
 /// filters applied to every settings-sourced env object.
 ///
-/// `process` is the calling transaction's own snapshot ([`EnvUpdate::snapshot`]):
-/// CC reads `process.env` at filter time (`:27`, `:49`), which mid-pass means
-/// the partially-applied state.
-fn filter_settings_env(
-    env: Option<&IndexMap<String, String>>,
-    process: &EnvSnapshot,
-) -> Vec<(String, String)> {
-    // JS truthiness: an empty ANTHROPIC_UNIX_SOCKET disables the filter (:27).
-    let ssh_tunnel = process.var("ANTHROPIC_UNIX_SOCKET").truthy().is_some();
-    let host_managed =
-        crate::utils::env_utils::is_env_truthy(process.var("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"));
+/// @nyan: CC's SSH-tunnel and host-managed-provider filters are gone with the
+/// provider environment itself.
+fn filter_settings_env(env: Option<&IndexMap<String, String>>) -> Vec<(String, String)> {
     // CC `withoutCcdSpawnEnvKeys` (:71-80) is a no-op until applySafe captured
     // the snapshot (`!ccdSpawnEnvKeys`); an un-latched read reproduces that.
     let ccd_keys = ccd_spawn_env_keys();
 
     env.into_iter()
         .flat_map(|env| process_env::ecmascript_object_entries(env.iter()))
-        .filter(|(key, _)| !(ssh_tunnel && is_ssh_tunnel_var(key)))
-        .filter(|(key, _)| !(host_managed && is_provider_managed_env_var(key)))
         .filter(|(key, _)| !ccd_keys.as_ref().is_some_and(|keys| keys.contains(*key)))
         .map(|(key, value)| (key.to_owned(), value.clone()))
         .collect()
@@ -259,7 +145,7 @@ fn filter_settings_env(
 
 /// One `Object.assign(process.env, filterSettingsEnv(...))` step.
 fn apply_filtered(update: &mut EnvUpdate<'_>, env: Option<&IndexMap<String, String>>) {
-    let filtered = filter_settings_env(env, &update.snapshot());
+    let filtered = filter_settings_env(env);
     update.apply(filtered);
 }
 
@@ -268,8 +154,8 @@ fn apply_filtered(update: &mut EnvUpdate<'_>, env: Option<&IndexMap<String, Stri
 /// Trusted sources (user settings, `--settings` flag) apply
 /// ALL their env vars; project-scoped sources contribute only the
 /// [`SAFE_ENV_VARS`] allowlist, so a repository-controlled
-/// `.nyan/settings.json` cannot redirect provider routing (e.g.
-/// `ANTHROPIC_BASE_URL`) before trust is established.
+/// `.nyan/settings.json` cannot inject arbitrary environment variables
+/// before trust is established.
 ///
 /// Maps to: CC `utils/managedEnv.ts:124-178` `applySafeConfigEnvironmentVariables`.
 pub fn apply_safe_config_environment_variables() {
@@ -304,15 +190,14 @@ pub fn apply_safe_config_environment_variables() {
 
     // Safe allowlisted vars from the fully-merged settings, which include
     // project-scoped sources (:164-178).
-    let safe = filter_settings_env(merged.env.as_deref(), &update.snapshot())
+    let safe = filter_settings_env(merged.env.as_deref())
         .into_iter()
         .filter(|(key, _)| is_safe_managed_env_var(key));
     update.apply(safe);
     update.commit();
 }
 
-/// Apply ALL settings env vars (only provider-routing vars are stripped when
-/// `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST` is set — see [`filter_settings_env`]).
+/// Apply ALL settings env vars.
 /// Applies potentially dangerous variables such as `LD_PRELOAD` and `PATH`;
 /// call only after trust is established.
 ///
@@ -341,18 +226,6 @@ mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
-    #[test]
-    fn provider_managed_matches_set_and_prefix_case_insensitively() {
-        assert!(is_provider_managed_env_var("ANTHROPIC_BASE_URL"));
-        assert!(is_provider_managed_env_var("anthropic_base_url"));
-        assert!(is_provider_managed_env_var("VERTEX_REGION_CLAUDE_9_0_OPUS"));
-        assert!(is_provider_managed_env_var(
-            "CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"
-        ));
-        assert!(!is_provider_managed_env_var("ANTHROPIC_CUSTOM_HEADERS"));
-        assert!(!is_provider_managed_env_var("PATH"));
-    }
-
     /// CC `utils/managedEnv.ts#applyConfigEnvironmentVariables` applies each
     /// settings object with `Object.assign`, so own-key projection precedes
     /// Node `process.env` assignment normalization.
@@ -374,68 +247,9 @@ mod tests {
     }
 
     #[test]
-    fn ssh_tunnel_filter_gates_on_socket_presence() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        reset_ccd_spawn_env_keys_for_tests();
-        let env: IndexMap<String, String> = [
-            ("ANTHROPIC_API_KEY", "from-settings"),
-            ("OTHER_VAR", "kept"),
-        ]
-        .into_iter()
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect();
-
-        {
-            let _socket = EnvVarGuard::set("ANTHROPIC_UNIX_SOCKET", "/tmp/sock");
-            let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
-            assert!(!filtered.iter().any(|(key, _)| key == "ANTHROPIC_API_KEY"));
-            assert!(filtered.iter().any(|(key, _)| key == "OTHER_VAR"));
-        }
-        {
-            let _socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
-            let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
-            assert!(filtered.iter().any(|(key, _)| key == "ANTHROPIC_API_KEY"));
-        }
-        // JS truthiness: an empty socket value disables the filter (:27).
-        {
-            let _socket = EnvVarGuard::set("ANTHROPIC_UNIX_SOCKET", "");
-            let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
-            assert!(filtered.iter().any(|(key, _)| key == "ANTHROPIC_API_KEY"));
-        }
-    }
-
-    #[test]
-    fn host_managed_filter_strips_provider_vars_only_when_truthy() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        reset_ccd_spawn_env_keys_for_tests();
-        let env: IndexMap<String, String> = [
-            ("ANTHROPIC_API_KEY", "custom"),
-            ("MAX_THINKING_TOKENS", "1"),
-        ]
-        .into_iter()
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect();
-
-        let _no_socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
-        {
-            let _host = EnvVarGuard::set("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "1");
-            let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
-            assert!(!filtered.iter().any(|(key, _)| key == "ANTHROPIC_API_KEY"));
-            assert!(filtered.iter().any(|(key, _)| key == "MAX_THINKING_TOKENS"));
-        }
-        {
-            let _host = EnvVarGuard::set("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "false");
-            let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
-            assert!(filtered.iter().any(|(key, _)| key == "ANTHROPIC_API_KEY"));
-        }
-    }
-
-    #[test]
     fn ccd_spawn_keys_latch_once_and_shield_spawn_env() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
-        let _no_socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
-        let _no_host = EnvVarGuard::unset("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST");
         let _entry = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "claude-desktop");
         let _spawn_var = EnvVarGuard::set("OTEL_LOGS_EXPORTER", "otlp");
 
@@ -448,7 +262,7 @@ mod tests {
         .into_iter()
         .map(|(key, value)| (key.to_string(), value.to_string()))
         .collect();
-        let filtered = filter_settings_env(Some(&env), &process_env::snapshot());
+        let filtered = filter_settings_env(Some(&env));
         // Keys present in the spawn env are shielded; later additions apply.
         assert!(!filtered.iter().any(|(key, _)| key == "OTEL_LOGS_EXPORTER"));
         assert!(filtered.iter().any(|(key, _)| key == "BRAND_NEW_VAR"));

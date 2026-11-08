@@ -165,27 +165,12 @@ pub fn is_non_custom_opus_model(model: &str) -> bool {
 /// depended on the developer's real credentials. Removed rather than wired up —
 /// CC takes no arguments here, so adding real ones would be the deviation.
 pub fn is_opus_1m_merge_enabled() -> bool {
-    if crate::utils::context::is_1m_context_disabled()
-        || crate::utils::model::providers::get_api_provider()
-            != crate::utils::model::providers::ApiProvider::FirstParty
-    {
-        return false;
-    }
-
-    true
+    !crate::utils::context::is_1m_context_disabled()
 }
 
 // @[MODEL LAUNCH]: Add a marketing name mapping for the new model below.
 /// Maps to: CC `utils/model/model.ts:570-614#getMarketingNameForModel`.
 pub fn get_marketing_name_for_model(model_id: &str) -> Option<String> {
-    if crate::utils::model::providers::get_api_provider()
-        == crate::utils::model::providers::ApiProvider::Foundry
-    {
-        // A Foundry deployment ID is user-defined, so it may bear no relation
-        // to the actual model.
-        return None;
-    }
-
     let has_1m = model_id.to_ascii_lowercase().contains("[1m]");
     let canonical = get_canonical_name(model_id);
     let name = if canonical.contains("claude-opus-4-6") {
@@ -251,18 +236,12 @@ mod tests {
     /// CC also closes the gate for a Pro subscriber and fails closed for a
     /// subscriber whose tokens carry no `subscriptionType`. There are no
     /// claude.ai subscribers any more, so those cases are gone: the gate depends
-    /// only on the provider and the 1M opt-out, and stored or ambient claude.ai
-    /// credentials (here a Pro subscriber and a bare OAuth token) are ignored.
+    /// only on the 1M opt-out, and stored or ambient claude.ai credentials
+    /// (here a Pro subscriber and a bare OAuth token) are ignored.
     #[test]
-    fn opus_1m_merge_gate_depends_only_on_provider_and_opt_out_not_on_claude_ai_credentials() {
+    fn opus_1m_merge_gate_depends_only_on_opt_out_not_on_claude_ai_credentials() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _providers = [
-            "CLAUDE_CODE_DISABLE_1M_CONTEXT",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-        ]
-        .map(EnvVarGuard::unset);
+        let _opt_out = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_1M_CONTEXT");
 
         let config_dir =
             std::env::temp_dir().join(format!("nyan-opus1m-{}", uuid::Uuid::new_v4().simple()));
@@ -288,11 +267,6 @@ mod tests {
         let _oauth_token = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token");
         crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
         assert!(is_opus_1m_merge_enabled());
-
-        // Non-first-party provider closes the gate.
-        crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        assert!(!is_opus_1m_merge_enabled());
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
 
         // Explicit opt-out closes the gate.
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1");

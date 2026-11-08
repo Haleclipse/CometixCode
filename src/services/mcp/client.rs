@@ -1699,7 +1699,7 @@ mod runtime {
         // Maps to: CC `new SSEClientTransport(new URL(serverRef.url), ...)`.
         // Its event stream spreads `getProxyFetchOptions()` (`client.ts:657-669`)
         // and its POSTs take the global `fetch`: the same transport.
-        let client = crate::utils::proxy::get_proxy_fetch_options(false)?.build()?;
+        let client = crate::utils::proxy::get_proxy_fetch_options()?.build()?;
         let mut request = client.get(url).header("Accept", "text/event-stream");
         for (key, value) in &headers {
             request = request.header(key, value);
@@ -1989,7 +1989,7 @@ mod runtime {
     /// (`client.ts:815-831`, `:887`). rmcp's own default has no idle pool and
     /// follows no redirect (`default_http_client`); both are kept.
     pub(super) fn streamable_http_client() -> anyhow::Result<reqwest::Client> {
-        Ok(crate::utils::proxy::get_proxy_fetch_options(false)?
+        Ok(crate::utils::proxy::get_proxy_fetch_options()?
             .pool_max_idle_per_host(0)
             .redirect(reqwest::redirect::Policy::none())
             .build()?)
@@ -5018,22 +5018,14 @@ rl.on('line', line => {
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(&root);
         crate::bootstrap::state::set_original_cwd("/tmp/nyan-project");
         crate::bootstrap::state::set_session_id("session-mcp-large-output-test");
-        let (endpoint, server) = spawn_count_tokens_server(r#"{"inputTokens":999}"#);
+        let (endpoint, server) = spawn_count_tokens_server(r#"{"input_tokens":999}"#);
         let _config_home = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _max_tokens = EnvVarGuard::set("MAX_MCP_OUTPUT_TOKENS", "5");
         let _large_output = EnvVarGuard::set("ENABLE_MCP_LARGE_OUTPUT_FILES", "1");
-        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
-        let _skip_auth = EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "1");
-        let _endpoint = EnvVarGuard::set("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", &endpoint);
-        // Token counting needs a selected main profile to exist; the Bedrock
-        // endpoint above supplies the count, so the profile's own key and URL
-        // are unused here.
-        let _count_key = EnvVarGuard::set("NYAN_MCP_TEST_KEY", "sk-unused-by-bedrock");
+        let _count_key = EnvVarGuard::set("NYAN_MCP_TEST_KEY", "sk-count-tokens");
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::services::provider::anthropic::target::install_test_main_profile(
-            "https://unused.invalid",
+            &endpoint,
             "NYAN_MCP_TEST_KEY",
         );
         struct ResetSettings;

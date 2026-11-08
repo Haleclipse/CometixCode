@@ -78,63 +78,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anthropic-sdk-bedrock"
-version = "0.26.3"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#16dc3e424e7c5041bcc952ebb54d9ec4b2b1ced7"
-dependencies = [
- "anthropic-sdk",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "crc32fast",
- "futures",
- "hex",
- "hmac",
- "pin-project-lite",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "time",
- "tokio",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "anthropic-sdk-foundry"
-version = "0.2.3"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#16dc3e424e7c5041bcc952ebb54d9ec4b2b1ced7"
-dependencies = [
- "anthropic-sdk",
- "chrono",
- "futures",
- "getrandom 0.3.4",
- "reqwest",
- "ryu-js",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "anthropic-sdk-vertex"
-version = "0.14.3"
-source = "git+https://github.com/Haleclipse/anthropic-sdk-rs#16dc3e424e7c5041bcc952ebb54d9ec4b2b1ced7"
-dependencies = [
- "anthropic-sdk",
- "base64 0.22.1",
- "futures",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -827,7 +770,6 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer 0.10.4",
  "crypto-common 0.1.7",
- "subtle",
 ]
 
 [[package]]
@@ -1324,21 +1266,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
  "foldhash",
-]
-
-[[package]]
-name = "hex"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-
-[[package]]
-name = "hmac"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
-dependencies = [
- "digest 0.10.7",
 ]
 
 [[package]]
@@ -2338,9 +2265,6 @@ name = "nyan"
 version = "0.2.0"
 dependencies = [
  "anthropic-sdk",
- "anthropic-sdk-bedrock",
- "anthropic-sdk-foundry",
- "anthropic-sdk-vertex",
  "anyhow",
  "async-channel",
  "base64 0.22.1",

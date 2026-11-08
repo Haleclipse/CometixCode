@@ -1373,7 +1373,6 @@ mod tests {
     fn compute_env_info_matches_official_xml_dirs_and_model_format() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _shell = EnvVarGuard::set("SHELL", "/custom/bin/zsh");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let root = TestDir::new();
         let dirs = vec!["/z-last".to_string(), "/a-first".to_string()];
         let actual = compute_env_info("claude-sonnet-4-6[1m]", &dirs, root.path());
@@ -1429,25 +1428,8 @@ mod tests {
     }
 
     #[test]
-    fn compute_env_info_matches_official_foundry_marketing_name_omission() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _foundry = EnvVarGuard::set("CLAUDE_CODE_USE_FOUNDRY", "1");
-        let root = TestDir::new();
-        let actual = compute_env_info("claude-opus-4-6", &[], root.path());
-        // CC utils/model/model.ts:571-574 declines deployment marketing labels.
-        assert!(!actual.contains("model named"));
-        if !crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Prompts,
-        ) {
-            assert!(actual.contains("You are powered by the model claude-opus-4-6."));
-        }
-        assert!(actual.ends_with("Assistant knowledge cutoff is May 2025."));
-    }
-
-    #[test]
     fn compute_simple_env_info_matches_official_marketing_name_and_undercover_omission() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let root = TestDir::new();
         let actual = compute_simple_env_info_with_cwd("claude-opus-4-5", &[], root.path());
         // CC constants/prompts.ts:659-668 and :691-702 retain the original model

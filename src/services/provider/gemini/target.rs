@@ -94,8 +94,13 @@ pub async fn target_for_profile(
         source,
     };
 
-    let reference = profile.credential.as_ref();
-    let (auth, optional_env) = if let Some(reference) = reference {
+    let reference = profile
+        .credential
+        .as_ref()
+        .ok_or(TargetError::NotConfigured {
+            provider: provider.clone(),
+        })?;
+    let (auth, optional_env) = {
         let source =
             validate_reference(profile.provider_kind, reference).map_err(credential_error)?;
         let opt_env = match &source {
@@ -129,15 +134,6 @@ pub async fn target_for_profile(
             }
         };
         (auth, opt_env)
-    } else {
-        // Fallback: check ambient GEMINI_API_KEY
-        if let Ok(secret_opt) = resolve_env_secret("GEMINI_API_KEY", false)
-            && let Some(secret) = secret_opt
-        {
-            (GeminiAuth::ApiKey(secret), None)
-        } else {
-            return Err(TargetError::NotConfigured { provider });
-        }
     };
 
     Ok(GeminiTarget {

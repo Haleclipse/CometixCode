@@ -443,67 +443,6 @@ fn is_oauth_token_revoked_error(error: &RetryableError) -> bool {
     }
 }
 
-/// Whether the error is a Bedrock auth error.
-///
-/// Maps to: CC `services/api/withRetry.ts:631-644`
-fn is_bedrock_auth_error(error: &RetryableError) -> bool {
-    if !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK").as_deref(),
-    ) {
-        return false;
-    }
-    // AWS libs reject with CredentialsProviderError or API returns 403
-    // TODO: Check for AWS CredentialsProviderError once aws utils are ported.
-    // See CC `utils/aws.ts` isAwsCredentialsProviderError.
-    error.status() == Some(403)
-}
-
-/// Whether the error is a Vertex (GCP) auth error.
-///
-/// Maps to: CC `services/api/withRetry.ts:670-682`
-fn is_vertex_auth_error(error: &RetryableError) -> bool {
-    if !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_USE_VERTEX").as_deref(),
-    ) {
-        return false;
-    }
-    // google-auth-library credential failure messages
-    let msg = error.message();
-    if msg.contains("Could not load the default credentials")
-        || msg.contains("Could not refresh access token")
-        || msg.contains("invalid_grant")
-    {
-        return true;
-    }
-    error.status() == Some(401)
-}
-
-/// Handle AWS credential errors by clearing caches.
-///
-/// Maps to: CC `services/api/withRetry.ts:650-656`
-fn handle_aws_credential_error(error: &RetryableError) -> bool {
-    if is_bedrock_auth_error(error) {
-        // TODO: Call clearAwsCredentialsCache() once auth module is ported.
-        // See CC `utils/auth.ts` clearAwsCredentialsCache.
-        true
-    } else {
-        false
-    }
-}
-
-/// Handle GCP credential errors by clearing caches.
-///
-/// Maps to: CC `services/api/withRetry.ts:688-694`
-fn handle_gcp_credential_error(error: &RetryableError) -> bool {
-    if is_vertex_auth_error(error) {
-        // TODO: Call clearGcpCredentialsCache() once auth module is ported.
-        // See CC `utils/auth.ts` clearGcpCredentialsCache.
-        true
-    } else {
-        false
-    }
-}
-
 /// Whether the error is retryable (standard retry predicate).
 ///
 /// Maps to: CC `services/api/withRetry.ts:696-787`
@@ -873,8 +812,6 @@ where
                 .map(|e| {
                     e.status() == Some(401)
                         || is_oauth_token_revoked_error(e)
-                        || is_bedrock_auth_error(e)
-                        || is_vertex_auth_error(e)
                         || is_stale_connection_error(e)
                 })
                 .unwrap_or(false);
@@ -1026,48 +963,42 @@ where
                     .into());
                 }
 
-                // --- Cloud auth error handling ---
-                // Maps to: CC services/api/withRetry.ts:375-382
-                let handled_cloud_auth =
-                    handle_aws_credential_error(&error) || handle_gcp_credential_error(&error);
-                if !handled_cloud_auth {
-                    match error.as_api() {
-                        // @nyan: an adapter policy already judged this one. A
-                        // max_tokens overflow stays retryable here because the
-                        // adjustment block below repairs it.
-                        Some(api) if error.verdict().is_some() => {
-                            if !matches!(
-                                error.verdict(),
-                                Some(crate::services::provider::retry::Verdict::Retry { .. })
-                            ) && parse_max_tokens_context_overflow(api).is_none()
-                            {
-                                return Err(CannotRetryError {
-                                    original_error: error,
-                                    retry_context,
-                                }
-                                .into());
-                            }
-                        }
-                        Some(api) => {
-                            if !should_retry(api) {
-                                return Err(CannotRetryError {
-                                    original_error: error,
-                                    retry_context,
-                                }
-                                .into());
-                            }
-                        }
-                        None if !error.is_connection() => {
-                            // Non-API, non-connection errors are not retryable
+                match error.as_api() {
+                    // @nyan: an adapter policy already judged this one. A
+                    // max_tokens overflow stays retryable here because the
+                    // adjustment block below repairs it.
+                    Some(api) if error.verdict().is_some() => {
+                        if !matches!(
+                            error.verdict(),
+                            Some(crate::services::provider::retry::Verdict::Retry { .. })
+                        ) && parse_max_tokens_context_overflow(api).is_none()
+                        {
                             return Err(CannotRetryError {
                                 original_error: error,
                                 retry_context,
                             }
                             .into());
                         }
-                        _ => {
-                            // Connection errors are retryable
+                    }
+                    Some(api) => {
+                        if !should_retry(api) {
+                            return Err(CannotRetryError {
+                                original_error: error,
+                                retry_context,
+                            }
+                            .into());
                         }
+                    }
+                    None if !error.is_connection() => {
+                        // Non-API, non-connection errors are not retryable
+                        return Err(CannotRetryError {
+                            original_error: error,
+                            retry_context,
+                        }
+                        .into());
+                    }
+                    _ => {
+                        // Connection errors are retryable
                     }
                 }
 

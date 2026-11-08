@@ -1,9 +1,7 @@
 pub mod agent;
 pub mod ant_models;
-pub mod bedrock;
 pub mod metadata;
 pub mod model;
-pub mod model_support_overrides;
 pub mod pricing;
 pub mod profile;
 pub mod providers;

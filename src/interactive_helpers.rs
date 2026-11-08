@@ -27,15 +27,13 @@ use crate::utils::claudemd::{
     get_external_claude_md_includes, should_show_claude_md_external_includes_warning,
 };
 use crate::utils::config::{
-    CustomApiKeyStatus, GlobalConfig, ProjectConfig, get_custom_api_key_status, load_global_config,
-    normalize_api_key_for_config, normalize_project_path,
+    GlobalConfig, ProjectConfig, load_global_config, normalize_project_path,
 };
 use crate::utils::config::{
     check_has_trust_dialog_accepted, get_current_project_config,
     reset_trust_dialog_accepted_cache_for_testing, save_current_project_config,
 };
 use crate::utils::env as runtime_env;
-use crate::utils::env_utils::is_running_on_homespace;
 use crate::utils::ide::IDEExtensionInstallationStatus;
 use crate::utils::ide::{is_jetbrains_ide, to_ide_display_name};
 use crate::utils::process_env::JsTruthy;
@@ -62,7 +60,6 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SetupScreensSnapshot {
     pub show_onboarding: bool,
-    pub api_key_needing_approval: Option<String>,
     pub offer_terminal_setup: bool,
     pub terminal_name: Option<String>,
     pub show_claude_in_chrome_onboarding: bool,
@@ -76,22 +73,6 @@ pub fn project_config_for_cwd(global_config: &GlobalConfig, cwd: &Path) -> Proje
         .get(&project_key)
         .cloned()
         .unwrap_or_default()
-}
-
-fn api_key_needing_onboarding_approval(
-    global_config: &GlobalConfig,
-    get_env: &impl Fn(&str) -> Option<String>,
-) -> Option<String> {
-    if is_running_on_homespace() {
-        return None;
-    }
-    // CC Onboarding.tsx:132-138: only an empty value is absent, and the
-    // suffix is taken from the value as set; auth matches the same
-    // untrimmed bytes, so a trimmed suffix would never be found approved.
-    let api_key = get_env("ANTHROPIC_API_KEY").truthy()?;
-    let truncated = normalize_api_key_for_config(&api_key);
-    (get_custom_api_key_status(global_config, &truncated) == CustomApiKeyStatus::New)
-        .then_some(truncated)
 }
 
 pub fn setup_screens_snapshot_from_readonly_runtime(
@@ -119,7 +100,6 @@ pub fn setup_screens_snapshot_from_readonly_runtime(
 
     SetupScreensSnapshot {
         show_onboarding,
-        api_key_needing_approval: api_key_needing_onboarding_approval(global_config, get_env),
         offer_terminal_setup: should_offer_terminal_setup_for(terminal_name.as_deref(), platform),
         terminal_name,
         show_claude_in_chrome_onboarding: enable_claude_in_chrome
@@ -404,7 +384,6 @@ fn SetupScreensHost<'a>(
                                     on_done: move |_| {
                                         dismissed.set(true);
                                     },
-                                    api_key_needing_approval: snapshot.api_key_needing_approval.clone(),
                                     offer_terminal_setup: snapshot.offer_terminal_setup,
                                     terminal_name: snapshot.terminal_name.clone(),
                                 )
@@ -556,35 +535,12 @@ fn SetupScreensHost<'a>(
 #[cfg(test)]
 mod setup_screens_snapshot_tests {
     use super::*;
-    use crate::utils::config::CustomApiKeyResponses;
     use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
     use std::fs;
     use std::path::Path;
 
     #[test]
-    fn api_key_needing_approval_keeps_the_key_as_set() {
-        // CC Onboarding.tsx:132-138: `normalizeApiKeyForConfig` of the raw
-        // value, as auth later matches it; only an empty value is absent.
-        let _lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _homespace = EnvVarGuard::unset("COO_RUNNING_ON_HOMESPACE");
-        let config = GlobalConfig::default();
-        let with_key = |value: &'static str| {
-            move |key: &str| (key == "ANTHROPIC_API_KEY").then(|| value.to_string())
-        };
-        assert_eq!(
-            api_key_needing_onboarding_approval(&config, &with_key("sk-ant-test-key\r")),
-            Some(normalize_api_key_for_config("sk-ant-test-key\r"))
-        );
-        assert_eq!(
-            api_key_needing_onboarding_approval(&config, &with_key("")),
-            None
-        );
-    }
-
-    #[test]
-    fn setup_screens_snapshot_matches_official_onboarding_gate_and_api_key_step() {
+    fn setup_screens_snapshot_matches_official_onboarding_gate() {
         let mut config = GlobalConfig::default();
         let snapshot = setup_screens_snapshot_from_readonly_runtime(
             &config,
@@ -607,37 +563,6 @@ mod setup_screens_snapshot_tests {
         );
         assert!(!completed.show_onboarding);
         assert!(!completed.offer_terminal_setup);
-
-        let with_new_key = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|key| {
-                (key == "ANTHROPIC_API_KEY")
-                    .then(|| "sk-ant-abcdefghijklmnopqrstuvwxyz".to_string())
-            },
-            Vec::<String>::new(),
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert_eq!(
-            with_new_key.api_key_needing_approval.as_deref(),
-            Some("ghijklmnopqrstuvwxyz")
-        );
-
-        config.custom_api_key_responses = Some(CustomApiKeyResponses {
-            approved: Some(vec!["ghijklmnopqrstuvwxyz".to_string()]),
-            rejected: None,
-        });
-        let approved_key = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|key| {
-                (key == "ANTHROPIC_API_KEY")
-                    .then(|| "sk-ant-abcdefghijklmnopqrstuvwxyz".to_string())
-            },
-            Vec::<String>::new(),
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert!(approved_key.api_key_needing_approval.is_none());
 
         let demo = setup_screens_snapshot_from_readonly_runtime(
             &GlobalConfig::default(),

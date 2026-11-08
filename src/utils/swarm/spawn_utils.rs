@@ -20,10 +20,6 @@ use crate::utils::swarm::constants::TEAMMATE_COMMAND_ENV_VAR;
 
 /// Maps to: CC `utils/swarm/spawnUtils.ts#TEAMMATE_ENV_VARS`.
 pub const TEAMMATE_ENV_VARS: &[&str] = &[
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_VERTEX",
-    "CLAUDE_CODE_USE_FOUNDRY",
-    "ANTHROPIC_BASE_URL",
     "NYAN_CONFIG_DIR",
     "CLAUDE_CODE_REMOTE",
     "CLAUDE_CODE_REMOTE_MEMORY_DIR",
@@ -202,19 +198,17 @@ mod tests {
     }
 
     #[test]
-    fn build_inherited_env_vars_forwards_official_provider_and_proxy_subset() {
+    fn build_inherited_env_vars_forwards_official_config_and_proxy_subset() {
         let mut env = BTreeMap::new();
-        env.insert("CLAUDE_CODE_USE_VERTEX".to_string(), "1".to_string());
         env.insert(
-            "ANTHROPIC_BASE_URL".to_string(),
-            "https://example.test/with space".to_string(),
+            "NYAN_CONFIG_DIR".to_string(),
+            "/tmp/nyan home/with space".to_string(),
         );
         env.insert("UNRELATED".to_string(), "ignored".to_string());
 
         let rendered = build_inherited_env_vars_from_map(&env);
         assert!(rendered.starts_with("CLAUDECODE=1 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
-        assert!(rendered.contains("CLAUDE_CODE_USE_VERTEX=1"));
-        assert!(rendered.contains("ANTHROPIC_BASE_URL='https://example.test/with space'"));
+        assert!(rendered.contains("NYAN_CONFIG_DIR='/tmp/nyan home/with space'"));
         assert!(!rendered.contains("UNRELATED"));
     }
 

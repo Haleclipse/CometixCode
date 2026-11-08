@@ -61,13 +61,6 @@ fn property(label: &'static str, value: impl Into<String>) -> Property {
     }
 }
 
-fn unlabeled_property(value: impl Into<String>) -> Property {
-    Property {
-        label: None,
-        value: value.into(),
-    }
-}
-
 /// Maps to: CC `utils/status.tsx:286-330` `buildAccountProperties`.
 ///
 /// The rows (login method, auth token source, organization, email) all described
@@ -78,72 +71,11 @@ pub fn build_account_properties() -> Vec<Property> {
     Vec::new()
 }
 
-fn push_env_property(properties: &mut Vec<Property>, label: &'static str, key: &str) {
-    if let Some(value) = crate::utils::process_env::var(key).truthy() {
-        properties.push(property(label, value));
-    }
-}
-
 /// Maps to: CC `utils/status.tsx:332-460` `buildAPIProviderProperties`.
 pub fn build_api_provider_properties() -> Vec<Property> {
-    use crate::utils::model::providers::ApiProvider;
-
-    let provider = crate::utils::model::providers::get_api_provider();
+    // Provider credentials and endpoints come only from the selected nyan
+    // profile, so there is no provider environment row to report.
     let mut properties = Vec::new();
-    match provider {
-        ApiProvider::FirstParty => {
-            push_env_property(&mut properties, "Anthropic base URL", "ANTHROPIC_BASE_URL");
-        }
-        ApiProvider::Bedrock => {
-            properties.push(property("API provider", "AWS Bedrock"));
-            push_env_property(&mut properties, "Bedrock base URL", "BEDROCK_BASE_URL");
-            properties.push(property(
-                "AWS region",
-                crate::utils::env_utils::get_aws_region(),
-            ));
-            if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SKIP_BEDROCK_AUTH").as_deref(),
-            ) {
-                properties.push(unlabeled_property("AWS auth skipped"));
-            }
-        }
-        ApiProvider::Vertex => {
-            properties.push(property("API provider", "Google Vertex AI"));
-            push_env_property(&mut properties, "Vertex base URL", "VERTEX_BASE_URL");
-            push_env_property(
-                &mut properties,
-                "GCP project",
-                "ANTHROPIC_VERTEX_PROJECT_ID",
-            );
-            properties.push(property(
-                "Default region",
-                crate::utils::env_utils::get_default_vertex_region(),
-            ));
-            if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SKIP_VERTEX_AUTH").as_deref(),
-            ) {
-                properties.push(unlabeled_property("GCP auth skipped"));
-            }
-        }
-        ApiProvider::Foundry => {
-            properties.push(property("API provider", "Microsoft Foundry"));
-            push_env_property(
-                &mut properties,
-                "Microsoft Foundry base URL",
-                "ANTHROPIC_FOUNDRY_BASE_URL",
-            );
-            push_env_property(
-                &mut properties,
-                "Microsoft Foundry resource",
-                "ANTHROPIC_FOUNDRY_RESOURCE",
-            );
-            if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SKIP_FOUNDRY_AUTH").as_deref(),
-            ) {
-                properties.push(unlabeled_property("Microsoft Foundry auth skipped"));
-            }
-        }
-    }
 
     // Maps to CC `status.tsx:428-457`.
     let env = crate::utils::process_env::snapshot();
@@ -189,12 +121,6 @@ mod tests {
         ));
         std::fs::write(&cert, "certificate").unwrap();
         let guards = vec![
-            EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1"),
-            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
-            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
-            EnvVarGuard::set("BEDROCK_BASE_URL", "https://bedrock.example"),
-            EnvVarGuard::set("AWS_DEFAULT_REGION", "us-west-2"),
-            EnvVarGuard::set("CLAUDE_CODE_SKIP_BEDROCK_AUTH", "true"),
             EnvVarGuard::set("https_proxy", "http://lowercase-proxy"),
             EnvVarGuard::unset("HTTPS_PROXY"),
             EnvVarGuard::unset("http_proxy"),
@@ -209,10 +135,6 @@ mod tests {
         assert_eq!(
             build_api_provider_properties(),
             vec![
-                property("API provider", "AWS Bedrock"),
-                property("Bedrock base URL", "https://bedrock.example"),
-                property("AWS region", "us-west-2"),
-                unlabeled_property("AWS auth skipped"),
                 property("Proxy", "http://lowercase-proxy"),
                 property("Additional CA cert(s)", "/tmp/ca.pem"),
                 property("mTLS client cert", cert.to_string_lossy()),

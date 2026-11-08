@@ -15,7 +15,6 @@ pub mod auth;
 pub mod auth_file_descriptor;
 pub mod auto_mode_denials;
 pub mod auto_updater;
-pub mod aws_auth_status_manager;
 pub mod background;
 pub mod bash;
 pub mod browser;

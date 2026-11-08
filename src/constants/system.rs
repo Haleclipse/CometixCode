@@ -34,13 +34,6 @@ pub fn get_cli_sysprompt_prefix(
     is_non_interactive: bool,
     has_append_system_prompt: bool,
 ) -> CliSyspromptPrefix {
-    // Maps to: CC `if (apiProvider === 'vertex') return DEFAULT_PREFIX`.
-    if matches!(
-        crate::utils::model::providers::get_api_provider(),
-        crate::utils::model::providers::ApiProvider::Vertex
-    ) {
-        return DEFAULT_PREFIX;
-    }
     if is_non_interactive {
         if has_append_system_prompt {
             return AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX;
@@ -109,7 +102,6 @@ mod tests {
     #[test]
     fn cli_sysprompt_prefix_print_mode_matches_official_agent_sdk_variants() {
         let _env = TEST_ENV_LOCK.lock().unwrap();
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
         // CC `getCLISyspromptPrefix({ isNonInteractive: true })` — `-p` / SDK.
         assert_eq!(
             get_cli_sysprompt_prefix(true, false),

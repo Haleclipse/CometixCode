@@ -420,7 +420,6 @@ pub enum ApiErrorClass {
     TokenRevoked,
     OauthOrgNotAllowed,
     AuthError,
-    BedrockModelAccess,
     ServerError,
     ClientError,
     SslCertError,
@@ -451,7 +450,6 @@ impl ApiErrorClass {
             Self::TokenRevoked => "token_revoked",
             Self::OauthOrgNotAllowed => "oauth_org_not_allowed",
             Self::AuthError => "auth_error",
-            Self::BedrockModelAccess => "bedrock_model_access",
             Self::ServerError => "server_error",
             Self::ClientError => "client_error",
             Self::SslCertError => "ssl_cert_error",
@@ -672,14 +670,6 @@ pub fn classify_api_error(error: &ApiErrorInfo) -> ApiErrorClass {
     // Authentication (x-api-key mention)
     if msg_lower.contains("x-api-key") {
         return ApiErrorClass::InvalidApiKey;
-    }
-
-    // Bedrock model access
-    if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK").as_deref(),
-    ) && msg_lower.contains("model id")
-    {
-        return ApiErrorClass::BedrockModelAccess;
     }
 
     // Connection errors
@@ -1053,26 +1043,6 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
         return create_assistant_api_error_message(
             &content,
             Some(SdkAssistantMessageError::AuthenticationFailed),
-            None,
-        );
-    }
-
-    // --- Bedrock model ID errors ---
-    if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_USE_BEDROCK").as_deref(),
-    ) && msg_lower.contains("model id")
-    {
-        let switch_cmd = if get_is_non_interactive_session() {
-            "--model"
-        } else {
-            "/model"
-        };
-        // TODO(port): Wire get3PModelFallbackSuggestion from CC errors.ts:940-959
-        return create_assistant_api_error_message(
-            &format!(
-                "{API_ERROR_MESSAGE_PREFIX} ({model}): {msg}. Run {switch_cmd} to pick a different model."
-            ),
-            Some(SdkAssistantMessageError::InvalidRequest),
             None,
         );
     }

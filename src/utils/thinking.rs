@@ -2,10 +2,6 @@
 //! Maps to CC `utils/thinking.ts`.
 
 use crate::utils::model::model::get_canonical_name;
-use crate::utils::model::model_support_overrides::{
-    ModelCapabilityOverride, get_3p_model_capability_override,
-};
-use crate::utils::model::providers::{ApiProvider, get_api_provider};
 use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::types::SettingsJson;
 use crate::utils::theme::Theme;
@@ -167,21 +163,14 @@ fn claude_family_version(id: &str) -> Option<(u32, u32)> {
 ///
 /// 1. @nyan: the profile's declared `capabilities.thinking` wins; `none` is
 ///    the only value without thinking.
-/// 2. 3P capability override pinned via `ANTHROPIC_DEFAULT_*_MODEL`.
-/// 3. Internal builds: any configured ant model supports thinking
+/// 2. Internal builds: any configured ant model supports thinking
 ///    (`process.env.USER_TYPE === 'ant' && resolveAntModel(...)`; the L1
 ///    build-profile gate lives inside `resolve_ant_model`).
-/// 4. 1P and Foundry: every model that is not `claude-3-` (including Haiku
-///    4.5 and custom gateway model names).
-/// 5. 3P (Bedrock/Vertex): only Opus 4+ and Sonnet 4+.
+/// 3. Every model that is not `claude-3-` (including Haiku 4.5 and custom
+///    gateway model names).
 pub fn model_supports_thinking(model: &str, profile: Option<&str>) -> bool {
     if let Some(declared) = profile_thinking(model, profile) {
         return declared != "none";
-    }
-    if let Some(supported_3p) =
-        get_3p_model_capability_override(model, ModelCapabilityOverride::Thinking)
-    {
-        return supported_3p;
     }
     if crate::utils::model::ant_models::resolve_ant_model(Some(&model.to_lowercase())).is_some() {
         return true;
@@ -189,48 +178,29 @@ pub fn model_supports_thinking(model: &str, profile: Option<&str>) -> bool {
     // IMPORTANT (CC): Do not change thinking support without notifying the
     // model launch DRI and research. This can greatly affect model quality and
     // bashing.
-    let canonical = get_canonical_name(model);
-    let provider = get_api_provider();
-    // 1P and Foundry: all Claude 4+ models (including Haiku 4.5)
-    if matches!(provider, ApiProvider::Foundry | ApiProvider::FirstParty) {
-        return !canonical.contains("claude-3-");
-    }
-    // 3P (Bedrock/Vertex): only Opus 4+ and Sonnet 4+
-    canonical.contains("sonnet-4") || canonical.contains("opus-4")
+    !get_canonical_name(model).contains("claude-3-")
 }
 
 /// Maps to: CC `utils/thinking.ts:112-144` `modelSupportsAdaptiveThinking(model)`.
 ///
 /// - @nyan: the profile's declared `capabilities.thinking` wins; only
 ///   `adaptive` is adaptive.
-/// - Then the 3P capability override.
 /// - Opus / Sonnet / Haiku from 4.6 on: `true`. Earlier versions reject
 ///   adaptive thinking, and the later ones reject a budget.
 /// - Any other known opus/sonnet/haiku string (Claude 3, no version): `false`.
-/// - Unknown model strings default to `true` on 1P and Foundry (Foundry is a
-///   proxy; newer models are trained on adaptive thinking) and `false` on the
-///   other 3P providers, whose model strings have different formats.
+/// - Unknown model strings default to `true`: newer models are trained on
+///   adaptive thinking.
 pub fn model_supports_adaptive_thinking(model: &str, profile: Option<&str>) -> bool {
     if let Some(declared) = profile_thinking(model, profile) {
         return declared == "adaptive";
-    }
-    if let Some(supported_3p) =
-        get_3p_model_capability_override(model, ModelCapabilityOverride::AdaptiveThinking)
-    {
-        return supported_3p;
     }
     let id = model.to_ascii_lowercase();
     if let Some(version) = claude_family_version(&id) {
         return version >= (4, 6);
     }
-    if ["opus", "sonnet", "haiku"]
+    !["opus", "sonnet", "haiku"]
         .iter()
         .any(|family| id.contains(family))
-    {
-        return false;
-    }
-    let provider = get_api_provider();
-    matches!(provider, ApiProvider::FirstParty | ApiProvider::Foundry)
 }
 
 /// Non-REPL / missing-context fallback for `ThinkingConfig`.
@@ -285,7 +255,7 @@ pub fn production_thinking_config_from_env_and_config(
 mod tests {
     use super::*;
     use crate::utils::settings::types::SettingsJson;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn ultrathink_matching_uses_fresh_case_insensitive_word_boundaries() {
@@ -308,21 +278,9 @@ mod tests {
         );
     }
 
-    fn clear_provider_and_pin_env() -> Vec<EnvVarGuard> {
-        vec![
-            EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
-            EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
-            EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
-            EnvVarGuard::unset("ANTHROPIC_DEFAULT_OPUS_MODEL"),
-            EnvVarGuard::unset("ANTHROPIC_DEFAULT_SONNET_MODEL"),
-            EnvVarGuard::unset("ANTHROPIC_DEFAULT_HAIKU_MODEL"),
-        ]
-    }
-
     #[test]
     fn model_supports_thinking_matches_official_first_party_rule() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _env = clear_provider_and_pin_env();
         // 1P: everything that is not claude-3-, including Haiku 4.5 and
         // gateway-custom names.
         assert!(model_supports_thinking("claude-haiku-4-5-20251001", None));
@@ -332,33 +290,8 @@ mod tests {
     }
 
     #[test]
-    fn model_supports_thinking_matches_official_bedrock_rule_and_override() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _env = clear_provider_and_pin_env();
-        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        // 3P: only Opus 4+ / Sonnet 4+.
-        assert!(model_supports_thinking(
-            "us.anthropic.claude-sonnet-4-20250514-v1:0",
-            None
-        ));
-        assert!(!model_supports_thinking(
-            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
-            None
-        ));
-        assert!(!model_supports_thinking("custom-gateway-model", None));
-        // Pinned capability override wins in both directions.
-        let _pinned = EnvVarGuard::set("ANTHROPIC_DEFAULT_HAIKU_MODEL", "custom-gateway-model");
-        let _caps = EnvVarGuard::set(
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
-            "thinking",
-        );
-        assert!(model_supports_thinking("custom-gateway-model", None));
-    }
-
-    #[test]
     fn model_supports_adaptive_thinking_matches_official_defaults() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _env = clear_provider_and_pin_env();
         assert!(model_supports_adaptive_thinking("claude-opus-4-6", None));
         assert!(model_supports_adaptive_thinking("claude-sonnet-4-6", None));
         assert!(!model_supports_adaptive_thinking(
@@ -366,17 +299,14 @@ mod tests {
             None
         ));
         assert!(!model_supports_adaptive_thinking("claude-opus-4-5", None));
-        // Unknown strings default to true on 1P ...
+        // Unknown strings default to true: newer models are trained on
+        // adaptive thinking.
         assert!(model_supports_adaptive_thinking("deepseek-v4-flash", None));
-        // ... and false on Bedrock/Vertex.
-        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        assert!(!model_supports_adaptive_thinking("deepseek-v4-flash", None));
     }
 
     #[test]
     fn adaptive_thinking_starts_at_version_4_6_in_every_family() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _env = clear_provider_and_pin_env();
         for model in [
             "claude-opus-4-6",
             "claude-opus-4-7",
@@ -445,7 +375,6 @@ mod tests {
     #[test]
     fn a_profile_declared_thinking_wins_over_the_built_in_table() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _env = clear_provider_and_pin_env();
         let _reset = ResetSettings;
 
         // `budgeted` keeps a table-adaptive model on a budget.
@@ -459,7 +388,6 @@ mod tests {
 
         // `adaptive` is believed for a model the table does not know.
         install_profile("gateway-reasoner", Some("adaptive"));
-        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
         assert!(model_supports_adaptive_thinking("gateway-reasoner", None));
         assert!(model_supports_thinking("gateway-reasoner", None));
 
@@ -478,7 +406,6 @@ mod tests {
     #[test]
     fn a_profile_without_thinking_or_for_another_model_falls_back_to_the_table() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _env = clear_provider_and_pin_env();
         let _reset = ResetSettings;
 
         install_profile("claude-opus-5-5", None);
@@ -492,16 +419,9 @@ mod tests {
     }
 
     #[test]
-    fn a_profile_declaration_wins_over_the_3p_capability_override() {
+    fn a_profile_declaration_wins_over_model_name_heuristics() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _env = clear_provider_and_pin_env();
         let _reset = ResetSettings;
-        let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        let _pinned = EnvVarGuard::set("ANTHROPIC_DEFAULT_OPUS_MODEL", "claude-opus-5-5");
-        let _caps = EnvVarGuard::set(
-            "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
-            "thinking",
-        );
 
         install_profile("claude-opus-5-5", Some("adaptive"));
         assert!(model_supports_adaptive_thinking("claude-opus-5-5", None));
@@ -509,9 +429,9 @@ mod tests {
         install_profile("claude-opus-5-5", Some("none"));
         assert!(!model_supports_thinking("claude-opus-5-5", None));
 
-        // Without a declaration the override still applies.
+        // Without a declaration the version table decides.
         install_profile("claude-opus-5-5", None);
-        assert!(!model_supports_adaptive_thinking("claude-opus-5-5", None));
+        assert!(model_supports_adaptive_thinking("claude-opus-5-5", None));
         assert!(model_supports_thinking("claude-opus-5-5", None));
     }
 

@@ -42,7 +42,7 @@ pub fn build_client(pool_idle_timeout_ms: u64) -> anyhow::Result<reqwest::Client
     let (connect_timeout, _) = ServiceKind::Emrank.default_timeouts();
     // Outbound goes through the same proxy construction as external search
     // (§5.2, external-search 4.2 rule 1).
-    crate::utils::proxy::get_proxy_fetch_options(false)?
+    crate::utils::proxy::get_proxy_fetch_options()?
         .connect_timeout(connect_timeout)
         .pool_idle_timeout(std::time::Duration::from_millis(pool_idle_timeout_ms))
         .pool_max_idle_per_host(4)

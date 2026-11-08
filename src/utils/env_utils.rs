@@ -44,51 +44,9 @@ pub fn is_bare_mode() -> bool {
         || std::env::args_os().any(|argument| argument == std::ffi::OsStr::new("--bare"))
 }
 
-/// Maps to: CC `utils/envUtils.ts:96-98` `getAWSRegion`.
-pub fn get_aws_region() -> String {
-    let env = process_env::snapshot();
-    env.var("AWS_REGION")
-        .truthy()
-        .or_else(|| env.var("AWS_DEFAULT_REGION").truthy())
-        .unwrap_or("us-east-1")
-        .to_string()
-}
-
-/// Maps to: CC `utils/envUtils.ts:103-105` `getDefaultVertexRegion`.
-pub fn get_default_vertex_region() -> String {
-    process_env::var("CLOUD_ML_REGION")
-        .truthy()
-        .unwrap_or_else(|| "us-east5".to_string())
-}
-
 /// Maps to: CC `utils/envUtils.ts:111-113` `shouldMaintainProjectWorkingDir`.
 pub fn should_maintain_project_working_dir() -> bool {
     is_env_truthy(process_env::var("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR").as_deref())
-}
-
-/// Maps to: CC `utils/envUtils.ts#getVertexRegionForModel` and its ordered
-/// `VERTEX_REGION_OVERRIDES` table. More-specific prefixes must stay first.
-pub fn get_vertex_region_for_model(model: Option<&str>) -> String {
-    const OVERRIDES: &[(&str, &str)] = &[
-        ("claude-haiku-4-5", "VERTEX_REGION_CLAUDE_HAIKU_4_5"),
-        ("claude-3-5-haiku", "VERTEX_REGION_CLAUDE_3_5_HAIKU"),
-        ("claude-3-5-sonnet", "VERTEX_REGION_CLAUDE_3_5_SONNET"),
-        ("claude-3-7-sonnet", "VERTEX_REGION_CLAUDE_3_7_SONNET"),
-        ("claude-opus-4-1", "VERTEX_REGION_CLAUDE_4_1_OPUS"),
-        ("claude-opus-4", "VERTEX_REGION_CLAUDE_4_0_OPUS"),
-        ("claude-sonnet-4-6", "VERTEX_REGION_CLAUDE_4_6_SONNET"),
-        ("claude-sonnet-4-5", "VERTEX_REGION_CLAUDE_4_5_SONNET"),
-        ("claude-sonnet-4", "VERTEX_REGION_CLAUDE_4_0_SONNET"),
-    ];
-    if let Some((_, variable)) = model.and_then(|model| {
-        OVERRIDES
-            .iter()
-            .find(|(prefix, _)| model.starts_with(prefix))
-    }) && let Some(region) = process_env::var(variable).truthy()
-    {
-        return region;
-    }
-    get_default_vertex_region()
 }
 
 /// Repository-wide mutation gate, independent of transcript persistence.

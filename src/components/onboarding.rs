@@ -2,14 +2,12 @@
 //!
 //! This is the main onboarding shell: official step ordering, WelcomeV2
 //! header, and the steps themselves. Each step owns its keys, as in CC: the
-//! theme step's ThemePicker, the api-key step's `ApproveApiKey` (which
-//! records the answer in `customApiKeyResponses`), and the terminal-setup
-//! step's Select; Onboarding's own confirm:yes / confirm:no bindings sit
-//! in a carrier ahead of the step. There is no sign-in step: Anthropic is
-//! API-key only. Terminal setup delegates to the canonical `terminalSetup`
-//! installer.
+//! theme step's ThemePicker and the terminal-setup step's Select;
+//! Onboarding's own confirm:yes / confirm:no bindings sit in a carrier ahead
+//! of the step. Provider credentials come from settings, so there is no
+//! sign-in or API-key approval step. Terminal setup delegates to the
+//! canonical `terminalSetup` installer.
 
-use crate::components::approve_api_key::ApproveApiKey;
 use crate::components::custom_select::{
     Select, SelectInputOptionMeta, SelectLayout, SelectOptionData, UseSelectInputOptions,
     UseSelectStateProps, use_select_input, use_select_state,
@@ -26,16 +24,15 @@ use iocraft::prelude::*;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OnboardingStepId {
     Theme,
-    ApiKey,
     Security,
     TerminalSetup,
 }
 
 impl OnboardingStepId {
+    #[cfg(test)]
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Theme => "theme",
-            Self::ApiKey => "api-key",
             Self::Security => "security",
             Self::TerminalSetup => "terminal-setup",
         }
@@ -44,7 +41,6 @@ impl OnboardingStepId {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct OnboardingFlowConfig {
-    pub api_key_needing_approval: Option<String>,
     pub offer_terminal_setup: bool,
 }
 
@@ -52,9 +48,6 @@ pub(crate) struct OnboardingFlowConfig {
 pub(crate) fn onboarding_step_ids(config: &OnboardingFlowConfig) -> Vec<OnboardingStepId> {
     let mut steps = Vec::new();
     steps.push(OnboardingStepId::Theme);
-    if config.api_key_needing_approval.is_some() {
-        steps.push(OnboardingStepId::ApiKey);
-    }
     steps.push(OnboardingStepId::Security);
     if config.offer_terminal_setup {
         steps.push(OnboardingStepId::TerminalSetup);
@@ -102,7 +95,6 @@ fn step_from_initial(
 #[derive(Props, Default)]
 pub(crate) struct OnboardingProps<'a> {
     pub on_done: HandlerMut<'a, ()>,
-    pub api_key_needing_approval: Option<String>,
     pub offer_terminal_setup: bool,
     pub initial_step: Option<OnboardingStepId>,
     pub initial_step_index: usize,
@@ -125,7 +117,6 @@ pub(crate) fn Onboarding<'a>(
         .or_else(|| env::get().terminal.clone())
         .unwrap_or_else(|| "unknown".to_string());
     let base_config = OnboardingFlowConfig {
-        api_key_needing_approval: props.api_key_needing_approval.clone(),
         offer_terminal_setup: props.offer_terminal_setup,
     };
     let base_steps = onboarding_step_ids(&base_config);
@@ -141,7 +132,6 @@ pub(crate) fn Onboarding<'a>(
     let exit_state = hooks.use_state(crate::hooks::use_exit::ExitKeyState::default);
 
     let config = OnboardingFlowConfig {
-        api_key_needing_approval: props.api_key_needing_approval.clone(),
         offer_terminal_setup: props.offer_terminal_setup,
     };
     let steps = onboarding_step_ids(&config);
@@ -172,11 +162,6 @@ pub(crate) fn Onboarding<'a>(
             go_to_next_step();
         }
     };
-    // CC :143-148 `handleApiKeyDone`: the answer is recorded by
-    // `ApproveApiKey`; approving or rejecting both go to the next step, since
-    // there is no sign-in step to skip.
-    let handle_api_key_done = move |_approved: bool| go_to_next_step();
-
     // Maps to: CC Onboarding.tsx:207-216, Select onChange's
     // setupTerminal(theme).catch(...).finally(goToNextStep), the
     // `goToNextStep` of the render that chose to install.
@@ -207,13 +192,6 @@ pub(crate) fn Onboarding<'a>(
 
     let body = match current_step {
         Some(OnboardingStepId::Theme) => render_theme_step(handle_theme_selection),
-        Some(OnboardingStepId::ApiKey) => render_api_key_step(
-            props
-                .api_key_needing_approval
-                .as_deref()
-                .unwrap_or_default(),
-            handle_api_key_done,
-        ),
         Some(OnboardingStepId::Security) => render_security_step(theme),
         Some(OnboardingStepId::TerminalSetup) => render_terminal_setup_step(
             theme,
@@ -508,20 +486,6 @@ fn render_terminal_setup_step(
     .into_any()
 }
 
-/// Maps to: CC `Onboarding.tsx:156-165`.
-fn render_api_key_step(
-    custom_api_key_truncated: &str,
-    handle_api_key_done: impl FnMut(bool) + Send + Sync + 'static,
-) -> AnyElement<'static> {
-    element! {
-        ApproveApiKey(
-            custom_api_key_truncated: custom_api_key_truncated.to_string(),
-            on_done: handle_api_key_done,
-        )
-    }
-    .into_any()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,7 +500,6 @@ mod tests {
     }
 
     fn render_onboarding_text(props: OnboardingProps<'static>) -> String {
-        let api_key_needing_approval = props.api_key_needing_approval;
         let offer_terminal_setup = props.offer_terminal_setup;
         let initial_step = props.initial_step;
         let initial_step_index = props.initial_step_index;
@@ -548,7 +511,6 @@ mod tests {
                 crate::state::app_state::AppStateProvider(
                     children: crate::state::app_state::ProviderChildren::new(move || element! {
                         Onboarding(
-                            api_key_needing_approval: api_key_needing_approval.clone(),
                             offer_terminal_setup: offer_terminal_setup,
                             initial_step: initial_step,
                             initial_step_index: initial_step_index,
@@ -570,13 +532,12 @@ mod tests {
         );
         assert_eq!(
             onboarding_step_ids(&OnboardingFlowConfig {
-                api_key_needing_approval: Some("abc".to_string()),
                 offer_terminal_setup: true,
             })
             .into_iter()
             .map(OnboardingStepId::as_str)
             .collect::<Vec<_>>(),
-            vec!["theme", "api-key", "security", "terminal-setup"]
+            vec!["theme", "security", "terminal-setup"]
         );
     }
 
@@ -696,102 +657,6 @@ mod tests {
             frames[2]
         );
         assert!(frames[2].contains("Security notes:"), "{}", frames[2]);
-    }
-
-    #[test]
-    fn onboarding_api_key_answer_goes_to_security_whether_approved_or_rejected() {
-        // CC Onboarding.tsx:143-148 `handleApiKeyDone`. With no sign-in step
-        // both answers continue to Security. The dialog owns its keys and
-        // opens on "No". Terminal setup follows security, so a second step
-        // would show. Writes stay off: the answer's config save is a dry
-        // run here.
-        use crate::components::design_system::theme_provider::{ThemeProvider, ThemeSaveHandler};
-        use crate::utils::theme::{ThemeName, ThemeSetting};
-
-        #[component]
-        fn KeyEcho(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-            let mut keys = hooks.use_state(|| 0usize);
-            hooks.use_terminal_events(move |event| {
-                if matches!(event, TerminalEvent::Key(key) if key.kind == KeyEventKind::Press) {
-                    keys.set(keys.get() + 1);
-                }
-            });
-            element! { Text(content: format!("keys={} pressed", keys.get())) }
-        }
-
-        #[component]
-        fn ApiKeyStepHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-            let runtime = crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
-                &mut hooks,
-                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
-            );
-            element! {
-                ContextProvider(value: Context::owned(runtime)) {
-                    ThemeProvider(
-                        initial_state: Some(ThemeSetting::Named(ThemeName::Dark)),
-                        on_theme_save: Some(Arc::new(|_| {}) as ThemeSaveHandler),
-                    ) {
-                        crate::state::app_state::AppStateProvider(
-                            children: crate::state::app_state::ProviderChildren::new(|| element! {
-                                View(flex_direction: FlexDirection::Column) {
-                                    Onboarding(
-                                        api_key_needing_approval: Some("abcd1234".to_string()),
-                                        offer_terminal_setup: true,
-                                        initial_step: Some(OnboardingStepId::ApiKey),
-                                        terminal_name: Some("xterm".to_string()),
-                                    )
-                                    KeyEcho
-                                }
-                            }.into_any()),
-                        )
-                    }
-                }
-            }
-        }
-
-        // Each batch in one go once the previous one has a frame, then an
-        // unbound F12 for the step to settle.
-        let run = |batches: Vec<Vec<KeyCode>>| {
-            futures::executor::block_on(async move {
-                let (keys, events) = async_channel::unbounded();
-                let mut app = element!(ApiKeyStepHarness);
-                let mut render_loop = Box::pin(app.mock_terminal_render_loop(
-                    MockTerminalConfig::with_events(events).with_size(120, 40),
-                ));
-                let mut batches = batches;
-                batches.push(vec![KeyCode::F(12)]);
-                let mut next_batch = 0;
-                let mut sent = 0;
-                let mut last = String::new();
-                while let Some(canvas) = render_loop.next().await {
-                    last = canvas.to_string();
-                    if !last.contains(&format!("keys={sent} ")) {
-                        continue;
-                    }
-                    let Some(batch) = batches.get(next_batch) else {
-                        break;
-                    };
-                    for code in batch {
-                        keys.send(key(*code)).await.unwrap();
-                    }
-                    sent += batch.len();
-                    next_batch += 1;
-                }
-                last
-            })
-        };
-
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _no_write = EnvVarGuard::unset("NYAN_WRITE_ENABLED");
-        let approved = run(vec![vec![KeyCode::Up], vec![KeyCode::Enter]]);
-        assert!(approved.contains("Security notes:"), "{approved}");
-        let rejected = run(vec![vec![KeyCode::Enter]]);
-        assert!(rejected.contains("Security notes:"), "{rejected}");
-        // An answer and Esc in one read are one answer, one step.
-        let rejected = run(vec![vec![KeyCode::Enter, KeyCode::Esc]]);
-        assert!(rejected.contains("Security notes:"), "{rejected}");
-        let approved = run(vec![vec![KeyCode::Up], vec![KeyCode::Enter, KeyCode::Esc]]);
-        assert!(approved.contains("Security notes:"), "{approved}");
     }
 
     #[derive(Default, Props)]

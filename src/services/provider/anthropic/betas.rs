@@ -6,14 +6,9 @@ pub use crate::constants::betas::{
     CONTEXT_1M_BETA_HEADER, CONTEXT_MANAGEMENT_BETA_HEADER, EFFORT_BETA_HEADER,
     INTERLEAVED_THINKING_BETA_HEADER, PROMPT_CACHING_SCOPE_BETA_HEADER,
     REDACT_THINKING_BETA_HEADER, STRUCTURED_OUTPUTS_BETA_HEADER, TASK_BUDGETS_BETA_HEADER,
-    TOOL_SEARCH_BETA_HEADER_1P, TOOL_SEARCH_BETA_HEADER_3P, WEB_SEARCH_BETA_HEADER,
+    TOOL_SEARCH_BETA_HEADER_1P,
 };
 use crate::utils::model::model::get_canonical_name;
-use crate::utils::model::model_support_overrides::{
-    ModelCapabilityOverride, get_3p_model_capability_override,
-};
-use crate::utils::model::providers::{ApiProvider, get_api_provider};
-use crate::utils::process_env::JsTruthy;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
@@ -38,7 +33,6 @@ struct AutoModeConfig {
 /// test seam; this helper carries no separate policy or state.
 fn model_supports_auto_mode_for(
     model: &str,
-    provider: ApiProvider,
     internal_build: bool,
     transcript_classifier_enabled: bool,
     allow_models: &[String],
@@ -48,12 +42,6 @@ fn model_supports_auto_mode_for(
     }
 
     let canonical = get_canonical_name(model);
-    // External Auto mode is first-party only. This guard intentionally runs
-    // before allowModels so a cached override cannot enable another provider.
-    if !internal_build && provider != ApiProvider::FirstParty {
-        return false;
-    }
-
     let raw_lower = model.to_ascii_lowercase();
     if allow_models.iter().any(|allowed| {
         let allowed = allowed.to_ascii_lowercase();
@@ -102,7 +90,6 @@ pub fn model_supports_auto_mode(model: &str) -> bool {
     };
     model_supports_auto_mode_for(
         model,
-        get_api_provider(),
         internal_build,
         transcript_classifier_enabled,
         &allow_models,
@@ -117,72 +104,37 @@ fn has_1m_context(model: &str) -> bool {
 
 /// Maps to CC `utils/betas.ts:92-111` `modelSupportsISP(...)`.
 pub fn model_supports_isp(model: &str) -> bool {
-    if let Some(supported_3p) =
-        get_3p_model_capability_override(model, ModelCapabilityOverride::InterleavedThinking)
-    {
-        return supported_3p;
-    }
     let canonical = canonical_model(model);
-    let provider = get_api_provider();
-    // Foundry supports interleaved thinking for all models
-    if provider == ApiProvider::Foundry {
-        return true;
-    }
-    if provider == ApiProvider::FirstParty {
-        return !canonical.contains("claude-3-");
-    }
-    canonical.contains("claude-opus-4") || canonical.contains("claude-sonnet-4")
+    !canonical.contains("claude-3-")
 }
 
 /// Maps to CC `utils/betas.ts` `modelSupportsContextManagement(...)`.
 pub fn model_supports_context_management(model: &str) -> bool {
-    let provider = get_api_provider();
-    if provider == ApiProvider::Foundry {
-        return true;
-    }
     let canonical = canonical_model(model);
-    if provider == ApiProvider::FirstParty {
-        return !canonical.contains("claude-3-");
-    }
-    canonical.contains("claude-opus-4")
-        || canonical.contains("claude-sonnet-4")
-        || canonical.contains("claude-haiku-4")
+    !canonical.contains("claude-3-")
 }
 
 /// Maps to CC `utils/betas.ts` `shouldIncludeFirstPartyOnlyBetas(...)`.
 pub fn should_include_first_party_only_betas() -> bool {
-    matches!(
-        get_api_provider(),
-        ApiProvider::FirstParty | ApiProvider::Foundry
-    ) && !crate::utils::env_utils::is_env_truthy(
+    !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
     )
 }
 
 /// Maps to CC `utils/betas.ts` `shouldUseGlobalCacheScope(...)`.
 pub fn should_use_global_cache_scope() -> bool {
-    get_api_provider() == ApiProvider::FirstParty
-        && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
-        )
+    !crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
+    )
 }
 
 /// Maps to CC `utils/betas.ts` `getToolSearchBetaHeader(...)`.
 pub fn get_tool_search_beta_header() -> &'static str {
-    match get_api_provider() {
-        ApiProvider::Bedrock | ApiProvider::Vertex => TOOL_SEARCH_BETA_HEADER_3P,
-        ApiProvider::FirstParty | ApiProvider::Foundry => TOOL_SEARCH_BETA_HEADER_1P,
-    }
+    TOOL_SEARCH_BETA_HEADER_1P
 }
 
 /// Maps to CC `utils/betas.ts` `modelSupportsStructuredOutputs(...)`.
 pub fn model_supports_structured_outputs(model: &str) -> bool {
-    if !matches!(
-        get_api_provider(),
-        ApiProvider::FirstParty | ApiProvider::Foundry
-    ) {
-        return false;
-    }
     let canonical = canonical_model(model);
     canonical.contains("claude-sonnet-4-6")
         || canonical.contains("claude-sonnet-4-5")
@@ -192,18 +144,9 @@ pub fn model_supports_structured_outputs(model: &str) -> bool {
         || canonical.contains("claude-haiku-4-5")
 }
 
-fn vertex_model_supports_web_search(model: &str) -> bool {
-    let canonical = canonical_model(model);
-    canonical.contains("claude-opus-4")
-        || canonical.contains("claude-sonnet-4")
-        || canonical.contains("claude-haiku-4")
-}
-
 static ALL_MODEL_BETAS_CACHE: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static MODEL_BETAS_CACHE: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-static BEDROCK_EXTRA_BODY_BETAS_CACHE: LazyLock<Mutex<HashMap<String, Vec<String>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Maps to: CC `utils/betas.ts:234-369` memoized `getAllModelBetas`.
@@ -219,7 +162,6 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
     }
 
     let mut beta_headers = Vec::new();
-    let provider = get_api_provider();
     let include_first_party_only_betas = should_include_first_party_only_betas();
 
     if !is_haiku(model) {
@@ -271,35 +213,12 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
         beta_headers.push(STRUCTURED_OUTPUTS_BETA_HEADER.to_string());
     }
 
-    if provider == ApiProvider::Vertex && vertex_model_supports_web_search(model) {
-        beta_headers.push(WEB_SEARCH_BETA_HEADER.to_string());
-    }
-    if provider == ApiProvider::Foundry {
-        beta_headers.push(WEB_SEARCH_BETA_HEADER.to_string());
-    }
-
     if include_first_party_only_betas {
         beta_headers.push(PROMPT_CACHING_SCOPE_BETA_HEADER.to_string());
     }
 
-    if let Some(extra_betas) = crate::utils::process_env::var("ANTHROPIC_BETAS").truthy() {
-        beta_headers.extend(
-            extra_betas
-                .split(',')
-                .map(str::trim)
-                .filter(|beta| !beta.is_empty())
-                .map(str::to_string),
-        );
-    }
-
     cache.insert(model.to_string(), beta_headers.clone());
     beta_headers
-}
-
-fn bedrock_extra_params_header(header: &str) -> bool {
-    header == INTERLEAVED_THINKING_BETA_HEADER
-        || header == CONTEXT_1M_BETA_HEADER
-        || header == TOOL_SEARCH_BETA_HEADER_3P
 }
 
 /// Maps to: CC `utils/betas.ts:371-377` memoized `getModelBetas`.
@@ -312,33 +231,8 @@ pub fn get_model_betas(model: &str) -> Vec<String> {
     {
         return betas;
     }
-    let mut beta_headers = get_all_model_betas(model);
-    if get_api_provider() == ApiProvider::Bedrock {
-        beta_headers.retain(|header| !bedrock_extra_params_header(header));
-    }
+    let beta_headers = get_all_model_betas(model);
     MODEL_BETAS_CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .insert(model.to_string(), beta_headers.clone());
-    beta_headers
-}
-
-/// Maps to: CC `utils/betas.ts:379-385` memoized
-/// `getBedrockExtraBodyParamsBetas`.
-pub fn get_bedrock_extra_body_params_betas(model: &str) -> Vec<String> {
-    if let Some(betas) = BEDROCK_EXTRA_BODY_BETAS_CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .get(model)
-        .cloned()
-    {
-        return betas;
-    }
-    let beta_headers = get_all_model_betas(model)
-        .into_iter()
-        .filter(|header| bedrock_extra_params_header(header))
-        .collect::<Vec<_>>();
-    BEDROCK_EXTRA_BODY_BETAS_CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .insert(model.to_string(), beta_headers.clone());
@@ -379,86 +273,56 @@ pub fn clear_betas_caches() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clear();
-    BEDROCK_EXTRA_BODY_BETAS_CACHE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clear();
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
-    fn auto_mode_model_gate_matches_official_provider_audience_and_allowlist_order() {
+    fn auto_mode_model_gate_matches_official_allowlist_order() {
         assert!(!model_supports_auto_mode_for(
             "claude-sonnet-4-6",
-            ApiProvider::FirstParty,
             false,
             false,
             &["claude-sonnet-4-6".to_string()],
         ));
-        for provider in [
-            ApiProvider::Bedrock,
-            ApiProvider::Vertex,
-            ApiProvider::Foundry,
-        ] {
-            assert!(!model_supports_auto_mode_for(
-                "claude-sonnet-4-6",
-                provider,
-                false,
-                true,
-                &["claude-sonnet-4-6".to_string()],
-            ));
-        }
         for model in ["claude-opus-4-6", "claude-sonnet-4-6"] {
-            assert!(model_supports_auto_mode_for(
-                model,
-                ApiProvider::FirstParty,
-                false,
-                true,
-                &[],
-            ));
+            assert!(model_supports_auto_mode_for(model, false, true, &[],));
         }
         assert!(!model_supports_auto_mode_for(
             "claude-haiku-4-5",
-            ApiProvider::FirstParty,
             false,
             true,
             &[],
         ));
         assert!(model_supports_auto_mode_for(
             "CLAUDE-HAIKU-4-5",
-            ApiProvider::FirstParty,
             false,
             true,
             &["claude-haiku-4-5".to_string()],
         ));
         assert!(model_supports_auto_mode_for(
             "any-internal-model",
-            ApiProvider::Bedrock,
             true,
             true,
             &[],
         ));
         assert!(!model_supports_auto_mode_for(
             "claude-3-5-sonnet",
-            ApiProvider::FirstParty,
             true,
             true,
             &[],
         ));
         assert!(!model_supports_auto_mode_for(
             "claude-opus-4-5",
-            ApiProvider::FirstParty,
             true,
             true,
             &[],
         ));
         assert!(model_supports_auto_mode_for(
             "claude-3-5-sonnet",
-            ApiProvider::FirstParty,
             true,
             true,
             &["CLAUDE-3-5-SONNET".to_string()],
@@ -475,14 +339,8 @@ mod tests {
     }
 
     #[test]
-    fn public_auto_mode_gate_ignores_cached_config_and_matches_provider_rules() {
+    fn public_auto_mode_gate_ignores_cached_config_and_matches_family_rules() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let provider_vars = [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-        ];
-        let _providers = provider_vars.map(EnvVarGuard::unset);
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
             "tengu_auto_mode_config".to_string(),
@@ -498,26 +356,14 @@ mod tests {
         } else {
             assert!(!model_supports_auto_mode("internal-cached-model"));
         }
-        crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        if cfg!(feature = "anthropic_internal") {
-            assert!(model_supports_auto_mode("internal-cached-model"));
-        } else {
-            assert!(!model_supports_auto_mode("internal-cached-model"));
-            assert!(!model_supports_auto_mode("claude-sonnet-4-6"));
-        }
-        drop(_providers);
         crate::utils::config::set_test_global_config(None);
     }
 
     #[test]
     fn get_model_betas_matches_official_first_party_agentic_headers() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_1M_CONTEXT");
-        crate::utils::process_env::remove("ANTHROPIC_BETAS");
         crate::utils::process_env::remove("CLAUDE_CODE_ENTRYPOINT");
         clear_betas_caches();
 
@@ -531,134 +377,10 @@ mod tests {
 
     #[test]
     fn model_supports_structured_outputs_matches_current_official_allowlist_shape() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
         assert!(model_supports_structured_outputs("claude-sonnet-4-6"));
         assert!(!model_supports_structured_outputs(
             "claude-sonnet-4-20250514"
         ));
-        crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
-        assert!(!model_supports_structured_outputs("claude-sonnet-4-6"));
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-    }
-
-    #[test]
-    fn bedrock_model_betas_are_split_between_header_and_extra_body_like_official() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_VERTEX");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_1M_CONTEXT");
-        crate::utils::process_env::remove("DISABLE_INTERLEAVED_THINKING");
-        crate::utils::process_env::set("ANTHROPIC_BETAS", STRUCTURED_OUTPUTS_BETA_HEADER);
-        clear_betas_caches();
-
-        let header_betas = get_model_betas("claude-sonnet-4-20250514[1m]");
-        let body_betas = get_bedrock_extra_body_params_betas("claude-sonnet-4-20250514[1m]");
-
-        assert!(!header_betas.contains(&CONTEXT_1M_BETA_HEADER.to_string()));
-        assert!(!header_betas.contains(&INTERLEAVED_THINKING_BETA_HEADER.to_string()));
-        assert!(body_betas.contains(&CONTEXT_1M_BETA_HEADER.to_string()));
-        assert!(body_betas.contains(&INTERLEAVED_THINKING_BETA_HEADER.to_string()));
-        assert!(header_betas.contains(&STRUCTURED_OUTPUTS_BETA_HEADER.to_string()));
-        assert!(!body_betas.contains(&STRUCTURED_OUTPUTS_BETA_HEADER.to_string()));
-
-        crate::utils::process_env::remove("ANTHROPIC_BETAS");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        clear_betas_caches();
-    }
-
-    #[test]
-    fn model_and_bedrock_split_memos_preserve_raw_key_chronology_matches_official() {
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for key in [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
-            "DISABLE_INTERLEAVED_THINKING",
-            "ANTHROPIC_BETAS",
-        ] {
-            crate::utils::process_env::remove(key);
-        }
-        clear_betas_caches();
-        let raw = "claude-sonnet-4-20250514[1m]";
-        let first_party_header = get_model_betas(raw);
-        assert!(first_party_header.contains(&CONTEXT_1M_BETA_HEADER.to_string()));
-        assert!(first_party_header.contains(&INTERLEAVED_THINKING_BETA_HEADER.to_string()));
-
-        crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        assert_eq!(get_model_betas(raw), first_party_header);
-        let body_after_flip = get_bedrock_extra_body_params_betas(raw);
-        assert!(body_after_flip.contains(&CONTEXT_1M_BETA_HEADER.to_string()));
-        assert!(body_after_flip.contains(&INTERLEAVED_THINKING_BETA_HEADER.to_string()));
-
-        clear_betas_caches();
-        let recomputed_header = get_model_betas(raw);
-        let recomputed_body = get_bedrock_extra_body_params_betas(raw);
-        assert!(!recomputed_header.contains(&CONTEXT_1M_BETA_HEADER.to_string()));
-        assert!(!recomputed_header.contains(&INTERLEAVED_THINKING_BETA_HEADER.to_string()));
-        assert!(recomputed_body.contains(&CONTEXT_1M_BETA_HEADER.to_string()));
-        assert!(recomputed_body.contains(&INTERLEAVED_THINKING_BETA_HEADER.to_string()));
-
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_BEDROCK");
-        clear_betas_caches();
-    }
-
-    #[test]
-    fn structured_outputs_model_provider_matrix_matches_official_canonical_policy() {
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _providers = [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-        ]
-        .map(EnvVarGuard::unset);
-        let supported_models = [
-            "claude-sonnet-4-6",
-            "claude-sonnet-4-5-20250929",
-            "claude-opus-4-1",
-            "claude-opus-4-5",
-            "claude-opus-4-6-20260101[1m]",
-            "CLAUDE-HAIKU-4-5",
-        ];
-        for model in supported_models {
-            assert!(model_supports_structured_outputs(model), "model={model}");
-        }
-        for model in [
-            "claude-3-5-sonnet",
-            "claude-sonnet-4-20250514",
-            "claude-sonnet-4-1",
-            "claude-opus-4",
-            "custom-model",
-        ] {
-            assert!(!model_supports_structured_outputs(model), "model={model}");
-        }
-
-        crate::utils::process_env::set("CLAUDE_CODE_USE_FOUNDRY", "1");
-        for model in supported_models {
-            assert!(model_supports_structured_outputs(model), "foundry={model}");
-        }
-        crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
-        for model in supported_models {
-            assert!(!model_supports_structured_outputs(model), "vertex={model}");
-        }
-        crate::utils::process_env::set("CLAUDE_CODE_USE_BEDROCK", "1");
-        for model in supported_models {
-            assert!(!model_supports_structured_outputs(model), "bedrock={model}");
-        }
-        for key in [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-        ] {
-            crate::utils::process_env::remove(key);
-        }
     }
 
     #[test]
@@ -668,13 +390,9 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
             "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
             "DISABLE_TELEMETRY",
             "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-            "ANTHROPIC_BETAS",
         ] {
             crate::utils::process_env::remove(key);
         }
@@ -705,7 +423,6 @@ mod tests {
             .expect("prompt caching scope header");
         assert!(context_index < cache_scope_index);
 
-        crate::utils::process_env::set("CLAUDE_CODE_USE_VERTEX", "1");
         crate::utils::process_env::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
         assert!(
             get_all_model_betas(raw)
@@ -725,98 +442,11 @@ mod tests {
                 .any(|beta| beta == CONTEXT_MANAGEMENT_BETA_HEADER)
         );
 
-        for key in [
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
-        ] {
-            crate::utils::process_env::remove(key);
-        }
+        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         assert!(
             !get_all_model_betas(raw)
                 .iter()
                 .any(|beta| beta == CONTEXT_MANAGEMENT_BETA_HEADER)
-        );
-
-        crate::utils::config::set_test_global_config(None);
-        clear_betas_caches();
-    }
-
-    #[cfg(feature = "anthropic_internal")]
-    #[test]
-    fn foundry_config_override_no_longer_reaches_strict_tools_gate() {
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for key in [
-            "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
-            "DISABLE_TELEMETRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-        ] {
-            crate::utils::process_env::remove(key);
-        }
-        crate::utils::process_env::set("CLAUDE_CODE_USE_FOUNDRY", "1");
-        clear_betas_caches();
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(true),
-        )]));
-        crate::utils::config::set_test_global_config(Some(config));
-
-        assert!(
-            !get_all_model_betas("claude-sonnet-4-6")
-                .iter()
-                .any(|beta| beta == STRUCTURED_OUTPUTS_BETA_HEADER)
-        );
-
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_FOUNDRY");
-        crate::utils::config::set_test_global_config(None);
-        clear_betas_caches();
-    }
-
-    #[test]
-    fn anthropic_betas_duplicates_and_raw_alias_memo_keys_matches_official() {
-        let _env_guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        for key in [
-            "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
-            "DISABLE_TELEMETRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-        ] {
-            crate::utils::process_env::remove(key);
-        }
-        crate::services::analytics::growthbook::reset_growth_book();
-        crate::utils::config::set_test_global_config(Some(
-            crate::utils::config::GlobalConfig::default(),
-        ));
-        clear_betas_caches();
-        crate::utils::process_env::set(
-            "ANTHROPIC_BETAS",
-            format!("{0},{0}", STRUCTURED_OUTPUTS_BETA_HEADER),
-        );
-        let duplicated = get_all_model_betas("claude-sonnet-4-6");
-        assert_eq!(
-            duplicated
-                .iter()
-                .filter(|beta| beta.as_str() == STRUCTURED_OUTPUTS_BETA_HEADER)
-                .count(),
-            2
-        );
-
-        crate::utils::process_env::remove("ANTHROPIC_BETAS");
-        assert_eq!(get_all_model_betas("claude-sonnet-4-6"), duplicated);
-        assert!(
-            !get_all_model_betas("CLAUDE-SONNET-4-6")
-                .iter()
-                .any(|beta| beta == STRUCTURED_OUTPUTS_BETA_HEADER)
         );
 
         crate::utils::config::set_test_global_config(None);

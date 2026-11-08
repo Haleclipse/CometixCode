@@ -137,7 +137,7 @@ pub async fn post_json_classified(
     if cancel.is_aborted() {
         return Err(aborted());
     }
-    let client = crate::utils::proxy::get_proxy_fetch_options(false)
+    let client = crate::utils::proxy::get_proxy_fetch_options()
         .and_then(|builder| {
             builder
                 .connect_timeout(connect_timeout)
@@ -230,7 +230,7 @@ pub async fn post_stream_classified(
     if cancel.is_aborted() {
         return Err(aborted());
     }
-    let client = crate::utils::proxy::get_proxy_fetch_options(false)
+    let client = crate::utils::proxy::get_proxy_fetch_options()
         .and_then(|builder| {
             builder
                 .connect_timeout(connect_timeout)

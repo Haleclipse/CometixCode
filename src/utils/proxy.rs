@@ -243,31 +243,11 @@ pub fn get_proxy_agent(uri: &str) -> anyhow::Result<reqwest::ClientBuilder> {
 /// for `fetch`, here a client builder that carries it. Callers add their own
 /// request options (timeout, redirects) and build, as CC's spread the options
 /// into their own `fetch` init.
-/// - `for_anthropic_api` with `ANTHROPIC_UNIX_SOCKET`: that socket, without
-///   proxy or TLS options. CC does this only under Bun, which Nyan, a
-///   native binary, follows. Unix only; elsewhere the variable is ignored.
 /// - A proxy: [`get_proxy_agent`].
 /// - Otherwise the mTLS and CA options if any (`getTLSFetchOptions`,
 ///   `mtls.ts:117-152`), else the defaults.
-///
-/// CC's plain `fetch` calls take undici's global dispatcher, which
-/// `configureGlobalAgents` sets to the same agent (`:370-386`); they map here
-/// with `for_anthropic_api: false`.
-pub fn get_proxy_fetch_options(for_anthropic_api: bool) -> anyhow::Result<reqwest::ClientBuilder> {
+pub fn get_proxy_fetch_options() -> anyhow::Result<reqwest::ClientBuilder> {
     let env = crate::utils::process_env::snapshot();
-
-    if for_anthropic_api && let Some(unix_socket) = env.var("ANTHROPIC_UNIX_SOCKET").truthy() {
-        // `.no_proxy()`: reqwest ignores proxies on a socket but would
-        // still attach a system proxy's credentials to the request.
-        #[cfg(unix)]
-        return Ok(fetch_builder(
-            client_builder().no_proxy().unix_socket(unix_socket),
-        ));
-        #[cfg(not(unix))]
-        log_for_debugging(&format!(
-            "ANTHROPIC_UNIX_SOCKET={unix_socket} is not supported on this platform; ignored"
-        ));
-    }
 
     if let Some(proxy_url) = get_proxy_url(&env) {
         return get_proxy_agent(&proxy_url);
@@ -455,13 +435,12 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();
-        let _socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
 
         let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_address = proxy.local_addr().unwrap();
         crate::utils::process_env::set("HTTPS_PROXY", format!("http://{proxy_address}"));
         let seen = tokio::spawn(accept_one(proxy));
-        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
+        let client = get_proxy_fetch_options().unwrap().build().unwrap();
         let response = client
             .get("http://origin.invalid/v1/models")
             .send()
@@ -479,7 +458,7 @@ mod tests {
         let origin_address = origin.local_addr().unwrap();
         crate::utils::process_env::set("NO_PROXY", "127.0.0.1");
         let seen = tokio::spawn(accept_one(origin));
-        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
+        let client = get_proxy_fetch_options().unwrap().build().unwrap();
         let response = client
             .get(format!("http://{origin_address}/direct"))
             .send()
@@ -489,7 +468,7 @@ mod tests {
         assert!(seen.await.unwrap().starts_with("GET /direct HTTP/1.1"));
 
         crate::utils::process_env::set("HTTPS_PROXY", "ftp://proxy:21");
-        assert!(get_proxy_fetch_options(true).is_err());
+        assert!(get_proxy_fetch_options().is_err());
     }
 
     /// Connections a server accepts while answering `requests` sequential
@@ -516,7 +495,7 @@ mod tests {
                 });
             }
         });
-        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
+        let client = get_proxy_fetch_options().unwrap().build().unwrap();
         for _ in 0..requests {
             let response = client
                 .get(format!("http://{address}/"))
@@ -536,7 +515,6 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _env = clear_proxy_env();
-        let _socket = EnvVarGuard::unset("ANTHROPIC_UNIX_SOCKET");
         // reqwest's system proxy matcher reads the OS `NO_PROXY`, which
         // `just test` pins to loopback; this carrier value no longer reaches it.
         let _no_proxy = EnvVarGuard::set("NO_PROXY", "127.0.0.1");
@@ -545,54 +523,5 @@ mod tests {
         disable_keep_alive();
         assert_eq!(connections_for(2).await, 2);
         reset_keep_alive_for_testing();
-    }
-
-    /// CC `getProxyFetchOptions({ forAnthropicAPI: true })` under Bun: the
-    /// socket alone. A proxy in the environment adds no credentials to it.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn unix_socket_carries_only_the_anthropic_api_client() {
-        let _lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _env = clear_proxy_env();
-        // Socket paths are capped near 104 bytes on macOS.
-        let path = std::env::temp_dir().join(format!(
-            "cx-{}.sock",
-            &uuid::Uuid::new_v4().simple().to_string()[..8]
-        ));
-        let listener = tokio::net::UnixListener::bind(&path).unwrap();
-        let _socket = EnvVarGuard::set("ANTHROPIC_UNIX_SOCKET", &path);
-        let _proxy = EnvVarGuard::set("HTTP_PROXY", "http://user:secret@127.0.0.1:9");
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                let mut buffer = [0; 4096];
-                let count = stream.read(&mut buffer).await.unwrap();
-                assert_ne!(count, 0, "HTTP request ended before headers");
-                request.extend_from_slice(&buffer[..count]);
-            }
-            stream
-                .write_all(b"HTTP/1.1 204 No Content\r\nconnection: close\r\n\r\n")
-                .await
-                .unwrap();
-            String::from_utf8_lossy(&request).to_ascii_lowercase()
-        });
-        let client = get_proxy_fetch_options(true).unwrap().build().unwrap();
-        let response = client
-            .get("http://localhost/v1/models")
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), 204);
-        let request = server.await.unwrap();
-        assert!(request.starts_with("get /v1/models http/1.1"), "{request}");
-        assert!(!request.contains("proxy-authorization"), "{request}");
-
-        // Other fetch clients take the proxy instead.
-        crate::utils::process_env::set("HTTP_PROXY", "ftp://proxy:21");
-        assert!(get_proxy_fetch_options(false).is_err());
-        let _ = std::fs::remove_file(path);
     }
 }

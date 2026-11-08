@@ -6,29 +6,10 @@
 //! `utils/provider_auth`.
 
 use crate::utils::auth_file_descriptor::get_api_key_from_file_descriptor;
-use crate::utils::config::{GlobalConfig, normalize_api_key_for_config};
-use crate::utils::env_utils::is_running_on_homespace;
 use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::SettingSource;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
-
-/// Credential shape returned by CC `utils/auth.ts#refreshAndGetAwsCredentials`.
-#[derive(Clone, Debug)]
-pub struct AwsCredentials {
-    pub access_key_id: String,
-    pub secret_access_key: String,
-    pub session_token: Option<String>,
-}
-
-/// Maps to: CC `utils/auth.ts#refreshAndGetAwsCredentials`.
-///
-/// The official owner returns credentials only from its configured
-/// auth-refresh/export flow. That lifecycle is not yet ported; callers must
-/// continue to delegate the ordinary credential chain to the provider SDK.
-pub async fn refresh_and_get_aws_credentials() -> Option<AwsCredentials> {
-    None
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum AuthIoOperation {
@@ -113,13 +94,6 @@ pub struct AnthropicApiKeyWithSource {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct GetAnthropicApiKeyOptions {
     pub skip_retrieving_key_from_api_key_helper: bool,
-}
-
-fn env_value(get_env: &impl Fn(&str) -> Option<String>, key: &str) -> Option<String> {
-    // JavaScript `process.env[key]` truthiness rejects only the empty string;
-    // callers that parse booleans or numbers apply their own source-defined
-    // whitespace handling. Credential bytes must remain unmodified.
-    get_env(key).truthy()
 }
 
 /// Maps to: CC `utils/auth.ts:355-363` `getConfiguredApiKeyHelper`.
@@ -471,103 +445,14 @@ pub fn get_api_key_from_config_or_macos_keychain() -> Option<AnthropicApiKeyWith
         })
 }
 
-fn is_custom_api_key_approved(config: &GlobalConfig, api_key: &str) -> bool {
-    let normalized_key = normalize_api_key_for_config(api_key);
-    config
-        .custom_api_key_responses
-        .as_ref()
-        .and_then(|responses| responses.approved.as_ref())
-        .is_some_and(|approved| approved.iter().any(|key| key == &normalized_key))
-}
-
-/// Maps to: CC `utils/auth.ts:221-224` `getAnthropicApiKey`.
-pub fn get_anthropic_api_key() -> Option<String> {
-    get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions::default()).key
-}
-
-/// Maps to: CC `utils/auth.ts#hasAnthropicApiKeyAuth`.
-///
-/// The helper is intentionally queried with the source's skip flag: command
-/// visibility must not execute a configured `apiKeyHelper` process.
-pub fn has_anthropic_api_key_auth() -> bool {
-    let result = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions {
-        skip_retrieving_key_from_api_key_helper: true,
-    });
-    result.key.is_some() && result.source != ApiKeySource::None
-}
-
 /// Maps to: CC `utils/auth.ts:226-341` `getAnthropicApiKeyWithSource`.
 pub fn get_anthropic_api_key_with_source(
     opts: GetAnthropicApiKeyOptions,
 ) -> AnthropicApiKeyWithSource {
-    let config = crate::utils::config::load_global_config();
-    let get_env = |key: &str| crate::utils::process_env::var(key);
     if crate::utils::env_utils::is_bare_mode() {
-        if let Some(api_key) = env_value(&get_env, "ANTHROPIC_API_KEY") {
-            return AnthropicApiKeyWithSource {
-                key: Some(api_key),
-                source: ApiKeySource::AnthropicApiKey,
-            };
-        }
-        if get_configured_api_key_helper().is_some() {
-            return AnthropicApiKeyWithSource {
-                key: if opts.skip_retrieving_key_from_api_key_helper {
-                    None
-                } else {
-                    get_api_key_from_api_key_helper(false)
-                },
-                source: ApiKeySource::ApiKeyHelper,
-            };
-        }
         return AnthropicApiKeyWithSource {
             key: None,
             source: ApiKeySource::None,
-        };
-    }
-
-    // Maps to CC `getAnthropicApiKeyWithSource()`: homespace ignores
-    // ANTHROPIC_API_KEY; normal interactive sessions only use that env key
-    // after the onboarding approval list contains its normalized suffix.
-    let api_key_env = if is_running_on_homespace() {
-        None
-    } else {
-        env_value(&get_env, "ANTHROPIC_API_KEY")
-    };
-
-    if crate::bootstrap::state::prefer_third_party_authentication()
-        && let Some(api_key) = api_key_env.clone()
-    {
-        return AnthropicApiKeyWithSource {
-            key: Some(api_key),
-            source: ApiKeySource::AnthropicApiKey,
-        };
-    }
-
-    if crate::utils::env_utils::is_env_truthy(get_env("CI").as_deref())
-        || env_value(&get_env, "NODE_ENV").as_deref() == Some("test")
-    {
-        if let Some(api_key) = get_api_key_from_file_descriptor() {
-            return AnthropicApiKeyWithSource {
-                key: Some(api_key),
-                source: ApiKeySource::AnthropicApiKey,
-            };
-        }
-        if let Some(api_key) = api_key_env {
-            return AnthropicApiKeyWithSource {
-                key: Some(api_key),
-                source: ApiKeySource::AnthropicApiKey,
-            };
-        }
-        return AnthropicApiKeyWithSource {
-            key: None,
-            source: ApiKeySource::None,
-        };
-    }
-
-    if let Some(api_key) = api_key_env.filter(|key| is_custom_api_key_approved(&config, key)) {
-        return AnthropicApiKeyWithSource {
-            key: Some(api_key),
-            source: ApiKeySource::AnthropicApiKey,
         };
     }
 
@@ -577,7 +462,6 @@ pub fn get_anthropic_api_key_with_source(
             source: ApiKeySource::AnthropicApiKey,
         };
     }
-
     if get_configured_api_key_helper().is_some() {
         return AnthropicApiKeyWithSource {
             key: if opts.skip_retrieving_key_from_api_key_helper {
@@ -588,20 +472,16 @@ pub fn get_anthropic_api_key_with_source(
             source: ApiKeySource::ApiKeyHelper,
         };
     }
-
-    if let Some(api_key) = get_api_key_from_config_or_macos_keychain() {
-        return api_key;
-    }
-
-    AnthropicApiKeyWithSource {
+    get_api_key_from_config_or_macos_keychain().unwrap_or(AnthropicApiKeyWithSource {
         key: None,
         source: ApiKeySource::None,
-    }
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::utils::config::GlobalConfig;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     struct CurrentDirGuard {
@@ -807,34 +687,13 @@ mod tests {
         assert_eq!(helper.source, ApiKeySource::ApiKeyHelper);
         assert_eq!(helper.key, None);
 
+        // Ambient provider keys are not a credential source any more.
         crate::utils::process_env::set("ANTHROPIC_API_KEY", "sk-ant-test");
-        let unapproved_env_key = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions {
+        let still_helper = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions {
             skip_retrieving_key_from_api_key_helper: true,
         });
-        assert_eq!(unapproved_env_key.source, ApiKeySource::ApiKeyHelper);
-        assert_eq!(unapproved_env_key.key, None);
-
-        config.custom_api_key_responses = Some(crate::utils::config::CustomApiKeyResponses {
-            approved: Some(vec![normalize_api_key_for_config("sk-ant-test")]),
-            rejected: None,
-        });
-        crate::utils::config::set_test_global_config(Some(config));
-        let approved_env_key =
-            get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions::default());
-        assert_eq!(approved_env_key.source, ApiKeySource::AnthropicApiKey);
-        assert_eq!(approved_env_key.key.as_deref(), Some("sk-ant-test"));
-
-        crate::utils::process_env::set("COO_RUNNING_ON_HOMESPACE", "true");
-        let homespace_key = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions {
-            skip_retrieving_key_from_api_key_helper: true,
-        });
-        if crate::utils::build_profile::build_audience().is_internal() {
-            assert_eq!(homespace_key.source, ApiKeySource::ApiKeyHelper);
-            assert_eq!(homespace_key.key, None);
-        } else {
-            assert_eq!(homespace_key.source, ApiKeySource::AnthropicApiKey);
-            assert_eq!(homespace_key.key.as_deref(), Some("sk-ant-test"));
-        }
+        assert_eq!(still_helper.source, ApiKeySource::ApiKeyHelper);
+        assert_eq!(still_helper.key, None);
 
         crate::utils::config::set_test_global_config(None);
         let _ = std::fs::remove_dir_all(dir);
@@ -890,10 +749,11 @@ mod tests {
         assert_eq!(no_key.source, ApiKeySource::None);
         assert_eq!(no_key.key, None);
 
+        // An ambient provider key does not bypass bare mode.
         crate::utils::process_env::set("ANTHROPIC_API_KEY", "sk-ant-test");
         let env_key = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions::default());
-        assert_eq!(env_key.source, ApiKeySource::AnthropicApiKey);
-        assert_eq!(env_key.key.as_deref(), Some("sk-ant-test"));
+        assert_eq!(env_key.source, ApiKeySource::None);
+        assert_eq!(env_key.key, None);
         crate::utils::config::set_test_global_config(None);
     }
 }
