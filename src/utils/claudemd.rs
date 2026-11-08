@@ -60,7 +60,6 @@ pub struct MemoryFileInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClaudeMdKind {
-    Managed,
     User,
     Project,
     AutoMem,
@@ -84,8 +83,8 @@ impl ExternalClaudeMdInclude {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// @nyan: no `Managed` tier (CC's policy-path CLAUDE.md).
 pub enum ClaudeMdSource {
-    Managed,
     UserGlobal,
     Project,
 }
@@ -93,7 +92,6 @@ pub enum ClaudeMdSource {
 impl ClaudeMdSource {
     fn kind(self) -> ClaudeMdKind {
         match self {
-            Self::Managed => ClaudeMdKind::Managed,
             Self::UserGlobal => ClaudeMdKind::User,
             Self::Project => ClaudeMdKind::Project,
         }
@@ -208,19 +206,6 @@ pub fn discover_claude_md_files_with_external_policy(
             .unwrap_or(false);
 
     if include_default_discovery {
-        // Managed policy is always enabled, but its external includes use the
-        // same approval-derived gate as upstream project policy.
-        process_memory_file(
-            &config::get_memory_path("Managed"),
-            ClaudeMdSource::Managed,
-            include_project_external,
-            0,
-            None,
-            &cwd,
-            &mut processed,
-            &mut files,
-        );
-
         if crate::utils::settings::constants::is_setting_source_enabled(
             crate::utils::settings::constants::SettingSource::User,
         ) {
@@ -312,7 +297,6 @@ pub fn discover_claude_md_files_with_external_policy(
         }
         for file in &files {
             let memory_type = match file.kind {
-                ClaudeMdKind::Managed => Some("Managed"),
                 ClaudeMdKind::User => Some("User"),
                 ClaudeMdKind::Project => Some("Project"),
                 ClaudeMdKind::AutoMem | ClaudeMdKind::TeamMem => None,
@@ -409,7 +393,6 @@ pub fn build_claude_md_context() -> String {
     let mut parts = Vec::new();
     for file in &files {
         let source_label = match file.source {
-            ClaudeMdSource::Managed => "managed",
             ClaudeMdSource::UserGlobal => "user global",
             ClaudeMdSource::Project => "project",
         };
@@ -1227,58 +1210,6 @@ mod tests {
     }
 
     #[test]
-    fn managed_external_includes_follow_the_shared_approval_gate() {
-        let _lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let _sources = AllowedSettingSourcesGuard::capture();
-        let root = temp_dir("managed-external-include");
-        let cwd = root.join("project");
-        let managed = root.join("managed");
-        let config_home = root.join("config");
-        std::fs::create_dir_all(&cwd).unwrap();
-        std::fs::create_dir_all(&managed).unwrap();
-        std::fs::create_dir_all(&config_home).unwrap();
-        let external = root.join("external.md");
-        std::fs::write(&external, "external managed include").unwrap();
-        std::fs::write(managed.join("AGENTS.md"), "@../external.md\nmanaged root").unwrap();
-
-        {
-            let _current_dir = CurrentDirGuard::set(&cwd);
-            let _original_cwd = OriginalCwdGuard::set(&cwd);
-            let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-            let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-            let _global_config =
-                GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
-            crate::bootstrap::state::set_allowed_setting_sources(Vec::new());
-
-            let unapproved = discover_claude_md_files_with_external_policy(true, &[], false);
-            assert!(
-                unapproved.iter().any(|file| {
-                    normalize_for_dedup(&file.path)
-                        == normalize_for_dedup(&managed.join("AGENTS.md"))
-                }),
-                "managed={} files={unapproved:#?}",
-                managed.join("AGENTS.md").display(),
-            );
-            assert!(
-                !unapproved.iter().any(|file| {
-                    normalize_for_dedup(&file.path) == normalize_for_dedup(&external)
-                })
-            );
-
-            let approval_probe = discover_claude_md_files_with_external_policy(true, &[], true);
-            assert!(
-                approval_probe.iter().any(|file| {
-                    normalize_for_dedup(&file.path) == normalize_for_dedup(&external)
-                })
-            );
-        }
-
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
     fn nested_worktree_skips_parent_project_instructions() {
         let _lock = TEST_ENV_LOCK
             .lock()
@@ -1312,15 +1243,12 @@ mod tests {
         );
         std::fs::write(root.join("AGENTS.md"), "parent instructions").unwrap();
         std::fs::write(nested.join("AGENTS.md"), "worktree instructions").unwrap();
-        let managed = root.join("managed");
         let config_home = root.join("config");
-        std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
 
         {
             let _current_dir = CurrentDirGuard::set(&nested);
             let _original_cwd = OriginalCwdGuard::set(&nested);
-            let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
             let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _global_config =
                 GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
@@ -1406,10 +1334,8 @@ mod tests {
         let root = temp_dir("agents-md");
         let cwd = root.join("project");
         let config_home = root.join("config");
-        let managed = root.join("managed");
         std::fs::create_dir_all(&cwd).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
-        std::fs::create_dir_all(&managed).unwrap();
         std::fs::write(config_home.join("AGENTS.md"), "global agents").unwrap();
         std::fs::write(cwd.join("AGENTS.md"), "project agents").unwrap();
         std::fs::write(cwd.join("CLAUDE.md"), "project claude").unwrap();
@@ -1417,7 +1343,6 @@ mod tests {
         {
             let _current_dir = CurrentDirGuard::set(&cwd);
             let _original_cwd = OriginalCwdGuard::set(&cwd);
-            let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
             let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _global_config =
                 GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
@@ -1605,42 +1530,35 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let _sources = AllowedSettingSourcesGuard::capture();
         let root = temp_dir("agents-md-only-full");
-        let managed = root.join("managed");
         let config_home = root.join("config");
         let parent = root.join("workspace");
         let cwd = parent.join("project");
         let nested = cwd.join("submodule");
 
-        std::fs::create_dir_all(managed.join(".claude/rules")).unwrap();
         std::fs::create_dir_all(config_home.join("rules")).unwrap();
         std::fs::create_dir_all(parent.join(".claude/rules")).unwrap();
         std::fs::create_dir_all(cwd.join(".claude/rules")).unwrap();
         std::fs::create_dir_all(nested.join(".claude/rules")).unwrap();
 
-        // 1. Managed level
-        std::fs::write(managed.join("AGENTS.md"), "managed agents").unwrap();
-        std::fs::write(managed.join("CLAUDE.md"), "managed claude").unwrap();
-        std::fs::write(managed.join(".claude/rules/m_rule.md"), "managed rule").unwrap();
-
-        // 2. UserGlobal level
+        // 1. UserGlobal level
         std::fs::write(config_home.join("AGENTS.md"), "user agents").unwrap();
         std::fs::write(config_home.join("CLAUDE.md"), "user claude").unwrap();
         std::fs::write(config_home.join("rules/u_rule.md"), "user rule").unwrap();
 
-        // 3. Parent ancestor level
+        // 2. Parent ancestor level
         std::fs::write(parent.join("AGENTS.md"), "parent agents").unwrap();
         std::fs::write(parent.join("CLAUDE.md"), "parent claude").unwrap();
         std::fs::write(parent.join(".claude/CLAUDE.md"), "parent dot claude").unwrap();
         std::fs::write(parent.join(".claude/rules/p_rule.md"), "parent rule").unwrap();
 
-        // 4. Project cwd level
+        // 3. Project cwd level
         std::fs::write(cwd.join("AGENTS.md"), "project agents").unwrap();
         std::fs::write(cwd.join("CLAUDE.md"), "project claude").unwrap();
         std::fs::write(cwd.join("CLAUDE.local.md"), "project local claude").unwrap();
         std::fs::write(cwd.join(".claude/CLAUDE.md"), "project dot claude").unwrap();
         std::fs::write(cwd.join(".claude/rules/c_rule.md"), "project rule").unwrap();
 
-        // 5. Nested directory level
+        // 4. Nested directory level
         std::fs::write(nested.join("AGENTS.md"), "nested agents").unwrap();
         std::fs::write(nested.join("CLAUDE.md"), "nested claude").unwrap();
         std::fs::write(nested.join("CLAUDE.local.md"), "nested local claude").unwrap();
@@ -1650,7 +1568,6 @@ mod tests {
         {
             let _current_dir = CurrentDirGuard::set(&cwd);
             let _original_cwd = OriginalCwdGuard::set(&cwd);
-            let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
             let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _global_config =
                 GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
@@ -1668,10 +1585,6 @@ mod tests {
                 .collect::<Vec<_>>();
 
             // Assert all AGENTS.md levels are loaded
-            assert!(
-                contents.contains(&"managed agents"),
-                "Managed AGENTS.md missing"
-            );
             assert!(contents.contains(&"user agents"), "User AGENTS.md missing");
             assert!(
                 contents.contains(&"parent agents"),
@@ -1683,8 +1596,6 @@ mod tests {
             );
 
             // Assert NO CLAUDE.md variants are loaded
-            assert!(!contents.contains(&"managed claude"));
-            assert!(!contents.contains(&"managed rule"));
             assert!(!contents.contains(&"user claude"));
             assert!(!contents.contains(&"user rule"));
             assert!(!contents.contains(&"parent claude"));

@@ -195,11 +195,6 @@ fn root_path_for_source(source: PermissionRuleSource) -> String {
                 .display()
                 .to_string()
         }
-        PermissionRuleSource::PolicySettings => {
-            crate::utils::settings::get_settings_root_path_for_source(SettingSource::Policy)
-                .display()
-                .to_string()
-        }
     }
 }
 
@@ -2196,7 +2191,6 @@ mod tests {
             (PermissionRuleSource::ProjectSettings, original_cwd.clone()),
             (PermissionRuleSource::LocalSettings, original_cwd.clone()),
             (PermissionRuleSource::FlagSettings, flag_dir.clone()),
-            (PermissionRuleSource::PolicySettings, original_cwd.clone()),
             (PermissionRuleSource::CliArg, original_cwd.clone()),
             (PermissionRuleSource::Command, original_cwd.clone()),
             (PermissionRuleSource::Session, original_cwd.clone()),

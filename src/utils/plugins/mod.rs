@@ -10,7 +10,6 @@ pub mod installed_plugins_manager;
 pub mod load_plugin_agents;
 pub mod load_plugin_hooks;
 pub mod lsp_plugin_integration;
-pub mod managed_plugins;
 pub mod marketplace_helpers;
 pub mod marketplace_manager;
 pub mod mcp_plugin_integration;
@@ -22,7 +21,6 @@ pub mod plugin_identifier;
 pub mod plugin_installation_helpers;
 pub mod plugin_loader;
 pub mod plugin_options_storage;
-pub mod plugin_policy;
 pub mod schemas;
 pub mod validate_plugin;
 

@@ -389,12 +389,9 @@ fn should_retry_529(query_source: Option<&RetryQuerySource>) -> bool {
 ///
 /// Maps to: CC `services/api/withRetry.ts:100-104`
 fn is_persistent_retry_enabled() -> bool {
-    // @nyan: retry-forever would outlive the managed cap, so a managed cap
-    // switches it off.
-    !crate::services::provider::retry::managed_cap_set()
-        && crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY").as_deref(),
-        )
+    crate::utils::env_utils::is_env_truthy(
+        crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY").as_deref(),
+    )
 }
 
 /// Check if an error is a transient capacity error (429 or 529).
@@ -720,9 +717,8 @@ fn get_rate_limit_reset_delay_ms(error: &ApiError) -> Option<u64> {
 /// The default maximum number of retries.
 ///
 /// @nyan: decisions 19 and 23. CC defaults to 10; nyan's unified controller
-/// defaults to 2 (`CLAUDE_CODE_MAX_RETRIES` may lower it) and the managed
-/// global cap (`nyan.retry.maxRetries` in managed settings, default 2, hard
-/// limit 5) bounds whatever is asked, so the environment cannot raise it.
+/// defaults to 2 (`CLAUDE_CODE_MAX_RETRIES` may lower it) and the global cap
+/// of 2 bounds whatever is asked, so the environment cannot raise it.
 ///
 /// Maps to: CC `services/api/withRetry.ts:789-794`
 pub fn get_default_max_retries() -> u32 {
@@ -733,11 +729,11 @@ pub fn get_default_max_retries() -> u32 {
 ///
 /// Maps to: CC `services/api/withRetry.ts:795-797`
 fn get_max_retries(options: &RetryOptions) -> u32 {
-    // @nyan: whoever asks, the managed global cap (hard limit 5) wins.
+    // @nyan: whoever asks, the global cap (decision 19) wins.
     options
         .max_retries
         .unwrap_or_else(get_default_max_retries)
-        .min(crate::services::provider::retry::global_cap())
+        .min(crate::services::provider::retry::DEFAULT_MAX_RETRIES)
 }
 
 /// Cancellation-aware async sleep.
@@ -1426,7 +1422,7 @@ mod tests {
     }
 
     #[test]
-    fn an_explicit_budget_is_held_to_the_managed_cap() {
+    fn an_explicit_budget_is_held_to_the_global_cap() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::settings::settings_cache::reset_settings_cache();
         let options = |max_retries| RetryOptions {

@@ -552,7 +552,6 @@ mod tests {
         "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_UNIX_SOCKET",
         "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
-        "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
         "CLAUDE_CODE_REMOTE",
@@ -601,10 +600,6 @@ mod tests {
             std::fs::create_dir_all(workspace.join(".nyan")).expect("create notifications fixture");
 
             crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
-            crate::utils::process_env::set(
-                "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-                root.join("missing-managed-settings.json"),
-            );
             if remote {
                 crate::utils::process_env::set("CLAUDE_CODE_REMOTE", "1");
             }

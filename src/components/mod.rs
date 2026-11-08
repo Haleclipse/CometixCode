@@ -69,7 +69,6 @@ pub mod log_selector;
 pub mod logo;
 pub mod logo_v2;
 pub mod lsp_recommendation;
-pub mod managed_settings_security_dialog;
 pub mod markdown;
 pub mod markdown_table;
 pub mod mcp;

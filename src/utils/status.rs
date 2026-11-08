@@ -2,10 +2,7 @@
 
 use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::get_setting_source_display_name_capitalized;
-use crate::utils::settings::{
-    SettingSource, SettingsJson, get_enabled_setting_sources, get_managed_file_settings_presence,
-    get_settings_for_source,
-};
+use crate::utils::settings::{SettingsJson, get_enabled_setting_sources, get_settings_for_source};
 
 /// Startup-only diagnostics snapshot for Settings/Status surfaces. Read-only,
 /// built once at App mount and injected directly (no wrapper context class).
@@ -44,19 +41,6 @@ pub fn build_setting_sources_properties() -> Vec<String> {
             let settings = get_settings_for_source(source)?;
             if settings == SettingsJson::default() {
                 return None;
-            }
-            if source == SettingSource::Policy {
-                let presence = get_managed_file_settings_presence();
-                return Some(
-                    if presence.has_base && presence.has_drop_ins {
-                        "Enterprise managed settings (file + drop-ins)"
-                    } else if presence.has_drop_ins {
-                        "Enterprise managed settings (drop-ins)"
-                    } else {
-                        "Enterprise managed settings (file)"
-                    }
-                    .to_string(),
-                );
             }
             Some(get_setting_source_display_name_capitalized(source).to_string())
         })

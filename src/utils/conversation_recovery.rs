@@ -779,9 +779,7 @@ mod tests {
             ..crate::utils::settings::SettingsJson::default()
         };
         crate::utils::hooks::hooks_config_snapshot::reset_hooks_config_snapshot();
-        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(
-            &settings, None, false,
-        );
+        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(&settings);
         let target = crate::commands::resume::ResumeTarget {
             session_id: "startup-resume-session".to_string(),
             project_path: None,

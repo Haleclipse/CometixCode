@@ -7,9 +7,7 @@
 
 use super::permission_dialog::PermissionDialog;
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
-use crate::utils::sandbox::sandbox_adapter::{
-    NetworkHostPattern, should_allow_managed_sandbox_domains_only,
-};
+use crate::utils::sandbox::sandbox_adapter::NetworkHostPattern;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
@@ -22,9 +20,6 @@ pub struct SandboxPermissionResponse {
 #[derive(Default, Props)]
 pub struct SandboxPermissionRequestProps<'a> {
     pub host_pattern: Option<NetworkHostPattern>,
-    /// Test/runtime snapshot seam for CC `shouldAllowManagedSandboxDomainsOnly`.
-    /// `None` reads the official policy settings helper.
-    pub managed_domains_only: Option<bool>,
     pub on_user_response: HandlerMut<'a, SandboxPermissionResponse>,
 }
 
@@ -71,26 +66,21 @@ impl SandboxPermissionOption {
     }
 }
 
-/// Maps to: CC `SandboxPermissionRequest` `options` array.
-pub fn sandbox_permission_options(
-    host: &str,
-    managed_domains_only: bool,
-) -> Vec<SandboxPermissionOption> {
-    let mut options = vec![SandboxPermissionOption::select(
-        "Yes",
-        SandboxPermissionOptionValue::Yes,
-    )];
-    if !managed_domains_only {
-        options.push(SandboxPermissionOption::select(
+/// Maps to: CC `SandboxPermissionRequest` `options` array. @nyan: the
+/// persistent option is always offered (CC hides it under the managed
+/// `allowManagedDomainsOnly`).
+pub fn sandbox_permission_options(host: &str) -> Vec<SandboxPermissionOption> {
+    vec![
+        SandboxPermissionOption::select("Yes", SandboxPermissionOptionValue::Yes),
+        SandboxPermissionOption::select(
             format!("Yes, and don't ask again for {host}"),
             SandboxPermissionOptionValue::YesDontAskAgain,
-        ));
-    }
-    options.push(SandboxPermissionOption::select(
-        "No, and tell Claude what to do differently (esc)",
-        SandboxPermissionOptionValue::No,
-    ));
-    options
+        ),
+        SandboxPermissionOption::select(
+            "No, and tell Claude what to do differently (esc)",
+            SandboxPermissionOptionValue::No,
+        ),
+    ]
 }
 
 /// Maps to: CC `onSelect` switch response shape.
@@ -125,10 +115,7 @@ pub fn SandboxPermissionRequest<'a>(
         .as_ref()
         .map(|pattern| pattern.host.clone())
         .unwrap_or_default();
-    let managed_domains_only = props
-        .managed_domains_only
-        .unwrap_or_else(should_allow_managed_sandbox_domains_only);
-    let options = sandbox_permission_options(&host, managed_domains_only);
+    let options = sandbox_permission_options(&host);
     let option_count = options.len().max(1);
     let mut focused_index = hooks.use_state(|| 0usize);
     let mut pending_select = hooks.use_state(|| Option::<SandboxPermissionOptionValue>::None);
@@ -213,12 +200,11 @@ mod tests {
         TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code))
     }
 
-    fn render_sandbox(host: &str, managed_domains_only: bool) -> String {
+    fn render_sandbox(host: &str) -> String {
         element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 SandboxPermissionRequest(
                     host_pattern: Some(NetworkHostPattern::new(host)),
-                    managed_domains_only: Some(managed_domains_only),
                 )
             }
         }
@@ -227,8 +213,8 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_permission_options_match_official_managed_domain_gate() {
-        let options = sandbox_permission_options("api.example.com", false);
+    fn sandbox_permission_options_match_official_labels() {
+        let options = sandbox_permission_options("api.example.com");
         assert_eq!(options[0].label, "Yes");
         assert_eq!(
             options[1].label,
@@ -238,14 +224,7 @@ mod tests {
             options[2].label,
             "No, and tell Claude what to do differently (esc)"
         );
-
-        let managed = sandbox_permission_options("api.example.com", true);
-        assert_eq!(managed.len(), 2);
-        assert!(
-            !managed
-                .iter()
-                .any(|option| option.value == SandboxPermissionOptionValue::YesDontAskAgain)
-        );
+        assert_eq!(options.len(), 3);
     }
 
     #[test]
@@ -275,7 +254,7 @@ mod tests {
 
     #[test]
     fn sandbox_permission_request_renders_official_copy_and_options() {
-        let text = render_sandbox("api.example.com", false);
+        let text = render_sandbox("api.example.com");
         assert!(
             text.contains("Network request outside of sandbox"),
             "canvas=\n{text}"
@@ -297,16 +276,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sandbox_permission_request_hides_persistent_option_when_managed_only() {
-        let text = render_sandbox("api.example.com", true);
-        assert!(text.contains("Yes"), "canvas=\n{text}");
-        assert!(
-            !text.contains("don't ask again"),
-            "managed-only policy should suppress persistent option; canvas=\n{text}"
-        );
-    }
-
     #[tokio::test]
     async fn sandbox_permission_request_escape_emits_official_cancel_response() {
         let responses = Arc::new(Mutex::new(Vec::new()));
@@ -315,7 +284,6 @@ mod tests {
             ContextProvider(value: Context::owned(*theme::current())) {
                 SandboxPermissionRequest(
                     host_pattern: Some(NetworkHostPattern::new("api.example.com")),
-                    managed_domains_only: Some(false),
                     on_user_response: move |response| {
                         responses_clone.lock().unwrap().push(response);
                     },

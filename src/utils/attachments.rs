@@ -2127,7 +2127,6 @@ fn get_directories_to_process(
 
 fn claude_md_kind_name(kind: crate::utils::claudemd::ClaudeMdKind) -> &'static str {
     match kind {
-        crate::utils::claudemd::ClaudeMdKind::Managed => "Managed",
         crate::utils::claudemd::ClaudeMdKind::User => "User",
         crate::utils::claudemd::ClaudeMdKind::Project => "Project",
         crate::utils::claudemd::ClaudeMdKind::AutoMem => "AutoMem",
@@ -2157,7 +2156,6 @@ fn memory_files_to_attachments(
         let content = memory_file.content.clone();
         let disk_projection = crate::utils::claudemd::claude_md_disk_projection(&memory_file);
         let instructions_hook = match memory_file.kind {
-            crate::utils::claudemd::ClaudeMdKind::Managed => Some("Managed"),
             crate::utils::claudemd::ClaudeMdKind::User => Some("User"),
             crate::utils::claudemd::ClaudeMdKind::Project => Some("Project"),
             crate::utils::claudemd::ClaudeMdKind::AutoMem

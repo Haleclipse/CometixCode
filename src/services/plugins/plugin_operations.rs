@@ -8,7 +8,6 @@ use crate::utils::plugins::{
     plugin_identifier::*,
     plugin_installation_helpers::*,
     plugin_loader::*,
-    plugin_policy::*,
     plugin_startup_check::*,
     plugin_versioning::*,
     schemas::{PluginManifest, PluginScope},
@@ -257,15 +256,6 @@ pub async fn install_plugin_op(
             format!("Failed to update settings: {message}")
         }
         InstallCoreResult::ResolutionFailed { resolution } => format_resolution_error(&resolution),
-        InstallCoreResult::BlockedByPolicy { plugin_name } => format!(
-            "Plugin \"{plugin_name}\" is blocked by your organization's policy and cannot be installed"
-        ),
-        InstallCoreResult::DependencyBlockedByPolicy {
-            plugin_name,
-            blocked_dependency,
-        } => format!(
-            "Plugin \"{plugin_name}\" depends on \"{blocked_dependency}\", which is blocked by your organization's policy"
-        ),
     };
     Ok(PluginOperationResult {
         message: failure,
@@ -454,14 +444,6 @@ pub async fn set_plugin_enabled_op(
             ..Default::default()
         });
     };
-    if enabled && is_plugin_blocked_by_policy(&id) {
-        return Ok(PluginOperationResult {
-            message: format!(
-                "Plugin \"{id}\" is blocked by your organization's policy and cannot be enabled"
-            ),
-            ..Default::default()
-        });
-    }
     let source = SettingSource::from(scope_to_setting_source(resolved).unwrap());
     let mut entries = get_settings_for_source(source)
         .and_then(|s| s.enabled_plugins)

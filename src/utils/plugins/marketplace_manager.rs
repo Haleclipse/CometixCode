@@ -1602,36 +1602,6 @@ pub async fn add_marketplace_source(
             .into_owned()
             .into();
     }
-    if !is_source_allowed_by_policy(&source) {
-        let display = format_source_for_display(&source);
-        if is_source_in_blocklist(&source) {
-            anyhow::bail!("Marketplace source '{display}' is blocked by enterprise policy.");
-        }
-        let allowlist = get_strict_known_marketplaces().unwrap_or_default();
-        let host_patterns = get_host_patterns_from_allowlist();
-        let mut message = format!("Marketplace source '{display}'");
-        if let Some(host) = extract_host_from_source(&source).filter(|s| !s.is_empty()) {
-            message.push_str(&format!(" ({host})"));
-        }
-        message.push_str(" is blocked by enterprise policy.");
-        if allowlist.is_empty() {
-            message.push_str(" No external marketplaces are allowed.");
-        } else {
-            message.push_str(&format!(
-                " Allowed sources: {}",
-                allowlist
-                    .iter()
-                    .map(format_source_for_display)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
-        }
-        if source["source"] == "github" && !host_patterns.is_empty() {
-            let repo = source["repo"].as_str().unwrap_or("");
-            message.push_str(&format!("\n\nTip: The shorthand \"{repo}\" assumes github.com. For internal GitHub Enterprise, use the full URL:\n  git@your-github-host.com:{repo}.git"));
-        }
-        anyhow::bail!(message);
-    }
     let existing_config = load_known_marketplaces_config().await?;
     for (name, entry) in crate::utils::process_env::ecmascript_object_entries(&existing_config) {
         if entry["source"] == source {

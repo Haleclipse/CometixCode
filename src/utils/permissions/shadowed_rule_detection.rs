@@ -46,9 +46,7 @@ pub enum ShadowResult {
 pub fn is_shared_setting_source(source: PermissionRuleSource) -> bool {
     matches!(
         source,
-        PermissionRuleSource::ProjectSettings
-            | PermissionRuleSource::PolicySettings
-            | PermissionRuleSource::Command
+        PermissionRuleSource::ProjectSettings | PermissionRuleSource::Command
     )
 }
 
@@ -211,9 +209,6 @@ mod tests {
     fn shared_setting_source_matches_official_definition() {
         assert!(is_shared_setting_source(
             PermissionRuleSource::ProjectSettings
-        ));
-        assert!(is_shared_setting_source(
-            PermissionRuleSource::PolicySettings
         ));
         assert!(is_shared_setting_source(PermissionRuleSource::Command));
         assert!(!is_shared_setting_source(

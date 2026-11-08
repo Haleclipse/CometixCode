@@ -825,7 +825,6 @@ mod tests {
         use crate::utils::hooks::session_hooks;
 
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let hook = |command: &str| HookCommand {
             command: command.to_string(),
             shell: None,

@@ -23,7 +23,6 @@ use std::sync::{LazyLock, Mutex};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SkillSource {
-    PolicySettings,
     UserSettings,
     ProjectSettings,
 }
@@ -31,7 +30,6 @@ pub enum SkillSource {
 impl SkillSource {
     pub fn official_name(self) -> &'static str {
         match self {
-            Self::PolicySettings => "policySettings",
             Self::UserSettings => "userSettings",
             Self::ProjectSettings => "projectSettings",
         }
@@ -77,11 +75,6 @@ pub fn get_skills_path(source: SkillsPathSource, dir: &str) -> PathBuf {
     use crate::utils::settings::constants::SettingSource;
 
     match source {
-        SkillsPathSource::Setting(SettingSource::Policy) => {
-            crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".nyan")
-                .join(dir)
-        }
         SkillsPathSource::Setting(SettingSource::User) => {
             crate::utils::env_utils::get_config_home_dir().join(dir)
         }
@@ -236,10 +229,10 @@ impl SkillCommand {
     }
 
     /// Maps to CC `processSlashCommand.tsx:1172-1186` — the frontmatter-hook
-    /// registration that runs right after `getPromptForCommand`, gated on the
-    /// same `["hooks"]`-lock rule as agent frontmatter hooks
-    /// (`run_agent.rs:1311-1318`, CC `runAgent.ts`): under a plugin-only
-    /// `hooks` policy, only admin-trusted sources may register.
+    /// registration that runs right after `getPromptForCommand`.
+    ///
+    /// @nyan: CC gates it on the managed `strictPluginOnlyCustomization`
+    /// `["hooks"]` lock; nyan has no managed settings, so it always registers.
     ///
     /// CC has one call site because everything funnels through
     /// `getMessagesForPromptSlashCommand`. This port materializes skill prompts
@@ -256,14 +249,6 @@ impl SkillCommand {
         let Some(hooks) = self.hooks.as_ref() else {
             return 0;
         };
-        let hooks_allowed_for_this_skill =
-            !crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("hooks")
-                || crate::utils::settings::plugin_only_policy::is_source_admin_trusted(
-                    self.source.official_name(),
-                );
-        if !hooks_allowed_for_this_skill {
-            return 0;
-        }
         crate::utils::hooks::register_skill_hooks::register_skill_hooks(
             session_id,
             hooks,
@@ -416,14 +401,12 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
 
     let mut skill_dirs = Vec::new();
     let mut legacy_command_dirs = Vec::new();
-    let skills_locked =
-        crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("skills");
-    let user_enabled = is_setting_source_enabled(SettingSource::User) && !skills_locked;
-    let project_enabled = is_setting_source_enabled(SettingSource::Project) && !skills_locked;
+    let user_enabled = is_setting_source_enabled(SettingSource::User);
+    let project_enabled = is_setting_source_enabled(SettingSource::Project);
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
 
     // CC --bare skips every auto-discovered source and all legacy commands;
-    // only explicit --add-dir skill roots survive the project/policy gate.
+    // only explicit --add-dir skill roots survive the project gate.
     if crate::utils::env_utils::is_bare_mode() {
         if project_enabled {
             for add_dir in additional_dirs {
@@ -437,20 +420,6 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
             }
         }
     } else {
-        if !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_POLICY_SKILLS").as_deref(),
-        ) {
-            let managed = crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".nyan")
-                .join("skills");
-            if managed.is_dir() {
-                skill_dirs.push(SkillDir {
-                    path: managed,
-                    source: SkillSource::PolicySettings,
-                });
-            }
-        }
-
         if user_enabled {
             let user = crate::utils::env_utils::get_config_home_dir().join("skills");
             if user.is_dir() {
@@ -481,37 +450,23 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
             }
         }
 
-        // Legacy commands are skills regardless of source, so strict
-        // plugin-only policy disables the entire legacy loader, including
-        // managed commands.
-        if !skills_locked {
-            let managed_commands = crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".nyan")
-                .join("commands");
-            if managed_commands.is_dir() {
+        if user_enabled {
+            let user_commands = crate::utils::env_utils::get_config_home_dir().join("commands");
+            if user_commands.is_dir() {
                 legacy_command_dirs.push(SkillDir {
-                    path: managed_commands,
-                    source: SkillSource::PolicySettings,
+                    path: user_commands,
+                    source: SkillSource::UserSettings,
                 });
             }
-            if user_enabled {
-                let user_commands = crate::utils::env_utils::get_config_home_dir().join("commands");
-                if user_commands.is_dir() {
-                    legacy_command_dirs.push(SkillDir {
-                        path: user_commands,
-                        source: SkillSource::UserSettings,
-                    });
-                }
-            }
-            if project_enabled {
-                for dir in crate::utils::markdown_config_loader::get_project_dirs_up_to_home(
-                    "commands", cwd,
-                ) {
-                    legacy_command_dirs.push(SkillDir {
-                        path: dir,
-                        source: SkillSource::ProjectSettings,
-                    });
-                }
+        }
+        if project_enabled {
+            for dir in
+                crate::utils::markdown_config_loader::get_project_dirs_up_to_home("commands", cwd)
+            {
+                legacy_command_dirs.push(SkillDir {
+                    path: dir,
+                    source: SkillSource::ProjectSettings,
+                });
             }
         }
     }
@@ -617,8 +572,7 @@ pub fn discover_skill_dirs_for_paths(file_paths: &[PathBuf], cwd: &Path) -> Vec<
 pub fn add_skill_directories(dirs: &[PathBuf]) {
     if !crate::utils::settings::constants::is_setting_source_enabled(
         crate::utils::settings::constants::SettingSource::Project,
-    ) || crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("skills")
-        || dirs.is_empty()
+    ) || dirs.is_empty()
     {
         return;
     }
@@ -1309,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn initial_skill_dirs_apply_source_plugin_only_and_bare_mode_gates() {
+    fn initial_skill_dirs_apply_source_and_bare_mode_gates() {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -1317,16 +1271,11 @@ mod tests {
         let _dynamic = DynamicSkillsTestSnapshot::capture();
         clear_dynamic_skills();
         let root = temp_dir("initial-gates");
-        let managed = root.join("managed");
         let config = root.join("config");
         let project = root.join("project");
         let additional = root.join("additional");
         std::fs::create_dir_all(project.join(".git")).unwrap();
         for (path, description) in [
-            (
-                managed.join(".nyan/skills/managed-skill/SKILL.md"),
-                "Managed skill",
-            ),
             (config.join("skills/user-skill/SKILL.md"), "User skill"),
             (
                 project.join(".nyan/skills/project-skill/SKILL.md"),
@@ -1343,10 +1292,6 @@ mod tests {
             );
         }
         for (path, body) in [
-            (
-                managed.join(".nyan/commands/managed-command.md"),
-                "Managed command",
-            ),
             (config.join("commands/user-command.md"), "User command"),
             (
                 project.join(".nyan/commands/project-command.md"),
@@ -1355,15 +1300,13 @@ mod tests {
         ] {
             write_file(&path, body);
         }
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
-        let _policy_disabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_POLICY_SKILLS", "0");
         crate::bootstrap::state::set_allowed_setting_sources(vec!["projectSettings".to_string()]);
         crate::bootstrap::state::set_additional_directories_for_claude_md(vec![additional.clone()]);
 
         // `get_skill_dir_commands` is memoized by cwd (CC `:638`), and this test
-        // re-reads the same cwd under three different policies, so each round
+        // re-reads the same cwd under two different modes, so each round
         // clears the skill caches the way CC's `clearSkillCaches()` does.
         clear_skill_caches();
         let names = get_skill_dir_commands(&project)
@@ -1373,32 +1316,12 @@ mod tests {
         assert_eq!(
             names,
             std::collections::HashSet::from([
-                "managed-skill".to_string(),
                 "project-skill".to_string(),
                 "additional-skill".to_string(),
-                "managed-command".to_string(),
                 "project-command".to_string(),
             ])
         );
 
-        std::fs::write(
-            managed.join("managed-settings.json"),
-            r#"{"strictPluginOnlyCustomization":["skills"]}"#,
-        )
-        .unwrap();
-        // Writing the file directly bypasses `update_settings_for_source`, the
-        // only writer that invalidates the merged-settings cache
-        // (settings.ts:505-506). The read above already populated it.
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        clear_skill_caches();
-        let names = get_skill_dir_commands(&project)
-            .into_iter()
-            .map(|skill| skill.name)
-            .collect::<Vec<_>>();
-        assert_eq!(names, vec!["managed-skill"]);
-
-        std::fs::remove_file(managed.join("managed-settings.json")).unwrap();
-        crate::utils::settings::settings_cache::reset_settings_cache();
         crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "1");
         clear_skill_caches();
         let names = get_skill_dir_commands(&project)
@@ -1630,49 +1553,6 @@ mod tests {
         );
 
         clear_all_session_hooks();
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn plugin_only_hooks_policy_blocks_untrusted_skill_hook_registration() {
-        // Maps to CC `processSlashCommand.tsx:1175-1177`
-        // `!isRestrictedToPluginOnly('hooks') || isSourceAdminTrusted(source)`.
-        // Same gate as agent frontmatter hooks (run_agent.rs:1311-1318). The
-        // policy is read from managed settings on disk, not a memory seed, so
-        // this exercises the real predicate.
-        use crate::utils::hooks::session_hooks::clear_all_session_hooks;
-
-        let _lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let root = temp_dir("skill-hooks-policy");
-        let managed = root.join("managed");
-        write_file(
-            &managed.join("managed-settings.json"),
-            r#"{"strictPluginOnlyCustomization":["hooks"]}"#,
-        );
-        let _managed_env = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        crate::utils::settings::settings_cache::reset_settings_cache();
-
-        let hooks: crate::services::hooks::HooksConfig = serde_json::from_value(
-            serde_json::json!({"Stop": [{"hooks": [{"type": "command", "command": "echo locked"}]}]}),
-        )
-        .unwrap();
-
-        let mut project_skill = skill_command_fixture("project-hooks");
-        project_skill.hooks = Some(hooks.clone());
-        let session = format!("policy-{}", uuid::Uuid::new_v4().simple());
-        assert_eq!(project_skill.register_skill_hooks(&session), 0);
-
-        // policySettings is admin-trusted, so the same skill from managed
-        // policy still registers.
-        let mut policy_skill = skill_command_fixture("policy-hooks");
-        policy_skill.hooks = Some(hooks);
-        policy_skill.source = SkillSource::PolicySettings;
-        assert_eq!(policy_skill.register_skill_hooks(&session), 1);
-
-        clear_all_session_hooks();
-        crate::utils::settings::settings_cache::reset_settings_cache();
         let _ = std::fs::remove_dir_all(root);
     }
 
@@ -2018,7 +1898,7 @@ mod tests {
     fn skill_dir_commands_are_memoized_per_cwd_until_skill_caches_clear() {
         // Maps to CC `memoize(...)` at `:638` plus `clearSkillCaches()`
         // (`:806-811`). Old shape: no memo at all — every caller re-walked
-        // managed + user + every project dir + `--add-dir` + the whole legacy
+        // user + every project dir + `--add-dir` + the whole legacy
         // `commands/` tree. Behaviour-preserving on its own; the assert here is
         // that the cached list is what a second call returns and that
         // `clear_skill_caches()` is what releases it.

@@ -69,6 +69,7 @@ pub struct PermissionRuleValue {
 }
 
 /// Maps to: CC `types/permissions.ts:52-78#PermissionRuleSource`.
+/// @nyan: no `policySettings` (no managed policy layer).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PermissionRuleSource {
     #[serde(rename = "userSettings")]
@@ -79,8 +80,6 @@ pub enum PermissionRuleSource {
     LocalSettings,
     #[serde(rename = "flagSettings")]
     FlagSettings,
-    #[serde(rename = "policySettings")]
-    PolicySettings,
     #[serde(rename = "cliArg")]
     CliArg,
     #[serde(rename = "command")]
@@ -116,8 +115,8 @@ impl PermissionRuleValue {
 
 /// Maps to: CC `types/permissions.ts:80-93#PermissionUpdateDestination`.
 ///
-/// This is update routing only. `flagSettings`, `policySettings`, and `command`
-/// are live rule sources but are not editable update destinations.
+/// This is update routing only. `flagSettings` and `command` are live rule
+/// sources but are not editable update destinations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PermissionUpdateDestination {
     #[serde(rename = "userSettings")]
@@ -1420,7 +1419,6 @@ mod tests {
             );
         }
         assert!(serde_json::from_str::<PermissionUpdateDestination>("\"command\"").is_err());
-        assert!(serde_json::from_str::<PermissionUpdateDestination>("\"policySettings\"").is_err());
         assert!(serde_json::from_str::<PermissionUpdateDestination>("\"flagSettings\"").is_err());
     }
 

@@ -212,11 +212,11 @@ pub(crate) async fn continue_processed_user_input(
     // the settings snapshot, the registered plugin hooks, and the session's own
     // `appState.sessionHooks`. `load_hooks_config()` covers the first two; the
     // third has to be merged in, the way `tool_execution.rs:3468-3476` and
-    // `run_agent.rs:1170` already do — including their `allow_managed_hooks_only`
+    // `run_agent.rs:1170` already do — including their `disable_all_hooks`
     // gate.
     let loaded = crate::services::hooks::load_hooks_config();
     let mut hooks_config = loaded.config;
-    if !loaded.allow_managed_hooks_only {
+    if !loaded.disable_all_hooks {
         crate::utils::hooks::session_hooks::merge_session_hooks_into_config(
             &mut hooks_config,
             session_id,

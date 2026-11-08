@@ -2490,7 +2490,6 @@ mod tests {
         set_session_settings_cache(SettingsWithErrors {
             settings: SettingsJson::default(),
             errors: Vec::new(),
-            policy_settings: None,
         });
         assert_eq!(mcp_oauth_client_name(), "nyan");
         set_session_settings_cache(SettingsWithErrors {
@@ -2499,7 +2498,6 @@ mod tests {
                 ..SettingsJson::default()
             },
             errors: Vec::new(),
-            policy_settings: None,
         });
         assert_eq!(mcp_oauth_client_name(), "custom-client");
         reset_settings_cache();

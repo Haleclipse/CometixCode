@@ -27,7 +27,6 @@ use crate::utils::plugins::{
     plugin_installation_helpers::{
         InstallPluginParams, InstallPluginResult, install_plugin_from_marketplace,
     },
-    plugin_policy::is_plugin_blocked_by_policy,
     schemas::PluginScope,
 };
 
@@ -227,9 +226,6 @@ pub fn BrowseMarketplace(
                         for entry in data["plugins"].as_array().into_iter().flatten() {
                             let plugin_id =
                                 create_plugin_id(entry["name"].as_str().unwrap_or(""), &name);
-                            if is_plugin_blocked_by_policy(&plugin_id) {
-                                continue;
-                            }
                             plugins.push(InstallablePlugin {
                                 entry: entry.clone(),
                                 marketplace_name: name.clone(),

@@ -351,15 +351,6 @@ pub enum PluginError {
         method: String,
         error: String,
     },
-    MarketplaceBlockedByPolicy {
-        source: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        plugin: Option<String>,
-        marketplace: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        blocked_by_blocklist: Option<bool>,
-        allowed_sources: Vec<String>,
-    },
     DependencyUnsatisfied {
         source: String,
         plugin: String,
@@ -412,7 +403,6 @@ impl PluginError {
             | Self::LspServerCrashed { source, .. }
             | Self::LspRequestTimeout { source, .. }
             | Self::LspRequestFailed { source, .. }
-            | Self::MarketplaceBlockedByPolicy { source, .. }
             | Self::DependencyUnsatisfied { source, .. }
             | Self::PluginCacheMiss { source, .. }
             | Self::GenericError { source, .. } => source,
@@ -589,16 +579,6 @@ pub fn get_plugin_error_message(error: &PluginError) -> String {
             format!(
                 "Plugin \"{plugin}\" LSP server \"{server_name}\" {method} request failed: {error}"
             )
-        }
-        PluginError::MarketplaceBlockedByPolicy {
-            marketplace,
-            blocked_by_blocklist,
-            ..
-        } => {
-            if blocked_by_blocklist.unwrap_or(false) {
-                return format!("Marketplace '{marketplace}' is blocked by enterprise policy");
-            }
-            format!("Marketplace '{marketplace}' is not in the allowed marketplace list")
         }
         PluginError::DependencyUnsatisfied {
             dependency, reason, ..
@@ -797,9 +777,6 @@ mod tests {
             (r#"{"source":"source","type":"lsp-request-timeout","plugin":"p","serverName":"s","method":"initialize","timeoutMs":1e+21}"#, "Plugin \"p\" LSP server \"s\" timed out on initialize request after 1e+21ms"),
             (r#"{"source":"source","type":"lsp-request-timeout","plugin":"p","serverName":"s","method":"initialize","timeoutMs":1e-07}"#, "Plugin \"p\" LSP server \"s\" timed out on initialize request after 1e-7ms"),
             (r#"{"source":"source","type":"lsp-request-failed","plugin":"p","serverName":"s","method":"initialize","error":"bad"}"#, "Plugin \"p\" LSP server \"s\" initialize request failed: bad"),
-            (r#"{"source":"source","type":"marketplace-blocked-by-policy","marketplace":"market","allowedSources":[]}"#, "Marketplace 'market' is not in the allowed marketplace list"),
-            (r#"{"source":"source","type":"marketplace-blocked-by-policy","marketplace":"market","blockedByBlocklist":false,"allowedSources":[]}"#, "Marketplace 'market' is not in the allowed marketplace list"),
-            (r#"{"source":"source","type":"marketplace-blocked-by-policy","marketplace":"market","blockedByBlocklist":true,"allowedSources":[]}"#, "Marketplace 'market' is blocked by enterprise policy"),
             (r#"{"source":"source","type":"dependency-unsatisfied","plugin":"p","dependency":"dep","reason":"not-enabled"}"#, "Dependency \"dep\" is disabled — enable it or remove the dependency"),
             (r#"{"source":"source","type":"dependency-unsatisfied","plugin":"p","dependency":"dep","reason":"not-found"}"#, "Dependency \"dep\" is not found in any configured marketplace"),
             (r#"{"source":"source","type":"plugin-cache-miss","plugin":"p","installPath":"/cache"}"#, "Plugin \"p\" not cached at /cache — run /plugins to refresh"),

@@ -118,8 +118,8 @@ pub fn strings_for_decision_reason(
     }
 
     match reason {
-        // CC `:50-59`. The quoted rule is the rule that MATCHED, and
-        // `policySettings` rules cannot be edited so they get no config hint.
+        // CC `:50-59`. The quoted rule is the rule that MATCHED. @nyan: every
+        // rule is editable (no `policySettings`), so it always gets the hint.
         PermissionDecisionReason::Rule { rule } => Some(PermissionRuleExplanationStrings {
             // CC `:52-54` `chalk.bold(permissionRuleValueToString(...))`.
             reason_string: format!(
@@ -128,9 +128,7 @@ pub fn strings_for_decision_reason(
                     &rule.rule_value
                 )
             ),
-            config_string: (rule.source
-                != crate::types::permissions::PermissionRuleSource::PolicySettings)
-                .then(|| "/permissions to update rules".to_string()),
+            config_string: Some("/permissions to update rules".to_string()),
             theme_color: None,
         }),
         // CC `:60-69`.
@@ -275,18 +273,6 @@ mod tests {
             strings.config_string.as_deref(),
             Some("/permissions to update rules")
         );
-    }
-
-    /// Maps to: CC `PermissionRuleExplanation.tsx:56-58` — a policy rule cannot
-    /// be edited, so it gets no `/permissions` hint.
-    #[test]
-    fn permission_rule_explanation_matches_official_policy_settings_has_no_config_hint() {
-        let strings = strings_for_decision_reason(
-            Some(&ask_rule(PermissionRuleSource::PolicySettings, "rm:*")),
-            PermissionRuleToolType::Command,
-        )
-        .expect("rule reason renders");
-        assert_eq!(strings.config_string, None);
     }
 
     /// Maps to: CC `PermissionRuleExplanation.tsx:30-32,81-83` — no reason and

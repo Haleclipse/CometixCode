@@ -15,7 +15,6 @@ use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SkillMenuSource {
-    PolicySettings,
     UserSettings,
     ProjectSettings,
     LocalSettings,
@@ -59,7 +58,6 @@ impl From<&SkillCommand> for SkillMenuCommand {
             description: skill.description.clone(),
             when_to_use: skill.when_to_use.clone(),
             source: match skill.source {
-                SkillSource::PolicySettings => SkillMenuSource::PolicySettings,
                 SkillSource::UserSettings => SkillMenuSource::UserSettings,
                 SkillSource::ProjectSettings => SkillMenuSource::ProjectSettings,
             },
@@ -83,7 +81,6 @@ pub struct SkillsMenuDone {
 
 fn source_title(source: SkillMenuSource) -> &'static str {
     match source {
-        SkillMenuSource::PolicySettings => "Managed skills",
         SkillMenuSource::UserSettings => "User skills",
         SkillMenuSource::ProjectSettings => "Project skills",
         SkillMenuSource::LocalSettings => "Project, gitignored skills",
@@ -103,9 +100,6 @@ fn skills_path(source: SkillMenuSource, directory: &str) -> String {
     use crate::utils::settings::constants::SettingSource;
 
     let path = match source {
-        SkillMenuSource::PolicySettings => {
-            get_skills_path(SkillsPathSource::Setting(SettingSource::Policy), directory)
-        }
         SkillMenuSource::UserSettings => {
             get_skills_path(SkillsPathSource::Setting(SettingSource::User), directory)
         }
@@ -231,7 +225,6 @@ pub fn SkillsMenu<'a>(
     let order = [
         SkillMenuSource::ProjectSettings,
         SkillMenuSource::UserSettings,
-        SkillMenuSource::PolicySettings,
         SkillMenuSource::Plugin,
         SkillMenuSource::Bundled,
         SkillMenuSource::Mcp,

@@ -410,7 +410,6 @@ mod tests {
 
         let _task_guard = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
 
         session_hooks::clear_all_session_hooks();
         session_hooks::add_session_hook(

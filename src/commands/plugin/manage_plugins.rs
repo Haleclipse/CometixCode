@@ -17,7 +17,7 @@ use crate::services::plugins::plugin_operations::*;
 use crate::types::plugin::{LoadedPlugin, PluginError};
 use crate::utils::plugins::{
     installed_plugins_manager::*, marketplace_manager::*, plugin_flagging::*, plugin_loader::*,
-    plugin_options_storage as options, plugin_policy::*, schemas::PluginScope,
+    plugin_options_storage as options, schemas::PluginScope,
 };
 use iocraft::prelude::*;
 use serde_json::{Map, Value};
@@ -174,21 +174,6 @@ async fn get_skill_dir_names(path: &Path) -> Vec<String> {
 async fn check_if_local_plugin(name: &str, marketplace: &str) -> anyhow::Result<Option<String>> {
     let catalog = get_marketplace(marketplace).await?;
     Ok(catalog["plugins"].as_array().and_then(|entries|entries.iter().find(|e|e["name"].as_str()==Some(name))).and_then(|entry|entry["source"].as_str()).map(|source|format!("Local plugins cannot be updated remotely. To update, modify the source at: {source}")))
-}
-/// Maps to: CC ManagePlugins.tsx:503-511#filterManagedDisabledPlugins.
-pub fn filter_managed_disabled_plugins(plugins: Vec<LoadedPlugin>) -> Vec<LoadedPlugin> {
-    plugins
-        .into_iter()
-        .filter(|plugin| {
-            let marketplace = plugin
-                .source
-                .split('@')
-                .nth(1)
-                .filter(|s| !s.is_empty())
-                .unwrap_or("local");
-            !is_plugin_blocked_by_policy(&format!("{}@{marketplace}", plugin.name))
-        })
-        .collect()
 }
 // Native projection of the source scope union. Non-installation scope labels
 // must not silently become an editable user-scope installation.
@@ -757,9 +742,7 @@ pub fn ManagePlugins(
                             Ok(loaded) => {
                                 let mut groups =
                                     indexmap::IndexMap::<String, Vec<LoadedPlugin>>::new();
-                                for plugin in filter_managed_disabled_plugins(
-                                    loaded.enabled.into_iter().chain(loaded.disabled).collect(),
-                                ) {
+                                for plugin in loaded.enabled.into_iter().chain(loaded.disabled) {
                                     let marketplace = plugin
                                         .source
                                         .split('@')

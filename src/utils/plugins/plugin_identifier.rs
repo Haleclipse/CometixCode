@@ -14,11 +14,8 @@ pub enum ExtendedPluginScope {
 pub type PersistablePluginScope = PluginScope;
 
 /// Maps to: CC `utils/plugins/pluginIdentifier.ts:26-32#SETTING_SOURCE_TO_SCOPE`.
-pub const SETTING_SOURCE_TO_SCOPE: [(SettingSource, ExtendedPluginScope); 5] = [
-    (
-        SettingSource::Policy,
-        ExtendedPluginScope::Persistable(PluginScope::Managed),
-    ),
+/// @nyan: no `policySettings → managed` row (no managed policy layer).
+pub const SETTING_SOURCE_TO_SCOPE: [(SettingSource, ExtendedPluginScope); 4] = [
     (
         SettingSource::User,
         ExtendedPluginScope::Persistable(PluginScope::User),
@@ -124,7 +121,7 @@ pub fn setting_source_to_scope(source: EditableSettingSource) -> PersistablePlug
     match scope {
         ExtendedPluginScope::Persistable(scope) => scope,
         ExtendedPluginScope::Flag => {
-            unreachable!("editable setting sources exclude policy and flag")
+            unreachable!("editable setting sources exclude flag")
         }
     }
 }
@@ -140,10 +137,6 @@ mod tests {
         assert_eq!(
             SETTING_SOURCE_TO_SCOPE,
             [
-                (
-                    SettingSource::Policy,
-                    ExtendedPluginScope::Persistable(PluginScope::Managed)
-                ),
                 (
                     SettingSource::User,
                     ExtendedPluginScope::Persistable(PluginScope::User)

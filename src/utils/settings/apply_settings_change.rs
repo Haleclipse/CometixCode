@@ -4,7 +4,7 @@
 //! replaces the corresponding AppState snapshots.
 
 use super::SettingSource;
-use super::{get_settings_for_source, get_settings_with_errors};
+use super::get_settings_with_errors;
 use crate::state::store::AppStore;
 use std::sync::Arc;
 
@@ -17,20 +17,12 @@ pub fn apply_settings_change(source: SettingSource, store: &AppStore) {
     ));
     let permission_rules =
         crate::utils::permissions::permissions_loader::load_all_permission_rules_from_disk();
-    let managed_only =
-        crate::utils::permissions::permissions_loader::should_allow_managed_permission_rules_only();
-    let policy_settings = get_settings_for_source(SettingSource::Policy);
-    crate::utils::hooks::hooks_config_snapshot::update_hooks_config_snapshot(
-        &fresh.settings,
-        policy_settings.as_ref(),
-        crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("hooks"),
-    );
+    crate::utils::hooks::hooks_config_snapshot::update_hooks_config_snapshot(&fresh.settings);
     store.replace_with(|state| {
         let mut permission_context =
             crate::utils::permissions::permissions::sync_permission_rules_from_disk(
                 &state.tool_permission_context,
                 &permission_rules,
-                managed_only,
             );
 
         // Maps to CC's internal-distribution broad-shell re-strip after sync.

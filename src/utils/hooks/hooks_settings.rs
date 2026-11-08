@@ -23,7 +23,6 @@ pub enum HookSource {
     UserSettings,
     ProjectSettings,
     LocalSettings,
-    PolicySettings,
     PluginHook,
     SessionHook,
     BuiltinHook,
@@ -35,7 +34,6 @@ impl HookSource {
             Self::UserSettings => "userSettings",
             Self::ProjectSettings => "projectSettings",
             Self::LocalSettings => "localSettings",
-            Self::PolicySettings => "policySettings",
             Self::PluginHook => "pluginHook",
             Self::SessionHook => "sessionHook",
             Self::BuiltinHook => "builtinHook",
@@ -219,30 +217,23 @@ pub fn get_hook_display_text(hook: &HookDisplayConfig) -> &str {
 pub fn get_all_hooks(session_id: &str) -> Vec<IndividualHookConfig> {
     let mut hooks = Vec::new();
 
-    let policy_settings = settings::get_settings_for_source(SettingSource::Policy);
-    let restricted_to_managed_only = policy_settings
-        .as_ref()
-        .is_some_and(|settings| settings.allow_managed_hooks_only == Some(true));
-
-    if !restricted_to_managed_only {
-        let mut seen_files = HashSet::<PathBuf>::new();
-        for (setting_source, hook_source) in editable_hook_sources() {
-            if let Some(file_path) = settings::get_settings_file_path_for_source(setting_source) {
-                let resolved = resolved_source_path(&file_path);
-                if !seen_files.insert(resolved) {
-                    continue;
-                }
-            }
-
-            let Some(source_settings) = settings::get_settings_for_source(setting_source) else {
+    let mut seen_files = HashSet::<PathBuf>::new();
+    for (setting_source, hook_source) in editable_hook_sources() {
+        if let Some(file_path) = settings::get_settings_file_path_for_source(setting_source) {
+            let resolved = resolved_source_path(&file_path);
+            if !seen_files.insert(resolved) {
                 continue;
-            };
-            push_hooks_from_config(
-                &mut hooks,
-                hook_source,
-                hooks_config_from_settings(&source_settings),
-            );
+            }
         }
+
+        let Some(source_settings) = settings::get_settings_for_source(setting_source) else {
+            continue;
+        };
+        push_hooks_from_config(
+            &mut hooks,
+            hook_source,
+            hooks_config_from_settings(&source_settings),
+        );
     }
 
     let session_hooks = super::session_hooks::get_session_hooks(session_id, None)
@@ -284,7 +275,6 @@ pub fn hook_source_description_display_string(source: HookSource) -> &'static st
         HookSource::PluginHook => "Plugin hooks (~/.nyan/plugins/*/hooks/hooks.json)",
         HookSource::SessionHook => "Session hooks (in-memory, temporary)",
         HookSource::BuiltinHook => "Built-in hooks (registered internally by nyan)",
-        HookSource::PolicySettings => "policySettings",
     }
 }
 
@@ -297,7 +287,6 @@ pub fn hook_source_header_display_string(source: HookSource) -> &'static str {
         HookSource::PluginHook => "Plugin Hooks",
         HookSource::SessionHook => "Session Hooks",
         HookSource::BuiltinHook => "Built-in Hooks",
-        HookSource::PolicySettings => "policySettings",
     }
 }
 
@@ -310,7 +299,6 @@ pub fn hook_source_inline_display_string(source: HookSource) -> &'static str {
         HookSource::PluginHook => "Plugin",
         HookSource::SessionHook => "Session",
         HookSource::BuiltinHook => "Built-in",
-        HookSource::PolicySettings => "policySettings",
     }
 }
 
@@ -323,7 +311,7 @@ fn source_priority(source: HookSource) -> usize {
         HookSource::PluginHook | HookSource::BuiltinHook => 999,
         // Non-editable sources are not in CC `SOURCES`; keep them stable after
         // editable settings sources.
-        HookSource::SessionHook | HookSource::PolicySettings => 999,
+        HookSource::SessionHook => 999,
     }
 }
 

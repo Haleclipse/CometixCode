@@ -62,7 +62,6 @@ mod tests {
         let startup_settings = Arc::new(SettingsWithErrors {
             settings: crate::utils::settings::SettingsJson::default(),
             errors: Vec::new(),
-            policy_settings: None,
         });
         let initial = crate::main::build_initial_app_state(
             &startup_settings.settings,

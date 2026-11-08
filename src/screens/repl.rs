@@ -10125,11 +10125,8 @@ mod tests {
         let _runtime = runtime.enter();
         let directory = BranchFixtureDirectory::new();
         let config = directory.path().join("config");
-        let managed = directory.path().join("managed");
         std::fs::create_dir_all(&config).unwrap();
-        std::fs::create_dir_all(&managed).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let _remote = EnvVarGuard::set("ENABLE_CLAUDEAI_MCP_SERVERS", "0");
         let _cwd = OriginalCwdGuard::set(directory.path());
@@ -11849,9 +11846,7 @@ mod tests {
             })),
             ..Default::default()
         };
-        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(
-            &settings, None, false,
-        );
+        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(&settings);
         let target = resume::ResumeTarget {
             session_id: target_id.clone(),
             project_path: None,
@@ -11911,9 +11906,7 @@ mod tests {
             ..crate::utils::settings::SettingsJson::default()
         };
         crate::utils::hooks::hooks_config_snapshot::reset_hooks_config_snapshot();
-        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(
-            &settings, None, false,
-        );
+        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(&settings);
         let target = resume::ResumeTarget {
             session_id: "repl-resume-session".to_string(),
             project_path: None,
@@ -18967,8 +18960,6 @@ mod tests {
                 })),
                 ..Default::default()
             },
-            None,
-            false,
         );
         let entries = vec![
             json!({"type":"user","uuid":"root","sessionId":target_id,"parentUuid":null,

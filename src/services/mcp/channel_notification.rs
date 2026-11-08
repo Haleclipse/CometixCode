@@ -27,18 +27,12 @@ pub const CHANNEL_EXPERIMENTAL_CAPABILITY: &str = "claude/channel";
 /// Maps to: CC `capabilities.experimental['claude/channel/permission']`.
 pub const CHANNEL_PERMISSION_EXPERIMENTAL_CAPABILITY: &str = "claude/channel/permission";
 
-/// Maps to: CC `getEffectiveChannelAllowlist(...)` source discriminator.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ChannelAllowlistSource {
-    Org,
-    Ledger,
-}
-
 /// Maps to: CC `getEffectiveChannelAllowlist(...)` return shape.
+/// @nyan: always the ledger; CC's org list comes from managed settings, which
+/// nyan does not have.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EffectiveChannelAllowlist {
     pub entries: Vec<ChannelAllowlistEntry>,
-    pub source: ChannelAllowlistSource,
 }
 
 /// Maps to: CC `ChannelMessageNotificationSchema` parsed params.
@@ -61,8 +55,6 @@ pub struct ChannelPermissionNotification {
 pub struct ChannelRuntimeGateContext {
     pub channels_enabled: bool,
     pub has_claude_ai_oauth: bool,
-    pub subscription: Option<String>,
-    pub policy_channels_enabled: Option<bool>,
     pub session_channels: Vec<ChannelEntry>,
     pub allowlist: EffectiveChannelAllowlist,
 }
@@ -73,7 +65,6 @@ pub enum ChannelGateSkipKind {
     Capability,
     Disabled,
     Auth,
-    Policy,
     Session,
     Marketplace,
     Allowlist,
@@ -87,10 +78,6 @@ pub enum ChannelGateResult {
         kind: ChannelGateSkipKind,
         reason: String,
     },
-}
-
-fn is_managed_subscription(subscription: Option<&str>) -> bool {
-    matches!(subscription, Some("team" | "enterprise"))
 }
 
 fn parse_plugin_marketplace(plugin_source: &str) -> Option<String> {
@@ -163,58 +150,21 @@ pub fn parse_channel_permission_notification_params(
     })
 }
 
-fn channel_allowlist_entry_from_value(value: &Value) -> Option<ChannelAllowlistEntry> {
-    // Maps to: CC managed setting `allowedChannelPlugins` entries, which use
-    // the same `{ marketplace, plugin }` shape as `ChannelAllowlistEntry`.
-    Some(ChannelAllowlistEntry {
-        marketplace: value
-            .get("marketplace")
-            .and_then(Value::as_str)?
-            .to_string(),
-        plugin: value.get("plugin").and_then(Value::as_str)?.to_string(),
-    })
-}
-
-fn channel_allowlist_entries_from_values(values: &[Value]) -> Option<Vec<ChannelAllowlistEntry>> {
-    values
-        .iter()
-        .map(channel_allowlist_entry_from_value)
-        .collect::<Option<Vec<_>>>()
-}
-
-/// Maps to: CC managed setting `allowedChannelPlugins` parsing.
-pub fn allowed_channel_plugins_from_settings_values(
-    values: Option<&[Value]>,
-) -> Vec<ChannelAllowlistEntry> {
-    values
-        .and_then(channel_allowlist_entries_from_values)
-        .unwrap_or_default()
-}
-
 /// Maps to: CC `gateChannelServer(...)` caller-side reads in
 /// `useManageMCPConnections.ts`.
 /// A `get_env` parameter was removed: the body never read it. A `global_config`
 /// parameter was removed likewise once the channel ledger moved to the switch
 /// table. Channels require a claude.ai OAuth login, which does not exist, so the
 /// subscription is always absent and `has_claude_ai_oauth` is always false.
-pub fn channel_gate_context_from_readonly_runtime(
-    policy_settings: Option<&crate::utils::settings::SettingsJson>,
-) -> ChannelRuntimeGateContext {
-    let subscription: Option<String> = None;
-    let org_list = policy_settings
-        .and_then(|settings| settings.allowed_channel_plugins.as_deref())
-        .map(|values| allowed_channel_plugins_from_settings_values(Some(values)));
+/// @nyan: no managed settings, so no org `channelsEnabled`/`allowedChannelPlugins`.
+pub fn channel_gate_context_from_readonly_runtime() -> ChannelRuntimeGateContext {
     ChannelRuntimeGateContext {
         channels_enabled: crate::services::mcp::channel_allowlist::is_channels_enabled(),
         has_claude_ai_oauth: false,
-        policy_channels_enabled: policy_settings.and_then(|settings| settings.channels_enabled),
         session_channels: crate::bootstrap::state::get_allowed_channels(),
-        allowlist: get_effective_channel_allowlist(
-            subscription.as_deref(),
-            org_list,
-            crate::services::mcp::channel_allowlist::get_channel_allowlist(),
-        ),
-        subscription,
+        allowlist: EffectiveChannelAllowlist {
+            entries: crate::services::mcp::channel_allowlist::get_channel_allowlist(),
+        },
     }
 }
 
@@ -265,34 +215,12 @@ pub fn find_channel_entry<'a>(
     })
 }
 
-/// Maps to: CC `getEffectiveChannelAllowlist(...)`.
-pub fn get_effective_channel_allowlist(
-    subscription: Option<&str>,
-    org_list: Option<Vec<ChannelAllowlistEntry>>,
-    ledger: Vec<ChannelAllowlistEntry>,
-) -> EffectiveChannelAllowlist {
-    if is_managed_subscription(subscription)
-        && let Some(entries) = org_list
-    {
-        return EffectiveChannelAllowlist {
-            entries,
-            source: ChannelAllowlistSource::Org,
-        };
-    }
-    EffectiveChannelAllowlist {
-        entries: ledger,
-        source: ChannelAllowlistSource::Ledger,
-    }
-}
-
 /// Pure counterpart of CC `gateChannelServer(...)`.
 pub fn gate_channel_server_from_context(
     server_name: &str,
     has_channel_capability: bool,
     channels_enabled: bool,
     has_claude_ai_oauth: bool,
-    subscription: Option<&str>,
-    policy_channels_enabled: Option<bool>,
     session_channels: &[ChannelEntry],
     plugin_source: Option<&str>,
     allowlist: &EffectiveChannelAllowlist,
@@ -315,16 +243,6 @@ pub fn gate_channel_server_from_context(
         return ChannelGateResult::Skip {
             kind: ChannelGateSkipKind::Auth,
             reason: "channels requires claude.ai authentication (run /login)".to_string(),
-        };
-    }
-
-    let managed = is_managed_subscription(subscription);
-    if managed && policy_channels_enabled != Some(true) {
-        return ChannelGateResult::Skip {
-            kind: ChannelGateSkipKind::Policy,
-            reason:
-                "channels not enabled by org policy (set channelsEnabled: true in managed settings)"
-                    .to_string(),
         };
     }
 
@@ -360,14 +278,9 @@ pub fn gate_channel_server_from_context(
             {
                 return ChannelGateResult::Skip {
                     kind: ChannelGateSkipKind::Allowlist,
-                    reason: match allowlist.source {
-                        ChannelAllowlistSource::Org => format!(
-                            "plugin {name}@{marketplace} is not on your org's approved channels list (set allowedChannelPlugins in managed settings)"
-                        ),
-                        ChannelAllowlistSource::Ledger => format!(
-                            "plugin {name}@{marketplace} is not on the approved channels allowlist (use --dangerously-load-development-channels for local dev)"
-                        ),
-                    },
+                    reason: format!(
+                        "plugin {name}@{marketplace} is not on the approved channels allowlist (use --dangerously-load-development-channels for local dev)"
+                    ),
                 };
             }
         }
@@ -450,7 +363,6 @@ mod tests {
                 plugin: "slack".to_string(),
                 marketplace: "anthropic".to_string(),
             }],
-            source: ChannelAllowlistSource::Ledger,
         };
         let channels = vec![ChannelEntry::plugin("slack", "anthropic", false)];
         assert_eq!(
@@ -459,8 +371,6 @@ mod tests {
                 true,
                 true,
                 true,
-                Some("max"),
-                None,
                 &channels,
                 Some("slack@anthropic"),
                 &ledger,
@@ -473,8 +383,6 @@ mod tests {
                 true,
                 true,
                 true,
-                Some("max"),
-                None,
                 &channels,
                 Some("slack@anthropic@ignored"),
                 &ledger,
@@ -487,8 +395,6 @@ mod tests {
             true,
             true,
             true,
-            Some("max"),
-            None,
             &channels,
             Some("slack@evil"),
             &ledger,
@@ -506,8 +412,6 @@ mod tests {
             true,
             true,
             true,
-            Some("max"),
-            None,
             &[ChannelEntry::server("planner", false)],
             None,
             &ledger,
@@ -525,36 +429,11 @@ mod tests {
                 true,
                 true,
                 true,
-                Some("max"),
-                None,
                 &[ChannelEntry::server("planner", true)],
                 None,
                 &ledger,
             ),
             ChannelGateResult::Register
-        );
-    }
-
-    #[test]
-    fn effective_channel_allowlist_uses_org_list_only_for_managed_subscriptions() {
-        let ledger = vec![ChannelAllowlistEntry {
-            plugin: "ledger".to_string(),
-            marketplace: "market".to_string(),
-        }];
-        let org = vec![ChannelAllowlistEntry {
-            plugin: "org".to_string(),
-            marketplace: "market".to_string(),
-        }];
-        assert_eq!(
-            get_effective_channel_allowlist(Some("team"), Some(org.clone()), ledger.clone())
-                .entries[0]
-                .plugin,
-            "org"
-        );
-        assert_eq!(
-            get_effective_channel_allowlist(Some("max"), Some(org), ledger.clone()).entries[0]
-                .plugin,
-            "ledger"
         );
     }
 
@@ -603,15 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn allowed_channel_plugins_parser_reads_policy_values() {
-        let policy = allowed_channel_plugins_from_settings_values(Some(&[
-            serde_json::json!({ "marketplace": "org", "plugin": "pager" }),
-        ]));
-        assert_eq!(policy[0].marketplace, "org");
-    }
-
-    #[test]
-    fn channel_gate_context_reads_cached_ledger_policy_and_session_channels_without_oauth() {
+    fn channel_gate_context_reads_cached_ledger_and_session_channels_without_oauth() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _channels_guard =
             AllowedChannelsGuard::set(vec![ChannelEntry::server("planner", true)]);
@@ -625,23 +496,14 @@ mod tests {
             serde_json::json!([{ "marketplace": "anthropic", "plugin": "mailbox" }]),
         )]));
         crate::utils::config::set_test_global_config(Some(config));
-        let mut policy = crate::utils::settings::SettingsJson::default();
-        policy.channels_enabled = Some(true);
-        policy.allowed_channel_plugins = Some(vec![
-            serde_json::json!({ "marketplace": "org", "plugin": "pager" }),
-        ]);
-
-        let context = channel_gate_context_from_readonly_runtime(Some(&policy));
+        let context = channel_gate_context_from_readonly_runtime();
         crate::utils::config::set_test_global_config(None);
         assert!(!context.channels_enabled);
         assert!(!context.has_claude_ai_oauth);
-        assert_eq!(context.subscription, None);
-        assert_eq!(context.policy_channels_enabled, Some(true));
         assert_eq!(
             context.session_channels,
             vec![ChannelEntry::server("planner", true)]
         );
-        assert_eq!(context.allowlist.source, ChannelAllowlistSource::Ledger);
         assert!(
             context.allowlist.entries.is_empty(),
             "the cached GrowthBook ledger is inert; the switch table ships the official empty payload"

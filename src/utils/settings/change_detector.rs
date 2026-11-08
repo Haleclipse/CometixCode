@@ -69,11 +69,10 @@ fn detector() -> MutexGuard<'static, DetectorState> {
 /// Sources watched for changes. Maps to: CC `getWatchTargets` (:180-250),
 /// which skips `flagSettings` (:194-196: CLI-provided, never changes in a
 /// session, and may live in `$TMPDIR` alongside special files).
-const WATCHED_SOURCES: [SettingSource; 4] = [
+const WATCHED_SOURCES: [SettingSource; 3] = [
     SettingSource::User,
     SettingSource::Project,
     SettingSource::Local,
-    SettingSource::Policy,
 ];
 
 /// Maps to: CC `initialize()` (:84-146) — start the change source once.

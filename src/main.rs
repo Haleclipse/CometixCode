@@ -494,16 +494,6 @@ pub struct McpStartupConfig {
 pub fn resolve_mcp_startup_config(
     cli: &crate::cli::CliConfig,
 ) -> Result<(McpStartupConfig, Vec<String>), String> {
-    resolve_mcp_startup_config_with_enterprise(
-        cli,
-        crate::services::mcp::config::does_enterprise_mcp_config_exist_readonly(),
-    )
-}
-
-fn resolve_mcp_startup_config_with_enterprise(
-    cli: &crate::cli::CliConfig,
-    enterprise_exists: bool,
-) -> Result<(McpStartupConfig, Vec<String>), String> {
     let parsed = crate::services::mcp::config::parse_dynamic_mcp_configs_readonly(&cli.mcp_config);
     if !parsed.errors.is_empty() {
         return Err(format!(
@@ -523,24 +513,8 @@ fn resolve_mcp_startup_config_with_enterprise(
         );
     }
     // The gated Computer-Use reserved name remains tied to its unported
-    // CHICAGO_MCP startup branch; policy and enterprise boundaries are live.
-    if enterprise_exists && cli.strict_mcp_config {
-        return Err(
-            "You cannot use --strict-mcp-config when an enterprise MCP config is present"
-                .to_string(),
-        );
-    }
-    if enterprise_exists
-        && parsed
-            .servers
-            .values()
-            .any(|config| config.transport != crate::services::mcp::types::Transport::Sdk)
-    {
-        return Err(
-            "You cannot dynamically configure MCP servers when an enterprise MCP config is present"
-                .to_string(),
-        );
-    }
+    // CHICAGO_MCP startup branch. @nyan: no enterprise `managed-mcp.json`, so
+    // CC's enterprise conflicts with --strict-mcp-config / --mcp-config are gone.
 
     let warnings = if parsed.blocked.is_empty() {
         Vec::new()
@@ -961,7 +935,6 @@ impl Default for MainProps {
             startup_settings: Arc::new(SettingsWithErrors {
                 settings: SettingsJson::default(),
                 errors: Vec::new(),
-                policy_settings: None,
             }),
             setup_snapshot: Arc::new(SetupScreensSnapshot::default()),
             repl_props: ReplProps::default(),
@@ -1053,15 +1026,13 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     if setup_complete.get() && !plugin_hooks_loaded.get() {
         let policy =
             crate::utils::hooks::hooks_config_snapshot::load_hooks_config_from_settings_sources();
-        if !policy.allow_managed_hooks_only
-            && !policy.disable_all_hooks
+        if !policy.disable_all_hooks
             && let Err(error) = crate::utils::plugins::load_plugin_hooks::load_plugin_hooks()
         {
             crate::utils::debug::log_for_debugging(&format!(
                 "Warning: Failed to load plugin hooks after setup: {error}"
             ));
         }
-        crate::utils::plugins::load_plugin_hooks::setup_plugin_hook_hot_reload();
         plugin_hooks_loaded.set(true);
     }
 
@@ -2056,7 +2027,7 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_mcp_startup_enforces_official_enterprise_conflicts_and_sdk_exemption() {
+    fn dynamic_mcp_startup_rejects_reserved_names_and_accepts_dynamic_servers() {
         let non_sdk_json = serde_json::json!({
             "mcpServers": { "docs": { "command": "docs-server" } }
         })
@@ -2076,37 +2047,27 @@ mod tests {
             ..crate::cli::CliConfig::default()
         };
         assert!(
-            resolve_mcp_startup_config_with_enterprise(&reserved, false)
+            resolve_mcp_startup_config(&reserved)
                 .unwrap_err()
                 .contains("reserved MCP name")
         );
 
-        let strict = crate::cli::CliConfig {
-            mcp_config: vec![non_sdk_json.clone()],
+        let dynamic = crate::cli::CliConfig {
+            mcp_config: vec![non_sdk_json],
             strict_mcp_config: true,
             ..crate::cli::CliConfig::default()
         };
-        assert!(
-            resolve_mcp_startup_config_with_enterprise(&strict, true)
-                .unwrap_err()
-                .contains("--strict-mcp-config")
-        );
-
-        let dynamic = crate::cli::CliConfig {
-            mcp_config: vec![non_sdk_json],
-            ..crate::cli::CliConfig::default()
-        };
-        assert!(
-            resolve_mcp_startup_config_with_enterprise(&dynamic, true)
-                .unwrap_err()
-                .contains("cannot dynamically configure MCP servers")
+        let (resolved, _) = resolve_mcp_startup_config(&dynamic).unwrap();
+        assert_eq!(
+            resolved.dynamic["docs"].command.as_deref(),
+            Some("docs-server")
         );
 
         let sdk = crate::cli::CliConfig {
             mcp_config: vec![sdk_json],
             ..crate::cli::CliConfig::default()
         };
-        let (resolved, warnings) = resolve_mcp_startup_config_with_enterprise(&sdk, true).unwrap();
+        let (resolved, warnings) = resolve_mcp_startup_config(&sdk).unwrap();
         assert!(warnings.is_empty());
         assert_eq!(
             resolved.dynamic["sdk"].transport,
@@ -2194,13 +2155,10 @@ mod tests {
             ..SettingsJson::default()
         };
         crate::utils::hooks::hooks_config_snapshot::reset_hooks_config_snapshot();
-        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(
-            &settings, None, false,
-        );
+        crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(&settings);
         let startup_settings = Arc::new(SettingsWithErrors {
             settings: settings.clone(),
             errors: Vec::new(),
-            policy_settings: None,
         });
         let session_id = uuid::Uuid::new_v4().to_string();
         let session_file =
@@ -2342,7 +2300,6 @@ mod tests {
         let startup_settings = Arc::new(SettingsWithErrors {
             settings: SettingsJson::default(),
             errors: Vec::new(),
-            policy_settings: None,
         });
         let missing_session_id = uuid::Uuid::new_v4().to_string();
         let exit_code = Arc::new(AtomicI32::new(0));
@@ -2441,7 +2398,6 @@ mod tests {
         let startup_settings = Arc::new(SettingsWithErrors {
             settings: SettingsJson::default(),
             errors: Vec::new(),
-            policy_settings: None,
         });
         let store = AppStore::new(
             build_initial_app_state(

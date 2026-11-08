@@ -19,7 +19,7 @@ use iocraft::prelude::*;
 use std::collections::BTreeMap;
 
 const RESERVED_CATEGORY_NAME: &str = "Autocompact buffer";
-const SOURCE_DISPLAY_ORDER: &[&str] = &["Project", "User", "Managed", "Plugin", "Built-in"];
+const SOURCE_DISPLAY_ORDER: &[&str] = &["Project", "User", "Plugin", "Built-in"];
 
 #[derive(Clone, Debug, Default, Props)]
 pub struct ContextVisualizationProps {

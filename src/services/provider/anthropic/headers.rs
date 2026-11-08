@@ -151,7 +151,6 @@ mod tests {
                 ..SettingsJson::default()
             },
             errors: Vec::new(),
-            policy_settings: None,
         });
         let mut headers =
             HashMap::from([("anthropic-beta".to_string(), Some("computed".to_string()))]);

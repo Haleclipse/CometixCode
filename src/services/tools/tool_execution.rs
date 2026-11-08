@@ -3763,7 +3763,7 @@ fn load_tool_hooks_config_and_env(
 ) -> Option<(RegisteredHooks, Vec<(String, String)>)> {
     let loaded_hooks = crate::services::hooks::load_hooks_config();
     let mut config = loaded_hooks.config;
-    if !loaded_hooks.allow_managed_hooks_only {
+    if !loaded_hooks.disable_all_hooks {
         // CC reads the session id as `toolUseContext.agentId ?? getSessionId()`
         // — six times in hooks.ts (`:2003 :3409 :3504 :3540 :3655 :3836`), plus
         // four that call `getSessionId()` outright. Not one of them skips the
@@ -4236,7 +4236,6 @@ mod tests {
         ]
         .map(EnvVarGuard::unset);
         let _settings = IsolatedProjectSettings::pin();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
 
         let input_capture = std::env::temp_dir().join(format!(
@@ -7154,7 +7153,6 @@ mod tests {
     async fn failing_tool_fires_post_tool_use_failure_with_is_interrupt_false() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let capture = std::env::temp_dir().join(format!(
             "nyan-post-failure-{}.json",
             uuid::Uuid::new_v4().simple()
@@ -13830,7 +13828,6 @@ mod permission_request_hook_decision_tests {
     async fn permission_request_hook_deny_message_reason_and_terminal_result_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         for reason in [Some("policy blocks this read"), Some(""), None] {
             let mut decision = json!({"behavior": "deny"});
@@ -13934,7 +13931,6 @@ mod permission_request_hook_decision_tests {
     async fn permission_request_hook_winning_allow_isolation_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         let config = competing_decisions(
             json!({"behavior": "allow", "updatedInput": {"file_path": "/tmp/winner"}}),
@@ -14058,7 +14054,6 @@ mod pre_tool_hook_decision_tests {
     async fn pre_tool_hook_prepare_message_and_reason_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         for behavior in ["allow", "ask", "deny"] {
             for reason in [Some("completion reason"), Some(""), None] {
@@ -14111,7 +14106,6 @@ mod pre_tool_hook_decision_tests {
     async fn pre_tool_hook_aggregated_deny_configured_terminal_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         for (later, expected_reason, expected_message) in [
             (

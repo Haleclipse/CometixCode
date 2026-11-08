@@ -316,8 +316,8 @@ mod tests {
     fn remote_environment_helpers_match_official_copy() {
         let cloud = env(EnvironmentKind::AnthropicCloud, "env_cloud", "Cloud");
         assert_eq!(
-            remote_environment_source_suffix(Some(SettingSource::Policy)),
-            " (from managed settings)"
+            remote_environment_source_suffix(Some(SettingSource::User)),
+            " (from user settings)"
         );
         assert_eq!(
             remote_environment_source_suffix(Some(SettingSource::Local)),
@@ -418,7 +418,7 @@ mod tests {
         let selection = get_environment_selection_info_from_snapshot(
             vec![cloud, byoc],
             Some("env_byoc"),
-            &[(SettingSource::Policy, Some("env_byoc".to_string()))],
+            &[(SettingSource::Project, Some("env_byoc".to_string()))],
         );
 
         let text = element! {
@@ -433,7 +433,7 @@ mod tests {
         .to_string();
 
         assert!(
-            text.contains("Currently using: BYOC (from managed settings)"),
+            text.contains("Currently using: BYOC (from project settings)"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Cloud (env_cloud)"), "canvas=\n{text}");

@@ -139,10 +139,6 @@ pub async fn load_plugins_from_marketplaces(
         .map(|(id, value)| (id.clone(), value.clone()))
         .collect();
     let known = load_known_marketplaces_config_safe().await;
-    let allowlist = get_strict_known_marketplaces();
-    let blocklist = get_blocked_marketplaces();
-    let active_policy =
-        allowlist.is_some() || blocklist.as_ref().is_some_and(|list| !list.is_empty());
     let mut names = Vec::new();
     for (id, _) in &entries {
         if let Some(name) = super::plugin_identifier::parse_plugin_identifier(id).marketplace
@@ -170,54 +166,12 @@ pub async fn load_plugins_from_marketplaces(
         let known = &known;
         let catalogs = &catalogs;
         let installed = &installed;
-        let allowlist = &allowlist;
         let errors = &errors;
         async move {
             let parsed = super::plugin_identifier::parse_plugin_identifier(id);
             let name = parsed.name;
             let marketplace = parsed.marketplace.expect("validated marketplace ID");
             let config = known.get(&marketplace);
-            if config.is_none() && active_policy {
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(PluginError::MarketplaceBlockedByPolicy {
-                        source: id.clone(),
-                        plugin: Some(name),
-                        marketplace,
-                        blocked_by_blocklist: Some(allowlist.is_none()),
-                        allowed_sources: allowlist
-                            .iter()
-                            .flatten()
-                            .map(format_source_for_display)
-                            .collect(),
-                    });
-                return None;
-            }
-            if let Some(config) = config
-                && !is_source_allowed_by_policy(&config["source"])
-            {
-                let blocked = is_source_in_blocklist(&config["source"]);
-                errors
-                    .lock()
-                    .unwrap()
-                    .push(PluginError::MarketplaceBlockedByPolicy {
-                        source: id.clone(),
-                        plugin: Some(name),
-                        marketplace,
-                        blocked_by_blocklist: Some(blocked),
-                        allowed_sources: if blocked {
-                            vec![]
-                        } else {
-                            get_strict_known_marketplaces()
-                                .into_iter()
-                                .flatten()
-                                .map(|s| format_source_for_display(&s))
-                                .collect()
-                        },
-                    });
-                return None;
-            }
             let result =
                 if let (Some(Some(catalog)), Some(config)) = (catalogs.get(&marketplace), config) {
                     catalog["plugins"]
@@ -1766,15 +1720,12 @@ async fn assemble_plugin_load_result(
         .into_iter()
         .chain(builtin.disabled)
         .collect::<Vec<_>>();
-    let managed = super::managed_plugins::get_managed_plugin_names();
-    let (mut plugins, merge_errors) = merge_plugin_sources(PluginSources {
+    let mut plugins = merge_plugin_sources(PluginSources {
         session: &session,
         marketplace: &marketplace,
         builtin: &builtin,
-        managed_names: managed.as_ref(),
     });
     errors.extend(session_errors);
-    errors.extend(merge_errors);
     let (demoted, dep_errors) = super::dependency_resolver::verify_and_demote(&plugins);
     for plugin in &mut plugins {
         if demoted.contains(&plugin.source) {
@@ -1998,7 +1949,6 @@ pub struct PluginSources<'a> {
     pub session: &'a [LoadedPlugin],
     pub marketplace: &'a [LoadedPlugin],
     pub builtin: &'a [LoadedPlugin],
-    pub managed_names: Option<&'a HashSet<String>>,
 }
 
 /// Merge session, marketplace, and built-in plugin sources using official
@@ -2006,38 +1956,10 @@ pub struct PluginSources<'a> {
 ///
 /// Maps to: CC `utils/plugins/pluginLoader.ts#mergePluginSources`.
 /// Session `--plugin-dir` plugins override installed marketplace plugins with
-/// the same name, except names locked by managed policy settings are dropped
-/// before the override set is computed.
-pub fn merge_plugin_sources(sources: PluginSources<'_>) -> (Vec<LoadedPlugin>, Vec<PluginError>) {
-    let mut errors = Vec::new();
-
-    let session_plugins = sources
-        .session
-        .iter()
-        .filter(|plugin| {
-            if sources
-                .managed_names
-                .is_some_and(|managed| managed.contains(&plugin.name))
-            {
-                tracing::warn!(
-                    plugin = %plugin.name,
-                    source = %plugin.source,
-                    "session plugin is blocked by managed settings"
-                );
-                errors.push(PluginError::GenericError {
-                    source: plugin.source.clone(),
-                    plugin: None,
-                    error: format!(
-                        "--plugin-dir copy of \"{}\" ignored: plugin is locked by managed settings",
-                        plugin.name
-                    ),
-                });
-                return false;
-            }
-            true
-        })
-        .cloned()
-        .collect::<Vec<_>>();
+/// the same name. @nyan: no managed policy layer, so no session plugin is ever
+/// locked out (CC drops names locked by managed settings first).
+pub fn merge_plugin_sources(sources: PluginSources<'_>) -> Vec<LoadedPlugin> {
+    let session_plugins = sources.session.to_vec();
 
     let session_names = session_plugins
         .iter()
@@ -2059,12 +1981,11 @@ pub fn merge_plugin_sources(sources: PluginSources<'_>) -> (Vec<LoadedPlugin>, V
         })
         .cloned();
 
-    let plugins = session_plugins
+    session_plugins
         .into_iter()
         .chain(marketplace_plugins)
         .chain(sources.builtin.iter().cloned())
-        .collect();
-    (plugins, errors)
+        .collect()
 }
 
 /// Native borrowed-source DTO projection of PluginMarketplaceEntry, whose schema lives in schemas.rs.
@@ -2195,7 +2116,6 @@ mod tests {
         let cache = temp_dir("cache");
         let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &cache);
         settings_cache::reset_settings_cache();
-        settings_cache::set_cached_settings_for_source(SettingSource::Policy, None);
         super::super::installed_plugins_manager::clear_installed_plugins_cache();
         let enabled_root = temp_dir("installed-enabled");
         write_file(
@@ -2288,7 +2208,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn marketplace_loader_matches_official_unknown_source_policy_guard() {
+    async fn marketplace_loader_resolves_unknown_source_marketplace_from_raw_cache() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let cache = temp_dir("policy");
         let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &cache);
@@ -2302,24 +2222,9 @@ mod tests {
             settings,
             ..Default::default()
         });
-        // :1920-1938 includes empty allowlist, but excludes empty blocklist.
-        for (policy, blocked, by_blocklist) in [
-            (
-                serde_json::json!({"strictKnownMarketplaces":[]}),
-                true,
-                false,
-            ),
-            (serde_json::json!({"blockedMarketplaces":[]}), false, false),
-            (
-                serde_json::json!({"blockedMarketplaces":[{"source":"github","repo":"team/repo"}]}),
-                true,
-                true,
-            ),
-        ] {
-            settings_cache::set_cached_settings_for_source(
-                SettingSource::Policy,
-                Some(serde_json::from_value(policy).unwrap()),
-            );
+        // @nyan: no managed marketplace policy, so an unknown-source
+        // marketplace is never blocked; only the raw-cast lookup decides.
+        {
             for raw_usable in [false, true] {
                 // Original Safe config rejects missing source, while cache-only
                 // lookup deliberately raw-casts and can still find this catalog.
@@ -2338,13 +2243,7 @@ mod tests {
                 };
                 write_file(&cache.join("known_marketplaces.json"), &raw);
                 let (plugins, errors) = load_plugins_from_marketplaces(true).await;
-                if blocked {
-                    assert!(plugins.is_empty());
-                    assert_eq!(errors.len(), 1);
-                    assert!(
-                        matches!(&errors[0], PluginError::MarketplaceBlockedByPolicy { blocked_by_blocklist: Some(value), allowed_sources, .. } if *value == by_blocklist && allowed_sources.is_empty())
-                    );
-                } else if raw_usable {
+                if raw_usable {
                     assert_eq!(plugins.len(), 1);
                     assert!(errors.is_empty());
                 } else {
@@ -2467,19 +2366,17 @@ mod tests {
         }
     }
 
-    fn merge_plugin_sources_drops_managed_session_plugins_and_preserves_precedence() {
+    #[test]
+    fn merge_plugin_sources_lets_session_plugins_override_marketplace_by_name() {
         let session_alpha = test_loaded_plugin("alpha", "alpha@inline", true);
-        let session_beta = test_loaded_plugin("beta", "beta@inline", true);
         let marketplace_alpha = test_loaded_plugin("alpha", "alpha@market", true);
         let marketplace_beta = test_loaded_plugin("beta", "beta@market", true);
         let builtin_gamma = test_loaded_plugin("gamma", "gamma@builtin", true);
-        let managed = HashSet::from(["alpha".to_string()]);
 
-        let (plugins, errors) = merge_plugin_sources(PluginSources {
-            session: &[session_alpha, session_beta],
+        let plugins = merge_plugin_sources(PluginSources {
+            session: &[session_alpha],
             marketplace: &[marketplace_alpha, marketplace_beta],
             builtin: &[builtin_gamma],
-            managed_names: Some(&managed),
         });
 
         assert_eq!(
@@ -2487,13 +2384,7 @@ mod tests {
                 .iter()
                 .map(|plugin| plugin.source.as_str())
                 .collect::<Vec<_>>(),
-            vec!["beta@inline", "alpha@market", "gamma@builtin"]
-        );
-        assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0].source(), "alpha@inline");
-        assert!(
-            crate::types::plugin::get_plugin_error_message(&errors[0])
-                .contains("plugin is locked by managed settings")
+            vec!["alpha@inline", "beta@market", "gamma@builtin"]
         );
     }
 

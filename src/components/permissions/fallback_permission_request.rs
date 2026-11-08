@@ -105,36 +105,33 @@ pub fn fallback_permission_response(
 
 /// Maps to: CC `options` (FallbackPermissionRequest.tsx:125-153): yes/no
 /// amendable, the always-allow label's name and directory bold.
+/// @nyan: always shows the always-allow option (CC hides it under the managed
+/// `allowManagedPermissionRulesOnly`).
 fn fallback_prompt_options(
     user_facing_name: &str,
     original_cwd: &str,
-    show_always_allow_options: bool,
 ) -> Vec<PermissionPromptOption> {
     let mut options = vec![
         PermissionPromptOption::new(FallbackPermissionOptionValue::Yes.as_str(), "Yes")
             .with_feedback(FeedbackType::Accept),
     ];
-    if show_always_allow_options {
-        let bold = |text: &str| {
-            let mut segment = StyledSegment::new(text);
-            segment.styles.bold = Some(true);
-            segment
-        };
-        options.push(
-            PermissionPromptOption::new(
-                FallbackPermissionOptionValue::YesDontAskAgain.as_str(),
-                format!(
-                    "Yes, and don't ask again for {user_facing_name} commands in {original_cwd}"
-                ),
-            )
-            .with_label_segments(vec![
-                StyledSegment::new("Yes, and don't ask again for "),
-                bold(user_facing_name),
-                StyledSegment::new(" commands in "),
-                bold(original_cwd),
-            ]),
-        );
-    }
+    let bold = |text: &str| {
+        let mut segment = StyledSegment::new(text);
+        segment.styles.bold = Some(true);
+        segment
+    };
+    options.push(
+        PermissionPromptOption::new(
+            FallbackPermissionOptionValue::YesDontAskAgain.as_str(),
+            format!("Yes, and don't ask again for {user_facing_name} commands in {original_cwd}"),
+        )
+        .with_label_segments(vec![
+            StyledSegment::new("Yes, and don't ask again for "),
+            bold(user_facing_name),
+            StyledSegment::new(" commands in "),
+            bold(original_cwd),
+        ]),
+    );
     options.push(
         PermissionPromptOption::new(FallbackPermissionOptionValue::No.as_str(), "No")
             .with_feedback(FeedbackType::Reject),
@@ -248,12 +245,7 @@ pub fn FallbackPermissionRequest(
     let request = props.request.clone().unwrap_or_else(default_request);
     let (user_facing_name, _) = fallback_user_facing_names(&request);
     let original_cwd = original_cwd_for_label();
-    // CC :124 `shouldShowAlwaysAllowOptions()`.
-    let options = fallback_prompt_options(
-        &user_facing_name,
-        &original_cwd,
-        crate::utils::permissions::permissions_loader::should_show_always_allow_options(),
-    );
+    let options = fallback_prompt_options(&user_facing_name, &original_cwd);
     // CC :47-106 `handleSelect`.
     let handle_select = {
         let on_select = props.on_select.clone();
@@ -370,7 +362,7 @@ mod tests {
 
     #[test]
     fn fallback_permission_options_include_official_always_allow_label() {
-        let options = fallback_prompt_options("CustomTool", "/repo", true);
+        let options = fallback_prompt_options("CustomTool", "/repo");
         assert_eq!(
             options
                 .iter()
@@ -392,15 +384,6 @@ mod tests {
                     .map(|config| config.feedback_type))
                 .collect::<Vec<_>>(),
             vec![Some(FeedbackType::Accept), None, Some(FeedbackType::Reject)]
-        );
-        // CC :134 `if (showAlwaysAllowOptions)`.
-        let managed_only = fallback_prompt_options("CustomTool", "/repo", false);
-        assert_eq!(
-            managed_only
-                .iter()
-                .map(|option| option.value.as_str())
-                .collect::<Vec<_>>(),
-            vec!["yes", "no"]
         );
     }
 
@@ -506,7 +489,7 @@ mod tests {
         assert!(!is_mcp);
 
         let cwd = original_cwd_for_label();
-        let options = fallback_prompt_options(&user_facing_name, &cwd, true);
+        let options = fallback_prompt_options(&user_facing_name, &cwd);
         assert_eq!(
             options[1].label,
             format!("Yes, and don't ask again for explore commands in {cwd}")

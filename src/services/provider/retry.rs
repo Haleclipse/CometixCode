@@ -9,7 +9,7 @@
 //! - [`judge`] applies the delay ceiling and the rules no policy may override:
 //!   a stream that already produced output is never replayed, and an abort is
 //!   never retried;
-//! - [`RetryLimits`] is the budget: default 2, the managed cap, hard limit 5.
+//! - [`RetryLimits`] is the budget: default and global cap 2.
 //!   The loop that spends it is `services/api/with_retry.rs`;
 //! - [`fallback_chain`] turns the explicit `selection.mainFallbacks` list into
 //!   profiles. An empty list is an empty chain: nothing switches provider on
@@ -26,10 +26,12 @@ use super::ir::{Protocol, ProviderError, ProviderErrorKind, StreamEvent, StreamE
 use crate::utils::model::profile::{ResolvedModelProfile, resolve_profile};
 use crate::utils::settings::nyan::{NyanSettings, RetrySettings};
 
-/// Retries per profile when nothing else says so (decision 19).
+/// Retries per profile when nothing else says so, and the global cap no
+/// profile or environment value can exceed (decision 19). @nyan: decision 19
+/// let managed settings move the cap (up to 5); with no managed policy layer
+/// the cap is this default.
 pub const DEFAULT_MAX_RETRIES: u32 = 2;
-/// The managed global cap can never be raised above this (decision 19).
-pub const HARD_MAX_RETRIES: u32 = 5;
+/// The longest server-hinted wait any profile may ask for.
 pub const DEFAULT_MAX_RETRY_DELAY: Duration = Duration::from_secs(32);
 
 // ---------------------------------------------------------------------------
@@ -44,97 +46,54 @@ pub struct RetryLimits {
     pub max_delay: Duration,
 }
 
-/// The managed global cap: `nyan.retry.maxRetries` from the managed source,
-/// default 2, never above [`HARD_MAX_RETRIES`].
-pub fn global_cap_from(managed: Option<&RetrySettings>) -> u32 {
-    managed
-        .and_then(|retry| retry.max_retries)
-        .unwrap_or(DEFAULT_MAX_RETRIES)
-        .min(HARD_MAX_RETRIES)
-}
-
 impl RetryLimits {
     /// `profile` is what the profile asks for, `env_default` the process-wide
-    /// `CLAUDE_CODE_MAX_RETRIES`. Whatever is asked, the managed cap wins, so
-    /// the environment and a profile can lower the budget but never raise it.
-    pub fn resolve(
-        managed: Option<&RetrySettings>,
-        profile: Option<&RetrySettings>,
-        env_default: Option<u32>,
-    ) -> Self {
-        let cap = global_cap_from(managed);
+    /// `CLAUDE_CODE_MAX_RETRIES`. Both can lower the budget and the delay
+    /// ceiling but never raise them past the global defaults.
+    pub fn resolve(profile: Option<&RetrySettings>, env_default: Option<u32>) -> Self {
         let requested = profile
             .and_then(|retry| retry.max_retries)
             .or(env_default)
             .unwrap_or(DEFAULT_MAX_RETRIES);
-        let ceiling = managed
-            .and_then(|retry| retry.max_retry_delay_ms)
-            .map(Duration::from_millis)
-            .unwrap_or(DEFAULT_MAX_RETRY_DELAY);
         let max_delay = profile
             .and_then(|retry| retry.max_retry_delay_ms)
             .map(Duration::from_millis)
-            .map_or(ceiling, |delay| delay.min(ceiling));
+            .map_or(DEFAULT_MAX_RETRY_DELAY, |delay| {
+                delay.min(DEFAULT_MAX_RETRY_DELAY)
+            });
         Self {
-            max_retries: requested.min(cap),
+            max_retries: requested.min(DEFAULT_MAX_RETRIES),
             max_delay,
         }
     }
 
-    /// For a request that names no profile: the default budget under the
-    /// managed cap.
+    /// For a request that names no profile: the default budget under the cap.
     pub fn unprofiled() -> Self {
-        Self::resolve(managed_retry_settings().as_ref(), None, env_max_retries())
+        Self::resolve(None, env_max_retries())
     }
 
     pub fn for_profile(profile: &str) -> Self {
-        Self::resolve(
-            managed_retry_settings().as_ref(),
-            profile_retry_settings(profile).as_ref(),
-            env_max_retries(),
-        )
+        Self::resolve(profile_retry_settings(profile).as_ref(), env_max_retries())
     }
 
     pub fn for_profile_with_override(profile: &str, retries_override: Option<u32>) -> Self {
         let mut limits = Self::for_profile(profile);
         if let Some(r) = retries_override {
-            let cap = global_cap();
-            limits.max_retries = r.min(cap);
+            limits.max_retries = r.min(DEFAULT_MAX_RETRIES);
         }
         limits
     }
 }
 
 /// Budget for call sites that name no profile (side queries, the non-streaming
-/// request): the same default and the same managed cap.
+/// request): the same default and the same cap.
 pub fn default_max_retries() -> u32 {
     RetryLimits::unprofiled().max_retries
-}
-
-/// Whether a managed source caps the retry budget. When it does, unattended
-/// retry-forever mode must not outlive the cap.
-pub fn managed_cap_set() -> bool {
-    managed_retry_settings().is_some_and(|retry| retry.max_retries.is_some())
-}
-
-/// The managed global cap alone (default 2, hard limit 5).
-pub fn global_cap() -> u32 {
-    global_cap_from(managed_retry_settings().as_ref())
 }
 
 fn env_max_retries() -> Option<u32> {
     crate::utils::process_env::var("CLAUDE_CODE_MAX_RETRIES")
         .and_then(|raw| raw.trim().parse().ok())
-}
-
-/// Only the managed (policy) source can set the global cap; a user or project
-/// `nyan.retry` is ignored, so the cap cannot be raised from below.
-fn managed_retry_settings() -> Option<RetrySettings> {
-    crate::utils::settings::get_settings_for_source(
-        crate::utils::settings::constants::SettingSource::Policy,
-    )
-    .and_then(|settings| settings.nyan)
-    .and_then(|nyan| nyan.retry)
 }
 
 fn profile_retry_settings(name: &str) -> Option<RetrySettings> {
@@ -484,76 +443,46 @@ mod tests {
 
     #[test]
     fn the_default_budget_is_two() {
-        assert_eq!(RetryLimits::resolve(None, None, None).max_retries, 2);
-        assert_eq!(global_cap_from(None), 2);
-    }
-
-    #[test]
-    fn the_managed_cap_is_two_by_default_and_never_above_five() {
-        for (asked, cap) in [
-            (None, 2),
-            (Some(0), 0),
-            (Some(3), 3),
-            (Some(5), 5),
-            (Some(9), 5),
-        ] {
-            assert_eq!(global_cap_from(Some(&settings(asked, None))), cap);
-        }
-        // Raising the cap to 9 still lets a profile reach only 5.
-        let managed = settings(Some(9), None);
-        let profile = settings(Some(8), None);
-        assert_eq!(
-            RetryLimits::resolve(Some(&managed), Some(&profile), None).max_retries,
-            5
-        );
+        assert_eq!(RetryLimits::resolve(None, None).max_retries, 2);
     }
 
     #[test]
     fn a_profile_can_lower_the_budget_but_not_exceed_the_cap() {
-        let managed = settings(Some(3), None);
-        for (asked, expected) in [(0, 0), (1, 1), (3, 3), (4, 3), (100, 3)] {
+        for (asked, expected) in [(0, 0), (1, 1), (2, 2), (5, 2), (100, 2)] {
             let profile = settings(Some(asked), None);
             assert_eq!(
-                RetryLimits::resolve(Some(&managed), Some(&profile), None).max_retries,
+                RetryLimits::resolve(Some(&profile), None).max_retries,
                 expected,
                 "profile asked for {asked}"
             );
         }
-        // With no managed setting the cap is the default 2, so a profile
-        // asking for 5 gets 2.
-        let profile = settings(Some(5), None);
-        assert_eq!(
-            RetryLimits::resolve(None, Some(&profile), None).max_retries,
-            2
-        );
     }
 
     #[test]
     fn the_environment_is_held_to_the_cap_and_the_profile_overrides_it() {
-        assert_eq!(RetryLimits::resolve(None, None, Some(10)).max_retries, 2);
-        assert_eq!(RetryLimits::resolve(None, None, Some(1)).max_retries, 1);
+        assert_eq!(RetryLimits::resolve(None, Some(10)).max_retries, 2);
+        assert_eq!(RetryLimits::resolve(None, Some(1)).max_retries, 1);
         let profile = settings(Some(0), None);
         assert_eq!(
-            RetryLimits::resolve(None, Some(&profile), Some(10)).max_retries,
+            RetryLimits::resolve(Some(&profile), Some(10)).max_retries,
             0
         );
     }
 
     #[test]
-    fn a_profile_delay_ceiling_cannot_exceed_the_managed_one() {
-        let managed = settings(None, Some(10_000));
+    fn a_profile_delay_ceiling_cannot_exceed_the_default_one() {
         let profile = settings(None, Some(60_000));
         assert_eq!(
-            RetryLimits::resolve(Some(&managed), Some(&profile), None).max_delay,
-            Duration::from_secs(10)
+            RetryLimits::resolve(Some(&profile), None).max_delay,
+            DEFAULT_MAX_RETRY_DELAY
         );
         let lower = settings(None, Some(1_000));
         assert_eq!(
-            RetryLimits::resolve(Some(&managed), Some(&lower), None).max_delay,
+            RetryLimits::resolve(Some(&lower), None).max_delay,
             Duration::from_secs(1)
         );
         assert_eq!(
-            RetryLimits::resolve(None, None, None).max_delay,
+            RetryLimits::resolve(None, None).max_delay,
             DEFAULT_MAX_RETRY_DELAY
         );
     }

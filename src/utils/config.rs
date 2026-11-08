@@ -152,9 +152,6 @@ pub fn get_memory_path(memory_type: &str) -> PathBuf {
     match memory_type {
         "User" | "user" => crate::utils::env_utils::get_config_home_dir().join("AGENTS.md"),
         "Local" | "local" => crate::utils::env_utils::get_config_home_dir().join("AGENTS.md"),
-        "Managed" | "managed" => {
-            crate::utils::settings::managed_path::get_managed_file_path().join("AGENTS.md")
-        }
         "AutoMem" | "autoMem" | "automem" => crate::memdir::paths::get_auto_mem_entrypoint(),
         "Project" | "project" => crate::bootstrap::state::get_original_cwd().join("AGENTS.md"),
         // `TeamMem` only joins `MemoryType` under CC's `feature('TEAMMEM')`

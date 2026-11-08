@@ -2513,7 +2513,7 @@ mod tests {
     };
 
     #[test]
-    fn source_keyed_permission_context_serde_round_trips_all_eight_sources() {
+    fn source_keyed_permission_context_serde_round_trips_all_sources() {
         use crate::types::permissions::{PermissionRuleSource, PermissionRuleValue};
 
         let mut context = ToolPermissionContext::default();
@@ -2522,7 +2522,6 @@ mod tests {
             PermissionRuleSource::ProjectSettings,
             PermissionRuleSource::LocalSettings,
             PermissionRuleSource::FlagSettings,
-            PermissionRuleSource::PolicySettings,
             PermissionRuleSource::CliArg,
             PermissionRuleSource::Command,
             PermissionRuleSource::Session,
@@ -2541,7 +2540,6 @@ mod tests {
             "projectSettings",
             "localSettings",
             "flagSettings",
-            "policySettings",
             "cliArg",
             "command",
             "session",

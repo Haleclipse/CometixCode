@@ -65,7 +65,6 @@ fn get_auto_mem_path_setting() -> Option<PathBuf> {
     use crate::utils::settings::get_settings_for_source;
 
     let dir = [
-        SettingSource::Policy,
         SettingSource::Flag,
         SettingSource::Local,
         SettingSource::User,
@@ -192,8 +191,8 @@ fn sanitize_auto_memory_project_key(path: &Path) -> String {
 
 /// Test-only: seeds the settings this module reads. `initial` is what
 /// `getInitialSettings()` returns (`isAutoMemoryEnabled`); `user` is the only
-/// trusted source `getAutoMemPathSetting` finds settings in, the other three
-/// are cached as having none so the machine's own managed settings cannot
+/// trusted source `getAutoMemPathSetting` finds settings in, the other two
+/// are cached as having none so the machine's own flag/local settings cannot
 /// reach in. The caller holds `TEST_ENV_LOCK`, whose guard resets these
 /// caches when it is taken and when it is released.
 #[cfg(test)]
@@ -207,11 +206,7 @@ pub(crate) fn seed_settings(initial: SettingsJson, user: Option<SettingsJson>) {
             ..Default::default()
         },
     );
-    for source in [
-        SettingSource::Policy,
-        SettingSource::Flag,
-        SettingSource::Local,
-    ] {
+    for source in [SettingSource::Flag, SettingSource::Local] {
         settings_cache::set_cached_settings_for_source(source, None);
     }
     settings_cache::set_cached_settings_for_source(SettingSource::User, user);
@@ -271,14 +266,13 @@ mod tests {
             .join(AUTO_MEM_DIRNAME)
     }
 
-    const AUTO_MEMORY_ENV_KEYS: [&str; 7] = [
+    const AUTO_MEMORY_ENV_KEYS: [&str; 6] = [
         "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
         "CLAUDE_CODE_SIMPLE",
         "CLAUDE_CODE_REMOTE",
         "CLAUDE_CODE_REMOTE_MEMORY_DIR",
         "NYAN_CONFIG_DIR",
-        "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
     ];
 
     struct IsolatedAutoMemoryEnv {
@@ -383,10 +377,6 @@ mod tests {
         // `projectSettings` is rooted at the original cwd, not the process cwd.
         let _project = PinnedProjectDir::at(&project);
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _managed = EnvVarGuard::set(
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-            root.join("missing-managed-root"),
-        );
         // The redirect is really in the merged settings, so only the
         // trusted-source chain keeps it out of the path.
         assert_eq!(

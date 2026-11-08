@@ -69,7 +69,6 @@ pub enum CommandKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandSource {
     Builtin,
-    PolicySettings,
     UserSettings,
     ProjectSettings,
     Plugin,
@@ -437,7 +436,6 @@ impl Command {
         use crate::skills::load_skills_dir::SkillSource;
 
         let source = match skill.source {
-            SkillSource::PolicySettings => CommandSource::PolicySettings,
             SkillSource::UserSettings => CommandSource::UserSettings,
             SkillSource::ProjectSettings => CommandSource::ProjectSettings,
         };
@@ -1299,7 +1297,6 @@ pub fn format_description_with_source(command: &Command) -> String {
             }
             _ => format!("{description} (plugin)"),
         },
-        CommandSource::PolicySettings => format!("{description} (managed)"),
         CommandSource::UserSettings => format!("{description} (user)"),
         CommandSource::ProjectSettings => format!("{description} (project)"),
     }
@@ -1377,12 +1374,6 @@ mod tests {
                 CommandSource::Bundled,
                 None,
                 "CUSTOM_METADATA_0916 (bundled)",
-            ),
-            (
-                CommandKind::Prompt,
-                CommandSource::PolicySettings,
-                None,
-                "CUSTOM_METADATA_0916 (managed)",
             ),
             (
                 CommandKind::Prompt,

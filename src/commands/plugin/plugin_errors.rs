@@ -106,17 +106,6 @@ pub fn format_error_message(error: &PluginError) -> String {
             validation_error,
             ..
         } => format!("MCPB manifest invalid at {mcpb_path}: {validation_error}"),
-        MarketplaceBlockedByPolicy {
-            marketplace,
-            blocked_by_blocklist,
-            ..
-        } => {
-            if *blocked_by_blocklist == Some(true) {
-                format!("Marketplace \"{marketplace}\" is blocked by enterprise policy")
-            } else {
-                format!("Marketplace \"{marketplace}\" is not in the allowed marketplace list")
-            }
-        }
         DependencyUnsatisfied {
             dependency, reason, ..
         } => format!(
@@ -239,19 +228,6 @@ pub fn get_error_guidance(error: &PluginError) -> Option<String> {
         McpbDownloadFailed { .. } => "Check your internet connection and URL accessibility".into(),
         McpbExtractFailed { .. } => "Verify the MCPB file is valid and not corrupted".into(),
         McpbInvalidManifest { .. } => "Contact the plugin author about the invalid manifest".into(),
-        MarketplaceBlockedByPolicy {
-            blocked_by_blocklist,
-            allowed_sources,
-            ..
-        } => {
-            if *blocked_by_blocklist == Some(true) {
-                "This marketplace source is explicitly blocked by your administrator".into()
-            } else if !allowed_sources.is_empty() {
-                format!("Allowed sources: {}", allowed_sources.join(", "))
-            } else {
-                "Contact your administrator to configure allowed marketplace sources".into()
-            }
-        }
         DependencyUnsatisfied {
             dependency,
             plugin,

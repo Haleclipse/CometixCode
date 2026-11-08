@@ -9,22 +9,19 @@ use std::time::Duration;
 
 pub const STATUS_LINE_TIMEOUT_MS: u64 = 5_000;
 
-/// Resolve the configured statusLine command under official trust / managed
-/// hooks gates. Maps to the settings lookup inside CC `executeStatusLineCommand`.
+/// Resolve the configured statusLine command under the official trust and
+/// `disableAllHooks` gates. Maps to the settings lookup inside CC
+/// `executeStatusLineCommand`.
 pub fn status_line_command_from_settings(settings: &SettingsJson) -> Option<String> {
-    status_line_command_from_settings_with_policy(settings, None, true)
+    status_line_command_from_settings_with_trust(settings, true)
 }
 
+/// @nyan: CC splits this on managed settings (`allowManagedHooksOnly`, and a
+/// non-managed `disableAllHooks` keeps only the managed statusLine). Without a
+/// managed tier that leaves nothing, so the merged `disableAllHooks` turns the
+/// statusLine command off.
 pub fn status_line_command_from_settings_with_trust(
     settings: &SettingsJson,
-    workspace_trusted: bool,
-) -> Option<String> {
-    status_line_command_from_settings_with_policy(settings, None, workspace_trusted)
-}
-
-pub fn status_line_command_from_settings_with_policy(
-    settings: &SettingsJson,
-    policy_settings: Option<&SettingsJson>,
     workspace_trusted: bool,
 ) -> Option<String> {
     if !workspace_trusted {
@@ -35,23 +32,11 @@ pub fn status_line_command_from_settings_with_policy(
         return None;
     }
 
-    // Official `shouldDisableAllHooksIncludingManaged()`: only policy settings
-    // can disable managed hooks/statusLine commands.
-    if policy_settings.is_some_and(|policy| policy.disable_all_hooks == Some(true)) {
+    if settings.disable_all_hooks == Some(true) {
         return None;
     }
 
-    let managed_only = policy_settings
-        .is_some_and(|policy| policy.allow_managed_hooks_only == Some(true))
-        || (settings.disable_all_hooks == Some(true)
-            && !policy_settings.is_some_and(|policy| policy.disable_all_hooks == Some(true)));
-    let status_line_source = if managed_only {
-        policy_settings?
-    } else {
-        settings
-    };
-
-    status_line_source
+    settings
         .status_line
         .as_ref()
         .filter(|status_line| status_line.is_command_type())
@@ -64,15 +49,10 @@ pub fn status_line_command_from_settings_with_policy(
 pub async fn execute_status_line_command(
     status_line_input: &StatusLineCommandInput,
     workspace_trusted: bool,
-    policy_settings: Option<&SettingsJson>,
     log_result: bool,
 ) -> Option<String> {
     let settings = crate::utils::settings::get_initial_settings();
-    let command = status_line_command_from_settings_with_policy(
-        &settings,
-        policy_settings,
-        workspace_trusted,
-    )?;
+    let command = status_line_command_from_settings_with_trust(&settings, workspace_trusted)?;
     execute_status_line_command_with_command(command, status_line_input, log_result).await
 }
 
@@ -172,62 +152,6 @@ mod tests {
         );
         assert_eq!(
             status_line_command_from_settings_with_trust(&settings, false),
-            None
-        );
-    }
-
-    #[test]
-    fn status_line_command_from_settings_respects_official_managed_only_source_filter() {
-        let policy = SettingsJson {
-            status_line: Some(crate::utils::settings::types::StatusLineSettings {
-                kind: Some("command".to_string()),
-                command: "printf managed".to_string(),
-                padding: None,
-            }),
-            ..Default::default()
-        };
-        let non_managed_disabled = SettingsJson {
-            disable_all_hooks: Some(true),
-            status_line: Some(crate::utils::settings::types::StatusLineSettings {
-                kind: Some("command".to_string()),
-                command: "printf user".to_string(),
-                padding: None,
-            }),
-            ..Default::default()
-        };
-
-        assert_eq!(
-            status_line_command_from_settings_with_policy(
-                &non_managed_disabled,
-                Some(&policy),
-                true
-            ),
-            Some("printf managed".to_string())
-        );
-
-        let policy_disabled = SettingsJson {
-            disable_all_hooks: Some(true),
-            ..policy.clone()
-        };
-        assert_eq!(
-            status_line_command_from_settings_with_policy(
-                &non_managed_disabled,
-                Some(&policy_disabled),
-                true
-            ),
-            None
-        );
-
-        let policy_managed_only_without_status_line = SettingsJson {
-            allow_managed_hooks_only: Some(true),
-            ..Default::default()
-        };
-        assert_eq!(
-            status_line_command_from_settings_with_policy(
-                &non_managed_disabled,
-                Some(&policy_managed_only_without_status_line),
-                true
-            ),
             None
         );
     }

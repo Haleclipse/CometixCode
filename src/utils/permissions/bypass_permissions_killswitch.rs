@@ -211,7 +211,6 @@ mod tests {
                 settings: serde_json::from_value(serde_json::json!({"disableAutoMode":"disable"}))
                     .unwrap(),
                 errors: vec![],
-                policy_settings: None,
             },
         );
         let mut state = crate::state::app_state_store::AppState::default();

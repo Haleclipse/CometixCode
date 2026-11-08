@@ -397,7 +397,6 @@ fn empty_query_commands(commands: &[Command]) -> Vec<&Command> {
     let mut builtin = Vec::new();
     let mut user = Vec::new();
     let mut project = Vec::new();
-    let mut policy = Vec::new();
     let mut other = Vec::new();
     for command in visible {
         if recent_ids.contains(&command_id(command)) {
@@ -406,18 +405,11 @@ fn empty_query_commands(commands: &[Command]) -> Vec<&Command> {
         match command.source {
             CommandSource::UserSettings => user.push(command),
             CommandSource::ProjectSettings => project.push(command),
-            CommandSource::PolicySettings => policy.push(command),
             _ if command.kind == CommandKind::Prompt => other.push(command),
             _ => builtin.push(command),
         }
     }
-    for list in [
-        &mut builtin,
-        &mut user,
-        &mut project,
-        &mut policy,
-        &mut other,
-    ] {
+    for list in [&mut builtin, &mut user, &mut project, &mut other] {
         list.sort_by_key(|command| get_command_name(command).to_owned());
     }
     recently_used
@@ -426,7 +418,6 @@ fn empty_query_commands(commands: &[Command]) -> Vec<&Command> {
         .chain(builtin)
         .chain(user)
         .chain(project)
-        .chain(policy)
         .chain(other)
         .collect()
 }

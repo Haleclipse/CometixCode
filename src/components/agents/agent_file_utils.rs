@@ -11,7 +11,6 @@ pub enum AgentFileSource {
     UserSettings,
     ProjectSettings,
     LocalSettings,
-    PolicySettings,
     FlagSettings,
     BuiltIn,
     Plugin,
@@ -60,11 +59,6 @@ fn agent_directory(
         AgentFileSource::ProjectSettings | AgentFileSource::LocalSettings => {
             Ok(cwd.join(".nyan").join("agents"))
         }
-        AgentFileSource::PolicySettings => Ok(
-            crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".nyan")
-                .join("agents"),
-        ),
         AgentFileSource::FlagSettings => {
             Err("Cannot get directory path for flagSettings agents".to_string())
         }
@@ -116,7 +110,7 @@ pub fn get_actual_relative_agent_file_path(agent: &AgentDefinition, cwd: &Path) 
 }
 
 /// @nyan: only user and project agents are files the user owns; built-in,
-/// plugin, `--agents` and managed (policy) agents are view-only.
+/// plugin and `--agents` agents are view-only.
 pub fn is_editable(agent: &AgentDefinition) -> bool {
     matches!(
         agent.source,
@@ -216,15 +210,9 @@ mod tests {
         );
     }
 
-    /// Every writable tier lives under a `.nyan/agents` directory, the same
-    /// one the loader reads — the managed tier included.
+    /// Every writable tier lives under the directory the loader reads.
     #[test]
     fn writable_tiers_use_the_directories_the_loader_reads() {
-        let _lock = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
-        let managed =
-            std::env::temp_dir().join(format!("nyan-agent-managed-{}", uuid::Uuid::new_v4()));
-        let _managed =
-            crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let cwd = Path::new("/repo");
         let config = Path::new("/config");
         let path = |source| get_new_agent_file_path(source, "a", cwd, config).unwrap();
@@ -236,10 +224,6 @@ mod tests {
         assert_eq!(
             path(AgentFileSource::ProjectSettings),
             cwd.join(".nyan/agents/a.md")
-        );
-        assert_eq!(
-            path(AgentFileSource::PolicySettings),
-            managed.join(".nyan/agents/a.md")
         );
     }
 
@@ -302,7 +286,6 @@ mod tests {
             AgentDefinitionSource::BuiltIn,
             AgentDefinitionSource::Plugin,
             AgentDefinitionSource::FlagSettings,
-            AgentDefinitionSource::PolicySettings,
         ] {
             let agent = AgentDefinition::new("reviewer", "review", source);
             let error = delete_agent_from_file(&agent).unwrap_err();

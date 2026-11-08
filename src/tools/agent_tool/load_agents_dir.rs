@@ -28,7 +28,6 @@ pub enum AgentDefinitionSource {
     UserSettings,
     ProjectSettings,
     FlagSettings,
-    PolicySettings,
 }
 
 /// Maps to CC `loadAgentsDir.ts:127` `pendingSnapshotUpdate?: { snapshotTimestamp: string }`.
@@ -60,7 +59,6 @@ impl AgentDefinitionSource {
             Self::UserSettings => "userSettings",
             Self::ProjectSettings => "projectSettings",
             Self::FlagSettings => "flagSettings",
-            Self::PolicySettings => "policySettings",
         }
     }
 }
@@ -237,13 +235,12 @@ impl From<AgentDefinitionsResult> for AgentDefinitionsSnapshot {
     }
 }
 
-const SOURCE_PRIORITY: [AgentDefinitionSource; 6] = [
+const SOURCE_PRIORITY: [AgentDefinitionSource; 5] = [
     AgentDefinitionSource::BuiltIn,
     AgentDefinitionSource::Plugin,
     AgentDefinitionSource::UserSettings,
     AgentDefinitionSource::ProjectSettings,
     AgentDefinitionSource::FlagSettings,
-    AgentDefinitionSource::PolicySettings,
 ];
 
 fn normalize_path_for_comparison(path: &Path) -> String {
@@ -283,16 +280,13 @@ fn get_project_nyan_agent_dirs(cwd: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-/// Loads agent markdown files only from `<managed>/.nyan/agents` (policy),
-/// `~/.nyan/agents` (user) and `.nyan/agents` (project).
+/// Loads agent markdown files only from `~/.nyan/agents` (user) and
+/// `.nyan/agents` (project).
 /// Project agents require workspace trust (untrusted => do not load, print mode untrusted => skip).
 fn load_agent_markdown_files(
     cwd: &Path,
 ) -> Vec<crate::utils::markdown_config_loader::MarkdownFile> {
     let user_dir = crate::utils::env_utils::get_config_home_dir().join("agents");
-    let managed_dir = crate::utils::settings::managed_path::get_managed_file_path()
-        .join(".nyan")
-        .join("agents");
 
     // Project agents are gated by workspace trust: untrusted => do not load.
     let is_trusted = crate::utils::config::check_has_trust_dialog_accepted()
@@ -328,19 +322,10 @@ fn load_agent_markdown_files(
         }
     }
 
-    let customization_locked =
-        crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("agents");
     let mut files = Vec::new();
-    files.extend(
-        crate::utils::markdown_config_loader::load_markdown_files_from_dir(
-            &managed_dir,
-            crate::utils::markdown_config_loader::MarkdownConfigSource::PolicySettings,
-        ),
-    );
     if crate::utils::settings::constants::is_setting_source_enabled(
         crate::utils::settings::constants::SettingSource::User,
-    ) && !customization_locked
-    {
+    ) {
         files.extend(
             crate::utils::markdown_config_loader::load_markdown_files_from_dir(
                 &user_dir,
@@ -350,8 +335,7 @@ fn load_agent_markdown_files(
     }
     if crate::utils::settings::constants::is_setting_source_enabled(
         crate::utils::settings::constants::SettingSource::Project,
-    ) && !customization_locked
-    {
+    ) {
         for project_dir in project_dirs {
             files.extend(
                 crate::utils::markdown_config_loader::load_markdown_files_from_dir(
@@ -790,9 +774,6 @@ fn parse_agent_from_markdown(
         return None;
     }
     let source = match markdown_file.source {
-        crate::utils::markdown_config_loader::MarkdownConfigSource::PolicySettings => {
-            AgentDefinitionSource::PolicySettings
-        }
         crate::utils::markdown_config_loader::MarkdownConfigSource::UserSettings => {
             AgentDefinitionSource::UserSettings
         }
@@ -1009,22 +990,14 @@ mod tests {
     }
 
     /// Pins the loader's environment inputs: user agents come from
-    /// `config_home`, the project walk stops at `home`, a host's
-    /// `CLAUDE_CODE_SIMPLE` (CC `--bare` exports it) is cleared, and the
-    /// managed root points at a directory that does not exist. Unsetting the
-    /// managed override would fall back to the machine's real managed root
-    /// (`/Library/Application Support/ClaudeCode` on macOS), whose agents and
-    /// `managed-settings.json` would then reach the test. The caller holds
-    /// `TEST_ENV_LOCK`.
-    fn pin_loader_env(home: &Path, config_home: &Path) -> [EnvVarGuard; 4] {
+    /// `config_home`, the project walk stops at `home`, and a host's
+    /// `CLAUDE_CODE_SIMPLE` (CC `--bare` exports it) is cleared. The caller
+    /// holds `TEST_ENV_LOCK`.
+    fn pin_loader_env(home: &Path, config_home: &Path) -> [EnvVarGuard; 3] {
         [
             EnvVarGuard::set("NYAN_CONFIG_DIR", config_home),
             EnvVarGuard::set(HOME_VAR, home),
             EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
-            EnvVarGuard::set(
-                "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-                config_home.join("missing-managed-root"),
-            ),
         ]
     }
 
@@ -1718,7 +1691,7 @@ mod tests {
                 "project",
                 AgentDefinitionSource::ProjectSettings,
             ),
-            AgentDefinition::new("reviewer", "managed", AgentDefinitionSource::PolicySettings),
+            AgentDefinition::new("reviewer", "flag", AgentDefinitionSource::FlagSettings),
             AgentDefinition::new("helper", "user", AgentDefinitionSource::UserSettings),
         ];
 
@@ -1728,7 +1701,7 @@ mod tests {
             .iter()
             .find(|agent| agent.agent_type == "reviewer")
             .expect("reviewer active agent");
-        assert_eq!(reviewer.when_to_use, "managed");
+        assert_eq!(reviewer.when_to_use, "flag");
         assert_eq!(
             active
                 .iter()
@@ -1739,21 +1712,16 @@ mod tests {
     }
 
     #[test]
-    fn filesystem_loader_uses_managed_user_project_order_and_simple_mode() {
+    fn filesystem_loader_uses_user_project_order_and_simple_mode() {
         let root = temp_dir("dirs");
         let config_home = root.join("config");
-        let managed_root = root.join("managed");
         let cwd = root.join("repo/nested");
         fs::create_dir_all(&cwd).expect("cwd");
         fs::create_dir_all(root.join("repo/.git")).expect("git root");
+        // `.claude/agents` is not a project agents directory.
         write_file(
-            &managed_root.join(".nyan/agents/reviewer.md"),
-            "---\nname: reviewer\ndescription: Managed description\n---\nManaged",
-        );
-        // The managed tier no longer reads `.claude/agents` either.
-        write_file(
-            &managed_root.join(".claude/agents/legacy.md"),
-            "---\nname: legacy\ndescription: Legacy managed\n---\nLegacy",
+            &cwd.join(".claude/agents/legacy.md"),
+            "---\nname: legacy\ndescription: Legacy\n---\nLegacy",
         );
         write_file(
             &config_home.join("agents/reviewer.md"),
@@ -1771,23 +1739,21 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
         let _env = pin_loader_env(&root, &config_home);
-        // `get_managed_file_path` honours the override in every test build.
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_root);
         let result = get_agent_definitions_with_overrides(&cwd);
         let reviewer = result
             .active_agents
             .iter()
             .find(|agent| agent.agent_type == "reviewer")
             .expect("reviewer active agent");
-        assert_eq!(reviewer.when_to_use, "Managed description");
-        assert_eq!(reviewer.source, AgentDefinitionSource::PolicySettings);
+        assert_eq!(reviewer.when_to_use, "Root project description");
+        assert_eq!(reviewer.source, AgentDefinitionSource::ProjectSettings);
         assert!(
             result
                 .all_agents
                 .iter()
                 .all(|agent| agent.agent_type != "legacy")
         );
-        // Every tier is loaded, in managed < user < nested < root order.
+        // Every tier is loaded, in user < nested < root order.
         let descriptions = result
             .all_agents
             .iter()
@@ -1797,7 +1763,6 @@ mod tests {
         assert_eq!(
             descriptions,
             vec![
-                (AgentDefinitionSource::PolicySettings, "Managed description"),
                 (AgentDefinitionSource::UserSettings, "User description"),
                 (
                     AgentDefinitionSource::ProjectSettings,
@@ -1844,7 +1809,7 @@ mod tests {
     /// Without the last two the snapshot copy would land in whatever config
     /// home the run inherited.
     struct SnapshotEnv {
-        _loader: [EnvVarGuard; 4],
+        _loader: [EnvVarGuard; 3],
         _remote_memory: EnvVarGuard,
         _auto_memory: EnvVarGuard,
         _lock: TestEnvGuard<'static>,

@@ -11,8 +11,6 @@ use crate::utils::file::get_display_path;
 use crate::utils::format::format_number;
 use crate::utils::ide::IDEExtensionInstallationStatus;
 use crate::utils::model::model::render_model_name;
-use crate::utils::settings::get_managed_settings_file_path;
-use crate::utils::settings::types::CUSTOMIZATION_SURFACES;
 use crate::utils::settings::{SettingsJson, ValidationError};
 use crate::utils::status::StartupDiagnosticsSnapshot;
 use crate::utils::status::{
@@ -352,7 +350,6 @@ fn status_diagnostics(
     let mut diagnostics = non_empty_diagnostics(installation_diagnostics);
     diagnostics.extend(settings_error_diagnostics(settings_errors));
     diagnostics.extend(non_empty_diagnostics(doctor_diagnostics));
-    diagnostics.extend(managed_settings_customization_diagnostics());
     diagnostics.extend(memory_diagnostics_from_files(&discover_claude_md_files()));
     diagnostics
 }
@@ -364,62 +361,6 @@ fn non_empty_diagnostics(values: &[String]) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .collect()
-}
-
-fn managed_settings_customization_diagnostics() -> Vec<String> {
-    managed_settings_customization_diagnostics_from_path(&get_managed_settings_file_path())
-}
-
-fn managed_settings_customization_diagnostics_from_path(path: &std::path::Path) -> Vec<String> {
-    let Ok(raw) = std::fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return Vec::new();
-    };
-    let Some(field) = parsed
-        .as_object()
-        .and_then(|object| object.get("strictPluginOnlyCustomization"))
-    else {
-        return Vec::new();
-    };
-
-    if field.is_boolean() {
-        return Vec::new();
-    }
-
-    if let Some(values) = field.as_array() {
-        let unknown = values
-            .iter()
-            .filter_map(|value| value.as_str())
-            .filter(|surface| !CUSTOMIZATION_SURFACES.contains(surface))
-            .map(ToOwned::to_owned)
-            .collect::<Vec<_>>();
-        if unknown.is_empty() {
-            return Vec::new();
-        }
-        return vec![format!(
-            "managed-settings.json: strictPluginOnlyCustomization has {} value(s) this client doesn't recognize: {}",
-            unknown.len(),
-            unknown.join(", ")
-        )];
-    }
-
-    vec![format!(
-        "managed-settings.json: strictPluginOnlyCustomization has an invalid value (expected true or an array, got {})",
-        official_json_typeof(field)
-    )]
-}
-
-fn official_json_typeof(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null | serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-            "object"
-        }
-        serde_json::Value::Bool(_) => "boolean",
-        serde_json::Value::Number(_) => "number",
-        serde_json::Value::String(_) => "string",
-    }
 }
 
 fn memory_diagnostics_from_files(files: &[ClaudeMdFile]) -> Vec<String> {
@@ -731,48 +672,6 @@ mod tests {
             diagnostics[2],
             "Native installation exists but ~/.local/bin is not in your PATH"
         );
-    }
-
-    #[test]
-    fn doctor_diagnostics_match_official_managed_settings_customization_warnings() {
-        let root = std::env::temp_dir().join(format!(
-            "nyan-status-managed-diagnostics-{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&root).expect("create temp root");
-        let path = root.join("managed-settings.json");
-
-        std::fs::write(
-            &path,
-            r#"{"strictPluginOnlyCustomization":{"skills":true}}"#,
-        )
-        .expect("write invalid managed settings");
-        assert_eq!(
-            managed_settings_customization_diagnostics_from_path(&path),
-            vec![
-                "managed-settings.json: strictPluginOnlyCustomization has an invalid value (expected true or an array, got object)"
-                    .to_string()
-            ]
-        );
-
-        std::fs::write(
-            &path,
-            r#"{"strictPluginOnlyCustomization":["skills","widgets",7,"agents","portals"]}"#,
-        )
-        .expect("write unknown managed settings surfaces");
-        assert_eq!(
-            managed_settings_customization_diagnostics_from_path(&path),
-            vec![
-                "managed-settings.json: strictPluginOnlyCustomization has 2 value(s) this client doesn't recognize: widgets, portals"
-                    .to_string()
-            ]
-        );
-
-        std::fs::write(&path, r#"{"strictPluginOnlyCustomization":true}"#)
-            .expect("write boolean managed settings");
-        assert!(managed_settings_customization_diagnostics_from_path(&path).is_empty());
-
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

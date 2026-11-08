@@ -1,20 +1,21 @@
 //! Markdown config directory loader.
 //! Maps to: CC `utils/markdownConfigLoader.ts`.
 //!
-//! Collects managed/user/project `.nyan/<subdir>/*.md` files, follows
+//! Collects user/project `.nyan/<subdir>/*.md` files, follows
 //! symlinks with physical-directory cycle detection, applies worktree fallback
 //! and source/policy gates, parses frontmatter, and deduplicates file identity.
 //! Telemetry and the alternate ripgrep implementation remain intentionally
 //! omitted.
+//!
+//! @nyan: no managed (`policySettings`) tier; CC also reads
+//! `<managed path>/.claude/<subdir>`.
 
 use crate::utils::frontmatter_parser::{FrontmatterData, parse_frontmatter};
-use crate::utils::settings::managed_path::get_managed_file_path;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MarkdownConfigSource {
-    PolicySettings,
     UserSettings,
     ProjectSettings,
 }
@@ -22,7 +23,6 @@ pub enum MarkdownConfigSource {
 impl MarkdownConfigSource {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::PolicySettings => "policySettings",
             Self::UserSettings => "userSettings",
             Self::ProjectSettings => "projectSettings",
         }
@@ -191,7 +191,6 @@ pub(crate) fn load_markdown_files_from_dir(
 pub fn load_markdown_files_for_subdir(subdir: &str, cwd: &Path) -> Vec<MarkdownFile> {
     // CC :303-305 order.
     let user_dir = crate::utils::env_utils::get_config_home_dir().join(subdir);
-    let managed_dir = get_managed_file_path().join(".nyan").join(subdir);
     let mut project_dirs = get_project_dirs_up_to_home(subdir, cwd);
 
     // Worktree sparse-checkout fallback: only consult the main repository when
@@ -218,17 +217,10 @@ pub fn load_markdown_files_for_subdir(subdir: &str, cwd: &Path) -> Vec<MarkdownF
         }
     }
 
-    let customization_locked = subdir == "agents"
-        && crate::utils::settings::plugin_only_policy::is_restricted_to_plugin_only("agents");
     let mut files = Vec::new();
-    files.extend(load_markdown_files_from_dir(
-        &managed_dir,
-        MarkdownConfigSource::PolicySettings,
-    ));
     if crate::utils::settings::constants::is_setting_source_enabled(
         crate::utils::settings::constants::SettingSource::User,
-    ) && !customization_locked
-    {
+    ) {
         files.extend(load_markdown_files_from_dir(
             &user_dir,
             MarkdownConfigSource::UserSettings,
@@ -236,8 +228,7 @@ pub fn load_markdown_files_for_subdir(subdir: &str, cwd: &Path) -> Vec<MarkdownF
     }
     if crate::utils::settings::constants::is_setting_source_enabled(
         crate::utils::settings::constants::SettingSource::Project,
-    ) && !customization_locked
-    {
+    ) {
         for project_dir in project_dirs {
             files.extend(load_markdown_files_from_dir(
                 &project_dir,
@@ -357,8 +348,8 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let root = temp_dir("nyan-md-loader-symlink");
-        let managed_root = root.join("managed");
-        let managed = managed_root.join(".nyan/commands");
+        let config_home = root.join("config");
+        let managed = config_home.join("commands");
         let external = root.join("external");
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&external).unwrap();
@@ -370,11 +361,12 @@ mod tests {
         symlink(&nested, managed.join("nested-link")).unwrap();
         symlink(&managed, nested.join("cycle")).unwrap();
 
-        // Only the managed root has a `commands` dir: the user root is
-        // missing, and the project walk from `root` stops at once at home.
+        // Only the user root has a `commands` dir, and the project walk from
+        // `root` stops at once at home.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_root);
-        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("missing-user"));
+        let _sources = AllowedSourcesGuard::capture();
+        crate::bootstrap::state::set_allowed_setting_sources(vec!["userSettings".to_string()]);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _home = EnvVarGuard::set(HOME_VAR, &root);
         let files = load_markdown_files_for_subdir("commands", &root);
         let names = files
@@ -415,11 +407,8 @@ mod tests {
         .unwrap();
 
         let config_home = root.join("config");
-        let managed = root.join("managed");
         std::fs::create_dir_all(&config_home).unwrap();
-        std::fs::create_dir_all(&managed).unwrap();
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _sources_guard = AllowedSourcesGuard::capture();
         crate::bootstrap::state::set_allowed_setting_sources(vec![
             "userSettings".to_string(),
@@ -441,21 +430,14 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = temp_dir("nyan-md-loader");
         let config_home = root.join("config");
-        let managed = root.join("managed");
         let project = root.join("project");
         std::fs::create_dir_all(project.join(".git")).unwrap();
         for dir in [
             config_home.join("output-styles"),
-            managed.join(".nyan/output-styles"),
             project.join(".nyan/output-styles"),
         ] {
             std::fs::create_dir_all(dir).unwrap();
         }
-        std::fs::write(
-            managed.join(".nyan/output-styles/managed.md"),
-            "---\nname: Managed\n---\nmanaged prompt",
-        )
-        .unwrap();
         std::fs::write(
             config_home.join("output-styles/user.md"),
             "---\nname: User\n---\nuser prompt",
@@ -468,7 +450,6 @@ mod tests {
         .unwrap();
 
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&project).unwrap();
         let files = load_markdown_files_for_subdir("output-styles", &project);
@@ -479,11 +460,8 @@ mod tests {
             .iter()
             .map(|file| file.source.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(
-            sources,
-            vec!["policySettings", "userSettings", "projectSettings"]
-        );
-        assert_eq!(files[0].content, "managed prompt");
+        assert_eq!(sources, vec!["userSettings", "projectSettings"]);
+        assert_eq!(files[0].content, "user prompt");
     }
     #[test]
     fn description_matches_actual_bun_header_whitespace_and_utf16_oracle() {

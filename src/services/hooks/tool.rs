@@ -382,110 +382,6 @@ mod tests {
         crate::services::hooks::test_support::registered_config(&config)
     }
 
-    /// Maps to: CC `utils/hooks.ts:1978-1980` — the FIRST thing `executeHooks`
-    /// does is `if (shouldDisableAllHooksIncludingManaged()) { return }`.
-    ///
-    /// The claim under test is structural, not per-event: the gate sits in the
-    /// shared executor, so both events routed through it stop, and so would a
-    /// fourth one added tomorrow. The old shape had no gate here at all, which
-    /// left the session-hook arm the callers merge in (agent frontmatter, skill
-    /// hooks) as the one source an enterprise `disableAllHooks` failed to stop.
-    ///
-    /// Non-vacuity is asserted in-test rather than by deleting the guard: the
-    /// SAME two configs run first with an empty managed root (one result each)
-    /// and then with the policy installed (zero). Removing the guard turns the
-    /// second half's `assert!(…is_empty())` into `1 != 0`.
-    #[cfg(not(windows))]
-    #[tokio::test]
-    async fn managed_disable_all_hooks_policy_stops_every_event_at_the_shared_executor() {
-        use crate::services::hooks::test_support::{ManagedSettingsGuard, SessionTrustGuard};
-
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        // The same executor now also carries CC's trust gate (`hooks.ts:1994`),
-        // so the "allowed" half has to state trust rather than inherit it from
-        // the developer's `state.json`.
-        let _trust = SessionTrustGuard::accepted();
-
-        async fn run_both_events() -> (Vec<HookResult>, Vec<HookResult>) {
-            let post = execute_post_tool_hooks(
-                &post_hook_config("printf hooked"),
-                "Read",
-                "toolu_policy_post",
-                &serde_json::json!({"file_path": "/tmp/source.txt"}),
-                &serde_json::json!({"type": "text"}),
-                &HookContext::default(),
-                vec![],
-                None,
-            )
-            .await;
-            let denied = execute_permission_denied_hooks(
-                &denied_hook_config("printf hooked"),
-                "Read",
-                "toolu_policy_denied",
-                &serde_json::json!({"file_path": "/tmp/source.txt"}),
-                "Permission denied",
-                &HookContext::default(),
-                vec![],
-                None,
-            )
-            .await;
-            (post, denied)
-        }
-
-        // Baseline: an EMPTY managed root, so the developer's real policy file
-        // cannot make this half pass for the wrong reason.
-        let allowed = {
-            let _managed = ManagedSettingsGuard::install(None);
-            run_both_events().await
-        };
-        assert_eq!(allowed.0.len(), 1, "PostToolUse runs without the policy");
-        assert_eq!(
-            allowed.1.len(),
-            1,
-            "PermissionDenied runs without the policy"
-        );
-
-        let blocked = {
-            let _managed = ManagedSettingsGuard::install(Some(r#"{"disableAllHooks": true}"#));
-            run_both_events().await
-        };
-        assert!(
-            blocked.0.is_empty(),
-            "PostToolUse must stop at the shared executor, got {:?}",
-            blocked.0.len()
-        );
-        assert!(
-            blocked.1.is_empty(),
-            "PermissionDenied must stop at the same gate, got {:?}",
-            blocked.1.len()
-        );
-    }
-
-    #[cfg(not(windows))]
-    fn denied_hook_config(command: &str) -> RegisteredHooks {
-        use crate::services::hooks::{HookCommand, HookConfigEntry};
-        let config: crate::services::hooks::HooksConfig = std::collections::HashMap::from([(
-            HookEvent::PermissionDenied.as_str().to_string(),
-            vec![HookConfigEntry {
-                matcher: Some("Read".to_string()),
-                hooks: vec![HookCommand {
-                    command: command.to_string(),
-                    shell: None,
-                    timeout: Some(5),
-                    condition: None,
-                    status: None,
-                    once: None,
-                    is_async: None,
-                    async_rewake: None,
-                }],
-                plugin_root: None,
-                plugin_name: None,
-                plugin_id: None,
-            }],
-        )]);
-        crate::services::hooks::test_support::registered_config(&config)
-    }
-
     /// Maps to: CC `entrypoints/sdk/coreSchemas.ts:456`
     /// (`is_interrupt: z.boolean().optional()`) and `utils/hooks.ts:3516`
     /// (`is_interrupt: isInterrupt`, written unconditionally).
@@ -498,7 +394,6 @@ mod tests {
     #[tokio::test]
     async fn absent_is_interrupt_sends_no_key_at_all() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
 
         let capture = crate::services::hooks::test_support::HookInputCapture::new();

@@ -17,11 +17,11 @@ pub struct EnvironmentSelectionInfo {
     pub selected_environment_source: Option<SettingSource>,
 }
 
-fn source_priority_high_to_low() -> [SettingSource; 4] {
+fn source_priority_high_to_low() -> [SettingSource; 3] {
     // Official SETTING_SOURCES is [user, project, local, flag, policy] and the
     // source lookup iterates from the end, skipping flagSettings.
+    // @nyan: no policySettings tier.
     [
-        SettingSource::Policy,
         SettingSource::Local,
         SettingSource::Project,
         SettingSource::User,
@@ -120,16 +120,12 @@ mod tests {
             &[
                 (SettingSource::User, Some("env_byoc".to_string())),
                 (SettingSource::Flag, Some("env_byoc".to_string())),
-                (SettingSource::Policy, Some("env_byoc".to_string())),
+                (SettingSource::Local, Some("env_byoc".to_string())),
             ],
         );
 
         assert_eq!(info.selected_environment, Some(byoc));
-        assert_eq!(
-            info.selected_environment_source,
-            Some(SettingSource::Policy)
-        );
-        assert_eq!(get_setting_source_name(SettingSource::Policy), "managed");
+        assert_eq!(info.selected_environment_source, Some(SettingSource::Local));
         assert_eq!(
             get_setting_source_name(SettingSource::Local),
             "project, gitignored"
@@ -142,7 +138,7 @@ mod tests {
         let info = get_environment_selection_info_from_snapshot(
             vec![cloud.clone()],
             Some("missing"),
-            &[(SettingSource::Policy, Some("missing".to_string()))],
+            &[(SettingSource::Local, Some("missing".to_string()))],
         );
 
         assert_eq!(info.selected_environment, Some(cloud));

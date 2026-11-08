@@ -283,14 +283,13 @@ pub fn get_hook_event_metadata(tool_names: &[String]) -> HashMap<HookEvent, Hook
             HookEvent::ConfigChange,
             HookEventMetadata {
                 summary: "When configuration files change during a session",
-                description: "Input to command is JSON with source (user_settings, project_settings, local_settings, policy_settings, skills) and file_path.\nExit code 0 - allow the change\nExit code 2 - block the change from being applied to the session\nOther exit codes - show stderr to user only",
+                description: "Input to command is JSON with source (user_settings, project_settings, local_settings, skills) and file_path.\nExit code 0 - allow the change\nExit code 2 - block the change from being applied to the session\nOther exit codes - show stderr to user only",
                 matcher_metadata: literal_matcher(
                     "source",
                     &[
                         "user_settings",
                         "project_settings",
                         "local_settings",
-                        "policy_settings",
                         "skills",
                     ],
                 ),

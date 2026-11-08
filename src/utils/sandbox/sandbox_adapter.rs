@@ -14,7 +14,6 @@ use crate::utils::permissions::filesystem::get_claude_temp_dir;
 use crate::utils::permissions::permission_rule_parser::permission_rule_value_from_string;
 use crate::utils::process_env::JsTruthy;
 use crate::utils::settings::constants::SettingSource;
-use crate::utils::settings::managed_path::get_managed_settings_drop_in_dir;
 use crate::utils::settings::types::SettingsJson;
 use crate::utils::settings::{
     get_initial_settings, get_settings_file_path_for_source, get_settings_for_source,
@@ -169,26 +168,6 @@ fn sandbox_ask_callback_slot() -> &'static Mutex<Option<SandboxAskCallback>> {
     SANDBOX_ASK_CALLBACK.get_or_init(|| Mutex::new(None))
 }
 
-/// Managed-policy gate applied in front of the registered ask callback.
-/// Maps to: CC `utils/sandbox/sandbox-adapter.ts:743-755` — the
-/// `wrappedCallback` built inside `initialize`, honoring
-/// `shouldAllowManagedSandboxDomainsOnly()` before prompting.
-fn wrap_sandbox_ask_callback(callback: SandboxAskCallback) -> SandboxAskCallback {
-    Arc::new(move |host_pattern: NetworkHostPattern| {
-        let callback = Arc::clone(&callback);
-        Box::pin(async move {
-            if should_allow_managed_sandbox_domains_only() {
-                tracing::debug!(
-                    host = %host_pattern.host,
-                    "[sandbox] Blocked network request (allowManagedDomainsOnly)"
-                );
-                return false;
-            }
-            callback(host_pattern).await
-        }) as std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>>
-    }) as SandboxAskCallback
-}
-
 /// RAII ask-callback registration held by the REPL while mounted.
 ///
 /// Maps to: CC `utils/sandbox/sandbox-adapter.ts:729-755` — the ask-callback
@@ -217,12 +196,13 @@ impl SandboxAskCallbackRegistration {
         if !is_sandboxing_enabled() {
             return Self { registered: None };
         }
-        let wrapped = wrap_sandbox_ask_callback(callback);
+        // @nyan: CC wraps the callback in the managed
+        // `allowManagedDomainsOnly` gate; nyan has no managed settings.
         *sandbox_ask_callback_slot()
             .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&wrapped));
+            .unwrap_or_else(|e| e.into_inner()) = Some(Arc::clone(&callback));
         Self {
-            registered: Some(wrapped),
+            registered: Some(callback),
         }
     }
 }
@@ -1185,13 +1165,12 @@ fn sandbox_value(settings: Option<&SettingsJson>, pointer: &str) -> Option<serde
         .cloned()
 }
 
-fn source_order() -> [SettingSource; 5] {
+fn source_order() -> [SettingSource; 4] {
     [
         SettingSource::User,
         SettingSource::Project,
         SettingSource::Local,
         SettingSource::Flag,
-        SettingSource::Policy,
     ]
 }
 
@@ -1251,7 +1230,6 @@ fn push_sandbox_filesystem_paths(
     allow_read: &mut Vec<String>,
     source: SettingSource,
     settings: &SettingsJson,
-    managed_read_paths_only: bool,
 ) {
     for path in sandbox_string_array(Some(settings), "/filesystem/allowWrite") {
         allow_write.push(resolve_sandbox_filesystem_path(&path, source));
@@ -1262,33 +1240,9 @@ fn push_sandbox_filesystem_paths(
     for path in sandbox_string_array(Some(settings), "/filesystem/denyRead") {
         deny_read.push(resolve_sandbox_filesystem_path(&path, source));
     }
-    if !managed_read_paths_only || source == SettingSource::Policy {
-        for path in sandbox_string_array(Some(settings), "/filesystem/allowRead") {
-            allow_read.push(resolve_sandbox_filesystem_path(&path, source));
-        }
+    for path in sandbox_string_array(Some(settings), "/filesystem/allowRead") {
+        allow_read.push(resolve_sandbox_filesystem_path(&path, source));
     }
-}
-
-/// Maps to: CC `shouldAllowManagedSandboxDomainsOnly()`.
-///
-/// Current safety behavior: reads only file-based managed settings via the
-/// existing settings loader. Registry/MDM policy sources and sandbox-runtime
-/// enforcement are not executed here.
-pub fn should_allow_managed_sandbox_domains_only() -> bool {
-    sandbox_bool(
-        get_settings_for_source(SettingSource::Policy).as_ref(),
-        "/network/allowManagedDomainsOnly",
-    )
-    .unwrap_or(false)
-}
-
-/// Maps to: CC `shouldAllowManagedReadPathsOnly()`.
-pub fn should_allow_managed_read_paths_only() -> bool {
-    sandbox_bool(
-        get_settings_for_source(SettingSource::Policy).as_ref(),
-        "/filesystem/allowManagedReadPathsOnly",
-    )
-    .unwrap_or(false)
 }
 
 /// Maps to: CC `convertToSandboxRuntimeConfig(...)`.
@@ -1297,37 +1251,17 @@ pub fn should_allow_managed_read_paths_only() -> bool {
 /// `@anthropic-ai/sandbox-runtime` or starting OS sandboxing. Runtime-only
 /// pieces (dependency checks, worktree probing, bare-repo scrubbing, bundled
 /// ripgrep fallback, and settings subscriptions) remain deferred.
+/// @nyan: no managed `allowManagedDomainsOnly` / `allowManagedReadPathsOnly`,
+/// and no managed-settings drop-in directory to protect.
 pub fn convert_to_sandbox_runtime_config(settings: &SettingsJson) -> SandboxRuntimeConfig {
-    let policy_settings = get_settings_for_source(SettingSource::Policy);
-    let managed_domains_only = should_allow_managed_sandbox_domains_only();
-    let managed_read_paths_only = should_allow_managed_read_paths_only();
-
-    let mut allowed_domains = Vec::new();
-    if managed_domains_only {
-        allowed_domains.extend(sandbox_string_array(
-            policy_settings.as_ref(),
-            "/network/allowedDomains",
-        ));
-        push_web_fetch_domain_rules(
-            &mut allowed_domains,
-            policy_settings
-                .as_ref()
-                .and_then(|settings| settings.permissions.as_ref())
-                .and_then(|permissions| permissions.allow.as_ref()),
-        );
-    } else {
-        allowed_domains.extend(sandbox_string_array(
-            Some(settings),
-            "/network/allowedDomains",
-        ));
-        push_web_fetch_domain_rules(
-            &mut allowed_domains,
-            settings
-                .permissions
-                .as_ref()
-                .and_then(|permissions| permissions.allow.as_ref()),
-        );
-    }
+    let mut allowed_domains = sandbox_string_array(Some(settings), "/network/allowedDomains");
+    push_web_fetch_domain_rules(
+        &mut allowed_domains,
+        settings
+            .permissions
+            .as_ref()
+            .and_then(|permissions| permissions.allow.as_ref()),
+    );
 
     let mut denied_domains = Vec::new();
     push_web_fetch_domain_rules(
@@ -1348,7 +1282,6 @@ pub fn convert_to_sandbox_runtime_config(settings: &SettingsJson) -> SandboxRunt
             deny_write.push(path.display().to_string());
         }
     }
-    deny_write.push(get_managed_settings_drop_in_dir().display().to_string());
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let original_cwd = get_original_cwd();
@@ -1391,7 +1324,6 @@ pub fn convert_to_sandbox_runtime_config(settings: &SettingsJson) -> SandboxRunt
                 &mut allow_read,
                 source,
                 &source_settings,
-                managed_read_paths_only,
             );
         }
     }
@@ -1628,17 +1560,15 @@ pub fn add_to_excluded_commands(
 }
 
 /// Maps to: CC `areSandboxSettingsLockedByPolicy()`.
+/// @nyan: only flag settings can lock (no policySettings tier).
 pub fn are_sandbox_settings_locked_by_policy() -> bool {
-    [SettingSource::Flag, SettingSource::Policy]
-        .into_iter()
-        .filter_map(get_settings_for_source)
-        .any(|settings| {
-            settings.sandbox.as_ref().is_some_and(|sandbox| {
-                sandbox.get("enabled").is_some()
-                    || sandbox.get("autoAllowBashIfSandboxed").is_some()
-                    || sandbox.get("allowUnsandboxedCommands").is_some()
-            })
+    get_settings_for_source(SettingSource::Flag).is_some_and(|settings| {
+        settings.sandbox.as_ref().is_some_and(|sandbox| {
+            sandbox.get("enabled").is_some()
+                || sandbox.get("autoAllowBashIfSandboxed").is_some()
+                || sandbox.get("allowUnsandboxedCommands").is_some()
         })
+    })
 }
 
 // --- `@anthropic-ai/sandbox-runtime` SandboxViolationStore (in-process) ----
@@ -2213,39 +2143,6 @@ mod tests {
     }
 
     #[test]
-    fn managed_sandbox_domains_only_reads_policy_settings_like_official() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-managed-sandbox-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(
-            root.join("managed-settings.json"),
-            r#"{"sandbox":{"network":{"allowManagedDomainsOnly":true}}}"#,
-        )
-        .unwrap();
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
-
-        assert!(should_allow_managed_sandbox_domains_only());
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn managed_sandbox_domains_only_defaults_false_without_policy() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-empty-managed-sandbox-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
-
-        assert!(!should_allow_managed_sandbox_domains_only());
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
     fn sandbox_path_resolvers_match_official_permission_vs_filesystem_semantics() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
@@ -2291,10 +2188,8 @@ mod tests {
             "nyan-sandbox-config-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let managed = root.join("managed");
         let config_home = root.join("user-config");
         std::fs::create_dir_all(root.join(".nyan")).unwrap();
-        std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::write(
             root.join(".nyan/settings.json"),
@@ -2326,7 +2221,6 @@ mod tests {
         )
         .unwrap();
         let _cwd_guard = CwdGuard::set(&root);
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
 
         let settings = get_initial_settings();
@@ -2400,89 +2294,6 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_runtime_config_honors_managed_only_network_and_read_policies() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-sandbox-managed-config-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let managed = root.join("managed");
-        let config_home = root.join("user-config");
-        std::fs::create_dir_all(root.join(".nyan")).unwrap();
-        std::fs::create_dir_all(&managed).unwrap();
-        std::fs::create_dir_all(&config_home).unwrap();
-        std::fs::write(
-            root.join(".nyan/settings.json"),
-            r#"{
-              "sandbox": {
-                "network": {"allowedDomains": ["project.example"]},
-                "filesystem": {"allowRead": ["project-read"]}
-              },
-              "permissions": {
-                "allow": ["WebFetch(domain:project-allow.example)"],
-                "deny": ["WebFetch(domain:project-deny.example)"]
-              }
-            }"#,
-        )
-        .unwrap();
-        std::fs::write(
-            managed.join("managed-settings.json"),
-            r#"{
-              "sandbox": {
-                "enabled": true,
-                "network": {
-                  "allowManagedDomainsOnly": true,
-                  "allowedDomains": ["managed.example"]
-                },
-                "filesystem": {
-                  "allowManagedReadPathsOnly": true,
-                  "allowRead": ["managed-read"]
-                }
-              },
-              "permissions": {
-                "allow": ["WebFetch(domain:policy-allow.example)"]
-              }
-            }"#,
-        )
-        .unwrap();
-        let _cwd_guard = CwdGuard::set(&root);
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-
-        let settings = get_initial_settings();
-        let config = convert_to_sandbox_runtime_config(&settings);
-        let cwd = std::env::current_dir().unwrap();
-
-        assert_eq!(
-            config.network.allowed_domains,
-            vec![
-                "managed.example".to_string(),
-                "policy-allow.example".to_string()
-            ]
-        );
-        assert_eq!(
-            config.network.denied_domains,
-            vec!["project-deny.example".to_string()]
-        );
-        assert!(
-            config
-                .filesystem
-                .allow_read
-                .contains(&cwd.join("managed-read").display().to_string())
-        );
-        assert!(
-            !config
-                .filesystem
-                .allow_read
-                .contains(&cwd.join("project-read").display().to_string()),
-            "managed allow-read policy should suppress non-policy allowRead paths"
-        );
-        assert!(are_sandbox_settings_locked_by_policy());
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
     fn sandboxing_enabled_uses_canonical_process_settings_and_runtime_gates() {
         let _env_lock = TEST_ENV_LOCK
             .lock()
@@ -2511,10 +2322,6 @@ mod tests {
         {
             let _cwd_guard = CwdGuard::set(&workspace);
             let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-            let _managed_guard = EnvVarGuard::set(
-                "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-                root.join("missing-managed-settings.json"),
-            );
 
             let expected =
                 is_supported_platform() && check_dependencies_readonly().errors.is_empty();

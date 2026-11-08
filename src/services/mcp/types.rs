@@ -4,16 +4,15 @@ use crate::utils::zod::{self, Schema};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-/// Maps to: CC `ConfigScope`.
+/// Maps to: CC `ConfigScope`. @nyan: no `enterprise`/`managed` scopes (no
+/// managed policy layer).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ConfigScope {
     Local,
     User,
     Project,
     Dynamic,
-    Enterprise,
     ClaudeAi,
-    Managed,
 }
 
 impl ConfigScope {
@@ -23,9 +22,7 @@ impl ConfigScope {
             Self::User => "user",
             Self::Project => "project",
             Self::Dynamic => "dynamic",
-            Self::Enterprise => "enterprise",
             Self::ClaudeAi => "claudeai",
-            Self::Managed => "managed",
         }
     }
 }

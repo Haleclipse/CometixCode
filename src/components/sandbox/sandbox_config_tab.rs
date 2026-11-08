@@ -2,7 +2,6 @@
 
 use crate::utils::sandbox::sandbox_adapter::{
     SandboxDependencyCheck, convert_to_sandbox_runtime_config, get_excluded_commands,
-    should_allow_managed_sandbox_domains_only,
 };
 use crate::utils::settings::types::SettingsJson;
 use iocraft::prelude::*;
@@ -18,14 +17,12 @@ pub struct SandboxConfigViewData {
     pub allowed_hosts: Vec<String>,
     pub denied_hosts: Vec<String>,
     pub allow_unix_sockets: Vec<String>,
-    pub managed_network: bool,
     pub warnings: Vec<String>,
 }
 
 pub fn sandbox_config_view_data(
     settings: &SettingsJson,
     dep_check: &SandboxDependencyCheck,
-    managed_network: bool,
 ) -> SandboxConfigViewData {
     let config = convert_to_sandbox_runtime_config(settings);
     SandboxConfigViewData {
@@ -43,7 +40,6 @@ pub fn sandbox_config_view_data(
         allowed_hosts: config.network.allowed_domains,
         denied_hosts: config.network.denied_domains,
         allow_unix_sockets: config.network.allow_unix_sockets.unwrap_or_default(),
-        managed_network,
         warnings: dep_check.warnings.clone(),
     }
 }
@@ -60,11 +56,7 @@ pub fn SandboxConfigTab(
     hooks: Hooks,
 ) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<crate::utils::theme::Theme>();
-    let data = sandbox_config_view_data(
-        &props.settings,
-        &props.dep_check,
-        should_allow_managed_sandbox_domains_only(),
-    );
+    let data = sandbox_config_view_data(&props.settings, &props.dep_check);
 
     if !data.is_enabled {
         return element! {
@@ -106,7 +98,7 @@ pub fn SandboxConfigTab(
             #(if !data.allowed_hosts.is_empty() || !data.denied_hosts.is_empty() {
                 Some(element! {
                     View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
-                        Text(content: format!("Network Restrictions{}:", if data.managed_network { " (Managed)" } else { "" }), color: theme.permission, weight: Weight::Bold, wrap: TextWrap::NoWrap)
+                        Text(content: "Network Restrictions:".to_string(), color: theme.permission, weight: Weight::Bold, wrap: TextWrap::NoWrap)
                         #(if !data.allowed_hosts.is_empty() { Some(element! { Text(content: format!("Allowed: {}", data.allowed_hosts.join(", ")), color: theme.inactive, wrap: TextWrap::Wrap) }) } else { None })
                         #(if !data.denied_hosts.is_empty() { Some(element! { Text(content: format!("Denied: {}", data.denied_hosts.join(", ")), color: theme.inactive, wrap: TextWrap::Wrap) }) } else { None })
                     }
@@ -158,7 +150,7 @@ mod tests {
             }
         }))
         .unwrap();
-        let data = sandbox_config_view_data(&settings, &SandboxDependencyCheck::default(), false);
+        let data = sandbox_config_view_data(&settings, &SandboxDependencyCheck::default());
         assert!(data.is_enabled);
         assert_eq!(data.excluded_commands, vec!["npm run test:*"]);
         assert!(data.allowed_hosts.contains(&"example.com".to_string()));

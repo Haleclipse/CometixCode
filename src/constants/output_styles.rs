@@ -74,7 +74,7 @@ pub fn get_all_output_styles_ordered(cwd: &Path) -> Vec<(String, Option<OutputSt
     let mut all_styles = built_in_output_styles_ordered();
     let custom_styles =
         crate::output_styles::load_output_styles_dir::get_output_style_dir_styles(cwd);
-    for source in ["userSettings", "projectSettings", "policySettings"] {
+    for source in ["userSettings", "projectSettings"] {
         for style in custom_styles.iter().filter(|style| style.source == source) {
             upsert_style_ordered(&mut all_styles, style.name.clone(), Some(style.clone()));
         }

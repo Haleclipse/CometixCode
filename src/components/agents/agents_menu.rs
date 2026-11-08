@@ -334,7 +334,6 @@ mod tests {
             AgentDefinitionSource::BuiltIn,
             AgentDefinitionSource::Plugin,
             AgentDefinitionSource::FlagSettings,
-            AgentDefinitionSource::PolicySettings,
         ] {
             assert_eq!(values(source), ["view", "back"], "{source:?}");
         }

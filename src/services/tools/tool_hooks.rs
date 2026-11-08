@@ -739,7 +739,6 @@ mod tests {
     async fn every_tool_event_payload_carries_the_tool_use_context_triple() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let context = subagent_hook_context();
         let request = read_request("toolu_triple");
 
@@ -885,7 +884,6 @@ mod tests {
     async fn post_tool_use_failure_payload_carries_is_interrupt_both_ways() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _managed = crate::services::hooks::test_support::ManagedSettingsGuard::install(None);
         let request = read_request("toolu_interrupt");
 
         async fn captured(is_interrupt: bool, request: &PermissionRequest) -> serde_json::Value {

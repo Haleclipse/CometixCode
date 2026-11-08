@@ -40,8 +40,6 @@ where
 // `utils/permissions/PermissionMode.ts`.
 pub use crate::utils::permissions::permission_mode::{EXTERNAL_PERMISSION_MODES, PERMISSION_MODES};
 
-pub const CUSTOMIZATION_SURFACES: &[&str] = &["skills", "agents", "hooks", "mcp"];
-
 pub const DEFAULT_SHELLS: &[&str] = &["bash", "powershell"];
 
 pub const LOGIN_METHODS: &[&str] = &["claudeai", "console"];
@@ -80,7 +78,6 @@ pub struct SettingsJson {
     // ── Hooks ──
     pub hooks: Option<serde_json::Value>,
     pub disable_all_hooks: Option<bool>,
-    pub allow_managed_hooks_only: Option<bool>,
     pub allowed_http_hook_urls: Option<Vec<String>>,
     pub http_hook_allowed_env_vars: Option<Vec<String>>,
 
@@ -93,7 +90,6 @@ pub struct SettingsJson {
     pub disabled_mcpjson_servers: Option<Vec<String>>,
     pub allowed_mcp_servers: Option<Vec<AllowedMcpServerEntry>>,
     pub denied_mcp_servers: Option<Vec<DeniedMcpServerEntry>>,
-    pub allow_managed_mcp_servers_only: Option<bool>,
 
     pub output_style: Option<String>,
     pub language: Option<String>,
@@ -150,16 +146,11 @@ pub struct SettingsJson {
 
     // ── Plugins ──
     pub enabled_plugins: Option<serde_json::Value>,
-    pub strict_plugin_only_customization: Option<serde_json::Value>,
     pub plugin_configs: Option<serde_json::Value>,
-    pub plugin_trust_message: Option<String>,
 
     // ── Marketplace ──
     pub extra_known_marketplaces: Option<serde_json::Value>,
-    pub strict_known_marketplaces: Option<Vec<serde_json::Value>>,
-    pub blocked_marketplaces: Option<Vec<serde_json::Value>>,
 
-    pub allow_managed_permission_rules_only: Option<bool>,
     pub skip_dangerous_mode_permission_prompt: Option<bool>,
     pub classifier_permissions_enabled: Option<bool>,
 
@@ -553,25 +544,6 @@ pub fn extra_known_marketplace_schema() -> &'static crate::utils::zod::Schema {
     })
 }
 
-/// Maps to: CC `utils/settings/types.ts:255-282` `strictPluginOnlyCustomization`'s
-/// preprocess — forwards-compat: drop unknown surface names so a future enum
-/// value doesn't fail safeParse and null out the ENTIRE managed-settings file.
-/// Degrades to less-locked, never to everything-unlocked.
-fn drop_unknown_customization_surfaces(v: &serde_json::Value) -> serde_json::Value {
-    match v.as_array() {
-        Some(arr) => serde_json::Value::Array(
-            arr.iter()
-                .filter(|x| {
-                    x.as_str()
-                        .is_some_and(|s| CUSTOMIZATION_SURFACES.contains(&s))
-                })
-                .cloned()
-                .collect(),
-        ),
-        None => v.clone(),
-    }
-}
-
 /// Maps to: CC `utils/settings/types.ts:570-596` — the `extraKnownMarketplaces`
 /// `.check`: for settings sources, the dict key must equal `source.name`, or
 /// the marketplace reconciler never converges (key-lookup misses every
@@ -842,12 +814,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ),
             ),
             (
-                "allowManagedHooksOnly",
-                zod::boolean().optional().describe(
-                    "When true (and set in managed settings), only hooks from managed settings run. User, project, and local hooks are ignored.",
-                ),
-            ),
-            (
                 "allowedHttpHookUrls",
                 zod::array(zod::string()).optional().describe(
                     "Allowlist of URL patterns that HTTP hooks may target. Supports * as a wildcard (e.g. \"https://hooks.example.com/*\"). When set, HTTP hooks with non-matching URLs are blocked. If undefined, all URLs are allowed. If empty array, no HTTP hooks are allowed. Arrays merge across settings sources (same semantics as allowedMcpServers).",
@@ -857,35 +823,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 "httpHookAllowedEnvVars",
                 zod::array(zod::string()).optional().describe(
                     "Allowlist of environment variable names HTTP hooks may interpolate into headers. When set, each hook's effective allowedEnvVars is the intersection with this list. If undefined, no restriction is applied. Arrays merge across settings sources (same semantics as allowedMcpServers).",
-                ),
-            ),
-            (
-                "allowManagedPermissionRulesOnly",
-                zod::boolean().optional().describe(
-                    "When true (and set in managed settings), only permission rules (allow/deny/ask) from managed settings are respected. User, project, local, and CLI argument permission rules are ignored.",
-                ),
-            ),
-            (
-                "allowManagedMcpServersOnly",
-                zod::boolean().optional().describe(
-                    "When true (and set in managed settings), allowedMcpServers is only read from managed settings. deniedMcpServers still merges from all sources, so users can deny servers for themselves. Users can still add their own MCP servers, but only the admin-defined allowlist applies.",
-                ),
-            ),
-            (
-                "strictPluginOnlyCustomization",
-                zod::preprocess(
-                    drop_unknown_customization_surfaces,
-                    zod::union(vec![
-                        zod::boolean(),
-                        zod::array(zod::enumeration(CUSTOMIZATION_SURFACES.to_vec())),
-                    ]),
-                )
-                .optional()
-                // Non-array invalid values would fail the union and null the
-                // whole managed-settings file; .catch drops the field instead.
-                .catch_undefined()
-                .describe(
-                    "When set in managed settings, blocks non-plugin customization sources for the listed surfaces. Array form locks specific surfaces (e.g. [\"skills\", \"hooks\"]); `true` locks all four; `false` is an explicit no-op. Blocked: ~/.nyan/{surface}/, .nyan/{surface}/ (project), settings.json hooks, .mcp.json. NOT blocked: managed (policySettings) sources, plugin-provided customizations. Composes with strictKnownMarketplaces for end-to-end admin control — plugins gated by marketplace allowlist, everything else blocked here.",
                 ),
             ),
             (
@@ -916,22 +853,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                     .optional()
                     .describe(
                         "Additional marketplaces to make available for this repository. Typically used in repository .nyan/settings.json to ensure team members have required plugin sources.",
-                    ),
-            ),
-            (
-                "strictKnownMarketplaces",
-                zod::array(marketplace_source_schema().clone())
-                    .optional()
-                    .describe(
-                        "Enterprise strict list of allowed marketplace sources. When set in managed settings, ONLY these exact sources can be added as marketplaces. The check happens BEFORE downloading, so blocked sources never touch the filesystem. Note: this is a policy gate only — it does NOT register marketplaces. To pre-register allowed marketplaces for users, also set extraKnownMarketplaces.",
-                    ),
-            ),
-            (
-                "blockedMarketplaces",
-                zod::array(marketplace_source_schema().clone())
-                    .optional()
-                    .describe(
-                        "Enterprise blocklist of marketplace sources. When set in managed settings, these exact sources are blocked from being added as marketplaces. The check happens BEFORE downloading, so blocked sources never touch the filesystem.",
                     ),
             ),
             (
@@ -1292,12 +1213,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                     "Glob patterns or absolute paths of AGENTS.md files to exclude from loading. Patterns are matched against absolute file paths using picomatch. Applies to User and Project memory types (Managed/policy files cannot be excluded). Examples: \"/home/user/monorepo/AGENTS.md\", \"**/code/AGENTS.md\"",
                 ),
             ),
-            (
-                "pluginTrustMessage",
-                zod::string().optional().describe(
-                    "Custom message to append to the plugin trust warning shown before installation. Only read from policy settings (managed-settings.json / MDM). Useful for enterprise administrators to add organization-specific context (e.g., \"All plugins from our internal marketplace are vetted and approved.\").",
-                ),
-            ),
             // @nyan: the strict top-level schema must know this key, otherwise
             // editing settings.json rejects any nyan configuration.
             (
@@ -1555,30 +1470,6 @@ mod zod_schema_tests {
             )
             .is_err()
         );
-    }
-
-    /// Maps to: CC `strictPluginOnlyCustomization` — the preprocess drops
-    /// unknown surfaces (forwards-compat) and `.catch(undefined)` swallows
-    /// invalid gated values instead of nulling the whole file.
-    #[test]
-    fn settings_schema_degrades_gated_fields_like_official() {
-        let filtered = crate::utils::zod::safe_parse(
-            settings_schema(),
-            &serde_json::json!({"strictPluginOnlyCustomization": ["skills", "commands"]}),
-        )
-        .expect("unknown surface filtered, not fatal");
-        assert_eq!(
-            filtered["strictPluginOnlyCustomization"],
-            serde_json::json!(["skills"])
-        );
-
-        let swallowed = crate::utils::zod::safe_parse(
-            settings_schema(),
-            &serde_json::json!({"strictPluginOnlyCustomization": "skills", "language": "zh"}),
-        )
-        .expect("invalid raw value swallowed by catch");
-        assert!(swallowed.get("strictPluginOnlyCustomization").is_none());
-        assert_eq!(swallowed["language"], "zh");
     }
 
     /// Maps to: CC `extraKnownMarketplaces` `.check` — a settings-sourced

@@ -18,12 +18,7 @@ use crate::services::mcp::utils::describe_mcp_config_file_path;
 use iocraft::prelude::*;
 use std::collections::BTreeMap;
 
-const SCOPE_ORDER: [ConfigScope; 4] = [
-    ConfigScope::Project,
-    ConfigScope::Local,
-    ConfigScope::User,
-    ConfigScope::Enterprise,
-];
+const SCOPE_ORDER: [ConfigScope; 3] = [ConfigScope::Project, ConfigScope::Local, ConfigScope::User];
 
 #[derive(Default, Props)]
 pub struct MCPListPanelProps<'a> {
@@ -59,12 +54,11 @@ pub fn get_scope_heading(scope: ConfigScope) -> (String, Option<String>) {
             "Local MCPs".to_string(),
             Some(describe_mcp_config_file_path(scope)),
         ),
-        ConfigScope::Enterprise => ("Enterprise MCPs".to_string(), None),
         ConfigScope::Dynamic => (
             "Built-in MCPs".to_string(),
             Some("always available".to_string()),
         ),
-        ConfigScope::ClaudeAi | ConfigScope::Managed => (scope.as_str().to_string(), None),
+        ConfigScope::ClaudeAi => (scope.as_str().to_string(), None),
     }
 }
 

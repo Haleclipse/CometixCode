@@ -12,7 +12,6 @@ use crate::utils::hooks::hooks_config_manager::{
 };
 use crate::utils::hooks::hooks_settings::IndividualHookConfig;
 use crate::utils::settings;
-use crate::utils::settings::constants::SettingSource;
 use crate::utils::string_utils::plural;
 use crate::utils::worktree::CommandResultDisplay;
 use iocraft::prelude::*;
@@ -29,8 +28,6 @@ pub struct HooksConfigMenuDone {
 pub struct HooksConfigMenuOverride {
     pub hooks: Vec<IndividualHookConfig>,
     pub hooks_disabled: bool,
-    pub disabled_by_policy: bool,
-    pub restricted_by_policy: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -55,18 +52,8 @@ pub struct HooksConfigMenuProps<'a> {
     pub on_exit: HandlerMut<'a, HooksConfigMenuDone>,
 }
 
-fn load_policy_state() -> (bool, bool, bool) {
-    let settings = settings::get_initial_settings();
-    let policy = settings::get_settings_for_source(SettingSource::Policy);
-    let hooks_disabled = settings.disable_all_hooks == Some(true);
-    let disabled_by_policy = hooks_disabled
-        && policy
-            .as_ref()
-            .is_some_and(|settings| settings.disable_all_hooks == Some(true));
-    let restricted_by_policy = policy
-        .as_ref()
-        .is_some_and(|settings| settings.allow_managed_hooks_only == Some(true));
-    (hooks_disabled, disabled_by_policy, restricted_by_policy)
+fn load_hooks_disabled() -> bool {
+    settings::get_initial_settings().disable_all_hooks == Some(true)
 }
 
 /// Maps to: CC `HooksConfigMenu`.
@@ -102,16 +89,9 @@ pub fn HooksConfigMenu<'a>(
     let override_data = hooks
         .try_use_context::<HooksConfigMenuOverride>()
         .map(|data| data.clone());
-    let (hooks_disabled, disabled_by_policy, restricted_by_policy) = override_data
+    let hooks_disabled = override_data
         .as_ref()
-        .map(|data| {
-            (
-                data.hooks_disabled,
-                data.disabled_by_policy,
-                data.restricted_by_policy,
-            )
-        })
-        .unwrap_or_else(load_policy_state);
+        .map_or_else(load_hooks_disabled, |data| data.hooks_disabled);
     let hooks_by_event_and_matcher = if let Some(data) = override_data {
         group_individual_hooks_by_event_and_matcher(data.hooks, &combined_tool_names)
     } else {
@@ -132,11 +112,6 @@ pub fn HooksConfigMenu<'a>(
     let mode = mode_state.read().clone();
     if hooks_disabled {
         let mut pending_done_for_cancel = pending_done;
-        let managed_suffix = if disabled_by_policy {
-            " by a managed settings file"
-        } else {
-            ""
-        };
         let configured_word = plural(total_hooks_count, "hook", None);
         let verb = plural(total_hooks_count, "is", Some("are"));
         return element! {
@@ -152,7 +127,7 @@ pub fn HooksConfigMenu<'a>(
                     View(flex_direction: FlexDirection::Column) {
                         Text(
                             content: format!(
-                                "All hooks are currently disabled{managed_suffix}. You have {total_hooks_count} configured {configured_word} that {verb} not running."
+                                "All hooks are currently disabled. You have {total_hooks_count} configured {configured_word} that {verb} not running."
                             ),
                             wrap: TextWrap::Wrap,
                         )
@@ -163,13 +138,11 @@ pub fn HooksConfigMenu<'a>(
                         Text(content: "· StatusLine will not be displayed".to_string(), dim: true, wrap: TextWrap::Wrap)
                         Text(content: "· Tool operations will proceed without hook validation".to_string(), dim: true, wrap: TextWrap::Wrap)
                     }
-                    #((!disabled_by_policy).then(|| element! {
-                        Text(
-                            content: "To re-enable hooks, remove \"disableAllHooks\" from settings.json or ask Claude.".to_string(),
-                            dim: true,
-                            wrap: TextWrap::Wrap,
-                        )
-                    }))
+                    Text(
+                        content: "To re-enable hooks, remove \"disableAllHooks\" from settings.json or ask Claude.".to_string(),
+                        dim: true,
+                        wrap: TextWrap::Wrap,
+                    )
                 }
             }
         }.into_any();
@@ -184,7 +157,6 @@ pub fn HooksConfigMenu<'a>(
                     hook_event_metadata: metadata,
                     hooks_by_event: hooks_by_event,
                     total_hooks_count: total_hooks_count,
-                    restricted_by_policy: restricted_by_policy,
                     on_select_event: move |event| {
                         if get_matcher_metadata(event, &combined_tool_names).is_some() {
                             mode_state_for_select.set(ModeState::SelectMatcher { event });
@@ -306,14 +278,12 @@ mod tests {
     }
 
     #[test]
-    fn disabled_menu_matches_managed_policy_copy() {
+    fn disabled_menu_matches_official_copy() {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 ContextProvider(value: Context::owned(HooksConfigMenuOverride {
                     hooks: vec![configured_hook()],
                     hooks_disabled: true,
-                    disabled_by_policy: true,
-                    restricted_by_policy: false,
                 })) {
                     HooksConfigMenu
                 }
@@ -326,14 +296,14 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("disabled by a managed settings file"),
+            text.contains("All hooks are currently disabled. You have"),
             "canvas=\n{text}"
         );
         assert!(
             text.contains("1 configured hook that is not running"),
             "canvas=\n{text}"
         );
-        assert!(!text.contains("To re-enable hooks"), "canvas=\n{text}");
+        assert!(text.contains("To re-enable hooks"), "canvas=\n{text}");
     }
 
     #[test]

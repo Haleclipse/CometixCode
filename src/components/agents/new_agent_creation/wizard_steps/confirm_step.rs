@@ -34,7 +34,6 @@ pub fn tools_display(tool_names: Option<&[String]>) -> String {
 fn source(value: &str) -> AgentDefinitionSource {
     match value {
         "userSettings" => AgentDefinitionSource::UserSettings,
-        "policySettings" => AgentDefinitionSource::PolicySettings,
         "flagSettings" => AgentDefinitionSource::FlagSettings,
         _ => AgentDefinitionSource::ProjectSettings,
     }

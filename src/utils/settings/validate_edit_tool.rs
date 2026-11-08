@@ -111,20 +111,6 @@ mod tests {
     }
 
     #[test]
-    fn zod_catch_fields_accept_invalid_or_future_values() {
-        // .catch(undefined) fields degrade instead of failing the edit.
-        assert!(
-            validate_input_for_settings_file_edit(
-                &settings_path(),
-                r#"{"language": "zh"}"#,
-                r#"{"language": "zh", "strictPluginOnlyCustomization": "skills"}"#,
-                &cwd(),
-            )
-            .is_none()
-        );
-    }
-
-    #[test]
     fn source_zod_coercions_and_refinements_control_valid_to_invalid_gate() {
         // env values coerce, so numbers stay valid.
         assert!(

@@ -32,7 +32,6 @@ pub fn permission_rule_source_from_official_str(value: &str) -> Option<Permissio
         "projectSettings" => Some(PermissionRuleSource::ProjectSettings),
         "localSettings" => Some(PermissionRuleSource::LocalSettings),
         "flagSettings" => Some(PermissionRuleSource::FlagSettings),
-        "policySettings" => Some(PermissionRuleSource::PolicySettings),
         "cliArg" => Some(PermissionRuleSource::CliArg),
         "command" => Some(PermissionRuleSource::Command),
         "session" => Some(PermissionRuleSource::Session),
@@ -46,7 +45,6 @@ pub fn permission_rule_source_to_official_str(value: PermissionRuleSource) -> &'
         PermissionRuleSource::ProjectSettings => "projectSettings",
         PermissionRuleSource::LocalSettings => "localSettings",
         PermissionRuleSource::FlagSettings => "flagSettings",
-        PermissionRuleSource::PolicySettings => "policySettings",
         PermissionRuleSource::CliArg => "cliArg",
         PermissionRuleSource::Command => "command",
         PermissionRuleSource::Session => "session",
@@ -112,8 +110,12 @@ mod tests {
             Some(PermissionBehavior::Allow)
         );
         assert_eq!(
+            permission_rule_source_from_official_str("flagSettings"),
+            Some(PermissionRuleSource::FlagSettings)
+        );
+        assert_eq!(
             permission_rule_source_from_official_str("policySettings"),
-            Some(PermissionRuleSource::PolicySettings)
+            None
         );
         let value = PermissionRuleValue::new("Bash", Some("cargo test:*".to_string()));
         let json = permission_rule_value_to_official_json(&value);

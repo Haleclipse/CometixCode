@@ -19,17 +19,15 @@ pub async fn execute_file_suggestion_command(
         return None;
     }
 
-    // Maps to CC's per-call `shouldDisableAllHooksIncludingManaged()` and
-    // `shouldSkipHookDueToTrust()` gates at the start of
+    // Maps to CC's per-call `shouldSkipHookDueToTrust()` gate at the start of
     // `executeFileSuggestionCommand` (hooks.ts:4681-4692). File suggestions
     // are not a HookEvent, so the generic event matcher is intentionally not
-    // reused here.
-    if super::should_disable_all_hooks_including_managed_from_settings()
-        || super::security::should_skip_hook_due_to_trust(
-            crate::utils::config::check_has_trust_dialog_accepted(),
-            crate::bootstrap::state::get_is_non_interactive_session(),
-        )
-    {
+    // reused here. @nyan: CC's `shouldDisableAllHooksIncludingManaged()` gate
+    // only reads managed settings, which nyan does not have.
+    if super::security::should_skip_hook_due_to_trust(
+        crate::utils::config::check_has_trust_dialog_accepted(),
+        crate::bootstrap::state::get_is_non_interactive_session(),
+    ) {
         return None;
     }
 

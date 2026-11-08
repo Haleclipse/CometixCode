@@ -57,10 +57,6 @@ impl std::fmt::Display for ValidationError {
 pub struct SettingsWithErrors {
     pub settings: SettingsJson,
     pub errors: Vec<ValidationError>,
-    /// Source-specific policy settings, when available. This mirrors official
-    /// `getSettingsForSource('policySettings')` for hook/status-line gating
-    /// without changing the merged settings shape.
-    pub policy_settings: Option<SettingsJson>,
 }
 
 // ════════════════════════════════════════════════════════════

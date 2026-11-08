@@ -704,7 +704,7 @@ pub(super) async fn request_sdk_tool_permission(
 /// `run_agent.rs#subagent_hook_config_and_env` and
 /// `process_user_input/mod.rs` already close with the shared
 /// `session_hooks::merge_session_hooks_into_config`, including its
-/// `allow_managed_hooks_only` gate (CC `:1515` + `:1541`). Function hooks stay
+/// `disable_all_hooks` gate (CC `:1515` + `:1541`). Function hooks stay
 /// out: `merge_session_hooks_into_config` flattens command hooks only, and this
 /// port has no `FunctionHookMatcher` executor yet.
 async fn execute_permission_request_hooks_for_sdk(
@@ -719,7 +719,7 @@ async fn execute_permission_request_hooks_for_sdk(
 
     let loaded = crate::services::hooks::load_hooks_config();
     let mut config = loaded.config;
-    if !loaded.allow_managed_hooks_only {
+    if !loaded.disable_all_hooks {
         let session_id = agent_id
             .map(str::to_string)
             .unwrap_or_else(crate::bootstrap::state::get_session_id);

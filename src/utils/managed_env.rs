@@ -265,7 +265,7 @@ fn apply_filtered(update: &mut EnvUpdate<'_>, env: Option<&IndexMap<String, Stri
 
 /// Apply environment variables from trusted sources before the trust dialog.
 ///
-/// Trusted sources (user settings, `--settings` flag, managed policy) apply
+/// Trusted sources (user settings, `--settings` flag) apply
 /// ALL their env vars; project-scoped sources contribute only the
 /// [`SAFE_ENV_VARS`] allowlist, so a repository-controlled
 /// `.nyan/settings.json` cannot redirect provider routing (e.g.
@@ -282,7 +282,6 @@ pub fn apply_safe_config_environment_variables() {
         .filter(|source| is_setting_source_enabled(*source))
         .filter_map(get_settings_for_source)
         .collect::<Vec<_>>();
-    let policy = get_settings_for_source(SettingSource::Policy);
     let merged = get_initial_settings();
 
     let mut update = process_env::begin_update();
@@ -293,25 +292,15 @@ pub fn apply_safe_config_environment_variables() {
     // Global config (state.json) env, user-controlled (:133-136).
     apply_filtered(&mut update, global.env.as_ref());
 
-    // Trusted setting sources; policySettings is deferred below (:138-149).
-    // The isSettingSourceEnabled gate only ever filters userSettings (SDK
-    // settingSources isolation, gh#217) — flag/policy are always enabled.
+    // Trusted setting sources (:138-149). The isSettingSourceEnabled gate only
+    // ever filters userSettings (SDK settingSources isolation, gh#217) — flag
+    // is always enabled.
     for settings in &trusted {
         apply_filtered(&mut update, settings.env.as_deref());
     }
 
-    // (:151-157) CC computes remote-managed-settings eligibility exactly here
-    // — after user/flag env (eligibility reads CLAUDE_CODE_USE_BEDROCK and
-    // ANTHROPIC_BASE_URL, both settable via settings.env) and before policy env.
-    // `services/remoteManagedSettings` is not ported (MODULE_MAP: missing);
-    // when it lands, prebuild its cache-backed input before this turn and use
-    // `update.snapshot()` only for this pure eligibility decision.
-
-    // Policy env, applied last among trusted sources (:159-162).
-    apply_filtered(
-        &mut update,
-        policy.as_ref().and_then(|settings| settings.env.as_deref()),
-    );
+    // @nyan: CC's remote-managed-settings eligibility check (:151-157) and
+    // policySettings env (:159-162) are gone with the managed policy layer.
 
     // Safe allowlisted vars from the fully-merged settings, which include
     // project-scoped sources (:164-178).

@@ -8,12 +8,11 @@ pub enum SettingSource {
     Project,
     Local,
     Flag,
-    Policy,
 }
 
 /// Maps to: CC `utils/settings/constants.ts:182-185#EditableSettingSource`.
 /// Rust carries the source's excluded union as a separate enum so functions
-/// accepting editable destinations cannot receive policy or flag settings.
+/// accepting editable destinations cannot receive flag settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EditableSettingSource {
     User,
@@ -47,7 +46,6 @@ pub fn get_setting_source_name(source: SettingSource) -> &'static str {
         SettingSource::Project => "project",
         SettingSource::Local => "project, gitignored",
         SettingSource::Flag => "cli flag",
-        SettingSource::Policy => "managed",
     }
 }
 
@@ -59,7 +57,6 @@ pub(crate) fn get_setting_source_display_name_capitalized(source: SettingSource)
         SettingSource::Project => "Shared project settings",
         SettingSource::Local => "Project local settings",
         SettingSource::Flag => "Command line arguments",
-        SettingSource::Policy => "Enterprise managed settings",
     }
 }
 
@@ -94,9 +91,8 @@ pub fn get_enabled_setting_sources() -> Vec<SettingSource> {
             sources.push(source);
         }
     }
-    // Policy and CLI flag settings cannot be disabled.
+    // CLI flag settings cannot be disabled.
     sources.push(SettingSource::Flag);
-    sources.push(SettingSource::Policy);
     sources
 }
 
@@ -125,7 +121,7 @@ mod tests {
     }
 
     #[test]
-    fn setting_source_selection_gates_editable_sources_but_not_policy_or_flag() {
+    fn setting_source_selection_gates_editable_sources_but_not_flag() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _restore = AllowedSourcesRestore::capture();
 
@@ -139,19 +135,14 @@ mod tests {
                 SettingSource::User,
                 SettingSource::Local,
                 SettingSource::Flag,
-                SettingSource::Policy,
             ]
         );
         assert!(is_setting_source_enabled(SettingSource::User));
         assert!(!is_setting_source_enabled(SettingSource::Project));
         assert!(is_setting_source_enabled(SettingSource::Flag));
-        assert!(is_setting_source_enabled(SettingSource::Policy));
 
         crate::bootstrap::state::set_allowed_setting_sources(Vec::new());
-        assert_eq!(
-            get_enabled_setting_sources(),
-            vec![SettingSource::Flag, SettingSource::Policy]
-        );
+        assert_eq!(get_enabled_setting_sources(), vec![SettingSource::Flag]);
     }
 
     #[test]

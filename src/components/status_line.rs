@@ -250,7 +250,6 @@ pub async fn run_status_line_update(
     main_loop_model: &str,
     vim_mode: Option<&str>,
     workspace_trusted: bool,
-    policy_settings: Option<&SettingsJson>,
     log_result: bool,
 ) -> Option<String> {
     let exceeds_200k_tokens = does_most_recent_assistant_message_exceed_200k(messages);
@@ -266,7 +265,6 @@ pub async fn run_status_line_update(
     crate::services::hooks::statusline::execute_status_line_command(
         &status_input,
         workspace_trusted,
-        policy_settings,
         log_result,
     )
     .await
@@ -441,7 +439,6 @@ fn use_status_line_update(hooks: &mut Hooks, inputs: StatusLineUpdateInputs) {
                 // established, and a false here silently suppresses the
                 // command, which is indistinguishable from "status line broken".
                 crate::utils::config::check_has_trust_dialog_accepted(),
-                None,
                 true,
             )
             .await;

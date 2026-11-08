@@ -206,10 +206,6 @@ mod tests {
         {
             let _cwd_guard = CwdGuard::set(&workspace);
             let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-            let _managed_guard = EnvVarGuard::set(
-                "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-                root.join("missing-managed-settings.json"),
-            );
 
             // An empty `enabledPlatforms` excludes every platform, which is the
             // only runtime-reachable arm of the official pair on a host that
@@ -254,13 +250,10 @@ mod tests {
             "nyan-sandbox-command-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let managed = root.join("managed");
         let config_home = root.join("user-config");
         std::fs::create_dir_all(root.join(".nyan")).unwrap();
-        std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
         let _cwd_guard = CwdGuard::set(&root);
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
 

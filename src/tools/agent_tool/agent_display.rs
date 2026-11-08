@@ -30,10 +30,6 @@ pub const AGENT_SOURCE_GROUPS: &[AgentSourceGroup] = &[
         source: AgentDefinitionSource::ProjectSettings,
     },
     AgentSourceGroup {
-        label: "Managed agents",
-        source: AgentDefinitionSource::PolicySettings,
-    },
-    AgentSourceGroup {
         label: "Plugin agents",
         source: AgentDefinitionSource::Plugin,
     },
@@ -112,7 +108,6 @@ fn source_display_name_lowercase(source: AgentDefinitionSource) -> String {
         AgentDefinitionSource::UserSettings => "user".to_string(),
         AgentDefinitionSource::ProjectSettings => "project".to_string(),
         AgentDefinitionSource::FlagSettings => "flag".to_string(),
-        AgentDefinitionSource::PolicySettings => "managed".to_string(),
         AgentDefinitionSource::BuiltIn => "built-in".to_string(),
         AgentDefinitionSource::Plugin => "plugin".to_string(),
     }

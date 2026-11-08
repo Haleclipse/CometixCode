@@ -442,8 +442,6 @@ pub(crate) fn install_channel_handlers(
         declares(CHANNEL_EXPERIMENTAL_CAPABILITY),
         context.channels_enabled,
         context.has_claude_ai_oauth,
-        context.subscription.as_deref(),
-        context.policy_channels_enabled,
         &context.session_channels,
         connected.config.plugin_source.as_deref(),
         &context.allowlist,
@@ -586,12 +584,9 @@ fn install_connection_handlers(server: &McpServerConnection, writer: &McpWriter)
     // Maps to: CC `:470-614`, built with `feature('KAIROS') ||
     // feature('KAIROS_CHANNELS')`.
     if feature_enabled(FeatureFlag::Kairos) || feature_enabled(FeatureFlag::KairosChannels) {
-        let policy_settings = crate::utils::settings::get_settings_for_source(
-            crate::utils::settings::constants::SettingSource::Policy,
-        );
         install_channel_handlers(
             connected,
-            &channel_gate_context_from_readonly_runtime(policy_settings.as_ref()),
+            &channel_gate_context_from_readonly_runtime(),
             with_connection_handlers(|hooks| hooks.channel_permission_callbacks.clone()).flatten(),
         );
     }
@@ -1267,11 +1262,11 @@ async fn load_and_connect_mcp_configs(
     // Preserve only the shared MCP auth-failure cache invalidation previously
     // delegated by claudeai.ts#clearClaudeAIMcpConfigsCache, under its same guard.
     // This does not read Claude.ai credentials or invoke the retained module.
-    if !strict && !super::config::does_enterprise_mcp_config_exist_readonly() {
+    if !strict {
         super::client::clear_mcp_auth_cache();
     }
     // Original wiring retained for future re-enablement:
-    // let claudeai_promise = if strict || super::config::does_enterprise_mcp_config_exist_readonly() {
+    // let claudeai_promise = if strict {
     //     super::config::start_mcp_config_promise(futures::future::ready(Default::default()))
     // } else {
     //     super::claudeai::clear_claude_ai_mcp_configs_cache();
@@ -1394,17 +1389,13 @@ fn log_discovered_mcp_server_counts(
     for (name, config) in crate::utils::process_env::ecmascript_object_entries(&all_configs) {
         use super::types::ConfigScope;
         let scope = match config.scope {
-            ConfigScope::Enterprise => Some("enterprise"),
-            ConfigScope::User => Some("global"),
-            ConfigScope::Project => Some("project"),
-            ConfigScope::Local => Some("user"),
-            ConfigScope::Dynamic => Some("plugin"),
-            ConfigScope::ClaudeAi => Some("claudeai"),
-            ConfigScope::Managed => None,
+            ConfigScope::User => "global",
+            ConfigScope::Project => "project",
+            ConfigScope::Local => "user",
+            ConfigScope::Dynamic => "plugin",
+            ConfigScope::ClaudeAi => "claudeai",
         };
-        if let Some(scope) = scope {
-            counts[scope] = serde_json::json!(counts[scope].as_u64().unwrap() + 1);
-        }
+        counts[scope] = serde_json::json!(counts[scope].as_u64().unwrap() + 1);
         if ant
             && !is_mcp_server_disabled(name)
             && config.transport == Transport::Stdio

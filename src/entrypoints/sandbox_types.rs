@@ -18,12 +18,6 @@ pub fn sandbox_network_config_schema() -> &'static Schema {
         zod::object(vec![
             ("allowedDomains", zod::array(zod::string()).optional()),
             (
-                "allowManagedDomainsOnly",
-                zod::boolean().optional().describe(
-                    "When true (and set in managed settings), only allowedDomains and WebFetch(domain:...) allow rules from managed settings are respected. User, project, local, and flag settings domains are ignored. Denied domains are still respected from all sources.",
-                ),
-            ),
-            (
                 "allowUnixSockets",
                 zod::array(zod::string()).optional().describe(
                     "macOS only: Unix socket paths to allow. Ignored on Linux (seccomp cannot filter by path).",
@@ -71,12 +65,6 @@ pub fn sandbox_filesystem_config_schema() -> &'static Schema {
                 "allowRead",
                 zod::array(zod::string()).optional().describe(
                     "Paths to re-allow reading within denyRead regions. Takes precedence over denyRead for matching paths.",
-                ),
-            ),
-            (
-                "allowManagedReadPathsOnly",
-                zod::boolean().optional().describe(
-                    "When true (set in managed settings), only allowRead paths from policySettings are used.",
                 ),
             ),
         ])

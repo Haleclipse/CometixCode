@@ -156,7 +156,6 @@ mod tests {
         set_session_settings_cache(SettingsWithErrors {
             settings: SettingsJson::default(),
             errors: Vec::new(),
-            policy_settings: None,
         });
         set_cached_settings_for_source(SettingSource::User, Some(SettingsJson::default()));
         set_cached_parsed_file(Path::new("/tmp/settings.json"), ParsedSettings::default());

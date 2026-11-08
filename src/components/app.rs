@@ -163,7 +163,6 @@ mod tests {
         let startup_settings = Arc::new(SettingsWithErrors {
             settings: crate::utils::settings::SettingsJson::default(),
             errors: Vec::new(),
-            policy_settings: None,
         });
         let store = crate::state::store::AppStore::new(
             crate::main::build_initial_app_state(

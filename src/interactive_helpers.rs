@@ -813,14 +813,8 @@ mod setup_screens_snapshot_tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _home = EnvVarGuard::set(HOME_VAR, &root);
-        // A host's `CLAUDE_CODE_SIMPLE` (CC `--bare`) would skip custom agents;
-        // unsetting the managed override would read the machine's real managed
-        // root, so point it at a directory that does not exist.
+        // A host's `CLAUDE_CODE_SIMPLE` (CC `--bare`) would skip custom agents.
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
-        let _managed = EnvVarGuard::set(
-            "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
-            root.join("missing-managed-root"),
-        );
         let context = status_notice_context_from_readonly_runtime(
             &GlobalConfig::default(),
             &cwd,

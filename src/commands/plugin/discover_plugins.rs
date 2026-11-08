@@ -23,7 +23,6 @@ use crate::utils::plugins::{
     plugin_installation_helpers::{
         InstallPluginParams, InstallPluginResult, install_plugin_from_marketplace,
     },
-    plugin_policy::is_plugin_blocked_by_policy,
     schemas::PluginScope,
 };
 use iocraft::prelude::*;
@@ -138,7 +137,7 @@ pub fn DiscoverPlugins(
                         }
                     }
                 }
-                let mut uninstalled=all_plugins.iter().filter(|p|!p.is_installed&&!is_plugin_blocked_by_policy(&p.plugin_id)).cloned().collect::<Vec<_>>();
+                let mut uninstalled=all_plugins.iter().filter(|p|!p.is_installed).cloned().collect::<Vec<_>>();
                 #[cfg(test)] let counts=if load_test_imports.is_some(){None}else{get_install_counts().await};
                 #[cfg(not(test))] let counts=get_install_counts().await;
                 let sort_failed=std::cell::Cell::new(false);
@@ -707,14 +706,6 @@ fn EmptyStateMessage(props: &EmptyStateMessageProps) -> impl Into<AnyElement<'st
         Some(EmptyMarketplaceReason::GitNotInstalled) => [
             "Git is required to install marketplaces.",
             "Please install git and restart nyan.",
-        ],
-        Some(EmptyMarketplaceReason::AllBlockedByPolicy) => [
-            "Your organization policy does not allow any external marketplaces.",
-            "Contact your administrator.",
-        ],
-        Some(EmptyMarketplaceReason::PolicyRestrictsSources) => [
-            "Your organization restricts which marketplaces can be added.",
-            "Switch to the Marketplaces tab to view allowed sources.",
         ],
         Some(EmptyMarketplaceReason::AllMarketplacesFailed) => [
             "Failed to load marketplace data.",

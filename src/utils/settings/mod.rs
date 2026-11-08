@@ -3,9 +3,12 @@
 //! 1. userSettings     — ~/.nyan/settings.json
 //! 2. projectSettings  — ${cwd}/.nyan/settings.json
 //! 3. localSettings    — ${cwd}/.nyan/settings.local.json
-//! 5. policySettings   — managed-settings.json + drop-in (Phase 2: remote, MDM, HKCU)
-//! - [ ] Policy: HKCU (Windows user registry)
-//! - [ ] Cowork mode: ~/.nyan/cowork_settings.json
+//! 4. flagSettings     — `--settings`
+//!
+//! @nyan: CC's fifth source, `policySettings` (managed-settings.json, its
+//! drop-in directory, MDM and remote-managed settings), is not implemented.
+//! nyan has no enterprise deployment, so every setting comes from a file the
+//! user owns.
 
 pub mod apply_settings_change;
 pub mod change_detector;
@@ -14,11 +17,9 @@ mod file_io;
 #[cfg(test)]
 mod fs_io_tests;
 pub(crate) mod internal_writes;
-pub mod managed_path;
 /// @nyan: formal settings family for nyan's own modules.
 pub mod nyan;
 pub mod permission_validation;
-pub mod plugin_only_policy;
 pub mod schema_output;
 pub mod settings_cache;
 pub mod tool_validation_config;
@@ -41,15 +42,8 @@ pub use validation::{
     validate_settings_file_content,
 };
 
-use managed_path::{get_managed_file_path, get_managed_settings_drop_in_dir};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ManagedFileSettingsPresence {
-    pub has_base: bool,
-    pub has_drop_ins: bool,
-}
 
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
@@ -59,7 +53,7 @@ pub struct ManagedFileSettingsPresence {
 pub(crate) fn get_settings_root_path_for_source(source: SettingSource) -> PathBuf {
     match source {
         SettingSource::User => crate::utils::env_utils::get_config_home_dir(),
-        SettingSource::Project | SettingSource::Local | SettingSource::Policy => {
+        SettingSource::Project | SettingSource::Local => {
             crate::bootstrap::state::get_original_cwd()
         }
         SettingSource::Flag => get_flag_settings_path()
@@ -79,7 +73,6 @@ pub(crate) fn get_relative_settings_file_path_for_source(source: SettingSource) 
 
 ///   User → configHome + getUserSettingsFilePath()
 ///   Project/Local → cwd + relative
-///   Policy → getManagedSettingsFilePath()
 ///   Flag → getFlagSettingsPath()
 /// Maps to: CC `utils/settings/settings.ts#getSettingsFilePathForSource`.
 pub(crate) fn get_settings_file_path_for_source(source: SettingSource) -> Option<PathBuf> {
@@ -94,7 +87,6 @@ pub(crate) fn get_settings_file_path_for_source(source: SettingSource) -> Option
             let relative = get_relative_settings_file_path_for_source(source);
             Some(root.join(relative))
         }
-        SettingSource::Policy => Some(get_managed_settings_file_path()),
         SettingSource::Flag => get_flag_settings_path(),
     }
 }
@@ -102,7 +94,7 @@ pub(crate) fn get_settings_file_path_for_source(source: SettingSource) -> Option
 /// Maps to: CC `utils/settings/settings.ts#updateSettingsForSource` for editable sources.
 /// Existing unknown fields are preserved; supplied keys are deep-merged by
 /// `apply_settings_update` exactly like the source's `mergeWith` customizer
-/// (:473-495). Policy and flag sources are intentionally not writable.
+/// (:473-495). Flag sources are intentionally not writable.
 pub fn update_settings_for_source(
     source: SettingSource,
     updates: &serde_json::Map<String, serde_json::Value>,
@@ -186,35 +178,6 @@ fn parse_flag_settings_inline() -> Option<SettingsJson> {
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
-/// Maps to: CC `utils/settings/settings.ts#getManagedSettingsFilePath`.
-pub fn get_managed_settings_file_path() -> PathBuf {
-    get_managed_file_path().join("managed-settings.json")
-}
-
-fn settings_value_has_fields(value: &serde_json::Value) -> bool {
-    match value {
-        serde_json::Value::Null => false,
-        serde_json::Value::Bool(_)
-        | serde_json::Value::Number(_)
-        | serde_json::Value::String(_) => true,
-        serde_json::Value::Array(_) => true,
-        serde_json::Value::Object(object) => object.values().any(settings_value_has_fields),
-    }
-}
-
-fn settings_has_fields(settings: &SettingsJson) -> bool {
-    serde_json::to_value(settings)
-        .map(|value| settings_value_has_fields(&value))
-        .unwrap_or(false)
-}
-
-fn settings_file_has_fields(path: &Path) -> bool {
-    parse_settings_file(path)
-        .0
-        .as_ref()
-        .is_some_and(settings_has_fields)
-}
-
 fn add_profile_names(settings: &SettingsJson, names: &mut HashSet<String>) {
     if let Some(models) = settings.nyan.as_ref().and_then(|nyan| nyan.models.as_ref()) {
         names.extend(models.keys().cloned());
@@ -249,14 +212,14 @@ fn strip_project_profile_definitions(
         errors.push(profile_scope_error(
             path,
             "nyan.providers",
-            "project and local settings may only reference provider profiles from user or managed settings",
+            "project and local settings may only reference provider profiles from user settings",
         ));
     }
     if nyan.models.take().is_some() {
         errors.push(profile_scope_error(
             path,
             "nyan.models",
-            "project and local settings may only reference model profiles from user or managed settings",
+            "project and local settings may only reference model profiles from user settings",
         ));
     }
     errors
@@ -449,35 +412,10 @@ fn validate_project_profile_references(
             profile_scope_error(
                 path,
                 "nyan.selection",
-                format!("model profile {name:?} is not defined by user or managed settings"),
+                format!("model profile {name:?} is not defined by user settings"),
             )
         })
         .collect()
-}
-
-/// Maps to: CC `utils/settings/settings.ts#getManagedFileSettingsPresence`.
-pub fn get_managed_file_settings_presence() -> ManagedFileSettingsPresence {
-    let has_base = settings_file_has_fields(&get_managed_settings_file_path());
-    let mut has_drop_ins = false;
-
-    if let Ok(entries) = crate::utils::fs_operations::get_fs_implementation()
-        .readdir_sync(&get_managed_settings_drop_in_dir())
-    {
-        has_drop_ins = entries.into_iter().any(|entry| {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            entry
-                .file_type()
-                .is_ok_and(|kind| kind.is_file() || kind.is_symlink())
-                && name.ends_with(".json")
-                && !name.starts_with('.')
-        });
-    }
-
-    ManagedFileSettingsPresence {
-        has_base,
-        has_drop_ins,
-    }
 }
 
 // ════════════════════════════════════════════════════════════
@@ -491,20 +429,8 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
     let mut seen_files: HashSet<PathBuf> = HashSet::new();
     let mut trusted_profile_names = HashSet::new();
     let mut project_profile_sources = Vec::new();
-    let mut policy_settings_snapshot: Option<SettingsJson> = None;
 
     for source in get_enabled_setting_sources() {
-        if source == SettingSource::Policy {
-            let (policy_settings, policy_errors) = load_managed_file_settings();
-            collect_errors(&policy_errors, &mut all_errors, &mut seen_errors);
-            if let Some(ps) = policy_settings {
-                add_profile_names(&ps, &mut trusted_profile_names);
-                policy_settings_snapshot = Some(ps.clone());
-                merge_settings_deep(&mut merged, &ps);
-            }
-            continue;
-        }
-
         let Some(file_path) = get_settings_file_path_for_source(source) else {
             if source == SettingSource::Flag
                 && let Some(inline_settings) = parse_flag_settings_inline()
@@ -559,7 +485,6 @@ pub fn load_settings_from_disk() -> SettingsWithErrors {
     SettingsWithErrors {
         settings: merged,
         errors: all_errors,
-        policy_settings: policy_settings_snapshot,
     }
 }
 
@@ -621,7 +546,6 @@ pub fn get_auto_mode_config() -> Option<types::AutoModeSettings> {
         SettingSource::User,
         SettingSource::Local,
         SettingSource::Flag,
-        SettingSource::Policy,
     ] {
         let Some(auto_mode) =
             get_settings_for_source(source).and_then(|settings| settings.auto_mode)
@@ -648,7 +572,6 @@ pub fn get_auto_mode_config() -> Option<types::AutoModeSettings> {
 
 fn load_settings_for_source_uncached(source: SettingSource) -> Option<SettingsJson> {
     match source {
-        SettingSource::Policy => load_managed_file_settings().0,
         SettingSource::Flag => {
             let mut merged = SettingsJson::default();
             let mut found = false;
@@ -680,7 +603,6 @@ pub fn has_skip_dangerous_mode_permission_prompt() -> bool {
         SettingSource::User,
         SettingSource::Local,
         SettingSource::Flag,
-        SettingSource::Policy,
     ]
     .into_iter()
     .filter(|source| is_setting_source_enabled(*source))
@@ -693,57 +615,6 @@ pub fn has_skip_dangerous_mode_permission_prompt() -> bool {
 
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
-
-/// Maps to: CC `utils/settings/settings.ts#loadManagedFileSettings`.
-fn load_managed_file_settings() -> (Option<SettingsJson>, Vec<ValidationError>) {
-    let mut errors: Vec<ValidationError> = Vec::new();
-    let mut merged = SettingsJson::default();
-    let mut found = false;
-
-    // 1. Base: managed-settings.json
-    let base_path = get_managed_settings_file_path();
-    let (base_settings, base_errors) = parse_settings_file(&base_path);
-    errors.extend(base_errors);
-    if let Some(s) = base_settings.filter(settings_has_fields) {
-        merge_settings_deep(&mut merged, &s);
-        found = true;
-    }
-
-    let drop_in_dir = get_managed_settings_drop_in_dir();
-    if let Ok(entries) =
-        crate::utils::fs_operations::get_fs_implementation().readdir_sync(&drop_in_dir)
-    {
-        let mut json_files: Vec<PathBuf> = entries
-            .into_iter()
-            .filter(|e| {
-                let name = e.file_name();
-                let name_str = name.to_string_lossy();
-                e.file_type()
-                    .is_ok_and(|kind| kind.is_file() || kind.is_symlink())
-                    && name_str.ends_with(".json")
-                    && !name_str.starts_with('.')
-            })
-            .map(|e| e.path())
-            .collect();
-
-        json_files.sort();
-
-        for file_path in json_files {
-            let (settings, file_errors) = parse_settings_file(&file_path);
-            errors.extend(file_errors);
-            if let Some(s) = settings.filter(settings_has_fields) {
-                merge_settings_deep(&mut merged, &s);
-                found = true;
-            }
-        }
-    }
-
-    if found {
-        (Some(merged), errors)
-    } else {
-        (None, errors)
-    }
-}
 
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
@@ -937,7 +808,6 @@ mod tests {
             (SettingSource::User, "user"),
             (SettingSource::Local, "local"),
             (SettingSource::Flag, "flag"),
-            (SettingSource::Policy, "policy"),
             (SettingSource::Project, "project"),
         ] {
             settings_cache::set_cached_settings_for_source(
@@ -969,13 +839,11 @@ mod tests {
                 "local".into(),
                 "duplicate".into(),
                 "flag".into(),
-                "duplicate".into(),
-                "policy".into(),
                 "duplicate".into()
             ])
         );
         let mut expected = Vec::new();
-        for name in ["user", "local", "flag", "policy"] {
+        for name in ["user", "local", "flag"] {
             expected.push(format!("{name}-soft"));
             if crate::utils::build_profile::build_audience().is_internal() {
                 expected.push(format!("{name}-legacy"));
@@ -988,15 +856,13 @@ mod tests {
             Some(vec![
                 "user-environment".into(),
                 "local-environment".into(),
-                "flag-environment".into(),
-                "policy-environment".into()
+                "flag-environment".into()
             ])
         );
         for source in [
             SettingSource::User,
             SettingSource::Local,
             SettingSource::Flag,
-            SettingSource::Policy,
         ] {
             settings_cache::set_cached_settings_for_source(source, None);
         }
@@ -1081,59 +947,6 @@ mod tests {
     }
 
     #[test]
-    fn managed_file_settings_presence_matches_official_file_and_drop_in_labels() {
-        let _lock = env_lock().lock().expect("env lock");
-        let root = unique_temp_dir("managed-presence");
-        let drop_ins = root.join("managed-settings.d");
-        fs::create_dir_all(&drop_ins).expect("create drop-ins");
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
-        // Relocating a settings root invalidates every cache keyed by the old
-        // source→path mapping. Production never moves these mid-session (the
-        // detector's fan-out owns invalidation there), so the test states the
-        // invariant itself.
-        settings_cache::reset_settings_cache();
-
-        fs::write(root.join("managed-settings.json"), "{}").expect("write empty base");
-        fs::write(drop_ins.join("10-empty.json"), "{}").expect("write empty drop-in");
-        assert_eq!(
-            get_managed_file_settings_presence(),
-            ManagedFileSettingsPresence {
-                has_base: false,
-                has_drop_ins: true
-            }
-        );
-        assert!(load_managed_file_settings().0.is_none());
-
-        fs::write(root.join("managed-settings.json"), r#"{"language":"zh"}"#).expect("write base");
-        // Direct disk writes bypass both production invalidation paths
-        // (`update_settings_for_source` and the change detector's fan-out),
-        // so the test states the invariant itself.
-        settings_cache::reset_settings_cache();
-        assert_eq!(
-            get_managed_file_settings_presence(),
-            ManagedFileSettingsPresence {
-                has_base: true,
-                has_drop_ins: true,
-            }
-        );
-
-        fs::write(drop_ins.join("20-language.json"), r#"{"language":"fr"}"#)
-            .expect("write drop-in");
-        settings_cache::reset_settings_cache();
-        assert_eq!(
-            get_managed_file_settings_presence(),
-            ManagedFileSettingsPresence {
-                has_base: true,
-                has_drop_ins: true,
-            }
-        );
-        let policy = load_managed_file_settings().0.expect("policy settings");
-        assert_eq!(policy.language.as_deref(), Some("fr"));
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
     fn settings_merge_customizer_matches_official_deep_object_and_array_semantics() {
         let mut target: SettingsJson = serde_json::from_value(serde_json::json!({
             "sandbox": {
@@ -1192,26 +1005,12 @@ mod tests {
         ]);
         let root = unique_temp_dir("source-labels");
         let config_home = root.join("config");
-        let managed = root.join("managed");
-        let drop_ins = managed.join("managed-settings.d");
         fs::create_dir_all(config_home.as_path()).expect("create config home");
-        fs::create_dir_all(drop_ins.as_path()).expect("create drop-ins");
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         settings_cache::reset_settings_cache();
 
         fs::write(config_home.join("settings.json"), r#"{"language":"en"}"#)
             .expect("write user settings");
-        fs::write(
-            managed.join("managed-settings.json"),
-            r#"{"promptSuggestionEnabled":false}"#,
-        )
-        .expect("write managed settings");
-        fs::write(
-            drop_ins.join("10-policy.json"),
-            r#"{"spinnerTipsEnabled":false}"#,
-        )
-        .expect("write managed drop-in");
 
         assert_eq!(
             get_setting_source_display_name_capitalized(SettingSource::User),
@@ -1225,14 +1024,10 @@ mod tests {
             get_setting_source_display_name_capitalized(SettingSource::Local),
             "Project local settings"
         );
-        assert_eq!(
-            get_setting_source_display_name_capitalized(SettingSource::Policy),
-            "Enterprise managed settings"
-        );
 
         let names = crate::utils::status::build_setting_sources_properties();
         assert!(names.contains(&"User settings".to_string()));
-        assert!(names.contains(&"Enterprise managed settings (file + drop-ins)".to_string()));
+        assert!(!names.iter().any(|name| name.contains("managed")));
 
         let _ = fs::remove_dir_all(root);
     }

@@ -5858,17 +5858,14 @@ rl.on('line', line => {
         channels: Vec<crate::bootstrap::state::ChannelEntry>,
     ) -> crate::services::mcp::channel_notification::ChannelRuntimeGateContext {
         use crate::services::mcp::channel_notification::{
-            ChannelAllowlistSource, ChannelRuntimeGateContext, EffectiveChannelAllowlist,
+            ChannelRuntimeGateContext, EffectiveChannelAllowlist,
         };
         ChannelRuntimeGateContext {
             channels_enabled: true,
             has_claude_ai_oauth: true,
-            subscription: Some("max".to_string()),
-            policy_channels_enabled: None,
             session_channels: channels,
             allowlist: EffectiveChannelAllowlist {
                 entries: Vec::new(),
-                source: ChannelAllowlistSource::Ledger,
             },
         }
     }

@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn rejects_non_destination_rule_sources_at_manual_schema_boundary() {
-        for destination in ["command", "policySettings", "flagSettings"] {
+        for destination in ["command", "flagSettings"] {
             let updates = permission_updates_from_official_json(&serde_json::json!([{
                 "type": "addRules",
                 "destination": destination,

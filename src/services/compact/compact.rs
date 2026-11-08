@@ -351,7 +351,7 @@ fn should_exclude_from_post_compact_restore(
     {
         return true;
     }
-    ["Managed", "User", "Project", "Local", "AutoMem", "TeamMem"]
+    ["User", "Project", "Local", "AutoMem", "TeamMem"]
         .into_iter()
         .map(crate::utils::config::get_memory_path)
         .map(|path| normalized_compact_path(&path.display().to_string(), context))

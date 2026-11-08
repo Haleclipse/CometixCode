@@ -1496,10 +1496,10 @@ impl ModelProfileSettings {
     }
 }
 
-/// Retry limits (provider redesign §7.2). At `nyan.retry` only the managed
-/// (policy) source is read, and `max_retries` there is the global cap
-/// (default 2, hard limit 5); at `nyan.models.<profile>.retry` it is the
-/// profile's own request, clamped to that cap.
+/// Retry limits (provider redesign §7.2) at `nyan.models.<profile>.retry`:
+/// the profile's own request, clamped to the global cap (default 2).
+/// @nyan: no top-level `nyan.retry`; CC-era decision 19 read it only from
+/// managed settings.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
@@ -1570,8 +1570,6 @@ pub struct NyanSettings {
     pub models: Option<BTreeMap<String, ModelProfileSettings>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selection: Option<SelectionSettings>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub retry: Option<RetrySettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compaction: Option<CompactionSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1775,7 +1773,7 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
             zod::array(zod::enumeration(vec!["text", "image"])).optional(),
         ),
         ("cost", cost.optional()),
-        ("retry", retry.clone().optional()),
+        ("retry", retry.optional()),
         (
             "cacheRetention",
             zod::enumeration(vec!["short", "long", "none", "5m", "1h"]).optional(),
@@ -2113,10 +2111,9 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ("web", web.optional()),
         ("decision", decision.optional()),
         ("toolIo", tool_io.optional()),
-        ("retry", retry.optional()),
     ])
     .describe(
-        "nyan settings: provider/model profiles and module settings. Provider profiles are user/managed-only; project/local settings may only select existing profile names.",
+        "nyan settings: provider/model profiles and module settings. Provider profiles are user-only; project/local settings may only select existing profile names.",
     )
 }
 

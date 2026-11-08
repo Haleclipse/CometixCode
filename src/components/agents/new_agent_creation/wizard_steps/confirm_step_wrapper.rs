@@ -21,7 +21,6 @@ use std::sync::Arc;
 fn source(value: &str) -> AgentFileSource {
     match value {
         "userSettings" => AgentFileSource::UserSettings,
-        "policySettings" => AgentFileSource::PolicySettings,
         "localSettings" => AgentFileSource::LocalSettings,
         _ => AgentFileSource::ProjectSettings,
     }

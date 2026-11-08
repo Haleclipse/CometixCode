@@ -16,7 +16,6 @@ pub fn get_plugin_editable_scopes() -> IndexMap<String, String> {
         }
     }
     for (scope, source) in [
-        ("managed", SettingSource::Policy),
         ("user", SettingSource::User),
         ("project", SettingSource::Project),
         ("local", SettingSource::Local),
@@ -32,13 +31,8 @@ pub fn get_plugin_editable_scopes() -> IndexMap<String, String> {
                 }
                 if extra.get(&id).is_some_and(|prior| prior != &value) {
                     crate::utils::debug::log_for_debugging(&format!(
-                        "Plugin {id} from --add-dir ({}) overridden by {} ({value})",
-                        extra[&id],
-                        if scope == "managed" {
-                            "policySettings".to_owned()
-                        } else {
-                            format!("{scope}Settings")
-                        }
+                        "Plugin {id} from --add-dir ({}) overridden by {scope}Settings ({value})",
+                        extra[&id]
                     ));
                 }
                 if value == Value::Bool(true) {

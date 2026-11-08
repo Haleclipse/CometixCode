@@ -1,8 +1,7 @@
 //! Maps to: CC `utils/permissions/permissionsLoader.ts`.
 //!
 //! Owns source-aware rule loading and editing. The settings owner performs disk
-//! writes and cache invalidation; this owner preserves rule normalization and
-//! the managed-only AddRules gate.
+//! writes and cache invalidation; this owner preserves rule normalization.
 
 use super::permission_rule_parser::{
     permission_rule_value_from_string, permission_rule_value_to_string,
@@ -18,18 +17,6 @@ pub const SUPPORTED_RULE_BEHAVIORS: &[PermissionBehavior] = &[
     PermissionBehavior::Deny,
     PermissionBehavior::Ask,
 ];
-
-/// Maps to: CC `shouldAllowManagedPermissionRulesOnly()`.
-pub fn should_allow_managed_permission_rules_only() -> bool {
-    get_settings_for_source(SettingSource::Policy)
-        .and_then(|settings| settings.allow_managed_permission_rules_only)
-        == Some(true)
-}
-
-/// Maps to: CC `shouldShowAlwaysAllowOptions()`.
-pub fn should_show_always_allow_options() -> bool {
-    !should_allow_managed_permission_rules_only()
-}
 
 /// Maps to: CC `settingsJsonToRules(...)`.
 pub fn settings_json_to_rules(
@@ -65,16 +52,12 @@ pub fn get_permission_rules_for_source(source: SettingSource) -> Vec<PermissionR
         SettingSource::Project => PermissionRuleSource::ProjectSettings,
         SettingSource::Local => PermissionRuleSource::LocalSettings,
         SettingSource::Flag => PermissionRuleSource::FlagSettings,
-        SettingSource::Policy => PermissionRuleSource::PolicySettings,
     };
     settings_json_to_rules(settings.as_ref(), rule_source)
 }
 
 /// Maps to: CC `loadAllPermissionRulesFromDisk()`.
 pub fn load_all_permission_rules_from_disk() -> Vec<PermissionRule> {
-    if should_allow_managed_permission_rules_only() {
-        return get_permission_rules_for_source(SettingSource::Policy);
-    }
     crate::utils::settings::get_enabled_setting_sources()
         .into_iter()
         .flat_map(get_permission_rules_for_source)
@@ -173,17 +156,14 @@ fn get_empty_permission_settings_json() -> serde_json::Value {
 
 /// Maps to: CC `utils/permissions/permissionsLoader.ts:229-296`
 /// `addPermissionRulesToSettings`.
-/// `true` includes an empty batch or an already-present batch. Managed-only
-/// and ordinary read/write failures return false; PermissionUpdate ignores
-/// that boolean in CC, so neither becomes a new permission-denial policy.
+/// `true` includes an empty batch or an already-present batch. Ordinary
+/// read/write failures return false; PermissionUpdate ignores that boolean in
+/// CC, so it never becomes a new permission-denial policy.
 pub fn add_permission_rules_to_settings(
     rule_values: &[PermissionRuleValue],
     rule_behavior: PermissionBehavior,
     source: SettingSource,
 ) -> bool {
-    if should_allow_managed_permission_rules_only() {
-        return false;
-    }
     if rule_values.is_empty() {
         return true;
     }
@@ -282,7 +262,7 @@ pub fn add_permission_rules_to_settings(
             serde_json::Value::Object(permissions),
         );
         // Explicit Nyan no-write seam. It applies at the actual write, not
-        // to managed-only / duplicate no-ops above.
+        // to the duplicate no-op above.
         if !crate::utils::session_storage::is_session_write_enabled() {
             anyhow::bail!(crate::tools::shared::write_gate::PERMISSION_PERSISTENCE_DISABLED_ERROR);
         }
@@ -357,7 +337,6 @@ mod persistence_tests {
     struct Fixture {
         root: PathBuf,
         _config: EnvVarGuard,
-        _managed: EnvVarGuard,
         _writes: EnvVarGuard,
     }
 
@@ -369,7 +348,6 @@ mod persistence_tests {
             let root = root.canonicalize().unwrap();
             let result = Self {
                 _config: EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
-                _managed: EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root),
                 _writes: EnvVarGuard::set("NYAN_WRITE_ENABLED", "1"),
                 root,
             };
@@ -459,10 +437,10 @@ mod persistence_tests {
         );
     }
 
-    /// CC permissionsLoader.ts:239-246: managed gate precedes empty batch success;
-    /// neither skipped branch creates or modifies the target file.
+    /// CC permissionsLoader.ts:243-246: an empty batch succeeds without
+    /// creating or modifying the target file.
     #[test]
-    fn add_rules_matches_official_managed_only_and_empty_no_write() {
+    fn add_rules_matches_official_empty_no_write() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let fixture = Fixture::new();
         assert!(add_permission_rules_to_settings(
@@ -470,29 +448,6 @@ mod persistence_tests {
             PermissionBehavior::Allow,
             SettingSource::User
         ));
-        assert!(!fixture.root.join("settings.json").exists());
-        std::fs::write(
-            fixture.root.join("managed-settings.json"),
-            r#"{"allowManagedPermissionRulesOnly":true}"#,
-        )
-        .unwrap();
-        reset_settings_cache();
-        assert!(!add_permission_rules_to_settings(
-            &[],
-            PermissionBehavior::Allow,
-            SettingSource::User
-        ));
-        for source in [
-            SettingSource::User,
-            SettingSource::Project,
-            SettingSource::Local,
-        ] {
-            assert!(!add_permission_rules_to_settings(
-                &[PermissionRuleValue::new("Read", None)],
-                PermissionBehavior::Allow,
-                source
-            ));
-        }
         assert!(!fixture.root.join("settings.json").exists());
     }
 
@@ -551,7 +506,7 @@ mod persistence_tests {
                 .unwrap(),
             vec!["Read"]
         );
-        rule.source = PermissionRuleSource::PolicySettings;
+        rule.source = PermissionRuleSource::FlagSettings;
         assert!(!delete_permission_rule_from_settings(&rule));
     }
 

@@ -6,22 +6,12 @@
 use crate::services::hooks::HooksConfig;
 use crate::types::plugin::LoadedPlugin;
 use crate::utils::plugins::plugin_loader::load_all_plugins_cache_only_from_sync;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex};
 
 /// Rust memoization cell for CC's memoized `loadPluginHooks`. This is only a
 /// cache bit; the authoritative `registeredHooks` value lives in bootstrap
 /// state exactly like CC.
 static PLUGIN_HOOKS_LOADED: LazyLock<Mutex<bool>> = LazyLock::new(|| Mutex::new(false));
-
-struct HotReloadRegistration {
-    _subscription: crate::utils::settings::change_detector::SettingsChangeUnsubscribe,
-}
-
-/// The source installs one process-wide settings listener after startup. Keep
-/// the unsubscribe handle alive for that process lifetime, while the snapshot
-/// itself remains independently mutable from the callback.
-static HOT_RELOAD_REGISTRATION: LazyLock<Mutex<Option<HotReloadRegistration>>> =
-    LazyLock::new(|| Mutex::new(None));
 
 /// Maps to: CC `convertPluginHooksToMatchers(plugin)`.
 pub fn convert_plugin_hooks_to_matchers(plugin: &LoadedPlugin) -> Result<HooksConfig, String> {
@@ -149,119 +139,6 @@ pub fn clear_plugin_hook_cache() {
     if let Ok(mut loaded) = PLUGIN_HOOKS_LOADED.lock() {
         *loaded = false;
     }
-}
-
-/// Maps to: CC `setupPluginHookHotReload()`
-/// (`utils/plugins/loadPluginHooks.ts:255-287`). The source listens only to
-/// `policySettings`; a change reloads when one of the settings consumed by
-/// `loadAllPluginsCacheOnly` changes. Other settings notifications are ignored
-/// so ordinary user/project edits do not trigger a plugin refresh.
-pub fn setup_plugin_hook_hot_reload() {
-    if crate::utils::env_utils::is_bare_mode() {
-        return;
-    }
-    let mut registration = HOT_RELOAD_REGISTRATION.lock().unwrap();
-    if registration.is_some() {
-        return;
-    }
-
-    let snapshot = Arc::new(Mutex::new(plugin_affecting_settings_snapshot()));
-    let callback_snapshot = snapshot.clone();
-    let subscription =
-        crate::utils::settings::change_detector::subscribe(Arc::new(move |source| {
-            if source != crate::utils::settings::constants::SettingSource::Policy {
-                return;
-            }
-            let next = plugin_affecting_settings_snapshot();
-            let changed = {
-                let mut current = callback_snapshot.lock().unwrap();
-                if *current == next {
-                    false
-                } else {
-                    *current = next;
-                    true
-                }
-            };
-            if !changed {
-                crate::utils::debug::log_for_debugging(
-                    "Plugin hooks: skipping reload, plugin-affecting settings unchanged",
-                );
-                return;
-            }
-
-            crate::utils::debug::log_for_debugging(
-                "Plugin hooks: reloading due to plugin-affecting settings change",
-            );
-            crate::utils::plugins::plugin_loader::clear_plugin_cache(Some(
-                "loadPluginHooks: plugin-affecting settings changed",
-            ));
-            clear_plugin_hook_cache();
-
-            let Some(runtime) = crate::utils::process_runtime::runtime_handle_for_detached_work()
-            else {
-                crate::utils::debug::log_for_debugging(
-                    "Plugin hooks: reload skipped because the process runtime is unavailable",
-                );
-                return;
-            };
-            runtime.spawn(async {
-                let result = tokio::task::spawn_blocking(load_plugin_hooks).await;
-                match result {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        crate::utils::log::log_error(crate::utils::log::LogError::new(format!(
-                            "Plugin hooks hot reload failed: {error}"
-                        )))
-                    }
-                    Err(error) => crate::utils::log::log_error(crate::utils::log::LogError::new(
-                        format!("Plugin hooks hot reload worker failed: {error}"),
-                    )),
-                }
-            });
-        }));
-    *registration = Some(HotReloadRegistration {
-        _subscription: subscription,
-    });
-}
-
-/// Maps to: CC `getPluginAffectingSettingsSnapshot()`
-/// (`utils/plugins/loadPluginHooks.ts:233-248`). Only the top-level record
-/// keys are sorted, matching the source's `sortKeys` helper; nested values keep
-/// their existing JSON representation.
-fn plugin_affecting_settings_snapshot() -> String {
-    use crate::utils::settings::constants::SettingSource;
-
-    let merged = crate::utils::settings::get_initial_settings();
-    let policy = crate::utils::settings::get_settings_for_source(SettingSource::Policy);
-    plugin_affecting_settings_snapshot_from(&merged, policy.as_ref())
-}
-
-fn plugin_affecting_settings_snapshot_from(
-    merged: &crate::utils::settings::SettingsJson,
-    policy: Option<&crate::utils::settings::SettingsJson>,
-) -> String {
-    use serde_json::{Map, Value};
-
-    fn sorted_record(value: Option<&Value>) -> Value {
-        let Some(object) = value.and_then(Value::as_object) else {
-            return Value::Object(Map::new());
-        };
-        let mut keys = object.keys().collect::<Vec<_>>();
-        keys.sort();
-        let mut sorted = Map::new();
-        for key in keys {
-            sorted.insert(key.clone(), object[key].clone());
-        }
-        Value::Object(sorted)
-    }
-
-    serde_json::json!({
-        "enabledPlugins": sorted_record(merged.enabled_plugins.as_ref()),
-        "extraKnownMarketplaces": sorted_record(merged.extra_known_marketplaces.as_ref()),
-        "strictKnownMarketplaces": policy.and_then(|settings| settings.strict_known_marketplaces.clone()).unwrap_or_default(),
-        "blockedMarketplaces": policy.and_then(|settings| settings.blocked_marketplaces.clone()).unwrap_or_default(),
-    })
-    .to_string()
 }
 
 /// Maps to: CC `utils/plugins/loadPluginHooks.ts:179-211#pruneRemovedPluginHooks`.
@@ -579,23 +456,5 @@ mod tests {
         assert_eq!(matcher.plugin_name.as_deref(), Some("formatter"));
         assert_eq!(matcher.plugin_id.as_deref(), Some("formatter@inline"));
         assert_eq!(matcher.hooks.len(), 1);
-    }
-
-    #[test]
-    fn plugin_hook_hot_reload_snapshot_sorts_source_record_keys() {
-        let merged = crate::utils::settings::SettingsJson {
-            enabled_plugins: Some(json!({"z@market": true, "a@market": false})),
-            extra_known_marketplaces: Some(json!({"z": "./z", "a": "./a"})),
-            ..Default::default()
-        };
-        let policy = crate::utils::settings::SettingsJson {
-            strict_known_marketplaces: Some(vec![json!("official")]),
-            blocked_marketplaces: Some(vec![json!("blocked")]),
-            ..Default::default()
-        };
-        assert_eq!(
-            plugin_affecting_settings_snapshot_from(&merged, Some(&policy)),
-            r#"{"enabledPlugins":{"a@market":false,"z@market":true},"extraKnownMarketplaces":{"a":"./a","z":"./z"},"strictKnownMarketplaces":["official"],"blockedMarketplaces":["blocked"]}"#
-        );
     }
 }

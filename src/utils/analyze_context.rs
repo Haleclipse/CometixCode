@@ -28,7 +28,6 @@ pub enum ContextSource {
     User,
     Local,
     Flag,
-    Managed,
     Plugin,
     #[default]
     BuiltIn,
@@ -41,7 +40,6 @@ impl ContextSource {
             Self::User => "User",
             Self::Local => "Local",
             Self::Flag => "Flag",
-            Self::Managed => "Managed",
             Self::Plugin => "Plugin",
             Self::BuiltIn => "Built-in",
         }
@@ -226,7 +224,6 @@ fn extract_section_name(content: &str) -> String {
 fn memory_type_name(kind: crate::utils::claudemd::ClaudeMdKind) -> &'static str {
     use crate::utils::claudemd::ClaudeMdKind;
     match kind {
-        ClaudeMdKind::Managed => "Managed",
         ClaudeMdKind::User => "User",
         ClaudeMdKind::Project => "Project",
         ClaudeMdKind::AutoMem => "Auto memory",
@@ -239,7 +236,6 @@ fn agent_source(source: AgentDefinitionSource) -> ContextSource {
         AgentDefinitionSource::ProjectSettings => ContextSource::Project,
         AgentDefinitionSource::FlagSettings => ContextSource::Flag,
         AgentDefinitionSource::UserSettings => ContextSource::User,
-        AgentDefinitionSource::PolicySettings => ContextSource::Managed,
         AgentDefinitionSource::Plugin => ContextSource::Plugin,
         AgentDefinitionSource::BuiltIn => ContextSource::BuiltIn,
     }
@@ -249,7 +245,6 @@ fn command_source(source: CommandSource) -> ContextSource {
     match source {
         CommandSource::ProjectSettings => ContextSource::Project,
         CommandSource::UserSettings => ContextSource::User,
-        CommandSource::PolicySettings => ContextSource::Managed,
         CommandSource::Plugin | CommandSource::Mcp => ContextSource::Plugin,
         CommandSource::Builtin | CommandSource::Bundled => ContextSource::BuiltIn,
     }

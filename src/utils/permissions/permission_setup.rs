@@ -1405,7 +1405,7 @@ mod tests {
                 rule_value: PermissionRuleValue::new("Bash", Some("python:*".to_string())),
             },
             PermissionRule {
-                source: PermissionRuleSource::PolicySettings,
+                source: PermissionRuleSource::FlagSettings,
                 rule_behavior: PermissionBehavior::Allow,
                 rule_value: PermissionRuleValue::new("PowerShell", None),
             },
@@ -1510,7 +1510,6 @@ mod tests {
             PermissionRuleSource::CliArg,
             PermissionRuleSource::Session,
             PermissionRuleSource::FlagSettings,
-            PermissionRuleSource::PolicySettings,
             PermissionRuleSource::Command,
         ] {
             context
@@ -1533,7 +1532,6 @@ mod tests {
         }
         for source in [
             PermissionRuleSource::FlagSettings,
-            PermissionRuleSource::PolicySettings,
             PermissionRuleSource::Command,
         ] {
             assert!(stripped.always_allow_rules[&source].contains(&dangerous));
@@ -1548,7 +1546,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn managed_only_startup_matches_official_source_attributed_loader_boundary() {
+    async fn startup_matches_official_source_attributed_loader_boundary() {
         let merged_settings = SettingsJson {
             permissions: Some(crate::utils::settings::types::PermissionsSettings {
                 allow: Some(vec!["Edit".to_string()]),
@@ -1556,15 +1554,15 @@ mod tests {
             }),
             ..SettingsJson::default()
         };
-        let loaded_policy_rule = PermissionRule {
-            source: PermissionRuleSource::PolicySettings,
+        let loaded_project_rule = PermissionRule {
+            source: PermissionRuleSource::ProjectSettings,
             rule_behavior: PermissionBehavior::Allow,
             rule_value: PermissionRuleValue::new("Read", None),
         };
 
         let context = initialize_tool_permission_context(
             &merged_settings,
-            &[loaded_policy_rule],
+            &[loaded_project_rule],
             &[],
             &[],
             None,
@@ -1581,7 +1579,7 @@ mod tests {
                 .is_none_or(Vec::is_empty)
         );
         assert_eq!(
-            context.always_allow_rules[&PermissionRuleSource::PolicySettings],
+            context.always_allow_rules[&PermissionRuleSource::ProjectSettings],
             vec![PermissionRuleValue::new("Read", None)]
         );
     }
@@ -1881,7 +1879,6 @@ mod gate_tests {
         settings_cache::set_session_settings_cache(SettingsWithErrors {
             settings: serde_json::from_value(value).unwrap(),
             errors: vec![],
-            policy_settings: None,
         });
     }
 

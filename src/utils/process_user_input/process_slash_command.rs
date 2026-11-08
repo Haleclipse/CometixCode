@@ -387,7 +387,6 @@ fn get_messages_for_prompt_slash_command(
     }
     let source = match command.source {
         commands::CommandSource::Builtin => "builtin",
-        commands::CommandSource::PolicySettings => "policySettings",
         commands::CommandSource::UserSettings => "userSettings",
         commands::CommandSource::ProjectSettings => "projectSettings",
         commands::CommandSource::Plugin => "plugin",

@@ -209,13 +209,6 @@ pub enum InstallCoreResult {
     ResolutionFailed {
         resolution: super::dependency_resolver::ResolutionResult,
     },
-    BlockedByPolicy {
-        plugin_name: String,
-    },
-    DependencyBlockedByPolicy {
-        plugin_name: String,
-        blocked_dependency: String,
-    },
 }
 /// Maps to: CC pluginInstallationHelpers.ts:304-327#formatResolutionError.
 pub fn format_resolution_error(result: &super::dependency_resolver::ResolutionResult) -> String {
@@ -272,9 +265,6 @@ pub async fn install_resolved_plugin(
         super::plugin_identifier::scope_to_setting_source(scope).map_err(anyhow::Error::msg)?,
     );
     let name = entry["name"].as_str().unwrap_or_default().to_owned();
-    if super::plugin_policy::is_plugin_blocked_by_policy(plugin_id) {
-        return Ok(BlockedByPolicy { plugin_name: name });
-    }
     let has_location = |location: Option<&Value>| match location {
         None | Some(Value::Null | Value::Bool(false)) => false,
         Some(Value::String(value)) => !value.is_empty(),
@@ -340,14 +330,6 @@ pub async fn install_resolved_plugin(
     let super::dependency_resolver::ResolutionResult::Success { closure } = resolution else {
         return Ok(ResolutionFailed { resolution });
     };
-    for id in &closure {
-        if id != plugin_id && super::plugin_policy::is_plugin_blocked_by_policy(id) {
-            return Ok(DependencyBlockedByPolicy {
-                plugin_name: name,
-                blocked_dependency: id.clone(),
-            });
-        }
-    }
     let mut enabled = crate::utils::settings::get_settings_for_source(setting_source)
         .and_then(|s| s.enabled_plugins)
         .and_then(|v| v.as_object().cloned())
@@ -433,8 +415,6 @@ pub async fn install_plugin_from_marketplace(params: InstallPluginParams) -> Ins
                     InstallCoreResult::LocalSourceNoLocation { plugin_name } => format!("Cannot install local plugin \"{plugin_name}\" without marketplace install location"),
                     InstallCoreResult::SettingsWriteFailed { message } => format!("Failed to update settings: {message}"),
                     InstallCoreResult::ResolutionFailed { resolution } => format_resolution_error(&resolution),
-                    InstallCoreResult::BlockedByPolicy { plugin_name } => format!("Plugin \"{plugin_name}\" is blocked by your organization's policy and cannot be installed"),
-                    InstallCoreResult::DependencyBlockedByPolicy { plugin_name, blocked_dependency } => format!("Cannot install \"{plugin_name}\": dependency \"{blocked_dependency}\" is blocked by your organization's policy"),
                     InstallCoreResult::Success { .. } => unreachable!(),
                 };
                 return Ok(InstallPluginResult::Failure { error });
@@ -450,7 +430,6 @@ pub async fn install_plugin_from_marketplace(params: InstallPluginParams) -> Ins
         });
         if let Some(fields) = crate::utils::telemetry::plugin_telemetry::build_plugin_telemetry_fields(
             params.entry["name"].as_str().unwrap_or_default(), Some(&params.marketplace_name),
-            super::managed_plugins::get_managed_plugin_names().as_ref(),
         ).as_object() { metadata.as_object_mut().unwrap().extend(fields.clone()); }
         if let Some(version) = params.entry.get("version").filter(|v| v.as_str().is_some_and(|s| !s.is_empty())) {
             metadata["version"] = version.clone();
@@ -700,7 +679,6 @@ mod tests {
         let _config = set_config_dir(&root);
         let _home = EnvVarGuard::set(HOME_VAR, &root);
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", root.join("managed"));
         let marketplace = root.join("market");
         for (name, version) in [("root", "2.0.0"), ("dependency", "1.0.0")] {
             let source = marketplace.join(format!("plugins/{name}/.claude-plugin"));
@@ -994,10 +972,6 @@ mod tests {
             std::env::temp_dir().join(format!("plugin-root-catalog-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
-        crate::utils::settings::settings_cache::set_cached_settings_for_source(
-            SettingSource::Policy,
-            None,
-        );
         let catalog = |name: &str, dependencies: Value, allowed: Value| {
             serde_json::json!({
                 "name":name, "owner":{"name":"Owner"},

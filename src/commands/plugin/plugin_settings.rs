@@ -591,9 +591,6 @@ enum ErrorRowAction {
     RemoveInstalledMarketplace {
         name: String,
     },
-    ManagedOnly {
-        name: String,
-    },
     None,
 }
 /// Maps to: CC PluginSettings.tsx#ErrorRow.
@@ -606,9 +603,11 @@ struct ErrorRow {
     scope: Option<String>,
 }
 /// Maps to: CC PluginSettings.tsx#getExtraMarketplaceSourceInfo.
+/// @nyan: without a managed settings source there is no `isFromPolicy`
+/// half; only the editable sources are reported.
 fn get_extra_marketplace_source_info(
     name: &str,
-) -> (Vec<(crate::utils::settings::SettingSource, String)>, bool) {
+) -> Vec<(crate::utils::settings::SettingSource, String)> {
     use crate::utils::settings::{SettingSource, get_settings_for_source};
     let mut editable = Vec::new();
     for (source, scope) in [
@@ -624,22 +623,16 @@ fn get_extra_marketplace_source_info(
             editable.push((source, scope.into()));
         }
     }
-    let policy = get_settings_for_source(SettingSource::Policy)
-        .and_then(|s| s.extra_known_marketplaces)
-        .and_then(|m| m.get(name).cloned())
-        .is_some_and(|v| !v.is_null() && v != false);
-    (editable, policy)
+    editable
 }
 /// Maps to: CC PluginSettings.tsx#buildMarketplaceAction.
 fn build_marketplace_action(name: &str) -> ErrorRowAction {
-    let (sources, policy) = get_extra_marketplace_source_info(name);
+    let sources = get_extra_marketplace_source_info(name);
     if !sources.is_empty() {
         ErrorRowAction::RemoveExtraMarketplace {
             name: name.into(),
             sources,
         }
-    } else if policy {
-        ErrorRowAction::ManagedOnly { name: name.into() }
     } else {
         ErrorRowAction::Navigate {
             tab: "marketplaces".into(),
@@ -722,21 +715,16 @@ fn build_error_rows(
     for m in failed {
         shown.insert(m.name.clone());
         let action = build_marketplace_action(&m.name);
-        let (editable, policy) = get_extra_marketplace_source_info(&m.name);
+        let editable = get_extra_marketplace_source_info(&m.name);
         rows.push(ErrorRow {
             label: m.name.clone(),
             message: m
                 .error
                 .clone()
                 .unwrap_or_else(|| "Installation failed".into()),
-            guidance: matches!(action, ErrorRowAction::ManagedOnly { .. })
-                .then(|| "Managed by your organization — contact your admin".into()),
+            guidance: None,
             action,
-            scope: if policy {
-                Some("managed".into())
-            } else {
-                editable.first().map(|(_, scope)| scope.clone())
-            },
+            scope: editable.first().map(|(_, scope)| scope.clone()),
         });
     }
     for error in extra {
@@ -749,21 +737,13 @@ fn build_error_rows(
             continue;
         }
         let action = build_marketplace_action(name);
-        let (editable, policy) = get_extra_marketplace_source_info(name);
+        let editable = get_extra_marketplace_source_info(name);
         rows.push(ErrorRow {
             label: name.into(),
             message: format_error_message(error),
-            guidance: if matches!(action, ErrorRowAction::ManagedOnly { .. }) {
-                Some("Managed by your organization — contact your admin".into())
-            } else {
-                get_error_guidance(error)
-            },
+            guidance: get_error_guidance(error),
             action,
-            scope: if policy {
-                Some("managed".into())
-            } else {
-                editable.first().map(|(_, scope)| scope.clone())
-            },
+            scope: editable.first().map(|(_, scope)| scope.clone()),
         });
     }
     for m in broken {
@@ -918,9 +898,7 @@ fn ErrorsTabContent(
         }
         if matches!(
             error,
-            PluginError::MarketplaceNotFound { .. }
-                | PluginError::MarketplaceLoadFailed { .. }
-                | PluginError::MarketplaceBlockedByPolicy { .. }
+            PluginError::MarketplaceNotFound { .. } | PluginError::MarketplaceLoadFailed { .. }
         ) {
             let value = serde_json::to_value(error).unwrap();
             if !names.contains(value["marketplace"].as_str().unwrap_or("")) {
@@ -1025,7 +1003,7 @@ fn ErrorsTabContent(
                                 let changed = mark_plugins_changed.clone();
                                 crate::utils::process_runtime::runtime_handle_for_detached_work().expect("plugin runtime").spawn(async move{match crate::utils::plugins::marketplace_manager::remove_marketplace_source(&name).await{Ok(())=>{crate::utils::plugins::cache_utils::clear_all_caches();failures.update(|next|next.retain(|f|f.name!=name));action_message.set(Some(format!("✔ Removed marketplace \"{name}\"")));changed(());},Err(e)=>action_message.set(Some(format!("Failed to remove \"{name}\": {e}"))),}});
                             }
-                            ErrorRowAction::ManagedOnly { .. } | ErrorRowAction::None => {}
+                            ErrorRowAction::None => {}
                         }
                     }
                     true
@@ -1040,12 +1018,9 @@ fn ErrorsTabContent(
         selected_index.set(clamped);
     }
     let theme = *hooks.use_context::<crate::utils::theme::Theme>();
-    let has_action = rows.get(clamped).is_some_and(|r| {
-        !matches!(
-            r.action,
-            ErrorRowAction::None | ErrorRowAction::ManagedOnly { .. }
-        )
-    });
+    let has_action = rows
+        .get(clamped)
+        .is_some_and(|r| !matches!(r.action, ErrorRowAction::None));
     if rows.is_empty() {
         return element!{View(flex_direction:FlexDirection::Column){View(margin_left:1u32){Text(content:"No plugin errors",dim:true)}View(margin_top:1u32){crate::components::configurable_shortcut_hint::ConfigurableShortcutHint(action:"confirm:no",context:"Confirmation",fallback:"Esc",description:"back",dim:true,italic:true)}}}.into_any();
     }

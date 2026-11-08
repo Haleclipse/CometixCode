@@ -121,15 +121,14 @@ pub fn rule_source_text(rule: &PermissionRule) -> String {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+/// @nyan: no `Managed` branch (CC's read-only `policySettings` rule details).
 pub enum RuleDetailsState {
-    Managed { rule: PermissionRule },
     ConfirmDelete { rule: PermissionRule },
 }
 
-/// Maps to: CC `RuleDetails` managed-settings branch.
+/// Maps to: CC `RuleDetails` title.
 pub fn rule_details_title(state: &RuleDetailsState) -> String {
     match state {
-        RuleDetailsState::Managed { .. } => "Rule details".to_string(),
         RuleDetailsState::ConfirmDelete { rule } => format!(
             "Delete {} tool?",
             get_rule_behavior_label(rule.rule_behavior)
@@ -257,9 +256,7 @@ pub fn RuleDetails<'a>(
     };
     let title = rule_details_title(&details);
     let rule = match &details {
-        RuleDetailsState::Managed { rule } | RuleDetailsState::ConfirmDelete { rule } => {
-            rule.clone()
-        }
+        RuleDetailsState::ConfirmDelete { rule } => rule.clone(),
     };
     // CC PermissionRuleList.tsx:93-99 — bold rule string + description +
     // source line, shared by both branches.
@@ -274,32 +271,6 @@ pub fn RuleDetails<'a>(
     };
 
     match details {
-        // CC PermissionRuleList.tsx:112-136 — managed settings can't be
-        // edited; no Select.
-        RuleDetailsState::Managed { .. } => element! {
-            View(flex_direction: FlexDirection::Column) {
-                View(
-                    flex_direction: FlexDirection::Column,
-                    row_gap: 1u32,
-                    border_style: BorderStyle::Round,
-                    border_color: theme.permission,
-                    padding_left: 1u32,
-                    padding_right: 1u32,
-                ) {
-                    Text(content: title.clone(), weight: Weight::Bold, color: theme.permission)
-                    #(Some(rule_description(&rule)))
-                    Text(
-                        content: "This rule is configured by managed settings and cannot be modified.\nContact your system administrator for more information.".to_string(),
-                        italic: true,
-                        wrap: TextWrap::Wrap,
-                    )
-                }
-                View(margin_left: 3u32) {
-                    Text(content: footer.clone(), dim: true)
-                }
-            }
-        }
-        .into_any(),
         // CC PermissionRuleList.tsx:138-164 — delete confirmation.
         RuleDetailsState::ConfirmDelete { .. } => element! {
             View(flex_direction: FlexDirection::Column) {
@@ -1005,11 +976,7 @@ pub fn PermissionRuleList<'a>(
         .unwrap_or_else(|| footer.to_string());
     let selected = selected_rule.read().clone();
     if let Some(rule) = selected {
-        let details = if rule.source == PermissionRuleSource::PolicySettings {
-            RuleDetailsState::Managed { rule: rule.clone() }
-        } else {
-            RuleDetailsState::ConfirmDelete { rule: rule.clone() }
-        };
+        let details = RuleDetailsState::ConfirmDelete { rule: rule.clone() };
         let sender = rule_results.0.clone();
         return element! { RuleDetails(details: Some(details), action_pending: deleting_rule.get(),
             on_cancel: move |_| { if !deleting_rule.get() { selected_rule.set(None); } },
@@ -1291,31 +1258,6 @@ mod tests {
         );
         assert!(text.contains("2. No"), "canvas=\n{text}");
         assert!(text.contains("Esc to cancel"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn rule_details_managed_branch_renders_without_select() {
-        let rule = PermissionRule {
-            rule_value: PermissionRuleValue::new("Bash", None),
-            rule_behavior: PermissionBehavior::Deny,
-            source: PermissionRuleSource::CliArg,
-        };
-        let text = element! {
-            ContextProvider(value: Context::owned(*theme::current())) {
-                RuleDetails(details: Some(RuleDetailsState::Managed { rule }))
-            }
-        }
-        .render(Some(120))
-        .to_string();
-        assert!(text.contains("Rule details"), "canvas=\n{text}");
-        assert!(
-            text.contains("configured by managed settings"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("❯"),
-            "managed branch renders no Select; canvas=\n{text}"
-        );
     }
 
     #[derive(Default, Props)]

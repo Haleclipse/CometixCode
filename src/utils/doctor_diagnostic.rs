@@ -1,8 +1,8 @@
 //! Maps to: CC `utils/doctorDiagnostic.ts`.
 //!
 //! Official Claude Code probes npm/native/package-manager installs, ripgrep,
-//! shell aliases, managed-settings warnings, and updater permissions. This Rust
-//! port keeps the same data model and safe local probes that do not mutate the
+//! shell aliases, and updater permissions. This Rust port keeps the same data
+//! model and safe local probes that do not mutate the
 //! system or execute package-manager/OAuth flows. Expensive or potentially
 //! mutating checks (npm config, package-manager command execution, PID cleanup)
 //! remain deferred to their dedicated service slices.
@@ -180,10 +180,10 @@ pub fn detect_multiple_installations() -> Vec<InstallationRecord> {
     }]
 }
 
-/// Maps to CC local `detectConfigurationIssues(type)` managed-settings and
-/// install-method warning branches that are safe to evaluate locally.
+/// Maps to CC local `detectConfigurationIssues(type)` install-method warning
+/// branches that are safe to evaluate locally.
 pub fn detect_configuration_issues(installation_type: &InstallationType) -> Vec<DiagnosticWarning> {
-    let mut warnings = detect_managed_strict_plugin_only_warnings();
+    let mut warnings = Vec::new();
     let config = crate::utils::config::load_global_config();
     let install_method = config.install_method.as_deref().unwrap_or("unknown");
 
@@ -327,71 +327,6 @@ fn get_ripgrep_status() -> RipgrepStatus {
     }
 }
 
-fn detect_managed_strict_plugin_only_warnings() -> Vec<DiagnosticWarning> {
-    let managed_settings_path = crate::utils::settings::get_managed_settings_file_path();
-    let Ok(raw) = std::fs::read_to_string(&managed_settings_path) else {
-        return Vec::new();
-    };
-    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) else {
-        return Vec::new();
-    };
-    let Some(field) = parsed
-        .as_object()
-        .and_then(|object| object.get("strictPluginOnlyCustomization"))
-    else {
-        return Vec::new();
-    };
-
-    if field.is_boolean() {
-        return Vec::new();
-    }
-
-    if let Some(items) = field.as_array() {
-        let unknown = items
-            .iter()
-            .filter_map(|item| item.as_str())
-            .filter(|item| !crate::utils::settings::types::CUSTOMIZATION_SURFACES.contains(item))
-            .map(ToString::to_string)
-            .collect::<Vec<_>>();
-        if unknown.is_empty() {
-            return Vec::new();
-        }
-        return vec![DiagnosticWarning {
-            issue: format!(
-                "managed-settings.json: strictPluginOnlyCustomization has {} value(s) this client doesn't recognize: {}",
-                unknown.len(),
-                unknown.join(", ")
-            ),
-            fix: format!(
-                "These are silently ignored (forwards-compat). Known surfaces for this version: {}. Either remove them, or this client is older than the managed-settings intended.",
-                crate::utils::settings::types::CUSTOMIZATION_SURFACES.join(", ")
-            ),
-        }];
-    }
-
-    vec![DiagnosticWarning {
-        issue: format!(
-            "managed-settings.json: strictPluginOnlyCustomization has an invalid value (expected true or an array, got {})",
-            json_type_name(field)
-        ),
-        fix: format!(
-            "The field is silently ignored (schema .catch rescues it). Set it to true, or an array of: {}.",
-            crate::utils::settings::types::CUSTOMIZATION_SURFACES.join(", ")
-        ),
-    }]
-}
-
-fn json_type_name(value: &serde_json::Value) -> &'static str {
-    match value {
-        serde_json::Value::Null => "object",
-        serde_json::Value::Bool(_) => "boolean",
-        serde_json::Value::Number(_) => "number",
-        serde_json::Value::String(_) => "string",
-        serde_json::Value::Array(_) => "array",
-        serde_json::Value::Object(_) => "object",
-    }
-}
-
 fn path_contains_local_bin() -> bool {
     let local_bin = crate::utils::node_os::homedir().join(".local").join("bin");
     let Some(path) = crate::utils::process_env::var_os("PATH") else {
@@ -482,27 +417,6 @@ mod tests {
             // be rewritten when it lands.
             RipgrepMode::Embedded => {}
         }
-    }
-
-    #[test]
-    fn managed_strict_plugin_only_warning_matches_official_forward_compat_copy() {
-        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = temp_dir("managed");
-        let config_home = temp_dir("config");
-        let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
-        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        crate::utils::config::clear_global_config_cache_for_testing();
-        fs::write(
-            root.join("managed-settings.json"),
-            r#"{"strictPluginOnlyCustomization":["mcp","futureSurface"]}"#,
-        )
-        .expect("write managed settings");
-
-        let warnings = detect_configuration_issues(&InstallationType::Unknown);
-        assert!(warnings.iter().any(|warning| {
-            warning.issue.contains("futureSurface")
-                && warning.fix.contains("skills, agents, hooks, mcp")
-        }));
     }
 
     #[test]

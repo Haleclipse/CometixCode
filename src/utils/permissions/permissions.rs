@@ -69,12 +69,11 @@ pub fn mock_permission_request_with_input(
 }
 
 /// Maps to: CC `utils/permissions/permissions.ts:109-129#PERMISSION_RULE_SOURCES`.
-pub const PERMISSION_RULE_SOURCES: [PermissionRuleSource; 8] = [
+pub const PERMISSION_RULE_SOURCES: [PermissionRuleSource; 7] = [
     PermissionRuleSource::UserSettings,
     PermissionRuleSource::ProjectSettings,
     PermissionRuleSource::LocalSettings,
     PermissionRuleSource::FlagSettings,
-    PermissionRuleSource::PolicySettings,
     PermissionRuleSource::CliArg,
     PermissionRuleSource::Command,
     PermissionRuleSource::Session,
@@ -196,7 +195,6 @@ pub fn permission_rule_source_display_string(source: PermissionRuleSource) -> &'
         PermissionRuleSource::ProjectSettings => "shared project settings",
         PermissionRuleSource::LocalSettings => "project local settings",
         PermissionRuleSource::FlagSettings => "command line arguments",
-        PermissionRuleSource::PolicySettings => "enterprise managed settings",
         PermissionRuleSource::CliArg => "CLI argument",
         PermissionRuleSource::Command => "command configuration",
         PermissionRuleSource::Session => "current session",
@@ -1549,7 +1547,7 @@ async fn resolve_headless_ask_async(
 /// `agentId`) — the agent's declared permission policy never ran on the one
 /// permission path that agent actually uses. The merge is the shared
 /// `session_hooks::merge_session_hooks_into_config` under its
-/// `allow_managed_hooks_only` gate (CC `:1515` + `:1541`), as in
+/// `disable_all_hooks` gate (CC `:1515` + `:1541`), as in
 /// `tool_execution.rs#load_tool_hooks_config_and_env`,
 /// `run_agent.rs#subagent_hook_config_and_env`, `process_user_input/mod.rs` and
 /// `cli/print.rs#execute_permission_request_hooks_for_sdk`. Session FUNCTION
@@ -1565,33 +1563,10 @@ async fn resolve_headless_ask_owned(
     let loaded = crate::services::hooks::load_hooks_config();
     let mut config = loaded.config;
     // Maps to: CC `hooks.ts:1534-1541` — `getHooksConfig` gates its session arm
-    // on `managedOnly` (`:1516`, `shouldAllowManagedHooksOnly()`) and on nothing
-    // else. `shouldDisableAllHooksIncludingManaged()` belongs to a DIFFERENT
-    // layer: CC evaluates it once at execution entry (`:1978-1980`, the first
-    // statement of `executeHooks`), never at merge time.
-    //
-    // The port now matches, because it now has that execution layer. When
-    // a772a9d added `!loaded.disable_all_hooks` here, `services/hooks/tool.rs`
-    // "carrie[d] no such guard" — its own words — and `load_hooks_config()`
-    // applies the policy only to the two sources it owns (empty snapshot via
-    // `get_hooks_from_allowed_sources`, `mod.rs:184` for the registered arm), so
-    // this merge site was the only thing standing between an enterprise
-    // `disableAllHooks` and an agent's own permission hooks. 8bb2e62 then routed
-    // every executor through `should_skip_hook_execution`, and this tail reaches
-    // it: `execute_permission_request_hooks` (`permission_request.rs:88`)
-    // delegates to `tool::execute_hooks`, which opens with the gate
-    // (`tool.rs:169`) ahead of `get_matching_hooks`. The conjunct had become a
-    // SECOND copy of an admin control, and duplicated admin controls are what
-    // drift apart — so it is gone, and which layer stops the hook is pinned by
-    // `headless_ask_skips_session_hooks_under_a_disable_all_hooks_policy`.
-    //
-    // The managed-ONLY conjunct stays, and has no execution-layer twin to be
-    // redundant with: in CC it is a per-source merge FILTER (`:1516`, `:1541`),
-    // not a per-call gate — the distinction
-    // `untrusted_workspace_stops_every_executor_family_without_filtering`
-    // documents from the other side. Its own layer is pinned by
-    // `headless_ask_skips_session_hooks_under_an_allow_managed_hooks_only_policy`.
-    if !loaded.allow_managed_hooks_only {
+    // on `managedOnly` (`:1516`, `shouldAllowManagedHooksOnly()`), which with no
+    // managed settings is the merged `disableAllHooks`. Pinned by
+    // `headless_ask_skips_session_hooks_under_disable_all_hooks`.
+    if !loaded.disable_all_hooks {
         // CC never skips the lookup when there is no agentId — `?? getSessionId()`
         // is the main-session arm, and it is what a `/hooks`-registered or
         // skill-registered PermissionRequest hook lives under.
@@ -2726,9 +2701,7 @@ pub fn delete_permission_rule(
     rule: &PermissionRule,
 ) -> anyhow::Result<ToolPermissionContext> {
     let destination = match rule.source {
-        PermissionRuleSource::PolicySettings
-        | PermissionRuleSource::FlagSettings
-        | PermissionRuleSource::Command => {
+        PermissionRuleSource::FlagSettings | PermissionRuleSource::Command => {
             anyhow::bail!("Cannot delete permission rules from read-only settings")
         }
         PermissionRuleSource::UserSettings => PermissionUpdateDestination::UserSettings,
@@ -2777,25 +2750,20 @@ pub fn apply_permission_rules_to_permission_context(
 }
 
 /// Maps to: CC `utils/permissions/permissions.ts:1419-1471#syncPermissionRulesFromDisk`.
-/// Replaces the literal source/behavior groups handled by upstream reload.
-/// Managed-only additionally clears CLI and session, while command and flag
-/// survive; policy/flag groups are replaced only when the fresh loader emits
-/// that exact group.
+/// Replaces the literal source/behavior groups handled by upstream reload;
+/// command, CLI, session and flag survive, and the flag group is replaced only
+/// when the fresh loader emits that exact group. @nyan: no managed-only mode
+/// (CC's `allowManagedPermissionRulesOnly` also cleared CLI and session).
 pub fn sync_permission_rules_from_disk(
     context: &ToolPermissionContext,
     rules: &[PermissionRule],
-    managed_only: bool,
 ) -> ToolPermissionContext {
     let mut next = context.clone();
-    let mut sources_to_clear = vec![
+    for source in [
         PermissionRuleSource::UserSettings,
         PermissionRuleSource::ProjectSettings,
         PermissionRuleSource::LocalSettings,
-    ];
-    if managed_only {
-        sources_to_clear.extend([PermissionRuleSource::CliArg, PermissionRuleSource::Session]);
-    }
-    for source in sources_to_clear {
+    ] {
         next.always_allow_rules.insert(source, Vec::new());
         next.always_deny_rules.insert(source, Vec::new());
         next.always_ask_rules.insert(source, Vec::new());
@@ -4150,8 +4118,6 @@ mod tests {
                 })),
                 ..Default::default()
             },
-            None,
-            false,
         );
     }
 
@@ -4163,8 +4129,6 @@ mod tests {
     fn capture_no_settings_hooks() {
         crate::utils::hooks::hooks_config_snapshot::capture_hooks_config_snapshot(
             &crate::utils::settings::SettingsJson::default(),
-            None,
-            false,
         );
         crate::bootstrap::state::clear_registered_hooks();
     }
@@ -4519,149 +4483,26 @@ mod tests {
         );
     }
 
-    /// Installs a managed policy file for the lifetime of the returned guards
-    /// and pins the settings cache to it.
-    ///
-    /// `NYAN_CONFIG_DIR` (pinned by `just test`) does NOT cover the managed
-    /// settings root, so a test that means to assert on policy behaviour has to
-    /// redirect `CLAUDE_CODE_MANAGED_SETTINGS_PATH` itself. Requires
-    /// `TEST_ENV_LOCK`. Trust is untouched: this relocates the POLICY root, not
-    /// the config root or the cwd, so the harness's own trusted workspace still
-    /// answers `check_has_trust_dialog_accepted()` — which is what lets these
-    /// tests tell the managed arm of `should_skip_hook_execution` apart from
-    /// its trust arm.
-    fn managed_policy_root(contents: &str) -> (std::path::PathBuf, EnvVarGuard) {
-        let root =
-            std::env::temp_dir().join(format!("nyan-headless-policy-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&root).expect("create managed root");
-        std::fs::write(root.join("managed-settings.json"), contents)
-            .expect("write policy settings");
-        let guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
-        // A direct disk write bypasses production invalidation, so the test
-        // states the invariant itself (same note as `settings/mod.rs` tests).
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        (root, guard)
-    }
-
-    /// Maps to: CC `hooks.ts:1978-1980` — `executeHooks` returns before doing
-    /// anything when `shouldDisableAllHooksIncludingManaged()`, i.e. when POLICY
-    /// settings carry `disableAllHooks`. That is an EXECUTION-time gate; CC's
-    /// merge-time assembly (`getHooksConfig`, `:1491-1565`) never consults it.
-    ///
-    /// The outcome assertion alone cannot tell those two layers apart, and for
-    /// one batch it did not have to: `resolve_headless_ask_owned` carried its
-    /// own `!loaded.disable_all_hooks` copy of the policy at the MERGE site
-    /// (a772a9d), because when that landed no port executor had the gate. It
-    /// passed identically with and without that conjunct — a redundancy and a
-    /// regression looked the same from here. So the assertions below name the
-    /// layer instead of the outcome:
-    ///
-    /// - the merge-time filter is INERT (`allow_managed_hooks_only == false`),
-    ///   so it is provably not what stopped the hook;
-    /// - the execution-time gate FIRES, and fires on its managed arm rather than
-    ///   its trust arm.
-    ///
-    /// Old shape: with the shared entry removed from `tool::execute_hooks`, the
-    /// `should_skip_hook_execution` assertion fails and the deny below carries
-    /// the hook's own message instead of the auto-deny reason.
-    #[tokio::test]
-    async fn headless_ask_skips_session_hooks_under_a_disable_all_hooks_policy() {
-        use crate::services::hooks::HookEvent;
-        use crate::utils::hooks::session_hooks;
-
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let (managed_root, _managed_guard) = managed_policy_root(r#"{"disableAllHooks": true}"#);
-        capture_no_settings_hooks();
-        session_hooks::clear_all_session_hooks();
-        session_hooks::add_session_hook(
-            "agent-headless-policy",
-            HookEvent::PermissionRequest,
-            "Write",
-            session_deny_hook("denied by agent frontmatter hook"),
-        );
-
-        let tool_use_context =
-            crate::tool::ToolUseContext::with_permission_context(ToolPermissionContext::default())
-                .with_agent_id(Some("agent-headless-policy".to_string()));
-        let context = ToolPermissionContext {
-            mode: PermissionMode::Default,
-            should_avoid_permission_prompts: true,
-            ..ToolPermissionContext::default()
-        };
-        let input = serde_json::json!({"file_path": "/tmp/hooked.txt", "content": "x"});
-        let result = has_permissions_to_use_tool_async_with_context(
-            headless_write_params(&input, &context),
-            Some(&tool_use_context),
-        )
-        .await;
-
-        // WHICH layer stopped it — read while the policy is still installed.
-        let loaded = crate::services::hooks::load_hooks_config();
-        assert!(
-            loaded.disable_all_hooks,
-            "precondition: the managed policy is in force"
-        );
-        assert!(
-            !loaded.allow_managed_hooks_only,
-            "CC's merge-time filter (`hooks.ts:1516`, `:1541`) is inert under \
-             `disableAllHooks`, so the session arm IS merged and the merge site \
-             cannot be what stopped the hook"
-        );
-        assert!(
-            crate::services::hooks::should_disable_all_hooks_including_managed_from_settings(),
-            "the managed arm of the execution gate is the one that fires"
-        );
-        assert!(
-            crate::services::hooks::should_skip_hook_execution(
-                HookEvent::PermissionRequest,
-                "Write",
-            ),
-            "CC `hooks.ts:1978-1980` at execution entry is what stops it, reached \
-             here through `permission_request.rs:88` -> `tool.rs:169`"
-        );
-
-        session_hooks::clear_all_session_hooks();
-        let _ = std::fs::remove_dir_all(&managed_root);
-
-        let HasPermissionsToUseToolResult::Deny(deny) = result else {
-            panic!("CC :944-951 auto-denies with no hook decision, got {result:?}");
-        };
-        assert_eq!(
-            deny.decision_reason,
-            Some(PermissionDecisionReason::AsyncAgent {
-                reason: "Permission prompts are not available in this context".to_string(),
-            }),
-            "a disableAllHooks policy must stop the session hook before it can decide"
-        );
-    }
-
-    /// The complementary layer, and the reason the merge site keeps its SECOND
-    /// conjunct after the first one was dropped as redundant.
-    ///
     /// Maps to: CC `hooks.ts:1534-1541` — "Skip session hooks entirely when
     /// allowManagedHooksOnly is set — this prevents frontmatter hooks from
-    /// agents/skills from bypassing the policy". Unlike `disableAllHooks`, this
-    /// policy has NO execution-time twin: `executeHooks` never checks it as a
-    /// gate (it reads it only for telemetry, `:2080-2082`), because it is a
-    /// per-SOURCE filter — managed hooks still run. So an agent's own session
-    /// hooks can only be stopped where they are merged.
+    /// agents/skills from bypassing the policy". With no managed settings that
+    /// filter is the merged `disableAllHooks`, applied where session hooks are
+    /// merged: an agent's own permission hook must not decide the ask.
     ///
-    /// Old shape (verified 2026-08-30 by dropping `!loaded.allow_managed_hooks_only`
-    /// too): the session hook merges and decides the ask, so the deny carries
+    /// Old shape (dropping `!loaded.disable_all_hooks` at the merge site): the
+    /// session hook merges and decides, so the deny carries
     /// `PermissionDecisionReason::Hook` with "denied by agent frontmatter hook"
-    /// instead of the auto-deny reason — a failed assertion, not a hang.
+    /// instead of the auto-deny reason.
     #[tokio::test]
-    async fn headless_ask_skips_session_hooks_under_an_allow_managed_hooks_only_policy() {
+    async fn headless_ask_skips_session_hooks_under_disable_all_hooks() {
         use crate::services::hooks::HookEvent;
         use crate::utils::hooks::session_hooks;
 
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let (managed_root, _managed_guard) =
-            managed_policy_root(r#"{"allowManagedHooksOnly": true}"#);
-        capture_no_settings_hooks();
+        let _hooks_off = crate::services::hooks::test_support::HooksDisabledGuard::install();
         session_hooks::clear_all_session_hooks();
         session_hooks::add_session_hook(
-            "agent-headless-managed-only",
+            "agent-headless-hooks-off",
             HookEvent::PermissionRequest,
             "Write",
             session_deny_hook("denied by agent frontmatter hook"),
@@ -4669,7 +4510,7 @@ mod tests {
 
         let tool_use_context =
             crate::tool::ToolUseContext::with_permission_context(ToolPermissionContext::default())
-                .with_agent_id(Some("agent-headless-managed-only".to_string()));
+                .with_agent_id(Some("agent-headless-hooks-off".to_string()));
         let context = ToolPermissionContext {
             mode: PermissionMode::Default,
             should_avoid_permission_prompts: true,
@@ -4682,29 +4523,11 @@ mod tests {
         )
         .await;
 
-        // The mirror image of the `disableAllHooks` test: here the MERGE filter
-        // fires and the execution gate does not.
-        let loaded = crate::services::hooks::load_hooks_config();
         assert!(
-            loaded.allow_managed_hooks_only,
-            "precondition: the managed-only policy is in force"
+            crate::services::hooks::load_hooks_config().disable_all_hooks,
+            "precondition: disableAllHooks is in force"
         );
-        assert!(
-            !loaded.disable_all_hooks,
-            "managed hooks still run under this policy — it is a filter, not an off switch"
-        );
-        assert!(
-            !crate::services::hooks::should_skip_hook_execution(
-                HookEvent::PermissionRequest,
-                "Write",
-            ),
-            "the execution gate does NOT cover this policy, which is why the \
-             merge site has to: `executeHooks` reads `shouldAllowManagedHooksOnly()` \
-             only for telemetry (`hooks.ts:2080-2082`)"
-        );
-
         session_hooks::clear_all_session_hooks();
-        let _ = std::fs::remove_dir_all(&managed_root);
 
         let HasPermissionsToUseToolResult::Deny(deny) = result else {
             panic!("CC :944-951 auto-denies with no hook decision, got {result:?}");
@@ -4714,7 +4537,7 @@ mod tests {
             Some(PermissionDecisionReason::AsyncAgent {
                 reason: "Permission prompts are not available in this context".to_string(),
             }),
-            "an allowManagedHooksOnly policy must stop the session hook at the merge"
+            "disableAllHooks must stop the session hook at the merge"
         );
     }
 
@@ -6139,7 +5962,6 @@ mod tests {
     #[test]
     fn delete_permission_rule_matches_official_read_only_source_guard() {
         for source in [
-            PermissionRuleSource::PolicySettings,
             PermissionRuleSource::FlagSettings,
             PermissionRuleSource::Command,
         ] {
@@ -6351,7 +6173,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_reload_matches_official_literal_clear_and_preservation_matrix() {
+    fn reload_matches_official_literal_clear_and_preservation_matrix() {
         let mut context = ToolPermissionContext::default();
         for source in PERMISSION_RULE_SOURCES {
             context.always_allow_rules.insert(
@@ -6359,40 +6181,20 @@ mod tests {
                 vec![PermissionRuleValue::new(format!("Old{source:?}"), None)],
             );
         }
-        let fresh_policy = PermissionRule {
-            source: PermissionRuleSource::PolicySettings,
+        let fresh_user = PermissionRule {
+            source: PermissionRuleSource::UserSettings,
             rule_behavior: PermissionBehavior::Allow,
-            rule_value: PermissionRuleValue::new("FreshPolicy", None),
+            rule_value: PermissionRuleValue::new("FreshUser", None),
         };
-        let managed =
-            sync_permission_rules_from_disk(&context, std::slice::from_ref(&fresh_policy), true);
-
+        let normal = sync_permission_rules_from_disk(&context, std::slice::from_ref(&fresh_user));
+        assert_eq!(
+            normal.always_allow_rules[&PermissionRuleSource::UserSettings]
+                .iter()
+                .map(|rule| rule.tool_name.as_str())
+                .collect::<Vec<_>>(),
+            ["FreshUser"]
+        );
         for source in [
-            PermissionRuleSource::UserSettings,
-            PermissionRuleSource::ProjectSettings,
-            PermissionRuleSource::LocalSettings,
-            PermissionRuleSource::CliArg,
-            PermissionRuleSource::Session,
-        ] {
-            assert!(managed.always_allow_rules[&source].is_empty(), "{source:?}");
-        }
-        assert_eq!(
-            managed.always_allow_rules[&PermissionRuleSource::Command][0].tool_name,
-            "OldCommand"
-        );
-        assert_eq!(
-            managed.always_allow_rules[&PermissionRuleSource::FlagSettings][0].tool_name,
-            "OldFlagSettings"
-        );
-        assert_eq!(
-            managed.always_allow_rules[&PermissionRuleSource::PolicySettings][0].tool_name,
-            "FreshPolicy"
-        );
-
-        let normal =
-            sync_permission_rules_from_disk(&context, std::slice::from_ref(&fresh_policy), false);
-        for source in [
-            PermissionRuleSource::UserSettings,
             PermissionRuleSource::ProjectSettings,
             PermissionRuleSource::LocalSettings,
         ] {

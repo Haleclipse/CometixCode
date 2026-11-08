@@ -45,22 +45,20 @@ pub fn mcp_config_diagnostic_sections(
     global_config: &GlobalConfig,
     project_config: &ProjectConfig,
 ) -> Vec<McpConfigDiagnosticSection> {
-    [
-        ConfigScope::User,
-        ConfigScope::Project,
-        ConfigScope::Local,
-        ConfigScope::Enterprise,
-    ]
-    .into_iter()
-    .map(|scope| {
-        let config = get_mcp_configs_by_scope_readonly(scope, global_config, project_config);
-        McpConfigDiagnosticSection {
-            scope,
-            parsing_errors: filter_mcp_config_errors(&config.errors, McpConfigErrorSeverity::Fatal),
-            warnings: filter_mcp_config_errors(&config.errors, McpConfigErrorSeverity::Warning),
-        }
-    })
-    .collect()
+    [ConfigScope::User, ConfigScope::Project, ConfigScope::Local]
+        .into_iter()
+        .map(|scope| {
+            let config = get_mcp_configs_by_scope_readonly(scope, global_config, project_config);
+            McpConfigDiagnosticSection {
+                scope,
+                parsing_errors: filter_mcp_config_errors(
+                    &config.errors,
+                    McpConfigErrorSeverity::Fatal,
+                ),
+                warnings: filter_mcp_config_errors(&config.errors, McpConfigErrorSeverity::Warning),
+            }
+        })
+        .collect()
 }
 
 fn format_error_detail(error: &McpConfigValidationError) -> String {

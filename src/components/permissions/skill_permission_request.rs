@@ -100,11 +100,9 @@ fn skill_prefix(skill: &str) -> &str {
 
 /// Maps to: CC `options` (SkillPermissionRequest.tsx:64-113): yes/no
 /// amendable, the always-allow labels' skill, prefix and directory bold.
-fn skill_prompt_options(
-    skill: &str,
-    original_cwd: &str,
-    show_always_allow_options: bool,
-) -> Vec<PermissionPromptOption> {
+/// @nyan: always shows the always-allow options (CC hides them under the
+/// managed `allowManagedPermissionRulesOnly`).
+fn skill_prompt_options(skill: &str, original_cwd: &str) -> Vec<PermissionPromptOption> {
     let bold = |text: &str| {
         let mut segment = StyledSegment::new(text);
         segment.styles.bold = Some(true);
@@ -115,37 +113,33 @@ fn skill_prompt_options(
             .with_feedback(FeedbackType::Accept),
     ];
 
-    if show_always_allow_options {
+    options.push(
+        PermissionPromptOption::new(
+            SkillPermissionOptionValue::YesExact.as_str(),
+            format!("Yes, and don't ask again for {skill} in {original_cwd}"),
+        )
+        .with_label_segments(vec![
+            StyledSegment::new("Yes, and don't ask again for "),
+            bold(skill),
+            StyledSegment::new(" in "),
+            bold(original_cwd),
+        ]),
+    );
+
+    if let Some(space_index) = skill.find(' ').filter(|space_index| *space_index > 0) {
+        let command_prefix = format!("{}:*", &skill[..space_index]);
         options.push(
             PermissionPromptOption::new(
-                SkillPermissionOptionValue::YesExact.as_str(),
-                format!("Yes, and don't ask again for {skill} in {original_cwd}"),
+                SkillPermissionOptionValue::YesPrefix.as_str(),
+                format!("Yes, and don't ask again for {command_prefix} commands in {original_cwd}"),
             )
             .with_label_segments(vec![
                 StyledSegment::new("Yes, and don't ask again for "),
-                bold(skill),
-                StyledSegment::new(" in "),
+                bold(&command_prefix),
+                StyledSegment::new(" commands in "),
                 bold(original_cwd),
             ]),
         );
-
-        if let Some(space_index) = skill.find(' ').filter(|space_index| *space_index > 0) {
-            let command_prefix = format!("{}:*", &skill[..space_index]);
-            options.push(
-                PermissionPromptOption::new(
-                    SkillPermissionOptionValue::YesPrefix.as_str(),
-                    format!(
-                        "Yes, and don't ask again for {command_prefix} commands in {original_cwd}"
-                    ),
-                )
-                .with_label_segments(vec![
-                    StyledSegment::new("Yes, and don't ask again for "),
-                    bold(&command_prefix),
-                    StyledSegment::new(" commands in "),
-                    bold(original_cwd),
-                ]),
-            );
-        }
     }
 
     options.push(
@@ -203,12 +197,7 @@ pub fn SkillPermissionRequest(
     let request = props.request.clone().unwrap_or_else(default_request);
     let skill = skill_name_from_permission_input(&request.input);
     let original_cwd = original_cwd_for_label();
-    // CC :65 `shouldShowAlwaysAllowOptions()`.
-    let options = skill_prompt_options(
-        &skill,
-        &original_cwd,
-        crate::utils::permissions::permissions_loader::should_show_always_allow_options(),
-    );
+    let options = skill_prompt_options(&skill, &original_cwd);
     // CC :123-215 `handleSelect`: "yes" and "no" carry the amend feedback.
     let handle_select = {
         let on_select = props.on_select.clone();
@@ -306,7 +295,7 @@ mod tests {
 
     #[test]
     fn skill_permission_options_match_official_exact_and_prefix_rules() {
-        let options = skill_prompt_options("deploy staging", "/repo", true);
+        let options = skill_prompt_options("deploy staging", "/repo");
         assert_eq!(
             option_values(&options),
             vec!["yes", "yes-exact", "yes-prefix", "no"]
@@ -337,15 +326,9 @@ mod tests {
         );
         // CC :90-91: no prefix option without an argument.
         assert_eq!(
-            option_values(&skill_prompt_options("deploy", "/repo", true)),
+            option_values(&skill_prompt_options("deploy", "/repo")),
             vec!["yes", "yes-exact", "no"]
         );
-    }
-
-    #[test]
-    fn skill_permission_options_hide_always_allow_when_managed_only() {
-        let options = skill_prompt_options("deploy staging", "/repo", false);
-        assert_eq!(option_values(&options), vec!["yes", "no"]);
     }
 
     #[test]

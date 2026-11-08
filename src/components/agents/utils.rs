@@ -10,7 +10,6 @@ pub fn get_agent_source_display_name(source: Option<AgentDefinitionSource>) -> &
         Some(AgentDefinitionSource::UserSettings) => "User",
         Some(AgentDefinitionSource::ProjectSettings) => "Project",
         Some(AgentDefinitionSource::FlagSettings) => "Cli flag",
-        Some(AgentDefinitionSource::PolicySettings) => "Managed",
     }
 }
 
@@ -32,10 +31,6 @@ mod tests {
         assert_eq!(
             get_agent_source_display_name(Some(AgentDefinitionSource::ProjectSettings)),
             "Project"
-        );
-        assert_eq!(
-            get_agent_source_display_name(Some(AgentDefinitionSource::PolicySettings)),
-            "Managed"
         );
     }
 }

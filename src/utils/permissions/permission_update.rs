@@ -524,7 +524,6 @@ mod persistence_tests {
         root: PathBuf,
         original_cwd: PathBuf,
         _config: EnvVarGuard,
-        _managed: EnvVarGuard,
         _writes: EnvVarGuard,
     }
 
@@ -540,7 +539,6 @@ mod persistence_tests {
             let fixture = Self {
                 original_cwd,
                 _config: EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
-                _managed: EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root),
                 _writes: EnvVarGuard::set("NYAN_WRITE_ENABLED", "1"),
                 root,
             };
@@ -560,42 +558,6 @@ mod persistence_tests {
             reset_settings_cache();
             let _ = std::fs::remove_dir_all(&self.root);
         }
-    }
-
-    /// CC PermissionUpdate.ts:235-242 ignores loader false; PermissionContext.ts:
-    /// 141-145 then applies the SAME updates to live state. Managed-only gates disk
-    /// addition rather than adding a new in-memory denial at this layer.
-    #[test]
-    fn persist_add_rules_matches_official_managed_only_disk_skip_and_live_projection() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let fixture = Fixture::new();
-        std::fs::write(
-            fixture.root.join("managed-settings.json"),
-            r#"{"allowManagedPermissionRulesOnly":true}"#,
-        )
-        .unwrap();
-        reset_settings_cache();
-        let update = PermissionUpdate::AddRules {
-            destination: PermissionUpdateDestination::UserSettings,
-            behavior: PermissionBehavior::Allow,
-            rules: vec![PermissionRuleValue::new("Read", None)],
-        };
-        let store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
-        );
-        assert!(
-            crate::hooks::tool_permission::permission_context::persist_permissions(
-                &store,
-                &[update]
-            )
-            .unwrap()
-        );
-        assert!(!fixture.root.join("settings.json").exists());
-        assert_eq!(
-            store.tool_permission_context().always_allow_rules[&PermissionRuleSource::UserSettings],
-            vec![PermissionRuleValue::new("Read", None)]
-        );
     }
 
     /// CC permissionsLoader.ts:292-295 catches an ordinary AddRules failure and

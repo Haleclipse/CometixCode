@@ -54,7 +54,6 @@ pub fn maybe_record_plugin_hint(hint: crate::utils::claude_code_hints::ClaudeCod
             parsed.marketplace.as_deref(),
         )
         || crate::utils::plugins::installed_plugins_manager::is_plugin_installed(&hint.value)
-        || crate::utils::plugins::plugin_policy::is_plugin_blocked_by_policy(&hint.value)
     {
         return;
     }
