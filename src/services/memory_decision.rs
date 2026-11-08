@@ -7,13 +7,15 @@
 //! `memory.duplicate`, `memory.consolidate`) but the extraction and
 //! consolidation flows only ever apply deterministic rules. This module asks
 //! the decision model for those five points in **shadow** mode: the model's
-//! answer and the deterministic answer are compared and appended to
-//! `$NYAN_CONFIG_DIR/decision/memory.<point>.jsonl`, while the memory
-//! pipeline keeps using the deterministic rule byte for byte.
+//! answer and the deterministic answer are compared and appended to the shared
+//! `$NYAN_CONFIG_DIR/decision/decisions.jsonl` log, while the memory pipeline
+//! keeps using the deterministic rule byte for byte.
 //!
 //! # Contract
-//! 1. Each point has its own switch under `settings.nyan.memory.decisionShadow`.
-//!    All default to off; off means no request, no file, no allocation.
+//! 1. Each point is governed only by its `settings.nyan.decision.points.*.mode`
+//!    (`off` / `shadow` / `active`). Memory points are shadow-only: `active`
+//!    still records and never applies an answer. `off` means no request, no
+//!    file, no allocation.
 //! 2. Shadow answers are only ever recorded. Nothing here reads, deletes,
 //!    rewrites or reorders a memory file.
 //! 3. A timeout, missing key, disabled backend or low confidence ends in a
@@ -35,7 +37,7 @@ use crate::services::decision::{
 };
 use crate::tool::AbortController;
 use crate::types::message::Message;
-use crate::utils::settings::nyan::{DecisionMode, MemorySettings};
+use crate::utils::settings::nyan::{DecisionMode, DecisionSettings};
 
 /// The five memory points this seam covers, in log-file order.
 pub const MEMORY_POINTS: &[DecisionPoint] = &[
@@ -46,55 +48,20 @@ pub const MEMORY_POINTS: &[DecisionPoint] = &[
     DecisionPoint::MemoryConsolidate,
 ];
 
-/// File-stem suffix for `$NYAN_CONFIG_DIR/decision/memory.<suffix>.jsonl`.
-pub fn log_suffix(point: DecisionPoint) -> Option<&'static str> {
-    match point {
-        DecisionPoint::MemoryExtractNow => Some("extract_now"),
-        DecisionPoint::MemoryExtractSkip => Some("extract_skip"),
-        DecisionPoint::MemoryType => Some("type"),
-        DecisionPoint::MemoryDuplicate => Some("duplicate"),
-        DecisionPoint::MemoryConsolidate => Some("consolidate"),
-        _ => None,
-    }
-}
-
-/// The per-point switch, independent of the global Decision Provider switch.
-pub fn point_switch(point: DecisionPoint, memory: &MemorySettings) -> bool {
-    let shadow = memory.decision_shadow();
-    match point {
-        DecisionPoint::MemoryExtractNow => shadow.extract_now(),
-        DecisionPoint::MemoryExtractSkip => shadow.extract_skip(),
-        DecisionPoint::MemoryType => shadow.memory_type(),
-        DecisionPoint::MemoryDuplicate => shadow.duplicate(),
-        DecisionPoint::MemoryConsolidate => shadow.consolidate(),
-        _ => false,
-    }
-}
-
-/// True when this point should be queried in shadow mode: its own switch is on,
-/// the Decision Provider is enabled and the point is not explicitly `off`.
-pub fn shadow_enabled(point: DecisionPoint, memory: &MemorySettings) -> bool {
-    if log_suffix(point).is_none() || !point_switch(point, memory) {
+/// True when this point should be queried in shadow mode: it is one of the
+/// memory points, the Decision Provider is enabled and its mode is not `off`.
+pub fn shadow_enabled(point: DecisionPoint, settings: &DecisionSettings) -> bool {
+    if !MEMORY_POINTS.contains(&point) || !settings.enabled() {
         return false;
     }
-    let settings = provider_settings();
-    settings.enabled()
-        && settings
-            .resolved_point(point.as_str())
-            .is_some_and(|resolved| resolved.mode != DecisionMode::Off)
+    settings
+        .resolved_point(point.as_str())
+        .is_some_and(|resolved| resolved.mode != DecisionMode::Off)
 }
 
 /// Convenience for the current process settings.
 pub fn shadow_enabled_now(point: DecisionPoint) -> bool {
-    shadow_enabled(point, &current_memory_settings())
-}
-
-pub fn current_memory_settings() -> MemorySettings {
-    crate::utils::settings::get_initial_settings()
-        .nyan
-        .as_ref()
-        .map(|nyan| nyan.memory())
-        .unwrap_or_default()
+    shadow_enabled(point, &provider_settings())
 }
 
 fn provider_settings() -> crate::utils::settings::nyan::DecisionSettings {
@@ -143,30 +110,11 @@ fn cached_provider(
     provider
 }
 
-/// Log path for one memory point.
-pub fn log_path(point: DecisionPoint) -> Option<PathBuf> {
-    log_suffix(point).map(|suffix| {
-        crate::utils::env_utils::get_config_home_dir()
-            .join("decision")
-            .join(format!("memory.{suffix}.jsonl"))
-    })
-}
-
 fn append_record<T: Serialize>(point: DecisionPoint, record: &T) -> std::io::Result<()> {
-    let Some(path) = log_path(point) else {
+    if !MEMORY_POINTS.contains(&point) {
         return Ok(());
-    };
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
     }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)?;
-    let line = serde_json::to_string(record)
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    use std::io::Write;
-    writeln!(file, "{line}")
+    crate::services::decision::log::append(record)
 }
 
 // ════════════════════════════════════════════════════════════
@@ -949,8 +897,12 @@ mod tests {
         }
     }
 
-    fn fixture(switches: crate::utils::settings::nyan::MemoryDecisionShadowSettings) -> Fixture {
-        use crate::utils::settings::nyan::{DecisionSettings, MemorySettings, NyanSettings};
+    fn fixture(
+        points: Option<
+            std::collections::BTreeMap<String, crate::utils::settings::nyan::DecisionPointConfig>,
+        >,
+    ) -> Fixture {
+        use crate::utils::settings::nyan::{DecisionSettings, NyanSettings};
         use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
         let lock = TEST_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
@@ -964,16 +916,15 @@ mod tests {
             EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir),
             EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &memory_dir),
         ];
-        let memory = MemorySettings {
-            decision_shadow: Some(switches),
-            ..Default::default()
-        };
         crate::memdir::paths::seed_settings(
             crate::utils::settings::types::SettingsJson {
                 auto_memory_enabled: Some(true),
                 nyan: Some(Box::new(NyanSettings {
-                    memory: Some(memory),
-                    decision: Some(DecisionSettings::default()),
+                    decision: Some(DecisionSettings {
+                        enabled: Some(true),
+                        points,
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 })),
                 ..Default::default()
@@ -988,14 +939,20 @@ mod tests {
         }
     }
 
-    fn all_on() -> crate::utils::settings::nyan::MemoryDecisionShadowSettings {
-        crate::utils::settings::nyan::MemoryDecisionShadowSettings {
-            extract_now: Some(true),
-            extract_skip: Some(true),
-            memory_type: Some(true),
-            duplicate: Some(true),
-            consolidate: Some(true),
-        }
+    fn all_off()
+    -> std::collections::BTreeMap<String, crate::utils::settings::nyan::DecisionPointConfig> {
+        MEMORY_POINTS
+            .iter()
+            .map(|point| {
+                (
+                    point.as_str().to_string(),
+                    crate::utils::settings::nyan::DecisionPointConfig {
+                        mode: Some(DecisionMode::Off),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect()
     }
 
     fn install(backend: Arc<MockBackend>) -> Arc<DecisionProvider> {
@@ -1008,16 +965,15 @@ mod tests {
         provider
     }
 
-    fn read_log(config_dir: &Path, suffix: &str) -> Vec<MemoryShadowRecord> {
-        let path = config_dir
-            .join("decision")
-            .join(format!("memory.{suffix}.jsonl"));
+    fn read_log(config_dir: &Path, point: &str) -> Vec<MemoryShadowRecord> {
+        let path = config_dir.join("decision").join("decisions.jsonl");
         let Ok(content) = std::fs::read_to_string(path) else {
             return Vec::new();
         };
         content
             .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
+            .filter_map(|line| serde_json::from_str::<MemoryShadowRecord>(line).ok())
+            .filter(|record| record.point == point)
             .collect()
     }
 
@@ -1072,17 +1028,19 @@ mod tests {
     }
 
     #[test]
-    fn every_switch_is_independent_and_off_by_default() {
-        let default = crate::utils::settings::nyan::MemorySettings::default();
+    fn memory_points_are_shadow_by_default_and_only_memory_points_are_queried() {
+        let settings = crate::utils::settings::nyan::DecisionSettings::default();
         for point in MEMORY_POINTS {
-            assert!(!point_switch(*point, &default), "{point:?} defaults off");
-            assert!(log_suffix(*point).is_some());
+            let resolved = settings.resolved_point(point.as_str()).unwrap();
+            assert_eq!(resolved.mode, DecisionMode::Shadow, "{point:?}");
+            assert!(shadow_enabled(*point, &settings), "{point:?}");
         }
+        assert!(!shadow_enabled(DecisionPoint::RetrievalAnswers, &settings));
     }
 
     #[tokio::test]
     async fn extract_now_records_model_and_rule_agreement() {
-        let fixture = fixture(all_on());
+        let fixture = fixture(None);
         let backend = MockBackend::new(0.95, None);
         install(backend.clone());
         let record = evaluate_extract_now(&[message("I prefer fish shell")], false, 3, 1_000)
@@ -1095,7 +1053,7 @@ mod tests {
         assert_eq!(record.detail["deterministicDue"], false);
         assert_eq!(record.detail["agrees"], false);
         assert!(!record.state_sha256.is_empty());
-        let logged = read_log(&fixture.config_dir, "extract_now");
+        let logged = read_log(&fixture.config_dir, "memory.extract_now");
         assert_eq!(logged.len(), 1);
         assert_eq!(logged[0].detail, record.detail);
         assert_eq!(backend.requests.lock().unwrap().len(), 1);
@@ -1103,7 +1061,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_disabled_switch_makes_no_request_and_writes_nothing() {
-        let fixture = fixture(Default::default());
+        let fixture = fixture(Some(all_off()));
         let backend = MockBackend::new(0.95, None);
         install(backend.clone());
         assert!(
@@ -1136,7 +1094,7 @@ mod tests {
 
     #[tokio::test]
     async fn type_and_duplicate_compare_against_the_extraction_agent() {
-        let fixture = fixture(all_on());
+        let fixture = fixture(None);
         install(MockBackend::new(0.1, Some("feedback")));
         let before = vec![MemoryFileSnapshot {
             path: fixture.memory_dir.join("a.md"),
@@ -1163,13 +1121,13 @@ mod tests {
         assert_eq!(entry["deterministicDuplicate"], true);
         assert_eq!(entry["modelSaysDuplicate"], false);
         assert_eq!(entry["agrees"], false);
-        assert_eq!(read_log(&fixture.config_dir, "type").len(), 1);
-        assert_eq!(read_log(&fixture.config_dir, "duplicate").len(), 1);
+        assert_eq!(read_log(&fixture.config_dir, "memory.type").len(), 1);
+        assert_eq!(read_log(&fixture.config_dir, "memory.duplicate").len(), 1);
     }
 
     #[tokio::test]
     async fn consolidate_compares_with_the_24h_rule() {
-        let fixture = fixture(all_on());
+        let fixture = fixture(None);
         install(MockBackend::new(0.9, None));
         let record = evaluate_consolidate(ConsolidationContext {
             last_start_ms: Some(0),
@@ -1194,7 +1152,7 @@ mod tests {
                 .abs()
                 < 1e-6
         );
-        assert_eq!(read_log(&fixture.config_dir, "consolidate").len(), 1);
+        assert_eq!(read_log(&fixture.config_dir, "memory.consolidate").len(), 1);
     }
 
     #[tokio::test]
@@ -1217,7 +1175,7 @@ mod tests {
             }
         }
 
-        let fixture = fixture(all_on());
+        let fixture = fixture(None);
         let settings = crate::utils::settings::nyan::DecisionSettings {
             enabled: Some(true),
             deadline_ms: Some(crate::utils::settings::nyan::DecisionDeadlineSettings {
@@ -1235,7 +1193,7 @@ mod tests {
             .expect("a timed-out evaluation still records");
         assert_eq!(record.outcome, "fallback");
         assert_eq!(record.fallback_reason.as_deref(), Some("timeout"));
-        assert_eq!(read_log(&fixture.config_dir, "extract_now").len(), 1);
+        assert_eq!(read_log(&fixture.config_dir, "memory.extract_now").len(), 1);
     }
 
     #[test]

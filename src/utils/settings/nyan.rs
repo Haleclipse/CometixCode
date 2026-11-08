@@ -45,7 +45,7 @@ pub struct CompactionSettings {
     pub mask_headroom: Option<f64>,
     /// Shadow mode for compaction.keep (compaction C14, decision-provider 4.4).
     /// When true, records keep-ordering vs actual-ordering comparisons to
-    /// `$NYAN_CONFIG_DIR/decision/compaction.keep.jsonl` without altering
+    /// `$NYAN_CONFIG_DIR/decision/decisions.jsonl` without altering
     /// the actual compression outcome.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keep_shadow: Option<bool>,
@@ -152,51 +152,6 @@ pub struct MemorySettings {
     pub consolidate_min_new_files: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub secret_scan: Option<bool>,
-    /// @nyan: per-point Decision Provider shadow switches (SMOKE-EVAL C4).
-    /// Every switch is off by default; off means no request, no log, and the
-    /// exact deterministic behaviour of the module.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub decision_shadow: Option<MemoryDecisionShadowSettings>,
-}
-
-/// @nyan: independent shadow switch per memory decision point. A point is only
-/// queried when its own switch here is on **and** the Decision Provider is
-/// enabled **and** the point's resolved mode in `settings.nyan.decision` is not
-/// `off`. A `shadow`/`active` mode in `decision.points` alone does not turn a
-/// memory point on, and even `active` is only recorded, never applied; the
-/// deterministic path is never altered.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(default)]
-pub struct MemoryDecisionShadowSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extract_now: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extract_skip: Option<bool>,
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub memory_type: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duplicate: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub consolidate: Option<bool>,
-}
-
-impl MemoryDecisionShadowSettings {
-    pub fn extract_now(&self) -> bool {
-        self.extract_now.unwrap_or(false)
-    }
-    pub fn extract_skip(&self) -> bool {
-        self.extract_skip.unwrap_or(false)
-    }
-    pub fn memory_type(&self) -> bool {
-        self.memory_type.unwrap_or(false)
-    }
-    pub fn duplicate(&self) -> bool {
-        self.duplicate.unwrap_or(false)
-    }
-    pub fn consolidate(&self) -> bool {
-        self.consolidate.unwrap_or(false)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -237,9 +192,6 @@ impl MemorySettings {
     }
     pub fn secret_scan(&self) -> bool {
         self.secret_scan.unwrap_or(true)
-    }
-    pub fn decision_shadow(&self) -> MemoryDecisionShadowSettings {
-        self.decision_shadow.clone().unwrap_or_default()
     }
 }
 
@@ -820,8 +772,6 @@ pub struct DecisionSettings {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emrank: Option<EmrankSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub chat: Option<ChatBackendSettings>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub deadline_ms: Option<DecisionDeadlineSettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_batch: Option<u32>,
@@ -850,14 +800,6 @@ pub struct EmrankSettings {
     pub pool_idle_timeout_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prewarm: Option<bool>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(default)]
-pub struct ChatBackendSettings {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -988,7 +930,7 @@ pub const BUILTIN_DECISION_POINTS: &[BuiltinDecisionPoint] = &[
     },
     BuiltinDecisionPoint {
         name: "memory.extract_now",
-        mode: DecisionMode::Active,
+        mode: DecisionMode::Shadow,
         model: DecisionModel::Accurate,
         min_confidence: 0.8,
         max_prob: None,
@@ -1004,7 +946,7 @@ pub const BUILTIN_DECISION_POINTS: &[BuiltinDecisionPoint] = &[
     },
     BuiltinDecisionPoint {
         name: "memory.type",
-        mode: DecisionMode::Active,
+        mode: DecisionMode::Shadow,
         model: DecisionModel::Accurate,
         min_confidence: 0.7,
         max_prob: None,
@@ -1012,7 +954,7 @@ pub const BUILTIN_DECISION_POINTS: &[BuiltinDecisionPoint] = &[
     },
     BuiltinDecisionPoint {
         name: "memory.duplicate",
-        mode: DecisionMode::Active,
+        mode: DecisionMode::Shadow,
         model: DecisionModel::Accurate,
         min_confidence: 0.7,
         max_prob: None,
@@ -1043,14 +985,6 @@ pub const BUILTIN_DECISION_POINTS: &[BuiltinDecisionPoint] = &[
         keep_at_least: None,
     },
     BuiltinDecisionPoint {
-        name: "permissions.explain_risk",
-        mode: DecisionMode::Shadow,
-        model: DecisionModel::Accurate,
-        min_confidence: 0.8,
-        max_prob: None,
-        keep_at_least: None,
-    },
-    BuiltinDecisionPoint {
         name: "prompt_suggestion.generate_gate",
         mode: DecisionMode::Shadow,
         model: DecisionModel::Fast,
@@ -1063,46 +997,6 @@ pub const BUILTIN_DECISION_POINTS: &[BuiltinDecisionPoint] = &[
         mode: DecisionMode::Shadow,
         model: DecisionModel::Fast,
         min_confidence: 0.8,
-        max_prob: None,
-        keep_at_least: None,
-    },
-    BuiltinDecisionPoint {
-        name: "context_suggestions.rank",
-        mode: DecisionMode::Shadow,
-        model: DecisionModel::Fast,
-        min_confidence: 0.7,
-        max_prob: None,
-        keep_at_least: None,
-    },
-    BuiltinDecisionPoint {
-        name: "agent.route",
-        mode: DecisionMode::Off,
-        model: DecisionModel::Accurate,
-        min_confidence: 0.85,
-        max_prob: None,
-        keep_at_least: None,
-    },
-    BuiltinDecisionPoint {
-        name: "plan.verify_need",
-        mode: DecisionMode::Shadow,
-        model: DecisionModel::Accurate,
-        min_confidence: 0.8,
-        max_prob: None,
-        keep_at_least: None,
-    },
-    BuiltinDecisionPoint {
-        name: "skill.rank",
-        mode: DecisionMode::Off,
-        model: DecisionModel::Fast,
-        min_confidence: 0.8,
-        max_prob: None,
-        keep_at_least: None,
-    },
-    BuiltinDecisionPoint {
-        name: "todo.rank",
-        mode: DecisionMode::Off,
-        model: DecisionModel::Fast,
-        min_confidence: 0.7,
         max_prob: None,
         keep_at_least: None,
     },
@@ -1173,6 +1067,7 @@ impl DecisionSettings {
         name.starts_with("retrieval.")
             || name.starts_with("web.")
             || name.starts_with("compaction.")
+            || name.starts_with("permissions.")
     }
 }
 
@@ -2042,7 +1937,6 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ),
         ("prewarm", zod::boolean().optional()),
     ]);
-    let chat = zod::object(vec![("model", zod::string().optional())]);
     let deadlines = zod::object(vec![
         ("critical", zod::number().int().positive().optional()),
         ("background", zod::number().int().positive().optional()),
@@ -2063,7 +1957,6 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
     let decision = zod::object(vec![
         ("enabled", zod::boolean().optional()),
         ("emrank", emrank.optional()),
-        ("chat", chat.optional()),
         ("deadlineMs", deadlines.optional()),
         ("maxBatch", zod::number().int().positive().optional()),
         (
@@ -2158,13 +2051,6 @@ mod tests {
         assert_eq!(settings.memory().consolidate_min_hours(), 24);
         assert_eq!(settings.memory().consolidate_min_new_files(), 5);
         assert!(settings.memory().secret_scan());
-        // @nyan: every memory decision-shadow switch defaults to off.
-        let shadow = settings.memory().decision_shadow();
-        assert!(!shadow.extract_now());
-        assert!(!shadow.extract_skip());
-        assert!(!shadow.memory_type());
-        assert!(!shadow.duplicate());
-        assert!(!shadow.consolidate());
 
         let retrieval = settings.retrieval();
         assert!(retrieval.enabled());
@@ -2300,12 +2186,15 @@ mod tests {
             DecisionModel::Accurate
         );
         assert_eq!(
-            decision.resolved_point("agent.route").unwrap().mode,
-            DecisionMode::Off
+            decision.resolved_point("memory.extract_now").unwrap().mode,
+            DecisionMode::Shadow
         );
         assert!(DecisionSettings::is_critical_point("retrieval.answers"));
         assert!(DecisionSettings::is_critical_point("web.answers"));
         assert!(DecisionSettings::is_critical_point("compaction.keep"));
+        assert!(DecisionSettings::is_critical_point(
+            "permissions.yolo_stage1"
+        ));
         assert!(!DecisionSettings::is_critical_point("memory.type"));
     }
 

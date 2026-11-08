@@ -28,6 +28,7 @@
 
 pub mod backends;
 pub mod egress;
+pub mod log;
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -66,14 +67,8 @@ pub enum DecisionPoint {
     MemoryConsolidate,
     CompactionKeep,
     PermissionsYoloStage1,
-    PermissionsExplainRisk,
     PromptSuggestionGenerateGate,
     SpeculationStart,
-    ContextSuggestionsRank,
-    AgentRoute,
-    PlanVerifyNeed,
-    SkillRank,
-    TodoRank,
 }
 
 impl DecisionPoint {
@@ -94,14 +89,8 @@ impl DecisionPoint {
         DecisionPoint::MemoryConsolidate,
         DecisionPoint::CompactionKeep,
         DecisionPoint::PermissionsYoloStage1,
-        DecisionPoint::PermissionsExplainRisk,
         DecisionPoint::PromptSuggestionGenerateGate,
         DecisionPoint::SpeculationStart,
-        DecisionPoint::ContextSuggestionsRank,
-        DecisionPoint::AgentRoute,
-        DecisionPoint::PlanVerifyNeed,
-        DecisionPoint::SkillRank,
-        DecisionPoint::TodoRank,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -122,14 +111,8 @@ impl DecisionPoint {
             DecisionPoint::MemoryConsolidate => "memory.consolidate",
             DecisionPoint::CompactionKeep => "compaction.keep",
             DecisionPoint::PermissionsYoloStage1 => "permissions.yolo_stage1",
-            DecisionPoint::PermissionsExplainRisk => "permissions.explain_risk",
             DecisionPoint::PromptSuggestionGenerateGate => "prompt_suggestion.generate_gate",
             DecisionPoint::SpeculationStart => "speculation.start",
-            DecisionPoint::ContextSuggestionsRank => "context_suggestions.rank",
-            DecisionPoint::AgentRoute => "agent.route",
-            DecisionPoint::PlanVerifyNeed => "plan.verify_need",
-            DecisionPoint::SkillRank => "skill.rank",
-            DecisionPoint::TodoRank => "todo.rank",
         }
     }
 
@@ -564,7 +547,7 @@ pub trait DecisionBackend: Send + Sync {
         abort: &'a AbortController,
     ) -> BackendFuture<'a>;
 
-    /// Wire name for receipts (`"emrank"`, `"chat"`, `"mock"`).
+    /// Wire name for receipts (`"emrank"`, `"mock"`).
     fn name(&self) -> &'static str;
 }
 
@@ -627,7 +610,7 @@ impl DecisionProvider {
         Self::new(nyan.decision())
     }
 
-    /// For tests and future backends (`chat`): bypass the global emrank cell.
+    /// For tests: bypass the global emrank cell.
     pub fn with_backend(settings: DecisionSettings, backend: Arc<dyn DecisionBackend>) -> Self {
         Self::with_backend_and_budget(settings, backend, global_session_budget())
     }

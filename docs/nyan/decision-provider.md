@@ -166,13 +166,14 @@ pub trait DecisionBackend: Send + Sync {
 
 | 决策点 | 问题（输入） | 确定性回退 | 安全集合 / 约束 | 方向 | 默认 | 模型 |
 |---|---|---|---|---|---|---|
-| `memory.extract_now` | 刚结束的这一轮是否含值得长期记住的内容（noul；本轮用户 / 助手文本） | 记忆 M2：每 8 轮或 token 增长 ≥ 30k | 判"有"时**提前**触发提取（不等 8 轮）；每 3 轮最多提前 1 次 | 增 | **active** | accurate |
+| `memory.extract_now` | 刚结束的这一轮是否含值得长期记住的内容（noul；本轮用户 / 助手文本） | 记忆 M2：每 8 轮或 token 增长 ≥ 30k | 判"有"时**提前**触发提取（不等 8 轮）；每 3 轮最多提前 1 次 | 增 | shadow | accurate |
 | `memory.extract_skip` | 节流到点时，这一段是否没有可记内容（noul） | 按规则提取 | 只能跳过节流触发的提取；连续跳过 ≥ 3 次后强制一次；压缩前的强制提取（记忆 M2.1）不可跳过 | 减 | shadow | accurate |
-| `memory.type` | 新记忆的类型 choice：user / feedback / project / reference / none | 提取 agent 自判 | 与提取 agent 不一致时转为候选（M4），由用户确认；`type: user` 仍由硬规则判为候选 | 增 | **active** | accurate |
-| `memory.duplicate` | 新记忆是否与已有条目重复（noul；新条目 + 同类型已有条目） | 提取 agent 自判 | 判重复时转为候选（提示"可能与 X 重复"），不自动合并、不删除 | 增 | **active** | accurate |
+| `memory.type` | 新记忆的类型 choice：user / feedback / project / reference / none | 提取 agent 自判 | 与提取 agent 不一致时转为候选（M4），由用户确认；`type: user` 仍由硬规则判为候选 | 增 | shadow | accurate |
+| `memory.duplicate` | 新记忆是否与已有条目重复（noul；新条目 + 同类型已有条目） | 提取 agent 自判 | 判重复时转为候选（提示"可能与 X 重复"），不自动合并、不删除 | 增 | shadow | accurate |
 | `memory.consolidate` | 现在是否该合并（noul；新文件数、上次合并时间、索引行数） | 记忆 M9：24 h 且 ≥ 5 个新文件 | 只能**提前**到 ≥ 12 h 且 ≥ 3 个新文件，或推迟到 ≤ 72 h | 增 / 减 | shadow | accurate |
 
 - "转为候选"在这里是**增**：多给用户一次确认机会，不丢记忆（候选文件照常写入，只是不进索引，记忆 M4）。
+- 五个记忆点统一 **shadow-only**：`active` 也只记录、不应用；开关只由 `decision.points.<point>.mode` 控制（`memory.decisionShadow` 已删除）。
 
 ### 4.4 压缩
 
@@ -205,21 +206,21 @@ pub trait DecisionBackend: Send + Sync {
 |---|---|---|---|
 | **Auto Mode / YOLO 权限分类** | `utils/permissions/yolo_classifier.rs:853`；当前是完整 side query，支持单阶段或 XML 两阶段（stage 1 快速判定、stage 2 thinking），输出 `should_block + reason`；解析失败默认阻断 | 作为 stage 1 的快速风险分类：`safe_readonly / safe_local_write / risky`，或判断是否需要进入昂贵的 stage 2；读取命令、上下文和工具输入 | `dangerous_patterns.rs`、`read_only_command_validation.rs`、权限规则仍是硬门；DP **不能单独放行**不确定命令；默认 shadow，确认无 false-safe 后再 active |
 | **Bash classifier** | `utils/permissions/bash_classifier.rs:67` 当前是 disabled stub | 未来替代 disabled classifier 的结构化判断，或给权限解释器提供风险标签 | 不能绕过硬 deny；先只做 advisory / ask 路径，不直接 allow |
-| **Permission explainer** | `utils/permissions/permission_explainer.rs:222-300` 用 side query 生成 explanation / reasoning / risk / riskLevel，超时 10 s 返回 None | `riskLevel`、是否需要展示解释、是否需要升级人工确认 | 文本 explanation 仍由生成模型负责；DP 只做分类，不替代生成 |
+| **Permission explainer** | `utils/permissions/permission_explainer.rs:222-300` 用 side query 生成 explanation / reasoning / risk / riskLevel，超时 10 s 返回 None | 不接 Decision Provider；改为 utility 角色 `permission_explainer`（默认 @light） | 解释文本由 utility 模型生成，硬安全边界不变 |
 | **权限规则与安全解析** | `permissions.rs` 规则匹配、`dangerous_patterns.rs`、`read_only_command_validation.rs`、路径 / UNC / exfil 检查 | 可把结果汇总为风险上下文，供上面的 DP 分类使用 | **不交给 DP 覆盖**：硬安全边界、路径越界、凭据外发、命令 flag 解析必须确定性 |
 | **Prompt suggestion 是否值得生成** | `prompt_suggestion/prompt_suggestion.rs:191` 生成用户下一句；文本由小模型生成 | 在生成前判断"下一步是否足够明确、是否值得花一次生成调用" | 只影响是否显示建议，不影响会话；可 active，默认先 shadow |
 | **Speculation 是否启动** | `prompt_suggestion/speculation.rs:264` 启动 fork，已有只读 / 写入 overlay / 权限边界 | 判断用户下一步是否明显、是否值得预计算；可判断候选路径是否可能很快撞权限边界 | overlay、只读 Bash、写权限边界继续由确定性代码执行；DP 不能让 speculation 绕过边界 |
-| **Context suggestions 选择 / 排序** | `utils/context_suggestions.rs:29` 是 token 阈值、严重度和节省量的纯规则 | 多条建议同时出现时，按当前任务选最有用的一条或排序 | 低收益；规则先保留，DP 只做 UI 排序，不改变压缩和上下文 |
+| **Context suggestions 选择 / 排序** | `utils/context_suggestions.rs:29` 是 token 阈值、严重度和节省量的纯规则 | 多条建议同时出现时，按当前任务选最有用的一条或排序 | 低收益；规则先保留，DP 只做 UI 排序，不改变压缩和上下文（不接入：DP1 已删除该点） |
 | **Session title / rename** | `session_title.rs:93`、`commands/rename/generate_session_name.rs:16` 生成标题 / kebab-case 名称 | 不适合替代；可判断是否值得重新命名或标题是否需要更新 | 最终输出是文本，继续用生成模型 |
 | **Tool-use summary** | `services/tool_use_summary.rs:32` 生成移动端短标签 | 不适合替代；可以在输入很短时跳过生成 | 生成文本，不是分类；失败不影响主轮 |
-| **Agent routing** | Agent 工具的 `subagent_type` 通常由主模型给出；built-in agent 有 Explore / Plan / Verify 等 | 没有明确 `subagent_type` 或候选冲突时，从封闭集合选择 agent 类型 | 不能覆盖用户显式选择；默认 shadow；错误只影响路由，不改权限 |
-| **Plan / verification 判断** | Plan 与 Verify agent 由提示词和主模型驱动；`VerificationAgent` 有独立 query source | 判断计划是否已满足、是否需要再验证、验证结果是否值得回主线程 | 只能追加验证，不能自行宣称已完成；默认 shadow |
-| **Skill 选择** | Skill 命令由显式 `/name` 或主模型调用；动态 skill trigger 是路径 / 编辑事件规则 | 对多个候选 skill 做相关性排序，或判断是否值得加载；不自动触发有副作用的 skill | 显式 skill 不经过 DP；自动触发默认 off / shadow，不能替代用户授权 |
+| **Agent routing** | Agent 工具的 `subagent_type` 通常由主模型给出；built-in agent 有 Explore / Plan / Verify 等 | 没有明确 `subagent_type` 或候选冲突时，从封闭集合选择 agent 类型 | 不能覆盖用户显式选择；默认 shadow；错误只影响路由，不改权限（不接入：DP1 已删除该点） |
+| **Plan / verification 判断** | Plan 与 Verify agent 由提示词和主模型驱动；`VerificationAgent` 有独立 query source | 判断计划是否已满足、是否需要再验证、验证结果是否值得回主线程 | 只能追加验证，不能自行宣称已完成；默认 shadow（不接入：DP1 已删除该点） |
+| **Skill 选择** | Skill 命令由显式 `/name` 或主模型调用；动态 skill trigger 是路径 / 编辑事件规则 | 对多个候选 skill 做相关性排序，或判断是否值得加载；不自动触发有副作用的 skill | 显式 skill 不经过 DP；自动触发默认 off / shadow，不能替代用户授权（不接入：DP1 已删除该点） |
 | **Model validation** | `utils/model/validate_model.rs:16`：allowlist + 真实 max_tokens=1 probe + 缓存 | 不需要；可把错误响应分类为 retryable / not-found 以改善提示，但现有 `ApiError` 已足够 | 模型是否可用是外部事实，保持确定性 probe |
 | **Model fallback / retry** | `services/api/with_retry.rs` 按错误类型、query source 和配置决定 | 只可做非安全的 provider / route 选择建议 | retryable、最大重试、预算和凭据错误必须由错误类型与配置决定 |
 | **Context / compaction admission** | `context_suggestions.rs` 阈值；autocompact / circuit breaker 用 token、错误和次数 | 可解释"是否值得提前提醒 / 是否建议用户 compact" | 不改变压缩准入、掩码数量、熔断规则；这些已有精确数值 |
 | **Hooks / permission prompts** | 用户 hook 的 exit code / JSON schema、权限响应、Plan 选择是外部契约 | 可在 hook 结果后做非权威的摘要或分类 | **不能覆盖 hook、用户选择或权限响应** |
-| **Todo / task reminders** | `attachments.rs` 按计数和状态生成 reminder | 可判断 reminder 是否值得展示、摘要哪些任务最相关 | 低收益；不改变任务状态与完成判定 |
+| **Todo / task reminders** | `attachments.rs` 按计数和状态生成 reminder | 可判断 reminder 是否值得展示、摘要哪些任务最相关 | 低收益；不改变任务状态与完成判定（不接入：DP1 已删除该点） |
 
 #### 4.6.1 权限场景的专门规则
 
@@ -257,7 +258,6 @@ pub trait DecisionBackend: Send + Sync {
 | 后端 | 形态 | 状态 |
 |---|---|---|
 | `emrank`（主） | `POST https://emrank.tech/v1/decisions`，Bearer key 按文件引用 | 可用（第一节） |
-| `chat`（后台兜底） | 网关对话模型，结构化 JSON 输出 | 可用（haiku 2.2–3.3 s）；只用于后台点（记忆），emrank Down 时 |
 | `local`（不在首批） | llama.cpp `/completion`（`n_predict: 1`、`n_probs`）读标签 logprob，对外仍是 System One 形态 | EMRank 长期不可用时再部署 |
 
 ### 5.1 模型
@@ -298,7 +298,7 @@ pub trait DecisionBackend: Send + Sync {
 
 ## 七、日志与放权
 
-- 每次决策写一行 `$NYAN_CONFIG_DIR/decision/<point>.jsonl`：时间、模型、延迟、答案与置信度、确定性答案、是否一致、事后信号；
+- 每次决策写一行 `$NYAN_CONFIG_DIR/decision/decisions.jsonl`（所有点共用同一文件，记录自带 `point`）：时间、模型、延迟、答案与置信度、确定性答案、是否一致、事后信号；
   `state` 只记 hash 与长度。保留 30 天。
 - **事后信号**：
   - `retrieval.answers` / `web.answers`：模型最后实际 Read / WebFetch 了哪些候选（被标"回答查询"的是否被用了）；
@@ -308,8 +308,7 @@ pub trait DecisionBackend: Send + Sync {
   - `memory.extract_now` / `extract_skip`：提取是否真的产生了记忆；
   - `memory.type` / `duplicate`：用户在 `/memory` 里对候选的处理（接受 / 改类型 / 删除）；
   - `compaction.keep`：被保留到最后清的结果，之后是否被模型引用（例如同一文件再次 Read）。
-- **`/decision` 命令**：每个点的样本数、一致率、"模型对而规则错 / 模型错而规则对"的次数、p50 / p95 延迟、可用率；用户据此把
-  shadow 点改为 active。不做自动放权。
+- **`/decision [point]` 命令**：读统一 jsonl，输出每个点的样本数、answered / fallback、一致与不一致计数、p50 / p95 延迟；可传点名校验单点。不做自动放权。
 
 ## 八、配置
 
@@ -325,7 +324,6 @@ pub trait DecisionBackend: Send + Sync {
     "poolIdleTimeoutMs": 90000,
     "prewarm": true
   },
-  "chat": { "model": "haiku" },
   "deadlineMs": { "critical": 800, "background": 2000 },
   "maxBatch": 30,
   "maxCallsPerSession": 600,
@@ -340,21 +338,14 @@ pub trait DecisionBackend: Send + Sync {
     "web.fetch_fallback":   { "mode": "active", "model": "accurate", "minConfidence": 0.8 },
     "web.query_kind":       { "mode": "active", "model": "fast",     "minConfidence": 0.7 },
     "web.prune":            { "mode": "shadow", "model": "fast",     "maxProb": 0.05, "keepAtLeast": 5 },
-    "memory.extract_now":   { "mode": "active", "model": "accurate", "minConfidence": 0.8 },
+    "memory.extract_now":   { "mode": "shadow", "model": "accurate", "minConfidence": 0.8 },
     "memory.extract_skip":  { "mode": "shadow", "model": "accurate", "minConfidence": 0.8 },
-    "memory.type":          { "mode": "active", "model": "accurate", "minConfidence": 0.7 },
-    "memory.duplicate":     { "mode": "active", "model": "accurate", "minConfidence": 0.7 },
+    "memory.type":          { "mode": "shadow", "model": "accurate", "minConfidence": 0.7 },
+    "memory.duplicate":     { "mode": "shadow", "model": "accurate", "minConfidence": 0.7 },
     "memory.consolidate":   { "mode": "shadow", "model": "accurate", "minConfidence": 0.7 },
     "compaction.keep":      { "mode": "shadow", "model": "fast",     "minConfidence": 0.7 },
     "permissions.yolo_stage1":       { "mode": "shadow", "model": "fast",     "minConfidence": 0.9 },
-    "permissions.explain_risk":      { "mode": "shadow", "model": "accurate", "minConfidence": 0.8 },
-    "prompt_suggestion.generate_gate": { "mode": "shadow", "model": "fast",  "minConfidence": 0.75 },
-    "speculation.start":             { "mode": "shadow", "model": "fast",     "minConfidence": 0.8 },
-    "context_suggestions.rank":      { "mode": "shadow", "model": "fast",     "minConfidence": 0.7 },
-    "agent.route":                   { "mode": "off",    "model": "accurate", "minConfidence": 0.85 },
-    "plan.verify_need":              { "mode": "shadow", "model": "accurate", "minConfidence": 0.8 },
-    "skill.rank":                    { "mode": "off",    "model": "fast",     "minConfidence": 0.8 },
-    "todo.rank":                     { "mode": "off",    "model": "fast",     "minConfidence": 0.7 }
+    "prompt_suggestion.generate_gate": { "mode": "shadow", "model": "fast",  "minConfidence": 0.75 }
   },
   "logRetentionDays": 30
 }
@@ -362,7 +353,7 @@ pub trait DecisionBackend: Send + Sync {
 
 - `enabled: false` 或某点 `off`：不发请求，行为与没有 Decision Provider 时相同。
 - 每台机器各自配置；key 在 `~/.nyan/keys/emrank`（0600，corp-pc 已就位，nyan-pc 复制同一文件）；读取时 trim。
-- **关键路径**（检索、外部搜索、压缩）的 800 ms 是硬上限：与确定性路径**并行发起**，到点未返回就按规则继续，不等待、不重试。
+- **关键路径**（检索、外部搜索、压缩、权限）的 800 ms 是硬上限：与确定性路径**并行发起**，到点未返回就按规则继续，不等待、不重试。
   `retrieval.answers` / `web.answers` 在 Inspect / 融合完成后发起，此时其余工作已结束，等待它的 0.5 s 计入工具耗时；
   `retrieval.sufficient` 判"不足"时追加的一轮在同一个工具调用内完成（总 deadline 不变）。
 
@@ -382,17 +373,15 @@ pub trait DecisionBackend: Send + Sync {
 |---|---|---|---|
 | A | 接口、批量问题、安全集合与阈值、shadow 语义、凭据遮蔽（复用 secret scanner）、会话上限 | 新 `services/decision/{mod,egress}.rs` | 公共 H、记忆 A（secret scanner） |
 | B | `emrank` 后端：连接池与预热、UA、模型别名、401 / 402 / 429 映射、`X-Request-ID` | `services/decision/backends/emrank.rs` | A |
-| D | `chat` 后端（后台点兜底） | `services/decision/backends/chat.rs` | A |
 | E | 决策日志、事后信号、`/decision` 命令 | `services/decision/log.rs`、`commands/decision/` | A |
 | F | 接入检索：`intent`、`answers`（Inspect 后批量）、`sufficient`（追加一轮）、`prune` | 检索切片 B / F 的管线 | A、检索 B |
 | G | 接入外部搜索：`answers`、`page_answers`、`fetch_fallback`、`query_kind`（provider 参数）、`prune` | 外部搜索切片 E / H 与 WebFetch 返回 | A、外部搜索 E |
 | H | 接入记忆：`extract_now`、`extract_skip`、`type`、`duplicate`、`consolidate` | 记忆切片 C / D | A、记忆 C |
 | I | 接入压缩：`compaction.keep`（掩码候选排序） | 压缩切片 A 的候选选择 | A、压缩 A |
-| J | 接入权限：`permissions.yolo_stage1`、`permissions.explain_risk`；DP 只能分流 / 升级，硬规则和完整分类器 fail-closed 不变 | `utils/permissions/`、`services/decision` 适配层 | A、B、权限现状已读 |
-| K | 接入建议 / 预测：`prompt_suggestion.generate_gate`、`speculation.start`、`context_suggestions.rank` | `services/prompt_suggestion/`、`utils/context_suggestions.rs` | A、B |
-| L | 接入宿主路由：`agent.route`、`plan.verify_need`、`skill.rank`、`todo.rank` | 各宿主调用点 | A、B；逐点 shadow |
+| J | 接入权限：仅 `permissions.yolo_stage1`（先 shadow，active 只能升级，永不单独放行）；`permissions.explain_risk` 不接，风险解释走 utility 角色 `permission_explainer`（默认 @light）；硬规则和完整分类器 fail-closed 不变 | `utils/permissions/`、`services/decision` 适配层 | A、B、权限现状已读 |
+| K | 接入建议：`prompt_suggestion.generate_gate`（默认关；开启后先 shadow，active 只能跳过生成）。`speculation.start` 不接，`context_suggestions.rank` 删除 | `services/prompt_suggestion/` | A、B |
 
-A 进批次 1；B、D、E 并行；F、G、H、I 跟随四模块调用点；J、K、L 作为宿主运行时批次后续逐点接入。`local` 后端不在首批。
+A 进批次 1；B、E 并行；F、G、H、I 跟随四模块调用点；J、K 作为宿主运行时批次后续接入。`chat` / `local` 后端不实现。
 
 ## 十一、验收
 

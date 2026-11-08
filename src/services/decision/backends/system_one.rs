@@ -10,10 +10,6 @@
 //! supplies its key and client. EMRank is the first such provider; TypeSafe /
 //! OpenRouter serve the identical protocol and need no new client.
 //!
-//! What is *not* generic: a chat-completion backend (`chat`, a structured-JSON
-//! prompt to a gateway model) is a different protocol and gets its own
-//! backend; it can reuse [`super::super::DecisionBackend`] but not this file.
-//!
 //! Measured behaviour this module is shaped around (corp-pc, 2026-10-27):
 //! one request with 20 batched candidates costs about the same as one request
 //! with one candidate (0.5–0.6 s), while 20 independent requests cost far

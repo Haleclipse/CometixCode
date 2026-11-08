@@ -22,6 +22,7 @@ pub mod color;
 pub mod compact;
 pub mod context;
 pub mod copy;
+pub mod decision;
 pub mod diff;
 pub mod doctor;
 pub mod effort;
@@ -729,6 +730,7 @@ fn commands() -> Vec<Command> {
         Command::prompt("pr-comments", "Get comments from a GitHub pull request")
             .prompt_metadata("fetching PR comments", 0),
         Command::local("release-notes", "View release notes").supports_non_interactive(),
+        decision::command(),
         reload_plugins::command(),
         retrieval::command(),
         Command::local_ui("rename", "Rename the current conversation")
@@ -1433,13 +1435,13 @@ mod tests {
         let _demo = EnvVarGuard::unset("IS_DEMO");
 
         let catalog = commands();
-        // 71 direct descriptors + internal /version, plus @nyan `/retrieval`.
-        // `/login` and `/logout` are gone: Anthropic is API-key only; `/fast`
-        // is gone with Fast mode.
+        // 71 direct descriptors + internal /version, plus @nyan `/retrieval`
+        // and `/decision`. `/login` and `/logout` are gone: Anthropic is
+        // API-key only; `/fast` is gone with Fast mode.
         let base_len = if crate::utils::build_profile::build_audience().is_internal() {
-            72
+            73
         } else {
-            71
+            72
         };
         assert_eq!(catalog.len(), base_len);
         for removed in ["login", "logout"] {

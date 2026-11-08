@@ -334,7 +334,7 @@ pub fn mask_tool_results_if_needed(
 
     // @nyan: compaction.keep shadow mode (C14, decision-provider 4.4).
     // Evaluate keep-ordering vs actual-ordering and append comparison to
-    // $NYAN_CONFIG_DIR/decision/compaction.keep.jsonl. The actual compression
+    // $NYAN_CONFIG_DIR/decision/decisions.jsonl. The actual compression
     // outcome below remains 100% unchanged.
     if crate::services::compact::decision::is_keep_shadow_enabled() {
         let candidate_infos: Vec<_> = candidates
@@ -1008,7 +1008,7 @@ mod tests {
 
         // Poll briefly until the background shadow task writes a full line:
         // the file is created before the record is written into it.
-        let log_file = temp_dir.join("decision/compaction.keep.jsonl");
+        let log_file = temp_dir.join("decision/decisions.jsonl");
         let start = std::time::Instant::now();
         while !std::fs::read_to_string(&log_file).is_ok_and(|content| content.ends_with('\n'))
             && start.elapsed() < std::time::Duration::from_secs(3)

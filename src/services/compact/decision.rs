@@ -6,7 +6,7 @@
 //! `compaction.keep` shadow mode is enabled, evaluate which candidate tool
 //! results the keep policy would preserve vs clear, compare against the actual
 //! C2 ordering (the status quo), and append a structured record to
-//! `$NYAN_CONFIG_DIR/decision/compaction.keep.jsonl`.
+//! `$NYAN_CONFIG_DIR/decision/decisions.jsonl` (shared with every point).
 //!
 //! # Contract
 //! 1. In shadow mode, the actual masking result remains 100% unchanged.
@@ -25,7 +25,6 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -85,7 +84,7 @@ pub struct CandidateComparison {
     pub action_actual: String, // "clear" or "preserve"
 }
 
-/// Structured shadow record appended to `$NYAN_CONFIG_DIR/decision/compaction.keep.jsonl`.
+/// Structured shadow record appended to `$NYAN_CONFIG_DIR/decision/decisions.jsonl`.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactionKeepShadowRecord {
@@ -143,11 +142,6 @@ pub fn is_keep_shadow_enabled() -> bool {
         return true;
     }
     false
-}
-
-/// Target path for compaction.keep shadow logs.
-pub fn shadow_log_path() -> PathBuf {
-    crate::utils::env_utils::get_config_home_dir().join("decision/compaction.keep.jsonl")
 }
 
 /// Extracts a representative task excerpt/summary from recent conversation messages.
@@ -298,21 +292,9 @@ pub fn compute_keep_ordering(
     }
 }
 
-/// Writes a shadow record as one line in JSONL format.
+/// Writes a shadow record as one line in the shared decision log.
 pub fn write_shadow_record(record: &CompactionKeepShadowRecord) -> std::io::Result<()> {
-    let path = shadow_log_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let mut file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)?;
-    let line = serde_json::to_string(record)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    use std::io::Write;
-    writeln!(file, "{}", line)?;
-    Ok(())
+    crate::services::decision::log::append(record)
 }
 
 /// Maximum concurrent compaction.keep shadow evaluations allowed in flight.
