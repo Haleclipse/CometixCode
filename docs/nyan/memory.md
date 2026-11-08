@@ -1,7 +1,7 @@
 # 记忆（Memory）设计
 
 状态：已定稿，未实现（2026-10-27 审查修订）。修订：作用域改正为 canonical git root（M1）、写时 + 读时拦截覆盖 Bash 写入（M3）、
-提取的两条请求路径与费用（M2）、提取与压缩的先后（M2.1）、提取位置的存储（M2.2）、合并锁（M5）、双机、决策点（M10）。
+提取的请求形态与费用（M2）、提取与压缩的先后（M2.1）、提取位置的存储（M2.2）、合并锁（M5）、双机、决策点（M10）。
 
 设计来源：nyan-legacy N5（旧 roadmap `88ef45bb0:ROADMAP.md` 第 272、296-300 行，Owner Decisions #1、#11）、
 `2026-10-26-deferred-context-governance-design-inventory.md` 的"记忆（N5）"一节、Pactile
@@ -64,23 +64,21 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
   非 bare 模式、auto memory 开启时触发；节流为**每 N 轮或会话 token 增长 ≥ T 时一次**
   （默认 N = 8 轮、T = 30k），避免每轮都花钱。另有一个强制触发点：压缩前（M2.1）。
 - 执行：`run_forked_agent`，`QuerySource::ExtractMemories`，`skip_transcript = true`，不写进主 transcript。
-  按是否配置 `extractModel` 走两条路径之一：
-
-  | | 路径 1：未配置 `extractModel`（默认） | 路径 2：配置了 `extractModel` 且与主模型不同 |
-  |---|---|---|
-  | 性质 | **cache 共享分叉**（README 第一节第 8 条，`ExtractMemories` 在名单内） | 普通分叉，不共享主会话 cache |
-  | `CacheSafeParams` | 原样取 `get_last_cache_safe_params()`（`utils/forked_agent.rs:404`，由 stop hook 写入）：system prompt、user / system context、`fork_context_messages` = 主线程完整历史，全部与主线程逐字节相同 | 不用主线程的 `fork_context_messages`；system prompt 用提取专用提示词，`fork_context_messages` 为空 |
-  | `prompt_messages` | 一条 user 消息：提取指令 + 提取游标（M2.2）+ 当前 `MEMORY.md` 索引 | 一条 user 消息：提取指令 + **游标之后的新片段**（按 M2.2 的游标从主线程消息中切出，tool_result 截到 2k 字符）+ 当前 `MEMORY.md` 索引 |
-  | model | `tool_use_context.main_loop_model`（`tool.rs:1281`），即主模型 | `tool_use_context` 克隆后把 `main_loop_model` 改为 `extractModel` |
-  | Agent-Id 头 / 掩码 | 不带 `X-Claude-Code-Agent-Id`；继承主线程 `ContentReplacementState`，只重放、不新增掩码（README 第 8 条三条规则） | 带自己的 `agent_id`（普通子代理，压缩切片 G）；不继承掩码状态 |
-  | 成本 | 历史全部命中 cache，主要付输出 token | 全价输入，量由"只带新片段"控制 |
+  提取是 **cache 共享分叉**（README 第一节第 8 条，`ExtractMemories` 在名单内）：
+  - `CacheSafeParams`：原样取 `get_last_cache_safe_params()`（`utils/forked_agent.rs:404`，由 stop hook 写入）：
+    system prompt、user / system context、`fork_context_messages` = 主线程完整历史，全部与主线程逐字节相同。
+  - `prompt_messages`：一条 user 消息：提取指令 + 提取游标（M2.2）+ 当前 `MEMORY.md` 索引。
+  - model：主模型——`tool_use_context` 原样沿用，model / profile / effort 都与主线程相同（`tool.rs:1281`）。
+  - Agent-Id 头 / 掩码：不带 `X-Claude-Code-Agent-Id`；继承主线程 `ContentReplacementState`，只重放、不新增掩码
+    （README 第 8 条三条规则）。
+  - 成本：历史全部命中 cache，主要付输出 token。
 
 - 工具：只允许 Read / Glob / Grep 读 memdir、Write / Edit **只限 memdir 目录内**（`can_use_tool` 回调强制，
   目录外一律拒绝；Bash 不给）；`max_turns` 默认 6。
 - 提示词：只提取符合四种类型、"从代码或 git 推不出来"的信息（沿用 CC `WHAT_NOT_TO_SAVE_SECTION`），优先更新已有
   记忆而不是新建重复项。
-- 提取模型：`settings.nyan.memory.extractModel`，未设置时用主模型（路径 1，最便宜）。不回退到压缩的摘要模型，
-  避免用户没单独配置时平白丢掉 cache 共享。
+- 提取模型：始终是主模型，不单独配置，也不走 `selection.utility`、不用压缩的摘要模型——换模型或 profile 就丢掉
+  cache 共享。
 - **费用**：分叉结果的 `total_usage`（`utils/forked_agent.rs:462-464`）计入会话 token 统计（`cost_tracker::add_to_total_tokens`，
   `cost_tracker.rs:113`）。USD 累计在本 port 尚未接线（`utils/model_cost.rs:4-9`：token → USD 的计算半边未移植，主线程
   请求本身也没有计费）；提取请求与主线程走同一条入口，USD 计费随主线程接线一起生效，本模块不单独实现计价。
@@ -96,8 +94,8 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
 
 - 在 autocompact 决定要摘要之后、调用 `compact_conversation` / `partial_compact_conversation` 之前，以及手动 `/compact`
   执行摘要之前，若存在游标之后的未提取片段且 `extract` 开启，**同步**运行一次提取（不看节流），完成或失败后再摘要。
-- 走路径 1 时，这次提取与紧接着的摘要请求共享同一前缀（都是压缩前的主线程历史），两者都命中 cache；额外成本是
-  一次提取的输出 token + 最多 `max_turns` 次工具往返，换来不丢原文。走路径 2 时是一次全价输入（只含新片段）。
+- 这次提取与紧接着的摘要请求共享同一前缀（都是压缩前的主线程历史），两者都命中 cache；额外成本是
+  一次提取的输出 token + 最多 `max_turns` 次工具往返，换来不丢原文。
 - 超时：强制提取有 60 s 上限，超时视为失败、游标不前进，摘要照常进行（不阻塞压缩；该段原文会丢给摘要，日志记
   `extract_skipped_before_compact`）。
 - 压缩保留尾部原文（压缩 C7 `keepRecentTokens`）不改变这一点：游标之前、切点之前的内容仍会被摘要。
@@ -169,9 +167,9 @@ Bash 的路径校验经 `utils/permissions/path_validation.rs:176` 命中同一�
 
 - 沿用 CC 上游 auto-dream 的形态，只补缺失的驱动：`tasks/dream_task.rs` 已有任务状态机、`files_touched`、
   `prior_mtime`（`:81`）、kill 入口（`kill_dream_task`，`:202`）。`autoDreamEnabled` 从死设置变成真开关（`@nyan`）。
-- 执行：`run_forked_agent`，`QuerySource::AutoDream`。合并不依赖当前对话内容，但为了共享 cache 仍走路径 1 的形态
-  （README 第一节第 8 条名单内：不带 Agent-Id、只重放掩码、`CacheSafeParams` 原样复用），`prompt_messages` 只含合并
-  指令与 memdir 清单。会话里还没有 cache-safe 参数（首轮之前）时不触发。
+- 执行：`run_forked_agent`，`QuerySource::AutoDream`。合并不依赖当前对话内容，但为了共享 cache 与提取一样是 cache
+  共享分叉（README 第一节第 8 条名单内：主模型、不带 Agent-Id、只重放掩码、`CacheSafeParams` 原样复用），
+  `prompt_messages` 只含合并指令与 memdir 清单。会话里还没有 cache-safe 参数（首轮之前）时不触发。
 - 触发：会话空闲（一轮结束、等待用户输入）时检查阈值——距上次合并 ≥ `consolidateMinHours`（默认 24）且 memdir 中
   mtime 比锁文件新的记忆文件 ≥ `consolidateMinNewFiles`（默认 5）。手动：`/memory consolidate`（不看阈值）。
 - 内容：去重、合并相近条目、更新过时的 `project` 记忆、重建 `MEMORY.md` 索引。
@@ -237,7 +235,6 @@ Bash 的路径校验经 `utils/permissions/path_validation.rs:176` 命中同一�
 | `extract` | `true` | 后台提取 |
 | `extractEveryTurns` | `8` | 提取节流：轮数 |
 | `extractEveryTokens` | `30000` | 提取节流：token 增长 |
-| `extractModel` | 未设置 | 提取模型；未设置用主模型（见 M2） |
 | `extractBeforeCompact` | `true` | 压缩前强制提取（M2.1） |
 | `extractBeforeCompactTimeoutMs` | `60000` | 压缩前强制提取的上限，超时则跳过、摘要照常 |
 | `extractMaxTurns` | `6` | 提取 agent 的最大轮数 |
@@ -286,10 +283,9 @@ CC 原有的 `autoMemoryEnabled = false` 时，提取与合并一并关闭。
 
 ## 六、cache 约束（与压缩模块一致）
 
-- 默认（未配置 `extractModel`）提取与合并都是 **cache 共享分叉**（README 第一节第 8 条，`ExtractMemories` / `AutoDream`
-  在名单内）：`CacheSafeParams` 原样复用、不带 `X-Claude-Code-Agent-Id`、只重放掩码不新增，历史部分全部命中主会话 cache，
+- 提取与合并都是 **cache 共享分叉**（README 第一节第 8 条，`ExtractMemories` / `AutoDream` 在名单内）：用主模型、
+  `CacheSafeParams` 原样复用、不带 `X-Claude-Code-Agent-Id`、只重放掩码不新增，历史部分全部命中主会话 cache，
   只付输出 token。判别统一用 `is_cache_sharing_fork`，本模块不另写名单。
-- 配置了 `extractModel` 且与主模型不同时，提取走 M2 路径 2：不是 cache 共享分叉，只带新片段，控制全价输入量。
 - 压缩前强制提取（M2.1）与紧接着的摘要请求共享同一前缀，两者都命中 cache。
 - 提取与合并的请求不得改变主会话后续请求的前缀（不写主 transcript 的消息、不改主会话消息；提取游标是元数据条目，
   不进模型上下文），保证主会话 cache 不受影响。
@@ -300,7 +296,7 @@ CC 原有的 `autoMemoryEnabled = false` 时，提取与合并一并关闭。
 |---|---|---|---|
 | A | 写入安全：解开 secret 规则门控、启发式、`check_memory_content`；写时接入 Write / Edit（完整文件内容）；读时接入 `MEMORY.md` 注入；`/memory` 隔离标记的数据来源 | `services/team_memory_sync/secret_scanner.rs`、新 `memdir/write_guard.rs`、`tools/file_write_tool`、`tools/file_edit_tool`、`utils/claudemd.rs` | — |
 | B | 候选机制：列出不在索引里的记忆文件；提取 agent 修改索引时的 `type: user` 检查 | `memdir/memdir.rs` | — |
-| C | 提取 agent：节流、两条请求路径、工具约束、提示词、费用（`total_usage` → `cost_tracker`）、提取游标条目与 `METADATA_MARKERS`、压缩前强制提取、`settings.nyan.memory` | 新 `services/extract_memories/`、`query/stop_hooks.rs`、`services/compact/auto_compact.rs`、`commands/compact/compact.rs`、`utils/session_storage.rs`（游标条目类型与 marker）、`utils/settings/types.rs` | A、B、公共（`is_cache_sharing_fork`，README 批次 0） |
+| C | 提取 agent：节流、cache 共享分叉、工具约束、提示词、费用（`total_usage` → `cost_tracker`）、提取游标条目与 `METADATA_MARKERS`、压缩前强制提取、`settings.nyan.memory` | 新 `services/extract_memories/`、`query/stop_hooks.rs`、`services/compact/auto_compact.rs`、`commands/compact/compact.rs`、`utils/session_storage.rs`（游标条目类型与 marker）、`utils/settings/types.rs` | A、B、公共（`is_cache_sharing_fork`，README 批次 0） |
 | D | 合并 agent：dream 驱动、空闲触发与阈值、`.consolidate-lock` 获取 / 完成 / 回滚 / 崩溃回收、禁止删除、建议删除清单、后台任务列表的 Dream 分支 | 新 `services/auto_dream/`（含 `lock.rs`）、`tasks/dream_task.rs`、`components/tasks/background_tasks_dialog.rs` | A、B、公共（`is_cache_sharing_fork`） |
 | E | `/memory` UI：不在索引里的文件（加入 / 删除）、隔离文件标记、手动合并、上次提取 / 合并的时间与结果 | `components/memory/memory_file_selector.rs`、`commands/memory.rs` | B、D |
 
@@ -319,8 +315,7 @@ E 都涉及 `auto_compact.rs`（C 只在摘要调用前加一个钩子）。
 5. 压缩前存在未提取片段时，摘要请求发出之前已完成（或超时跳过）一次提取；超时有 `extract_skipped_before_compact` 日志。
 6. 提取不写主 transcript 的消息；提取游标条目在 resume 后可读（含 transcript > 5 MB 的情况）；提取的 `total_usage`
    计入会话 token 统计。
-7. 默认配置下提取请求与主线程最后一次请求的前缀逐字节相同，且不带 `X-Claude-Code-Agent-Id`；配置 `extractModel` 后
-   只带游标之后的新片段。
+7. 提取请求与主线程最后一次请求用同一模型、前缀逐字节相同，且不带 `X-Claude-Code-Agent-Id`。
 8. 候选记忆不出现在 MEMORY.md 索引、不注入；在 `/memory` 里加入索引后才生效。
 9. 合并 agent 无法删除任何文件；建议删除的文件经用户确认后才删除。
 10. 合并被 kill 或失败后锁文件 mtime 恢复为合并前的值；持锁进程崩溃后，下一次触发能回收锁；运行中的合并出现在

@@ -411,7 +411,6 @@ mod tests {
         assert_eq!(default_utility_spec("webfetch"), "@light");
         assert_eq!(default_utility_spec("bash_prefix"), "@light");
         assert_eq!(default_utility_spec("prompt_suggestions"), "@light");
-        assert_eq!(default_utility_spec("memory"), "@light");
         assert_eq!(default_utility_spec("side_query"), "@light");
     }
 

@@ -19,10 +19,6 @@ use std::time::Duration;
 
 pub const CURSOR_METADATA_TYPE: &str = "memory-extract-cursor";
 
-/// M2 path 2 (dedicated `extractModel`): the fork does not share the main
-/// session's prefix, so it gets one purpose-built system prompt instead.
-const EXTRACTION_SYSTEM_PROMPT: &str = "You extract durable memories from conversation excerpts. Use the Read/Glob/Grep/Write/Edit tools only inside the auto-memory directory. Never save secrets, prompts, transcripts, or temporary task state. Report what you wrote.";
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ExtractCursor {
     pub message_uuid: Option<String>,
@@ -128,50 +124,9 @@ pub fn messages_after_cursor(messages: &[Message], cursor: &ExtractCursor) -> Ve
     messages.iter().skip(index + 1).cloned().collect()
 }
 
-fn message_text(message: &Message) -> String {
-    match message {
-        Message::User(user) => {
-            crate::utils::messages::get_user_message_text(user).unwrap_or_default()
-        }
-        Message::Assistant(_) => {
-            crate::utils::messages::get_assistant_message_text(message).unwrap_or_default()
-        }
-        // Tool results are retained only as a bounded diagnostic fragment on
-        // the dedicated-model path; the default path already has the original
-        // cache-safe history.
-        _ => format!("{message:?}"),
-    }
-}
-
-fn bounded_new_message_context(messages: &[Message]) -> String {
-    messages
-        .iter()
-        .map(|message| {
-            let text = message_text(message);
-            let text = if text.chars().count() > 2_000 {
-                text.chars().take(2_000).collect::<String>()
-            } else {
-                text
-            };
-            format!("### message {}\n{}", message.uuid(), text)
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
-
-fn extraction_prompt(
-    new_context: &str,
-    memory_index: &str,
-    dedicated_model: bool,
-    memory_dir: &Path,
-) -> String {
-    let context = if dedicated_model {
-        new_context
-    } else {
-        "The complete cache-safe conversation history is already available to you. Use the cursor and index below to avoid duplicating existing memories."
-    };
+fn extraction_prompt(memory_index: &str, memory_dir: &Path) -> String {
     format!(
-        "[MEMORY EXTRACTION]\nExtract only durable facts that cannot be derived from the current repository or git history. Use only the four memory types user, feedback, project, and reference. Prefer updating an existing topic over creating a duplicate. `type: user` files are candidates and must not be added to MEMORY.md automatically. Never save prompts, transcripts, temporary task state, secrets, or credentials.\n\n{context}\n\nCurrent MEMORY.md index:\n{memory_index}\n\nWrite candidate/topic files only under the auto-memory directory `{dir}`. Always pass absolute paths inside it to every tool call (Glob/Grep need an explicit `path`). Add `source: extract` to the frontmatter of every file you create. Add an index entry only for low-risk, non-user memories you are confident about. You cannot delete files. Report what you wrote and which files remain candidates.",
+        "[MEMORY EXTRACTION]\nExtract only durable facts that cannot be derived from the current repository or git history. Use only the four memory types user, feedback, project, and reference. Prefer updating an existing topic over creating a duplicate. `type: user` files are candidates and must not be added to MEMORY.md automatically. Never save prompts, transcripts, temporary task state, secrets, or credentials.\n\nThe complete cache-safe conversation history is already available to you. Use the cursor and index below to avoid duplicating existing memories.\n\nCurrent MEMORY.md index:\n{memory_index}\n\nWrite candidate/topic files only under the auto-memory directory `{dir}`. Always pass absolute paths inside it to every tool call (Glob/Grep need an explicit `path`). Add `source: extract` to the frontmatter of every file you create. Add an index entry only for low-risk, non-user memories you are confident about. You cannot delete files. Report what you wrote and which files remain candidates.",
         dir = memory_dir.display(),
     )
 }
@@ -306,7 +261,6 @@ pub async fn run_extract_memories(
     messages: Vec<Message>,
     cursor: ExtractCursor,
     memory_index: String,
-    extract_model: Option<String>,
     max_turns: u32,
     timeout: Duration,
 ) -> ExtractOutcome {
@@ -316,7 +270,6 @@ pub async fn run_extract_memories(
         messages,
         cursor,
         memory_index,
-        extract_model,
         max_turns,
         timeout,
         crate::query::deps::production_deps(),
@@ -330,7 +283,6 @@ pub(crate) async fn run_extract_memories_with_deps<D: crate::query::deps::QueryD
     messages: Vec<Message>,
     cursor: ExtractCursor,
     memory_index: String,
-    extract_model: Option<String>,
     max_turns: u32,
     timeout: Duration,
     deps: D,
@@ -355,23 +307,13 @@ pub(crate) async fn run_extract_memories_with_deps<D: crate::query::deps::QueryD
         };
     }
 
-    let main_model = context
-        .main_loop_model
-        .clone()
-        .unwrap_or_else(crate::utils::model::model::get_main_loop_model);
-    let dedicated_model = extract_model
-        .as_deref()
-        .is_some_and(|model| model != main_model);
-    let prompt = extraction_prompt(
-        &bounded_new_message_context(&new_messages),
-        &memory_index,
-        dedicated_model,
-        &memory_dir,
-    );
     let prompt_message = Message::User(UserMessage {
         uuid: uuid::Uuid::new_v4().to_string(),
         timestamp: chrono::Utc::now(),
-        content: vec![UserContent::Text(prompt)],
+        content: vec![UserContent::Text(extraction_prompt(
+            &memory_index,
+            &memory_dir,
+        ))],
         is_compact_summary: false,
         plan_content: None,
         image_paste_ids: None,
@@ -386,33 +328,17 @@ pub(crate) async fn run_extract_memories_with_deps<D: crate::query::deps::QueryD
     // @nyan: the fork gets its own child controller so a timeout can stop it
     // without aborting the main session; a main-session abort still cascades.
     let fork_abort = crate::tool::AbortController::child_of(context.abort_controller.clone());
-    let mut fork_context = (*cache_safe_params).clone();
-    let overrides = if dedicated_model {
-        // M2 path 2 is an ordinary fork: no shared history and no main-thread
-        // system prompt to preserve, so it gets the extraction prompt alone.
-        fork_context.fork_context_messages = Arc::new(Vec::new());
-        fork_context.system_prompt = vec![EXTRACTION_SYSTEM_PROMPT.to_string()];
-        let mut options = context.options();
-        options.main_loop_model = extract_model;
-        Some(SubagentContextOverrides {
-            options: Some(options),
-            abort_controller: Some(fork_abort.clone()),
-            ..Default::default()
-        })
-    } else {
-        Some(SubagentContextOverrides {
-            abort_controller: Some(fork_abort.clone()),
-            ..Default::default()
-        })
-    };
     let callback = memory_tool_callback(&context, &memory_dir);
     let params = ForkedAgentParams {
         prompt_messages: vec![prompt_message],
-        cache_safe_params: fork_context,
+        cache_safe_params: (*cache_safe_params).clone(),
         can_use_tool: callback,
         query_source: QuerySource::ExtractMemories,
         fork_label: "extract-memories".to_string(),
-        overrides,
+        overrides: Some(SubagentContextOverrides {
+            abort_controller: Some(fork_abort.clone()),
+            ..Default::default()
+        }),
         max_output_tokens: None,
         max_turns: Some(max_turns.max(1)),
         on_message: None,
@@ -509,7 +435,6 @@ pub async fn extract_before_compact(
     messages: Vec<Message>,
     cursor: ExtractCursor,
     memory_index: String,
-    extract_model: Option<String>,
     max_turns: u32,
     timeout_ms: u64,
 ) -> ExtractOutcome {
@@ -519,7 +444,6 @@ pub async fn extract_before_compact(
         messages,
         cursor,
         memory_index,
-        extract_model,
         max_turns,
         Duration::from_millis(timeout_ms),
     )
@@ -594,18 +518,21 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// One scripted model turn: optional index edit (simulating what a Write
-    /// tool would have done), then a final text answer with usage.
+    /// tool would have done), then a final text answer with usage. Every
+    /// request is recorded.
     #[derive(Clone)]
     struct ScriptedDeps {
         before_answer: Arc<dyn Fn() + Send + Sync>,
         abort_on_call: Option<crate::tool::AbortController>,
+        requests: Arc<std::sync::Mutex<Vec<crate::query::deps::CallModelRequest>>>,
     }
 
     impl crate::query::deps::QueryDeps for ScriptedDeps {
         fn call_model(
             &self,
-            _request: crate::query::deps::CallModelRequest,
+            request: crate::query::deps::CallModelRequest,
         ) -> crate::query::deps::CallModelStreamFuture {
+            self.requests.lock().unwrap().push(request);
             let before_answer = self.before_answer.clone();
             let abort = self.abort_on_call.clone();
             Box::pin(async move {
@@ -702,12 +629,68 @@ mod tests {
             messages,
             ExtractCursor::default(),
             String::new(),
-            None,
             2,
             Duration::from_secs(20),
             deps,
         )
         .await
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_fork_replays_the_session_prefix_on_the_session_selection() {
+        let _fixture = fixture();
+        let mut context = ToolUseContext::default()
+            .with_main_loop_model("session-model")
+            .with_effort_value(Some(crate::utils::effort::Effort::High));
+        context.main_loop_profile = Some("session-profile".to_string());
+        let messages = history();
+        let cache = CacheSafeParams {
+            system_prompt: vec!["system".to_string()],
+            user_context: Default::default(),
+            system_context: Default::default(),
+            tool_use_context: context.clone(),
+            fork_context_messages: Arc::new(messages.clone()),
+        };
+        let deps = ScriptedDeps {
+            before_answer: Arc::new(|| {}),
+            abort_on_call: None,
+            requests: Default::default(),
+        };
+        let outcome = run_extract_memories_with_deps(
+            context,
+            Some(Arc::new(cache)),
+            messages.clone(),
+            ExtractCursor::default(),
+            String::new(),
+            2,
+            Duration::from_secs(20),
+            deps.clone(),
+        )
+        .await;
+        assert_eq!(outcome.status, ExtractStatus::Success);
+
+        let requests = deps.requests.lock().unwrap();
+        let [request] = requests.as_slice() else {
+            panic!("expected one request, got {}", requests.len());
+        };
+        assert_eq!(request.query_source, QuerySource::ExtractMemories);
+        assert_eq!(request.options.model, "session-model");
+        assert_eq!(request.options.profile.as_deref(), Some("session-profile"));
+        assert_eq!(
+            request.options.effort_value,
+            Some(crate::utils::effort::Effort::High)
+        );
+        assert_eq!(request.system_prompt, vec!["system".to_string()]);
+        // The session history first, unchanged; the extraction prompt last.
+        assert_eq!(request.messages.len(), messages.len() + 1);
+        assert_eq!(request.messages[..messages.len()], messages[..]);
+        let Some(Message::User(prompt)) = request.messages.last() else {
+            panic!("the extraction prompt is the last message");
+        };
+        assert!(
+            crate::utils::messages::get_user_message_text(prompt)
+                .is_some_and(|text| text.starts_with("[MEMORY EXTRACTION]"))
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -722,6 +705,7 @@ mod tests {
             ScriptedDeps {
                 before_answer: Arc::new(|| {}),
                 abort_on_call: None,
+                requests: Default::default(),
             },
         )
         .await;
@@ -743,6 +727,7 @@ mod tests {
             ScriptedDeps {
                 before_answer: Arc::new(|| {}),
                 abort_on_call: Some(session_abort),
+                requests: Default::default(),
             },
         )
         .await;
@@ -778,6 +763,7 @@ mod tests {
                     .unwrap();
                 }),
                 abort_on_call: None,
+                requests: Default::default(),
             },
         )
         .await;

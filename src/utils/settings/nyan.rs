@@ -138,9 +138,6 @@ pub struct MemorySettings {
     pub extract_every_turns: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extract_every_tokens: Option<u32>,
-    /// `None` means "use the main model" (memory M2).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub extract_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extract_before_compact: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1849,7 +1846,6 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
             "extractEveryTokens",
             zod::number().int().positive().optional(),
         ),
-        ("extractModel", zod::string().optional()),
         ("extractBeforeCompact", zod::boolean().optional()),
         (
             "extractBeforeCompactTimeoutMs",
