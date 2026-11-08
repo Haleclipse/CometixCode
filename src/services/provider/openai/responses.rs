@@ -1471,10 +1471,10 @@ mod tests {
         t.model = "gpt-5.6".into();
         for (kind, base_url) in [
             (ProviderKind::Openai, "https://api.deepseek.com/v1"),
-            (ProviderKind::Openai, "https://api.moonshot.ai/v1"),
             (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
             (ProviderKind::Openai, "http://127.0.0.1:8317/v1"),
             (ProviderKind::Gateway, "https://api.openai.com/v1"),
+            (ProviderKind::Gateway, "https://api.moonshot.ai/v1"),
             (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
             (ProviderKind::Vllm, "http://127.0.0.1:8000/v1"),
             (ProviderKind::Ollama, "http://127.0.0.1:11434/v1"),
@@ -1488,6 +1488,34 @@ mod tests {
             ] {
                 assert!(body.get(field).is_none(), "{kind:?} {base_url}: {body}");
             }
+        }
+    }
+
+    #[test]
+    fn responses_send_kimi_the_key_but_no_ttl_field_by_default() {
+        use crate::utils::settings::nyan::CacheRetention;
+
+        let req = request(vec![user_text("hi")]);
+        let mut t = target(all());
+        t.model = "kimi-k3".into();
+        for url in [
+            "https://api.moonshot.cn/v1",
+            "https://api.moonshot.ai/v1",
+            "https://api.kimi.com/coding/v1",
+        ] {
+            let compat = Compat::resolve_full(ProviderKind::Openai, url, Some(&t.model), None);
+            t.cache_retention = CacheRetention::Long;
+            let body = super::build_body(&t, &req, Backend::Api, &compat);
+            assert!(body["prompt_cache_key"].is_string(), "{url}: {body}");
+            assert!(
+                body.get("prompt_cache_retention").is_none(),
+                "{url}: {body}"
+            );
+            assert!(body.get("prompt_cache_options").is_none(), "{url}: {body}");
+
+            t.cache_retention = CacheRetention::None;
+            let off = super::build_body(&t, &req, Backend::Api, &compat);
+            assert!(off.get("prompt_cache_key").is_none(), "{url}: {off}");
         }
     }
 

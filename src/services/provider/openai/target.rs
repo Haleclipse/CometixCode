@@ -125,17 +125,23 @@ impl Compat {
                         .any(|name| model.contains(name))
             });
         // @nyan: stricter than Pi, which also sends the key to every host it
-        // believes takes long retention. Only OpenAI's own hosts get OpenAI's
-        // cache parameters unless the provider's compat asks for them.
-        let openai_host = kind == ProviderKind::Openai && vendor == Vendor::OpenAi;
+        // believes takes long retention. Unless the provider's compat says
+        // otherwise, the openai kind sends the key to OpenAI's and Kimi's own
+        // hosts, which both document it, and OpenAI's long-TTL fields only to
+        // OpenAI: Kimi's TTL option takes other values.
+        let (default_key, default_long_retention) = match (kind, vendor) {
+            (ProviderKind::Openai, Vendor::OpenAi) => (true, true),
+            (ProviderKind::Openai, Vendor::Moonshot) => (true, false),
+            _ => (false, false),
+        };
         let prompt_cache_key = match settings.and_then(|s| s.prompt_cache_key) {
-            None | Some(PromptCacheKeyMode::Auto) => openai_host,
+            None | Some(PromptCacheKeyMode::Auto) => default_key,
             Some(PromptCacheKeyMode::Enabled) => true,
             Some(PromptCacheKeyMode::Disabled) => false,
         };
         let long_cache_retention = settings
             .and_then(|s| s.long_cache_retention)
-            .unwrap_or(openai_host);
+            .unwrap_or(default_long_retention);
         let explicit_prompt_cache_mode = model
             .and_then(|model| {
                 crate::utils::model::metadata::metadata_provider_for_kind(kind).and_then(
@@ -603,6 +609,10 @@ mod tests {
             ("https://gw.example/api.openai.com/v1", Vendor::Other),
             ("https://gw.example/v1?upstream=deepseek.com", Vendor::Other),
             ("https://api.openai.com@gw.example/v1", Vendor::Other),
+            ("https://evil.example/moonshot.cn", Vendor::Other),
+            ("https://moonshot.cn.evil.example/v1", Vendor::Other),
+            ("https://notkimi.com/v1", Vendor::Other),
+            ("https://kimi.com@evil.example/v1", Vendor::Other),
             ("http://127.0.0.1:8317/v1", Vendor::Other),
             ("not a url", Vendor::Other),
         ] {
@@ -611,26 +621,36 @@ mod tests {
     }
 
     #[test]
-    fn only_openai_hosts_of_the_openai_kind_get_openai_cache_parameters() {
-        let compat = |kind, url: &str| Compat::resolve_full(kind, url, Some("gpt-5"), None);
+    fn cache_parameter_defaults_follow_the_openai_kind_and_its_host() {
+        let defaults = |kind, url: &str| {
+            let c = Compat::resolve_full(kind, url, Some("gpt-5"), None);
+            (c.prompt_cache_key, c.long_cache_retention)
+        };
         for url in [API_BASE, "https://us.api.openai.com/v1", CODEX_BASE] {
-            let c = compat(ProviderKind::Openai, url);
-            assert!(c.prompt_cache_key && c.long_cache_retention, "{url}");
+            assert_eq!(defaults(ProviderKind::Openai, url), (true, true), "{url}");
+        }
+        // Kimi documents the key but takes its own TTL values.
+        for url in [
+            "https://api.moonshot.cn/v1",
+            "https://api.moonshot.ai/v1",
+            "https://api.kimi.com/coding/v1",
+            "https://eu.api.moonshot.ai/v1",
+        ] {
+            assert_eq!(defaults(ProviderKind::Openai, url), (true, false), "{url}");
         }
         for (kind, url) in [
             (ProviderKind::Openai, "https://api.deepseek.com"),
-            (ProviderKind::Openai, "https://api.moonshot.cn/v1"),
             (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
             (ProviderKind::Openai, "http://127.0.0.1:8317/v1"),
+            (ProviderKind::Openai, "https://evil.example/moonshot.cn"),
+            (ProviderKind::Openai, "https://moonshot.cn.evil.example/v1"),
+            (ProviderKind::Openai, "https://kimi.com@evil.example/v1"),
             (ProviderKind::Gateway, API_BASE),
+            (ProviderKind::Gateway, "https://api.moonshot.cn/v1"),
             (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
             (ProviderKind::Vllm, "http://127.0.0.1:8000/v1"),
         ] {
-            let c = compat(kind, url);
-            assert!(
-                !c.prompt_cache_key && !c.long_cache_retention,
-                "{kind:?} {url}"
-            );
+            assert_eq!(defaults(kind, url), (false, false), "{kind:?} {url}");
         }
     }
 

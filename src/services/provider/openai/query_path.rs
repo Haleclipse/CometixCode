@@ -1341,8 +1341,8 @@ async fn a_configured_effort_maps_per_family_and_off_is_omitted_where_unknown() 
     );
 }
 
-/// With the default long retention, only OpenAI's own hosts get OpenAI's cache
-/// parameters: the mock is not one, so even the OpenAI kind sends none unless
+/// With the default long retention, only OpenAI's and Kimi's own hosts get a
+/// cache key: the mock is neither, so even the OpenAI kind sends none unless
 /// the provider's compat asks for the key.
 #[tokio::test]
 async fn the_default_long_retention_sends_no_cache_key_off_openai_hosts() {

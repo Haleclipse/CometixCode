@@ -1358,7 +1358,7 @@ pub enum MaxTokensField {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PromptCacheKeyMode {
-    /// Only to OpenAI's own hosts.
+    /// Only to OpenAI's and Kimi's own hosts.
     Auto,
     /// Whenever caching is on, for servers that take it.
     Enabled,

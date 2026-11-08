@@ -1158,14 +1158,22 @@ async fn chat_and_responses_send_openai_cache_fields_by_host_and_compat() {
         let sent = wire_cache_fields(ProviderKind::Openai, url, None).await;
         assert_eq!(sent, [long.clone(), long.clone()], "{url}");
     }
-    // DeepSeek, Kimi, OpenRouter and gateways cache on their own terms.
+    // Kimi takes the key, but its TTL option is not OpenAI's.
+    for url in [
+        "https://api.moonshot.cn/v1",
+        "https://api.moonshot.ai/v1",
+        "https://api.kimi.com/coding/v1",
+    ] {
+        let sent = wire_cache_fields(ProviderKind::Openai, url, None).await;
+        assert_eq!(sent, [key_only.clone(), key_only.clone()], "{url}");
+    }
+    // DeepSeek, OpenRouter and gateways cache on their own terms.
     for (kind, url) in [
         (ProviderKind::Openai, "https://api.deepseek.com"),
-        (ProviderKind::Openai, "https://api.moonshot.cn/v1"),
-        (ProviderKind::Openai, "https://api.moonshot.ai/v1"),
         (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
         (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
         (ProviderKind::Gateway, "http://127.0.0.1:8317/v1"),
+        (ProviderKind::Gateway, "https://api.moonshot.cn/v1"),
     ] {
         let sent = wire_cache_fields(kind, url, None).await;
         assert_eq!(sent, [none.clone(), none.clone()], "{kind:?} {url}");
@@ -1186,14 +1194,16 @@ async fn chat_and_responses_send_openai_cache_fields_by_host_and_compat() {
     )
     .await;
     assert_eq!(sent, [long.clone(), long.clone()]);
-    // Disabled wins on OpenAI itself; longCacheRetention alone adds nothing.
-    let sent = wire_cache_fields(
-        ProviderKind::Openai,
-        super::target::API_BASE,
-        compat(PromptCacheKeyMode::Disabled, Some(true)),
-    )
-    .await;
-    assert_eq!(sent, [none.clone(), none.clone()]);
+    // Disabled wins on OpenAI and Kimi; longCacheRetention alone adds nothing.
+    for url in [super::target::API_BASE, "https://api.moonshot.ai/v1"] {
+        let sent = wire_cache_fields(
+            ProviderKind::Openai,
+            url,
+            compat(PromptCacheKeyMode::Disabled, Some(true)),
+        )
+        .await;
+        assert_eq!(sent, [none.clone(), none.clone()], "{url}");
+    }
     let sent = wire_cache_fields(
         ProviderKind::Openai,
         super::target::API_BASE,
@@ -1201,4 +1211,12 @@ async fn chat_and_responses_send_openai_cache_fields_by_host_and_compat() {
     )
     .await;
     assert_eq!(sent, [key_only.clone(), key_only]);
+    // An explicit longCacheRetention on Kimi asks for OpenAI's 24h as written.
+    let sent = wire_cache_fields(
+        ProviderKind::Openai,
+        "https://api.moonshot.cn/v1",
+        compat(PromptCacheKeyMode::Auto, Some(true)),
+    )
+    .await;
+    assert_eq!(sent, [long.clone(), long]);
 }

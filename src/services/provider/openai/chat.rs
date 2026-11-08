@@ -1427,17 +1427,17 @@ mod tests {
         t.cache_retention = CacheRetention::Long;
         for (kind, base_url) in [
             (ProviderKind::Openai, "https://api.deepseek.com"),
-            (ProviderKind::Openai, "https://api.moonshot.cn/v1"),
             (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
             (ProviderKind::Openai, "https://gw.example/v1"),
             (ProviderKind::Gateway, "https://api.openai.com/v1"),
+            (ProviderKind::Gateway, "https://api.moonshot.cn/v1"),
             (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
             (ProviderKind::Vllm, "http://127.0.0.1:8000/v1"),
             (ProviderKind::Ollama, "http://127.0.0.1:11434/v1"),
         ] {
             let compat = Compat::resolve_full(kind, base_url, Some(&t.model), None);
             let body = super::build_body(&t, &req, &compat);
-            // DeepSeek and Kimi cache automatically; only OpenAI takes these.
+            // DeepSeek caches automatically; only OpenAI and Kimi take these.
             assert!(
                 body.get("prompt_cache_key").is_none(),
                 "{kind:?} {base_url}"
@@ -1506,9 +1506,75 @@ mod tests {
         let official = body("https://api.openai.com/v1", auto(Some(false)));
         assert!(official["prompt_cache_key"].is_string(), "{official}");
         assert!(official.get("prompt_cache_retention").is_none());
-        let elsewhere = body("https://api.moonshot.ai/v1", auto(Some(true)));
+        let elsewhere = body("https://api.deepseek.com", auto(Some(true)));
         assert!(elsewhere.get("prompt_cache_key").is_none(), "{elsewhere}");
         assert!(elsewhere.get("prompt_cache_retention").is_none());
+    }
+
+    #[test]
+    fn build_body_sends_kimi_the_key_but_no_ttl_field_by_default() {
+        use crate::utils::settings::nyan::{OpenaiCompatSettings, PromptCacheKeyMode};
+
+        let req = request(vec![user_text("hi")]);
+        let mut t = target(all());
+        t.model = "kimi-k3".into();
+        let body = |t: &ResolvedTarget, base_url: &str, settings: Option<OpenaiCompatSettings>| {
+            let compat = Compat::resolve_full(
+                ProviderKind::Openai,
+                base_url,
+                Some(&t.model),
+                settings.as_ref(),
+            );
+            super::build_body(t, &req, &compat)
+        };
+        let hosts = [
+            "https://api.moonshot.cn/v1",
+            "https://api.moonshot.ai/v1",
+            "https://api.kimi.com/coding/v1",
+            "https://eu.api.moonshot.ai/v1",
+        ];
+
+        // Long (the default) and short retention: the key, never a TTL field.
+        for retention in [CacheRetention::Long, CacheRetention::Short] {
+            t.cache_retention = retention;
+            for url in hosts {
+                let sent = body(&t, url, None);
+                assert!(sent["prompt_cache_key"].is_string(), "{url}: {sent}");
+                assert!(
+                    sent.get("prompt_cache_retention").is_none(),
+                    "{url}: {sent}"
+                );
+                assert!(sent.get("prompt_cache_options").is_none(), "{url}: {sent}");
+            }
+        }
+
+        // No caching, or the key disabled: nothing.
+        t.cache_retention = CacheRetention::None;
+        let off = body(&t, hosts[0], None);
+        assert!(off.get("prompt_cache_key").is_none(), "{off}");
+        t.cache_retention = CacheRetention::Long;
+        let disabled = body(
+            &t,
+            hosts[0],
+            Some(OpenaiCompatSettings {
+                prompt_cache_key: Some(PromptCacheKeyMode::Disabled),
+                ..Default::default()
+            }),
+        );
+        assert!(disabled.get("prompt_cache_key").is_none(), "{disabled}");
+        assert!(disabled.get("prompt_cache_retention").is_none());
+
+        // An explicit longCacheRetention still asks for OpenAI's 24h.
+        let long = body(
+            &t,
+            hosts[0],
+            Some(OpenaiCompatSettings {
+                long_cache_retention: Some(true),
+                ..Default::default()
+            }),
+        );
+        assert!(long["prompt_cache_key"].is_string(), "{long}");
+        assert_eq!(long["prompt_cache_retention"], "24h");
     }
 
     #[test]
