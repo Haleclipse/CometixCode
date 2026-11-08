@@ -1900,6 +1900,10 @@ pub async fn get_attachments(
     // queued-command projection (`maybe('agent_pending_messages', …)`,
     // utils/attachments.ts:916-918, just before critical_system_reminder) —
     // the two are parallel chains, not an either/or on query source.
+    attachments.extend(get_todo_task_reminder_attachments(
+        messages,
+        tool_use_context,
+    ));
     attachments.extend(get_agent_pending_message_attachments(tool_use_context));
     attachments.extend(get_critical_system_reminder_attachments(tool_use_context));
     attachments.extend(ide_diagnostics);
@@ -1908,6 +1912,174 @@ pub async fn get_attachments(
         query_source,
     ));
     attachments
+}
+
+/// Maps to: CC `utils/attachments.ts` `TURNS_SINCE_WRITE` /
+/// `TURNS_BETWEEN_REMINDERS` in the 2.0 series.
+const TURNS_SINCE_WRITE: usize = 7;
+const TURNS_BETWEEN_REMINDERS: usize = 3;
+
+/// Maps to: CC `utils/attachments.ts` `countTurnsSinceLastTodoWrite` —
+/// thinking-only assistant messages do not advance either counter.
+fn reminder_turn_counts(messages: &[Message]) -> (usize, usize) {
+    let mut found_write = false;
+    let mut found_reminder = false;
+    let mut since_write = 0;
+    let mut since_reminder = 0;
+
+    for message in messages.iter().rev() {
+        if let Message::Assistant(assistant) = message {
+            if assistant.content.iter().all(|block| {
+                matches!(
+                    block,
+                    crate::types::message::AssistantContent::Thinking { .. }
+                        | crate::types::message::AssistantContent::RedactedThinking { .. }
+                )
+            }) {
+                continue;
+            }
+            if !found_write {
+                since_write += 1;
+            }
+            if !found_reminder {
+                since_reminder += 1;
+            }
+            if !found_write
+                && assistant.content.iter().any(|block| {
+                    matches!(
+                        block,
+                        crate::types::message::AssistantContent::ToolUse(tool)
+                            if tool.name == "TodoWrite"
+                    )
+                })
+            {
+                found_write = true;
+            }
+        } else if !found_reminder
+            && matches!(
+                message,
+                Message::Attachment(attachment)
+                    if matches!(attachment.attachment, Attachment::TodoReminder { .. })
+            )
+        {
+            found_reminder = true;
+        }
+
+        if found_write && found_reminder {
+            break;
+        }
+    }
+
+    (since_write, since_reminder)
+}
+
+/// Task tools whose use resets the task reminder clock.
+fn is_task_write_tool(name: &str) -> bool {
+    matches!(name, "TaskCreate" | "TaskUpdate")
+}
+
+/// CC 2.0-style counterpart of [`reminder_turn_counts`] for the TodoV2 task
+/// tools.
+fn task_reminder_turn_counts(messages: &[Message]) -> (usize, usize) {
+    let mut found_write = false;
+    let mut found_reminder = false;
+    let mut since_write = 0;
+    let mut since_reminder = 0;
+
+    for message in messages.iter().rev() {
+        if let Message::Assistant(assistant) = message {
+            if assistant.content.iter().all(|block| {
+                matches!(
+                    block,
+                    crate::types::message::AssistantContent::Thinking { .. }
+                        | crate::types::message::AssistantContent::RedactedThinking { .. }
+                )
+            }) {
+                continue;
+            }
+            if !found_write {
+                since_write += 1;
+            }
+            if !found_reminder {
+                since_reminder += 1;
+            }
+            if !found_write
+                && assistant.content.iter().any(|block| {
+                    matches!(
+                        block,
+                        crate::types::message::AssistantContent::ToolUse(tool)
+                            if is_task_write_tool(&tool.name)
+                    )
+                })
+            {
+                found_write = true;
+            }
+        } else if !found_reminder
+            && matches!(
+                message,
+                Message::Attachment(attachment)
+                    if matches!(attachment.attachment, Attachment::TaskReminder { .. })
+            )
+        {
+            found_reminder = true;
+        }
+
+        if found_write && found_reminder {
+            break;
+        }
+    }
+
+    (since_write, since_reminder)
+}
+
+/// Maps to: CC `utils/attachments.ts` `getTodoReminders`. The active task
+/// surface decides which reminder is emitted: TodoWrite below TodoV2, the
+/// task tools at or above it.
+fn get_todo_task_reminder_attachments(
+    messages: &[Message],
+    tool_use_context: &ToolUseContext,
+) -> Vec<AttachmentContinuation> {
+    if crate::utils::tasks::is_todo_v2_enabled() {
+        let (since_write, since_reminder) = task_reminder_turn_counts(messages);
+        if since_write < TURNS_SINCE_WRITE || since_reminder < TURNS_BETWEEN_REMINDERS {
+            return Vec::new();
+        }
+        let content = crate::utils::tasks::list_tasks(&crate::utils::tasks::get_task_list_id());
+        return vec![attachment_continuation(AttachmentMessage::new(
+            Attachment::TaskReminder {
+                item_count: content.len(),
+                content,
+            },
+        ))];
+    }
+
+    let (since_write, since_reminder) = reminder_turn_counts(messages);
+    if since_write < TURNS_SINCE_WRITE || since_reminder < TURNS_BETWEEN_REMINDERS {
+        return Vec::new();
+    }
+    let todo_key = tool_use_context
+        .agent_id
+        .clone()
+        .unwrap_or_else(crate::bootstrap::state::get_session_id);
+    let content = tool_use_context
+        .app_store
+        .store
+        .as_ref()
+        .map(|store| {
+            store
+                .get()
+                .todos
+                .get(&todo_key)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .unwrap_or_default();
+    vec![attachment_continuation(AttachmentMessage::new(
+        Attachment::TodoReminder {
+            item_count: content.len(),
+            content,
+        },
+    ))]
 }
 
 /// @nyan: M6 producer — retrieve relevant memories for the current user turn.
@@ -4144,5 +4316,93 @@ mod tests {
         assert!(attachments.is_empty());
         assert_eq!(get_pending_lsp_diagnostic_count(), 1);
         reset_all_lsp_diagnostic_state();
+    }
+
+    fn assistant_text(text: &str) -> Message {
+        Message::Assistant(crate::types::message::AssistantMessage {
+            uuid: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            content: vec![crate::types::message::AssistantContent::Text(
+                text.to_string(),
+            )],
+            model: None,
+            stop_reason: None,
+            usage: None,
+        })
+    }
+
+    fn assistant_tool(name: &str) -> Message {
+        Message::Assistant(crate::types::message::AssistantMessage {
+            uuid: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Utc::now(),
+            content: vec![crate::types::message::AssistantContent::ToolUse(
+                crate::types::message::ToolUseBlock {
+                    id: crate::types::ids::ToolUseId("toolu_reminder".to_string()),
+                    name: name.to_string(),
+                    input: serde_json::json!({}),
+                },
+            )],
+            model: None,
+            stop_reason: None,
+            usage: None,
+        })
+    }
+
+    fn todo_reminder_attachment() -> Message {
+        Message::Attachment(AttachmentMessage::new(Attachment::TodoReminder {
+            content: Vec::new(),
+            item_count: 0,
+        }))
+    }
+
+    #[test]
+    fn todo_reminder_counts_skip_thinking_and_reset_on_writes_and_reminders() {
+        let seven = (0..7).map(|_| assistant_text("work")).collect::<Vec<_>>();
+        assert_eq!(reminder_turn_counts(&seven), (7, 7));
+
+        // The write turn is counted, as in CC's reverse scan.
+        let mut with_write = vec![assistant_tool("TodoWrite")];
+        with_write.extend((0..6).map(|_| assistant_text("work")));
+        assert_eq!(reminder_turn_counts(&with_write), (7, 7));
+
+        // A later reminder resets only the reminder counter.
+        let with_reminder = todo_reminder_attachment_sequence();
+        assert_eq!(reminder_turn_counts(&with_reminder), (5, 5));
+
+        // Thinking-only assistant turns advance neither counter.
+        let mut thinking = Vec::new();
+        for _ in 0..10 {
+            thinking.push(Message::Assistant(
+                crate::types::message::AssistantMessage {
+                    uuid: uuid::Uuid::new_v4().to_string(),
+                    timestamp: chrono::Utc::now(),
+                    content: vec![crate::types::message::AssistantContent::Thinking {
+                        text: "thinking".to_string(),
+                        signature: String::new(),
+                    }],
+                    model: None,
+                    stop_reason: None,
+                    usage: None,
+                },
+            ));
+        }
+        thinking.extend((0..3).map(|_| assistant_text("work")));
+        assert_eq!(reminder_turn_counts(&thinking), (3, 3));
+    }
+
+    fn todo_reminder_attachment_sequence() -> Vec<Message> {
+        let mut messages = vec![todo_reminder_attachment()];
+        messages.extend((0..5).map(|_| assistant_text("work")));
+        messages
+    }
+
+    #[test]
+    fn todo_reminder_is_emitted_only_after_both_thresholds() {
+        let under = (0..6).map(|_| assistant_text("work")).collect::<Vec<_>>();
+        assert!(get_todo_task_reminder_attachments(&under, &ToolUseContext::default()).is_empty());
+
+        let ready = (0..7).map(|_| assistant_text("work")).collect::<Vec<_>>();
+        let attachments = get_todo_task_reminder_attachments(&ready, &ToolUseContext::default());
+        assert_eq!(attachments.len(), 1);
     }
 }
