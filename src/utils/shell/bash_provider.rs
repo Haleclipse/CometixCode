@@ -36,7 +36,7 @@ impl std::fmt::Debug for BashShellProvider {
 }
 
 fn get_disable_extglob_command(shell_path: &str) -> Option<&'static str> {
-    if crate::utils::process_env::var_os("CLAUDE_CODE_SHELL_PREFIX")
+    if crate::utils::process_env::var_os("NYAN_SHELL_PREFIX")
         .as_deref()
         .truthy()
         .is_some()
@@ -162,7 +162,7 @@ impl ShellProvider for BashShellProvider {
             crate::utils::bash::shell_quote::quote(&[&shell_cwd])
         ));
         let mut command_string = parts.join(" && ");
-        if let Some(prefix) = crate::utils::process_env::var("CLAUDE_CODE_SHELL_PREFIX").truthy() {
+        if let Some(prefix) = crate::utils::process_env::var("NYAN_SHELL_PREFIX").truthy() {
             command_string = crate::utils::bash::shell_prefix::format_shell_prefix_command(
                 &prefix,
                 &command_string,
@@ -202,7 +202,7 @@ impl ShellProvider for BashShellProvider {
                 path.display().to_string()
             };
             env.push(("TMPDIR".to_string(), path.clone()));
-            env.push(("CLAUDE_CODE_TMPDIR".to_string(), path.clone()));
+            env.push(("NYAN_TMPDIR".to_string(), path.clone()));
             env.push(("TMPPREFIX".to_string(), format!("{path}/zsh")));
         }
         env.extend(crate::utils::session_env_vars::get_session_env_vars());

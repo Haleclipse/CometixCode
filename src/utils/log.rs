@@ -224,15 +224,7 @@ pub fn attach_error_log_sink(new_sink: ErrorLogSink) -> io::Result<()> {
 pub fn log_error(error: impl Into<McpLogError>) {
     let _turn = LogTurn::enter();
     let err = crate::utils::errors::to_error(error.into());
-    if [
-        "CLAUDE_CODE_USE_BEDROCK",
-        "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CODE_USE_FOUNDRY",
-    ]
-    .iter()
-    .any(|key| {
-        crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var(key).as_deref())
-    }) || crate::utils::process_env::var("DISABLE_ERROR_REPORTING")
+    if crate::utils::process_env::var("DISABLE_ERROR_REPORTING")
         .truthy()
         .is_some()
         || crate::utils::privacy_level::is_essential_traffic_only()
@@ -326,11 +318,8 @@ mod tests {
 
     fn clean_env() -> Vec<EnvVarGuard> {
         [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "DISABLE_ERROR_REPORTING",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ]
         .into_iter()
         .map(EnvVarGuard::unset)
@@ -464,24 +453,16 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         attach_error_log_sink(record_sink(events.clone())).unwrap();
         for key in [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "DISABLE_ERROR_REPORTING",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
-            let value = if key.starts_with("CLAUDE_CODE_USE_") {
-                "true"
-            } else {
-                "0"
-            };
-            let _env = EnvVarGuard::set(key, value);
+            let _env = EnvVarGuard::set(key, "1");
             log_error(json!("hidden"));
             log_mcp_debug("srv", key);
             log_mcp_error("srv", Value::Null);
         }
         assert!(get_in_memory_errors().is_empty());
-        assert_eq!(events.lock().unwrap().len(), 10);
+        assert_eq!(events.lock().unwrap().len(), 4);
         for index in 0..101 {
             log_error(LogError {
                 name: "Error".into(),

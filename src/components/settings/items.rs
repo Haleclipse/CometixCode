@@ -80,7 +80,7 @@ fn auto_updates_are_disabled(config: &GlobalConfig) -> bool {
             crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref(),
         )
         || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER")
+            crate::utils::process_env::var("NYAN_DISABLE_AUTOUPDATER")
                 .as_deref(),
         )
         // CC `config.ts:1742` `getEssentialTrafficOnlyReason()`.
@@ -582,8 +582,8 @@ mod tests {
         // under test decide the outcome on every host.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let mut config = GlobalConfig::default();
         let mut settings = SettingsJson::default();
         settings.auto_updates_channel = Some("stable".to_string());

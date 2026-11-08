@@ -2116,7 +2116,7 @@ mod tests {
             }
         }
         let _reset_settings = ResetSettings;
-        let _memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        let _memory = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "1");
         let _auto = EnvVarGuard::set("DISABLE_AUTO_COMPACT", "1");
         let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::<serde_json::Value>::new()));
         let captured = requests.clone();

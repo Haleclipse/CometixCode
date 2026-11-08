@@ -3418,7 +3418,7 @@ mod sdk_mapper_tests {
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
             crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
-            crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "0");
+            crate::utils::process_env::set("NYAN_SIMPLE", "0");
             crate::bootstrap::state::set_original_cwd(&root);
             crate::bootstrap::state::set_inline_plugins(vec![root.join("plugin")]);
             crate::commands::clear_commands_cache();

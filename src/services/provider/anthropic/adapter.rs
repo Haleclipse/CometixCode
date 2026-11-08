@@ -301,19 +301,15 @@ mod tests {
         let lock = crate::utils::test_env::TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let guards = [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-        ]
-        .into_iter()
-        .map(EnvVarGuard::unset)
-        .chain([
-            EnvVarGuard::set("NO_PROXY", "*"),
-            EnvVarGuard::set("no_proxy", "*"),
-            EnvVarGuard::set("API_TIMEOUT_MS", "5000"),
-        ])
-        .collect();
+        let guards = []
+            .into_iter()
+            .map(EnvVarGuard::unset)
+            .chain([
+                EnvVarGuard::set("NO_PROXY", "*"),
+                EnvVarGuard::set("no_proxy", "*"),
+                EnvVarGuard::set("API_TIMEOUT_MS", "5000"),
+            ])
+            .collect();
         (lock, guards)
     }
 

@@ -12,7 +12,7 @@ pub fn get_max_timeout_ms() -> u64 {
 
 pub fn get_background_usage_note() -> Option<&'static str> {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
     ) {
         return None;
     }
@@ -35,7 +35,7 @@ fn get_commit_and_pr_instructions() -> String {
     // For ant users, CC uses the short version pointing to skills (:56-76).
     if crate::utils::build_profile::build_audience().is_internal() {
         let skills_section = if !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+            crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
         ) {
             "For git commits and pull requests, use the `/commit` and `/commit-push-pr` skills:\n- `/commit` - Create a git commit with staged changes\n- `/commit-push-pr` - Commit, push, and create a pull request\n\nThese skills handle git safety protocols, proper commit message formatting, and PR creation.\n\nBefore creating a pull request, run `/simplify` to review your changes, then test end-to-end (e.g. via `/tmux` for interactive features).\n\n"
         } else {

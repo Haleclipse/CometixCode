@@ -332,7 +332,7 @@ pub fn get_hook_event_metadata(tool_names: &[String]) -> HashMap<HookEvent, Hook
             HookEvent::CwdChanged,
             HookEventMetadata {
                 summary: "After the working directory changes",
-                description: "Input to command is JSON with old_cwd and new_cwd.\nCLAUDE_ENV_FILE is set — write bash exports there to apply env to subsequent BashTool commands.\nHook output can include hookSpecificOutput.watchPaths (array of absolute paths) to register with the FileChanged watcher.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only",
+                description: "Input to command is JSON with old_cwd and new_cwd.\nNYAN_ENV_FILE is set — write bash exports there to apply env to subsequent BashTool commands.\nHook output can include hookSpecificOutput.watchPaths (array of absolute paths) to register with the FileChanged watcher.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only",
                 matcher_metadata: None,
             },
         ),
@@ -340,7 +340,7 @@ pub fn get_hook_event_metadata(tool_names: &[String]) -> HashMap<HookEvent, Hook
             HookEvent::FileChanged,
             HookEventMetadata {
                 summary: "When a watched file changes",
-                description: "Input to command is JSON with file_path and event (change, add, unlink).\nCLAUDE_ENV_FILE is set — write bash exports there to apply env to subsequent BashTool commands.\nThe matcher field specifies filenames to watch in the current directory (e.g. \".envrc|.env\").\nHook output can include hookSpecificOutput.watchPaths (array of absolute paths) to dynamically update the watch list.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only",
+                description: "Input to command is JSON with file_path and event (change, add, unlink).\nNYAN_ENV_FILE is set — write bash exports there to apply env to subsequent BashTool commands.\nThe matcher field specifies filenames to watch in the current directory (e.g. \".envrc|.env\").\nHook output can include hookSpecificOutput.watchPaths (array of absolute paths) to dynamically update the watch list.\nExit code 0 - command completes successfully\nOther exit codes - show stderr to user only",
                 matcher_metadata: None,
             },
         ),

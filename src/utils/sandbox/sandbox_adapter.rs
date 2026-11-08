@@ -888,7 +888,7 @@ fn wrap_shell_command_macos(
 }
 
 fn proxy_environment(http_port: u16, socks_port: u16) -> Vec<String> {
-    let tmpdir = crate::utils::process_env::var("CLAUDE_TMPDIR")
+    let tmpdir = crate::utils::process_env::var("NYAN_TMPDIR")
         .truthy()
         .unwrap_or_else(|| {
             crate::utils::permissions::filesystem::get_claude_temp_dir()
@@ -1009,10 +1009,10 @@ fn wrap_shell_command_linux(
     }
     args.extend([
         "--setenv".to_string(),
-        "CLAUDE_CODE_HOST_HTTP_PROXY_PORT".to_string(),
+        "NYAN_HOST_HTTP_PROXY_PORT".to_string(),
         network.http_port.to_string(),
         "--setenv".to_string(),
-        "CLAUDE_CODE_HOST_SOCKS_PROXY_PORT".to_string(),
+        "NYAN_HOST_SOCKS_PROXY_PORT".to_string(),
         network.socks_port.to_string(),
         "--setenv".to_string(),
         "GIT_SSH_COMMAND".to_string(),

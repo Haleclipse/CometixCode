@@ -467,7 +467,7 @@ mod tests {
     fn production_thinking_config_from_settings_matches_main_without_thinking_flag() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
-        crate::utils::process_env::remove("CLAUDE_CODE_THINKING");
+        crate::utils::process_env::remove("NYAN_THINKING");
         crate::utils::process_env::remove("NYAN_THINKING");
 
         assert!(matches!(

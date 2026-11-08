@@ -2639,7 +2639,7 @@ mod tests {
         // rows are omitted; default user output and other system output stay.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         for fullscreen in ["0", "1"] {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", fullscreen);
+            let _env = EnvVarGuard::set("NYAN_NO_FLICKER", fullscreen);
             for output in [
                 "Permissions dialog dismissed",
                 "Workspace dialog dismissed",

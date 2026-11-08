@@ -57,7 +57,7 @@ impl DebugLogLevel {
 
 /// Maps to: CC `utils/debug.ts#getMinDebugLogLevel`.
 pub fn get_min_debug_log_level() -> DebugLogLevel {
-    crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOG_LEVEL")
+    crate::utils::process_env::var("NYAN_DEBUG_LOG_LEVEL")
         .as_deref()
         .map(str::trim)
         .and_then(DebugLogLevel::from_env_name)
@@ -69,7 +69,7 @@ pub fn get_debug_log_path() -> PathBuf {
     if let Some(path) = config().debug_file.clone() {
         return path;
     }
-    if let Some(dir) = crate::utils::process_env::var("CLAUDE_CODE_DEBUG_LOGS_DIR") {
+    if let Some(dir) = crate::utils::process_env::var("NYAN_DEBUG_LOGS_DIR") {
         return PathBuf::from(dir)
             .join(format!("{}.log", crate::bootstrap::state::get_session_id()));
     }
@@ -416,7 +416,7 @@ impl DebugConfig {
                 crate::utils::process_env::var("DEBUG_SDK").as_deref(),
             )
             || crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_DEBUG").as_deref(),
+                crate::utils::process_env::var("NYAN_DEBUG").as_deref(),
             );
 
         let profiles = ProfileSelection::parse(debug_filter).or(ProfileSelection::from_env());
@@ -523,7 +523,7 @@ mod tests {
                 "--nocapture",
             ])
             .env(CHILD, "1")
-            .env_remove("CLAUDE_CODE_DEBUG_LOG_LEVEL")
+            .env_remove("NYAN_DEBUG_LOG_LEVEL")
             .output()
             .unwrap();
         assert!(output.status.success());

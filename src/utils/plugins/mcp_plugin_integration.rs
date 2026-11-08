@@ -154,28 +154,28 @@ fn resolve_plugin_mcp_config_readonly(
     config.env = if is_stdio {
         let mut env = std::collections::HashMap::new();
         // Maps to CC `resolvePluginMcpEnvironment(...)`: stdio plugin MCP
-        // servers always receive CLAUDE_PLUGIN_ROOT and CLAUDE_PLUGIN_DATA.
+        // servers always receive NYAN_PLUGIN_ROOT and NYAN_PLUGIN_DATA.
         // DATA is created via getPluginDataDir even when no config string
         // explicitly references it; errors reach the existing per-server catch.
         env.insert(
-            "CLAUDE_PLUGIN_ROOT".to_string(),
+            "NYAN_PLUGIN_ROOT".to_string(),
             crate::utils::plugins::plugin_options_storage::substitute_plugin_variables(
-                "${CLAUDE_PLUGIN_ROOT}",
+                "${NYAN_PLUGIN_ROOT}",
                 &plugin.path,
                 None,
             )?,
         );
         env.insert(
-            "CLAUDE_PLUGIN_DATA".to_string(),
+            "NYAN_PLUGIN_DATA".to_string(),
             crate::utils::plugins::plugin_options_storage::substitute_plugin_variables(
-                "${CLAUDE_PLUGIN_DATA}",
+                "${NYAN_PLUGIN_DATA}",
                 &plugin.path,
                 Some(&plugin.source),
             )?,
         );
         if let Some(existing) = existing_env {
             for (key, value) in existing {
-                let resolved = if key == "CLAUDE_PLUGIN_ROOT" || key == "CLAUDE_PLUGIN_DATA" {
+                let resolved = if key == "NYAN_PLUGIN_ROOT" || key == "NYAN_PLUGIN_DATA" {
                     value
                 } else {
                     resolve_plugin_mcp_string_value(
@@ -691,7 +691,7 @@ mod tests {
               "name":"toolbox",
               "mcpServers":[
                 "./servers.json",
-                {"inline":{"type":"stdio","command":"${CLAUDE_PLUGIN_ROOT}/inline-mcp","args":["--ok"]}}
+                {"inline":{"type":"stdio","command":"${NYAN_PLUGIN_ROOT}/inline-mcp","args":["--ok"]}}
               ]
             }"#,
         );
@@ -708,13 +708,13 @@ mod tests {
         assert_eq!(inline.command.as_deref(), Some(expected_command.as_str()));
         assert_eq!(inline.args, vec!["--ok".to_string()]);
         assert_eq!(
-            inline.env.get("CLAUDE_PLUGIN_ROOT").map(String::as_str),
+            inline.env.get("NYAN_PLUGIN_ROOT").map(String::as_str),
             Some(root.to_string_lossy().as_ref())
         );
         assert!(
             inline
                 .env
-                .get("CLAUDE_PLUGIN_DATA")
+                .get("NYAN_PLUGIN_DATA")
                 .is_some_and(|value| value.ends_with("toolbox-inline"))
         );
         assert_eq!(inline.scope, ConfigScope::Dynamic);
@@ -1187,7 +1187,7 @@ mod tests {
         let root = temp_dir("activation-cache");
         fs::write(
             root.join(".mcp.json"),
-            r#"{"fresh":{"command":"${CLAUDE_PLUGIN_ROOT}/bin"}}"#,
+            r#"{"fresh":{"command":"${NYAN_PLUGIN_ROOT}/bin"}}"#,
         )
         .unwrap();
         let plugin = LoadedPlugin {

@@ -489,7 +489,7 @@ fn parse_raw_single_file_diff(
 
 async fn get_single_file_diff_ref(root: &Path) -> String {
     let base_branch =
-        if let Some(base_ref) = crate::utils::process_env::var("CLAUDE_CODE_BASE_REF").truthy() {
+        if let Some(base_ref) = crate::utils::process_env::var("NYAN_BASE_REF").truthy() {
             base_ref
         } else {
             // Maps to cached `getDefaultBranch()`: origin/HEAD, then remote

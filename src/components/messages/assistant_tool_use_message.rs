@@ -1311,7 +1311,7 @@ fn shell_progress_auxiliary_messages(
 fn shell_background_hint(task_id: Option<&str>) -> Option<String> {
     if task_id.is_none()
         || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+            crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
         )
     {
         return None;

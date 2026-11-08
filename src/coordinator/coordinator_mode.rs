@@ -60,7 +60,7 @@ pub fn is_coordinator_mode() -> bool {
         return false;
     }
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_COORDINATOR_MODE").as_deref(),
+        crate::utils::process_env::var("NYAN_COORDINATOR_MODE").as_deref(),
     )
 }
 
@@ -74,17 +74,15 @@ pub fn match_session_mode(session_mode: Option<&str>) -> Option<String> {
     let coordinator_enabled = feature_enabled(FeatureFlag::CoordinatorMode);
     let mut update = crate::utils::process_env::begin_update();
     let current_is_coordinator = coordinator_enabled
-        && crate::utils::env_utils::is_env_truthy(
-            update.snapshot().var("CLAUDE_CODE_COORDINATOR_MODE"),
-        );
+        && crate::utils::env_utils::is_env_truthy(update.snapshot().var("NYAN_COORDINATOR_MODE"));
     if current_is_coordinator == session_is_coordinator {
         return None;
     }
 
     if session_is_coordinator {
-        update.set("CLAUDE_CODE_COORDINATOR_MODE", "1");
+        update.set("NYAN_COORDINATOR_MODE", "1");
     } else {
-        update.remove("CLAUDE_CODE_COORDINATOR_MODE");
+        update.remove("NYAN_COORDINATOR_MODE");
     }
     update.commit();
 
@@ -108,12 +106,12 @@ pub fn get_coordinator_user_context(
 ) -> BTreeMap<String, String> {
     let env = crate::utils::process_env::snapshot();
     if !feature_enabled(FeatureFlag::CoordinatorMode)
-        || !crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_COORDINATOR_MODE"))
+        || !crate::utils::env_utils::is_env_truthy(env.var("NYAN_COORDINATOR_MODE"))
     {
         return BTreeMap::new();
     }
 
-    let worker_tools = if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SIMPLE")) {
+    let worker_tools = if crate::utils::env_utils::is_env_truthy(env.var("NYAN_SIMPLE")) {
         let mut names = [
             BASH_TOOL_NAME,
             FILE_READ_TOOL_NAME,
@@ -155,7 +153,7 @@ pub fn get_coordinator_user_context(
 /// Maps to: CC `coordinatorMode.ts#getCoordinatorSystemPrompt`.
 pub fn get_coordinator_system_prompt() -> String {
     let worker_capabilities = if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     ) {
         "Workers have access to Bash, Read, and Edit tools, plus MCP tools from configured MCP servers."
     } else {
@@ -427,9 +425,9 @@ mod tests {
     fn with_coordinator_env<T>(enabled: bool, f: impl FnOnce() -> T) -> T {
         let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _env = if enabled {
-            EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1")
+            EnvVarGuard::set("NYAN_COORDINATOR_MODE", "1")
         } else {
-            EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE")
+            EnvVarGuard::unset("NYAN_COORDINATOR_MODE")
         };
         f()
     }

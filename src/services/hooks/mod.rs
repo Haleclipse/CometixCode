@@ -219,9 +219,7 @@ fn hook_name(event: HookEvent, match_query: &str) -> String {
 /// port's `--bare` writer.
 ///
 pub fn bare_mode_disables_hooks() -> bool {
-    crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
-    )
+    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_SIMPLE").as_deref())
 }
 
 /// The gate block CC opens BOTH of its hook executors with, before either one
@@ -514,7 +512,7 @@ pub struct HookContext {
 /// `claude_code_version` belongs to the SDK `system.init` message
 /// (`utils/messages/systemInit.ts:74`, `coreSchemas.ts:1464`) — neither is a
 /// hook input field. CC puts the project dir on the env rail instead, as
-/// `CLAUDE_PROJECT_DIR`, which `exec::exec_command_hook` sets for every hook
+/// `NYAN_PROJECT_DIR`, which `exec::exec_command_hook` sets for every hook
 /// (`utils/hooks.ts:816,882-885`).
 ///
 /// Deviation (carrier): CC's `sessionId ?? getSessionId()` (`:315`),
@@ -830,7 +828,7 @@ pub(crate) mod test_support {
                 previous_interactive: crate::bootstrap::state::get_is_interactive(),
                 scratch: scratch.clone(),
                 _non_interactive_env: [
-                    "CLAUDE_CODE_NON_INTERACTIVE",
+                    "NYAN_NON_INTERACTIVE",
                     "NYAN_NON_INTERACTIVE",
                     "NYAN_NON_INTERACTIVE_SESSION",
                 ]
@@ -2017,7 +2015,7 @@ mod foundation_tests {
     async fn hooks_match_official_parallel_completion_and_sticky_permission_precedence() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let (sender, receiver) = async_channel::bounded::<()>(1);
         let waiting = RegisteredHook::Callback(HookCallback {
             callback: Arc::new(move |_, _| {
@@ -2082,7 +2080,7 @@ mod foundation_tests {
     async fn permission_request_matches_official_first_nested_decision_and_winner_payload() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let config = config(
             HookEvent::PermissionRequest,
             vec![
@@ -2129,7 +2127,7 @@ mod foundation_tests {
     async fn pre_tool_input_only_completion_matches_official_independent_yield() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let config = config(
             HookEvent::PreToolUse,
             vec![
@@ -2182,7 +2180,7 @@ mod foundation_tests {
     async fn bare_mode_matches_official_gate_before_any_tool_hook_executes() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _trust = test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let config = config(
             HookEvent::PreToolUse,
             vec![RegisteredHook::Callback(HookCallback {

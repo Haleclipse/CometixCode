@@ -13,7 +13,7 @@ pub fn has_embedded_search_tools() -> bool {
     ) {
         return false;
     }
-    match crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() {
+    match crate::utils::process_env::var("NYAN_ENTRYPOINT").as_deref() {
         Some("sdk-ts") | Some("sdk-py") | Some("sdk-cli") | Some("local-agent") => false,
         _ => true,
     }

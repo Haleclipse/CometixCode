@@ -67,7 +67,7 @@ pub fn apply_process_env(command: &mut tokio::process::Command) {
 }
 
 fn scrub_enabled(env: &crate::utils::process_env::EnvSnapshot) -> bool {
-    crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"))
+    crate::utils::env_utils::is_env_truthy(env.var("NYAN_SUBPROCESS_ENV_SCRUB"))
 }
 
 /// Maps to CC `subprocessEnv()` (`utils/subprocessEnv.ts:79-99`): the
@@ -149,7 +149,7 @@ mod tests {
     fn base_env_matches_official_current_process_env_inheritance() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _dynamic = EnvVarGuard::set("NYAN_SUBPROCESS_ENV_TEST_DYNAMIC", "fresh");
-        let _scrub_off = EnvVarGuard::unset("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB");
+        let _scrub_off = EnvVarGuard::unset("NYAN_SUBPROCESS_ENV_SCRUB");
 
         let mut command = std::process::Command::new("true");
         super::apply_subprocess_env_std(&mut command);
@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn scrub_matches_official_secret_and_deleted_key_filtering() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _scrub = EnvVarGuard::set("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "1");
+        let _scrub = EnvVarGuard::set("NYAN_SUBPROCESS_ENV_SCRUB", "1");
         let _secret = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-test");
         let _input = EnvVarGuard::set("INPUT_ANTHROPIC_API_KEY", "sk-test");
         let _deleted = EnvVarGuard::unset("NYAN_SUBPROCESS_ENV_TEST_DELETED");
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn explicit_overrides_after_scrub_match_official_spread_precedence() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _scrub = EnvVarGuard::set("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB", "true");
+        let _scrub = EnvVarGuard::set("NYAN_SUBPROCESS_ENV_SCRUB", "true");
 
         let mut command = std::process::Command::new("true");
         super::apply_subprocess_env_std(&mut command);

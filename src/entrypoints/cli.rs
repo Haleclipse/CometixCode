@@ -130,7 +130,7 @@ mod tests {
     fn import_time_constants_ignore_later_environment_writes() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _startup = [
-            EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"),
+            EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS"),
             EnvVarGuard::unset("TMUX"),
             EnvVarGuard::unset("TMUX_PANE"),
             EnvVarGuard::set("TERM", "xterm-256color"),
@@ -140,7 +140,7 @@ mod tests {
         let spinner = crate::components::spinner::utils::spinner_frame(5);
 
         let _later = [
-            EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1"),
+            EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "1"),
             EnvVarGuard::set("TMUX", "/tmp/tmux-501/default,1,0"),
             EnvVarGuard::set("TMUX_PANE", "%3"),
             EnvVarGuard::set("TERM", "xterm-ghostty"),

@@ -53,7 +53,7 @@ pub fn SessionBackgroundHint(
         move || has_foreground,
         move || {
             if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+                crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
             ) {
                 return true;
             }
@@ -169,7 +169,7 @@ mod tests {
     fn session_background_matches_official_child_input_and_later_owner() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _disabled = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _disabled = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         // No configuration write is needed to prove this input path.
         let mut config = crate::utils::config::load_global_config();
         config.has_used_background_task = Some(true);

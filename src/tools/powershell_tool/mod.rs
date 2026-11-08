@@ -225,7 +225,7 @@ fn full_input_fields() -> Vec<crate::utils::zod::ObjectField> {
 pub(crate) static IS_BACKGROUND_TASKS_DISABLED: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| {
         crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+            crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
         )
     });
 
@@ -1103,7 +1103,7 @@ mod tests {
             Some("true")
         ));
 
-        let _disabled = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _disabled = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let schema = powershell_tool_schema();
         assert_eq!(schema.name, "PowerShell");
         assert!(schema.description.contains("PowerShell Syntax Notes"));
@@ -1134,7 +1134,7 @@ mod tests {
     #[test]
     fn powershell_tool_schema_omits_background_when_gate_is_off() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _enabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "true");
+        let _enabled = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "true");
         let schema = powershell_tool_schema();
         assert!(
             schema

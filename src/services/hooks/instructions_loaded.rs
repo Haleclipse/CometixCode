@@ -90,9 +90,8 @@ pub fn dispatch_instructions_loaded_hooks(input: InstructionsLoadedInput) {
         .display()
         .to_string();
     let context = HookContext {
-        session_id: crate::utils::process_env::var("CLAUDE_SESSION_ID").unwrap_or_default(),
-        transcript_path: crate::utils::process_env::var("CLAUDE_TRANSCRIPT_PATH")
-            .unwrap_or_default(),
+        session_id: crate::utils::process_env::var("NYAN_SESSION_ID").unwrap_or_default(),
+        transcript_path: crate::utils::process_env::var("NYAN_TRANSCRIPT_PATH").unwrap_or_default(),
         cwd,
         ..HookContext::default()
     };

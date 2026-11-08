@@ -87,8 +87,8 @@ pub fn is_fork_subagent_enabled() -> bool {
 #[cfg(test)]
 pub(crate) fn fork_gate_environment() -> [EnvVarGuard; 4] {
     [
-        EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE"),
-        EnvVarGuard::unset("CLAUDE_CODE_NON_INTERACTIVE"),
+        EnvVarGuard::unset("NYAN_COORDINATOR_MODE"),
+        EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
         EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
         EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION"),
     ]
@@ -100,7 +100,7 @@ pub(crate) fn fork_gate_environment() -> [EnvVarGuard; 4] {
 /// code on both sides, not a compatibility shim.
 #[cfg(test)]
 pub(crate) fn fork_veto_environment() -> EnvVarGuard {
-    EnvVarGuard::set("CLAUDE_CODE_NON_INTERACTIVE", "1")
+    EnvVarGuard::set("NYAN_NON_INTERACTIVE", "1")
 }
 
 /// Maps to CC `forkSubagent.ts#FORK_AGENT`.
@@ -390,7 +390,7 @@ mod tests {
         assert!(is_fork_subagent_enabled());
 
         {
-            let _coordinator_on = EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1");
+            let _coordinator_on = EnvVarGuard::set("NYAN_COORDINATOR_MODE", "1");
             assert!(
                 !is_fork_subagent_enabled(),
                 "forkSubagent.ts:34 — coordinator mode owns orchestration"

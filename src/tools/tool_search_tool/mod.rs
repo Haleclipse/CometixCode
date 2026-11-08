@@ -550,7 +550,7 @@ mod tests {
     fn tool_search_request_gate_requires_model_support_and_tool_availability() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         let tools = vec![
             super::tool_search_tool_schema(),
             crate::tools::web_fetch_tool::web_fetch_tool_schema(),
@@ -574,16 +574,16 @@ mod tests {
     fn tool_search_optimistic_gate_respects_beta_kill_switch() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         assert!(super::prompt::is_tool_search_enabled_optimistic());
 
         crate::utils::process_env::set("ENABLE_TOOL_SEARCH", "false");
         assert!(!super::prompt::is_tool_search_enabled_optimistic());
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
 
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
+        crate::utils::process_env::set("NYAN_DISABLE_EXPERIMENTAL_BETAS", "1");
         assert!(!super::prompt::is_tool_search_enabled_optimistic());
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
     }
 
     #[test]

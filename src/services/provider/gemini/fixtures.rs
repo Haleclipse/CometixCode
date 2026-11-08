@@ -1095,7 +1095,7 @@ impl QueryEnv {
         std::fs::create_dir_all(&root).unwrap();
         let guards = vec![
             EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
-            EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
+            EnvVarGuard::set("NYAN_SIMPLE", "1"),
             EnvVarGuard::set("TEST_GEMINI_KEY", "fake-gemini-key"),
             EnvVarGuard::set("API_TIMEOUT_MS", "5000"),
             EnvVarGuard::set("NO_PROXY", "*"),

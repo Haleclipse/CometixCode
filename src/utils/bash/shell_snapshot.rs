@@ -267,9 +267,9 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
     let mut command = std::process::Command::new(bin_shell);
     // CC `ShellSnapshot.ts:460-467`: the base env is `subprocessEnv()` unless
     // CLAUDE_CODE_DONT_INHERIT_ENV is set (then an empty env); SHELL /
-    // GIT_EDITOR / CLAUDECODE are spread over that base afterwards.
+    // GIT_EDITOR / NYAN are spread over that base afterwards.
     if process_env
-        .var_os("CLAUDE_CODE_DONT_INHERIT_ENV")
+        .var_os("NYAN_DONT_INHERIT_ENV")
         .is_some_and(|value| !value.is_empty())
     {
         command.env_clear();
@@ -280,7 +280,7 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
         .args(["-c", "-l", &script])
         .env("SHELL", bin_shell)
         .env("GIT_EDITOR", "true")
-        .env("CLAUDECODE", "1")
+        .env("NYAN", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());

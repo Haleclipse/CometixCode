@@ -400,8 +400,7 @@ pub fn get_extra_body_params(
     let mut result = serde_json::Map::new();
 
     // Parse user's extra body parameters first
-    if let Some(extra_body_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_BODY").truthy()
-    {
+    if let Some(extra_body_str) = crate::utils::process_env::var("NYAN_EXTRA_BODY").truthy() {
         match crate::utils::json::safe_parse_json(Some(&extra_body_str), true).as_ref() {
             JsonValue::Object(obj) => {
                 // Clone before mutation to avoid poisoning the shared parse cache.
@@ -552,7 +551,7 @@ pub fn get_api_metadata() -> ApiMetadata {
     let mut extra = serde_json::Map::new();
 
     // Parse CLAUDE_CODE_EXTRA_METADATA env var
-    if let Some(extra_str) = crate::utils::process_env::var("CLAUDE_CODE_EXTRA_METADATA").truthy() {
+    if let Some(extra_str) = crate::utils::process_env::var("NYAN_EXTRA_METADATA").truthy() {
         match crate::utils::json::safe_parse_json(Some(&extra_str), false).as_ref() {
             JsonValue::Object(obj) => {
                 extra = obj.clone();
@@ -1568,8 +1567,8 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
 
     // Env var override: CLAUDE_CODE_MAX_OUTPUT_TOKENS
     crate::utils::env_validation::validate_bounded_int_env_var(
-        "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
-        crate::utils::process_env::var("CLAUDE_CODE_MAX_OUTPUT_TOKENS").as_deref(),
+        "NYAN_MAX_OUTPUT_TOKENS",
+        crate::utils::process_env::var("NYAN_MAX_OUTPUT_TOKENS").as_deref(),
         default_tokens as usize,
         max_output.upper_limit as usize,
     )
@@ -2667,7 +2666,7 @@ fn params_from_context(
         sdk_thinking,
         anthropic_sdk::resources::messages::ThinkingConfig::Disabled
     ) && !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_THINKING").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_THINKING").as_deref(),
     );
     let context_management = if betas.contains(&CONTEXT_MANAGEMENT_BETA_HEADER.to_string()) {
         crate::services::compact::api_microcompact::get_api_context_management(
@@ -3944,13 +3943,13 @@ fn streaming_attempt_options_from_retry_context(
 /// Maps to CC `CLAUDE_ENABLE_STREAM_WATCHDOG` gate around the idle timers.
 fn stream_watchdog_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_ENABLE_STREAM_WATCHDOG").as_deref(),
+        crate::utils::process_env::var("NYAN_ENABLE_STREAM_WATCHDOG").as_deref(),
     )
 }
 
 /// Maps to CC `STREAM_IDLE_TIMEOUT_MS` (`CLAUDE_STREAM_IDLE_TIMEOUT_MS` or 90s).
 fn stream_idle_timeout_ms() -> u64 {
-    crate::utils::process_env::var("CLAUDE_STREAM_IDLE_TIMEOUT_MS")
+    crate::utils::process_env::var("NYAN_STREAM_IDLE_TIMEOUT_MS")
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|ms| *ms > 0)
         .unwrap_or(90_000)
@@ -4693,7 +4692,7 @@ fn is_non_streaming_fallback_disabled() -> bool {
     // are not available in Nyan's direct API adapter, so only the explicit
     // env kill switch is honored here.
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_NONSTREAMING_FALLBACK").as_deref(),
     )
 }
 
@@ -5968,7 +5967,7 @@ mod tests {
     fn production_thinking_config_matches_official_env_and_settings_precedence() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("MAX_THINKING_TOKENS");
-        crate::utils::process_env::remove("CLAUDE_CODE_THINKING");
+        crate::utils::process_env::remove("NYAN_THINKING");
         crate::utils::process_env::remove("NYAN_THINKING");
 
         let mut settings = crate::utils::settings::types::SettingsJson::default();
@@ -6294,8 +6293,8 @@ mod tests {
     #[test]
     fn sdk_request_adapter_preserves_global_system_prompt_cache_scope() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::set("NYAN_USE_GLOBAL_CACHE_SCOPE", "1");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
@@ -6335,7 +6334,7 @@ mod tests {
             sdk_message_body_with_private_overrides(&plan.params, &plan.private_body_overrides)
                 .expect("effective body serialize");
 
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         let system = value["system"].as_array().expect("system blocks");
         let static_block = system
             .iter()
@@ -6355,8 +6354,8 @@ mod tests {
     #[test]
     fn sdk_params_skip_global_system_prompt_cache_when_mcp_tool_cache_marker_is_needed() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::set("NYAN_USE_GLOBAL_CACHE_SCOPE", "1");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
             timestamp: chrono::Utc::now(),
@@ -6403,7 +6402,7 @@ mod tests {
         .expect("SDK params build");
         let value = serde_json::to_value(params).expect("params serialize");
 
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         let system = value["system"].as_array().expect("system blocks");
         let prompt_block = system
             .iter()
@@ -7358,7 +7357,7 @@ mod tests {
     fn sdk_request_options_attach_beta_header_extra_body_output_config_and_context_management_like_official()
      {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::services::provider::anthropic::betas::clear_betas_caches();
         crate::services::analytics::growthbook::reset_growth_book();
         // CC `betas.ts:270-277`: SDK / print-mode sessions keep thinking
@@ -7366,7 +7365,7 @@ mod tests {
         // `clear_thinking_20251015` lead the context_management edits below.
         let _interactive = crate::bootstrap::state::IsInteractiveGuard::capture();
         crate::bootstrap::state::set_is_interactive(false);
-        crate::utils::process_env::set("CLAUDE_CODE_EXTRA_BODY", r#"{"service_tier":"priority"}"#);
+        crate::utils::process_env::set("NYAN_EXTRA_BODY", r#"{"service_tier":"priority"}"#);
 
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -7463,7 +7462,7 @@ mod tests {
             serde_json::json!("clear_thinking_20251015")
         );
 
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_BODY");
+        crate::utils::process_env::remove("NYAN_EXTRA_BODY");
         crate::services::provider::anthropic::betas::clear_betas_caches();
     }
 
@@ -7474,11 +7473,11 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let env_keys = [
             "NODE_ENV",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+            "NYAN_DISABLE_EXPERIMENTAL_BETAS",
             "DISABLE_INTERLEAVED_THINKING",
             "DISABLE_TELEMETRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-            "CLAUDE_CODE_EXTRA_BODY",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_EXTRA_BODY",
         ];
         for key in env_keys {
             crate::utils::process_env::remove(key);
@@ -7529,10 +7528,7 @@ mod tests {
             1
         );
 
-        crate::utils::process_env::set(
-            "CLAUDE_CODE_EXTRA_BODY",
-            r#"{"output_config":{"other":true}}"#,
-        );
+        crate::utils::process_env::set("NYAN_EXTRA_BODY", r#"{"output_config":{"other":true}}"#);
         let merged_output_config =
             build_sdk_request_options_plan(&messages, &ThinkingConfig::Disabled, &[], &options)
                 .unwrap();
@@ -7554,7 +7550,7 @@ mod tests {
         );
 
         crate::utils::process_env::set(
-            "CLAUDE_CODE_EXTRA_BODY",
+            "NYAN_EXTRA_BODY",
             r#"{"output_config":{"format":{"type":"json_schema","schema":{"const":"extra"}},"other":true}}"#,
         );
         let extra_wins =
@@ -7571,9 +7567,9 @@ mod tests {
                 .iter()
                 .any(|beta| beta == STRUCTURED_OUTPUTS_BETA_HEADER)
         );
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_BODY");
+        crate::utils::process_env::remove("NYAN_EXTRA_BODY");
 
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
+        crate::utils::process_env::set("NYAN_DISABLE_EXPERIMENTAL_BETAS", "1");
         crate::services::provider::anthropic::betas::clear_betas_caches();
         let kill_bypass =
             build_sdk_request_options_plan(&messages, &ThinkingConfig::Disabled, &[], &options)
@@ -7635,9 +7631,9 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
             "NODE_ENV",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+            "NYAN_DISABLE_EXPERIMENTAL_BETAS",
             "DISABLE_TELEMETRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
         }
@@ -7765,7 +7761,7 @@ mod tests {
     #[test]
     fn sdk_request_options_add_tool_search_beta_when_deferred_loading_is_sent() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -7817,7 +7813,7 @@ mod tests {
     #[test]
     fn sdk_params_keep_tool_search_available_while_mcp_servers_pending_like_official() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -7995,7 +7991,7 @@ mod tests {
     #[test]
     fn sdk_params_mark_deferred_tools_for_tool_search_like_official() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![
             Message::User(UserMessage {
@@ -8085,7 +8081,7 @@ mod tests {
     #[test]
     fn sdk_params_with_tool_search_omit_undiscovered_deferred_tools_like_official() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -8139,7 +8135,7 @@ mod tests {
     #[test]
     fn sdk_params_do_not_mark_deferred_tools_when_tool_search_request_gate_is_off() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -8367,7 +8363,7 @@ mod tests {
     fn get_extra_body_params_empty_when_no_env() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // Temporarily ensure env var is not set
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_BODY");
+        crate::utils::process_env::remove("NYAN_EXTRA_BODY");
         let result = get_extra_body_params(None);
         assert!(result.is_empty());
     }
@@ -8375,7 +8371,7 @@ mod tests {
     #[test]
     fn get_extra_body_params_with_beta_headers() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_BODY");
+        crate::utils::process_env::remove("NYAN_EXTRA_BODY");
         let headers = vec!["beta-1".to_string(), "beta-2".to_string()];
         let result = get_extra_body_params(Some(&headers));
         let betas = result.get("anthropic_beta").unwrap();
@@ -8387,7 +8383,7 @@ mod tests {
     fn get_extra_body_params_deduplicates_beta_headers() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set(
-            "CLAUDE_CODE_EXTRA_BODY",
+            "NYAN_EXTRA_BODY",
             r#"{"anthropic_beta":["existing-beta"]}"#,
         );
         let headers = vec!["existing-beta".to_string(), "new-beta".to_string()];
@@ -8395,7 +8391,7 @@ mod tests {
         let betas = result.get("anthropic_beta").unwrap().as_array().unwrap();
         // Should have existing-beta (from env) + new-beta (deduped)
         assert_eq!(betas.len(), 2);
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_BODY");
+        crate::utils::process_env::remove("NYAN_EXTRA_BODY");
     }
 
     // -- get_prompt_caching_enabled --
@@ -8603,7 +8599,7 @@ mod tests {
             EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir),
             // Ambient Anthropic credentials must not stand in for a profile.
             EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ambient"),
-            EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "0"),
+            EnvVarGuard::set("NYAN_MAX_RETRIES", "0"),
         ];
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::utils::config::set_test_global_config(Some(
@@ -8916,7 +8912,7 @@ mod tests {
     #[test]
     fn get_max_output_tokens_default_for_sonnet() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_MAX_OUTPUT_TOKENS");
+        crate::utils::process_env::remove("NYAN_MAX_OUTPUT_TOKENS");
         crate::utils::process_env::remove("NYAN_MAX_TOKENS_CAP");
         let result = get_max_output_tokens_for_model("claude-sonnet-4-20250514");
         assert_eq!(result, 32_000);
@@ -8925,15 +8921,15 @@ mod tests {
     #[test]
     fn get_max_output_tokens_env_override() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "32000suffix");
+        crate::utils::process_env::set("NYAN_MAX_OUTPUT_TOKENS", "32000suffix");
         crate::utils::process_env::remove("NYAN_MAX_TOKENS_CAP");
         let result = get_max_output_tokens_for_model("claude-sonnet-4-20250514");
         assert_eq!(result, 32_000);
 
-        crate::utils::process_env::set("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "0");
+        crate::utils::process_env::set("NYAN_MAX_OUTPUT_TOKENS", "0");
         let result = get_max_output_tokens_for_model("claude-sonnet-4-20250514");
         assert_eq!(result, 32_000);
-        crate::utils::process_env::remove("CLAUDE_CODE_MAX_OUTPUT_TOKENS");
+        crate::utils::process_env::remove("NYAN_MAX_OUTPUT_TOKENS");
     }
 
     // -- get_nonstreaming_fallback_timeout_ms --
@@ -8996,8 +8992,8 @@ mod tests {
     #[test]
     fn build_system_prompt_blocks_splits_global_static_and_uncached_dynamic_boundary() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::set("NYAN_USE_GLOBAL_CACHE_SCOPE", "1");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         let prompt = vec![
             "static one".to_string(),
             "static two".to_string(),
@@ -9007,7 +9003,7 @@ mod tests {
 
         let blocks = build_system_prompt_blocks(&prompt, true, false);
 
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].text, "static one\n\nstatic two");
         assert_eq!(blocks[1].text, "dynamic one");
@@ -9025,7 +9021,7 @@ mod tests {
     fn build_system_prompt_blocks_places_attribution_and_prefix_like_official() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         // `shouldUseGlobalCacheScope()` = !DISABLE_EXPERIMENTAL_BETAS.
-        let _disable = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        let _disable = EnvVarGuard::unset("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         let header = "x-anthropic-billing-header: cc_version=0.0.0.abc; cc_entrypoint=cli;";
         let prefix = crate::constants::system::get_cli_sysprompt_prefix(false, false);
         let prompt = vec![
@@ -9080,7 +9076,7 @@ mod tests {
 
         // Default mode (`utils/api.ts:411-433`): same shape, boundary text kept
         // inside the joined rest because nothing strips it here in CC either.
-        let _disable_betas = EnvVarGuard::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
+        let _disable_betas = EnvVarGuard::set("NYAN_DISABLE_EXPERIMENTAL_BETAS", "1");
         let blocks = build_system_prompt_blocks(&prompt, true, false);
         assert_eq!(blocks.len(), 3);
         assert_eq!(blocks[0].text, header);
@@ -9099,8 +9095,8 @@ mod tests {
     #[test]
     fn build_system_prompt_blocks_skips_global_boundary_when_tool_cache_owns_system_prompt() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::set("NYAN_USE_GLOBAL_CACHE_SCOPE", "1");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         let prompt = vec![
             "static".to_string(),
             crate::constants::prompts::SYSTEM_PROMPT_DYNAMIC_BOUNDARY.to_string(),
@@ -9109,7 +9105,7 @@ mod tests {
 
         let blocks = build_system_prompt_blocks(&prompt, true, true);
 
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].text, "static\n\ndynamic");
         assert!(blocks[0].cache_control.is_some());
@@ -9234,7 +9230,7 @@ mod tests {
     #[test]
     fn get_api_metadata_returns_valid_json_user_id() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_METADATA");
+        crate::utils::process_env::remove("NYAN_EXTRA_METADATA");
         let meta = get_api_metadata();
         let parsed: serde_json::Value =
             serde_json::from_str(&meta.user_id).expect("user_id should be valid JSON");
@@ -9244,7 +9240,7 @@ mod tests {
     #[test]
     fn get_api_metadata_device_id_matches_official_persisted_user_id() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_METADATA");
+        crate::utils::process_env::remove("NYAN_EXTRA_METADATA");
         let mut config = crate::utils::config::GlobalConfig::default();
         config.user_id = Some("0123456789abcdef0123456789abcdef".to_string());
         let previous = crate::utils::config::replace_test_global_config(Some(config));
@@ -9270,7 +9266,7 @@ mod tests {
     #[test]
     fn get_api_metadata_mints_one_device_id_and_reuses_it() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXTRA_METADATA");
+        crate::utils::process_env::remove("NYAN_EXTRA_METADATA");
         let previous = crate::utils::config::replace_test_global_config(Some(
             crate::utils::config::GlobalConfig::default(),
         ));
@@ -9290,25 +9286,25 @@ mod tests {
     #[test]
     fn stream_idle_timeout_defaults_to_90s_like_official() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_STREAM_IDLE_TIMEOUT_MS");
+        crate::utils::process_env::remove("NYAN_STREAM_IDLE_TIMEOUT_MS");
         assert_eq!(stream_idle_timeout_ms(), 90_000);
-        crate::utils::process_env::set("CLAUDE_STREAM_IDLE_TIMEOUT_MS", "45000");
+        crate::utils::process_env::set("NYAN_STREAM_IDLE_TIMEOUT_MS", "45000");
         assert_eq!(stream_idle_timeout_ms(), 45_000);
-        crate::utils::process_env::set("CLAUDE_STREAM_IDLE_TIMEOUT_MS", "0");
+        crate::utils::process_env::set("NYAN_STREAM_IDLE_TIMEOUT_MS", "0");
         assert_eq!(stream_idle_timeout_ms(), 90_000);
-        crate::utils::process_env::set("CLAUDE_STREAM_IDLE_TIMEOUT_MS", "not-a-number");
+        crate::utils::process_env::set("NYAN_STREAM_IDLE_TIMEOUT_MS", "not-a-number");
         assert_eq!(stream_idle_timeout_ms(), 90_000);
-        crate::utils::process_env::remove("CLAUDE_STREAM_IDLE_TIMEOUT_MS");
+        crate::utils::process_env::remove("NYAN_STREAM_IDLE_TIMEOUT_MS");
     }
 
     #[test]
     fn stream_watchdog_gated_by_claude_enable_stream_watchdog() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_ENABLE_STREAM_WATCHDOG");
+        crate::utils::process_env::remove("NYAN_ENABLE_STREAM_WATCHDOG");
         assert!(!stream_watchdog_enabled());
-        crate::utils::process_env::set("CLAUDE_ENABLE_STREAM_WATCHDOG", "1");
+        crate::utils::process_env::set("NYAN_ENABLE_STREAM_WATCHDOG", "1");
         assert!(stream_watchdog_enabled());
-        crate::utils::process_env::remove("CLAUDE_ENABLE_STREAM_WATCHDOG");
+        crate::utils::process_env::remove("NYAN_ENABLE_STREAM_WATCHDOG");
     }
 
     #[test]
@@ -9471,7 +9467,7 @@ mod tests {
     #[test]
     fn tool_search_adds_deferred_tool_placeholder_and_anchors_cache_on_a_full_tool() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
 
         let messages = vec![Message::User(crate::utils::messages::create_user_message(
@@ -9777,12 +9773,9 @@ mod raw_image_tests {
     fn extra_body_and_metadata_match_official_json_owner_bom_and_cache() {
         // CC services/api/claude.ts:272–297,503–519, utils/json.ts:31–58.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _body = EnvVarGuard::set(
-            "CLAUDE_CODE_EXTRA_BODY",
-            "\u{feff}{\"custom_json_owner\":true}",
-        );
+        let _body = EnvVarGuard::set("NYAN_EXTRA_BODY", "\u{feff}{\"custom_json_owner\":true}");
         let _metadata = EnvVarGuard::set(
-            "CLAUDE_CODE_EXTRA_METADATA",
+            "NYAN_EXTRA_METADATA",
             "\u{feff}{\"json_owner_metadata\":123}",
         );
         crate::utils::json::SAFE_PARSE_JSON_CACHE.clear();

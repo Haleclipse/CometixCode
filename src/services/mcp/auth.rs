@@ -2904,7 +2904,7 @@ mod tests {
     #[test]
     fn perform_mcp_oauth_flow_xaa_disabled_fails_without_standard_oauth_fallback() {
         with_temp_config_home(|_| {
-            let _xaa = EnvVarGuard::unset("CLAUDE_CODE_ENABLE_XAA");
+            let _xaa = EnvVarGuard::unset("NYAN_ENABLE_XAA");
             let error = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()

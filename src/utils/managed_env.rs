@@ -38,15 +38,15 @@ pub const SAFE_ENV_VARS: &[&str] = &[
     "BASH_DEFAULT_TIMEOUT_MS",
     "BASH_MAX_OUTPUT_LENGTH",
     "BASH_MAX_TIMEOUT_MS",
-    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR",
+    "NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR",
     "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
-    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE",
+    "NYAN_DISABLE_EXPERIMENTAL_BETAS",
+    "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
+    "NYAN_DISABLE_TERMINAL_TITLE",
     "CLAUDE_CODE_ENABLE_TELEMETRY",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
-    "CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL",
-    "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+    "NYAN_EXPERIMENTAL_AGENT_TEAMS",
+    "NYAN_IDE_SKIP_AUTO_INSTALL",
+    "NYAN_MAX_OUTPUT_TOKENS",
     "DISABLE_AUTOUPDATER",
     "DISABLE_BUG_COMMAND",
     "DISABLE_COST_WARNINGS",
@@ -102,7 +102,7 @@ fn capture_ccd_spawn_env_keys(env: &EnvSnapshot) {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     if slot.is_none() {
         *slot = Some(
-            (env.var("CLAUDE_CODE_ENTRYPOINT") == Some("claude-desktop")).then(|| {
+            (env.var("NYAN_ENTRYPOINT") == Some("claude-desktop")).then(|| {
                 env.keys()
                     .filter_map(|key| key.to_str().map(str::to_owned))
                     .collect()
@@ -250,7 +250,7 @@ mod tests {
     fn ccd_spawn_keys_latch_once_and_shield_spawn_env() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
-        let _entry = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "claude-desktop");
+        let _entry = EnvVarGuard::set("NYAN_ENTRYPOINT", "claude-desktop");
         let _spawn_var = EnvVarGuard::set("OTEL_LOGS_EXPORTER", "otlp");
 
         capture_ccd_spawn_env_keys(&process_env::snapshot());
@@ -274,7 +274,7 @@ mod tests {
     fn ccd_capture_is_null_outside_claude_desktop() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         reset_ccd_spawn_env_keys_for_tests();
-        let _entry = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli");
+        let _entry = EnvVarGuard::set("NYAN_ENTRYPOINT", "cli");
 
         capture_ccd_spawn_env_keys(&process_env::snapshot());
         assert_eq!(ccd_spawn_env_keys(), None);

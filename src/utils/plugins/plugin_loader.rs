@@ -1688,7 +1688,7 @@ pub fn load_all_plugins_cache_only()
 {
     use futures::FutureExt;
     let promise = if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SYNC_PLUGIN_INSTALL").as_deref(),
+        crate::utils::process_env::var("NYAN_SYNC_PLUGIN_INSTALL").as_deref(),
     ) {
         return futures::future::Either::Left(load_all_plugins());
     } else {
@@ -2114,7 +2114,7 @@ mod tests {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let cache = temp_dir("cache");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &cache);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &cache);
         settings_cache::reset_settings_cache();
         super::super::installed_plugins_manager::clear_installed_plugins_cache();
         let enabled_root = temp_dir("installed-enabled");
@@ -2211,7 +2211,7 @@ mod tests {
     async fn marketplace_loader_resolves_unknown_source_marketplace_from_raw_cache() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let cache = temp_dir("policy");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &cache);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &cache);
         settings_cache::reset_settings_cache();
         super::super::installed_plugins_manager::clear_installed_plugins_cache();
         let settings = crate::utils::settings::SettingsJson {

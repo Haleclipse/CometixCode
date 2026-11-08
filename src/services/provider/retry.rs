@@ -92,8 +92,7 @@ pub fn default_max_retries() -> u32 {
 }
 
 fn env_max_retries() -> Option<u32> {
-    crate::utils::process_env::var("CLAUDE_CODE_MAX_RETRIES")
-        .and_then(|raw| raw.trim().parse().ok())
+    crate::utils::process_env::var("NYAN_MAX_RETRIES").and_then(|raw| raw.trim().parse().ok())
 }
 
 fn profile_retry_settings(name: &str) -> Option<RetrySettings> {

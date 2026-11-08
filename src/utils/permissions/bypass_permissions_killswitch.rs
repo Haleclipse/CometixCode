@@ -150,7 +150,7 @@ mod tests {
         // CC :19-49: the input controls whether to check; CURRENT state is modified.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _telemetry = EnvVarGuard::unset("DISABLE_TELEMETRY");
-        let _traffic = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _traffic = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let _node = EnvVarGuard::unset("NODE_ENV");
         let _override = EnvVarGuard::unset("CLAUDE_INTERNAL_FC_OVERRIDES");
         crate::services::analytics::growthbook::reset_growth_book();

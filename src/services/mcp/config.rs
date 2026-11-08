@@ -1278,7 +1278,7 @@ mod tests {
         let config = root.join("config");
         std::fs::create_dir_all(&config).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let _project = ProjectRootGuard::pin(&root);
         std::fs::write(
             config.join("settings.json"),
@@ -1662,7 +1662,7 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&project_dir).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let _project_root = ProjectRootGuard::pin(&project_dir);
         crate::utils::config::clear_global_config_cache_for_testing();
 

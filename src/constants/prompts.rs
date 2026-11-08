@@ -74,7 +74,7 @@ pub fn get_system_prompt_with_settings(
     crate::constants::system_prompt_sections::clear_system_prompt_sections();
 
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     ) {
         return get_simple_system_prompt_if_enabled();
     }
@@ -194,7 +194,7 @@ fn prompt_settings_snapshot() -> crate::utils::settings::types::SettingsJson {
 /// Maps to: CC `constants/prompts.ts` `getSystemPrompt(...)` simple-mode branch.
 pub fn get_simple_system_prompt_if_enabled() -> SystemPrompt {
     if !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     ) {
         return Vec::new();
     }
@@ -869,9 +869,9 @@ mod tests {
     #[test]
     fn simple_system_prompt_matches_official_shape_when_enabled() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "1");
+        crate::utils::process_env::set("NYAN_SIMPLE", "1");
         let prompt = get_simple_system_prompt_if_enabled();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
 
         assert_eq!(prompt.len(), 1);
         assert!(prompt[0].starts_with("You are Claude Code, Anthropic's official CLI for Claude."));
@@ -882,20 +882,20 @@ mod tests {
     #[test]
     fn simple_system_prompt_is_absent_when_official_gate_is_disabled() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         assert!(get_simple_system_prompt_if_enabled().is_empty());
     }
 
     #[test]
     fn default_system_prompt_uses_official_section_order_and_environment() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "1");
         let tools = crate::tools::get_all_base_tools();
         let prompt = get_system_prompt(&tools, "claude-sonnet-4-6", &[], &[]);
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
 
         assert!(prompt[0].starts_with("\nYou are an interactive agent"));
         assert!(prompt.iter().any(|section| section.starts_with("# System")));
@@ -932,12 +932,12 @@ mod tests {
     #[test]
     fn default_system_prompt_includes_global_cache_boundary_when_enabled() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
-        crate::utils::process_env::set("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE", "1");
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
+        crate::utils::process_env::set("NYAN_USE_GLOBAL_CACHE_SCOPE", "1");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "1");
         let prompt = get_system_prompt(&[], "claude-opus-4-6", &[], &[]);
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
 
         assert!(
             prompt
@@ -954,8 +954,8 @@ mod tests {
         use crate::services::mcp::types::{McpServerConnection, ScopedMcpServerConfig};
 
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
-        let _memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
+        let _memory = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "1");
         let clients = [
             McpServerConnection::connected_with_instructions_for_test("docs", "Read first."),
             McpServerConnection::connected_with_instructions_for_test("lint", "Run last."),
@@ -977,7 +977,7 @@ mod tests {
                 .cloned()
         };
 
-        let _delta = EnvVarGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "false");
+        let _delta = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "false");
         let prompt = get_system_prompt(&[], "claude-sonnet-4-6", &[], &clients);
         assert_eq!(
             section(&prompt).as_deref(),
@@ -988,7 +988,7 @@ mod tests {
         let prompt = get_system_prompt(&[], "claude-sonnet-4-6", &[], &clients[2..]);
         assert_eq!(section(&prompt), None);
 
-        let _delta = EnvVarGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "true");
+        let _delta = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "true");
         let prompt = get_system_prompt(&[], "claude-sonnet-4-6", &[], &clients);
         assert_eq!(section(&prompt), None);
     }
@@ -997,10 +997,10 @@ mod tests {
     #[test]
     fn default_system_prompt_includes_internal_static_guidance() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "1");
         let prompt = get_system_prompt_with_settings(
             &[],
             "claude-sonnet-4-6",
@@ -1008,7 +1008,7 @@ mod tests {
             &[],
             &crate::utils::settings::types::SettingsJson::default(),
         );
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
 
         let doing_tasks = prompt
             .iter()
@@ -1043,17 +1043,17 @@ mod tests {
     #[test]
     fn default_system_prompt_threads_language_and_output_style_dynamic_sections() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "1");
         let settings = crate::utils::settings::types::SettingsJson {
             language: Some("French".to_string()),
             output_style: Some("Explanatory".to_string()),
             ..Default::default()
         };
         let prompt = get_system_prompt_with_settings(&[], "claude-sonnet-4-6", &[], &[], &settings);
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
 
         assert!(prompt[0].contains("according to your \"Output Style\" below"));
         let env_idx = prompt
@@ -1102,12 +1102,12 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         crate::utils::process_env::set(
             "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
             temp.display().to_string(),
         );
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let prompt = get_system_prompt_with_settings(
             &[],
             "claude-sonnet-4-6",
@@ -1116,7 +1116,7 @@ mod tests {
             &crate::utils::settings::types::SettingsJson::default(),
         );
         crate::utils::process_env::remove("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
 
         let boundary_idx = prompt
             .iter()
@@ -1228,7 +1228,7 @@ mod tests {
         crate::bootstrap::state::IsInteractiveGuard,
     ) {
         let env = [
-            EnvVarGuard::unset("CLAUDE_CODE_NON_INTERACTIVE"),
+            EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION"),
         ];
@@ -1258,7 +1258,7 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         // Keep `getAgentToolSection()`'s own gate off this test's back: the
         // coordinator veto is the other half of `isForkSubagentEnabled()`.
-        let _coordinator = EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE");
+        let _coordinator = EnvVarGuard::unset("NYAN_COORDINATOR_MODE");
         let enabled_tools =
             HashSet::from([crate::tools::agent_tool::constants::AGENT_TOOL_NAME.to_string()]);
 
@@ -1510,7 +1510,7 @@ mod tests {
             }
         }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let _dynamic = crate::skills::load_skills_dir::DynamicSkillsTestSnapshot::capture();
         let _sources =
             AllowedSourcesRestore(crate::bootstrap::state::get_allowed_setting_sources());
@@ -1557,10 +1557,10 @@ mod tests {
     #[test]
     fn system_prompt_places_all_dynamic_content_after_cache_boundary() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::remove("ANTHROPIC_USE_GLOBAL_CACHE_SCOPE");
-        let _memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
+        let _memory = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "1");
 
         let tools = crate::tools::get_all_base_tools();
         let prompt = get_system_prompt(
@@ -1635,11 +1635,11 @@ mod tests {
     #[test]
     fn system_prompt_prefix_is_byte_identical_across_different_directories() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
 
         // Case 1: Memory disabled — static prefix before boundary is identical.
         {
-            let _memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+            let _memory = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "1");
             let tools = crate::tools::get_all_base_tools();
             let prompt_dir_a =
                 get_system_prompt(&tools, "claude-sonnet-4-6", &["/path/a".to_string()], &[]);
@@ -1671,7 +1671,7 @@ mod tests {
             let temp_a = TestDir::new();
             let temp_b = TestDir::new();
 
-            let _memory_gate = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+            let _memory_gate = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
             let tools = crate::tools::get_all_base_tools();
 
             let prompt_a = {

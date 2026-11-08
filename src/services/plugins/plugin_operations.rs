@@ -769,7 +769,7 @@ mod tests {
         std::fs::create_dir_all(root.join("plugins")).unwrap();
         std::fs::write(root.join("plugins/known_marketplaces.json"), "{}").unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", root.join("plugins"));
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", root.join("plugins"));
         for (id, expected) in [
             (
                 "missing",

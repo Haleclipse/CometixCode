@@ -365,9 +365,9 @@ fn auto_updates_disabled_env_var() -> Option<&'static str> {
     ) {
         Some("DISABLE_AUTOUPDATER")
     } else if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_AUTOUPDATER").as_deref(),
     ) {
-        Some("CLAUDE_CODE_DISABLE_AUTOUPDATER")
+        Some("NYAN_DISABLE_AUTOUPDATER")
     } else {
         // CC `config.ts:1742` `getEssentialTrafficOnlyReason()`: a plain
         // truthiness test, not `isEnvTruthy`.
@@ -379,10 +379,8 @@ fn auto_updates_disabled_reason_label() -> &'static str {
     match auto_updates_disabled_env_var() {
         Some(env_var) => match env_var {
             "DISABLE_AUTOUPDATER" => "DISABLE_AUTOUPDATER set",
-            "CLAUDE_CODE_DISABLE_AUTOUPDATER" => "CLAUDE_CODE_DISABLE_AUTOUPDATER set",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" => {
-                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC set"
-            }
+            "NYAN_DISABLE_AUTOUPDATER" => "NYAN_DISABLE_AUTOUPDATER set",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC" => "NYAN_DISABLE_NONESSENTIAL_TRAFFIC set",
             _ => "environment",
         },
         None => "config",
@@ -2105,8 +2103,8 @@ mod tests {
     fn config_auto_updates_disabled_row_uses_readonly_submenu() {
         let _lock = env_lock().lock().expect("env tests should serialize");
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let item = SettingItem {
             id: "autoUpdatesChannel",
             label: "Auto-update channel",
@@ -2144,8 +2142,8 @@ mod tests {
     fn config_auto_updates_disabled_submenu_matches_official_dialog_shape() {
         let _lock = env_lock().lock().expect("env tests should serialize");
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let mut events = text_events("version");
         events.push(press(KeyCode::Enter));
         events.push(press(KeyCode::Char(' ')));
@@ -2197,8 +2195,8 @@ mod tests {
     fn config_auto_updates_disabled_by_env_stays_message_only() {
         // CC Config.tsx:2025-2038: an env reason shows its message, no Select.
         let _lock = env_lock().lock().expect("env tests should serialize");
-        let _disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let _env_guard = EnvVarGuard::set("DISABLE_AUTOUPDATER", "1");
 
         let text = drive_auto_updates_disabled_keys_text(open_auto_updates_submenu());
@@ -2224,8 +2222,8 @@ mod tests {
         // CC Config.tsx:2051-2075: the chosen channel becomes the row value.
         let _lock = env_lock().lock().expect("env tests should serialize");
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         // F12 is a key nothing binds: its frame shows the settled choice.
         let mut keys = open_auto_updates_submenu();
         keys.push(press(KeyCode::Down));
@@ -2247,8 +2245,8 @@ mod tests {
         // n; the row keeps its value.
         let _lock = env_lock().lock().expect("env tests should serialize");
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         // F12 is a key nothing binds: its frame shows the settled cancel.
         for key in [KeyCode::Esc, KeyCode::Char('n')] {
             let mut keys = open_auto_updates_submenu();
@@ -2271,8 +2269,8 @@ mod tests {
     fn config_auto_updates_disabled_row_renders_official_reason_line() {
         let _lock = env_lock().lock().expect("env tests should serialize");
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let mut events = text_events("version");
         events.push(press(KeyCode::Enter));
         let text = render_auto_updates_disabled_text_with_events(events);
@@ -2327,8 +2325,8 @@ mod tests {
     fn latest_channel_env_guards() -> [EnvVarGuard; 3] {
         [
             EnvVarGuard::unset("DISABLE_AUTOUPDATER"),
-            EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER"),
-            EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"),
+            EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER"),
+            EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC"),
         ]
     }
 
@@ -2755,8 +2753,8 @@ mod tests {
         // Neutralize machine-level auto-update kill-switches so the
         // auto-updates picker rows behave identically on every host.
         let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let temp_root =
             std::env::temp_dir().join(format!("nyan-settings-readonly-{}", uuid::Uuid::new_v4()));
         let config_home = temp_root.join("config-home");
@@ -3231,7 +3229,7 @@ mod tests {
         ));
         fs::create_dir_all(&dir).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
-        let _syntax = EnvVarGuard::unset("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
+        let _syntax = EnvVarGuard::unset("NYAN_SYNTAX_HIGHLIGHT");
         // Frame-driven: ctrl+t goes out once the picker registered its context.
         let canvases = drive_config_with_provider(vec![open_theme_submenu(), vec![ctrl_char('t')]]);
         let text = canvas_lines(canvases.last().unwrap()).join("\n");

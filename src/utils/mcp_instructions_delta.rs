@@ -27,12 +27,12 @@ pub struct ClientSideInstruction {
 /// `isMcpInstructionsDeltaEnabled()`.
 pub fn is_mcp_instructions_delta_enabled() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_MCP_INSTR_DELTA").as_deref(),
+        crate::utils::process_env::var("NYAN_MCP_INSTR_DELTA").as_deref(),
     ) {
         return true;
     }
     if crate::utils::env_utils::is_env_defined_falsy(
-        crate::utils::process_env::var("CLAUDE_CODE_MCP_INSTR_DELTA").as_deref(),
+        crate::utils::process_env::var("NYAN_MCP_INSTR_DELTA").as_deref(),
     ) {
         return false;
     }

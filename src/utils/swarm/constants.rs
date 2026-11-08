@@ -13,11 +13,11 @@ pub const TMUX_COMMAND: &str = "tmux";
 /// Maps to: CC `utils/swarm/constants.ts#HIDDEN_SESSION_NAME`.
 pub const HIDDEN_SESSION_NAME: &str = "claude-hidden";
 /// Maps to: CC `utils/swarm/constants.ts#TEAMMATE_COMMAND_ENV_VAR`.
-pub const TEAMMATE_COMMAND_ENV_VAR: &str = "CLAUDE_CODE_TEAMMATE_COMMAND";
+pub const TEAMMATE_COMMAND_ENV_VAR: &str = "NYAN_TEAMMATE_COMMAND";
 /// Maps to: CC `utils/swarm/constants.ts#TEAMMATE_COLOR_ENV_VAR`.
-pub const TEAMMATE_COLOR_ENV_VAR: &str = "CLAUDE_CODE_AGENT_COLOR";
+pub const TEAMMATE_COLOR_ENV_VAR: &str = "NYAN_AGENT_COLOR";
 /// Maps to: CC `utils/swarm/constants.ts#PLAN_MODE_REQUIRED_ENV_VAR`.
-pub const PLAN_MODE_REQUIRED_ENV_VAR: &str = "CLAUDE_CODE_PLAN_MODE_REQUIRED";
+pub const PLAN_MODE_REQUIRED_ENV_VAR: &str = "NYAN_PLAN_MODE_REQUIRED";
 
 /// Maps to: CC `utils/swarm/constants.ts#getSwarmSocketName`.
 pub fn get_swarm_socket_name() -> String {

@@ -895,8 +895,8 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::utils::process_env::remove("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
-        crate::utils::process_env::remove("CLAUDE_CODE_COORDINATOR_MODE");
+        crate::utils::process_env::remove("NYAN_AGENT_LIST_IN_MESSAGES");
+        crate::utils::process_env::remove("NYAN_COORDINATOR_MODE");
 
         let agents = vec![
             AgentDefinition::new(

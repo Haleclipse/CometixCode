@@ -7,12 +7,12 @@
 /// Maps to: CC `shouldIncludeGitInstructions()`.
 pub fn should_include_git_instructions() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_GIT_INSTRUCTIONS").as_deref(),
     ) {
         return false;
     }
     if crate::utils::env_utils::is_env_defined_falsy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_GIT_INSTRUCTIONS").as_deref(),
     ) {
         return true;
     }

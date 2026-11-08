@@ -223,7 +223,7 @@ pub fn is_new_init_enabled() -> bool {
     is_new_init_enabled_for_audience(
         crate::utils::build_profile::build_audience(),
         crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_NEW_INIT").as_deref(),
+            crate::utils::process_env::var("NYAN_NEW_INIT").as_deref(),
         ),
     )
 }
@@ -266,7 +266,7 @@ mod tests {
         fn clear() -> Self {
             Self {
                 _env: [
-                    EnvVarGuard::unset("CLAUDE_CODE_NEW_INIT"),
+                    EnvVarGuard::unset("NYAN_NEW_INIT"),
                     EnvVarGuard::set("NYAN_WRITE_ENABLED", "0"),
                 ],
             }
@@ -313,7 +313,7 @@ mod tests {
                 OLD_DESCRIPTION
             }
         );
-        crate::utils::process_env::set("CLAUDE_CODE_NEW_INIT", "1");
+        crate::utils::process_env::set("NYAN_NEW_INIT", "1");
         assert!(is_new_init_enabled());
         assert_eq!(description(), NEW_DESCRIPTION);
         // CC init.ts:229-235 is a getter even on an already loaded catalog.
@@ -321,7 +321,7 @@ mod tests {
             crate::commands::command_description(command),
             NEW_DESCRIPTION
         );
-        crate::utils::process_env::remove("CLAUDE_CODE_NEW_INIT");
+        crate::utils::process_env::remove("NYAN_NEW_INIT");
         assert!(is_new_init_enabled_for_audience(
             crate::utils::build_profile::BuildAudience::AnthropicInternal,
             false,

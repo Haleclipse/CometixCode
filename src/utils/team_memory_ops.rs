@@ -56,7 +56,7 @@ mod tests {
         ));
         let _memory_env = [
             EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root),
-            EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false"),
+            EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false"),
         ];
 
         let mut config = crate::utils::config::GlobalConfig::default();

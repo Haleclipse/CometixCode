@@ -447,9 +447,6 @@ mod tests {
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let handle = get_anthropic_client(GetAnthropicClientOptions {
             target: target_with_key("sk-ant-test", None),
             ..GetAnthropicClientOptions::default()
@@ -481,9 +478,6 @@ mod tests {
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "oauth-ambient");
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let _base_url = EnvVarGuard::set("ANTHROPIC_BASE_URL", "https://ambient.example");
         let _auth_token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "tok-ambient");
         let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ambient");
@@ -525,9 +519,6 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-keyless-target-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ambient");
 
         let handle = get_anthropic_client(GetAnthropicClientOptions::default())
@@ -556,9 +547,6 @@ mod tests {
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let _base_url = EnvVarGuard::unset("ANTHROPIC_BASE_URL");
 
         let handle = get_anthropic_client(GetAnthropicClientOptions {

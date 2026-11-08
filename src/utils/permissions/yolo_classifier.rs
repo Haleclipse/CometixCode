@@ -226,7 +226,7 @@ fn maybe_dump_auto_mode(
 ) {
     if !has_internal_capability(InternalCapability::Permissions)
         || !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DUMP_AUTO_MODE").as_deref(),
+            crate::utils::process_env::var("NYAN_DUMP_AUTO_MODE").as_deref(),
         )
     {
         return;
@@ -1066,7 +1066,7 @@ fn get_classifier_model() -> String {
 /// Maps to: CC `yoloClassifier.ts:1353-1369` `resolveTwoStageClassifier`.
 fn resolve_two_stage_classifier() -> Option<Value> {
     if has_internal_capability(InternalCapability::Permissions) {
-        let env = crate::utils::process_env::var("CLAUDE_CODE_TWO_STAGE_CLASSIFIER");
+        let env = crate::utils::process_env::var("NYAN_TWO_STAGE_CLASSIFIER");
         if matches!(env.as_deref(), Some("fast" | "thinking")) {
             return env.map(Value::String);
         }
@@ -1095,7 +1095,7 @@ fn is_two_stage_classifier_enabled() -> bool {
 /// Maps to: CC `yoloClassifier.ts:1379-1390` `isJsonlTranscriptEnabled`.
 fn is_jsonl_transcript_enabled() -> bool {
     if has_internal_capability(InternalCapability::Permissions) {
-        let env = crate::utils::process_env::var("CLAUDE_CODE_JSONL_TRANSCRIPT");
+        let env = crate::utils::process_env::var("NYAN_JSONL_TRANSCRIPT");
         if crate::utils::env_utils::is_env_truthy(env.as_deref()) {
             return true;
         }
@@ -1479,14 +1479,11 @@ mod tests {
             let vars = [
                 "NODE_ENV",
                 "DISABLE_TELEMETRY",
-                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-                "CLAUDE_CODE_USE_BEDROCK",
-                "CLAUDE_CODE_USE_VERTEX",
-                "CLAUDE_CODE_USE_FOUNDRY",
+                "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
                 "CLAUDE_INTERNAL_FC_OVERRIDES",
-                "CLAUDE_CODE_TWO_STAGE_CLASSIFIER",
-                "CLAUDE_CODE_JSONL_TRANSCRIPT",
-                "CLAUDE_CODE_DUMP_AUTO_MODE",
+                "NYAN_TWO_STAGE_CLASSIFIER",
+                "NYAN_JSONL_TRANSCRIPT",
+                "NYAN_DUMP_AUTO_MODE",
             ]
             .into_iter()
             .map(EnvVarGuard::unset)
@@ -1920,7 +1917,7 @@ mod tests {
         assert_eq!(padding, if internal { 2048 } else { 0 });
         assert_eq!(get_classifier_thinking_config("normal-model").1, 0);
         ConfigGuard::set_config(json!({"twoStageClassifier":true}));
-        let _env = EnvVarGuard::set("CLAUDE_CODE_TWO_STAGE_CLASSIFIER", "false");
+        let _env = EnvVarGuard::set("NYAN_TWO_STAGE_CLASSIFIER", "false");
         assert_eq!(is_two_stage_classifier_enabled(), !internal);
     }
 

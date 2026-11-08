@@ -329,7 +329,7 @@ mod tests {
         let prior_disabled = crate::bootstrap::state::is_session_persistence_disabled();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("config"));
-        let _skip = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_original_cwd(&workdir);
         crate::bootstrap::state::set_session_persistence_disabled(false);
         crate::utils::settings::settings_cache::reset_settings_cache();

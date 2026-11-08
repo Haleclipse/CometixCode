@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn opus_1m_merge_gate_depends_only_on_opt_out_not_on_claude_ai_credentials() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _opt_out = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_1M_CONTEXT");
+        let _opt_out = EnvVarGuard::unset("NYAN_DISABLE_1M_CONTEXT");
 
         let config_dir =
             std::env::temp_dir().join(format!("nyan-opus1m-{}", uuid::Uuid::new_v4().simple()));
@@ -269,9 +269,9 @@ mod tests {
         assert!(is_opus_1m_merge_enabled());
 
         // Explicit opt-out closes the gate.
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_1M_CONTEXT", "1");
+        crate::utils::process_env::set("NYAN_DISABLE_1M_CONTEXT", "1");
         assert!(!is_opus_1m_merge_enabled());
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_1M_CONTEXT");
+        crate::utils::process_env::remove("NYAN_DISABLE_1M_CONTEXT");
 
         let _ = std::fs::remove_dir_all(&config_dir);
     }

@@ -4,6 +4,9 @@
 // Prevents AI agents and contributors from weakening tests or test gates:
 // 1. Prohibits introducing new `#[ignore]` attributes in code or tests.
 //    (Bypassing failing tests by ignoring them is forbidden; fix the defect instead.)
+// 2. Prohibits reading or writing new `CLAUDE_*` / `ANTHROPIC_*` environment
+//    variables. nyan's switches live in the `NYAN_*` namespace; the names
+//    below still belong to Anthropic-account features being removed.
 //
 // Usage (CI):   node scripts/ci/check-quality-drift.mjs
 // Usage (local): node scripts/ci/check-quality-drift.mjs --base master --head HEAD
@@ -45,6 +48,55 @@ function endpoints() {
 
 const zero = /^0+$/;
 
+// Anthropic/CC environment names still present while their features are removed.
+const LEGACY_ENV_ALLOW = new Set([
+  // Provider variables tests still set to prove nyan ignores the ambient
+  // Anthropic environment.
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_BETAS",
+  "ANTHROPIC_CUSTOM_HEADERS",
+  "ANTHROPIC_CUSTOM_MODEL_OPTION",
+  "ANTHROPIC_FOUNDRY_API_KEY",
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_SMALL_FAST_MODEL",
+  "ANTHROPIC_UNIX_SOCKET",
+  "CLAUDE_AGENT_SDK_CLIENT_APP",
+  "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS",
+  "CLAUDE_AGENT_SDK_MCP_NO_PREFIX",
+  "CLAUDE_AGENT_SDK_VERSION",
+  "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+  "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
+  "CLAUDE_CODE_CONTAINER_ID",
+  "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+  "CLAUDE_CODE_ENABLE_TELEMETRY",
+  "CLAUDE_CODE_ENVIRONMENT_KIND",
+  "CLAUDE_CODE_IS_COWORK",
+  "CLAUDE_CODE_OAUTH_CLIENT_ID",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
+  "CLAUDE_CODE_ORGANIZATION_UUID",
+  "CLAUDE_CODE_REMOTE",
+  "CLAUDE_CODE_REMOTE_MEMORY_DIR",
+  "CLAUDE_CODE_REMOTE_SESSION_ID",
+  "CLAUDE_CODE_SESSION_ACCESS_TOKEN",
+  "CLAUDE_CODE_USE_COWORK_PLUGINS",
+  "CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES",
+  "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+  "CLAUDE_INTERNAL_FC_OVERRIDES",
+  "CLAUDE_LOCAL_OAUTH_API_BASE",
+  "CLAUDE_LOCAL_OAUTH_APPS_BASE",
+  "CLAUDE_LOCAL_OAUTH_CONSOLE_BASE",
+  "CLAUDE_MOCK_HEADERLESS_429",
+  "CLAUDE_OVERRIDE_SENTINEL",
+  "CLAUDE_SESSION_INGRESS_TOKEN_FILE",
+  "CLAUDE_SIG",
+]);
+
+const envAccess =
+  /(?:process_env::(?:var|var_os|set|remove)|EnvVarGuard::(?:set|unset|preserve))\(\s*"((?:CLAUDE|ANTHROPIC)_[A-Z0-9_]+)"/;
+
 function diffLines() {
   const { base, head } = endpoints();
   if (!base || !head || zero.test(base) || zero.test(head)) return null;
@@ -81,6 +133,14 @@ function main() {
     if (/^#\s*\[\s*ignore\b/.test(content)) {
       violations.push(`Adding '#[ignore]' attribute is forbidden: "${content}"`);
     }
+
+    // Detect new CC/Anthropic environment names in code.
+    const env = envAccess.exec(content);
+    if (env && !LEGACY_ENV_ALLOW.has(env[1])) {
+      violations.push(
+        `Use the NYAN_* namespace instead of "${env[1]}": "${content}"`,
+      );
+    }
   }
 
   if (violations.length > 0) {
@@ -88,7 +148,9 @@ function main() {
     for (const v of violations) {
       console.error(`  - ${v}`);
     }
-    console.error("\nResolution: fix the failing test or underlying defect instead of ignoring it.");
+    console.error(
+      "\nResolution: fix the failing test or underlying defect instead of ignoring it; use NYAN_* for nyan switches.",
+    );
     process.exit(1);
   }
 

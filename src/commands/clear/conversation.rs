@@ -233,10 +233,10 @@ pub fn clear_conversation(store: &AppStore) -> ClearConversationOutcome {
         let mut update = crate::utils::process_env::begin_update();
         if update
             .snapshot()
-            .var_os("CLAUDE_CODE_SESSION_ID")
+            .var_os("NYAN_SESSION_ID")
             .is_some_and(|value| !value.is_empty())
         {
-            update.set("CLAUDE_CODE_SESSION_ID", &new_session_id);
+            update.set("NYAN_SESSION_ID", &new_session_id);
         }
         update.commit();
     }

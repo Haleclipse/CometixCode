@@ -282,9 +282,9 @@ impl SkillCommand {
 
         if let Some(base_dir) = &self.skill_root {
             final_content =
-                final_content.replace("${CLAUDE_SKILL_DIR}", &display_path_for_prompt(base_dir));
+                final_content.replace("${NYAN_SKILL_DIR}", &display_path_for_prompt(base_dir));
         }
-        Ok(final_content.replace("${CLAUDE_SESSION_ID}", session_id))
+        Ok(final_content.replace("${NYAN_SESSION_ID}", session_id))
     }
 }
 
@@ -1301,7 +1301,7 @@ mod tests {
             write_file(&path, body);
         }
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "0");
         crate::bootstrap::state::set_allowed_setting_sources(vec!["projectSettings".to_string()]);
         crate::bootstrap::state::set_additional_directories_for_claude_md(vec![additional.clone()]);
 
@@ -1322,7 +1322,7 @@ mod tests {
             ])
         );
 
-        crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "1");
+        crate::utils::process_env::set("NYAN_SIMPLE", "1");
         clear_skill_caches();
         let names = get_skill_dir_commands(&project)
             .into_iter()
@@ -1355,7 +1355,7 @@ mod tests {
         let skills = root.join("skills");
         write_file(
             &skills.join("review").join("SKILL.md"),
-            "---\nname: Review Display\ndescription: Review code\nallowed-tools: Read, Grep\nargument-hint: [scope]\narguments: scope mode\npaths: src/**, tests/**\n---\nUse $scope in $mode. Dir=${CLAUDE_SKILL_DIR} Session=${CLAUDE_SESSION_ID}",
+            "---\nname: Review Display\ndescription: Review code\nallowed-tools: Read, Grep\nargument-hint: [scope]\narguments: scope mode\npaths: src/**, tests/**\n---\nUse $scope in $mode. Dir=${NYAN_SKILL_DIR} Session=${NYAN_SESSION_ID}",
         );
         write_file(&skills.join("ignored.md"), "# ignored");
 
@@ -1540,7 +1540,7 @@ mod tests {
         assert_eq!(pre[0].matcher, "Bash");
         assert_eq!(pre[0].hooks[0].command, "echo guard");
         // skillRoot rides along (CC registerSkillHooks.ts:52) so hook commands
-        // can resolve CLAUDE_PLUGIN_ROOT.
+        // can resolve NYAN_PLUGIN_ROOT.
         assert_eq!(
             pre[0].skill_root.as_deref(),
             skill.skill_root.as_ref().map(|root| root.to_str().unwrap())

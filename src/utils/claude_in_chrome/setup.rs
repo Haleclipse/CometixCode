@@ -23,7 +23,7 @@ pub fn should_enable_claude_in_chrome_from_readonly_runtime(
     if let Some(value) = chrome_flag_from_args(args) {
         return value;
     }
-    let cfc = get_env("CLAUDE_CODE_ENABLE_CFC");
+    let cfc = get_env("NYAN_ENABLE_CFC");
     if crate::utils::env_utils::is_env_truthy(cfc.as_deref()) {
         return true;
     }

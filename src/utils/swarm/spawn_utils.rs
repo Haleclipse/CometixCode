@@ -158,7 +158,7 @@ pub fn build_inherited_cli_flags(
 /// Maps to: CC `buildInheritedEnvVars()`.
 pub fn build_inherited_env_vars_from_map(env: &BTreeMap<String, String>) -> String {
     let mut env_vars = vec![
-        "CLAUDECODE=1".to_string(),
+        "NYAN=1".to_string(),
         "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1".to_string(),
     ];
 
@@ -207,7 +207,7 @@ mod tests {
         env.insert("UNRELATED".to_string(), "ignored".to_string());
 
         let rendered = build_inherited_env_vars_from_map(&env);
-        assert!(rendered.starts_with("CLAUDECODE=1 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
+        assert!(rendered.starts_with("NYAN=1 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1"));
         assert!(rendered.contains("NYAN_CONFIG_DIR='/tmp/nyan home/with space'"));
         assert!(!rendered.contains("UNRELATED"));
     }

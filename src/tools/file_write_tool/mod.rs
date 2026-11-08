@@ -948,7 +948,7 @@ mod tests {
 
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = std::env::temp_dir().join(format!(
             "nyan-write-exclusive-{}",
             uuid::Uuid::new_v4().simple()
@@ -1303,7 +1303,7 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _bootstrap = BootstrapRestore::capture();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _checkpointing = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING");
+        let _checkpointing = EnvVarGuard::unset("NYAN_DISABLE_FILE_CHECKPOINTING");
         let root = std::env::temp_dir().join(format!(
             "nyan-write-history-{}",
             uuid::Uuid::new_v4().simple()

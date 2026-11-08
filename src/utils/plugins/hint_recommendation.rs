@@ -195,7 +195,7 @@ mod tests {
         use serde_json::json;
         let root = std::env::temp_dir().join(format!("hint-resolution-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         let catalog = root.join("catalog.json");
         std::fs::write(
             &catalog,

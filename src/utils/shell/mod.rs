@@ -95,7 +95,7 @@ pub fn find_suitable_shell() -> Result<PathBuf, String> {
     if cfg!(windows) {
         return crate::utils::windows_paths::find_git_bash_path();
     }
-    if let Some(override_path) = crate::utils::process_env::var_os("CLAUDE_CODE_SHELL")
+    if let Some(override_path) = crate::utils::process_env::var_os("NYAN_SHELL")
         .as_deref()
         .truthy()
         .map(PathBuf::from)
@@ -203,12 +203,12 @@ pub fn exec(
     }
     let provider = get_shell_config()?;
     let id = &uuid::Uuid::new_v4().simple().to_string()[..4];
-    // `Shell.ts:204-207`: `posixJoin(CLAUDE_CODE_TMPDIR || '/tmp',
+    // `Shell.ts:204-207`: `posixJoin(NYAN_TMPDIR || '/tmp',
     // getClaudeTempDirName())`, not `getClaudeTempDir()`: no symlink
     // resolution, so on macOS this is `/tmp/claude-<uid>`. Sandboxing runs on
     // macOS and Linux only, where `node:path.join` is the POSIX one.
     let sandbox_tmp_dir = crate::utils::fs_operations::native::join_path(
-        &crate::utils::process_env::var_os("CLAUDE_CODE_TMPDIR")
+        &crate::utils::process_env::var_os("NYAN_TMPDIR")
             .as_deref()
             .truthy()
             .map(PathBuf::from)
@@ -309,22 +309,19 @@ pub fn exec(
             .stderr(std::process::Stdio::piped());
     }
     // Env layering matches CC `Shell.ts:317-328` spread order exactly:
-    // `{ ...subprocessEnv(), SHELL, GIT_EDITOR, CLAUDECODE, ...envOverrides,
+    // `{ ...subprocessEnv(), SHELL, GIT_EDITOR, NYAN, ...envOverrides,
     // ...(ant ? { CLAUDE_CODE_SESSION_ID } : {}) }` — explicit entries are
     // applied after the scrubbed base so they survive the scrub.
     crate::utils::subprocess_env::apply_subprocess_env_std(&mut process);
     process
         .env("SHELL", provider.shell_path())
         .env("GIT_EDITOR", "true")
-        .env("CLAUDECODE", "1");
+        .env("NYAN", "1");
     for (key, value) in provider.get_environment_overrides(command) {
         process.env(key, value);
     }
     if crate::utils::build_profile::build_audience().is_internal() {
-        process.env(
-            "CLAUDE_CODE_SESSION_ID",
-            crate::bootstrap::state::get_session_id(),
-        );
+        process.env("NYAN_SESSION_ID", crate::bootstrap::state::get_session_id());
     }
     #[cfg(unix)]
     if provider.detached() {
@@ -439,12 +436,9 @@ pub fn run_command_streaming(
     process
         .env_remove("SHELL")
         .env("GIT_EDITOR", "true")
-        .env("CLAUDECODE", "1");
+        .env("NYAN", "1");
     if crate::utils::build_profile::build_audience().is_internal() {
-        process.env(
-            "CLAUDE_CODE_SESSION_ID",
-            crate::bootstrap::state::get_session_id(),
-        );
+        process.env("NYAN_SESSION_ID", crate::bootstrap::state::get_session_id());
     }
     #[cfg(unix)]
     {
@@ -653,14 +647,14 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("input.txt"), "provided").unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
-        let _prefix = EnvVarGuard::unset("CLAUDE_CODE_SHELL_PREFIX");
+        let _prefix = EnvVarGuard::unset("NYAN_SHELL_PREFIX");
         let _restore = Restore(root.clone());
         reset_shell_config_for_test();
         for shell in ["/bin/bash", "/bin/zsh"] {
             if !Path::new(shell).is_file() {
                 continue;
             }
-            let _shell = EnvVarGuard::set("CLAUDE_CODE_SHELL", shell);
+            let _shell = EnvVarGuard::set("NYAN_SHELL", shell);
             reset_shell_config_for_test();
             for write_enabled in ["1", "0"] {
                 let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", write_enabled);

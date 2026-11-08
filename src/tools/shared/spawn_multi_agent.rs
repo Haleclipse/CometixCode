@@ -1523,7 +1523,7 @@ mod tests {
             "opus",
             Some(crate::types::permissions::PermissionMode::Auto),
         );
-        assert!(command.starts_with("cd '/tmp/project dir' && env CLAUDECODE=1"));
+        assert!(command.starts_with("cd '/tmp/project dir' && env NYAN=1"));
         assert!(command.contains("'/bin/claude code' --agent-id 'reviewer@alpha team'"));
         assert!(command.contains("--agent-name reviewer"));
         assert!(command.contains("--team-name 'alpha team'"));

@@ -16,14 +16,14 @@ const AUTO_MEM_ENTRYPOINT_NAME: &str = "MEMORY.md";
 
 /// Maps to CC `memdir/paths.ts:30-55` `isAutoMemoryEnabled()`.
 pub fn is_auto_memory_enabled() -> bool {
-    let env_val = crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+    let env_val = crate::utils::process_env::var("NYAN_DISABLE_AUTO_MEMORY");
     if is_env_truthy(env_val.as_deref()) {
         return false;
     }
     if is_env_defined_falsy(env_val.as_deref()) {
         return true;
     }
-    if is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref()) {
+    if is_env_truthy(crate::utils::process_env::var("NYAN_SIMPLE").as_deref()) {
         return false;
     }
     if is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
@@ -268,8 +268,8 @@ mod tests {
 
     const AUTO_MEMORY_ENV_KEYS: [&str; 6] = [
         "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-        "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
-        "CLAUDE_CODE_SIMPLE",
+        "NYAN_DISABLE_AUTO_MEMORY",
+        "NYAN_SIMPLE",
         "CLAUDE_CODE_REMOTE",
         "CLAUDE_CODE_REMOTE_MEMORY_DIR",
         "NYAN_CONFIG_DIR",
@@ -311,19 +311,19 @@ mod tests {
         );
         assert!(is_auto_memory_enabled());
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "true");
+            let _env = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "true");
             assert!(!is_auto_memory_enabled());
         }
 
         seed_settings(disabled_in_settings, None);
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+            let _env = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
             assert!(is_auto_memory_enabled());
         }
 
         seed_settings(default_settings(), None);
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+            let _env = EnvVarGuard::set("NYAN_SIMPLE", "1");
             assert!(!is_auto_memory_enabled());
         }
         {

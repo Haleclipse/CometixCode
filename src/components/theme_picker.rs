@@ -77,7 +77,7 @@ pub fn theme_picker_syntax_footer(
     shortcut: &str,
 ) -> String {
     if let Some(value) = syntax_disabled_env_value {
-        return format!("Syntax highlighting disabled (via CLAUDE_CODE_SYNTAX_HIGHLIGHT={value})");
+        return format!("Syntax highlighting disabled (via NYAN_SYNTAX_HIGHLIGHT={value})");
     }
     if syntax_highlighting_disabled {
         return format!("Syntax highlighting disabled ({shortcut} to enable)");
@@ -486,7 +486,7 @@ mod tests {
     fn theme_picker_syntax_footer_matches_official_branches() {
         assert_eq!(
             theme_picker_syntax_footer(ThemeName::Dark, false, Some("0"), "ctrl+t"),
-            "Syntax highlighting disabled (via CLAUDE_CODE_SYNTAX_HIGHLIGHT=0)"
+            "Syntax highlighting disabled (via NYAN_SYNTAX_HIGHLIGHT=0)"
         );
         assert_eq!(
             theme_picker_syntax_footer(ThemeName::Dark, true, None, "ctrl+t"),
@@ -704,7 +704,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
-        let _syntax = EnvVarGuard::unset("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
+        let _syntax = EnvVarGuard::unset("NYAN_SYNTAX_HIGHLIGHT");
         let mut ctrl_t = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('t'));
         ctrl_t.modifiers = KeyModifiers::CONTROL;
         let frames = drive(vec![vec![TerminalEvent::Key(ctrl_t)]]);

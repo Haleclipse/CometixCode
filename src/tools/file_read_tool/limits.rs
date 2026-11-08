@@ -27,7 +27,7 @@ pub struct FileReadingLimits {
 /// decimal-prefix behavior and JavaScript Number overflow.
 fn get_env_max_tokens() -> Option<f64> {
     let override_value =
-        crate::utils::process_env::var("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS").truthy()?;
+        crate::utils::process_env::var("NYAN_FILE_READ_MAX_OUTPUT_TOKENS").truthy()?;
     let trimmed = override_value.trim_start_matches(|character| {
         matches!(
             character,
@@ -118,9 +118,9 @@ mod tests {
     #[test]
     fn env_parser_matches_official_javascript_parse_int_prefix_semantics() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _max = EnvVarGuard::preserve("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS");
+        let _max = EnvVarGuard::preserve("NYAN_FILE_READ_MAX_OUTPUT_TOKENS");
         let parse = |value: &str| {
-            crate::utils::process_env::set("CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS", value);
+            crate::utils::process_env::set("NYAN_FILE_READ_MAX_OUTPUT_TOKENS", value);
             get_env_max_tokens()
         };
         assert_eq!(parse("  +123abc"), Some(123.0));

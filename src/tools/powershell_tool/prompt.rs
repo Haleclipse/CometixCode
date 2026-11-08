@@ -28,7 +28,7 @@ pub fn get_max_output_length() -> usize {
 
 fn get_background_usage_note() -> Option<&'static str> {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
     ) {
         return None;
     }
@@ -39,7 +39,7 @@ fn get_background_usage_note() -> Option<&'static str> {
 
 fn get_sleep_guidance() -> Option<&'static str> {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
     ) {
         return None;
     }

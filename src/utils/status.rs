@@ -91,14 +91,10 @@ pub fn build_api_provider_properties() -> Vec<Property> {
     if let Some(mtls_config) = mtls_config {
         // `mtlsConfig.cert && ...`: an empty file's contents are falsy.
         let loaded = |contents: &Option<String>| contents.as_deref().is_some_and(|c| !c.is_empty());
-        if let Some(cert_path) =
-            truthy("CLAUDE_CODE_CLIENT_CERT").filter(|_| loaded(&mtls_config.cert))
-        {
+        if let Some(cert_path) = truthy("NYAN_CLIENT_CERT").filter(|_| loaded(&mtls_config.cert)) {
             properties.push(property("mTLS client cert", cert_path));
         }
-        if let Some(key_path) =
-            truthy("CLAUDE_CODE_CLIENT_KEY").filter(|_| loaded(&mtls_config.key))
-        {
+        if let Some(key_path) = truthy("NYAN_CLIENT_KEY").filter(|_| loaded(&mtls_config.key)) {
             properties.push(property("mTLS client key", key_path));
         }
     }
@@ -126,8 +122,8 @@ mod tests {
             EnvVarGuard::unset("http_proxy"),
             EnvVarGuard::unset("HTTP_PROXY"),
             EnvVarGuard::set("NODE_EXTRA_CA_CERTS", "/tmp/ca.pem"),
-            EnvVarGuard::set("CLAUDE_CODE_CLIENT_CERT", &cert),
-            EnvVarGuard::unset("CLAUDE_CODE_CLIENT_KEY"),
+            EnvVarGuard::set("NYAN_CLIENT_CERT", &cert),
+            EnvVarGuard::unset("NYAN_CLIENT_KEY"),
         ];
         // `getMTLSConfig` is memoized.
         crate::utils::mtls::clear_mtls_cache();

@@ -60,12 +60,12 @@ fn executable_exists(path: &Path) -> bool {
 }
 
 pub fn git_bash_discovery_source() -> &'static str {
-    if crate::utils::process_env::var_os("CLAUDE_CODE_GIT_BASH_PATH")
+    if crate::utils::process_env::var_os("NYAN_GIT_BASH_PATH")
         .as_deref()
         .truthy()
         .is_some()
     {
-        "CLAUDE_CODE_GIT_BASH_PATH"
+        "NYAN_GIT_BASH_PATH"
     } else {
         "automatic discovery"
     }
@@ -156,7 +156,7 @@ pub fn validate_git_bash_executable(path: &Path) -> Result<(), String> {
 /// Maps to CC `findGitBashPath()` without process exit: callers surface the
 /// official installation message as an execution error.
 pub fn find_git_bash_path() -> Result<PathBuf, String> {
-    if let Some(raw_os) = crate::utils::process_env::var_os("CLAUDE_CODE_GIT_BASH_PATH")
+    if let Some(raw_os) = crate::utils::process_env::var_os("NYAN_GIT_BASH_PATH")
         .as_deref()
         .truthy()
     {
@@ -224,10 +224,10 @@ mod tests {
     #[test]
     fn git_bash_discovery_source_identifies_override_or_automatic_lookup() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _override = EnvVarGuard::unset("CLAUDE_CODE_GIT_BASH_PATH");
+        let _override = EnvVarGuard::unset("NYAN_GIT_BASH_PATH");
         assert_eq!(git_bash_discovery_source(), "automatic discovery");
-        let _override = EnvVarGuard::set("CLAUDE_CODE_GIT_BASH_PATH", r"C:\Git\bin\bash.exe");
-        assert_eq!(git_bash_discovery_source(), "CLAUDE_CODE_GIT_BASH_PATH");
+        let _override = EnvVarGuard::set("NYAN_GIT_BASH_PATH", r"C:\Git\bin\bash.exe");
+        assert_eq!(git_bash_discovery_source(), "NYAN_GIT_BASH_PATH");
     }
 
     #[test]
@@ -350,11 +350,9 @@ mod tests {
 
         // 1. Exact path override
         {
-            let _override = EnvVarGuard::set(
-                "CLAUDE_CODE_GIT_BASH_PATH",
-                discovered.display().to_string(),
-            );
-            assert_eq!(git_bash_discovery_source(), "CLAUDE_CODE_GIT_BASH_PATH");
+            let _override =
+                EnvVarGuard::set("NYAN_GIT_BASH_PATH", discovered.display().to_string());
+            assert_eq!(git_bash_discovery_source(), "NYAN_GIT_BASH_PATH");
             let found =
                 find_git_bash_path().expect("valid CLAUDE_CODE_GIT_BASH_PATH should resolve");
             assert_eq!(found, discovered);
@@ -363,7 +361,7 @@ mod tests {
         // 2. POSIX path conversion override
         {
             let posix = windows_path_to_posix_path(&discovered.display().to_string());
-            let _override = EnvVarGuard::set("CLAUDE_CODE_GIT_BASH_PATH", posix);
+            let _override = EnvVarGuard::set("NYAN_GIT_BASH_PATH", posix);
             let found =
                 find_git_bash_path().expect("POSIX CLAUDE_CODE_GIT_BASH_PATH should resolve");
             assert_eq!(found, discovered);
@@ -372,7 +370,7 @@ mod tests {
         // 3. Forward-slash path override
         {
             let forward = discovered.display().to_string().replace('\\', "/");
-            let _override = EnvVarGuard::set("CLAUDE_CODE_GIT_BASH_PATH", forward);
+            let _override = EnvVarGuard::set("NYAN_GIT_BASH_PATH", forward);
             let found = find_git_bash_path()
                 .expect("Forward-slash CLAUDE_CODE_GIT_BASH_PATH should resolve");
             assert_eq!(found, discovered);
@@ -380,10 +378,8 @@ mod tests {
 
         // 4. Invalid nonexistent path override
         {
-            let _override = EnvVarGuard::set(
-                "CLAUDE_CODE_GIT_BASH_PATH",
-                r"C:\nonexistent\tools\bash.exe",
-            );
+            let _override =
+                EnvVarGuard::set("NYAN_GIT_BASH_PATH", r"C:\nonexistent\tools\bash.exe");
             let err = find_git_bash_path().unwrap_err();
             assert!(err.contains("does not exist"), "unexpected error: {err}");
         }
@@ -391,7 +387,7 @@ mod tests {
         // 5. Invalid directory path override
         {
             let _override = EnvVarGuard::set(
-                "CLAUDE_CODE_GIT_BASH_PATH",
+                "NYAN_GIT_BASH_PATH",
                 discovered.parent().unwrap().display().to_string(),
             );
             let err = find_git_bash_path().unwrap_err();

@@ -98,7 +98,7 @@ pub fn model_supports_auto_mode(model: &str) -> bool {
 
 fn has_1m_context(model: &str) -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_1M_CONTEXT").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_1M_CONTEXT").as_deref(),
     ) && model.to_ascii_lowercase().contains("[1m]")
 }
 
@@ -117,14 +117,14 @@ pub fn model_supports_context_management(model: &str) -> bool {
 /// Maps to CC `utils/betas.ts` `shouldIncludeFirstPartyOnlyBetas(...)`.
 pub fn should_include_first_party_only_betas() -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
     )
 }
 
 /// Maps to CC `utils/betas.ts` `shouldUseGlobalCacheScope(...)`.
 pub fn should_use_global_cache_scope() -> bool {
     !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
     )
 }
 
@@ -168,7 +168,7 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
         beta_headers.push(CLAUDE_CODE_20250219_BETA_HEADER.to_string());
         if crate::utils::build_profile::has_internal_capability(
             crate::utils::build_profile::InternalCapability::Api,
-        ) && crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() == Some("cli")
+        ) && crate::utils::process_env::var("NYAN_ENTRYPOINT").as_deref() == Some("cli")
             && !CLI_INTERNAL_BETA_HEADER.is_empty()
         {
             beta_headers.push(CLI_INTERNAL_BETA_HEADER.to_string());
@@ -251,7 +251,7 @@ pub fn get_merged_betas(model: &str, is_agentic_query: bool) -> Vec<String> {
         }
         if crate::utils::build_profile::has_internal_capability(
             crate::utils::build_profile::InternalCapability::Api,
-        ) && crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref() == Some("cli")
+        ) && crate::utils::process_env::var("NYAN_ENTRYPOINT").as_deref() == Some("cli")
             && !CLI_INTERNAL_BETA_HEADER.is_empty()
             && !beta_headers
                 .iter()
@@ -362,9 +362,9 @@ mod tests {
     #[test]
     fn get_model_betas_matches_official_first_party_agentic_headers() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_1M_CONTEXT");
-        crate::utils::process_env::remove("CLAUDE_CODE_ENTRYPOINT");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_1M_CONTEXT");
+        crate::utils::process_env::remove("NYAN_ENTRYPOINT");
         clear_betas_caches();
 
         let betas = get_merged_betas("claude-haiku-4-5-20251001[1m]", true);
@@ -390,9 +390,9 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         for key in [
             "NODE_ENV",
-            "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS",
+            "NYAN_DISABLE_EXPERIMENTAL_BETAS",
             "DISABLE_TELEMETRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
         }
@@ -423,7 +423,7 @@ mod tests {
             .expect("prompt caching scope header");
         assert!(context_index < cache_scope_index);
 
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1");
+        crate::utils::process_env::set("NYAN_DISABLE_EXPERIMENTAL_BETAS", "1");
         assert!(
             get_all_model_betas(raw)
                 .iter()
@@ -442,7 +442,7 @@ mod tests {
                 .any(|beta| beta == CONTEXT_MANAGEMENT_BETA_HEADER)
         );
 
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         assert!(
             !get_all_model_betas(raw)
                 .iter()

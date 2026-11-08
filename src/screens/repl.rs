@@ -3836,7 +3836,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // Maps to: CC `REPL.tsx:939-942` mount-time env gate.
     let terminal_title_disabled = hooks.use_const(|| {
         crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_TERMINAL_TITLE").as_deref(),
+            crate::utils::process_env::var("NYAN_DISABLE_TERMINAL_TITLE").as_deref(),
         )
     });
     // CC fires generateSessionTitle as a void promise from onQueryImpl. The
@@ -5606,7 +5606,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
 
                             // Maps to CC `QueryEngine.query()` eager/cowork
                             // result boundary.
-                            if (crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_EAGER_FLUSH").as_deref()) || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_IS_COWORK").as_deref()))
+                            if (crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_EAGER_FLUSH").as_deref()) || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_IS_COWORK").as_deref()))
                                 && let Err(error) =
                                     crate::utils::session_storage::flush_session_storage().await
                                 {
@@ -10127,7 +10127,7 @@ mod tests {
         let config = directory.path().join("config");
         std::fs::create_dir_all(&config).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let _remote = EnvVarGuard::set("ENABLE_CLAUDEAI_MCP_SERVERS", "0");
         let _cwd = OriginalCwdGuard::set(directory.path());
         crate::utils::settings::settings_cache::reset_settings_cache();
@@ -11425,7 +11425,7 @@ mod tests {
         let _projects = crate::utils::session_storage::set_test_projects_dir_override(
             temp.path().join("projects"),
         );
-        let _no_hooks = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _no_hooks = EnvVarGuard::set("NYAN_SIMPLE", "1");
         struct RestoreSession(String, Option<PathBuf>);
         impl Drop for RestoreSession {
             fn drop(&mut self) {
@@ -11731,7 +11731,7 @@ mod tests {
         let temp = BranchFixtureDirectory::new();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
-        let _no_hooks = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _no_hooks = EnvVarGuard::set("NYAN_SIMPLE", "1");
         struct RestoreSession {
             id: String,
             project: Option<PathBuf>,
@@ -11828,7 +11828,7 @@ mod tests {
         let temp = BranchFixtureDirectory::new();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         // Moving config/cwd away from just's trusted fixture removes its
         // persisted trust grant. Use the existing accepted-workspace fixture
         // so this test reaches hook execution rather than the trust skip.
@@ -11881,7 +11881,7 @@ mod tests {
     #[test]
     fn resume_runs_session_end_before_session_start_like_official_repl_callback() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let marker_path =
             std::env::temp_dir().join(format!("nyan-repl-resume-hooks-{}", uuid::Uuid::new_v4()));
         let settings = crate::utils::settings::SettingsJson {
@@ -12539,7 +12539,7 @@ mod tests {
         let _doctor = EnvVarGuard::unset("DISABLE_DOCTOR_COMMAND");
         // Simple mode: built-ins plus `--agents` only, so no host agent file
         // or plugin reaches the test.
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         struct Reset;
         impl Drop for Reset {
             fn drop(&mut self) {
@@ -13523,7 +13523,7 @@ mod tests {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _checkpointing = EnvVarGuard::set("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING", "0");
+        let _checkpointing = EnvVarGuard::set("NYAN_DISABLE_FILE_CHECKPOINTING", "0");
         let entries = vec![
             json!({"type":"user","uuid":"rewind-first","timestamp":"2026-07-12T00:00:00.000Z","message":{"role":"user","content":"first prompt"}}),
             json!({"type":"user","uuid":"rewind-second","timestamp":"2026-07-12T00:00:01.000Z","message":{"role":"user","content":"<ide_selection>noise</ide_selection>\n<code>second</code>"}}),
@@ -13620,7 +13620,7 @@ mod tests {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let prompt_path = "identity-fixture/verbose-only.rs";
         let absolute_path = crate::bootstrap::state::get_original_cwd()
             .join(prompt_path)
@@ -14656,7 +14656,7 @@ mod tests {
         // Immediate completion schedules a notification on the same process
         // runtime that main publishes before mounting the actual REPL.
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _no_flicker = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _no_flicker = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let observer = PluginCompletionObserver::default();
         futures::executor::block_on(async {
             let mut app = element! { ContextProvider(value: Context::owned(observer.clone())) { ReplHarness } };
@@ -16771,7 +16771,7 @@ mod tests {
         // This regression checks inline scrollback. The separate fullscreen
         // completion regression checks the source dismissal suppression branch.
         let _guard = env_lock().lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let mut timed_events = text_input_events("/permissions")
             .into_iter()
             .map(|event| (event, 0))
@@ -16799,7 +16799,7 @@ mod tests {
         // This regression checks inline scrollback. The separate fullscreen
         // completion regression checks the source dismissal suppression branch.
         let _guard = env_lock().lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let mut timed_events = text_input_events("/permissions")
             .into_iter()
             .map(|event| (event, 0))
@@ -16933,7 +16933,7 @@ mod tests {
         let _settings = IsolatedProjectSettings::pin();
         for fullscreen in [false, true] {
             let _fullscreen =
-                EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", if fullscreen { "1" } else { "0" });
+                EnvVarGuard::set("NYAN_NO_FLICKER", if fullscreen { "1" } else { "0" });
             let directory = std::env::temp_dir()
                 .join(format!("permissions-immediate-<held>&-{}", Uuid::new_v4(),));
             std::fs::create_dir_all(&directory).unwrap();
@@ -17119,7 +17119,7 @@ mod tests {
         // mount; an isolated input lacks the other live keybinding contexts.
         let _guard = env_lock().lock().unwrap();
         let _settings = IsolatedProjectSettings::pin();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let mut app = element! {
             ContextProvider(value: Context::owned(
                 crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
@@ -17180,8 +17180,8 @@ mod tests {
         // REPL.tsx's command shortcut ignores shouldQuery during an active query.
         let _guard = env_lock().lock().unwrap();
         let _settings = IsolatedProjectSettings::pin();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
-        let _title = EnvVarGuard::set("CLAUDE_CODE_DISABLE_TERMINAL_TITLE", "1");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
+        let _title = EnvVarGuard::set("NYAN_DISABLE_TERMINAL_TITLE", "1");
         let command = "echo permissions-retry-scout";
         crate::utils::auto_mode_denials::record_auto_mode_denial(
             crate::utils::auto_mode_denials::AutoModeDenial {
@@ -18919,7 +18919,7 @@ mod tests {
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path().join("config"));
         let _project = PinnedProjectDir::at(temp.path());
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "byoc");
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
         struct Restore(String, Option<PathBuf>);

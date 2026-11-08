@@ -100,7 +100,7 @@ pub fn get_session_environment_script() -> Option<String> {
     }
 
     let mut scripts = Vec::new();
-    if let Some(env_file) = crate::utils::process_env::var_os("CLAUDE_ENV_FILE")
+    if let Some(env_file) = crate::utils::process_env::var_os("NYAN_ENV_FILE")
         .as_deref()
         .truthy()
         && let Ok(content) = std::fs::read_to_string(env_file)

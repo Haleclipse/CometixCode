@@ -145,7 +145,7 @@ pub fn powershell_tool_has_permission(
     }
 
     if !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_COMMAND_INJECTION_CHECK").as_deref(),
     ) && let PermissionResult::Ask {
         decision_reason: Some(PermissionDecisionReason::SafetyCheck { reason, .. }),
         ..

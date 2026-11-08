@@ -27,7 +27,7 @@ fn get_advisor_config() -> AdvisorConfig {
 /// Maps to CC `isAdvisorEnabled()` (`utils/advisor.ts:60-69`).
 pub fn is_advisor_enabled() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_ADVISOR_TOOL").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_ADVISOR_TOOL").as_deref(),
     ) {
         return false;
     }
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn advisor_gate_honors_disable_environment_before_feature_config() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _disabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_ADVISOR_TOOL", "1");
+        let _disabled = EnvVarGuard::set("NYAN_DISABLE_ADVISOR_TOOL", "1");
         assert!(!is_advisor_enabled());
         assert!(!can_user_configure_advisor());
     }

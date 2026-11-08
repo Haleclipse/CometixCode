@@ -78,16 +78,16 @@ pub fn file_history_enabled() -> bool {
     }
     load_global_config().file_checkpointing_enabled != Some(false)
         && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING").as_deref(),
+            crate::utils::process_env::var("NYAN_DISABLE_FILE_CHECKPOINTING").as_deref(),
         )
 }
 
 /// Maps to: CC `fileHistoryEnabledSdk()`.
 fn file_history_enabled_sdk() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING").as_deref(),
+        crate::utils::process_env::var("NYAN_ENABLE_SDK_FILE_CHECKPOINTING").as_deref(),
     ) && !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_FILE_CHECKPOINTING").as_deref(),
     )
 }
 

@@ -701,7 +701,7 @@ mod tests {
         use crate::tool::ToolCall;
 
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         crate::services::lsp::manager::reset_lsp_manager_for_testing();
         crate::services::lsp::manager::initialize_lsp_server_manager();
 

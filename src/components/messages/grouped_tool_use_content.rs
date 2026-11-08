@@ -1378,7 +1378,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _fork_vetoed = crate::tools::agent_tool::fork_subagent::fork_veto_environment();
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let mut first = agent_input("Run lint");
         first["run_in_background"] = serde_json::json!(true);
         let mut second = agent_input("Run tests");

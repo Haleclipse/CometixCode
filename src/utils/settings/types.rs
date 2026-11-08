@@ -612,7 +612,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
         // USER_TYPE is a build-time define in CC. Keep the same axis for the
         // remaining internal-only schema fields.
         let is_ant = crate::utils::build_profile::build_audience().is_internal();
-        let xaa = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_ENABLE_XAA").as_deref());
+        let xaa = is_env_truthy(crate::utils::process_env::var("NYAN_ENABLE_XAA").as_deref());
 
         // @nyan: no `$schema` key. CC's points at the SchemaStore schema for
         // Claude Code settings, which rejects nyan's own keys.

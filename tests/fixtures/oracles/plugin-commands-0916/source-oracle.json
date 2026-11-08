@@ -24,7 +24,7 @@
   "commandPrompt": [
     {
       "type": "text",
-      "text": "/p second ${CLAUDE_SKILL_DIR} S2 😀"
+      "text": "/p second ${NYAN_SKILL_DIR} S2 😀"
     }
   ],
   "skillPrompt": [

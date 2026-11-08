@@ -21,7 +21,7 @@ mod tests {
         let keys = [
             "NODE_ENV",
             "DISABLE_TELEMETRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ];
         for key in keys {
             crate::utils::process_env::remove(key);
@@ -31,7 +31,7 @@ mod tests {
         for (key, value) in [
             ("NODE_ENV", "test"),
             ("DISABLE_TELEMETRY", "1"),
-            ("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
+            ("NYAN_DISABLE_NONESSENTIAL_TRAFFIC", "1"),
         ] {
             crate::utils::process_env::set(key, value);
             assert!(is_analytics_disabled(), "condition={key}");

@@ -21,7 +21,7 @@ fn env_count(key: &str) -> Option<usize> {
 
 /// Maps to CC `utils/planModeV2.ts:6-27` `getPlanModeV2AgentCount()`.
 pub fn get_plan_mode_v2_agent_count() -> usize {
-    if let Some(count) = env_count("CLAUDE_CODE_PLAN_V2_AGENT_COUNT") {
+    if let Some(count) = env_count("NYAN_PLAN_V2_AGENT_COUNT") {
         return count;
     }
     // The 3-agent tier required a claude.ai Max 20x / Team / Enterprise
@@ -32,7 +32,7 @@ pub fn get_plan_mode_v2_agent_count() -> usize {
 /// Maps to CC `utils/planModeV2.ts:29-40`
 /// `getPlanModeV2ExploreAgentCount()`.
 pub fn get_plan_mode_v2_explore_agent_count() -> usize {
-    env_count("CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT").unwrap_or(3)
+    env_count("NYAN_PLAN_V2_EXPLORE_AGENT_COUNT").unwrap_or(3)
 }
 
 /// Maps to CC `utils/planModeV2.ts:42-60`
@@ -47,7 +47,7 @@ pub fn is_plan_mode_interview_phase_enabled() -> bool {
     // `false`: GrowthBook delivery is intentionally absent. Preserve its source
     // default rather than inventing a cohort assignment.
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE").as_deref(),
+        crate::utils::process_env::var("NYAN_PLAN_MODE_INTERVIEW_PHASE").as_deref(),
     )
 }
 
@@ -73,17 +73,17 @@ mod tests {
             ("11", None),
             ("-2", None),
         ] {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", input);
-            assert_eq!(env_count("CLAUDE_CODE_PLAN_V2_AGENT_COUNT"), expected);
+            let _env = EnvVarGuard::set("NYAN_PLAN_V2_AGENT_COUNT", input);
+            assert_eq!(env_count("NYAN_PLAN_V2_AGENT_COUNT"), expected);
         }
     }
 
     #[test]
     fn external_interview_gate_and_agent_counts_honor_official_env_precedence() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
-        let _agents = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", "2");
-        let _explore = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT", "4");
+        let _interview = EnvVarGuard::set("NYAN_PLAN_MODE_INTERVIEW_PHASE", "true");
+        let _agents = EnvVarGuard::set("NYAN_PLAN_V2_AGENT_COUNT", "2");
+        let _explore = EnvVarGuard::set("NYAN_PLAN_V2_EXPLORE_AGENT_COUNT", "4");
         assert!(is_plan_mode_interview_phase_enabled());
         assert_eq!(get_plan_mode_v2_agent_count(), 2);
         assert_eq!(get_plan_mode_v2_explore_agent_count(), 4);

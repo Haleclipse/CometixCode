@@ -291,7 +291,7 @@ mod tests {
         let home = TempDir::new();
         let _home = EnvVarGuard::set(HOME_VAR, home.path());
         let _privacy = EnvVarGuard::set("DISABLE_ERROR_REPORTING", "1");
-        let _traffic = EnvVarGuard::set("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+        let _traffic = EnvVarGuard::set("NYAN_DISABLE_NONESSENTIAL_TRAFFIC", "1");
         log::_reset_error_log_for_testing();
         log::log_mcp_debug("docs:test", "before startup");
         let path = get_mcp_logs_path("docs:test").unwrap();

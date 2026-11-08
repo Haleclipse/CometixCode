@@ -550,7 +550,7 @@ mod tests {
     #[test]
     fn api_key_helper_bare_mode_uses_only_flag_settings_source() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         clear_api_key_helper_cache();
         let dir = unique_temp_dir("bare-helper");
         std::fs::create_dir_all(&dir).unwrap();
@@ -739,7 +739,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let mut config = GlobalConfig::default();
         config.primary_api_key = Some("managed".to_string());
         crate::utils::config::set_test_global_config(Some(config));

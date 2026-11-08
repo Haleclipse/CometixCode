@@ -131,7 +131,7 @@ impl Project {
         if !SESSION_WRITE_ENABLED
             || crate::bootstrap::state::is_session_persistence_disabled()
             || crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY").as_deref(),
+                crate::utils::process_env::var("NYAN_SKIP_PROMPT_HISTORY").as_deref(),
             )
         {
             return true;
@@ -2322,7 +2322,7 @@ fn read_transcript_entries(path: &Path) -> Vec<serde_json::Value> {
 
     if file_size > SKIP_PRECOMPACT_THRESHOLD
         && !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP").as_deref(),
+            crate::utils::process_env::var("NYAN_DISABLE_PRECOMPACT_SKIP").as_deref(),
         )
     {
         return read_large_transcript_entries(path, file_size);
@@ -4890,7 +4890,7 @@ fn attachment_row_is_withheld(payload: &serde_json::Value) -> bool {
     let is_hook_context =
         payload.get("type").and_then(|value| value.as_str()) == Some("hook_additional_context");
     let keep_hook_context = crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT").as_deref(),
+        crate::utils::process_env::var("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT").as_deref(),
     );
     !(is_hook_context && keep_hook_context)
 }
@@ -6022,7 +6022,7 @@ mod tests {
         }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         let restore = Restore {
             session_id: crate::bootstrap::state::get_session_id(),
             project_dir: crate::bootstrap::state::get_session_project_dir(),
@@ -6748,13 +6748,13 @@ mod tests {
     fn should_skip_persistence_honors_bootstrap_and_prompt_history_gates() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
-        crate::utils::process_env::set("CLAUDE_CODE_SKIP_PROMPT_HISTORY", "1");
+        crate::utils::process_env::set("NYAN_SKIP_PROMPT_HISTORY", "1");
         assert!(!is_session_write_enabled());
-        crate::utils::process_env::remove("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        crate::utils::process_env::remove("NYAN_SKIP_PROMPT_HISTORY");
 
         crate::bootstrap::state::set_session_persistence_disabled(true);
         assert!(!is_session_write_enabled());
@@ -6778,7 +6778,7 @@ mod tests {
         }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         let restore = Restore {
             session_id: crate::bootstrap::state::get_session_id(),
@@ -6852,7 +6852,7 @@ mod tests {
         }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         let restore = Restore {
             session_id: crate::bootstrap::state::get_session_id(),
@@ -7676,7 +7676,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
@@ -7788,7 +7788,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
@@ -7932,7 +7932,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
@@ -8088,8 +8088,8 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
-        let _hook_context = EnvVarGuard::unset("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
+        let _hook_context = EnvVarGuard::unset("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
@@ -8184,7 +8184,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
@@ -8302,7 +8302,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::bootstrap::state::set_session_persistence_disabled(false);
         assert!(is_session_write_enabled());
 
@@ -9203,7 +9203,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::utils::process_env::remove("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
 
         let plain = crate::types::message::Message::Attachment(
             crate::types::message::AttachmentMessage::new(
@@ -9222,7 +9222,7 @@ mod tests {
         assert_eq!(typed_message_entry(&hook).is_some(), internal);
 
         // Flag on: it opens the hook exception ONLY — not attachments at large.
-        crate::utils::process_env::set("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
+        crate::utils::process_env::set("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
         assert_eq!(
             typed_message_entry(&plain).is_some(),
             internal,
@@ -9232,7 +9232,7 @@ mod tests {
             typed_message_entry(&hook).is_some(),
             "hook_additional_context is loggable on every audience once the flag is set"
         );
-        crate::utils::process_env::remove("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
     }
 
     /// Maps to: CC `isLoggableMessage` (sessionStorage.ts:4351-4367).
@@ -9252,7 +9252,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::utils::process_env::remove("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
 
         // The SessionStart projection's two payload shapes
         // (session_start.rs#hook_result_messages ↔ sessionStart.ts:164-171).
@@ -9282,7 +9282,7 @@ mod tests {
 
         // Flag on: only hook_additional_context comes through — the same
         // single exception the Attachment arm grants.
-        crate::utils::process_env::set("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
+        crate::utils::process_env::set("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
         assert!(
             typed_message_entry(&context).is_some(),
             "hook_additional_context is loggable on every audience once the flag is set"
@@ -9292,7 +9292,7 @@ mod tests {
             internal,
             "the env flag opens the hook-context exception only"
         );
-        crate::utils::process_env::remove("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
 
         // The row that IS written keeps CC's wire shape: hook results have no
         // wire type of their own — they are attachment rows.
@@ -9827,7 +9827,7 @@ mod tests {
     fn cold_sentinel_matches_official_identity_usage_and_api_roundtrip() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         struct Restore {
             session_id: String,
             project_dir: Option<PathBuf>,

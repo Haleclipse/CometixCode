@@ -52,7 +52,7 @@ pub fn get_cli_sysprompt_prefix(
 /// @nyan offset: default `CLAUDE_CODE_ATTRIBUTION_HEADER` to `0` when unset
 /// so the official gate skips assembling the header on production requests.
 fn is_attribution_header_enabled() -> bool {
-    let value = crate::utils::process_env::var("CLAUDE_CODE_ATTRIBUTION_HEADER")
+    let value = crate::utils::process_env::var("NYAN_ATTRIBUTION_HEADER")
         .unwrap_or_else(|| "0".to_string());
     if crate::utils::env_utils::is_env_defined_falsy(Some(&value)) {
         return false;
@@ -80,8 +80,8 @@ pub fn get_attribution_header(fingerprint: &str) -> String {
     // Maps to: CC `const version = \`${MACRO.VERSION}.${fingerprint}\``
     let version = format!("{}.{}", crate::constants::product::VERSION, fingerprint);
     // Maps to: CC `process.env.CLAUDE_CODE_ENTRYPOINT ?? 'unknown'`
-    let entrypoint = crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT")
-        .unwrap_or_else(|| "unknown".to_string());
+    let entrypoint =
+        crate::utils::process_env::var("NYAN_ENTRYPOINT").unwrap_or_else(|| "unknown".to_string());
     // cch=00000 placeholder is Bun-native attestation — omitted in Nyan.
     format!("x-anthropic-billing-header: cc_version={version}; cc_entrypoint={entrypoint};")
 }
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn attribution_header_includes_fingerprint_when_enabled() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_ATTRIBUTION_HEADER", "1");
+        crate::utils::process_env::set("NYAN_ATTRIBUTION_HEADER", "1");
         let header = get_attribution_header("abc");
         assert!(header.contains("cc_version="), "header={header:?}");
         assert!(header.contains(".abc"));
@@ -136,7 +136,7 @@ mod tests {
     #[test]
     fn attribution_header_defaults_to_disabled_when_env_unset() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_ATTRIBUTION_HEADER");
+        crate::utils::process_env::remove("NYAN_ATTRIBUTION_HEADER");
         assert!(get_attribution_header("abc").is_empty());
     }
 }

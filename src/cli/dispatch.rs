@@ -6,7 +6,7 @@ use crate::constants::product::{NAME, VERSION};
 /// Apply Live side effects that must run before interactive launch (bare env).
 pub fn apply_live_env_side_effects(config: &CliConfig) {
     if config.bare {
-        crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "1");
+        crate::utils::process_env::set("NYAN_SIMPLE", "1");
     }
 }
 
@@ -146,11 +146,11 @@ mod tests {
     #[test]
     fn dispatch_bare_sets_env_and_continues() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let c = parse_cli_config(&argv(&["--bare"]));
         assert_eq!(dispatch(&c), None);
         assert!(crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref()
+            crate::utils::process_env::var("NYAN_SIMPLE").as_deref()
         ));
     }
 

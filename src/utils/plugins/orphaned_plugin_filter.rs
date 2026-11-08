@@ -198,7 +198,7 @@ mod tests {
         // Declared before the env guard so the exclusions are cleared after
         // the cache directory variable has been restored.
         let _cache = CacheGuard;
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         clear_plugin_cache_exclusions();
 
         assert_eq!(

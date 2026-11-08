@@ -1865,7 +1865,7 @@ mod tests {
             "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
             root.to_string_lossy().as_ref(),
         );
-        let _enabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let _enabled = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let config = CliConfig {
             system_prompt: Some("CUSTOM".into()),
             append_system_prompt: Some("APPEND".into()),
@@ -2390,7 +2390,7 @@ mod sdk_mapper_tests {
             let root = std::path::PathBuf::from(root);
             crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
             // Exercise the full tool registry, including Agent's eager schema.
-            crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "0");
+            crate::utils::process_env::set("NYAN_SIMPLE", "0");
             crate::bootstrap::state::set_original_cwd(&root);
             crate::bootstrap::state::set_inline_plugins(vec![root.join("plugin")]);
             crate::commands::clear_commands_cache();

@@ -609,7 +609,7 @@ mod tests {
         for case in oracle()["readCases"].as_array().unwrap() {
             let dir = root.join(case["name"].as_str().unwrap());
             std::fs::create_dir(&dir).unwrap();
-            let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &dir);
+            let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &dir);
             clear_installed_plugins_cache();
             if case["missing"] != true {
                 let input = &case["input"];
@@ -657,7 +657,7 @@ mod tests {
     fn installed_registry_save_snapshot_and_raw_order_match_official_bun() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = root("lifecycle");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         clear_installed_plugins_cache();
         let initial = get_in_memory_installed_plugins();
         write(
@@ -714,7 +714,7 @@ mod tests {
     fn installed_registry_scope_replacement_and_failure_cache_match_official_bun() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = root("scope");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         clear_installed_plugins_cache();
         write(
             &json!({"version":2,"plugins":{"p@m":[{"scope":"user","installPath":"/old","version":"old"},{"scope":"project","projectPath":"/other","installPath":"/other"}]}}),
@@ -754,7 +754,7 @@ mod tests {
     fn installed_registry_project_and_disabled_settings_match_official_bun() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = root("predicate");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         clear_installed_plugins_cache();
         let previous = crate::bootstrap::state::get_original_cwd();
         crate::bootstrap::state::set_original_cwd("/current");
@@ -794,7 +794,7 @@ mod tests {
     fn installed_registry_concurrent_writers_preserve_official_synchronous_turns() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = root("concurrent");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         clear_installed_plugins_cache();
         let workers: Vec<_> = (0..8)
             .map(|n| {
@@ -830,7 +830,7 @@ mod tests {
     fn installed_registry_live_loader_retains_official_session_snapshot() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = root("loader");
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         clear_installed_plugins_cache();
         settings(json!({"p@m":true}));
         let plugin = root.join("plugin");

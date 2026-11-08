@@ -527,7 +527,7 @@ mod tests {
         std::fs::create_dir_all(root.join("plugins")).unwrap();
         std::fs::write(root.join("plugins/known_marketplaces.json"), "{}").unwrap();
         let _config = set_config_dir(&root);
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", root.join("plugins"));
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", root.join("plugins"));
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         crate::utils::settings::settings_cache::reset_settings_cache();
         let entry = serde_json::json!({"name":"p","source":"./p"});
@@ -971,7 +971,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("plugin-root-catalog-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         let catalog = |name: &str, dependencies: Value, allowed: Value| {
             serde_json::json!({
                 "name":name, "owner":{"name":"Owner"},

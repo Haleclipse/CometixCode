@@ -223,7 +223,7 @@ fn platform_default_timeout_seconds() -> u64 {
 }
 
 fn default_timeout() -> Duration {
-    let parsed_seconds = crate::utils::process_env::var("CLAUDE_CODE_GLOB_TIMEOUT_SECONDS")
+    let parsed_seconds = crate::utils::process_env::var("NYAN_GLOB_TIMEOUT_SECONDS")
         .truthy()
         .map(|value| parse_timeout_seconds(&value))
         .unwrap_or(0);

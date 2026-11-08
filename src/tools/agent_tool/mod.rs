@@ -32,7 +32,7 @@ pub mod ui;
 pub(crate) static IS_BACKGROUND_TASKS_DISABLED: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| {
         crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+            crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
         )
     });
 
@@ -347,7 +347,7 @@ fn can_read_agent_output_file(context: &crate::tool::ToolUseContext) -> bool {
 /// Maps to CC `AgentTool.tsx#getAutoBackgroundMs` env branch.
 fn get_auto_background_ms_for_agent_tool() -> Option<u64> {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_AUTO_BACKGROUND_TASKS").as_deref(),
+        crate::utils::process_env::var("NYAN_AUTO_BACKGROUND_TASKS").as_deref(),
     )
     .then_some(120_000)
 }
@@ -2462,7 +2462,7 @@ mod tests {
     #[test]
     fn agent_tool_schema_matches_official_base_input_shape() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let _fork_gate = fork_subagent::fork_gate_environment();
         let schema = agent_tool_schema();
         assert_eq!(schema.name, "Agent");
@@ -2540,7 +2540,7 @@ mod tests {
     fn agent_tool_schema_omits_background_when_gate_is_off() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fork_vetoed = fork_subagent::fork_veto_environment();
-        let _disabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "true");
+        let _disabled = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "true");
         assert!(!fork_subagent::is_fork_subagent_enabled());
         let schema = agent_tool_schema();
         assert!(
@@ -2566,7 +2566,7 @@ mod tests {
     fn agent_tool_schema_advertises_background_when_neither_gate_omits_it() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _fork_vetoed = fork_subagent::fork_veto_environment();
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let schema = agent_tool_schema();
         assert_eq!(
             schema
@@ -2584,10 +2584,10 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let context = crate::tool::ToolUseContext::default();
         {
-            let _teams = EnvVarGuard::unset("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+            let _teams = EnvVarGuard::unset("NYAN_EXPERIMENTAL_AGENT_TEAMS");
             assert!(resolve_team_name_for_agent_tool(None, &context).is_none());
         }
-        let _teams = EnvVarGuard::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        let _teams = EnvVarGuard::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
             .lock()
             .unwrap();
@@ -2658,10 +2658,10 @@ mod tests {
     fn auto_background_ms_matches_official_env_gate() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         {
-            let _auto = EnvVarGuard::unset("CLAUDE_AUTO_BACKGROUND_TASKS");
+            let _auto = EnvVarGuard::unset("NYAN_AUTO_BACKGROUND_TASKS");
             assert_eq!(get_auto_background_ms_for_agent_tool(), None);
         }
-        let _auto = EnvVarGuard::set("CLAUDE_AUTO_BACKGROUND_TASKS", "1");
+        let _auto = EnvVarGuard::set("NYAN_AUTO_BACKGROUND_TASKS", "1");
         assert_eq!(get_auto_background_ms_for_agent_tool(), Some(120_000));
     }
 
@@ -2731,7 +2731,7 @@ mod tests {
     fn execution_gate_rejects_bad_isolation_before_the_tool_runs() {
         use crate::services::tools::tool_execution::validate_tool_input_against_schema;
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let tool = agent_tool_schema();
 
         for bad in ["bogus", "", "remote"] {
@@ -2810,7 +2810,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::utils::process_env::remove("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
+        crate::utils::process_env::remove("NYAN_AGENT_LIST_IN_MESSAGES");
         let agents = vec![
             listed_agent("reviewer", "review code"),
             listed_agent("test-runner", "run tests"),
@@ -3165,7 +3165,7 @@ mod tests {
     fn agent_tool_rejects_nested_teammate_spawn_before_backend_execution() {
         use crate::tool::ToolCall;
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _teams = EnvVarGuard::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        let _teams = EnvVarGuard::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
             .lock()
             .unwrap();
@@ -3219,7 +3219,7 @@ mod tests {
     async fn agent_tool_rejects_in_process_teammate_background_before_runtime() {
         use crate::tool::ToolCall;
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _teams = EnvVarGuard::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        let _teams = EnvVarGuard::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let teammate_context = crate::utils::teammate_context::create_teammate_context(
             crate::utils::teammate_context::CreateTeammateContextConfig {
                 agent_id: "worker@alpha".to_string(),
@@ -3709,7 +3709,7 @@ mod tests {
     #[test]
     fn team_name_resolution_uses_js_truthiness_not_trimming() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _teams = EnvVarGuard::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        let _teams = EnvVarGuard::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let _teammate_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
             .lock()
             .unwrap();
@@ -4931,8 +4931,8 @@ mod tests {
         crate::bootstrap::state::IsInteractiveGuard,
     ) {
         let fork_env = fork_subagent::fork_gate_environment();
-        let background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
-        let list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
+        let background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
+        let list_in_messages = EnvVarGuard::unset("NYAN_AGENT_LIST_IN_MESSAGES");
         let interactive = crate::bootstrap::state::IsInteractiveGuard::capture();
         let args: Vec<String> = cli_args.iter().map(|arg| (*arg).to_string()).collect();
         // `stdout_is_tty: true` on purpose — under `just test` stdout is a pipe,
@@ -5068,7 +5068,7 @@ mod tests {
 
         // The no-TTY leg, with an empty argv so nothing else can explain it.
         let _fork_env = fork_subagent::fork_gate_environment();
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let _interactive = crate::bootstrap::state::IsInteractiveGuard::capture();
         crate::main::apply_is_interactive(&[], false);
         assert!(!fork_subagent::is_fork_subagent_enabled());

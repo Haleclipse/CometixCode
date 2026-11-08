@@ -1195,7 +1195,7 @@ mod tests {
             EnvVarGuard::unset("USE_LOCAL_OAUTH"),
             EnvVarGuard::unset("USE_STAGING_OAUTH"),
             EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
-            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+            EnvVarGuard::unset("NYAN_SIMPLE"),
             EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token"),
         ];
         // A stored claude.ai account (and an ambient token) must not produce the

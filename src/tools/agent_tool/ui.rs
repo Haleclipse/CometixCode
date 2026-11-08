@@ -3168,7 +3168,7 @@ mod grouped_agent_stat_tests {
     fn a_vetoed_fork_gate_lets_the_input_flag_report_async() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _fork_vetoed = super::super::fork_subagent::fork_veto_environment();
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let base = serde_json::json!({"description": "Run lint", "prompt": "go"});
 
         let mut backgrounded = base.clone();

@@ -682,7 +682,7 @@ mod tests {
     #[tokio::test]
     async fn filter_allows_in_process_teammate_task_tools_when_async() {
         let _env = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        crate::utils::process_env::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let teammate_context = crate::utils::teammate_context::create_teammate_context(
             crate::utils::teammate_context::CreateTeammateContextConfig {
                 agent_id: "worker@team".to_string(),
@@ -715,7 +715,7 @@ mod tests {
                 filter_tools_for_agent(&pool, false, true, None)
             })
             .await;
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
         let names = filtered
             .iter()
             .map(|tool| tool.name.as_str())

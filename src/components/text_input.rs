@@ -62,7 +62,7 @@ pub fn text_input_hide_placeholder_text(voice_recording: bool) -> bool {
 
 fn accessibility_enabled_from_env() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_ACCESSIBILITY").as_deref(),
+        crate::utils::process_env::var("NYAN_ACCESSIBILITY").as_deref(),
     )
 }
 
@@ -330,7 +330,7 @@ mod tests {
         std::fs::create_dir_all(&directory).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &directory);
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         crate::utils::process_runtime::initialize_test_process_runtime();
         for parent_cancel in [false, true] {
             let store = crate::state::store::AppStore::new(
@@ -608,7 +608,7 @@ mod tests {
         // Omission accepts editing; only explicit true inverts placeholder E.
         use futures::StreamExt;
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _accessibility = EnvVarGuard::set("CLAUDE_CODE_ACCESSIBILITY", "0");
+        let _accessibility = EnvVarGuard::set("NYAN_ACCESSIBILITY", "0");
         crate::utils::process_runtime::initialize_test_process_runtime();
         assert_eq!(TextInputProps::default().focus, None);
         for focus in [None, Some(true), Some(false)] {

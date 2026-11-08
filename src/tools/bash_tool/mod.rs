@@ -408,7 +408,7 @@ fn full_input_fields() -> Vec<crate::utils::zod::ObjectField> {
 pub(crate) static IS_BACKGROUND_TASKS_DISABLED: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| {
         crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+            crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
         )
     });
 
@@ -1180,8 +1180,7 @@ impl crate::tool::ToolCall for BashTool {
         let mut ast_commands = None;
         if crate::utils::build_profile::build_audience().is_internal()
             && !crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_DISABLE_COMMAND_INJECTION_CHECK")
-                    .as_deref(),
+                crate::utils::process_env::var("NYAN_DISABLE_COMMAND_INJECTION_CHECK").as_deref(),
             )
         {
             match crate::utils::bash::ast::parse_for_security(command) {
@@ -1705,7 +1704,7 @@ mod tests {
     #[test]
     fn bash_tool_schema_matches_official_background_task_gate() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _disabled = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _disabled = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let schema = bash_tool_schema();
         assert!(
             schema
@@ -1735,7 +1734,7 @@ mod tests {
     #[test]
     fn bash_tool_schema_omits_background_when_gate_is_off() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _enabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "true");
+        let _enabled = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "true");
         let schema = bash_tool_schema();
         assert!(
             schema
@@ -1996,7 +1995,7 @@ mod tests {
     #[test]
     fn foreground_timeout_maps_to_exit_143_without_abort_or_display_stderr() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _background = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+        let _background = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "1");
         let output = bash_output(
             &serde_json::json!({"command": "sleep 1", "timeout": 40}),
             &crate::tool::ToolUseContext::default(),
@@ -2036,7 +2035,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _background = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+        let _background = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "1");
         let output = bash_output(
             &serde_json::json!({
                 "command": "printf a; printf b >&2; printf '\\377tail'"
@@ -2062,7 +2061,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "0");
-        let _background = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+        let _background = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "1");
         let output = bash_output(
             &serde_json::json!({"command": "printf visible-error >&2; exit 2"}),
             &crate::tool::ToolUseContext::default(),
@@ -2093,7 +2092,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _background = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+        let _background = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "1");
         // Snapshot creation is a one-time provider cost and is outside the
         // ShellCommand `exit` versus inherited-fd contract measured here.
         crate::utils::shell::get_shell_config().unwrap();
@@ -2137,7 +2136,7 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _tasks = TaskStateGuard;
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         crate::tasks::local_shell_task::clear_for_test();
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
@@ -2210,7 +2209,7 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _tasks = TaskStateGuard;
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         crate::tasks::local_shell_task::clear_for_test();
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
@@ -2338,7 +2337,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::write(&path, "export NYAN_SESSION_ENV_TEST=visible").unwrap();
-        let _env_file = EnvVarGuard::set("CLAUDE_ENV_FILE", &path);
+        let _env_file = EnvVarGuard::set("NYAN_ENV_FILE", &path);
         crate::utils::session_environment::invalidate_session_env_cache();
 
         let output = bash_output(

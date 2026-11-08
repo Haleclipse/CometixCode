@@ -2474,7 +2474,7 @@ mod tests {
         // MessagesImpl / MessageRows / MessageRow bailouts, as CC's
         // `useSyncExternalStore` subscriber re-renders past memoized parents.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let store = crate::state::store::AppStore::new(worker_waiting_on("toolu_1"), None);
         // Frame-driven, no timers: take the mount frame, answer the worker
         // request, then take the frame that write produces. The same write
@@ -2586,7 +2586,7 @@ mod tests {
         // `message-rows` Memo did. Frame-driven: the same write flips the
         // sibling echo, so a frame always follows.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         for is_loading in [false, true] {
             let store = crate::state::store::AppStore::new(Default::default(), None);
             let (queued, started) = futures::executor::block_on(async {
@@ -2703,7 +2703,7 @@ mod tests {
         // `message-rows` Memo (loading), its own static key and CachedSubtree;
         // the theme name in those keys is what carries the change through.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         for is_loading in [false, true] {
             let (before, after) = futures::executor::block_on(async {
                 let (keys, events) = async_channel::unbounded();
@@ -2797,7 +2797,7 @@ mod tests {
         // in place, it does not remount it, so a task that has since finished
         // still reads "still running" in that historical row.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let store = crate::state::store::AppStore::new(Default::default(), None);
         store.replace_with(|state| {
             Arc::make_mut(&mut state.tasks).insert(
@@ -2881,7 +2881,7 @@ mod tests {
         // The logo's dim text previews light and returns to dark on cancel,
         // as every themed descendant does under CC's ThemeProvider.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let colors = futures::executor::block_on(async {
             let (keys, events) = async_channel::unbounded();
             let mut probe = element!(ThemeFlipProbe(show_logo: true));
@@ -2925,7 +2925,7 @@ mod tests {
         // CC AssistantToolUseMessage.tsx:58-60,122: the row reads
         // `pendingWorkerRequest` from AppState; Messages passes nothing.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let current_theme = *theme::current();
         let messages = Arc::new(vec![tool_use_named_with_input(
             "assistant-tool",
@@ -2966,7 +2966,7 @@ mod tests {
     #[test]
     fn messages_classifier_checking_tool_use_renders_official_auxiliary_row() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let current_theme = *theme::current();
         let messages = Arc::new(vec![tool_use_named_with_input(
             "assistant-tool",
@@ -3018,7 +3018,7 @@ mod tests {
         // (input: None) becomes collapsible via is_fullscreen_env_enabled()
         // and the "Bash" row assertion fails in parallel runs.
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let current_theme = *theme::current();
         for status in [ToolUseStatus::Running, ToolUseStatus::Queued] {
             let messages = Arc::new(vec![tool_use_named_with_input(
@@ -3304,7 +3304,7 @@ mod tests {
     #[test]
     fn transcript_dividers_cap_raw_rows_and_use_configured_shortcut_matches_official() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let input = Arc::new(collapsible_read_transcript(20));
         let render = |show_all_in_transcript: bool| {
             let input = Arc::clone(&input);
@@ -3383,7 +3383,7 @@ mod tests {
         );
 
         let fullscreen_env_only = {
-            let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "1");
+            let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "1");
             render(false).to_string()
         };
         assert!(
@@ -3474,7 +3474,7 @@ mod tests {
         // env so BOTH audiences exercise the main-screen slice this test is
         // about; the fullscreen skip itself is fullscreen.rs's contract.
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_NO_FLICKER", "0");
+        crate::utils::process_env::set("NYAN_NO_FLICKER", "0");
         let boundary = RenderableMessage {
             uuid: "boundary".to_string(),
             kind: RenderableMessageKind::System(
@@ -3511,7 +3511,7 @@ mod tests {
         // Without a boundary nothing is sliced away.
         let no_boundary = vec![RenderableMessage::user("only", "prompt")];
         assert_eq!(compact_aware_messages(no_boundary.clone(), false).len(), 1);
-        crate::utils::process_env::remove("CLAUDE_CODE_NO_FLICKER");
+        crate::utils::process_env::remove("NYAN_NO_FLICKER");
     }
 
     #[test]
@@ -4262,7 +4262,7 @@ mod tests {
     #[test]
     fn fullscreen_collapse_surfaces_git_outcomes_without_double_counting_bash() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _env = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "1");
+        let _env = EnvVarGuard::set("NYAN_NO_FLICKER", "1");
         let input = vec![
             tool_use_named(
                 "bash-commit",
@@ -4690,7 +4690,7 @@ mod tests {
         ));
         let root_text = root.display().to_string();
         let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root_text);
-        let _enabled = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let _enabled = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
             "tengu_herring_clock".to_string(),
@@ -4857,7 +4857,7 @@ mod tests {
     #[test]
     fn collapse_read_search_keeps_non_search_bash_visible_on_main_screen() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _fullscreen = EnvVarGuard::set("CLAUDE_CODE_NO_FLICKER", "0");
+        let _fullscreen = EnvVarGuard::set("NYAN_NO_FLICKER", "0");
         let input = vec![
             tool_use_named("bash-run", "toolu_bash_run", "Bash", "npm test"),
             tool_result("result-run", "toolu_bash_run", ToolResultStatus::Success),

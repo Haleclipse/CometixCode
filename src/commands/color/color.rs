@@ -200,7 +200,7 @@ mod tests {
         // CC color.ts:45-63,75-92: disk first, same name, default sentinel.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         let fixture = SessionFixture::new();
         let store = AppStore::new(AppState::default(), None);
         let context = ToolUseContext::default().with_app_store(store.clone());

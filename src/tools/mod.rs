@@ -67,7 +67,7 @@ fn special_tools() -> std::collections::HashSet<&'static str> {
 /// Maps to: CC `tools.ts` `getTools(...)`.
 pub fn get_tools(permission_context: &crate::tool::ToolPermissionContext) -> Vec<Tool> {
     let tools = if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     ) {
         // Maps to CC `tools.ts` simple mode: expose only Bash, Read, and Edit
         // primitives until REPL/coordinator mode wrappers are ported.
@@ -557,7 +557,7 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let _restore = [
             EnvVarGuard::unset("EMBEDDED_SEARCH_TOOLS"),
-            EnvVarGuard::unset("CLAUDE_CODE_ENTRYPOINT"),
+            EnvVarGuard::unset("NYAN_ENTRYPOINT"),
         ];
         let ordinary = get_all_base_tools()
             .into_iter()
@@ -661,7 +661,7 @@ mod tests {
     fn brief_tool_is_always_registered_and_enabled_only_when_override_is_set() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _opt_in = BriefOptInGuard::capture();
-        crate::utils::process_env::remove("CLAUDE_CODE_BRIEF");
+        crate::utils::process_env::remove("NYAN_BRIEF");
         crate::bootstrap::state::set_user_msg_opt_in(false);
         assert!(
             get_all_base_tools()
@@ -674,13 +674,13 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(!without.iter().any(|name| name == "SendUserMessage"));
 
-        crate::utils::process_env::set("CLAUDE_CODE_BRIEF", "1");
+        crate::utils::process_env::set("NYAN_BRIEF", "1");
         crate::bootstrap::state::set_user_msg_opt_in(true);
         let with = get_tools(&crate::tool::ToolPermissionContext::default())
             .into_iter()
             .map(|tool| tool.name)
             .collect::<Vec<_>>();
-        crate::utils::process_env::remove("CLAUDE_CODE_BRIEF");
+        crate::utils::process_env::remove("NYAN_BRIEF");
         assert!(with.iter().any(|name| name == "SendUserMessage"));
     }
 
@@ -706,7 +706,7 @@ mod tests {
     #[test]
     fn task_v2_tools_are_available_in_interactive_sessions_and_env_override() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_TASKS");
+        crate::utils::process_env::remove("NYAN_ENABLE_TASKS");
         crate::utils::process_env::remove("NYAN_NON_INTERACTIVE_SESSION");
         let interactive = get_all_base_tools()
             .into_iter()
@@ -723,13 +723,13 @@ mod tests {
             .collect::<std::collections::BTreeSet<_>>();
         assert!(!non_interactive.contains("TaskCreate"));
 
-        crate::utils::process_env::set("CLAUDE_CODE_ENABLE_TASKS", "1");
+        crate::utils::process_env::set("NYAN_ENABLE_TASKS", "1");
         let forced = get_all_base_tools()
             .into_iter()
             .map(|tool| tool.name)
             .collect::<std::collections::BTreeSet<_>>();
         assert!(forced.contains("TaskCreate"));
-        crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_TASKS");
+        crate::utils::process_env::remove("NYAN_ENABLE_TASKS");
         crate::utils::process_env::remove("NYAN_NON_INTERACTIVE_SESSION");
     }
 
@@ -776,7 +776,7 @@ mod tests {
     fn tool_search_tool_is_available_unless_explicit_beta_or_env_disable() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         let with_default = get_all_base_tools()
             .into_iter()
             .map(|tool| tool.name)
@@ -809,7 +809,7 @@ mod tests {
     #[test]
     fn cron_tools_are_available_only_when_hardcoded_cron_switch_is_enabled() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_CRON");
+        crate::utils::process_env::remove("NYAN_DISABLE_CRON");
         let enabled = get_all_base_tools()
             .into_iter()
             .map(|tool| tool.name)
@@ -821,7 +821,7 @@ mod tests {
             assert_eq!(enabled.contains(tool_name), expected_enabled, "{tool_name}");
         }
 
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_CRON", "1");
+        crate::utils::process_env::set("NYAN_DISABLE_CRON", "1");
         let disabled = get_all_base_tools()
             .into_iter()
             .map(|tool| tool.name)
@@ -829,13 +829,13 @@ mod tests {
         for tool_name in ["CronCreate", "CronDelete", "CronList"] {
             assert!(!disabled.contains(tool_name), "unexpected {tool_name}");
         }
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_CRON");
+        crate::utils::process_env::remove("NYAN_DISABLE_CRON");
     }
 
     #[test]
     fn agent_swarm_tools_keep_send_message_registered_and_gate_active_tools() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
         let without = get_all_base_tools()
             .into_iter()
             .map(|tool| tool.name)
@@ -857,12 +857,12 @@ mod tests {
             crate::utils::build_profile::build_audience().is_internal()
         );
 
-        crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        crate::utils::process_env::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let with = get_all_base_tools()
             .into_iter()
             .map(|tool| tool.name)
             .collect::<std::collections::BTreeSet<_>>();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
         for tool_name in ["SendMessage", "TeamCreate", "TeamDelete"] {
             assert!(with.contains(tool_name), "missing {tool_name}");
         }
@@ -889,9 +889,9 @@ mod tests {
     #[test]
     fn get_tools_honors_official_simple_mode_subset() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "true");
+        crate::utils::process_env::set("NYAN_SIMPLE", "true");
         let tools = get_tools(&crate::tool::ToolPermissionContext::default());
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
 
         let names = tools.into_iter().map(|tool| tool.name).collect::<Vec<_>>();
         assert_eq!(names, vec!["Bash", "Read", "Edit"]);

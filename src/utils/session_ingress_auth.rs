@@ -41,7 +41,7 @@ pub fn get_token_from_file_descriptor_with_env(
 
     let fallback_path = env_value(get_env, "CLAUDE_SESSION_INGRESS_TOKEN_FILE")
         .unwrap_or_else(|| CCR_SESSION_INGRESS_TOKEN_PATH.to_string());
-    let token = match env_value(get_env, "CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR") {
+    let token = match env_value(get_env, "NYAN_WEBSOCKET_AUTH_FILE_DESCRIPTOR") {
         Some(fd_env) => fd_env
             .parse::<i32>()
             .ok()

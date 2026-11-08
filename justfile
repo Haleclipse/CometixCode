@@ -20,10 +20,10 @@
 #                      asserting against the developer's own config.
 #   privacy vars       gate analytics, which decides whether growthbook
 #                      features are read at all (services/analytics/config.rs:6).
-#                      A dev shell exporting CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+#                      A dev shell exporting NYAN_DISABLE_NONESSENTIAL_TRAFFIC
 #                      turned those tests into no-ops that passed for the wrong
 #                      reason.
-#   CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR
+#   NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR
 #                      short-circuits `reset_cwd_if_outside_project`
 #                      (bash_tool/utils.rs:184) to always report the project
 #                      root, whatever the shell actually did. A dev shell
@@ -161,7 +161,7 @@ test-all-audiences:
 #     early return (env.rs:165-175). "Expected 2 results, got 0" read as a
 #     product bug for as long as the note stood.
 #   foreground_shell_reports_persistent_physical_cwd
-#     CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR leaked from the developer's
+#     NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR leaked from the developer's
 #     shell and short-circuits reset_cwd_if_outside_project. Cleared by the
 #     test harness (scripts/ci/test.sh).
 #   status_notice_context_uses_official_api_key_approval_for_conflict_source

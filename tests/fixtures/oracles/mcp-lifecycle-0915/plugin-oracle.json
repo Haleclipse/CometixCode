@@ -9,11 +9,11 @@
   ],
   "rawCache": {
     "fresh": {
-      "command": "${CLAUDE_PLUGIN_ROOT}/bin",
+      "command": "${NYAN_PLUGIN_ROOT}/bin",
       "args": []
     }
   },
-  "rawCachedCommand": "${CLAUDE_PLUGIN_ROOT}/bin",
+  "rawCachedCommand": "${NYAN_PLUGIN_ROOT}/bin",
   "activationCommand": "<ROOT>/bin",
   "errors": []
 }

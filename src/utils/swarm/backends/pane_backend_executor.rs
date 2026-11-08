@@ -461,7 +461,7 @@ mod tests {
             "reviewer@alpha team",
             AgentColorName::Green,
         );
-        assert!(command.starts_with("cd '/tmp/project dir' && env CLAUDECODE=1"));
+        assert!(command.starts_with("cd '/tmp/project dir' && env NYAN=1"));
         assert!(command.contains("'/bin/claude code' --agent-id 'reviewer@alpha team'"));
         assert!(command.contains("--team-name 'alpha team'"));
         assert!(command.contains("--model 'claude model'"));

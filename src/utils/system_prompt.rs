@@ -108,7 +108,7 @@ pub fn build_effective_system_prompt(args: BuildEffectiveSystemPromptArgs<'_>) -
     // here to prevent circular deps during test module loading).
     if feature_enabled(FeatureFlag::CoordinatorMode)
         && crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_COORDINATOR_MODE").as_deref(),
+            crate::utils::process_env::var("NYAN_COORDINATOR_MODE").as_deref(),
         )
         && args.main_thread_agent_definition.is_none()
     {
@@ -245,7 +245,7 @@ mod tests {
     /// Clear coordinator env so default/custom priority tests are deterministic.
     fn without_coordinator_env<T>(f: impl FnOnce() -> T) -> T {
         let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let _coordinator = EnvVarGuard::unset("CLAUDE_CODE_COORDINATOR_MODE");
+        let _coordinator = EnvVarGuard::unset("NYAN_COORDINATOR_MODE");
         f()
     }
 
@@ -334,7 +334,7 @@ mod tests {
             return;
         }
         let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let _coordinator = EnvVarGuard::set("CLAUDE_CODE_COORDINATOR_MODE", "1");
+        let _coordinator = EnvVarGuard::set("NYAN_COORDINATOR_MODE", "1");
         let prompt = build_effective_system_prompt(args_custom_default_append(
             Some("CUSTOM"),
             vec!["DEFAULT".into()],

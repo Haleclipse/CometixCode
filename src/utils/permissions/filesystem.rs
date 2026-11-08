@@ -618,7 +618,7 @@ pub(crate) fn check_editable_internal_path(
     // compile-time `anthropic_internal` Cargo feature so the env key and
     // policy are absent from external binaries.
     #[cfg(feature = "anthropic_internal")]
-    if let Some(job_dir) = crate::utils::process_env::var_os("CLAUDE_JOB_DIR")
+    if let Some(job_dir) = crate::utils::process_env::var_os("NYAN_JOB_DIR")
         .as_deref()
         .truthy()
         .map(PathBuf::from)
@@ -782,7 +782,7 @@ pub(crate) fn verify_owned_temp_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt as _;
     use std::os::unix::fs::{MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _};
     const HINT: &str =
-        "Set CLAUDE_CODE_TMPDIR to a directory you control, or ask an administrator to remove it.";
+        "Set NYAN_TMPDIR to a directory you control, or ask an administrator to remove it.";
     let uid = current_uid();
     let shown = dir.display();
     // `e.replace(/[\/]+$/, "") || e`
@@ -846,7 +846,7 @@ pub(crate) fn verify_owned_temp_dir(dir: &Path) -> std::io::Result<()> {
 }
 
 /// Maps to CC `getClaudeTempDir()` (`filesystem.ts:331-346`), memoized: the
-/// per-user temp directory under `CLAUDE_CODE_TMPDIR || (Windows ? tmpdir() :
+/// per-user temp directory under `NYAN_TMPDIR || (Windows ? tmpdir() :
 /// '/tmp')` with the base's symlinks resolved (`/tmp` is `/private/tmp` on
 /// macOS), with a trailing separator.
 ///
@@ -866,7 +866,7 @@ pub fn get_claude_temp_dir() -> PathBuf {
 /// The body of [`get_claude_temp_dir`].
 fn claude_temp_dir() -> PathBuf {
     use crate::utils::platform::{Platform, get_platform};
-    let base_tmp_dir = crate::utils::process_env::var_os("CLAUDE_CODE_TMPDIR")
+    let base_tmp_dir = crate::utils::process_env::var_os("NYAN_TMPDIR")
         .as_deref()
         .truthy()
         .map(PathBuf::from)
@@ -1550,7 +1550,7 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, PinnedProjectDir, TEST_ENV_LOCK};
 
     /// CC `filesystem.ts:331-346` and `:376-378`: the per-user directory
-    /// under the resolved `CLAUDE_CODE_TMPDIR`, and the project directory
+    /// under the resolved `NYAN_TMPDIR`, and the project directory
     /// under it named by `sanitizePath`, each with a trailing separator.
     #[cfg(unix)]
     #[test]
@@ -1559,7 +1559,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("nyan-temp-shape-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let resolved = root.canonicalize().unwrap();
-        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("NYAN_TMPDIR", &root);
         let expected = format!("{}/claude-{}/", resolved.display(), current_uid());
         assert_eq!(get_claude_temp_dir().to_string_lossy(), expected);
         let cwd = crate::bootstrap::state::get_original_cwd();
@@ -1985,7 +1985,7 @@ mod tests {
         std::fs::create_dir_all(&job).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _job = EnvVarGuard::set("CLAUDE_JOB_DIR", &job);
+        let _job = EnvVarGuard::set("NYAN_JOB_DIR", &job);
         let context = ToolPermissionContext::default();
         let inside = job.join("result.txt");
         assert!(matches!(
@@ -2002,7 +2002,7 @@ mod tests {
         ));
 
         {
-            let _hijacked_job = EnvVarGuard::set("CLAUDE_JOB_DIR", &outside);
+            let _hijacked_job = EnvVarGuard::set("NYAN_JOB_DIR", &outside);
             let hijacked = outside.join("result.txt");
             assert!(!matches!(
                 check_write_permission_for_tool(

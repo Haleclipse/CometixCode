@@ -1770,9 +1770,9 @@ pub async fn get_attachments(
     // silently drop them (Coworker runs with --bare and depends on
     // task-notification for mid-tool-call notifications).
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_ATTACHMENTS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_ATTACHMENTS").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     ) {
         return get_queued_command_attachments(&queued_commands);
     }
@@ -4064,7 +4064,7 @@ mod tests {
     #[test]
     fn mcp_instruction_delta_reads_instructions_from_connected_records() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _gate = EnvVarGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "true");
+        let _gate = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "true");
         let clients = [
             crate::services::mcp::types::McpServerConnection::connected_with_instructions_for_test(
                 "docs",
@@ -4082,7 +4082,7 @@ mod tests {
         );
 
         // The gate is off: no attachment.
-        let _gate = EnvVarGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "false");
+        let _gate = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "false");
         assert!(
             get_mcp_instructions_delta_attachment(&clients, &[], "claude-sonnet-4-6", &[])
                 .is_none()
@@ -4092,7 +4092,7 @@ mod tests {
     #[test]
     fn mcp_instruction_delta_appends_chrome_tool_search_instructions() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _gate = EnvVarGuard::set("CLAUDE_CODE_MCP_INSTR_DELTA", "true");
+        let _gate = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "true");
         let _tool_search = EnvVarGuard::set("ENABLE_TOOL_SEARCH", "true");
         let clients = [
             crate::services::mcp::types::McpServerConnection::connected_with_instructions_for_test(

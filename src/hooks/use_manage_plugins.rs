@@ -28,7 +28,7 @@ pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>, enabled: bool) {
                     let mut metrics = initial_plugin_load(store, notifications).await;
                     let names = metrics.as_object_mut().unwrap().remove("ant_enabled_names");
                     metrics["has_custom_plugin_cache_dir"] = json!(
-                        crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR")
+                        crate::utils::process_env::var("NYAN_PLUGIN_CACHE_DIR")
                             .truthy()
                             .is_some()
                     );

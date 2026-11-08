@@ -552,7 +552,7 @@ mod tests {
         "CLAUDE_CODE_OAUTH_TOKEN",
         "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
         "CLAUDE_CODE_REMOTE",
-        "CLAUDE_CODE_SIMPLE",
+        "NYAN_SIMPLE",
         "NYAN_CONFIG_DIR",
         "NODE_ENV",
     ];

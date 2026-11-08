@@ -277,7 +277,7 @@ Live:
       --debug-to-stderr      Debug to stderr instead of file (-d2e)
       --debug-file <path>    Debug log file (implies debug)
       --verbose              Verbose mode
-      --bare                 Minimal/simple mode (CLAUDE_CODE_SIMPLE)
+      --bare                 Minimal/simple mode (NYAN_SIMPLE)
       --model <model>        Session model (or `default`)
       --effort <level>       Effort: off|medium|high|max
       --thinking <mode>      adaptive|enabled|disabled

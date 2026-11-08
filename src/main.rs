@@ -460,7 +460,7 @@ fn build_initial_app_state_with_agents(
         crate::bootstrap::state::get_is_non_interactive_session(),
         crate::utils::agent_swarms_enabled::is_agent_swarms_enabled()
             && crate::utils::teammate::is_teammate(),
-        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION")
+        crate::utils::process_env::var("NYAN_ENABLE_PROMPT_SUGGESTION")
             .as_deref(),
     );
     // Maps to: CC main.tsx initialState notifications seeding.
@@ -2124,11 +2124,10 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-main-resume-order-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&cwd).unwrap();
         let cwd = fs::canonicalize(&cwd).unwrap();
-        let _process_state =
-            MainProcessStateGuard::enter(&cwd, &["CLAUDE_CODE_SIMPLE", "CLAUBBIT"]);
+        let _process_state = MainProcessStateGuard::enter(&cwd, &["NYAN_SIMPLE", "CLAUBBIT"]);
         let _projects_guard =
             utils::session_storage::set_test_projects_dir_override(cwd.join("projects"));
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         crate::utils::process_env::set("CLAUBBIT", "1");
         utils::config::set_test_global_config(Some(utils::config::GlobalConfig::default()));
         utils::config::reset_trust_dialog_accepted_cache_for_testing();
@@ -2489,7 +2488,7 @@ mod tests {
             .lock()
             .unwrap();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        crate::utils::process_env::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         utils::teammate::clear_dynamic_team_context();
         utils::swarm::backends::teammate_mode_snapshot::reset_teammate_mode_snapshot_for_test();
 
@@ -2535,13 +2534,13 @@ mod tests {
 
         utils::teammate::clear_dynamic_team_context();
         utils::swarm::backends::teammate_mode_snapshot::reset_teammate_mode_snapshot_for_test();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
     }
 
     #[test]
     fn configure_teammate_from_cli_requires_identity_triplet_like_official() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        crate::utils::process_env::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let error = configure_teammate_from_cli(&argv(&[
             "--agent-id",
             "reviewer@alpha",
@@ -2551,7 +2550,7 @@ mod tests {
         .unwrap_err();
 
         assert!(error.contains("--agent-id, --agent-name, and --team-name"));
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
     }
 
     fn install_launch_profiles() {

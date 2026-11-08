@@ -187,7 +187,7 @@ pub async fn execute_hooks_outside_repl_with_config(
                     .map(|seconds| seconds * 1_000)
                     .unwrap_or(timeout_ms);
                 let mut env = base_env.clone();
-                // Maps to CC `execCommandHook` `CLAUDE_ENV_FILE` injection. PowerShell
+                // Maps to CC `execCommandHook` `NYAN_ENV_FILE` injection. PowerShell
                 // hooks are routed through their separate shell owner; this path is the
                 // Bash `.sh` environment contract.
                 if matches!(
@@ -200,7 +200,7 @@ pub async fn execute_hooks_outside_repl_with_config(
                     event.as_str(),
                     hook_index,
                 ) {
-                    env.push(("CLAUDE_ENV_FILE".to_string(), path.display().to_string()));
+                    env.push(("NYAN_ENV_FILE".to_string(), path.display().to_string()));
                 }
                 let exec_result = exec_command_hook(
                     &command.command,

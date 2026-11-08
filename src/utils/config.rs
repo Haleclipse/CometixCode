@@ -1644,7 +1644,7 @@ pub fn get_auto_updater_disabled_reason() -> Option<&'static str> {
     if crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTOUPDATER").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_AUTOUPDATER").as_deref(),
     ) {
         return Some("environment");
     }

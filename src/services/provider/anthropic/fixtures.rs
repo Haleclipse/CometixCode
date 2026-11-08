@@ -39,23 +39,20 @@ impl Env {
         std::fs::create_dir_all(&root).unwrap();
         let mut guards = vec![
             EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
-            EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
+            EnvVarGuard::set("NYAN_SIMPLE", "1"),
             EnvVarGuard::set(KEY_VAR, KEY),
-            EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "0"),
+            EnvVarGuard::set("NYAN_MAX_RETRIES", "0"),
             EnvVarGuard::set("API_TIMEOUT_MS", "5000"),
             EnvVarGuard::set("NO_PROXY", "*"),
             EnvVarGuard::set("no_proxy", "*"),
         ];
         for key in [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "ANTHROPIC_API_KEY",
             "ANTHROPIC_AUTH_TOKEN",
             "ANTHROPIC_BASE_URL",
             "ANTHROPIC_CUSTOM_HEADERS",
             "ANTHROPIC_BETAS",
-            "CLAUDE_CODE_EXTRA_BODY",
+            "NYAN_EXTRA_BODY",
             "DISABLE_PROMPT_CACHING",
             "ANTHROPIC_UNIX_SOCKET",
         ] {
@@ -638,7 +635,7 @@ async fn an_overloaded_529_retries_under_the_unified_budget_and_recovers() {
     .await;
     let _env = Env::new(&mock.base_url);
     // Override the fixture's CLAUDE_CODE_MAX_RETRIES="0" pin so the default budget (2) is active.
-    let _retries = EnvVarGuard::unset("CLAUDE_CODE_MAX_RETRIES");
+    let _retries = EnvVarGuard::unset("NYAN_MAX_RETRIES");
 
     let options = Options::new(
         "claude-sonnet-4-6".to_string(),

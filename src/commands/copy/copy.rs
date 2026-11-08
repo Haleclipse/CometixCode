@@ -266,7 +266,7 @@ fn prepare_call(messages: &[Message], args: &str, copy_full_response: bool) -> C
 /// Nyan-specific deviation (10-03, user): `/copy` writes where CC 2.1.285
 /// does. 2.1.88 (`copy.tsx:23`) uses `join(tmpdir(), 'claude')`, on macOS the
 /// per-user `/var/folders/…/T/claude`. 2.1.285's `writeToFile` takes its
-/// shared per-uid temp root, `join(CLAUDE_CODE_TMPDIR || '/tmp', 'claude-' +
+/// shared per-uid temp root, `join(NYAN_TMPDIR || '/tmp', 'claude-' +
 /// (getuid() ?? 0))` (`/tmp/claude-<uid>` on macOS too; the variable trimmed,
 /// as 2.1.285's environment reads are), created 0700 and checked to be the
 /// user's own (`verify_owned_temp_dir`). 2.1.285 checks once per path; this
@@ -276,7 +276,7 @@ fn prepare_call(messages: &[Message], args: &str, copy_full_response: bool) -> C
 /// ported.
 fn copy_dir() -> std::io::Result<PathBuf> {
     use crate::utils::process_env::JsTruthy as _;
-    let base = crate::utils::process_env::var("CLAUDE_CODE_TMPDIR")
+    let base = crate::utils::process_env::var("NYAN_TMPDIR")
         .map(|value| value.trim().to_owned())
         .truthy()
         .map(PathBuf::from)
@@ -666,7 +666,7 @@ mod tests {
     };
     use chrono::Utc;
 
-    /// 2.1.285: the per-uid root under `CLAUDE_CODE_TMPDIR`, made 0700.
+    /// 2.1.285: the per-uid root under `NYAN_TMPDIR`, made 0700.
     #[cfg(unix)]
     #[test]
     fn copy_dir_is_the_per_uid_root_made_private() {
@@ -679,7 +679,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&expected).unwrap();
         std::fs::set_permissions(&expected, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("NYAN_TMPDIR", &root);
         assert_eq!(copy_dir().unwrap(), expected);
         assert_eq!(
             std::fs::metadata(&expected).unwrap().permissions().mode() & 0o777,
@@ -727,7 +727,7 @@ mod tests {
     /// plant on a shared `/tmp`.
     /// Checked on every call (user, 10-03; 2.1.285 checks once per path): a
     /// loosened mode is fixed again, and a root replaced by a symlink after
-    /// the first call is refused. `CLAUDE_CODE_TMPDIR` is trimmed.
+    /// the first call is refused. `NYAN_TMPDIR` is trimmed.
     #[cfg(unix)]
     #[test]
     fn copy_dir_rechecks_the_root_on_every_call() {
@@ -735,7 +735,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("nyan-copy-again-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", format!(" {} ", root.display()));
+        let _tmp = EnvVarGuard::set("NYAN_TMPDIR", format!(" {} ", root.display()));
         let dir = copy_dir().unwrap();
         assert_eq!(dir.parent(), Some(root.as_path()));
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -769,7 +769,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000)).unwrap();
-        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("NYAN_TMPDIR", &root);
         let error = copy_dir().unwrap_err();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(error.to_string().contains("is not readable"), "{error}");
@@ -791,7 +791,7 @@ mod tests {
             )),
         )
         .unwrap();
-        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &root);
+        let _tmp = EnvVarGuard::set("NYAN_TMPDIR", &root);
         let error = copy_dir().unwrap_err();
         assert!(error.to_string().contains("not a directory"), "{error}");
         let _ = std::fs::remove_dir_all(root);
@@ -1074,7 +1074,7 @@ mod tests {
         crate::utils::process_runtime::initialize_test_process_runtime();
         // Keep `copy_dir()` off the real per-uid temp root.
         let _tmp = EnvVarGuard::set(
-            "CLAUDE_CODE_TMPDIR",
+            "NYAN_TMPDIR",
             std::env::temp_dir().join(format!("nyan-copy-fail-{}", uuid::Uuid::new_v4())),
         );
         let output = std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -1135,7 +1135,7 @@ mod tests {
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _path = EnvVarGuard::set("PATH", &directory);
         // Keep `copy_dir()` off the real per-uid temp root.
-        let _tmp = EnvVarGuard::set("CLAUDE_CODE_TMPDIR", &directory);
+        let _tmp = EnvVarGuard::set("NYAN_TMPDIR", &directory);
         for drop_observer in [false, true] {
             let filename = format!("copy-fixture-{}.txt", uuid::Uuid::new_v4());
             let result = std::sync::Arc::new(std::sync::Mutex::new(None));

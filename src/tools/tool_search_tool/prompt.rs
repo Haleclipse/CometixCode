@@ -104,7 +104,7 @@ pub fn is_tool_search_enabled_for_request(
 /// Maps to CC `utils/toolSearch.ts` `isToolSearchEnabledOptimistic()`.
 pub fn is_tool_search_enabled_optimistic() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_EXPERIMENTAL_BETAS").as_deref(),
     ) {
         return false;
     }

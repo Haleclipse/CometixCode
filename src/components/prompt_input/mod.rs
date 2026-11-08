@@ -3989,7 +3989,7 @@ mod tests {
         // history suppresses the suggestion state, not just the dropdown.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         prompt_history::add_to_history("/help");
         prompt_history::add_to_history("/resume");
         assert_eq!(prompt_history::get_history()[0].display, "/resume");

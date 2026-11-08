@@ -355,9 +355,7 @@ const DEFAULT_PLUGIN_GIT_TIMEOUT_MS: f64 = 120_000.0;
 
 /// Maps to: CC `utils/plugins/marketplaceManager.ts:517-526#getPluginGitTimeoutMs`.
 fn get_plugin_git_timeout_ms() -> f64 {
-    if let Some(value) =
-        crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS").truthy()
-    {
+    if let Some(value) = crate::utils::process_env::var("NYAN_PLUGIN_GIT_TIMEOUT_MS").truthy() {
         // ECMAScript trim and decimal-prefix parseInt; preserve Number rounding.
         let trimmed = value.trim_start_matches(|c: char| matches!(c, '\u{9}'..='\u{d}' | '\u{20}' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}' | '\u{feff}'));
         let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
@@ -2056,7 +2054,7 @@ mod tests {
             std::env::temp_dir().join(format!("marketplace-reader-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", "");
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", "");
         let _cowork = EnvVarGuard::set("CLAUDE_CODE_USE_COWORK_PLUGINS", "0");
         // Verbatim Bun oracle outputs for marketplaceManager.ts:264-299 and
         // schemas.ts:1593-1629. Native JSON syntax diagnostics are a recorded
@@ -2138,7 +2136,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&first).unwrap();
         std::fs::create_dir_all(&second).unwrap();
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &first);
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &first);
         let file = get_known_marketplaces_file();
         std::fs::create_dir(&file).unwrap();
         // marketplaceManager.ts:284-298: only ENOENT is empty; EISDIR is Error.
@@ -2150,7 +2148,7 @@ mod tests {
         assert!(!error.is::<crate::utils::errors::ConfigParseError>());
         assert!(file.is_dir());
         // :265-266 resolves the path on every call; no memo or seed overlay.
-        let _second = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &second);
+        let _second = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &second);
         assert!(load_known_marketplaces_config().await.unwrap().is_empty());
         assert!(!get_known_marketplaces_file().exists());
         std::fs::remove_dir_all(first).unwrap();
@@ -2163,10 +2161,7 @@ mod tests {
         std::fs::create_dir_all(&cache).unwrap();
         let value = serde_json::json!({"m": {"source": {"source":"directory","path":""}, "installLocation":"", "lastUpdated":""}});
         std::fs::write(cache.join("known_marketplaces.json"), value.to_string()).unwrap();
-        let _cache = EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            root.join("missing/../cache"),
-        );
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", root.join("missing/../cache"));
         // marketplaceManager.ts:103 join normalizes even nonexistent components.
         assert_eq!(
             get_known_marketplaces_file(),
@@ -2186,7 +2181,7 @@ mod tests {
                 "cafe\u{301}/known_marketplaces.json",
             ),
         ] {
-            let _case = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", input);
+            let _case = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", input);
             assert_eq!(get_known_marketplaces_file(), PathBuf::from(expected));
         }
         std::fs::remove_dir_all(root).unwrap();
@@ -2198,8 +2193,8 @@ mod tests {
         let root = std::env::temp_dir().join(format!("marketplace-cache-{}", uuid::Uuid::new_v4()));
         let primary = root.join("primary");
         std::fs::create_dir_all(&primary).unwrap();
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &primary);
-        let _seed = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_SEED_DIR", root.join("seed"));
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &primary);
+        let _seed = EnvVarGuard::set("NYAN_PLUGIN_SEED_DIR", root.join("seed"));
         let config = get_known_marketplaces_file();
         let catalog = root.join("catalog.json");
         let manifest = json!({"name":"m","owner":{"name":"Owner"},"plugins":[
@@ -2362,7 +2357,7 @@ mod tests {
         use serde_json::json;
         let root = std::env::temp_dir().join(format!("marketplace-race-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &root);
         std::fs::write(get_known_marketplaces_file(), "{}").unwrap();
         let catalog = root.join("catalog.json");
         std::fs::write(
@@ -2420,11 +2415,11 @@ mod tests {
             ("\u{85}50", 120000.0),
             ("9007199254740993", 9007199254740992.0),
         ] {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", raw);
+            let _env = EnvVarGuard::set("NYAN_PLUGIN_GIT_TIMEOUT_MS", raw);
             assert_eq!(get_plugin_git_timeout_ms(), expected, "{raw:?}");
         }
         let large = "9".repeat(400);
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", &large);
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_GIT_TIMEOUT_MS", &large);
         assert_eq!(get_plugin_git_timeout_ms(), f64::INFINITY);
     }
 
@@ -2432,7 +2427,7 @@ mod tests {
     fn git_pull_error_precedence_preserves_returned_fields() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         use crate::utils::exec_file_no_throw::ExecFileOutput;
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", "1499");
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_GIT_TIMEOUT_MS", "1499");
         for (code, stderr, error, prefix) in [
             (
                 0,
@@ -2616,7 +2611,7 @@ mod tests {
         .unwrap();
         let _global = EnvVarGuard::set("GIT_CONFIG_GLOBAL", &config);
         let _system = EnvVarGuard::set("GIT_CONFIG_NOSYSTEM", "1");
-        let _timeout = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS", "10000");
+        let _timeout = EnvVarGuard::set("NYAN_PLUGIN_GIT_TIMEOUT_MS", "10000");
         let _hooks = EnvVarGuard::unset("GIT_TEMPLATE_DIR");
         // Test-only fixture setup feeds the same existing runner, no new process loop.
         for args in [

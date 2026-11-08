@@ -219,7 +219,7 @@ const DEFAULT_PARSE_TIMEOUT_MS: u64 = 5_000;
 
 /// Maps to: CC `parser.ts:208-215#getParseTimeoutMs`.
 fn get_parse_timeout_ms() -> u64 {
-    crate::utils::process_env::var("CLAUDE_CODE_PWSH_PARSE_TIMEOUT_MS")
+    crate::utils::process_env::var("NYAN_PWSH_PARSE_TIMEOUT_MS")
         .truthy()
         .and_then(|value| value.parse::<u64>().ok())
         .filter(|parsed| *parsed > 0)

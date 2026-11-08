@@ -732,7 +732,7 @@ mod tests {
             crate::bootstrap::state::set_original_cwd(&root);
             let mut env = vec![
                 EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
-                EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
+                EnvVarGuard::set("NYAN_SIMPLE", "1"),
                 EnvVarGuard::set("NYAN_SIDE_QUERY_TEST_KEY", "sk-ant-local-side-query-test"),
                 EnvVarGuard::set("API_TIMEOUT_MS", "5000"),
                 EnvVarGuard::set("NO_PROXY", "*"),

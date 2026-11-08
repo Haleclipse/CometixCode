@@ -510,9 +510,9 @@ mod tests {
         std::fs::create_dir_all(&session_root).unwrap();
         let env = vec![
             EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root),
-            EnvVarGuard::unset("CLAUDE_CODE_DISABLE_AUTO_MEMORY"),
-            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
-            EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY"),
+            EnvVarGuard::unset("NYAN_DISABLE_AUTO_MEMORY"),
+            EnvVarGuard::unset("NYAN_SIMPLE"),
+            EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY"),
             EnvVarGuard::set("NYAN_WRITE_ENABLED", "1"),
         ];
         crate::bootstrap::state::set_session_persistence_disabled(false);

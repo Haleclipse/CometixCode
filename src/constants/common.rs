@@ -6,9 +6,7 @@ use crate::utils::process_env::JsTruthy;
 
 /// Maps to: CC `constants/common.ts` `getLocalISODate()`.
 pub fn get_local_iso_date() -> String {
-    if let Some(override_date) =
-        crate::utils::process_env::var("CLAUDE_CODE_OVERRIDE_DATE").truthy()
-    {
+    if let Some(override_date) = crate::utils::process_env::var("NYAN_OVERRIDE_DATE").truthy() {
         return override_date;
     }
 
@@ -20,8 +18,7 @@ pub fn get_local_iso_date() -> String {
 /// same `CLAUDE_CODE_OVERRIDE_DATE` override; an unparseable override falls
 /// back to now (CC would render "Invalid Date").
 pub fn get_local_month_year() -> String {
-    if let Some(override_date) =
-        crate::utils::process_env::var("CLAUDE_CODE_OVERRIDE_DATE").truthy()
+    if let Some(override_date) = crate::utils::process_env::var("NYAN_OVERRIDE_DATE").truthy()
         && let Ok(date) = chrono::NaiveDate::parse_from_str(&override_date, "%Y-%m-%d")
     {
         return date.format("%B %Y").to_string();
@@ -44,8 +41,8 @@ mod tests {
     #[test]
     fn get_local_iso_date_honors_official_override_env() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_OVERRIDE_DATE", "2026-07-03");
+        crate::utils::process_env::set("NYAN_OVERRIDE_DATE", "2026-07-03");
         assert_eq!(get_local_iso_date(), "2026-07-03");
-        crate::utils::process_env::remove("CLAUDE_CODE_OVERRIDE_DATE");
+        crate::utils::process_env::remove("NYAN_OVERRIDE_DATE");
     }
 }

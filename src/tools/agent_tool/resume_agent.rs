@@ -757,9 +757,9 @@ mod tests {
     #[test]
     fn recover_fork_parent_system_prompt_recomputes_with_the_four_arg_plumbing() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
-        crate::utils::process_env::remove("CLAUDE_CODE_COORDINATOR_MODE");
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
+        crate::utils::process_env::remove("NYAN_COORDINATOR_MODE");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "1");
 
         let mut context = crate::tool::ToolUseContext::default();
         assert!(context.rendered_system_prompt.is_none());
@@ -777,7 +777,7 @@ mod tests {
 
         let recovered = recover_fork_parent_system_prompt(&context)
             .expect("recompute fallback yields a prompt");
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
 
         assert!(!recovered.is_empty());
         let env_section = recovered

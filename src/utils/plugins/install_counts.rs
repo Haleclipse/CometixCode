@@ -533,10 +533,7 @@ mod tests {
     async fn install_counts_cache_matches_official_ttl_validation_and_raw_numbers() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            temp.path().to_str().unwrap(),
-        );
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", temp.path().to_str().unwrap());
         let _reset = BoundaryReset;
         let now = chrono::DateTime::parse_from_rfc3339("2026-09-14T00:00:00Z")
             .unwrap()
@@ -595,10 +592,7 @@ mod tests {
     async fn install_counts_fetch_matches_official_save_before_map_and_cache_hit() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            temp.path().to_str().unwrap(),
-        );
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", temp.path().to_str().unwrap());
         let _reset = BoundaryReset;
         let bom_server = serve(vec![(200, "\u{feff}{\"plugins\":[]}")]);
         assert!(get_install_counts().await.unwrap().entries.is_empty());
@@ -652,10 +646,7 @@ mod tests {
     async fn install_counts_fetch_matches_official_write_failure_and_invalid_response() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            temp.path().to_str().unwrap(),
-        );
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", temp.path().to_str().unwrap());
         let _reset = BoundaryReset;
         // An existing directory at the final filename makes rename fail. The
         // successful fetched Map still returns, and the random temp is removed.
@@ -690,13 +681,10 @@ mod tests {
         let temp = TestDirectory::new().unwrap();
         let file = temp.path().join("ordinary-plugins-file");
         std::fs::write(&file, "unchanged").unwrap();
-        let _env = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", file.to_str().unwrap());
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", file.to_str().unwrap());
         let _logging = [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "DISABLE_ERROR_REPORTING",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ]
         .map(EnvVarGuard::unset);
         let _reset = BoundaryReset;
@@ -724,10 +712,7 @@ mod tests {
     async fn install_counts_concurrent_misses_match_official_independent_fetches() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let temp = TestDirectory::new().unwrap();
-        let _env = EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            temp.path().to_str().unwrap(),
-        );
+        let _env = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", temp.path().to_str().unwrap());
         let _reset = BoundaryReset;
         let server = serve(vec![
             (200, r#"{"plugins":[{"plugin":"a","unique_installs":1}]}"#),

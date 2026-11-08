@@ -202,7 +202,7 @@ mod tests {
             "CLAUDE_INTERNAL_FC_OVERRIDES",
             "NODE_ENV",
             "DISABLE_TELEMETRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
         }

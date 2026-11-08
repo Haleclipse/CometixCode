@@ -59,8 +59,7 @@ pub fn clear_leader_team_name() {
 
 /// Maps to: CC `utils/tasks.ts#getTaskListId`.
 pub fn get_task_list_id() -> String {
-    if let Some(task_list_id) = crate::utils::process_env::var("CLAUDE_CODE_TASK_LIST_ID").truthy()
-    {
+    if let Some(task_list_id) = crate::utils::process_env::var("NYAN_TASK_LIST_ID").truthy() {
         return task_list_id;
     }
     crate::utils::teammate::get_team_name(None)
@@ -153,7 +152,7 @@ pub fn reset_task_list(task_list_id: &str) -> std::io::Result<()> {
 /// (`getIsNonInteractiveSession()`), not an env var.
 pub fn is_todo_v2_enabled() -> bool {
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_TASKS").as_deref(),
+        crate::utils::process_env::var("NYAN_ENABLE_TASKS").as_deref(),
     ) {
         return true;
     }
@@ -487,7 +486,7 @@ impl TempTaskConfig {
             std::env::temp_dir().join(format!("nyan-tasks-{}", uuid::Uuid::new_v4().simple()));
         let guards = vec![
             EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
-            EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", list_id),
+            EnvVarGuard::set("NYAN_TASK_LIST_ID", list_id),
         ];
         let _ = reset_task_list(list_id);
         Self {
@@ -572,7 +571,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-task-claim-{}", uuid::Uuid::new_v4().simple()));
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
-        let _list_guard = EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", "session");
+        let _list_guard = EnvVarGuard::set("NYAN_TASK_LIST_ID", "session");
         let _ = reset_task_list("session");
         create_task(
             "session",
@@ -636,7 +635,7 @@ mod tests {
             .lock()
             .unwrap();
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _task_list_guard = EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", "");
+        let _task_list_guard = EnvVarGuard::set("NYAN_TASK_LIST_ID", "");
         clear_leader_team_name();
         crate::utils::teammate::clear_dynamic_team_context();
 
@@ -655,10 +654,10 @@ mod tests {
         ));
         assert_eq!(get_task_list_id(), "pane-team");
 
-        crate::utils::process_env::set("CLAUDE_CODE_TASK_LIST_ID", "explicit-list");
+        crate::utils::process_env::set("NYAN_TASK_LIST_ID", "explicit-list");
         assert_eq!(get_task_list_id(), "explicit-list");
 
-        crate::utils::process_env::set("CLAUDE_CODE_TASK_LIST_ID", "");
+        crate::utils::process_env::set("NYAN_TASK_LIST_ID", "");
         crate::utils::teammate::clear_dynamic_team_context();
         clear_leader_team_name();
     }
@@ -705,16 +704,16 @@ mod tests {
     #[test]
     fn is_todo_v2_enabled_matches_official_interactive_default_and_env_override() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_TASKS");
+        crate::utils::process_env::remove("NYAN_ENABLE_TASKS");
         crate::utils::process_env::remove("NYAN_NON_INTERACTIVE_SESSION");
         assert!(super::is_todo_v2_enabled());
 
         crate::utils::process_env::set("NYAN_NON_INTERACTIVE_SESSION", "1");
         assert!(!super::is_todo_v2_enabled());
 
-        crate::utils::process_env::set("CLAUDE_CODE_ENABLE_TASKS", "1");
+        crate::utils::process_env::set("NYAN_ENABLE_TASKS", "1");
         assert!(super::is_todo_v2_enabled());
-        crate::utils::process_env::remove("CLAUDE_CODE_ENABLE_TASKS");
+        crate::utils::process_env::remove("NYAN_ENABLE_TASKS");
         crate::utils::process_env::remove("NYAN_NON_INTERACTIVE_SESSION");
     }
 }

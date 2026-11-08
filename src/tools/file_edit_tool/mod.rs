@@ -657,7 +657,7 @@ impl crate::tool::ToolCall for FileEditTool {
             let touched_paths = [full_path.clone()];
             let mut dynamic_skill_dirs = Vec::new();
             if !crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+                crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
             ) {
                 let skill_dirs = crate::skills::load_skills_dir::discover_skill_dirs_for_paths(
                     &touched_paths,
@@ -1379,7 +1379,7 @@ mod tests {
 
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("exclusive");
         let path = root.join("locked.txt");
         std::fs::write(&path, "original\n").unwrap();
@@ -1486,7 +1486,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "0");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("disabled");
         let path = root.join("missing/disabled.txt");
         let request = request(&path, "", "content\n");
@@ -1517,7 +1517,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("empty-old");
 
         let missing = root.join("nested/new.txt");
@@ -1567,7 +1567,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("encoding");
         let path = root.join("encoded.txt");
         let original = "alpha\r\nold\r\n";
@@ -1628,7 +1628,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("replace-all");
         let path = root.join("values.txt");
         std::fs::write(&path, "old\nold\n").unwrap();
@@ -1663,8 +1663,8 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let _bootstrap = BootstrapRestore::capture();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
-        let _checkpointing = EnvVarGuard::set("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING", "0");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
+        let _checkpointing = EnvVarGuard::set("NYAN_DISABLE_FILE_CHECKPOINTING", "0");
         let root = temp_root("history");
         let config_dir = root.join("config");
         let _config_dir = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
@@ -1766,7 +1766,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let _remote = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
         let mut config = crate::utils::config::GlobalConfig::default();
         config.cached_growth_book_features = Some(std::collections::HashMap::from([(
@@ -1836,7 +1836,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "0");
         let _skills = crate::skills::load_skills_dir::DynamicSkillsTestSnapshot::capture();
         crate::skills::load_skills_dir::clear_dynamic_skills();
         let root = temp_root("dynamic-error");
@@ -1875,7 +1875,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("retarget");
         let package = root.join("package");
         std::fs::create_dir_all(&package).unwrap();
@@ -1915,7 +1915,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("user-path-update");
         let original_path = root.join("original.txt");
         let updated_path = root.join("updated.txt");
@@ -1952,7 +1952,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = temp_root("user-modified");
         let path = root.join("value.txt");
         std::fs::write(&path, "old\n").unwrap();

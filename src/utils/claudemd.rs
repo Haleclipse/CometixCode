@@ -121,7 +121,7 @@ pub fn discover_claude_md_files() -> Vec<ClaudeMdFile> {
 
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     );
     let files = discover_claude_md_files_with_options(include_default_discovery, &additional_dirs);
 
@@ -272,7 +272,7 @@ pub fn discover_claude_md_files_with_external_policy(
     }
 
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD").as_deref(),
+        crate::utils::process_env::var("NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD").as_deref(),
     ) {
         for dir in additional_dirs {
             load_project_claude_md_files(
@@ -374,7 +374,7 @@ pub fn should_show_claude_md_external_includes_warning() -> bool {
 
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     );
     let files = discover_claude_md_files_with_external_policy(
         include_default_discovery,
@@ -1273,7 +1273,7 @@ mod tests {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _unset = EnvVarGuard::unset("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
+        let _unset = EnvVarGuard::unset("NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD");
         let extra = temp_dir("additional-gate");
         std::fs::write(extra.join("AGENTS.md"), "explicit memory").unwrap();
 
@@ -1281,7 +1281,7 @@ mod tests {
         assert!(disabled.is_empty());
 
         let enabled = {
-            let _enabled = EnvVarGuard::set("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
+            let _enabled = EnvVarGuard::set("NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
             discover_claude_md_files_with_options(false, std::slice::from_ref(&extra))
         };
 
@@ -1297,7 +1297,7 @@ mod tests {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _enabled = EnvVarGuard::set("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
+        let _enabled = EnvVarGuard::set("NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
         let extra = temp_dir("additional-shape");
         std::fs::write(extra.join("AGENTS.md"), "agents memory").unwrap();
         std::fs::write(extra.join("CLAUDE.md"), "root memory").unwrap();

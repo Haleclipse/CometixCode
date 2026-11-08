@@ -66,7 +66,7 @@ struct SessionHookEntry {
     /// Maps to CC `SessionHookMatcher.skillRoot`. The current command-hook
     /// merge path still flattens this into `HooksConfig`; the shared hook
     /// orchestrator will consume `get_session_hook_matchers(...)` to pass
-    /// `CLAUDE_PLUGIN_ROOT` for skill hooks.
+    /// `NYAN_PLUGIN_ROOT` for skill hooks.
     skill_root: Option<String>,
 }
 

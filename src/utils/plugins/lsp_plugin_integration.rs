@@ -231,17 +231,17 @@ pub fn resolve_plugin_lsp_environment_readonly(
     let mut resolved_env = BTreeMap::new();
     // Maps to CC env defaults before user env spreading.
     resolved_env.insert(
-        "CLAUDE_PLUGIN_ROOT".to_string(),
+        "NYAN_PLUGIN_ROOT".to_string(),
         crate::utils::plugins::plugin_options_storage::substitute_plugin_variables(
-            "${CLAUDE_PLUGIN_ROOT}",
+            "${NYAN_PLUGIN_ROOT}",
             &plugin.path,
             None,
         )?,
     );
     resolved_env.insert(
-        "CLAUDE_PLUGIN_DATA".to_string(),
+        "NYAN_PLUGIN_DATA".to_string(),
         crate::utils::plugins::plugin_options_storage::substitute_plugin_variables(
-            "${CLAUDE_PLUGIN_DATA}",
+            "${NYAN_PLUGIN_DATA}",
             &plugin.path,
             Some(&plugin.source),
         )?,
@@ -250,7 +250,7 @@ pub fn resolve_plugin_lsp_environment_readonly(
         resolved_env.insert(key, value);
     }
     for (key, value) in resolved_env.clone() {
-        if key == "CLAUDE_PLUGIN_ROOT" || key == "CLAUDE_PLUGIN_DATA" {
+        if key == "NYAN_PLUGIN_ROOT" || key == "NYAN_PLUGIN_DATA" {
             continue;
         }
         let resolved =
@@ -426,7 +426,7 @@ mod tests {
         );
         write_file(
             &root.join(".lsp.json"),
-            r#"{"first":{"command":"${CLAUDE_PLUGIN_ROOT}/bin","extensionToLanguage":{".rs":"rust"}}}"#,
+            r#"{"first":{"command":"${NYAN_PLUGIN_ROOT}/bin","extensionToLanguage":{".rs":"rust"}}}"#,
         );
         let (plugin, errors) = create_plugin_from_path(&root, "shared@inline", true, "shared");
         assert!(errors.is_empty());
@@ -443,7 +443,7 @@ mod tests {
         assert!(extracted.contains_key("plugin:shared:first"));
         assert_eq!(
             cached.lsp_servers.snapshot().unwrap()["first"]["command"],
-            "${CLAUDE_PLUGIN_ROOT}/bin",
+            "${NYAN_PLUGIN_ROOT}/bin",
             "cache retains unresolved source values"
         );
         write_file(&root.join(".lsp.json"), "not JSON");
@@ -698,7 +698,7 @@ mod tests {
               "name":"toolbox",
               "lspServers":[
                 "./servers.json",
-                {"inline":{"command":"${CLAUDE_PLUGIN_ROOT}/inline-lsp","args":["--ok"],"extensionToLanguage":{".vue":"vue"}}}
+                {"inline":{"command":"${NYAN_PLUGIN_ROOT}/inline-lsp","args":["--ok"],"extensionToLanguage":{".vue":"vue"}}}
               ]
             }"#,
         );
@@ -723,7 +723,7 @@ mod tests {
                 .config
                 .env
                 .as_ref()
-                .and_then(|env| env.get("CLAUDE_PLUGIN_ROOT"))
+                .and_then(|env| env.get("NYAN_PLUGIN_ROOT"))
                 .map(String::as_str),
             Some(root.to_string_lossy().as_ref())
         );
@@ -732,7 +732,7 @@ mod tests {
                 .config
                 .env
                 .as_ref()
-                .and_then(|env| env.get("CLAUDE_PLUGIN_DATA"))
+                .and_then(|env| env.get("NYAN_PLUGIN_DATA"))
                 .is_some_and(|value| value.ends_with("toolbox-inline"))
         );
 
@@ -811,7 +811,7 @@ mod tests {
                 },
                 "lspServers": {
                     "configured": {
-                        "command": "${CLAUDE_PLUGIN_ROOT}/bin/lsp",
+                        "command": "${NYAN_PLUGIN_ROOT}/bin/lsp",
                         "args": ["--workspace", "${user_config.workspace}"],
                         "env": {"TOKEN":"${NYAN_LSP_TOKEN}"},
                         "workspaceFolder": "${user_config.workspace}",

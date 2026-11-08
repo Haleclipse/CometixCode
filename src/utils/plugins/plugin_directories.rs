@@ -27,7 +27,7 @@ fn get_plugins_directory_name() -> &'static str {
 
 /// Maps to CC `pluginDirectories.ts#getPluginsDirectory`.
 pub fn get_plugins_directory() -> PathBuf {
-    if let Some(path) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR").truthy() {
+    if let Some(path) = crate::utils::process_env::var("NYAN_PLUGIN_CACHE_DIR").truthy() {
         return expand_tilde_path(&path);
     }
     crate::utils::env_utils::get_config_home_dir().join(get_plugins_directory_name())
@@ -35,7 +35,7 @@ pub fn get_plugins_directory() -> PathBuf {
 
 /// Maps to CC `pluginDirectories.ts#getPluginSeedDirs`.
 pub fn get_plugin_seed_dirs() -> Vec<PathBuf> {
-    let Some(raw) = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_SEED_DIR").truthy() else {
+    let Some(raw) = crate::utils::process_env::var("NYAN_PLUGIN_SEED_DIR").truthy() else {
         return Vec::new();
     };
     let delimiter = if cfg!(windows) { ';' } else { ':' };
@@ -152,57 +152,57 @@ mod tests {
     fn plugin_directories_respect_cache_override_cowork_and_seed_precedence() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _restore = [
-            EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_CACHE_DIR"),
+            EnvVarGuard::preserve("NYAN_PLUGIN_CACHE_DIR"),
             EnvVarGuard::preserve("CLAUDE_CODE_USE_COWORK_PLUGINS"),
-            EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_SEED_DIR"),
+            EnvVarGuard::preserve("NYAN_PLUGIN_SEED_DIR"),
         ];
         // `expandTilde` takes `homedir()`: pin it to a literal.
         let home = "/home/someone";
         let _home = EnvVarGuard::set(HOME_VAR, home);
         crate::utils::process_env::remove("CLAUDE_CODE_USE_COWORK_PLUGINS");
-        crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_SEED_DIR");
-        crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", "~/custom-plugins");
+        crate::utils::process_env::remove("NYAN_PLUGIN_SEED_DIR");
+        crate::utils::process_env::set("NYAN_PLUGIN_CACHE_DIR", "~/custom-plugins");
         assert_eq!(
             get_plugins_directory(),
             PathBuf::from(&home).join("custom-plugins")
         );
 
-        crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", "");
+        crate::utils::process_env::set("NYAN_PLUGIN_CACHE_DIR", "");
         assert_eq!(
             get_plugins_directory(),
             crate::utils::env_utils::get_config_home_dir().join(PLUGINS_DIR)
         );
 
-        crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_CACHE_DIR");
+        crate::utils::process_env::remove("NYAN_PLUGIN_CACHE_DIR");
         crate::utils::process_env::set("CLAUDE_CODE_USE_COWORK_PLUGINS", "1");
         assert!(get_plugins_directory().ends_with(COWORK_PLUGINS_DIR));
 
         let delimiter = if cfg!(windows) { ';' } else { ':' };
         crate::utils::process_env::set(
-            "CLAUDE_CODE_PLUGIN_SEED_DIR",
+            "NYAN_PLUGIN_SEED_DIR",
             format!("~/seed-one{delimiter}/tmp/seed-two"),
         );
         let seeds = get_plugin_seed_dirs();
         assert_eq!(seeds[0], PathBuf::from(&home).join("seed-one"));
         assert_eq!(seeds[1], PathBuf::from("/tmp/seed-two"));
 
-        crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_SEED_DIR");
+        crate::utils::process_env::remove("NYAN_PLUGIN_SEED_DIR");
         crate::utils::process_env::remove("CLAUDE_CODE_USE_COWORK_PLUGINS");
     }
 
     #[test]
     fn plugin_data_dir_path_sanitizes_plugin_id_without_creating_directory() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _restore = EnvVarGuard::preserve("CLAUDE_CODE_PLUGIN_CACHE_DIR");
+        let _restore = EnvVarGuard::preserve("NYAN_PLUGIN_CACHE_DIR");
         let root = std::env::temp_dir().join(format!(
             "nyan-plugin-data-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &root);
+        crate::utils::process_env::set("NYAN_PLUGIN_CACHE_DIR", &root);
         let path = plugin_data_dir_path("plugin/name@market.place");
         assert_eq!(path, root.join("data").join("plugin-name-market-place"));
         assert!(!path.exists(), "read-only helper must not mkdir data dirs");
-        crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_CACHE_DIR");
+        crate::utils::process_env::remove("NYAN_PLUGIN_CACHE_DIR");
         let _ = std::fs::remove_dir_all(root);
     }
 }

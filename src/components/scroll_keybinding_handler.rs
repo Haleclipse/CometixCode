@@ -142,7 +142,7 @@ pub fn read_scroll_speed_base_from_value(raw: Option<&str>) -> f64 {
 /// Maps to: CC `ScrollKeybindingHandler.tsx#readScrollSpeedBase`.
 pub fn read_scroll_speed_base() -> f64 {
     read_scroll_speed_base_from_value(
-        crate::utils::process_env::var("CLAUDE_CODE_SCROLL_SPEED")
+        crate::utils::process_env::var("NYAN_SCROLL_SPEED")
             .truthy()
             .as_deref(),
     )

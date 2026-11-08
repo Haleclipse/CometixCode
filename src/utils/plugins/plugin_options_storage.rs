@@ -315,7 +315,7 @@ pub fn substitute_plugin_variables(
     source: Option<&str>,
 ) -> Result<String, String> {
     let root = normalize_plugin_path(plugin_path);
-    let out = content.replace("${CLAUDE_PLUGIN_ROOT}", &root);
+    let out = content.replace("${NYAN_PLUGIN_ROOT}", &root);
     let Some(source) = source.filter(|source| !source.is_empty()) else {
         return Ok(out);
     };
@@ -323,7 +323,7 @@ pub fn substitute_plugin_variables(
     // inserted by ROOT participates in this subsequent replacement, as in JS.
     let mut rendered = String::with_capacity(out.len());
     let mut rest = out.as_str();
-    const DATA: &str = "${CLAUDE_PLUGIN_DATA}";
+    const DATA: &str = "${NYAN_PLUGIN_DATA}";
     while let Some(index) = rest.find(DATA) {
         rendered.push_str(&rest[..index]);
         let data_dir = crate::utils::plugins::plugin_directories::get_plugin_data_dir(source)
@@ -414,38 +414,38 @@ mod tests {
     fn plugin_variable_substitution_matches_bun_lazy_data_directory_and_errors() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("plugin-vars-{}", uuid::Uuid::new_v4()));
-        let previous = crate::utils::process_env::var("CLAUDE_CODE_PLUGIN_CACHE_DIR");
+        let previous = crate::utils::process_env::var("NYAN_PLUGIN_CACHE_DIR");
         struct Restore(Option<String>, std::path::PathBuf);
         impl Drop for Restore {
             fn drop(&mut self) {
                 if let Some(value) = &self.0 {
-                    crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", value);
+                    crate::utils::process_env::set("NYAN_PLUGIN_CACHE_DIR", value);
                 } else {
-                    crate::utils::process_env::remove("CLAUDE_CODE_PLUGIN_CACHE_DIR");
+                    crate::utils::process_env::remove("NYAN_PLUGIN_CACHE_DIR");
                 }
                 let _ = std::fs::remove_dir_all(&self.1);
             }
         }
         let _restore = Restore(previous, root.clone());
         let cache = root.join("cache");
-        crate::utils::process_env::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", &cache);
+        crate::utils::process_env::set("NYAN_PLUGIN_CACHE_DIR", &cache);
         assert_eq!(
-            substitute_plugin_variables("${CLAUDE_PLUGIN_ROOT}", &root, Some("plugin@market"))
+            substitute_plugin_variables("${NYAN_PLUGIN_ROOT}", &root, Some("plugin@market"))
                 .unwrap(),
             root.display().to_string()
         );
         assert!(!cache.exists());
         for source in [None, Some("")] {
             assert_eq!(
-                substitute_plugin_variables("${CLAUDE_PLUGIN_DATA}", &root, source).unwrap(),
-                "${CLAUDE_PLUGIN_DATA}"
+                substitute_plugin_variables("${NYAN_PLUGIN_DATA}", &root, source).unwrap(),
+                "${NYAN_PLUGIN_DATA}"
             );
             assert!(!cache.exists());
         }
         let data = cache.join("data/plugin-market");
         assert_eq!(
             substitute_plugin_variables(
-                "${CLAUDE_PLUGIN_DATA}|${CLAUDE_PLUGIN_DATA}",
+                "${NYAN_PLUGIN_DATA}|${NYAN_PLUGIN_DATA}",
                 &root,
                 Some("plugin@market")
             )
@@ -459,7 +459,7 @@ mod tests {
             substitute_plugin_variables("ordinary content", &root, Some("plugin@market")).is_ok()
         );
         assert!(
-            substitute_plugin_variables("${CLAUDE_PLUGIN_DATA}", &root, Some("plugin@market"))
+            substitute_plugin_variables("${NYAN_PLUGIN_DATA}", &root, Some("plugin@market"))
                 .is_err()
         );
     }

@@ -2150,7 +2150,7 @@ mod tests {
     #[test]
     fn agent_system_prompt_appends_persistent_agent_memory_prompt() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let root = std::env::temp_dir().join(format!(
             "nyan-agent-system-memory-{}",
             uuid::Uuid::new_v4().simple()
@@ -2174,7 +2174,7 @@ mod tests {
         assert!(joined.contains("Persistent Agent Memory"));
         assert!(joined.contains("- Use focused review notes"));
         let _ = std::fs::remove_dir_all(&root);
-        crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
     }
 
     #[test]
@@ -2573,10 +2573,8 @@ mod tests {
         let skill_file = skills_dir.join("audit").join("SKILL.md");
         std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
         let mut file = std::fs::File::create(&skill_file).unwrap();
-        file.write_all(
-            b"---\ndescription: Audit code\n---\nAudit instructions ${CLAUDE_SESSION_ID}",
-        )
-        .unwrap();
+        file.write_all(b"---\ndescription: Audit code\n---\nAudit instructions ${NYAN_SESSION_ID}")
+            .unwrap();
 
         let commands = crate::skills::load_skills_dir::load_skills_from_skills_dir(
             &skills_dir,
@@ -2935,7 +2933,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        crate::utils::process_env::remove("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
 
         // Byte-for-byte the attachment `run_agent` pushes after SubagentStart.
         let subagent_start_hook_context = Message::Attachment(
@@ -3017,7 +3015,7 @@ mod tests {
 
         // Flag on: the hook exception opens on every audience; plain
         // attachments stay withheld externally.
-        crate::utils::process_env::set("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
+        crate::utils::process_env::set("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
         let gated = sidechain_entries(&[subagent_start_hook_context, plain_attachment]);
         assert_eq!(
             gated.len(),
@@ -3025,7 +3023,7 @@ mod tests {
             "the env flag is not a blanket opt-in for attachments"
         );
         assert_eq!(gated[0]["attachment"]["type"], "hook_additional_context");
-        crate::utils::process_env::remove("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
     }
 
     #[test]
@@ -3866,7 +3864,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
 
         struct PersistenceRestore(bool);
         impl Drop for PersistenceRestore {
@@ -4036,12 +4034,12 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_history = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
         // The one attachment CC does hand to the writer is `initialMessages`'
         // trailing hook context, and only behind this flag off-`ant`. Nothing
         // in this test goes through that path, so hold it cleared: any
         // attachment row here came from the loop.
-        let _hook_context = EnvVarGuard::unset("CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT");
+        let _hook_context = EnvVarGuard::unset("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
 
         struct PersistenceRestore(bool);
         impl Drop for PersistenceRestore {
@@ -4271,8 +4269,8 @@ mod input_contract_tests {
     #[test]
     fn get_agent_system_prompt_matches_official_custom_memory_inside_original_block() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let previous = crate::utils::process_env::var("CLAUDE_CODE_DISABLE_AUTO_MEMORY");
-        crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let previous = crate::utils::process_env::var("NYAN_DISABLE_AUTO_MEMORY");
+        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let root = std::env::temp_dir().join(format!("nyan-agent-input-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let context = ToolUseContext::default().with_cwd_override(Some(root.clone()));
@@ -4294,8 +4292,8 @@ mod input_contract_tests {
         assert_eq!(builtin[0], "Review carefully.");
         std::fs::remove_dir_all(&root).unwrap();
         match previous {
-            Some(value) => crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", value),
-            None => crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_AUTO_MEMORY"),
+            Some(value) => crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", value),
+            None => crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY"),
         }
     }
 
@@ -4345,7 +4343,7 @@ mod input_contract_tests {
                 "NYAN_AGENT_TEST_KEY",
                 "sk-ant-test-agent-contract".to_string(),
             ),
-            ("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1".to_string()),
+            ("NYAN_DISABLE_AUTO_MEMORY", "1".to_string()),
             ("DISABLE_AUTO_COMPACT", "1".to_string()),
             ("NODE_ENV", String::new()),
         ];
@@ -4643,8 +4641,8 @@ mod input_contract_tests {
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
             crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
-            crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "0");
-            crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+            crate::utils::process_env::set("NYAN_SIMPLE", "0");
+            crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "1");
             crate::bootstrap::state::set_original_cwd(&root);
             crate::bootstrap::state::set_inline_plugins(vec![root.join("plugin")]);
             crate::commands::clear_commands_cache();

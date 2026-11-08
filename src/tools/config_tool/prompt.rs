@@ -74,14 +74,7 @@ pub(super) mod tests {
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(root.join("settings.json"), "{}").unwrap();
             let config_dir = Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root));
-            let cleared_env = [
-                "CLAUDE_CODE_USE_BEDROCK",
-                "CLAUDE_CODE_USE_VERTEX",
-                "CLAUDE_CODE_USE_FOUNDRY",
-            ]
-            .into_iter()
-            .map(EnvVarGuard::unset)
-            .collect();
+            let cleared_env = [].into_iter().map(EnvVarGuard::unset).collect();
 
             crate::utils::settings::settings_cache::reset_settings_cache();
             crate::utils::config::set_test_global_config(Some(Default::default()));

@@ -83,7 +83,7 @@ pub fn default_syntax_theme_name(theme_name: &str) -> &'static str {
 }
 
 pub fn get_syntax_theme(theme_name: &str) -> SyntaxTheme {
-    let claude_code = crate::utils::process_env::var("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
+    let claude_code = crate::utils::process_env::var("NYAN_SYNTAX_HIGHLIGHT");
     let bat_theme = crate::utils::process_env::var("BAT_THEME");
     get_syntax_theme_with_env(theme_name, claude_code.as_deref(), bat_theme.as_deref())
 }
@@ -99,7 +99,7 @@ pub fn get_syntax_theme_with_env(
     {
         return SyntaxTheme {
             theme: value.to_string(),
-            source: Some("CLAUDE_CODE_SYNTAX_HIGHLIGHT"),
+            source: Some("NYAN_SYNTAX_HIGHLIGHT"),
         };
     }
     if let Some(value) = bat_theme
@@ -117,7 +117,7 @@ pub fn get_syntax_theme_with_env(
 }
 
 pub fn syntax_highlighting_disabled_by_env() -> Option<String> {
-    let claude_code = crate::utils::process_env::var("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
+    let claude_code = crate::utils::process_env::var("NYAN_SYNTAX_HIGHLIGHT");
     syntax_highlighting_disabled_by_env_value(claude_code.as_deref())
 }
 
@@ -216,7 +216,7 @@ mod tests {
     fn get_syntax_theme_reports_env_source_without_writing_settings() {
         let syntax = get_syntax_theme_with_env("light", Some("TwoDark"), Some("GitHub"));
         assert_eq!(syntax.theme, "TwoDark");
-        assert_eq!(syntax.source, Some("CLAUDE_CODE_SYNTAX_HIGHLIGHT"));
+        assert_eq!(syntax.source, Some("NYAN_SYNTAX_HIGHLIGHT"));
         assert_eq!(
             syntax.highlight_theme(),
             SyntaxHighlightTheme::Named("TwoDark")

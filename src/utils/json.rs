@@ -1110,11 +1110,8 @@ mod tests {
         // CC utils/json.ts:13–26,31–42: failures are cached by json alone.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env: Vec<_> = [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "DISABLE_ERROR_REPORTING",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ]
         .into_iter()
         .map(EnvVarGuard::unset)
@@ -1287,11 +1284,8 @@ mod tests {
         // CC utils/json.ts:273–276 logs the resulting exception and replaces.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env: Vec<_> = [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
             "DISABLE_ERROR_REPORTING",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ]
         .into_iter()
         .map(EnvVarGuard::unset)

@@ -40,13 +40,13 @@ pub fn is_env_defined_falsy(env_var: Option<&str>) -> bool {
 
 /// Maps to: CC `utils/envUtils.ts:60-65` `isBareMode`.
 pub fn is_bare_mode() -> bool {
-    is_env_truthy(process_env::var("CLAUDE_CODE_SIMPLE").as_deref())
+    is_env_truthy(process_env::var("NYAN_SIMPLE").as_deref())
         || std::env::args_os().any(|argument| argument == std::ffi::OsStr::new("--bare"))
 }
 
 /// Maps to: CC `utils/envUtils.ts:111-113` `shouldMaintainProjectWorkingDir`.
 pub fn should_maintain_project_working_dir() -> bool {
-    is_env_truthy(process_env::var("CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR").as_deref())
+    is_env_truthy(process_env::var("NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR").as_deref())
 }
 
 /// Repository-wide mutation gate, independent of transcript persistence.

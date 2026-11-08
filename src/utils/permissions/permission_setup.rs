@@ -1442,12 +1442,7 @@ mod tests {
     #[test]
     fn transition_plan_auto_mode_matches_official_settings_reload_activation_and_restrip() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _provider_vars = [
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-        ]
-        .map(EnvVarGuard::unset);
+        let _provider_vars = [].map(EnvVarGuard::unset);
         let root = std::env::temp_dir().join(format!(
             "nyan-plan-auto-reload-{}",
             uuid::Uuid::new_v4().simple()
@@ -1887,7 +1882,7 @@ mod gate_tests {
         // permissionSetup.ts:1315-1352: only the absent Symbol allows deferral.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _telemetry = EnvVarGuard::unset("DISABLE_TELEMETRY");
-        let _traffic = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _traffic = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let _node = EnvVarGuard::unset("NODE_ENV");
         crate::services::analytics::growthbook::reset_growth_book();
         for (value, expected) in [
@@ -1927,7 +1922,7 @@ mod gate_tests {
         // permissionSetup.ts:699-811,1270-1280.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _telemetry = EnvVarGuard::unset("DISABLE_TELEMETRY");
-        let _traffic = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC");
+        let _traffic = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let _node = EnvVarGuard::unset("NODE_ENV");
         crate::services::analytics::growthbook::reset_growth_book();
         settings(

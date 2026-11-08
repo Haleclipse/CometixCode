@@ -862,7 +862,7 @@ mod tests {
         std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
         let mut file = std::fs::File::create(&skill_file).unwrap();
         file.write_all(
-            b"---\ndescription: Commit changes\nallowed-tools: Bash, Read\narguments: message\nmodel: opus\n---\nCreate commit: $message\nDir: ${CLAUDE_SKILL_DIR}\nSession: ${CLAUDE_SESSION_ID}",
+            b"---\ndescription: Commit changes\nallowed-tools: Bash, Read\narguments: message\nmodel: opus\n---\nCreate commit: $message\nDir: ${NYAN_SKILL_DIR}\nSession: ${NYAN_SESSION_ID}",
         )
         .unwrap();
 

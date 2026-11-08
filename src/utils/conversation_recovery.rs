@@ -752,7 +752,7 @@ mod tests {
     #[test]
     fn load_conversation_for_resume_runs_only_session_start_resume_hooks() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let marker_path = std::env::temp_dir().join(format!(
             "nyan-startup-resume-hooks-{}",
             uuid::Uuid::new_v4()

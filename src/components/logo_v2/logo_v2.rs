@@ -279,15 +279,13 @@ impl LogoDisplayData {
             voice_notice_seen_count: global_config.voice_notice_seen_count.unwrap_or(0),
             company_announcement,
             show_sandbox_status,
-            tmux_session: crate::utils::process_env::var("CLAUDE_CODE_TMUX_SESSION").truthy(),
+            tmux_session: crate::utils::process_env::var("NYAN_TMUX_SESSION").truthy(),
             // CC interpolates the raw value with no truthiness guard
             // (LogoV2.tsx:207-208), so an empty prefix is kept as-is.
-            tmux_prefix: crate::utils::process_env::var("CLAUDE_CODE_TMUX_PREFIX"),
-            tmux_prefix_conflicts: crate::utils::process_env::var(
-                "CLAUDE_CODE_TMUX_PREFIX_CONFLICTS",
-            )
-            .truthy()
-            .is_some(),
+            tmux_prefix: crate::utils::process_env::var("NYAN_TMUX_PREFIX"),
+            tmux_prefix_conflicts: crate::utils::process_env::var("NYAN_TMUX_PREFIX_CONFLICTS")
+                .truthy()
+                .is_some(),
         }
     }
 
@@ -345,7 +343,7 @@ pub fn Logo(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let columns = columns.max(1) as usize;
     let data = LogoDisplayData::current();
     let show_full_logo = data.should_show_full_logo(crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_FORCE_FULL_LOGO").as_deref(),
+        crate::utils::process_env::var("NYAN_FORCE_FULL_LOGO").as_deref(),
     ));
     let mode = select_logo_layout_mode(columns, show_full_logo);
 

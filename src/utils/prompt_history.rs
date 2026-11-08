@@ -89,7 +89,7 @@ pub fn add_to_history_with_pasted(
 ) {
     if !history_write_enabled()
         || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_SKIP_PROMPT_HISTORY").as_deref(),
+            crate::utils::process_env::var("NYAN_SKIP_PROMPT_HISTORY").as_deref(),
         )
     {
         return;
@@ -310,7 +310,7 @@ mod tests {
         let config_home = temp_history_home();
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _write_guard = EnvVarGuard::unset("NYAN_WRITE_ENABLED");
-        let _skip_guard = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_guard = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
 
         add_to_history("/resume");
 
@@ -324,7 +324,7 @@ mod tests {
         let config_home = temp_history_home();
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _skip_guard = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
+        let _skip_guard = EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY");
 
         add_to_history("/resume");
 

@@ -339,7 +339,7 @@ mod tests {
         );
         write_file(
             &root.join("agents/reviewer.md"),
-            "---\nname: reviewer\ndescription: Review docs\ntools: Read, Bash(git status, git diff)\ndisallowedTools: WebFetch\nskills: docs\ncolor: blue\nmodel: INHERIT\nbackground: true\nmemory: project\nisolation: worktree\neffort: high\nmaxTurns: 3\npermissionMode: plan\nhooks:\n  Stop:\n    - matcher: \"\"\n      hooks:\n        - command: echo bad\nmcpServers:\n  - docs\n---\nUse ${CLAUDE_PLUGIN_ROOT}/README.md",
+            "---\nname: reviewer\ndescription: Review docs\ntools: Read, Bash(git status, git diff)\ndisallowedTools: WebFetch\nskills: docs\ncolor: blue\nmodel: INHERIT\nbackground: true\nmemory: project\nisolation: worktree\neffort: high\nmaxTurns: 3\npermissionMode: plan\nhooks:\n  Stop:\n    - matcher: \"\"\n      hooks:\n        - command: echo bad\nmcpServers:\n  - docs\n---\nUse ${NYAN_PLUGIN_ROOT}/README.md",
         );
 
         let (plugin, errors) = create_plugin_from_path(&root, "docs-plugin@inline", true, "root");

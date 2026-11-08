@@ -26,9 +26,9 @@ pub fn is_context_collapse_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_CONTEXT_COLLAPSE").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_CONTEXT_COLLAPSE").as_deref(),
+        crate::utils::process_env::var("NYAN_CONTEXT_COLLAPSE").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CONTEXT_COLLAPSE").as_deref(),
+        crate::utils::process_env::var("NYAN_CONTEXT_COLLAPSE").as_deref(),
     )
 }
 
@@ -96,19 +96,19 @@ mod tests {
     fn context_collapse_enabled_honors_official_env_alias() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("NYAN_CONTEXT_COLLAPSE");
-        crate::utils::process_env::remove("CLAUDE_CODE_CONTEXT_COLLAPSE");
-        crate::utils::process_env::remove("CLAUDE_CONTEXT_COLLAPSE");
+        crate::utils::process_env::remove("NYAN_CONTEXT_COLLAPSE");
+        crate::utils::process_env::remove("NYAN_CONTEXT_COLLAPSE");
         assert!(!is_context_collapse_enabled());
 
-        crate::utils::process_env::set("CLAUDE_CONTEXT_COLLAPSE", "1");
+        crate::utils::process_env::set("NYAN_CONTEXT_COLLAPSE", "1");
         assert!(is_context_collapse_enabled());
-        crate::utils::process_env::remove("CLAUDE_CONTEXT_COLLAPSE");
+        crate::utils::process_env::remove("NYAN_CONTEXT_COLLAPSE");
     }
 
     #[test]
     fn withheld_prompt_too_long_and_recover_overflow_are_safe_noops_until_store_is_ported() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CONTEXT_COLLAPSE", "1");
+        crate::utils::process_env::set("NYAN_CONTEXT_COLLAPSE", "1");
         let error = crate::types::message::SystemApiErrorMessage {
             content: crate::services::api::errors::PROMPT_TOO_LONG_ERROR_MESSAGE.to_string(),
             api_error: "invalid_request".to_string(),
@@ -144,7 +144,7 @@ mod tests {
         );
         assert_eq!(recovered.messages, messages);
         assert_eq!(recovered.committed, 0);
-        crate::utils::process_env::remove("CLAUDE_CONTEXT_COLLAPSE");
+        crate::utils::process_env::remove("NYAN_CONTEXT_COLLAPSE");
     }
 
     #[test]

@@ -14,7 +14,7 @@ pub fn should_inject_agent_list_in_messages() -> bool {
     // `false`: GrowthBook delivery is intentionally absent; preserve the source
     // default rather than assigning this process to a fabricated cohort.
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES").as_deref(),
+        crate::utils::process_env::var("NYAN_AGENT_LIST_IN_MESSAGES").as_deref(),
     )
 }
 
@@ -172,7 +172,7 @@ pub fn get_prompt(agent_definitions: &[AgentDefinition], is_coordinator: bool) -
     };
 
     let background_notes = if !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS").as_deref(),
+        crate::utils::process_env::var("NYAN_DISABLE_BACKGROUND_TASKS").as_deref(),
     ) && !fork_enabled
     {
         "\n- You can optionally run agents in the background using the run_in_background parameter. When an agent runs in the background, you will be automatically notified when it completes — do NOT sleep, poll, or proactively check on its progress. Continue with other work or respond to the user instead.\n- **Foreground vs background**: Use foreground (default) when you need the agent's results before you can proceed — e.g., research agents whose findings inform your next steps. Use background when you have genuinely independent work to do in parallel."
@@ -259,7 +259,7 @@ mod tests {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
+        let _list_in_messages = EnvVarGuard::unset("NYAN_AGENT_LIST_IN_MESSAGES");
 
         let prompt = get_prompt(
             &[
@@ -280,7 +280,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let prompt = {
-            let _list_in_messages = EnvVarGuard::set("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES", "true");
+            let _list_in_messages = EnvVarGuard::set("NYAN_AGENT_LIST_IN_MESSAGES", "true");
             get_prompt(&[agent("general-purpose", "Use for general tasks")], false)
         };
 
@@ -299,8 +299,8 @@ mod tests {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _list_in_messages = EnvVarGuard::unset("NYAN_AGENT_LIST_IN_MESSAGES");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let _fork_gate = crate::tools::agent_tool::fork_subagent::fork_gate_environment();
 
         let prompt = get_prompt(&[agent("general-purpose", "Use for general tasks")], false);
@@ -341,8 +341,8 @@ mod tests {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
-        let _background = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS");
+        let _list_in_messages = EnvVarGuard::unset("NYAN_AGENT_LIST_IN_MESSAGES");
+        let _background = EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS");
         let _fork_vetoed = crate::tools::agent_tool::fork_subagent::fork_veto_environment();
 
         let prompt = get_prompt(&[agent("general-purpose", "Use for general tasks")], false);
@@ -369,7 +369,7 @@ mod tests {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
+        let _list_in_messages = EnvVarGuard::unset("NYAN_AGENT_LIST_IN_MESSAGES");
 
         let prompt = get_prompt(&[agent("general-purpose", "Use for general tasks")], true);
 
@@ -391,10 +391,10 @@ mod tests {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let _list_in_messages = EnvVarGuard::unset("CLAUDE_CODE_AGENT_LIST_IN_MESSAGES");
+        let _list_in_messages = EnvVarGuard::unset("NYAN_AGENT_LIST_IN_MESSAGES");
         let _fork_vetoed = crate::tools::agent_tool::fork_subagent::fork_veto_environment();
         let prompt = {
-            let _background = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+            let _background = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "1");
             get_prompt(&[agent("general-purpose", "Use for general tasks")], false)
         };
 

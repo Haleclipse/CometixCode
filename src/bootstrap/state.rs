@@ -137,7 +137,7 @@ static HAS_DEV_CHANNELS: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(f
 /// it, so the initial value is derived here.
 static USER_MSG_OPT_IN: LazyLock<RwLock<bool>> = LazyLock::new(|| {
     RwLock::new(crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_BRIEF").as_deref(),
+        crate::utils::process_env::var("NYAN_BRIEF").as_deref(),
     ))
 });
 /// Maps to: CC `bootstrap/state.ts:82` `STATE.questionPreviewFormat`.
@@ -148,7 +148,7 @@ static USER_MSG_OPT_IN: LazyLock<RwLock<bool>> = LazyLock::new(|| {
 static QUESTION_PREVIEW_FORMAT: LazyLock<RwLock<Option<QuestionPreviewFormat>>> =
     LazyLock::new(|| {
         RwLock::new(
-            match crate::utils::process_env::var("CLAUDE_CODE_QUESTION_PREVIEW_FORMAT")
+            match crate::utils::process_env::var("NYAN_QUESTION_PREVIEW_FORMAT")
                 .unwrap_or_default()
                 .as_str()
             {
@@ -688,7 +688,7 @@ pub fn get_is_non_interactive_session() -> bool {
 fn non_interactive_env_override() -> bool {
     // The tests write these through the carrier, so the seam reads it too.
     [
-        "CLAUDE_CODE_NON_INTERACTIVE",
+        "NYAN_NON_INTERACTIVE",
         "NYAN_NON_INTERACTIVE",
         "NYAN_NON_INTERACTIVE_SESSION",
     ]
@@ -734,8 +734,7 @@ impl Drop for IsInteractiveGuard {
 /// `preferThirdPartyAuthentication`.
 pub fn prefer_third_party_authentication() -> bool {
     get_is_non_interactive_session()
-        && crate::utils::process_env::var("CLAUDE_CODE_ENTRYPOINT").as_deref()
-            != Some("claude-vscode")
+        && crate::utils::process_env::var("NYAN_ENTRYPOINT").as_deref() != Some("claude-vscode")
 }
 
 /// Maps to CC `getKairosActive()`.
@@ -1108,7 +1107,7 @@ mod tests {
     #[test]
     fn non_interactive_session_mirrors_official_inverse_interactive_state_and_env_override() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_NON_INTERACTIVE");
+        crate::utils::process_env::remove("NYAN_NON_INTERACTIVE");
         crate::utils::process_env::remove("NYAN_NON_INTERACTIVE");
         crate::utils::process_env::remove("NYAN_NON_INTERACTIVE_SESSION");
 
@@ -1121,10 +1120,10 @@ mod tests {
         assert!(super::get_is_non_interactive_session());
 
         super::set_is_interactive(true);
-        crate::utils::process_env::set("CLAUDE_CODE_NON_INTERACTIVE", "1");
+        crate::utils::process_env::set("NYAN_NON_INTERACTIVE", "1");
         assert!(super::get_is_non_interactive_session());
 
-        crate::utils::process_env::remove("CLAUDE_CODE_NON_INTERACTIVE");
+        crate::utils::process_env::remove("NYAN_NON_INTERACTIVE");
         super::set_is_interactive(true);
     }
 }

@@ -1996,10 +1996,7 @@ mod tests {
         std::fs::write(orphaned.join(".orphaned_at"), "now").unwrap();
         std::fs::write(orphaned.join("old.txt"), "needle old\n").unwrap();
         std::fs::write(current.join("new.txt"), "needle new\n").unwrap();
-        let _guard = PluginStateGuard(Some(EnvVarGuard::set(
-            "CLAUDE_CODE_PLUGIN_CACHE_DIR",
-            &plugins,
-        )));
+        let _guard = PluginStateGuard(Some(EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", &plugins)));
         crate::utils::plugins::orphaned_plugin_filter::clear_plugin_cache_exclusions();
 
         let output = grep_output(

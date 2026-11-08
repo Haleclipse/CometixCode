@@ -1359,7 +1359,7 @@ impl FileReadTool {
         // conditional activation then runs synchronously. Simple mode skips
         // the complete block. There is no separate dynamic-discovery gate.
         if !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+            crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
         ) {
             let cwd = context.effective_cwd();
             let paths = vec![full_file_path.clone()];
@@ -4897,10 +4897,7 @@ PY\n\
         // dedup must stay on because the switch table owns the answer.
         let _env_restore = [
             "NODE_ENV",
-            "CLAUDE_CODE_USE_BEDROCK",
-            "CLAUDE_CODE_USE_VERTEX",
-            "CLAUDE_CODE_USE_FOUNDRY",
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
             "DISABLE_TELEMETRY",
         ]
         .into_iter()

@@ -257,7 +257,7 @@ mod tests {
 
         let _env = [
             EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("config")),
-            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+            EnvVarGuard::unset("NYAN_SIMPLE"),
         ];
         let previous_inline = crate::bootstrap::state::get_inline_plugins();
         let previous_registered_hooks = crate::bootstrap::state::get_registered_hooks();

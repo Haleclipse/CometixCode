@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
-const CLAUDE_CODE_ENABLE_XAA: &str = "CLAUDE_CODE_ENABLE_XAA";
+const CLAUDE_CODE_ENABLE_XAA: &str = "NYAN_ENABLE_XAA";
 const ID_TOKEN_EXPIRY_BUFFER_S: i64 = 60;
 const IDP_LOGIN_TIMEOUT_SECS: u64 = 5 * 60;
 const IDP_REQUEST_TIMEOUT_SECS: u64 = 30;

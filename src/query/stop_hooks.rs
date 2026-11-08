@@ -202,7 +202,7 @@ pub async fn handle_stop_hooks(params: StopHookParams) -> StopHookResult {
         );
     }
     let prompt_suggestion_env_disabled = crate::utils::env_utils::is_env_defined_falsy(
-        crate::utils::process_env::var("CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION").as_deref(),
+        crate::utils::process_env::var("NYAN_ENABLE_PROMPT_SUGGESTION").as_deref(),
     );
     if matches!(params.query_source, QuerySource::Prompt)
         && !prompt_suggestion_env_disabled

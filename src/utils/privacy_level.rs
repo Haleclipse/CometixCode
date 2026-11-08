@@ -13,7 +13,7 @@ pub enum PrivacyLevel {
 }
 
 pub fn get_privacy_level_with(get_env: &impl Fn(&str) -> Option<String>) -> PrivacyLevel {
-    if get_env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+    if get_env("NYAN_DISABLE_NONESSENTIAL_TRAFFIC")
         .truthy()
         .is_some()
     {
@@ -38,10 +38,10 @@ pub fn is_telemetry_disabled() -> bool {
 }
 
 pub fn get_essential_traffic_only_reason() -> Option<&'static str> {
-    crate::utils::process_env::var("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+    crate::utils::process_env::var("NYAN_DISABLE_NONESSENTIAL_TRAFFIC")
         .truthy()
         .is_some()
-        .then_some("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+        .then_some("NYAN_DISABLE_NONESSENTIAL_TRAFFIC")
 }
 
 #[cfg(test)]
@@ -52,7 +52,7 @@ mod tests {
     fn privacy_level_uses_most_restrictive_official_environment_signal() {
         let env = |key: &str| match key {
             "DISABLE_TELEMETRY" => Some("1".to_string()),
-            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC" => Some("1".to_string()),
+            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC" => Some("1".to_string()),
             _ => None,
         };
         assert_eq!(get_privacy_level_with(&env), PrivacyLevel::EssentialTraffic);

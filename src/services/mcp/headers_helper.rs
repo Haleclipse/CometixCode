@@ -52,10 +52,10 @@ pub async fn get_mcp_headers_from_helper(
     // CLAUDE_CODE_MCP_SERVER_URL: config.url }` — process.env, not
     // subprocessEnv(); an undefined url drops the inherited key.
     crate::utils::subprocess_env::apply_process_env(&mut command);
-    command.env("CLAUDE_CODE_MCP_SERVER_NAME", server_name);
+    command.env("NYAN_MCP_SERVER_NAME", server_name);
     match config.url.as_deref() {
-        Some(url) => command.env("CLAUDE_CODE_MCP_SERVER_URL", url),
-        None => command.env_remove("CLAUDE_CODE_MCP_SERVER_URL"),
+        Some(url) => command.env("NYAN_MCP_SERVER_URL", url),
+        None => command.env_remove("NYAN_MCP_SERVER_URL"),
     };
 
     let output = match tokio::time::timeout(Duration::from_secs(10), command.output()).await {

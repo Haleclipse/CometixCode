@@ -1545,7 +1545,7 @@ mod tests {
         std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
         std::fs::write(
             &skill_file,
-            "---\ndescription: Review the requested scope\nargument-hint: [scope]\n---\nReview $ARGUMENTS for session ${CLAUDE_SESSION_ID}",
+            "---\ndescription: Review the requested scope\nargument-hint: [scope]\n---\nReview $ARGUMENTS for session ${NYAN_SESSION_ID}",
         )
         .unwrap();
 
@@ -1699,7 +1699,7 @@ mod tests {
         std::fs::create_dir_all(root.join("commands")).unwrap();
         std::fs::write(
             root.join("commands").join("inspect.md"),
-            "---\ndescription: Inspect through plugin\n---\nRoot=${CLAUDE_PLUGIN_ROOT} Args=$ARGUMENTS",
+            "---\ndescription: Inspect through plugin\n---\nRoot=${NYAN_PLUGIN_ROOT} Args=$ARGUMENTS",
         )
         .unwrap();
         std::fs::create_dir_all(root.join("skills").join("verify")).unwrap();

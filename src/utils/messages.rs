@@ -3348,7 +3348,7 @@ Treat this as a fresh planning session. Do not assume the existing plan is relev
         Attachment::CompactionReminder => vec![meta_message("Auto-compact is enabled. When the context window is nearly full, older messages will be automatically summarized so you can continue working seamlessly. There is no need to stop or rush — you have unlimited context through automatic compaction.")],
         Attachment::CompanionIntro { name, species } => vec![meta_message(crate::buddy::prompt::companion_intro_text(name,species))],
         Attachment::VerifyPlanReminder => {
-            let tool_name = if crate::utils::build_profile::has_internal_capability(crate::utils::build_profile::InternalCapability::Prompts) && crate::utils::process_env::var("CLAUDE_CODE_VERIFY_PLAN").as_deref() == Some("true") { "VerifyPlanExecution" } else { "" };
+            let tool_name = if crate::utils::build_profile::has_internal_capability(crate::utils::build_profile::InternalCapability::Prompts) && crate::utils::process_env::var("NYAN_VERIFY_PLAN").as_deref() == Some("true") { "VerifyPlanExecution" } else { "" };
             vec![meta_message(format!("You have completed implementing the plan. Please call the \"{tool_name}\" tool directly (NOT the Agent tool or an agent) to verify that all plan items were completed correctly."))]
         }
         Attachment::DynamicSkill { .. }
@@ -5734,7 +5734,7 @@ mod plan_instruction_tests {
     #[test]
     fn plan_subagent_takes_precedence_over_sparse_and_interview_workflows() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
+        let _interview = EnvVarGuard::set("NYAN_PLAN_MODE_INTERVIEW_PHASE", "true");
         let messages = get_plan_mode_instructions("sparse", true, "/plans/change.md", true);
         assert_source_digest(
             &messages,
@@ -5746,7 +5746,7 @@ mod plan_instruction_tests {
     #[test]
     fn plan_sparse_reminder_honors_interview_gate_without_full_workflow() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
+        let _interview = EnvVarGuard::set("NYAN_PLAN_MODE_INTERVIEW_PHASE", "true");
         let messages = get_plan_mode_instructions("sparse", false, "/plans/change.md", false);
         assert_eq!(
             reminder_text(&messages),
@@ -5758,8 +5758,8 @@ mod plan_instruction_tests {
     fn plan_interview_template_matches_source_embedded_tool_names() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _embedded = EnvVarGuard::set("EMBEDDED_SEARCH_TOOLS", "1");
-        let _entrypoint = EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "cli");
-        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "true");
+        let _entrypoint = EnvVarGuard::set("NYAN_ENTRYPOINT", "cli");
+        let _interview = EnvVarGuard::set("NYAN_PLAN_MODE_INTERVIEW_PHASE", "true");
         assert_eq!(get_read_only_tool_names(), "Read, `find`, `grep`");
         let messages = get_plan_mode_instructions("full", false, "/plans/change.md", false);
         assert_source_digest(
@@ -5772,8 +5772,8 @@ mod plan_instruction_tests {
     #[test]
     fn plan_five_phase_templates_match_source_agent_count_and_newline_branches() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _interview = EnvVarGuard::set("CLAUDE_CODE_PLAN_MODE_INTERVIEW_PHASE", "false");
-        let _explore = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_EXPLORE_AGENT_COUNT", "4");
+        let _interview = EnvVarGuard::set("NYAN_PLAN_MODE_INTERVIEW_PHASE", "false");
+        let _explore = EnvVarGuard::set("NYAN_PLAN_V2_EXPLORE_AGENT_COUNT", "4");
         assert_eq!(get_plan_phase4_section(), PLAN_PHASE4_CONTROL);
         for (count, digest) in [
             (
@@ -5785,7 +5785,7 @@ mod plan_instruction_tests {
                 "65507c793a150a5bcfb48297d6206d942c4ac51d3954a72a663c8524fa0c13b0",
             ),
         ] {
-            let _count = EnvVarGuard::set("CLAUDE_CODE_PLAN_V2_AGENT_COUNT", count);
+            let _count = EnvVarGuard::set("NYAN_PLAN_V2_AGENT_COUNT", count);
             let messages = get_plan_mode_instructions("full", false, "/plans/change.md", false);
             assert_source_digest(&messages, digest);
         }

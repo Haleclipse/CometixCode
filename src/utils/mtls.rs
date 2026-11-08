@@ -103,7 +103,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
     let env = crate::utils::process_env::snapshot();
     let mut config = MTLSConfig::default();
 
-    if let Some(path) = env.var("CLAUDE_CODE_CLIENT_CERT").truthy() {
+    if let Some(path) = env.var("NYAN_CLIENT_CERT").truthy() {
         match read_file(path) {
             Ok(cert) => {
                 config.cert = Some(cert);
@@ -116,7 +116,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
         }
     }
 
-    if let Some(path) = env.var("CLAUDE_CODE_CLIENT_KEY").truthy() {
+    if let Some(path) = env.var("NYAN_CLIENT_KEY").truthy() {
         match read_file(path) {
             Ok(key) => {
                 config.key = Some(key);
@@ -129,7 +129,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
         }
     }
 
-    if let Some(passphrase) = env.var("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE").truthy() {
+    if let Some(passphrase) = env.var("NYAN_CLIENT_KEY_PASSPHRASE").truthy() {
         config.passphrase = Some(passphrase.to_owned());
         log_for_debugging("mTLS: Using client key passphrase");
     }
@@ -237,9 +237,9 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _cert = EnvVarGuard::set("CLAUDE_CODE_CLIENT_CERT", fixture("client.pem"));
-        let _key = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY", fixture("missing.key"));
-        let _passphrase = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE", "secret");
+        let _cert = EnvVarGuard::set("NYAN_CLIENT_CERT", fixture("client.pem"));
+        let _key = EnvVarGuard::set("NYAN_CLIENT_KEY", fixture("missing.key"));
+        let _passphrase = EnvVarGuard::set("NYAN_CLIENT_KEY_PASSPHRASE", "secret");
         reset();
         let config = get_mtls_config().unwrap();
         assert!(
@@ -253,9 +253,9 @@ mod tests {
         assert_eq!(config.key, None);
         assert_eq!(config.passphrase.as_deref(), Some("secret"));
 
-        let _cert = EnvVarGuard::set("CLAUDE_CODE_CLIENT_CERT", "");
-        let _key = EnvVarGuard::unset("CLAUDE_CODE_CLIENT_KEY");
-        let _passphrase = EnvVarGuard::unset("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE");
+        let _cert = EnvVarGuard::set("NYAN_CLIENT_CERT", "");
+        let _key = EnvVarGuard::unset("NYAN_CLIENT_KEY");
+        let _passphrase = EnvVarGuard::unset("NYAN_CLIENT_KEY_PASSPHRASE");
         reset();
         assert!(get_mtls_config().is_none());
         reset();
@@ -268,8 +268,8 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::tls_provider::install_crypto_provider();
         let _ca = EnvVarGuard::unset("NODE_EXTRA_CA_CERTS");
-        let _cert = EnvVarGuard::set("CLAUDE_CODE_CLIENT_CERT", fixture("client.pem"));
-        let _key = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY", fixture("client.key"));
+        let _cert = EnvVarGuard::set("NYAN_CLIENT_CERT", fixture("client.pem"));
+        let _key = EnvVarGuard::set("NYAN_CLIENT_KEY", fixture("client.key"));
         reset();
         let agent = get_mtls_agent().unwrap();
         assert!(agent.identity.is_some());
@@ -280,16 +280,16 @@ mod tests {
                 .is_ok()
         );
 
-        let _key = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY", fixture("client-encrypted.key"));
+        let _key = EnvVarGuard::set("NYAN_CLIENT_KEY", fixture("client-encrypted.key"));
         reset();
         assert!(get_mtls_agent().unwrap().identity.is_none());
 
-        let _key = EnvVarGuard::unset("CLAUDE_CODE_CLIENT_KEY");
+        let _key = EnvVarGuard::unset("NYAN_CLIENT_KEY");
         reset();
         assert!(get_mtls_agent().unwrap().identity.is_none());
 
         // A key that does not match the certificate fails the build.
-        let _key = EnvVarGuard::set("CLAUDE_CODE_CLIENT_KEY", fixture("other.key"));
+        let _key = EnvVarGuard::set("NYAN_CLIENT_KEY", fixture("other.key"));
         reset();
         let agent = get_mtls_agent().unwrap();
         assert!(
@@ -307,9 +307,9 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _ca = EnvVarGuard::set("NODE_EXTRA_CA_CERTS", fixture("ca.pem"));
-        let _cert = EnvVarGuard::unset("CLAUDE_CODE_CLIENT_CERT");
-        let _key = EnvVarGuard::unset("CLAUDE_CODE_CLIENT_KEY");
-        let _passphrase = EnvVarGuard::unset("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE");
+        let _cert = EnvVarGuard::unset("NYAN_CLIENT_CERT");
+        let _key = EnvVarGuard::unset("NYAN_CLIENT_KEY");
+        let _passphrase = EnvVarGuard::unset("NYAN_CLIENT_KEY_PASSPHRASE");
         reset();
         crate::utils::tls_provider::install_crypto_provider();
         let agent = get_mtls_agent().unwrap();

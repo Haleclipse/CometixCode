@@ -49,7 +49,7 @@ mod runtime {
 
     /// Maps to: CC `services/mcp/officialRegistry.ts#prefetchOfficialMcpUrls`.
     pub async fn prefetch_official_mcp_urls() {
-        if crate::utils::process_env::var_os("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC")
+        if crate::utils::process_env::var_os("NYAN_DISABLE_NONESSENTIAL_TRAFFIC")
             .as_deref()
             .truthy()
             .is_some()

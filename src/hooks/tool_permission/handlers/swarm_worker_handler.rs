@@ -502,7 +502,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         crate::hooks::use_swarm_permission_poller::clear_sandbox_permission_callbacks_for_test();
-        crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        crate::utils::process_env::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         crate::utils::teammate::set_dynamic_team_context(Some(
             crate::utils::teammate::DynamicTeamContext {
                 agent_id: "worker-1".into(),
@@ -555,6 +555,6 @@ mod tests {
         assert!(store.get().pending_sandbox_request.is_none());
 
         crate::utils::teammate::set_dynamic_team_context(None);
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
     }
 }

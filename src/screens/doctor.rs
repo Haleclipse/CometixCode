@@ -76,7 +76,7 @@ fn env_validation_warnings() -> Vec<EnvValidationWarning> {
             TASK_MAX_OUTPUT_UPPER_LIMIT,
         ),
         (
-            "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+            "NYAN_MAX_OUTPUT_TOKENS",
             max_output_tokens.default as usize,
             max_output_tokens.upper_limit as usize,
         ),

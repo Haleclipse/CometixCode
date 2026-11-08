@@ -133,7 +133,7 @@ pub fn cached_microcompact_config_from_env() -> CachedMicrocompactConfig {
     config.enabled = crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_CACHED_MICROCOMPACT").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_CACHED_MICROCOMPACT").as_deref(),
+        crate::utils::process_env::var("NYAN_CACHED_MICROCOMPACT").as_deref(),
     );
     if let Some(value) = crate::utils::process_env::var("NYAN_CACHED_MC_TRIGGER_THRESHOLD")
         && let Ok(parsed) = value.parse::<usize>()
@@ -830,7 +830,7 @@ mod tests {
     #[tokio::test]
     async fn threshold_mask_clears_old_results_but_not_the_current_user_round() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "50000");
+        crate::utils::process_env::set("NYAN_AUTO_COMPACT_WINDOW", "50000");
         let mut messages = vec![
             assistant_tool_message(&["toolu_old"], 0),
             user_tool_result_message(&["toolu_old"]),
@@ -869,7 +869,7 @@ mod tests {
                     if crate::utils::tool_result_storage::is_tool_result_cleared(&result.content)
             ))
         ));
-        crate::utils::process_env::remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+        crate::utils::process_env::remove("NYAN_AUTO_COMPACT_WINDOW");
     }
 
     #[test]
@@ -894,7 +894,7 @@ mod tests {
     #[tokio::test]
     async fn cache_sharing_forks_replay_but_never_decide() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "50000");
+        crate::utils::process_env::set("NYAN_AUTO_COMPACT_WINDOW", "50000");
         let mut messages = vec![
             assistant_tool_message(&["toolu_old"], 0),
             user_tool_result_message(&["toolu_old"]),
@@ -917,7 +917,7 @@ mod tests {
         assert_eq!(result.masked_count, 0);
         assert!(result.newly_replaced.is_empty());
         assert!(state.replacements.is_empty());
-        crate::utils::process_env::remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+        crate::utils::process_env::remove("NYAN_AUTO_COMPACT_WINDOW");
     }
 
     #[tokio::test]
@@ -962,7 +962,7 @@ mod tests {
         }
 
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "50000");
+        crate::utils::process_env::set("NYAN_AUTO_COMPACT_WINDOW", "50000");
 
         // Temporary config dir so shadow log writes to an isolated file
         let temp_dir =
@@ -1033,7 +1033,7 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_dir_all(&temp_dir);
         crate::services::compact::decision::test_override::clear();
-        crate::utils::process_env::remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+        crate::utils::process_env::remove("NYAN_AUTO_COMPACT_WINDOW");
         crate::utils::process_env::remove("NYAN_CONFIG_DIR");
     }
 }

@@ -4198,7 +4198,7 @@ fn should_escalate_max_output_tokens(current_override: Option<u32>) -> bool {
             crate::utils::feature_flags::FeatureFlag::MaxOutputTokensEscalation,
         ),
         current_override,
-        crate::utils::process_env::var_os("CLAUDE_CODE_MAX_OUTPUT_TOKENS")
+        crate::utils::process_env::var_os("NYAN_MAX_OUTPUT_TOKENS")
             .as_deref()
             .truthy()
             .is_some(),
@@ -6312,10 +6312,10 @@ mod tests {
 
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _non_interactive = EnvVarGuard::unset("CLAUDE_CODE_NON_INTERACTIVE");
+        let _non_interactive = EnvVarGuard::unset("NYAN_NON_INTERACTIVE");
         let _nyan_non_interactive = EnvVarGuard::unset("NYAN_NON_INTERACTIVE");
         let _nyan_non_interactive_session = EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION");
-        let _checkpointing = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING");
+        let _checkpointing = EnvVarGuard::unset("NYAN_DISABLE_FILE_CHECKPOINTING");
         let _bootstrap = BootstrapRestore {
             interactive: crate::bootstrap::state::get_is_interactive(),
             persistence_disabled: crate::bootstrap::state::is_session_persistence_disabled(),
@@ -8091,9 +8091,9 @@ mod tests {
     #[test]
     fn build_call_model_request_matches_official_simple_prompt_then_caller_system_context() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "1");
+        crate::utils::process_env::set("NYAN_SIMPLE", "1");
         let base_system_prompt = crate::constants::prompts::get_simple_system_prompt_if_enabled();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         let mut system_context = std::collections::BTreeMap::new();
         system_context.insert("gitStatus".to_string(), "Current branch: main".to_string());
 
@@ -8129,7 +8129,7 @@ mod tests {
     fn build_call_model_request_threads_non_interactive_session_like_official_options() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::bootstrap::state::set_is_interactive(true);
-        crate::utils::process_env::remove("CLAUDE_CODE_NON_INTERACTIVE");
+        crate::utils::process_env::remove("NYAN_NON_INTERACTIVE");
         let interactive_ctx =
             crate::tool::ToolUseContext::default().with_non_interactive_session(
                 crate::bootstrap::state::get_is_non_interactive_session(),
@@ -8145,7 +8145,7 @@ mod tests {
         );
         assert!(!interactive_request.options.is_non_interactive_session);
 
-        crate::utils::process_env::set("CLAUDE_CODE_NON_INTERACTIVE", "1");
+        crate::utils::process_env::set("NYAN_NON_INTERACTIVE", "1");
         let non_interactive_ctx =
             crate::tool::ToolUseContext::default().with_non_interactive_session(
                 crate::bootstrap::state::get_is_non_interactive_session(),
@@ -8161,7 +8161,7 @@ mod tests {
         );
         assert!(non_interactive_request.options.is_non_interactive_session);
 
-        crate::utils::process_env::remove("CLAUDE_CODE_NON_INTERACTIVE");
+        crate::utils::process_env::remove("NYAN_NON_INTERACTIVE");
         crate::bootstrap::state::set_is_interactive(true);
     }
 
@@ -8788,7 +8788,7 @@ mod tests {
     #[test]
     fn query_actor_withholds_prompt_too_long_for_context_collapse_before_surface() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("CLAUDE_CONTEXT_COLLAPSE", "1");
+        crate::utils::process_env::set("NYAN_CONTEXT_COLLAPSE", "1");
 
         #[derive(Clone, Debug)]
         struct WithheldPromptTooLongDeps;
@@ -8850,7 +8850,7 @@ mod tests {
                 command_rx,
             ));
 
-        crate::utils::process_env::remove("CLAUDE_CONTEXT_COLLAPSE");
+        crate::utils::process_env::remove("NYAN_CONTEXT_COLLAPSE");
 
         assert_eq!(terminal.reason, "prompt_too_long");
         let mut saw_prompt_too_long = false;
@@ -10162,7 +10162,7 @@ mod tests {
     #[test]
     fn query_actor_preempts_model_call_at_blocking_limit() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _blocking_limit = EnvVarGuard::set("CLAUDE_CODE_BLOCKING_LIMIT_OVERRIDE", "10");
+        let _blocking_limit = EnvVarGuard::set("NYAN_BLOCKING_LIMIT_OVERRIDE", "10");
         let _disable_auto_compact = EnvVarGuard::set("DISABLE_AUTO_COMPACT", "1");
 
         #[derive(Clone, Debug)]
@@ -13015,7 +13015,7 @@ mod tests {
         // bootstrap mapping uses this flag for a non-interactive legacy-todo
         // context; force-disable the explicit Task-tool override as well.
         let _non_interactive = EnvVarGuard::set("NYAN_NON_INTERACTIVE_SESSION", "1");
-        let _tasks_override = EnvVarGuard::unset("CLAUDE_CODE_ENABLE_TASKS");
+        let _tasks_override = EnvVarGuard::unset("NYAN_ENABLE_TASKS");
 
         #[derive(Clone, Debug)]
         struct TodoDeps {
@@ -14036,7 +14036,7 @@ mod tests {
         }
 
         let _opt_in = BriefOptInGuard(crate::bootstrap::state::get_user_msg_opt_in());
-        crate::utils::process_env::set("CLAUDE_CODE_BRIEF", "1");
+        crate::utils::process_env::set("NYAN_BRIEF", "1");
         crate::bootstrap::state::set_user_msg_opt_in(true);
 
         #[derive(Clone, Debug)]
@@ -14155,7 +14155,7 @@ mod tests {
                 .await
                 .expect("brief continuation actor should finish")
             });
-        crate::utils::process_env::remove("CLAUDE_CODE_BRIEF");
+        crate::utils::process_env::remove("NYAN_BRIEF");
 
         assert_eq!(terminal.reason, "completed");
         assert!(

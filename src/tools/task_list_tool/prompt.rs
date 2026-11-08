@@ -62,7 +62,7 @@ mod tests {
     fn task_list_prompt_matches_official_swarms_branches() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
 
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
         let no_opt_in = get_prompt();
         if crate::utils::build_profile::build_audience().is_internal() {
             assert!(no_opt_in.contains("Before assigning tasks to teammates"));
@@ -76,9 +76,9 @@ mod tests {
             "must be resolved first (tasks with blockedBy cannot be claimed until dependencies resolve)"
         ));
 
-        crate::utils::process_env::set("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", "1");
+        crate::utils::process_env::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let on = get_prompt();
-        crate::utils::process_env::remove("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS");
+        crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
         assert!(on.contains("- Before assigning tasks to teammates, to see what's available\n- After completing a task,"));
         assert!(on.contains("## Teammate Workflow"));
         assert!(on.ends_with("5. If blocked, focus on unblocking tasks or notify the team lead\n"));

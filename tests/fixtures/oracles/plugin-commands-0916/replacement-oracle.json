@@ -1,6 +1,6 @@
 [
   {
     "type": "text",
-    "text": "Base directory for this skill: /p/skills/$&-$$\n\n/p/skills/${CLAUDE_SKILL_DIR}-$|S${CLAUDE_SESSION_ID}"
+    "text": "Base directory for this skill: /p/skills/$&-$$\n\n/p/skills/${NYAN_SKILL_DIR}-$|S${NYAN_SESSION_ID}"
   }
 ]

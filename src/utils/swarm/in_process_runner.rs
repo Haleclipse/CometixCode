@@ -1672,7 +1672,7 @@ mod tests {
             .lock()
             .unwrap();
         crate::tasks::in_process_teammate_task::clear_in_process_teammate_tasks_for_test();
-        crate::utils::process_env::set("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "1");
+        crate::utils::process_env::set("NYAN_AUTO_COMPACT_WINDOW", "1");
 
         let task_id = register_task("compact");
         let identity = identity("compact");
@@ -1717,7 +1717,7 @@ mod tests {
                 .contains("toolu_old")
         );
 
-        crate::utils::process_env::remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+        crate::utils::process_env::remove("NYAN_AUTO_COMPACT_WINDOW");
     }
 
     /// One aborted teammate turn, set up the way

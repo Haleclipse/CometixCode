@@ -291,10 +291,10 @@ pub fn glob(
         search_pattern,
         "--sort=modified".to_string(),
     ];
-    if env_default_true("CLAUDE_CODE_GLOB_NO_IGNORE") {
+    if env_default_true("NYAN_GLOB_NO_IGNORE") {
         arguments.push("--no-ignore".to_string());
     }
-    if env_default_true("CLAUDE_CODE_GLOB_HIDDEN") {
+    if env_default_true("NYAN_GLOB_HIDDEN") {
         arguments.push("--hidden".to_string());
     }
     for pattern in ignore_patterns {
@@ -629,7 +629,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let keys = ["CLAUDE_CODE_GLOB_NO_IGNORE", "CLAUDE_CODE_GLOB_HIDDEN"];
+        let keys = ["NYAN_GLOB_NO_IGNORE", "NYAN_GLOB_HIDDEN"];
         let _restore = keys.map(EnvVarGuard::preserve);
         let root = std::env::temp_dir().join(format!(
             "nyan-utils-glob-env-{}",

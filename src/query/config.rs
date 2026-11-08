@@ -77,7 +77,7 @@ fn build_query_config_from_env_and_session(
             // state.
             streaming_tool_execution: streaming_tool_execution_test_override()
                 .unwrap_or_else(|| feature_enabled(FeatureFlag::StreamingToolExecution)),
-            emit_tool_use_summaries: is_truthy(get_env("CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES")),
+            emit_tool_use_summaries: is_truthy(get_env("NYAN_EMIT_TOOL_USE_SUMMARIES")),
             is_ant: crate::utils::build_profile::has_internal_capability(
                 crate::utils::build_profile::InternalCapability::Api,
             ),
@@ -102,8 +102,8 @@ mod tests {
     fn build_query_config_snapshots_official_env_gates_without_io() {
         let config = build_query_config_from_env_and_session(
             |key| match key {
-                "CLAUDE_SESSION_ID" => Some("ignored-env-session".to_string()),
-                "CLAUDE_CODE_EMIT_TOOL_USE_SUMMARIES" => Some("1".to_string()),
+                "NYAN_SESSION_ID" => Some("ignored-env-session".to_string()),
+                "NYAN_EMIT_TOOL_USE_SUMMARIES" => Some("1".to_string()),
                 _ => None,
             },
             || SessionId("session-query-config".to_string()),

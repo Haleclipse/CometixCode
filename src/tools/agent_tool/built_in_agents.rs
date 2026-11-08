@@ -68,7 +68,7 @@ mod tests {
                 "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS",
                 disable_built_in_agents,
             ),
-            EnvVarGuard::unset("CLAUDE_CODE_NON_INTERACTIVE"),
+            EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION"),
         ];

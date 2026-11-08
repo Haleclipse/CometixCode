@@ -519,7 +519,7 @@ mod tests {
         crate::utils::tasks::clear_leader_team_name();
         let root = unique_config_dir("tasks");
         let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
-        let _list_guard = EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", "alpha-team");
+        let _list_guard = EnvVarGuard::set("NYAN_TASK_LIST_ID", "alpha-team");
         crate::utils::tasks::TASK_TOOL_STORE.lock().unwrap().push(
             crate::utils::tasks::TaskRecord {
                 id: "1".to_string(),

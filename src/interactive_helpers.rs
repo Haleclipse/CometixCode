@@ -600,7 +600,7 @@ mod setup_screens_snapshot_tests {
 
         let by_env = setup_screens_snapshot_from_readonly_runtime(
             &config,
-            &|key| (key == "CLAUDE_CODE_ENABLE_CFC").then(|| "true".to_string()),
+            &|key| (key == "NYAN_ENABLE_CFC").then(|| "true".to_string()),
             Vec::<String>::new(),
             None,
             runtime_env::Platform::Linux,
@@ -610,7 +610,7 @@ mod setup_screens_snapshot_tests {
         config.claude_in_chrome_default_enabled = Some(true);
         let env_falsy_wins = setup_screens_snapshot_from_readonly_runtime(
             &config,
-            &|key| (key == "CLAUDE_CODE_ENABLE_CFC").then(|| "false".to_string()),
+            &|key| (key == "NYAN_ENABLE_CFC").then(|| "false".to_string()),
             Vec::<String>::new(),
             None,
             runtime_env::Platform::Linux,
@@ -670,26 +670,26 @@ mod setup_screens_snapshot_tests {
     }
 
     #[test]
-    fn auth_token_and_api_key_guards_restore_distinct_sentinels() {
+    fn env_guards_restore_distinct_sentinels() {
         let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _restore_token = EnvVarGuard::preserve("ANTHROPIC_AUTH_TOKEN");
-        let _restore_api_key = EnvVarGuard::preserve("ANTHROPIC_API_KEY");
-        crate::utils::process_env::set("ANTHROPIC_AUTH_TOKEN", "token-sentinel");
-        crate::utils::process_env::set("ANTHROPIC_API_KEY", "api-key-sentinel");
+        let _restore_token = EnvVarGuard::preserve("NYAN_AUTH_TOKEN");
+        let _restore_api_key = EnvVarGuard::preserve("NYAN_API_KEY");
+        crate::utils::process_env::set("NYAN_AUTH_TOKEN", "token-sentinel");
+        crate::utils::process_env::set("NYAN_API_KEY", "api-key-sentinel");
 
         {
-            let _token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "token-under-test");
-            let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "api-key-under-test");
+            let _token = EnvVarGuard::set("NYAN_AUTH_TOKEN", "token-under-test");
+            let _api_key = EnvVarGuard::set("NYAN_API_KEY", "api-key-under-test");
         }
 
         assert_eq!(
-            crate::utils::process_env::var("ANTHROPIC_AUTH_TOKEN").as_deref(),
+            crate::utils::process_env::var("NYAN_AUTH_TOKEN").as_deref(),
             Some("token-sentinel")
         );
         assert_eq!(
-            crate::utils::process_env::var("ANTHROPIC_API_KEY").as_deref(),
+            crate::utils::process_env::var("NYAN_API_KEY").as_deref(),
             Some("api-key-sentinel")
         );
     }
@@ -739,7 +739,7 @@ mod setup_screens_snapshot_tests {
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _home = EnvVarGuard::set(HOME_VAR, &root);
         // A host's `CLAUDE_CODE_SIMPLE` (CC `--bare`) would skip custom agents.
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let context = status_notice_context_from_readonly_runtime(
             &GlobalConfig::default(),
             &cwd,
@@ -813,7 +813,7 @@ pub fn should_show_claude_md_external_includes_gate() -> bool {
 pub fn load_claude_md_external_includes_for_setup() -> Vec<ExternalClaudeMdInclude> {
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     );
     let files = discover_claude_md_files_with_external_policy(
         include_default_discovery,

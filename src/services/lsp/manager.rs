@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn initialize_creates_empty_manager_from_safe_plugin_loader_boundary() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         reset_lsp_manager_for_testing();
         initialize_lsp_server_manager();
 
@@ -393,7 +393,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn file_sync_wrappers_are_noops_without_matching_server_like_official_manager() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         reset_lsp_manager_for_testing();
         initialize_lsp_server_manager();
 
@@ -411,13 +411,13 @@ mod tests {
     fn bare_mode_skips_initialization_like_official() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         reset_lsp_manager_for_testing();
-        crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "1");
+        crate::utils::process_env::set("NYAN_SIMPLE", "1");
         initialize_lsp_server_manager();
         assert_eq!(
             get_initialization_status(),
             InitializationStatus::NotStarted
         );
-        crate::utils::process_env::remove("CLAUDE_CODE_SIMPLE");
+        crate::utils::process_env::remove("NYAN_SIMPLE");
         reset_lsp_manager_for_testing();
     }
 

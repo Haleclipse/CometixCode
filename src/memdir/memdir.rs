@@ -971,8 +971,8 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _env = [
             "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
-            "CLAUDE_CODE_SIMPLE",
+            "NYAN_DISABLE_AUTO_MEMORY",
+            "NYAN_SIMPLE",
             "CLAUDE_CODE_REMOTE",
             "CLAUDE_CODE_REMOTE_MEMORY_DIR",
         ]

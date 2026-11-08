@@ -360,7 +360,7 @@ impl OracleEnvironment {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         Self {
             _variables: [
-                EnvVarGuard::unset("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"),
+                EnvVarGuard::unset("NYAN_DISABLE_BACKGROUND_TASKS"),
                 EnvVarGuard::unset("BASH_MAX_TIMEOUT_MS"),
                 EnvVarGuard::unset("BASH_DEFAULT_TIMEOUT_MS"),
             ],

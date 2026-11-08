@@ -34,9 +34,8 @@ pub fn get_record_file_path() -> Option<PathBuf> {
     // Established compile-time distribution capability projection (PORTING.md).
     if !crate::utils::build_profile::has_internal_capability(
         crate::utils::build_profile::InternalCapability::Ui,
-    ) || !is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_TERMINAL_RECORDING").as_deref(),
-    ) {
+    ) || !is_env_truthy(crate::utils::process_env::var("NYAN_TERMINAL_RECORDING").as_deref())
+    {
         return None;
     }
     state.timestamp = SystemTime::now()
@@ -366,7 +365,7 @@ mod tests {
         // enumeration has no recording gate and matches prefix, not UUID equality.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let fixture = Fixture::new();
-        let _off = EnvVarGuard::set("CLAUDE_CODE_TERMINAL_RECORDING", "0");
+        let _off = EnvVarGuard::set("NYAN_TERMINAL_RECORDING", "0");
         assert_eq!(get_record_file_path(), None);
         assert!(get_session_recording_paths().is_empty());
         let path = fixture.seed_path();
@@ -391,7 +390,7 @@ mod tests {
             ]
         );
         _reset_recording_state_for_testing();
-        let _on = EnvVarGuard::set("CLAUDE_CODE_TERMINAL_RECORDING", "1");
+        let _on = EnvVarGuard::set("NYAN_TERMINAL_RECORDING", "1");
         assert_eq!(
             get_record_file_path().is_some(),
             crate::utils::build_profile::build_audience().is_internal()

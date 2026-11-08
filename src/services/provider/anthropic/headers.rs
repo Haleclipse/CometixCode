@@ -40,7 +40,7 @@ pub fn anthropic_adapter_headers(env: &EnvSnapshot) -> HashMap<String, Option<St
             Some(remote_session_id.to_string()),
         );
     }
-    if crate::utils::env_utils::is_env_truthy(env.var("CLAUDE_CODE_ADDITIONAL_PROTECTION")) {
+    if crate::utils::env_utils::is_env_truthy(env.var("NYAN_ADDITIONAL_PROTECTION")) {
         headers.insert(
             "x-anthropic-additional-protection".to_string(),
             Some("true".to_string()),
@@ -118,7 +118,7 @@ mod tests {
         let _container =
             crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_CONTAINER_ID", "box");
         let _protection =
-            crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_ADDITIONAL_PROTECTION", "1");
+            crate::utils::test_env::EnvVarGuard::set("NYAN_ADDITIONAL_PROTECTION", "1");
         let env = crate::utils::process_env::snapshot();
         let headers = anthropic_adapter_headers(&env);
         assert!(headers.contains_key("X-Nyan-Session-Id"));

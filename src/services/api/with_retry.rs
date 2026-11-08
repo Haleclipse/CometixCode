@@ -390,7 +390,7 @@ fn should_retry_529(query_source: Option<&RetryQuerySource>) -> bool {
 /// Maps to: CC `services/api/withRetry.ts:100-104`
 fn is_persistent_retry_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_UNATTENDED_RETRY").as_deref(),
+        crate::utils::process_env::var("NYAN_UNATTENDED_RETRY").as_deref(),
     )
 }
 
@@ -1323,7 +1323,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::settings::settings_cache::reset_settings_cache();
         // Decisions 19/23: the default dropped from CC's 10 to 2.
-        crate::utils::process_env::remove("CLAUDE_CODE_MAX_RETRIES");
+        crate::utils::process_env::remove("NYAN_MAX_RETRIES");
         assert_eq!(get_default_max_retries(), 2);
         assert_eq!(
             get_max_retries(&RetryOptions {
@@ -1344,11 +1344,11 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::settings::settings_cache::reset_settings_cache();
         {
-            let _one = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "1");
+            let _one = crate::utils::test_env::EnvVarGuard::set("NYAN_MAX_RETRIES", "1");
             assert_eq!(get_default_max_retries(), 1);
         }
         // The old CC default, asked for explicitly, is held to the cap (2).
-        let _ten = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "10");
+        let _ten = crate::utils::test_env::EnvVarGuard::set("NYAN_MAX_RETRIES", "10");
         assert_eq!(get_default_max_retries(), 2);
     }
 

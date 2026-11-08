@@ -807,8 +807,8 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = [
             "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-            "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
-            "CLAUDE_CODE_SIMPLE",
+            "NYAN_DISABLE_AUTO_MEMORY",
+            "NYAN_SIMPLE",
             "CLAUDE_CODE_REMOTE",
             "CLAUDE_CODE_REMOTE_MEMORY_DIR",
         ]
@@ -836,20 +836,20 @@ mod tests {
         assert!(enabled.dream_enabled);
         assert_eq!(enabled.path, Some(PathBuf::from("/tmp/memory-dir")));
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "true");
+            let _env = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "true");
             assert!(!auto_memory_snapshot().enabled);
         }
 
         crate::memdir::paths::seed_settings(with_auto_memory(false), user.clone());
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+            let _env = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
             assert!(auto_memory_snapshot().enabled);
         }
 
         // With settings on, only the environment gates can turn it off.
         crate::memdir::paths::seed_settings(with_auto_memory(true), user);
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+            let _env = EnvVarGuard::set("NYAN_SIMPLE", "1");
             assert!(!auto_memory_snapshot().enabled);
         }
         {

@@ -331,10 +331,10 @@ fn create_plugin_command(
 
 // L1: the two source string-replacement regular expressions.
 static SKILL_DIR_VARIABLE: std::sync::LazyLock<regress::Regex> = std::sync::LazyLock::new(|| {
-    regress::Regex::new(r"\$\{CLAUDE_SKILL_DIR\}").expect("source regex")
+    regress::Regex::new(r"\$\{NYAN_SKILL_DIR\}").expect("source regex")
 });
 static SESSION_ID_VARIABLE: std::sync::LazyLock<regress::Regex> = std::sync::LazyLock::new(|| {
-    regress::Regex::new(r"\$\{CLAUDE_SESSION_ID\}").expect("source regex")
+    regress::Regex::new(r"\$\{NYAN_SESSION_ID\}").expect("source regex")
 });
 
 /// Maps to CC `createPluginCommand(...).getPromptForCommand`.
@@ -1036,7 +1036,7 @@ mod tests {
         let _restore = Restore(previous_session);
         let mut plugin = fixture.plugin();
         plugin.manifest.user_config = Some(serde_json::json!({"label":{"type":"string"}}));
-        let body = "$ARGUMENTS ${user_config.label} ${CLAUDE_SKILL_DIR} ${CLAUDE_SESSION_ID} 😀";
+        let body = "$ARGUMENTS ${user_config.label} ${NYAN_SKILL_DIR} ${NYAN_SESSION_ID} 😀";
         let mut input = file(fixture.0.join("commands/leaf/SKILL.md"), body);
         input
             .frontmatter
@@ -1074,16 +1074,16 @@ mod tests {
         )
         .unwrap();
         crate::bootstrap::state::set_session_id("S2");
-        let expected = format!("{} second ${{CLAUDE_SKILL_DIR}} S2 😀", fixture.0.display());
-        assert_eq!(text(&command, "${CLAUDE_PLUGIN_ROOT}"), expected);
+        let expected = format!("{} second ${{NYAN_SKILL_DIR}} S2 😀", fixture.0.display());
+        assert_eq!(text(&command, "${NYAN_PLUGIN_ROOT}"), expected);
         assert_eq!(
-            text(&skill, "${CLAUDE_PLUGIN_ROOT}"),
+            text(&skill, "${NYAN_PLUGIN_ROOT}"),
             format!(
                 "Base directory for this skill: {0}/skills/leaf\n\n{0} second {0}/skills/leaf S2 😀",
                 fixture.0.display()
             )
         );
-        assert_eq!(command.content_length, Some(75));
+        assert_eq!(command.content_length, Some(71));
         let dto = command.prompt_command.as_ref().unwrap();
         assert_eq!(dto.execution_context, SkillExecutionContext::Inline);
         assert!(dto.agent.is_none() && dto.hooks.is_none() && dto.paths.is_none());
@@ -1118,7 +1118,7 @@ mod tests {
         let config = fixture.0.join("config");
         std::fs::create_dir_all(&config).unwrap();
         let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _bare = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _bare = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let original = crate::bootstrap::state::get_inline_plugins();
         struct Restore(Vec<PathBuf>);
         impl Drop for Restore {
@@ -1199,7 +1199,7 @@ mod tests {
             "p:dollar".into(),
             file(
                 "/p/skills/$&-$$/SKILL.md",
-                "${CLAUDE_SKILL_DIR}|${CLAUDE_SESSION_ID}",
+                "${NYAN_SKILL_DIR}|${NYAN_SESSION_ID}",
             ),
             &plugin,
             true,

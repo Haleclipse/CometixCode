@@ -75,7 +75,7 @@ pub async fn exec_command_hook(
     let execution = async move {
         // Maps to CC `execCommandHook` plugin setup (`utils/hooks.ts:801-904`).
         // Plugin variables are substituted before user-config values so values
-        // containing `${CLAUDE_PLUGIN_ROOT}` remain opaque. Plugin env entries are
+        // containing `${NYAN_PLUGIN_ROOT}` remain opaque. Plugin env entries are
         // appended after caller env and therefore win on duplicate keys, matching
         // CC's object-spread override order.
         //
@@ -84,16 +84,16 @@ pub async fn exec_command_hook(
         // plugin slice.
         let mut command = command.to_string();
         if let Some(plugin_root) = plugin_root {
-            command = command.replace("${CLAUDE_PLUGIN_ROOT}", plugin_root);
-            env_vars.push(("CLAUDE_PLUGIN_ROOT".to_string(), plugin_root.to_string()));
+            command = command.replace("${NYAN_PLUGIN_ROOT}", plugin_root);
+            env_vars.push(("NYAN_PLUGIN_ROOT".to_string(), plugin_root.to_string()));
 
             if let Some(plugin_id) = plugin_id {
                 let data_path =
                     crate::utils::plugins::plugin_directories::plugin_data_dir_path(plugin_id)
                         .display()
                         .to_string();
-                command = command.replace("${CLAUDE_PLUGIN_DATA}", &data_path);
-                env_vars.push(("CLAUDE_PLUGIN_DATA".to_string(), data_path));
+                command = command.replace("${NYAN_PLUGIN_DATA}", &data_path);
+                env_vars.push(("NYAN_PLUGIN_DATA".to_string(), data_path));
 
                 let options =
                     crate::utils::plugins::plugin_options_storage::load_plugin_options(plugin_id);
@@ -128,7 +128,7 @@ pub async fn exec_command_hook(
                             }
                         })
                         .collect::<String>();
-                    env_vars.push((format!("CLAUDE_PLUGIN_OPTION_{env_key}"), rendered));
+                    env_vars.push((format!("NYAN_PLUGIN_OPTION_{env_key}"), rendered));
                 }
             }
         }
@@ -150,13 +150,13 @@ pub async fn exec_command_hook(
             shell.kill_on_drop(true).args(["-c", command.as_str()]);
             shell
         };
-        // CC hooks.ts:813-816,882-885: `{ ...subprocessEnv(), CLAUDE_PROJECT_DIR:
+        // CC hooks.ts:813-816,882-885: `{ ...subprocessEnv(), NYAN_PROJECT_DIR:
         // getProjectRoot() }`, set here for every caller; the caller's and the
         // plugin variables in `env_vars` go over it. The original cwd stands in
         // for the project root this port does not have.
         crate::utils::subprocess_env::apply_subprocess_env(&mut shell);
         shell.env(
-            "CLAUDE_PROJECT_DIR",
+            "NYAN_PROJECT_DIR",
             crate::bootstrap::state::get_original_cwd(),
         );
         let mut child = match shell
@@ -413,12 +413,12 @@ mod tests {
                 .display()
                 .to_string();
         let result = exec_command_hook(
-            r#"printf '%s\n%s\n%s\n%s\n' '${CLAUDE_PLUGIN_ROOT}' "$CLAUDE_PLUGIN_ROOT" '${CLAUDE_PLUGIN_DATA}' "$CLAUDE_PLUGIN_DATA""#,
+            r#"printf '%s\n%s\n%s\n%s\n' '${NYAN_PLUGIN_ROOT}' "$NYAN_PLUGIN_ROOT" '${NYAN_PLUGIN_DATA}' "$NYAN_PLUGIN_DATA""#,
             "{}",
             Duration::from_secs(5),
             vec![
-                ("CLAUDE_PLUGIN_ROOT".to_string(), "stale-root".to_string()),
-                ("CLAUDE_PLUGIN_DATA".to_string(), "stale-data".to_string()),
+                ("NYAN_PLUGIN_ROOT".to_string(), "stale-root".to_string()),
+                ("NYAN_PLUGIN_DATA".to_string(), "stale-data".to_string()),
             ],
             Some(&plugin_root),
             Some(&plugin_id),
@@ -453,7 +453,7 @@ mod tests {
             "pluginConfigs": {
                 (plugin_id.clone()): {
                     "options": {
-                        "opaque": "${CLAUDE_PLUGIN_ROOT}",
+                        "opaque": "${NYAN_PLUGIN_ROOT}",
                         "count": 42
                     }
                 }
@@ -468,11 +468,11 @@ mod tests {
 
         let plugin_root = std::env::temp_dir().display().to_string();
         let result = exec_command_hook(
-            r#"printf '%s\n%s\n%s\n' '${user_config.opaque}' "$CLAUDE_PLUGIN_OPTION_OPAQUE" "$CLAUDE_PLUGIN_OPTION_COUNT""#,
+            r#"printf '%s\n%s\n%s\n' '${user_config.opaque}' "$NYAN_PLUGIN_OPTION_OPAQUE" "$NYAN_PLUGIN_OPTION_COUNT""#,
             "{}",
             Duration::from_secs(5),
             vec![(
-                "CLAUDE_PLUGIN_OPTION_OPAQUE".to_string(),
+                "NYAN_PLUGIN_OPTION_OPAQUE".to_string(),
                 "stale".to_string(),
             )],
             Some(&plugin_root),
@@ -485,7 +485,7 @@ mod tests {
         assert_eq!(result.status, 0, "{}", result.stderr);
         assert_eq!(
             result.stdout.lines().collect::<Vec<_>>(),
-            vec!["${CLAUDE_PLUGIN_ROOT}", "${CLAUDE_PLUGIN_ROOT}", "42"]
+            vec!["${NYAN_PLUGIN_ROOT}", "${NYAN_PLUGIN_ROOT}", "42"]
         );
     }
 
@@ -495,7 +495,7 @@ mod tests {
         let plugin_root = std::env::temp_dir().display().to_string();
         let controller = crate::tool::AbortController::default();
         let result = exec_command_hook(
-            r#"printf '%s\n%s\n' '${CLAUDE_PLUGIN_ROOT}' "$CLAUDE_PLUGIN_ROOT""#,
+            r#"printf '%s\n%s\n' '${NYAN_PLUGIN_ROOT}' "$NYAN_PLUGIN_ROOT""#,
             "{}",
             Duration::from_secs(5),
             vec![],

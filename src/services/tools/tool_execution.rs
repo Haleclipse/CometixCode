@@ -3728,7 +3728,7 @@ fn post_tool_hook_event(status: Option<ToolResultStatus>, aborted: bool) -> Post
 ///
 /// `session_id` and `transcript_path` used to be left at `Default::default()`
 /// here; the JSON rail hid that (its `is_empty()` fallbacks re-derive both).
-/// The env rail is CC's `{ ...subprocessEnv(), CLAUDE_PROJECT_DIR }`
+/// The env rail is CC's `{ ...subprocessEnv(), NYAN_PROJECT_DIR }`
 /// (`hooks.ts:882-885`), which `exec_command_hook` sets itself; the
 /// session/agent variables this port used to add there were removed on
 /// 2026-10-03 (env C7).
@@ -3757,7 +3757,7 @@ pub(crate) fn tool_hook_context(context: &ToolUseContext) -> crate::services::ho
 /// of the same `ToolUseContext` that every `*_with_config` hop already carries,
 /// so both rails are the same value by construction and no call site can hand
 /// the two halves a mismatched pair. The tool family adds nothing to the hook
-/// env (`exec_command_hook` sets `CLAUDE_PROJECT_DIR`), so `base_env` is empty.
+/// env (`exec_command_hook` sets `NYAN_PROJECT_DIR`), so `base_env` is empty.
 fn load_tool_hooks_config_and_env(
     context: &ToolUseContext,
 ) -> Option<(RegisteredHooks, Vec<(String, String)>)> {
@@ -4205,7 +4205,7 @@ mod tests {
         crate::utils::hooks::session_hooks::clear_session_hooks(&session_id);
         let (config, base_env) = loaded.expect("session hook must surface through the loader");
         assert!(!config.is_empty());
-        // `exec_command_hook` sets `CLAUDE_PROJECT_DIR` for every caller
+        // `exec_command_hook` sets `NYAN_PROJECT_DIR` for every caller
         // (CC `hooks.ts:816,882-885`); the tool family adds nothing.
         assert!(base_env.is_empty(), "{base_env:?}");
     }
@@ -4218,7 +4218,7 @@ mod tests {
     /// BOTH rails are asserted from ONE hook run, because they are two
     /// projections of the same `HookContext`. The JSON rail carries the session,
     /// transcript, cwd and agent fields; the env rail is CC's
-    /// `{ ...subprocessEnv(), CLAUDE_PROJECT_DIR }` (`hooks.ts:882-885`) and
+    /// `{ ...subprocessEnv(), NYAN_PROJECT_DIR }` (`hooks.ts:882-885`) and
     /// carries none of them.
     ///
     /// `agent_id` / `agent_type` / `permission_mode` (CC `:324-326`) are the
@@ -4229,12 +4229,8 @@ mod tests {
     async fn tool_hook_input_carries_the_official_base_fields_and_env_only_the_project_dir() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         // A host value would be inherited through `subprocessEnv()`, as in CC.
-        let _absent = [
-            "CLAUDE_SESSION_ID",
-            "CLAUDE_TRANSCRIPT_PATH",
-            "CLAUDE_AGENT_ID",
-        ]
-        .map(EnvVarGuard::unset);
+        let _absent =
+            ["NYAN_SESSION_ID", "NYAN_TRANSCRIPT_PATH", "NYAN_AGENT_ID"].map(EnvVarGuard::unset);
         let _settings = IsolatedProjectSettings::pin();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
 
@@ -4266,7 +4262,7 @@ mod tests {
             "Bash",
             crate::services::hooks::HookCommand {
                 command: format!(
-                    "cat > '{}'; printf '%s\\n%s\\n%s\\n%s\\n' \"${{CLAUDE_SESSION_ID-<unset>}}\" \"${{CLAUDE_TRANSCRIPT_PATH-<unset>}}\" \"${{CLAUDE_AGENT_ID-<unset>}}\" \"$CLAUDE_PROJECT_DIR\" > '{}'",
+                    "cat > '{}'; printf '%s\\n%s\\n%s\\n%s\\n' \"${{NYAN_SESSION_ID-<unset>}}\" \"${{NYAN_TRANSCRIPT_PATH-<unset>}}\" \"${{NYAN_AGENT_ID-<unset>}}\" \"$NYAN_PROJECT_DIR\" > '{}'",
                     input_capture.display(),
                     env_capture.display()
                 ),
@@ -4322,7 +4318,7 @@ mod tests {
         assert_eq!(payload["agent_type"], "code-reviewer");
         assert_eq!(payload["permission_mode"], "acceptEdits");
 
-        // The env rail: `CLAUDE_PROJECT_DIR` only, from the project root that
+        // The env rail: `NYAN_PROJECT_DIR` only, from the project root that
         // `exec_command_hook` reads (the original cwd stands in for it).
         let project_dir = crate::bootstrap::state::get_original_cwd()
             .display()
@@ -5896,7 +5892,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         let root = std::env::temp_dir().join(format!(
             "nyan-edit-pinned-destination-{}",
             uuid::Uuid::new_v4().simple()
@@ -6240,7 +6236,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let _write_enabled = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let _skills = crate::skills::load_skills_dir::DynamicSkillsTestSnapshot::capture();
         crate::skills::load_skills_dir::clear_dynamic_skills();
         let root = std::env::temp_dir().join(format!(
@@ -6622,7 +6618,7 @@ mod tests {
     #[test]
     fn run_tool_use_deferred_schema_validation_adds_tool_search_hint_when_schema_was_not_sent() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _disable_betas_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        let _disable_betas_guard = EnvVarGuard::unset("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         let _tool_search_guard = EnvVarGuard::unset("ENABLE_TOOL_SEARCH");
         let block = ToolUseBlock {
             id: crate::types::ids::ToolUseId("toolu_invalid_web_fetch".to_string()),
@@ -6669,7 +6665,7 @@ mod tests {
     #[test]
     fn run_tool_use_deferred_schema_validation_skips_tool_search_hint_after_discovery() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _disable_betas_guard = EnvVarGuard::unset("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
+        let _disable_betas_guard = EnvVarGuard::unset("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         let _tool_search_guard = EnvVarGuard::unset("ENABLE_TOOL_SEARCH");
         let block = ToolUseBlock {
             id: crate::types::ids::ToolUseId("toolu_invalid_web_fetch_discovered".to_string()),
@@ -6833,7 +6829,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let block = ToolUseBlock {
             id: crate::types::ids::ToolUseId("toolu_invalid_ask".to_string()),
             name: "AskUserQuestion".to_string(),
@@ -10867,7 +10863,7 @@ rl.on('line', line => {
     #[tokio::test]
     async fn local_tool_executor_times_out_bash_command() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _background = EnvVarGuard::set("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "1");
+        let _background = EnvVarGuard::set("NYAN_DISABLE_BACKGROUND_TASKS", "1");
         let request = mock_permission_request_with_input(
             "perm-bash-timeout".to_string(),
             "toolu_bash_timeout".to_string(),
@@ -11267,9 +11263,6 @@ rl.on('line', line => {
         let _api_key = EnvVarGuard::unset("ANTHROPIC_API_KEY");
         let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
         let _oauth_token = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
-        let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
-        let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
-        let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
         let path = std::env::temp_dir().join(format!(
             "nyan-read-listener-token-{}.txt",
             uuid::Uuid::new_v4()
@@ -13828,7 +13821,7 @@ mod permission_request_hook_decision_tests {
     async fn permission_request_hook_deny_message_reason_and_terminal_result_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         for reason in [Some("policy blocks this read"), Some(""), None] {
             let mut decision = json!({"behavior": "deny"});
             if let Some(reason) = reason {
@@ -13931,7 +13924,7 @@ mod permission_request_hook_decision_tests {
     async fn permission_request_hook_winning_allow_isolation_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         let config = competing_decisions(
             json!({"behavior": "allow", "updatedInput": {"file_path": "/tmp/winner"}}),
             json!({"behavior": "deny", "message": "losing deny", "interrupt": true}),
@@ -14054,7 +14047,7 @@ mod pre_tool_hook_decision_tests {
     async fn pre_tool_hook_prepare_message_and_reason_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         for behavior in ["allow", "ask", "deny"] {
             for reason in [Some("completion reason"), Some(""), None] {
                 let config = ordered_config(hook_output(behavior, reason), None);
@@ -14106,7 +14099,7 @@ mod pre_tool_hook_decision_tests {
     async fn pre_tool_hook_aggregated_deny_configured_terminal_matches_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
-        let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
+        let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
         for (later, expected_reason, expected_message) in [
             (
                 hook_output("allow", Some("later allow reason")),

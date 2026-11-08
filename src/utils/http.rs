@@ -39,7 +39,7 @@ mod tests {
     fn every_http_surface_uses_the_same_nyan_user_agent() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = [
-            EnvVarGuard::set("CLAUDE_CODE_ENTRYPOINT", "sdk"),
+            EnvVarGuard::set("NYAN_ENTRYPOINT", "sdk"),
             EnvVarGuard::set("CLAUDE_AGENT_SDK_VERSION", "1.2.3"),
             EnvVarGuard::set("CLAUDE_AGENT_SDK_CLIENT_APP", "my-app/1.0"),
         ];

@@ -366,7 +366,7 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
     // Maps to the official simple-mode branch: skip custom agents and return
     // only built-ins.
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_SIMPLE").as_deref(),
+        crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     ) {
         let nyan = crate::utils::settings::get_initial_settings().nyan;
         let mut failed_files = Vec::new();
@@ -997,7 +997,7 @@ mod tests {
         [
             EnvVarGuard::set("NYAN_CONFIG_DIR", config_home),
             EnvVarGuard::set(HOME_VAR, home),
-            EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
+            EnvVarGuard::unset("NYAN_SIMPLE"),
         ]
     }
 
@@ -1183,7 +1183,7 @@ mod tests {
 
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = pin_loader_env(&root, &config_home);
-        let _auto_memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let _auto_memory = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let result = get_agent_definitions_with_overrides(&root);
 
         let reviewer = result
@@ -1312,7 +1312,7 @@ mod tests {
     #[test]
     fn parse_agent_from_json_matches_official_schema_and_memory_tool_injection() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _auto_memory = EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false");
+        let _auto_memory = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
 
         let value = serde_json::json!({
             "description": "Review code",
@@ -1775,7 +1775,7 @@ mod tests {
             ]
         );
 
-        let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "true");
+        let _simple = EnvVarGuard::set("NYAN_SIMPLE", "true");
         let simple = get_agent_definitions_with_overrides(&cwd);
         assert!(
             simple
@@ -1820,7 +1820,7 @@ mod tests {
         SnapshotEnv {
             _loader: pin_loader_env(home, config_home),
             _remote_memory: EnvVarGuard::unset("CLAUDE_CODE_REMOTE_MEMORY_DIR"),
-            _auto_memory: EnvVarGuard::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "false"),
+            _auto_memory: EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false"),
             _lock: lock,
         }
     }
