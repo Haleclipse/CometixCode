@@ -37,10 +37,12 @@ fn cache_settings() -> crate::utils::settings::nyan::CacheSettings {
         .unwrap_or_default()
 }
 
-/// Read the final in-memory usage, not a transcript usage snapshot.
+/// Read the final in-memory usage, not a transcript usage snapshot. `profile`
+/// is the one the request went through (`None`: the main profile).
 pub fn warm_eligibility(
     usage: &crate::types::message::TokenUsage,
     model: &str,
+    profile: Option<&str>,
     thinking: &ThinkingConfig,
     has_tool_use: bool,
 ) -> Option<WarmEligibility> {
@@ -51,13 +53,14 @@ pub fn warm_eligibility(
         // since the last recorded write): do not pretend a refresh helps.
         return None;
     };
-    warm_eligibility_with_ttl(usage, ttl_usage, model, thinking, has_tool_use)
+    warm_eligibility_with_ttl(usage, ttl_usage, model, profile, thinking, has_tool_use)
 }
 
 pub fn warm_eligibility_with_ttl(
     usage: &crate::types::message::TokenUsage,
     ttl_usage: crate::services::provider::anthropic::cache::CacheTtlUsage,
     model: &str,
+    profile: Option<&str>,
     thinking: &ThinkingConfig,
     has_tool_use: bool,
 ) -> Option<WarmEligibility> {
@@ -66,6 +69,7 @@ pub fn warm_eligibility_with_ttl(
         usage,
         ttl_usage,
         model,
+        profile,
         thinking,
         has_tool_use,
     )
@@ -76,6 +80,7 @@ fn warm_eligibility_with_settings(
     usage: &crate::types::message::TokenUsage,
     ttl_usage: crate::services::provider::anthropic::cache::CacheTtlUsage,
     model: &str,
+    profile: Option<&str>,
     thinking: &ThinkingConfig,
     has_tool_use: bool,
 ) -> Option<WarmEligibility> {
@@ -86,9 +91,12 @@ fn warm_eligibility_with_settings(
     // `max_tokens = 1` is only a legal, prefix-identical request when thinking
     // is effectively off. `Enabled`, or an `Adaptive` that the request builder
     // would convert to `Enabled`, would send a different thinking budget.
-    let thinking_is_neutral = !model_supports_thinking(model)
+    let thinking_is_neutral = !model_supports_thinking(model, profile)
         || matches!(thinking, ThinkingConfig::Disabled)
-        || matches!(thinking, ThinkingConfig::Adaptive if model_supports_adaptive_thinking(model));
+        || matches!(
+            thinking,
+            ThinkingConfig::Adaptive if model_supports_adaptive_thinking(model, profile)
+        );
     if !thinking_is_neutral {
         return None;
     }
@@ -214,6 +222,7 @@ pub fn observe_response(
         .clone()
         .or_else(|| last.model.clone())
         .unwrap_or_else(crate::utils::model::model::get_main_loop_model);
+    let profile = context.main_loop_profile.clone();
     let thinking = context.thinking_config.clone().unwrap_or_else(|| {
         crate::utils::thinking::production_thinking_config_from_env_and_settings(
             &crate::utils::settings::get_initial_settings(),
@@ -226,7 +235,15 @@ pub fn observe_response(
         .content
         .iter()
         .any(|content| matches!(content, crate::types::message::AssistantContent::ToolUse(_)));
-    observe_real_request(source, Some(cache), usage, &model, &thinking, has_tool_use);
+    observe_real_request(
+        source,
+        Some(cache),
+        usage,
+        &model,
+        profile.as_deref(),
+        &thinking,
+        has_tool_use,
+    );
 }
 
 /// Observe one completed real request and schedule a bounded refresh if the
@@ -238,6 +255,7 @@ pub fn observe_real_request(
     cache: Option<Arc<CacheSafeParams>>,
     usage: &crate::types::message::TokenUsage,
     model: &str,
+    profile: Option<&str>,
     thinking: &ThinkingConfig,
     has_tool_use: bool,
 ) {
@@ -245,7 +263,7 @@ pub fn observe_real_request(
         return;
     }
     invalidate();
-    let Some(eligibility) = warm_eligibility(usage, model, thinking, has_tool_use) else {
+    let Some(eligibility) = warm_eligibility(usage, model, profile, thinking, has_tool_use) else {
         return;
     };
     let Some(cache) = cache.or_else(get_last_cache_safe_params) else {
@@ -332,7 +350,7 @@ mod tests {
         thinking: &ThinkingConfig,
         has_tool_use: bool,
     ) -> Option<WarmEligibility> {
-        warm_eligibility_with_settings(settings, usage, ttl, model, thinking, has_tool_use)
+        warm_eligibility_with_settings(settings, usage, ttl, model, None, thinking, has_tool_use)
     }
 
     #[test]
@@ -443,8 +461,8 @@ mod tests {
         let enabled = ThinkingConfig::Enabled {
             budget_tokens: None,
         };
-        assert!(!model_supports_adaptive_thinking("claude-sonnet-4-5"));
-        assert!(model_supports_thinking("claude-sonnet-4-5"));
+        assert!(!model_supports_adaptive_thinking("claude-sonnet-4-5", None));
+        assert!(model_supports_thinking("claude-sonnet-4-5", None));
         assert!(
             eligible(
                 &on,
@@ -486,7 +504,7 @@ mod tests {
             .is_some()
         );
         let adaptive_model = "claude-sonnet-4-6";
-        assert!(model_supports_adaptive_thinking(adaptive_model));
+        assert!(model_supports_adaptive_thinking(adaptive_model, None));
         assert!(
             eligible(
                 &on,
@@ -498,6 +516,51 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    #[test]
+    fn adaptive_5_5_models_may_warm_unless_their_profile_declares_a_budget() {
+        let _lock = crate::utils::test_env::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct ResetSettings;
+        impl Drop for ResetSettings {
+            fn drop(&mut self) {
+                crate::utils::settings::settings_cache::reset_settings_cache();
+            }
+        }
+        let _reset = ResetSettings;
+        let on = settings(CacheWarmingMode::Active);
+        let adaptive = |model: &str, profile: Option<&str>| {
+            warm_eligibility_with_settings(
+                &on,
+                &usage(25_000),
+                ttl_5m(),
+                model,
+                profile,
+                &ThinkingConfig::Adaptive,
+                true,
+            )
+        };
+        assert!(adaptive("claude-opus-5-5", None).is_some());
+        assert!(adaptive("claude-sonnet-5-5", None).is_some());
+        assert!(adaptive("claude-haiku-5-5", None).is_some());
+        assert!(adaptive("claude-haiku-4-5-20251001", None).is_none());
+
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {"main": {"provider": "p", "model": "claude-opus-5-5",
+                    "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000,
+                        "thinking": "budgeted"}}},
+                "selection": {"main": "main"}
+            }}))
+            .unwrap(),
+        );
+        // The request builder would send a budget, so `max_tokens = 1` is not
+        // prefix-identical.
+        assert!(adaptive("claude-opus-5-5", Some("main")).is_none());
+        assert!(adaptive("claude-opus-5-5", None).is_none());
     }
 
     #[test]
@@ -524,7 +587,7 @@ mod tests {
         // thinking.
         let on = settings(CacheWarmingMode::Active);
         let model = "claude-3-5-haiku-20241022";
-        assert!(!model_supports_thinking(model));
+        assert!(!model_supports_thinking(model, None));
         assert!(
             eligible(
                 &on,

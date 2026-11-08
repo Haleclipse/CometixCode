@@ -124,6 +124,39 @@ pub fn validate_reference(
     Ok(source)
 }
 
+/// The secrets a reference yields now, without network I/O. `env` and `file`
+/// are read as a request reads them; `oauth` yields the stored tokens of the
+/// account a request would use (refreshing an expired one is the request's
+/// job). `none` and an unset `optionalEnv` yield nothing.
+pub fn offline_secrets(
+    kind: ProviderKind,
+    reference: &CredentialReference,
+    store: &AuthStore,
+) -> Result<Vec<Secret>, ResolveError> {
+    Ok(match validate_reference(kind, reference)? {
+        CredentialSource::Env { name, required } => {
+            resolve_env_secret(&name, required)?.into_iter().collect()
+        }
+        CredentialSource::File { path } => vec![resolve_file_secret(&path)?],
+        CredentialSource::None => Vec::new(),
+        CredentialSource::OAuth { provider } => {
+            let not_signed_in = || TokenError::NotSignedIn {
+                provider: provider.clone(),
+                account: None,
+            };
+            let auth = store
+                .load(&provider)
+                .map_err(TokenError::from)?
+                .ok_or_else(not_signed_in)?;
+            let (_, credential) = auth.account(None).ok_or_else(not_signed_in)?;
+            vec![
+                credential.access_secret(),
+                Secret::new(credential.refresh.clone()),
+            ]
+        }
+    })
+}
+
 /// What a credential reference yields.
 #[derive(Debug)]
 pub enum Resolved {

@@ -14,30 +14,15 @@ use std::path::Path;
 pub const EXTERNAL_EDITOR_HINT_KEY: &str = "external-editor-hint";
 pub const EXTERNAL_EDITOR_HINT_TIMEOUT_MS: u64 = 5_000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ApiKeyVerificationStatus {
-    Valid,
-    Invalid,
-    Missing,
-    Unknown,
-}
-
-impl ApiKeyVerificationStatus {
-    fn allows_external_editor_hint(self) -> bool {
-        !matches!(self, Self::Invalid | Self::Missing)
-    }
-}
-
+/// `credential_missing`: the footer is already showing the missing-credential
+/// row, which the hint must not displace.
 pub fn external_editor_hint_notification_from_state(
     is_input_wrapped: bool,
     is_showing_compact_message: bool,
-    api_key_status: ApiKeyVerificationStatus,
+    credential_missing: bool,
     editor: Option<&str>,
 ) -> Option<Notification> {
-    if !is_input_wrapped
-        || is_showing_compact_message
-        || !api_key_status.allows_external_editor_hint()
-    {
+    if !is_input_wrapped || is_showing_compact_message || credential_missing {
         return None;
     }
 
@@ -143,59 +128,22 @@ mod tests {
     #[test]
     fn external_editor_hint_from_state_matches_prompt_input_gates() {
         assert!(
-            external_editor_hint_notification_from_state(
-                true,
-                false,
-                ApiKeyVerificationStatus::Valid,
-                Some("cursor"),
-            )
-            .is_some()
+            external_editor_hint_notification_from_state(true, false, false, Some("cursor"))
+                .is_some()
         );
         assert!(
-            external_editor_hint_notification_from_state(
-                false,
-                false,
-                ApiKeyVerificationStatus::Valid,
-                Some("cursor"),
-            )
-            .is_none()
+            external_editor_hint_notification_from_state(false, false, false, Some("cursor"))
+                .is_none()
         );
         assert!(
-            external_editor_hint_notification_from_state(
-                true,
-                true,
-                ApiKeyVerificationStatus::Valid,
-                Some("cursor"),
-            )
-            .is_none()
+            external_editor_hint_notification_from_state(true, true, false, Some("cursor"))
+                .is_none()
         );
         assert!(
-            external_editor_hint_notification_from_state(
-                true,
-                false,
-                ApiKeyVerificationStatus::Invalid,
-                Some("cursor"),
-            )
-            .is_none()
+            external_editor_hint_notification_from_state(true, false, true, Some("cursor"))
+                .is_none()
         );
-        assert!(
-            external_editor_hint_notification_from_state(
-                true,
-                false,
-                ApiKeyVerificationStatus::Missing,
-                Some("cursor"),
-            )
-            .is_none()
-        );
-        assert!(
-            external_editor_hint_notification_from_state(
-                true,
-                false,
-                ApiKeyVerificationStatus::Unknown,
-                None,
-            )
-            .is_none()
-        );
+        assert!(external_editor_hint_notification_from_state(true, false, false, None).is_none());
     }
 
     #[test]

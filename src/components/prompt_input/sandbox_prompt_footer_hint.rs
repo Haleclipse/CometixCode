@@ -315,7 +315,7 @@ mod tests {
                 &store.get(),
                 false,
                 false,
-                crate::hooks::use_api_key_verification::VerificationStatus::Loading,
+                &crate::hooks::use_credential_status::CredentialStatus::Ready,
                 // No messages in this fixture; zero usage matches an empty
                 // conversation (CC derives tokenUsage from messages).
                 0,

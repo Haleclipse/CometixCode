@@ -5537,7 +5537,7 @@ fn legacy_model_messages_from_params(params: &QueryParams) -> Vec<crate::types::
 pub(crate) fn sdk_error_event(turn_id: &str, error: &str) -> PendingQueryEvent {
     // CC `query.ts:974,990` — `yield createAssistantAPIErrorMessage({ content })`.
     let message = crate::utils::messages::create_assistant_api_error_message(
-        redact_error_text(error),
+        crate::services::provider::credential::redact_credentials(error),
         None,
         None,
     );
@@ -5589,7 +5589,7 @@ pub(crate) async fn send_assistant_api_error_message(
     error: &str,
 ) -> Result<(), ()> {
     let mut message = crate::utils::messages::create_assistant_api_error_message(
-        redact_error_text(error),
+        crate::services::provider::credential::redact_credentials(error),
         None,
         None,
     );
@@ -5598,24 +5598,6 @@ pub(crate) async fn send_assistant_api_error_message(
         .send(QueryEvent::Message(Message::Assistant(message)))
         .await
         .map_err(|_| ())
-}
-
-fn redact_error_text(text: &str) -> String {
-    let mut sanitized = text.replace('\n', " ");
-    for key in [
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "CLAUDE_CODE_OAUTH_TOKEN",
-    ] {
-        sanitized = sanitized.replace(key, "<redacted>");
-        if let Some(secret) = crate::utils::process_env::var(key) {
-            let trimmed = secret.trim();
-            if !trimmed.is_empty() {
-                sanitized = sanitized.replace(trimmed, "<redacted>");
-            }
-        }
-    }
-    sanitized
 }
 
 /// The query seam's yield value (C3c-3).
@@ -6028,6 +6010,28 @@ mod tests {
             },
             _ => None,
         }
+    }
+
+    #[test]
+    fn api_error_text_redacts_a_non_anthropic_provider_key() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _key = EnvVarGuard::set("NYAN_FAKE_DEEPSEEK_KEY", "sk-fake-deepseek-query-0001");
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {"providers": {
+                "deepseek": {"kind": "openai", "protocol": "openaiChat",
+                    "credential": {"env": "NYAN_FAKE_DEEPSEEK_KEY"}}
+            }}}))
+            .unwrap(),
+        );
+        let event = sdk_error_event("t1", "401: bad key sk-fake-deepseek-query-0001");
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        let QuerySourceEventKind::AssistantText { text, .. } = event.event.kind else {
+            panic!("an API error is an assistant text row");
+        };
+        assert!(text.contains("401: bad key <redacted>"), "{text}");
+        assert!(!text.contains("sk-fake-deepseek-query-0001"), "{text}");
     }
 
     fn row_is_api_error(message: &RenderableMessage) -> bool {

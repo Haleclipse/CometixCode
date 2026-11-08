@@ -721,7 +721,9 @@ async fn brave_monthly_window_zero_is_quota_even_on_a_successful_response() {
     let build = |u: &str| -> Box<dyn SearchProvider> {
         Box::new(BraveProvider::with_base_url(u, Some("k".into())).unwrap())
     };
-    let spent = Reply::ok(hit_envelope("brave")).header("x-ratelimit-remaining", "1, 0");
+    let spent = Reply::ok(hit_envelope("brave"))
+        .header("x-ratelimit-limit", "1, 2000")
+        .header("x-ratelimit-remaining", "1, 0");
     assert_eq!(
         search_error(build, spent).await,
         ProviderError::QuotaExhausted
@@ -735,6 +737,25 @@ async fn brave_monthly_window_zero_is_quota_even_on_a_successful_response() {
     // A healthy window returns hits.
     let server = mock(vec![
         Reply::ok(hit_envelope("brave")).header("x-ratelimit-remaining", "1, 1400"),
+    ])
+    .await;
+    let provider = BraveProvider::with_base_url(&server.url, Some("k".into())).unwrap();
+    assert_eq!(
+        provider
+            .search(request("q", 5), DEADLINE)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn brave_unmetered_month_returns_hits_despite_a_zero_remainder() {
+    let server = mock(vec![
+        Reply::ok(hit_envelope("brave"))
+            .header("x-ratelimit-limit", "1, 0")
+            .header("x-ratelimit-remaining", "0, 0"),
     ])
     .await;
     let provider = BraveProvider::with_base_url(&server.url, Some("k".into())).unwrap();

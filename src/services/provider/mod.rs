@@ -3,6 +3,7 @@
 
 pub mod adapter;
 pub mod anthropic;
+pub mod credential;
 pub mod gemini;
 pub mod history;
 pub mod ir;

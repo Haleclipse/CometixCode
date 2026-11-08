@@ -14,7 +14,7 @@ use crate::components::status_line::{
     StatusLine, status_line_should_display, status_line_should_render,
 };
 use crate::context::notifications::{NotificationColor, NotificationSegment};
-use crate::hooks::use_api_key_verification::VerificationStatus;
+use crate::hooks::use_credential_status::CredentialStatus;
 use crate::state::app_state::use_app_state;
 use crate::types::permissions::PermissionMode;
 use crate::utils::permissions::permission_mode::is_default_mode;
@@ -67,7 +67,7 @@ impl PromptFooterIndicator {
 #[derive(Default, Props)]
 pub struct FooterProps {
     /// Maps to: CC `PromptInputFooter.apiKeyStatus` → `Notifications`.
-    pub api_key_status: VerificationStatus,
+    pub credential_status: CredentialStatus,
     /// Maps to: CC `PromptInputFooter.tsx:46` `autoUpdaterResult` (REPL-owned),
     /// forwarded to `Notifications` (`:208`).
     pub auto_updater_result: Option<crate::utils::auto_updater::AutoUpdaterResult>,
@@ -257,7 +257,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
     // re-boxed every render, so each pass still closes over that pass's props.
     let notification_row_count = {
         let debug = props.debug;
-        let api_key_status = props.api_key_status;
+        let credential_status = props.credential_status.clone();
         let auto_updater_result = props.auto_updater_result.clone();
         let is_auto_updating = props.is_auto_updating;
         let ide_selection = props.ide_selection.clone();
@@ -266,7 +266,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                 state,
                 has_current_notification,
                 debug,
-                api_key_status,
+                &credential_status,
                 token_usage,
                 auto_updater_result.as_ref(),
                 is_auto_updating,
@@ -363,7 +363,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                         // props to Notifications.
                                         Some(element! {
                                             notifications::Notifications(
-                                                api_key_status: props.api_key_status,
+                                                credential_status: props.credential_status.clone(),
                                                 auto_updater_result: props.auto_updater_result.clone(),
                                                 is_auto_updating: props.is_auto_updating,
                                                 on_auto_updater_result: props.on_auto_updater_result.clone(),

@@ -64,11 +64,9 @@ use crate::components::teams::teams_dialog::{
 };
 use crate::components::vim_text_input::{VimMode, VimTextInput};
 use crate::context::notifications::use_notifications;
-use crate::hooks::notifs::external_editor_hint::{
-    ApiKeyVerificationStatus, external_editor_hint_notification_from_state,
-};
-use crate::hooks::use_api_key_verification::VerificationStatus;
+use crate::hooks::notifs::external_editor_hint::external_editor_hint_notification_from_state;
 use crate::hooks::use_arrow_key_history::use_arrow_key_history;
+use crate::hooks::use_credential_status::CredentialStatus;
 use crate::hooks::use_double_press::use_double_press;
 use crate::hooks::use_history_search::{UseHistorySearchOptions, use_history_search};
 use crate::hooks::use_text_input::{HistoryDirection, UseTextInputOptions, use_text_input};
@@ -395,17 +393,6 @@ fn restore_stash_or_clear(
     }
 }
 
-fn external_editor_api_key_status(status: VerificationStatus) -> ApiKeyVerificationStatus {
-    match status {
-        VerificationStatus::Valid => ApiKeyVerificationStatus::Valid,
-        VerificationStatus::Invalid => ApiKeyVerificationStatus::Invalid,
-        VerificationStatus::Missing => ApiKeyVerificationStatus::Missing,
-        VerificationStatus::Loading | VerificationStatus::Error => {
-            ApiKeyVerificationStatus::Unknown
-        }
-    }
-}
-
 fn visible_prompt_suggestion(
     state: &crate::state::app_state_store::PromptSuggestionState,
     input: &str,
@@ -451,8 +438,8 @@ pub struct PromptInputProps<'a> {
     /// Maps to: CC `PromptInputProps.debug`, forwarded from REPL launch props.
     pub debug: bool,
     /// Maps to: CC `PromptInputProps.apiKeyStatus`, owned by REPL's
-    /// `useApiKeyVerification` hook.
-    pub api_key_status: VerificationStatus,
+    /// `use_credential_status` hook.
+    pub credential_status: CredentialStatus,
     /// Maps to: CC `PromptInput.tsx:239` `autoUpdaterResult` — REPL-owned
     /// state (REPL.tsx:1408), prop-drilled to Footer → Notifications.
     pub auto_updater_result: Option<crate::utils::auto_updater::AutoUpdaterResult>,
@@ -2686,7 +2673,7 @@ pub fn PromptInput<'a>(
     // the subscription hook retains the selector, so it may not borrow props.
     let notification_row_count = {
         let debug = props.debug;
-        let api_key_status = props.api_key_status;
+        let credential_status = props.credential_status.clone();
         let auto_updater_result = props.auto_updater_result.clone();
         let auto_updating = is_auto_updating.get();
         let ide_selection = props.ide_selection.clone();
@@ -2695,7 +2682,7 @@ pub fn PromptInput<'a>(
                 state,
                 has_notification,
                 debug,
-                api_key_status,
+                &credential_status,
                 token_usage,
                 auto_updater_result.as_ref(),
                 auto_updating,
@@ -2770,7 +2757,7 @@ pub fn PromptInput<'a>(
     let external_editor_hint = external_editor_hint_notification_from_state(
         input_row_height > 1,
         false,
-        external_editor_api_key_status(props.api_key_status),
+        props.credential_status.is_missing(),
         editor_for_external_hint.as_deref(),
     );
     let external_editor_hint_text = external_editor_hint
@@ -3064,7 +3051,7 @@ pub fn PromptInput<'a>(
                         // receives autoUpdaterResult/isAutoUpdating plus the
                         // onAutoUpdaterResult/onChangeIsUpdating callbacks.
                         prompt_input_footer::Footer(
-                            api_key_status: props.api_key_status,
+                            credential_status: props.credential_status.clone(),
                             auto_updater_result: props.auto_updater_result.clone(),
                             is_auto_updating: is_auto_updating.get(),
                             on_auto_updater_result: props.on_auto_updater_result.clone(),
@@ -3370,7 +3357,7 @@ mod tests {
     }
 
     #[component]
-    fn PromptWithMissingApiKey(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
+    fn PromptWithMissingCredential(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         let store = hooks.use_const(|| {
             crate::state::store::AppStore::new(
                 crate::state::app_state_store::AppState::default(),
@@ -3384,7 +3371,9 @@ mod tests {
                     children: crate::state::app_state::ProviderChildren::new(|| element! {
                         View(width: 80u32) {
                             PromptInput(
-                                api_key_status: VerificationStatus::Missing,
+                                credential_status: CredentialStatus::Missing {
+                                    provider: "cpa".to_string(),
+                                },
                                 on_submit: move |_| {},
                                 on_exit: move |_| {},
                             )
@@ -3457,7 +3446,7 @@ mod tests {
                     children: crate::state::app_state::ProviderChildren::new(|| element! {
                         View(width: 40u32) {
                             PromptInput(
-                                api_key_status: VerificationStatus::Valid,
+                                credential_status: CredentialStatus::Ready,
                                 on_submit: move |_| {},
                                 on_exit: move |_| {},
                             )
@@ -4674,13 +4663,13 @@ mod tests {
     }
 
     #[test]
-    fn prompt_input_passes_repl_api_key_status_through_footer_matches_official() {
-        let text = element!(PromptWithMissingApiKey)
+    fn prompt_input_passes_repl_credential_status_through_footer() {
+        let text = element!(PromptWithMissingCredential)
             .render(Some(80))
             .to_string();
 
         assert!(
-            text.contains("No API key · Set one on the selected provider profile"),
+            text.contains("No credential for provider cpa"),
             "canvas=\n{text}"
         );
     }
@@ -4998,30 +4987,6 @@ mod tests {
         assert!(
             text.contains("ctrl+g to edit in VS Code"),
             "wrapped prompt should enqueue the official external-editor hint; canvas=\n{text}"
-        );
-    }
-
-    #[test]
-    fn external_editor_status_mapping_keeps_auth_errors_suppressed() {
-        assert_eq!(
-            external_editor_api_key_status(VerificationStatus::Valid),
-            ApiKeyVerificationStatus::Valid
-        );
-        assert_eq!(
-            external_editor_api_key_status(VerificationStatus::Invalid),
-            ApiKeyVerificationStatus::Invalid
-        );
-        assert_eq!(
-            external_editor_api_key_status(VerificationStatus::Missing),
-            ApiKeyVerificationStatus::Missing
-        );
-        assert_eq!(
-            external_editor_api_key_status(VerificationStatus::Loading),
-            ApiKeyVerificationStatus::Unknown
-        );
-        assert_eq!(
-            external_editor_api_key_status(VerificationStatus::Error),
-            ApiKeyVerificationStatus::Unknown
         );
     }
 

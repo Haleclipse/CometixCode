@@ -1605,7 +1605,7 @@ fn sdk_model_infos() -> Vec<serde_json::Value> {
                 "supportedEffortLevels".to_string(),
                 serde_json::json!(["off", "medium", "high", "max"]),
             );
-            if crate::utils::thinking::model_supports_adaptive_thinking(&model) {
+            if crate::utils::thinking::model_supports_adaptive_thinking(&model, Some(name)) {
                 info.insert("supportsAdaptiveThinking".to_string(), true.into());
             }
             info.into()
@@ -3250,6 +3250,56 @@ mod tests {
         assert_eq!(models[1]["description"], "claude-sonnet-4-6");
         crate::utils::settings::settings_cache::reset_settings_cache();
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sdk_model_info_marks_adaptive_thinking_by_version_and_profile() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let caps = |thinking: Option<&str>| {
+            let mut caps = serde_json::json!({"contextWindow": 200000, "maxOutputTokens": 64000});
+            if let Some(thinking) = thinking {
+                caps["thinking"] = thinking.into();
+            }
+            caps
+        };
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {
+                    "budget": {"provider": "p", "model": "claude-opus-5-5",
+                        "capabilities": caps(Some("budgeted"))},
+                    "legacy": {"provider": "p", "model": "claude-opus-4-5",
+                        "capabilities": caps(None)},
+                    "opus": {"provider": "p", "model": "claude-opus-5-5",
+                        "capabilities": caps(None)},
+                    "sonnet": {"provider": "p", "model": "claude-sonnet-5-5",
+                        "capabilities": caps(None)}
+                },
+                "selection": {"main": "opus"}
+            }}))
+            .unwrap(),
+        );
+        let adaptive = sdk_model_infos()
+            .into_iter()
+            .map(|info| {
+                (
+                    info["value"].as_str().unwrap().to_string(),
+                    info.get("supportsAdaptiveThinking").is_some(),
+                )
+            })
+            .collect::<Vec<_>>();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        assert_eq!(
+            adaptive,
+            [
+                ("budget".to_string(), false),
+                ("legacy".to_string(), false),
+                ("opus".to_string(), true),
+                ("sonnet".to_string(), true),
+            ]
+        );
     }
 
     #[test]

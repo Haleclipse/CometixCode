@@ -39,14 +39,20 @@ pub(super) fn classify(
     }
 }
 
-/// Brave sends `x-ratelimit-remaining: <per-second>, <monthly>`; the last
-/// window is the monthly one. A lone value is treated as the monthly window.
+/// Brave sends `x-ratelimit-limit` and `x-ratelimit-remaining` as
+/// `<per-second>, <monthly>`; the last window is the monthly one, and a lone
+/// value is treated as the monthly window. A monthly limit of `0` means the
+/// month is unmetered, so its zero remainder is not exhaustion. Without a
+/// limit header the remainder alone decides.
 pub(super) fn brave_monthly_exhausted(headers: &HeaderMap) -> bool {
-    headers
-        .get("x-ratelimit-remaining")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.rsplit(',').next())
-        .is_some_and(|window| window.trim() == "0")
+    let monthly = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.rsplit(',').next())
+            .and_then(|window| window.trim().parse::<u64>().ok())
+    };
+    monthly("x-ratelimit-remaining") == Some(0) && monthly("x-ratelimit-limit") != Some(0)
 }
 
 fn exa_quota_code(body: &[u8]) -> bool {
@@ -92,6 +98,12 @@ mod tests {
         if let Some(value) = remaining {
             map.insert("x-ratelimit-remaining", value.parse().unwrap());
         }
+        map
+    }
+
+    fn brave_headers(limit: &str, remaining: &str) -> HeaderMap {
+        let mut map = headers(Some(remaining));
+        map.insert("x-ratelimit-limit", limit.parse().unwrap());
         map
     }
 
@@ -168,13 +180,36 @@ mod tests {
             ProviderError::RateLimited
         );
         assert_eq!(
-            classify(ProviderKind::Brave, 429, &headers(Some("1, 0")), b""),
+            classify(
+                ProviderKind::Brave,
+                429,
+                &brave_headers("1, 2000", "0, 0"),
+                b""
+            ),
             ProviderError::QuotaExhausted
+        );
+        assert_eq!(
+            classify(
+                ProviderKind::Brave,
+                429,
+                &brave_headers("1, 0", "0, 0"),
+                b""
+            ),
+            ProviderError::RateLimited
         );
     }
 
     #[test]
-    fn brave_monthly_window_is_the_last_value() {
+    fn brave_month_is_spent_only_when_its_limit_is_metered() {
+        assert!(brave_monthly_exhausted(&brave_headers("1, 2000", "0, 0")));
+        assert!(brave_monthly_exhausted(&brave_headers("2000", "0")));
+        assert!(!brave_monthly_exhausted(&brave_headers("1, 0", "0, 0")));
+        assert!(!brave_monthly_exhausted(&brave_headers("0", "0")));
+        assert!(!brave_monthly_exhausted(&brave_headers("1, 2000", "0, 12")));
+    }
+
+    #[test]
+    fn brave_month_without_a_limit_header_is_judged_by_the_remainder() {
         assert!(brave_monthly_exhausted(&headers(Some("1, 0"))));
         assert!(brave_monthly_exhausted(&headers(Some("0"))));
         assert!(!brave_monthly_exhausted(&headers(Some("0, 12"))));

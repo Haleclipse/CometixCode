@@ -39,7 +39,7 @@ use crate::components::skills::skills_menu::SkillsMenuDone;
 use crate::components::spinner::{SpinnerMode, SpinnerWithVerb};
 use crate::components::stats::Stats;
 use crate::hooks::tool_permission::handlers::interactive_handler::tool_use_confirm_for_request;
-use crate::hooks::use_api_key_verification::use_api_key_verification;
+use crate::hooks::use_credential_status::use_credential_status;
 use crate::hooks::use_ide_selection::IdeSelection;
 use crate::query::{
     PendingQueryMessage, QueryCommand, QueryEvent, QueryHandle, StopHookProgressEvent,
@@ -4225,18 +4225,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
 
     // Maps to: CC `screens/REPL.tsx:2643` — REPL owns the hook-local status
     // and passes it down to PromptInput/Notifications.
-    let api_key_verification = use_api_key_verification(&mut hooks);
-    let api_key_status = api_key_verification.status;
-    // Maps to: CC `screens/REPL.tsx:5061-5064,5452-5455` `onInit`: startup
-    // verification begins after REPL mounts, rather than in main/bootstrap.
-    let startup_api_key_verification = api_key_verification.clone();
-    hooks.use_effect(
-        move || {
-            drop(startup_api_key_verification.reverify());
-        },
-        (),
-    );
-    // Maps to: CC `screens/REPL.tsx:5456-5459`, the same effect's unmount
+    let credential_status = use_credential_status(&mut hooks);
+    // Maps to: CC `screens/REPL.tsx:5456-5459`, the `onInit` effect's unmount
     // cleanup `void diagnosticTracker.shutdown()`; held in hook state so it
     // runs when this component drops (`_sandbox_ask_registration` precedent).
     let _diagnostic_tracker_shutdown = hooks.use_state(|| DiagnosticTrackerShutdown);
@@ -9939,7 +9929,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         debug: debug,
                         // Maps to: CC REPL.tsx:6816 `ideSelection={ideSelection}`.
                         ide_selection: ide_selection.read().clone(),
-                        api_key_status: api_key_status,
+                        credential_status: credential_status.clone(),
                         // Maps to: CC REPL.tsx:6830 `autoUpdaterResult={autoUpdaterResult}`.
                         auto_updater_result: auto_updater_result.read().clone(),
                         // Maps to: CC REPL.tsx:6829 `onAutoUpdaterResult={setAutoUpdaterResult}`

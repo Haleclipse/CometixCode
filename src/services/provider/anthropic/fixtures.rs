@@ -449,7 +449,7 @@ async fn cache_retention_long_request_profile_overrides_short_main_on_the_wire()
 }
 
 #[tokio::test]
-async fn tool_search_placeholder_is_on_the_wire_with_defer_loading_and_anchors_tool_cache() {
+async fn tool_search_placeholder_is_on_the_wire_and_tool_cache_anchors_on_a_full_tool() {
     let mock = MockAnthropic::start(vec![Reply::Sse(message_stream(StreamSpec::default()))]).await;
     let _env = Env::new(&mock.base_url);
 
@@ -457,12 +457,33 @@ async fn tool_search_placeholder_is_on_the_wire_with_defer_loading_and_anchors_t
         "claude-sonnet-4-6".to_string(),
         "repl_main_thread".to_string(),
     );
-    let messages = vec![user("search")];
+    // A discovered WebFetch goes on the wire as a deferred tool after Probe.
+    let mut discovery = crate::utils::messages::create_user_message(String::new());
+    discovery.content = vec![crate::types::message::UserContent::ToolResult(ToolResult {
+        tool_use_id: ToolUseId("toolu_search".to_string()),
+        content: String::new(),
+        is_error: false,
+        content_blocks: vec![
+            crate::types::message::ToolResultContentBlock::ToolReference {
+                tool_name: "WebFetch".to_string(),
+            },
+        ],
+        tool_use_result: None,
+    })];
+    let messages = vec![
+        user("search"),
+        assistant(vec![AssistantContent::ToolUse(ToolUseBlock {
+            id: ToolUseId("toolu_search".into()),
+            name: "ToolSearch".into(),
+            input: json!({"query": "fetch"}),
+        })]),
+        Message::User(discovery),
+    ];
     let system_prompt = vec!["System instructions.".to_string()];
     let tools = vec![
         crate::tools::tool_search_tool::tool_search_tool_schema(),
-        crate::tools::web_fetch_tool::web_fetch_tool_schema(),
         probe_tool(),
+        crate::tools::web_fetch_tool::web_fetch_tool_schema(),
     ];
     let mut rx = query_model_with_streaming(
         &messages,
@@ -479,18 +500,32 @@ async fn tool_search_placeholder_is_on_the_wire_with_defer_loading_and_anchors_t
     let body = &requests[0].body;
     let tools = body["tools"].as_array().expect("tools on the wire");
 
-    // Probe has NO cache_control because it's not the last tool
-    let probe = tools.iter().find(|t| t["name"] == "Probe").unwrap();
-    assert!(probe.get("cache_control").is_none());
-
-    // Placeholder is at the end with defer_loading and cache_control
-    let placeholder = tools.last().unwrap();
+    let names = tools.iter().map(|t| t["name"].clone()).collect::<Vec<_>>();
     assert_eq!(
-        placeholder["name"],
-        crate::services::api::claude::DEFERRED_TOOL_PLACEHOLDER_NAME
+        names,
+        [
+            json!("ToolSearch"),
+            json!("Probe"),
+            json!("WebFetch"),
+            json!(crate::services::api::claude::DEFERRED_TOOL_PLACEHOLDER_NAME),
+        ]
     );
-    assert_eq!(placeholder["defer_loading"], true);
-    assert_eq!(placeholder["cache_control"]["type"], "ephemeral");
+    let deferred = tools
+        .iter()
+        .filter(|t| t["defer_loading"] == true)
+        .collect::<Vec<_>>();
+    assert_eq!(deferred.len(), 2, "WebFetch and the placeholder");
+    // Anthropic rejects cache_control on a deferred tool.
+    assert!(deferred.iter().all(|t| t.get("cache_control").is_none()));
+
+    // The breakpoint sits on Probe, the last tool sent in full.
+    let anchors = tools
+        .iter()
+        .filter(|t| t.get("cache_control").is_some())
+        .collect::<Vec<_>>();
+    assert_eq!(anchors.len(), 1);
+    assert_eq!(anchors[0]["name"], "Probe");
+    assert_eq!(anchors[0]["cache_control"]["type"], "ephemeral");
 }
 
 // ---------------------------------------------------------------------------

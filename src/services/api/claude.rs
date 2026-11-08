@@ -20,9 +20,8 @@ use crate::services::provider::anthropic::betas::{
     ADVISOR_BETA_HEADER, CONTEXT_MANAGEMENT_BETA_HEADER, EFFORT_BETA_HEADER,
     PROMPT_CACHING_SCOPE_BETA_HEADER, REDACT_THINKING_BETA_HEADER, STRUCTURED_OUTPUTS_BETA_HEADER,
     TASK_BUDGETS_BETA_HEADER, TOOL_SEARCH_BETA_HEADER_3P, get_bedrock_extra_body_params_betas,
-    get_merged_betas, get_model_betas, get_tool_search_beta_header,
-    model_supports_structured_outputs, should_include_first_party_only_betas,
-    should_use_global_cache_scope,
+    get_merged_betas, get_tool_search_beta_header, model_supports_structured_outputs,
+    should_include_first_party_only_betas, should_use_global_cache_scope,
 };
 use crate::services::provider::anthropic::effort::{output_config_effort, thinking_for_effort};
 use crate::types::message::{StreamEvent, SystemApiErrorMessage};
@@ -30,9 +29,7 @@ use crate::types::tools::Tool;
 use crate::utils::content_array::insert_block_after_tool_results;
 use crate::utils::context::{CAPPED_DEFAULT_MAX_TOKENS, get_model_max_output_tokens};
 use crate::utils::effort::Effort;
-use crate::utils::model::model::{
-    get_main_loop_model, get_small_fast_model, normalize_model_string_for_api,
-};
+use crate::utils::model::model::{get_main_loop_model, normalize_model_string_for_api};
 use crate::utils::process_env::JsTruthy;
 use crate::utils::thinking::{
     ThinkingConfig, model_supports_adaptive_thinking, model_supports_thinking,
@@ -483,12 +480,14 @@ pub fn configure_effort_params(
 /// The thinking configuration of one request: the effort when the session or
 /// agent set one, otherwise the caller's own.
 fn effective_thinking_config(
-    effort: Option<Effort>,
     thinking_config: &ThinkingConfig,
-    model: &str,
+    options: &Options,
 ) -> ThinkingConfig {
-    match effort {
-        Some(effort) => thinking_for_effort(effort, model_supports_adaptive_thinking(model)),
+    match options.effort_value {
+        Some(effort) => thinking_for_effort(
+            effort,
+            model_supports_adaptive_thinking(&options.model, options.profile.as_deref()),
+        ),
         None => thinking_config.clone(),
     }
 }
@@ -588,38 +587,6 @@ pub fn get_api_metadata() -> ApiMetadata {
         serde_json::to_string(&JsonValue::Object(extra)).unwrap_or_else(|_| "{}".to_string());
 
     ApiMetadata { user_id }
-}
-
-// ---------------------------------------------------------------------------
-// verifyApiKey
-// ---------------------------------------------------------------------------
-
-/// Maps to: CC services/api/claude.ts:530-586
-///
-/// Verifies an API key by making a minimal messages.create call.
-/// Returns true if the key is valid, false if authentication fails.
-/// Errors on other failures.
-///
-pub async fn verify_api_key(
-    api_key: &str,
-    is_non_interactive_session: bool,
-) -> anyhow::Result<bool> {
-    // Skip API verification if running in print mode
-    if is_non_interactive_session {
-        return Ok(true);
-    }
-
-    // TODO: Implement real API key verification using anthropic_sdk::Anthropic.
-    // The CC implementation creates a minimal messages.create call with
-    // model=getSmallFastModel(), max_tokens=1, messages=[{role:'user', content:'test'}].
-    // See CC services/api/claude.ts:530-586 for full retry and error handling.
-    let _ = api_key;
-    let _model = get_small_fast_model();
-    let _betas = get_model_betas(&_model);
-
-    Err(anyhow::anyhow!(
-        "verifyApiKey stubbed: real implementation pending anthropic-sdk-rs wiring"
-    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1840,16 +1807,18 @@ fn sdk_system_prompt_from_blocks(
 
 fn local_thinking_config_to_sdk(
     thinking: &ThinkingConfig,
-    model: &str,
+    options: &Options,
     max_output_tokens: u32,
 ) -> anthropic_sdk::resources::messages::ThinkingConfig {
-    if matches!(thinking, ThinkingConfig::Disabled) || !model_supports_thinking(model) {
+    let model = options.model.as_str();
+    let profile = options.profile.as_deref();
+    if matches!(thinking, ThinkingConfig::Disabled) || !model_supports_thinking(model, profile) {
         return anthropic_sdk::resources::messages::ThinkingConfig::Disabled;
     }
 
     match thinking {
         ThinkingConfig::Disabled => anthropic_sdk::resources::messages::ThinkingConfig::Disabled,
-        ThinkingConfig::Adaptive if model_supports_adaptive_thinking(model) => {
+        ThinkingConfig::Adaptive if model_supports_adaptive_thinking(model, profile) => {
             anthropic_sdk::resources::messages::ThinkingConfig::Adaptive
         }
         ThinkingConfig::Adaptive => anthropic_sdk::resources::messages::ThinkingConfig::Enabled {
@@ -1920,6 +1889,34 @@ fn create_deferred_tool_placeholder() -> anthropic_sdk::resources::messages::Too
         "defer_loading": true
     });
     anthropic_sdk::resources::messages::ToolUnion::Raw(beta_tool)
+}
+
+/// Anthropic rejects `cache_control` on a `defer_loading` tool, so the tools
+/// breakpoint goes on the last tool sent in full, and nowhere when every tool
+/// is deferred.
+fn add_tool_cache_breakpoint(
+    tools: &mut [anthropic_sdk::resources::messages::ToolUnion],
+    cache_control: &crate::services::provider::anthropic::cache::CacheControl,
+) {
+    if let Some(anchor) = tools
+        .iter_mut()
+        .rev()
+        .find(|tool| !is_deferred_tool_union(tool))
+    {
+        add_cache_control_to_tool_union(anchor, cache_control);
+    }
+}
+
+fn is_deferred_tool_union(tool: &anthropic_sdk::resources::messages::ToolUnion) -> bool {
+    use anthropic_sdk::resources::messages::ToolUnion;
+    match tool {
+        ToolUnion::Raw(value) => value
+            .get("defer_loading")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        ToolUnion::WithHelper { tool, .. } => is_deferred_tool_union(tool),
+        _ => false,
+    }
 }
 
 fn add_cache_control_to_tool_union(
@@ -2209,23 +2206,22 @@ fn build_sdk_message_create_plan(
     if tool_search_enabled {
         sdk_tools.push(create_deferred_tool_placeholder());
     }
-    if enable_prompt_caching && !sdk_tools.is_empty() {
-        let cc = crate::services::provider::anthropic::cache::get_cache_control_with_retention(
-            None,
-            cache_retention,
+    if enable_prompt_caching {
+        add_tool_cache_breakpoint(
+            &mut sdk_tools,
+            &crate::services::provider::anthropic::cache::get_cache_control_with_retention(
+                None,
+                cache_retention,
+            ),
         );
-        if let Some(last_tool) = sdk_tools.last_mut() {
-            add_cache_control_to_tool_union(last_tool, &cc);
-        }
     }
 
     let max_tokens = options
         .max_output_tokens_override
         .unwrap_or_else(|| get_max_output_tokens_for_model(&options.model));
-    let effective_thinking_config =
-        effective_thinking_config(options.effort_value, thinking_config, &options.model);
+    let effective_thinking_config = effective_thinking_config(thinking_config, options);
     let sdk_thinking =
-        local_thinking_config_to_sdk(&effective_thinking_config, &options.model, max_tokens);
+        local_thinking_config_to_sdk(&effective_thinking_config, options, max_tokens);
     let temperature = if matches!(
         &sdk_thinking,
         anthropic_sdk::resources::messages::ThinkingConfig::Disabled
@@ -2681,10 +2677,9 @@ fn params_from_context(
     let max_tokens = options
         .max_output_tokens_override
         .unwrap_or_else(|| get_max_output_tokens_for_model(&options.model));
-    let effective_thinking_config =
-        effective_thinking_config(options.effort_value, thinking_config, &options.model);
+    let effective_thinking_config = effective_thinking_config(thinking_config, options);
     let sdk_thinking =
-        local_thinking_config_to_sdk(&effective_thinking_config, &options.model, max_tokens);
+        local_thinking_config_to_sdk(&effective_thinking_config, options, max_tokens);
     let has_thinking = !matches!(
         sdk_thinking,
         anthropic_sdk::resources::messages::ThinkingConfig::Disabled
@@ -2792,25 +2787,6 @@ fn sdk_output_config_from_options(
         effort: None,
         format: Some(format),
     }))
-}
-
-fn sdk_error_message_without_secrets(error: impl std::fmt::Display) -> String {
-    let raw = error.to_string();
-    let mut sanitized = raw.replace('\n', " ");
-    for key in [
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-        "CLAUDE_CODE_OAUTH_TOKEN",
-    ] {
-        sanitized = sanitized.replace(key, "<redacted>");
-        if let Some(secret) = crate::utils::process_env::var(key) {
-            let trimmed = secret.trim();
-            if !trimmed.is_empty() {
-                sanitized = sanitized.replace(trimmed, "<redacted>");
-            }
-        }
-    }
-    sanitized
 }
 
 fn stream_item_for_delta(delta: &crate::services::provider::ir::Delta) -> Option<ClaudeStreamItem> {
@@ -4722,7 +4698,7 @@ fn model_fallback_stream_item_from_error(error: &anyhow::Error) -> Option<QueryM
 }
 
 fn system_api_error_message_from_error(error: anyhow::Error) -> SystemApiErrorMessage {
-    let message = sdk_error_message_without_secrets(&error);
+    let message = crate::services::provider::credential::redact_credentials(&error.to_string());
     SystemApiErrorMessage {
         content: message.clone(),
         api_error: message.clone(),
@@ -6088,6 +6064,77 @@ mod tests {
 
         assert_eq!(value["thinking"]["type"], serde_json::json!("enabled"));
         assert_eq!(value["thinking"]["budget_tokens"], serde_json::json!(4095));
+    }
+
+    #[test]
+    fn wire_thinking_follows_the_model_version_and_the_profile_declaration() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        struct ResetSettings;
+        impl Drop for ResetSettings {
+            fn drop(&mut self) {
+                crate::utils::settings::settings_cache::reset_settings_cache();
+            }
+        }
+        let _reset = ResetSettings;
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {
+                "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
+                "models": {
+                    "main": {"provider": "p", "model": "claude-sonnet-5-5",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}},
+                    "budget": {"provider": "p", "model": "claude-opus-5-5",
+                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000,
+                            "thinking": "budgeted"}}
+                },
+                "selection": {"main": "main"}
+            }}))
+            .unwrap(),
+        );
+        let thinking = |model: &str, profile: Option<&str>, effort: Option<Effort>| {
+            let mut options = Options::new(model.to_string(), "repl_main_thread".to_string());
+            options.profile = profile.map(str::to_string);
+            options.effort_value = effort;
+            options.max_output_tokens_override = Some(32_000);
+            let params = build_sdk_message_create_params(
+                &[Message::User(crate::utils::messages::create_user_message(
+                    "think".to_string(),
+                ))],
+                &Vec::new(),
+                &ThinkingConfig::Adaptive,
+                &[],
+                &options,
+            )
+            .expect("SDK params build");
+            serde_json::to_value(params).expect("params serialize")["thinking"].clone()
+        };
+        let adaptive = serde_json::json!({"type": "adaptive"});
+
+        assert_eq!(thinking("claude-opus-5-5", None, None), adaptive);
+        assert_eq!(thinking("claude-sonnet-5-5", None, None), adaptive);
+        assert_eq!(
+            thinking("claude-sonnet-5-5", None, Some(Effort::High)),
+            adaptive
+        );
+        assert_eq!(thinking("claude-haiku-5-5", None, None), adaptive);
+        assert_eq!(
+            thinking("claude-haiku-5-5", None, Some(Effort::Medium)),
+            adaptive
+        );
+        assert_eq!(thinking("claude-opus-4-5", None, None)["type"], "enabled");
+        assert_eq!(
+            thinking("claude-haiku-4-5-20251001", None, None)["type"],
+            "enabled"
+        );
+        // The profile declares a budget for a model the table calls adaptive.
+        let budget = thinking("claude-opus-5-5", Some("budget"), None);
+        assert_eq!(budget["type"], "enabled");
+        assert_eq!(budget["budget_tokens"], 31_999);
+        assert_eq!(
+            thinking("claude-opus-5-5", Some("budget"), Some(Effort::High)),
+            serde_json::json!({"type": "enabled", "budget_tokens": 24_576})
+        );
     }
 
     #[test]
@@ -8574,19 +8621,31 @@ mod tests {
         );
     }
 
-    // -- verify_api_key stub --
-
     #[test]
-    fn verify_api_key_stub_does_not_perform_network_success() {
-        let result = futures::executor::block_on(verify_api_key("sk-ant-test", false));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn verify_api_key_non_interactive_skips_verification() {
-        let result = futures::executor::block_on(verify_api_key("sk-ant-test", true));
-        assert!(result.is_ok());
-        assert!(result.unwrap());
+    fn system_api_error_redacts_a_non_anthropic_provider_key() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _key = EnvVarGuard::set("NYAN_FAKE_GEMINI_KEY", "AIzaFakeGeminiClaude0001");
+        crate::utils::settings::settings_cache::install_test_settings(
+            serde_json::from_value(serde_json::json!({"nyan": {"providers": {
+                "gemini": {"kind": "gemini", "protocol": "gemini",
+                    "credential": {"env": "NYAN_FAKE_GEMINI_KEY"}}
+            }}}))
+            .unwrap(),
+        );
+        let message = system_api_error_message_from_error(anyhow::anyhow!(
+            "403 key=AIzaFakeGeminiClaude0001\nforbidden"
+        ));
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        for text in [
+            &message.content,
+            &message.api_error,
+            &message.error,
+            message.error_details.as_ref().unwrap(),
+        ] {
+            assert_eq!(text, "403 key=<redacted> forbidden");
+        }
     }
 
     // -- get_extra_body_params --
@@ -9703,7 +9762,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_search_adds_deferred_tool_placeholder_and_anchors_cache_control() {
+    fn tool_search_adds_deferred_tool_placeholder_and_anchors_cache_on_a_full_tool() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS");
         crate::utils::process_env::remove("ENABLE_TOOL_SEARCH");
@@ -9740,8 +9799,45 @@ mod tests {
         let last_tool = api_tools.last().expect("last tool");
         assert_eq!(last_tool["name"], DEFERRED_TOOL_PLACEHOLDER_NAME);
         assert_eq!(last_tool["defer_loading"], serde_json::json!(true));
-        // Cache control is anchored on the placeholder
-        assert_eq!(last_tool["cache_control"]["type"], "ephemeral");
+        assert!(last_tool.get("cache_control").is_none());
+        // The breakpoint sits on the last tool sent in full
+        let anchors = api_tools
+            .iter()
+            .filter(|t| t.get("cache_control").is_some())
+            .collect::<Vec<_>>();
+        assert_eq!(anchors.len(), 1);
+        assert_eq!(anchors[0]["name"], "ToolSearch");
+        assert_eq!(anchors[0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn tool_cache_breakpoint_skips_deferred_tools_and_is_absent_when_all_are_deferred() {
+        use anthropic_sdk::resources::messages::ToolUnion;
+        let cc = get_cache_control_with_retention(None, CacheRetention::Long);
+        let full = |name: &str| ToolUnion::Raw(serde_json::json!({ "name": name }));
+        let deferred =
+            |name: &str| ToolUnion::Raw(serde_json::json!({ "name": name, "defer_loading": true }));
+        let anchored = |tools: &[ToolUnion]| {
+            tools
+                .iter()
+                .map(|tool| serde_json::to_value(tool).unwrap())
+                .filter(|tool| tool.get("cache_control").is_some())
+                .map(|tool| tool["name"].as_str().unwrap().to_string())
+                .collect::<Vec<_>>()
+        };
+
+        let mut mixed = vec![
+            full("a"),
+            full("b"),
+            deferred("c"),
+            create_deferred_tool_placeholder(),
+        ];
+        add_tool_cache_breakpoint(&mut mixed, &cc);
+        assert_eq!(anchored(&mixed), ["b"]);
+
+        let mut all_deferred = vec![deferred("c"), create_deferred_tool_placeholder()];
+        add_tool_cache_breakpoint(&mut all_deferred, &cc);
+        assert!(anchored(&all_deferred).is_empty());
     }
 
     #[test]

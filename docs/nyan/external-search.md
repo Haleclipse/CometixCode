@@ -86,7 +86,7 @@
 | provider | `QuotaExhausted` | `RateLimited` |
 |---|---|---|
 | AnySearch | 402 | 429 |
-| Brave | 402 / 响应头 `x-ratelimit-remaining` 月度窗口为 0 | 429（头 `x-ratelimit-limit: 50, …`） |
+| Brave | 402 / 响应头 `x-ratelimit-remaining` 月度窗口为 0 且 `x-ratelimit-limit` 月度窗口不为 0 | 429（头 `x-ratelimit-limit: 50, …`） |
 | DeepSeek | 402（余额不足，OpenAI 格式 `{error:{type,code}}`） | 429（QPS） |
 | Exa | 402 且 `code ∈ {NO_MORE_CREDITS, API_KEY_BUDGET_EXCEEDED, TEAM_BUDGET_EXCEEDED}` | 429（带 `Retry-After`） |
 | Firecrawl | 402 | 429（限速或并发超限） |
@@ -96,8 +96,8 @@
 
 - AnySearch 匿名调用的 402 响应体可能附带自动生成的账号与 key；其他家的错误体也可能回显请求头或 key。脱敏规则统一见
   3.5，对所有 provider 生效。
-- Brave：2026-10-27 响应头的月度窗口剩余为 0，但 search 仍返回结果——免费 credits 可能尚未激活；按 `QuotaExhausted`
-  规则处理即可，不需特判。
+- Brave：两个头都是 `<每秒>, <月度>`，月度 `limit` 为 0 表示不限量，此时 `remaining` 的 0 不算耗尽；缺 `limit` 头时
+  只看 `remaining`。200 与 429 用同一判定。
 - DeepSeek 的 `authority` 实测 10 条全为 3，区分度低；连同 `rerank_score` 只留在 `SearchOutcome`，不参与排序。
 
 ## 三、WebSearch（Search 段）

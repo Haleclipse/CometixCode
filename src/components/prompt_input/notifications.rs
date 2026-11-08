@@ -29,7 +29,7 @@ use crate::components::token_warning::{TokenWarning, token_warning_hint_row_coun
 use crate::context::notifications::use_notifications;
 use crate::context::notifications::{NotificationColor, NotificationSegment};
 use crate::hooks::notifs::ide_status_indicator::IdeConnectionStatus;
-use crate::hooks::use_api_key_verification::VerificationStatus;
+use crate::hooks::use_credential_status::CredentialStatus;
 use crate::services::compact::auto_compact::is_auto_compact_enabled;
 use crate::state::store::AppStore;
 use crate::utils::auth::get_api_key_helper_elapsed_ms;
@@ -59,21 +59,20 @@ pub fn overage_indicator(
 
 /// Maps to: CC `Notifications.tsx` auth-error footer row.
 pub fn auth_status_indicator(
-    api_key_status: VerificationStatus,
+    credential_status: &CredentialStatus,
     is_remote_mode: bool,
 ) -> Option<PromptFooterIndicator> {
-    if !matches!(
-        api_key_status,
-        VerificationStatus::Invalid | VerificationStatus::Missing
-    ) {
+    let CredentialStatus::Missing { provider } = credential_status else {
         return None;
-    }
+    };
 
     Some(PromptFooterIndicator::colored(
         if is_remote_mode {
-            "Authentication error · Try again"
+            "Authentication error · Try again".to_string()
         } else {
-            "No API key · Set one on the selected provider profile"
+            format!(
+                "No credential for provider {provider} · check settings.nyan.providers.{provider}.credential"
+            )
         },
         NotificationColor::Error,
     ))
@@ -113,7 +112,7 @@ pub fn direct_footer_row_count(
     verbose: bool,
     is_brief_only: bool,
     main_loop_model: Option<&str>,
-    api_key_status: VerificationStatus,
+    credential_missing: bool,
     token_usage: u64,
     api_key_helper_slow: bool,
     memory_visible: bool,
@@ -121,11 +120,7 @@ pub fn direct_footer_row_count(
 ) -> usize {
     let mut count = usize::from(has_current_notification);
     count += usize::from(api_key_helper_slow);
-    if !matches!(
-        api_key_status,
-        VerificationStatus::Invalid | VerificationStatus::Missing
-    ) && verbose
-    {
+    if !credential_missing && verbose {
         count += 1;
     }
     let model = main_loop_model.unwrap_or(DEFAULT_MODEL);
@@ -156,7 +151,7 @@ pub fn direct_footer_row_count_from_app(
     state: &crate::state::app_state_store::AppState,
     has_current_notification: bool,
     debug: bool,
-    api_key_status: VerificationStatus,
+    credential_status: &CredentialStatus,
     token_usage: u64,
     auto_updater_result: Option<&crate::utils::auto_updater::AutoUpdaterResult>,
     is_auto_updating: bool,
@@ -188,7 +183,7 @@ pub fn direct_footer_row_count_from_app(
         Some(&crate::utils::model::model::profile_model(
             state.main_loop_profile.as_deref(),
         )),
-        api_key_status,
+        credential_status.is_missing(),
         token_usage,
         api_key_helper_slow,
         memory_visible,
@@ -202,7 +197,7 @@ pub fn direct_footer_row_count_from_app(
     }
     let is_remote_mode =
         is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
-    if auth_status_indicator(api_key_status, is_remote_mode).is_some() {
+    if auth_status_indicator(credential_status, is_remote_mode).is_some() {
         count += 1;
     }
     if debug {
@@ -266,7 +261,7 @@ fn notification_color(color: Option<NotificationColor>, theme: &Theme) -> Color 
 pub struct NotificationsProps {
     /// Maps to: CC `NotificationsProps.apiKeyStatus`, passed from REPL through
     /// PromptInput rather than read from AppState.
-    pub api_key_status: VerificationStatus,
+    pub credential_status: CredentialStatus,
     /// Maps to: CC `NotificationsProps.autoUpdaterResult` (Notifications.tsx:53)
     /// — REPL-owned state, prop-drilled through PromptInput/Footer.
     pub auto_updater_result: Option<crate::utils::auto_updater::AutoUpdaterResult>,
@@ -320,7 +315,7 @@ pub fn Notifications(
     let ide_connected = crate::state::app_state::use_app_state(&mut hooks, |state| {
         crate::components::ide_status_indicator::ide_client_connected(&state.mcp)
     });
-    let api_key_status = props.api_key_status;
+    let credential_status = props.credential_status.clone();
     let is_in_overage_mode = crate::state::app_state::use_app_state(&mut hooks, |state| {
         state.claude_ai_limits.is_using_overage
     });
@@ -410,7 +405,7 @@ pub fn Notifications(
         mid_rows.push(FooterRow::from_indicator(indicator));
     }
 
-    if let Some(indicator) = auth_status_indicator(api_key_status, is_remote_mode) {
+    if let Some(indicator) = auth_status_indicator(&credential_status, is_remote_mode) {
         tail_rows.push(FooterRow::from_indicator(indicator));
     }
     if debug {
@@ -419,11 +414,7 @@ pub fn Notifications(
             NotificationColor::Warning,
         )));
     }
-    if !matches!(
-        api_key_status,
-        VerificationStatus::Invalid | VerificationStatus::Missing
-    ) && verbose
-    {
+    if !credential_status.is_missing() && verbose {
         tail_rows.push(FooterRow::from_indicator(PromptFooterIndicator::dim(
             format!("{token_usage} tokens"),
         )));
@@ -770,18 +761,24 @@ mod tests {
         );
     }
 
+    fn missing(provider: &str) -> CredentialStatus {
+        CredentialStatus::Missing {
+            provider: provider.to_string(),
+        }
+    }
+
     #[test]
-    fn auth_status_indicator_matches_official_local_and_remote_copy() {
-        let local = auth_status_indicator(VerificationStatus::Missing, false).unwrap();
-        let remote = auth_status_indicator(VerificationStatus::Invalid, true).unwrap();
+    fn auth_status_indicator_names_the_provider_locally_and_stays_generic_remotely() {
+        let local = auth_status_indicator(&missing("deepseek"), false).unwrap();
+        let remote = auth_status_indicator(&missing("deepseek"), true).unwrap();
         assert_eq!(
             local.text,
-            "No API key · Set one on the selected provider profile"
+            "No credential for provider deepseek · check settings.nyan.providers.deepseek.credential"
         );
         assert_eq!(remote.text, "Authentication error · Try again");
         assert_eq!(local.segments[0].color, Some(NotificationColor::Error));
         assert_eq!(remote.segments[0].color, Some(NotificationColor::Error));
-        assert!(auth_status_indicator(VerificationStatus::Valid, false).is_none());
+        assert!(auth_status_indicator(&CredentialStatus::Ready, false).is_none());
     }
 
     #[test]
@@ -830,31 +827,11 @@ mod tests {
     #[test]
     fn direct_footer_row_count_includes_memory_wake_channel() {
         assert_eq!(
-            direct_footer_row_count(
-                false,
-                false,
-                false,
-                None,
-                VerificationStatus::Valid,
-                0,
-                false,
-                true,
-                false,
-            ),
+            direct_footer_row_count(false, false, false, None, false, 0, false, true, false),
             1
         );
         assert_eq!(
-            direct_footer_row_count(
-                false,
-                false,
-                false,
-                None,
-                VerificationStatus::Valid,
-                0,
-                false,
-                false,
-                false,
-            ),
+            direct_footer_row_count(false, false, false, None, false, 0, false, false, false),
             0
         );
     }
@@ -872,7 +849,7 @@ mod tests {
                     prebuilt_store: Some(store),
                     children: crate::state::app_state::ProviderChildren::new(|| element! {
                         Notifications(
-                            api_key_status: VerificationStatus::Missing,
+                            credential_status: missing("cpa"),
                             suppressed: false,
                             inline: true,
                         )
@@ -883,7 +860,9 @@ mod tests {
         .render(Some(120))
         .to_string();
         assert!(
-            text.contains("No API key · Set one on the selected provider profile"),
+            text.contains(
+                "No credential for provider cpa · check settings.nyan.providers.cpa.credential"
+            ),
             "canvas=\n{text}"
         );
     }
@@ -901,7 +880,7 @@ mod tests {
                     prebuilt_store: Some(store),
                     children: crate::state::app_state::ProviderChildren::new(|| element! {
                         Notifications(
-                            api_key_status: VerificationStatus::Missing,
+                            credential_status: missing("cpa"),
                             suppressed: false,
                             inline: true,
                         )
@@ -936,7 +915,7 @@ mod tests {
                     prebuilt_store: Some(store),
                     children: crate::state::app_state::ProviderChildren::new(|| element! {
                         Notifications(
-                            api_key_status: VerificationStatus::Valid,
+                            credential_status: CredentialStatus::Ready,
                             suppressed: false,
                             inline: true,
                         )
