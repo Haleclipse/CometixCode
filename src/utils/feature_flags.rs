@@ -219,8 +219,8 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
     FeatureSwitch {
         flag: FeatureFlag::DeferredToolsDelta,
         cc_growthbook_name: "tengu_glacier_2xr",
-        enabled: false,
-        note: "Deferred-tool delta announcements use the pre-gate available-deferred-tools wording by default.",
+        enabled: true,
+        note: "The delta announcement is the only deferred-tool listing nyan emits, so the ToolSearch prompt's system-reminder wording must match it.",
     },
     FeatureSwitch {
         flag: FeatureFlag::StreamingToolExecution,

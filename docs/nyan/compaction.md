@@ -269,12 +269,12 @@ legacy 的思想（`packages/coding-agent/src/core/cache-warmer.ts`）：在 cac
   `max_output_tokens = Some(1)`、`max_turns = 1`、`skip_transcript = true`，追加一条极短的 user 消息。分叉请求 = 主会话前缀（system、tools、历史逐字节相同）+ 这条消息，读到整段已缓存前缀、刷新其寿命，
   只新写几个 token——与 CC 现有分叉共享 cache 的机制相同，不需要另存"最后一次请求的原始字节"。
   - **与 thinking 的兼容**：`max_output_tokens` 进入 thinking 参数（`utils/forked_agent.rs:451` 的注释已指出）。
-    `local_thinking_config_to_sdk`（`services/api/claude.rs:1980-2007`）中，`Adaptive` 只在
-    `model_supports_adaptive_thinking(model)`（`utils/thinking.rs:165`）为真时原样发出；否则被转成
+    `local_thinking_config_to_sdk`（`services/api/claude.rs:1807`）中，`Adaptive` 只在
+    `model_supports_adaptive_thinking(model, profile)`（`utils/thinking.rs:193`）为真时原样发出；否则被转成
     `Enabled { budget_tokens = min(模型上限, max_output) − 1 }`，`Enabled` 也被夹到 `max_output − 1`——1 token 时
     budget 退化为 1（低于 API 下限，非法），且与主请求的 thinking 参数不同。规则：thinking 关闭（`Disabled` 或
-    `!model_supports_thinking`）或 `Adaptive` 且 `model_supports_adaptive_thinking(model)` 时才保活；`Enabled` 或
-    会被转换的 `Adaptive` 一律不保活。
+    `!model_supports_thinking(model, profile)`，`utils/thinking.rs:171`）或 `Adaptive` 且
+    `model_supports_adaptive_thinking(model, profile)` 时才保活；`Enabled` 或会被转换的 `Adaptive` 一律不保活。
   - "thinking 参数是否进入消息级 cache key"（即 adaptive / disabled 时 `max_tokens = 1` 是否仍命中主请求的 cache）
     是切片 F 的**第一步实测**，结果决定上面规则是否需要收紧；不是待定项。
 - **何时停**：上下文一变（新的真实请求、换模型、掩码、摘要）立即停；运行中最长保活 `nyan.cache.maxActiveMinutes`

@@ -4405,4 +4405,29 @@ mod tests {
         let attachments = get_todo_task_reminder_attachments(&ready, &ToolUseContext::default());
         assert_eq!(attachments.len(), 1);
     }
+
+    #[test]
+    fn first_turn_deferred_delta_lists_web_search_and_prompt_points_at_it() {
+        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+        let _tool_search = EnvVarGuard::unset("ENABLE_TOOL_SEARCH");
+        let _betas = EnvVarGuard::unset("NYAN_DISABLE_EXPERIMENTAL_BETAS");
+        let tools = vec![
+            crate::tools::tool_search_tool::tool_search_tool_schema(),
+            crate::tools::web_search_tool::web_search_tool_schema(),
+            crate::tools::bash_tool::bash_tool_schema(),
+        ];
+
+        let delta = get_deferred_tools_delta_attachment(&tools, "claude-sonnet-4-6", &[])
+            .expect("first turn announces deferred tools");
+        let wire = delta.attachment.to_wire();
+        assert!(
+            wire["addedNames"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name == "WebSearch"),
+            "{wire}"
+        );
+        assert!(crate::tools::tool_search_tool::prompt::get_prompt().contains("<system-reminder>"));
+    }
 }
