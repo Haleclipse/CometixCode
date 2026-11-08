@@ -66,7 +66,7 @@ pub enum ProfileResolutionError {
     /// A local server kind without its own endpoint. Never defaults to a
     /// commercial base URL.
     MissingBaseUrl(String),
-    /// `compat` is set on a provider whose profile speaks another protocol.
+    /// The provider's `compat` sets options the profile's protocol never reads.
     CompatNotForProtocol {
         profile: String,
         protocol: ProviderProtocol,
@@ -128,7 +128,7 @@ impl fmt::Display for ProfileResolutionError {
             ),
             Self::CompatNotForProtocol { profile, protocol } => write!(
                 f,
-                "Model profile {profile:?} speaks {protocol:?}, but its provider sets compat; compat options only apply to openaiChat."
+                "Model profile {profile:?} speaks {protocol:?}, but its provider sets compat options that protocol does not read; promptCacheKey and longCacheRetention also apply to openaiResponses, the rest only to openaiChat."
             ),
             Self::MissingModel(profile) => write!(
                 f,
@@ -341,11 +341,18 @@ pub fn resolve_profile(
             provider_name.to_string(),
         ));
     }
-    if provider.compat.is_some() && protocol != ProviderProtocol::OpenaiChat {
-        return Err(ProfileResolutionError::CompatNotForProtocol {
-            profile: profile_name.to_string(),
-            protocol,
-        });
+    if let Some(compat) = &provider.compat {
+        let fits = match protocol {
+            ProviderProtocol::OpenaiChat => true,
+            ProviderProtocol::OpenaiResponses => !compat.sets_chat_only_options(),
+            ProviderProtocol::AnthropicMessages | ProviderProtocol::Gemini => false,
+        };
+        if !fits {
+            return Err(ProfileResolutionError::CompatNotForProtocol {
+                profile: profile_name.to_string(),
+                protocol,
+            });
+        }
     }
 
     Ok(ResolvedModelProfile {
@@ -1247,6 +1254,38 @@ mod tests {
         .unwrap();
         assert!(matches!(
             resolve_profile(&nyan, "p").unwrap_err(),
+            ProfileResolutionError::CompatNotForProtocol { .. }
+        ));
+    }
+
+    #[test]
+    fn prompt_cache_compat_also_applies_to_responses() {
+        let nyan = |compat: serde_json::Value| -> NyanSettings {
+            serde_json::from_value(serde_json::json!({
+                "providers": {"openai": {
+                    "kind": "openai",
+                    "protocols": ["openaiChat", "openaiResponses"],
+                    "compat": compat
+                }},
+                "models": {"p": {"provider": "openai", "model": "gpt-5", "protocol": "openaiResponses"}}
+            }))
+            .unwrap()
+        };
+        let cache_only = nyan(serde_json::json!({
+            "promptCacheKey": "enabled",
+            "longCacheRetention": true
+        }));
+        let resolved = resolve_profile(&cache_only, "p").unwrap();
+        assert_eq!(
+            resolved.compat.unwrap().prompt_cache_key,
+            Some(crate::utils::settings::nyan::PromptCacheKeyMode::Enabled)
+        );
+        let mixed = nyan(serde_json::json!({
+            "promptCacheKey": "disabled",
+            "maxTokensField": "max_tokens"
+        }));
+        assert!(matches!(
+            resolve_profile(&mixed, "p").unwrap_err(),
             ProfileResolutionError::CompatNotForProtocol { .. }
         ));
     }

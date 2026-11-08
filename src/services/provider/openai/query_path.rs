@@ -1151,6 +1151,7 @@ fn thinking_env(
     protocol: ProviderProtocol,
     model: &str,
     effort: Option<crate::utils::effort::Effort>,
+    compat: Option<OpenaiCompatSettings>,
 ) -> Env {
     let base_url = base_url.to_string();
     let model = model.to_string();
@@ -1166,6 +1167,7 @@ fn thinking_env(
                         env: Some(KEY_VAR.into()),
                         ..Default::default()
                     }),
+                    compat,
                     ..Default::default()
                 },
             )])),
@@ -1268,6 +1270,7 @@ async fn an_unset_effort_sends_no_reasoning_depth_on_chat_or_responses() {
             ProviderProtocol::OpenaiChat,
             model,
             None,
+            None,
         );
         let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
         assert!(body.get("reasoning_effort").is_none(), "{model}: {body}");
@@ -1279,6 +1282,7 @@ async fn an_unset_effort_sends_no_reasoning_depth_on_chat_or_responses() {
         ProviderKind::Openai,
         ProviderProtocol::OpenaiResponses,
         "gpt-5.5",
+        None,
         None,
     );
     let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
@@ -1300,6 +1304,7 @@ async fn a_configured_effort_maps_per_family_and_off_is_omitted_where_unknown() 
         ProviderProtocol::OpenaiChat,
         "deepseek-reasoner",
         Some(Effort::High),
+        None,
     );
     let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
     assert_eq!(body["reasoning_effort"], "high", "profile effort: {body}");
@@ -1313,6 +1318,7 @@ async fn a_configured_effort_maps_per_family_and_off_is_omitted_where_unknown() 
             ProviderProtocol::OpenaiChat,
             model,
             None,
+            None,
         );
         let body = main_loop_body(&mock, ThinkingConfig::Adaptive, Some(Effort::Off)).await;
         assert!(body.get("reasoning_effort").is_none(), "{model}: {body}");
@@ -1325,6 +1331,7 @@ async fn a_configured_effort_maps_per_family_and_off_is_omitted_where_unknown() 
         ProviderProtocol::OpenaiResponses,
         "gpt-5.5",
         None,
+        None,
     );
     let body = main_loop_body(&mock, ThinkingConfig::Adaptive, Some(Effort::Max)).await;
     assert_eq!(
@@ -1334,41 +1341,71 @@ async fn a_configured_effort_maps_per_family_and_off_is_omitted_where_unknown() 
     );
 }
 
-/// Only the OpenAI kind takes OpenAI's cache parameters; with the default long
-/// retention a local server gets no `prompt_cache_key` either, while the
-/// OpenAI kind keeps its key and retention.
+/// With the default long retention, only OpenAI's own hosts get OpenAI's cache
+/// parameters: the mock is not one, so even the OpenAI kind sends none unless
+/// the provider's compat asks for the key.
 #[tokio::test]
-async fn the_default_long_retention_sends_a_cache_key_only_to_the_openai_kind() {
-    for kind in [ProviderKind::Vllm, ProviderKind::Ollama] {
-        let mock = MockOpenAi::start(vec![chat_reply()]).await;
-        let _env = thinking_env(
-            &mock.base_url,
-            kind,
+async fn the_default_long_retention_sends_no_cache_key_off_openai_hosts() {
+    use crate::utils::settings::nyan::PromptCacheKeyMode;
+
+    for (kind, protocol, reply) in [
+        (
+            ProviderKind::Vllm,
             ProviderProtocol::OpenaiChat,
-            "qwen3:32b",
-            None,
-        );
+            chat_reply(),
+        ),
+        (
+            ProviderKind::Ollama,
+            ProviderProtocol::OpenaiChat,
+            chat_reply(),
+        ),
+        (
+            ProviderKind::Openai,
+            ProviderProtocol::OpenaiChat,
+            chat_reply(),
+        ),
+        (
+            ProviderKind::Openai,
+            ProviderProtocol::OpenaiResponses,
+            responses_reply(),
+        ),
+    ] {
+        let mock = MockOpenAi::start(vec![reply]).await;
+        let _env = thinking_env(&mock.base_url, kind, protocol, "gpt-5", None, None);
         let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
         for field in [
             "prompt_cache_key",
             "prompt_cache_retention",
             "prompt_cache_options",
         ] {
-            assert!(body.get(field).is_none(), "{kind:?}: {body}");
+            assert!(body.get(field).is_none(), "{kind:?} {protocol:?}: {body}");
         }
     }
 
-    let mock = MockOpenAi::start(vec![chat_reply()]).await;
-    let _env = thinking_env(
-        &mock.base_url,
-        ProviderKind::Openai,
-        ProviderProtocol::OpenaiChat,
-        "gpt-5",
-        None,
-    );
-    let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
-    assert!(body["prompt_cache_key"].is_string(), "{body}");
-    assert_eq!(body["prompt_cache_retention"], "24h", "{body}");
+    // `promptCacheKey: enabled` is honoured on both protocols; without
+    // `longCacheRetention` no TTL field goes with it.
+    for (protocol, reply) in [
+        (ProviderProtocol::OpenaiChat, chat_reply()),
+        (ProviderProtocol::OpenaiResponses, responses_reply()),
+    ] {
+        let mock = MockOpenAi::start(vec![reply]).await;
+        let compat = OpenaiCompatSettings {
+            prompt_cache_key: Some(PromptCacheKeyMode::Enabled),
+            ..Default::default()
+        };
+        let _env = thinking_env(
+            &mock.base_url,
+            ProviderKind::Openai,
+            protocol,
+            "gpt-5",
+            None,
+            Some(compat),
+        );
+        let body = main_loop_body(&mock, ThinkingConfig::Adaptive, None).await;
+        assert!(body["prompt_cache_key"].is_string(), "{protocol:?}: {body}");
+        assert!(body.get("prompt_cache_retention").is_none(), "{body}");
+        assert!(body.get("prompt_cache_options").is_none(), "{body}");
+    }
 }
 
 #[tokio::test]

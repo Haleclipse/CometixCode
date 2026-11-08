@@ -283,14 +283,14 @@ pub fn build_body(target: &ResolvedTarget, request: &ModelRequest, compat: &Comp
             "strict": false,
         }});
     }
-    if compat.openai_prompt_cache && target.cache_retention != CacheRetention::None {
+    if compat.prompt_cache_key && target.cache_retention != CacheRetention::None {
         let session_id = crate::bootstrap::state::get_session_id();
         if !session_id.is_empty() {
             body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
         }
         // Pi `openai-completions.ts` sends "24h" for long retention on Chat,
         // whatever the model's cache mode.
-        if target.cache_retention == CacheRetention::Long {
+        if target.cache_retention == CacheRetention::Long && compat.long_cache_retention {
             body["prompt_cache_retention"] = json!("24h");
         }
     }
@@ -1420,25 +1420,95 @@ mod tests {
     }
 
     #[test]
-    fn build_body_sends_no_openai_cache_fields_to_deepseek_or_local_kinds() {
+    fn build_body_sends_no_openai_cache_fields_off_openai_hosts() {
         let req = request(vec![user_text("hi")]);
         let mut t = target(all());
         t.model = "deepseek-v4-flash".into();
         t.cache_retention = CacheRetention::Long;
-        for kind in [
-            ProviderKind::Gateway,
-            ProviderKind::Openrouter,
-            ProviderKind::Vllm,
-            ProviderKind::Ollama,
+        for (kind, base_url) in [
+            (ProviderKind::Openai, "https://api.deepseek.com"),
+            (ProviderKind::Openai, "https://api.moonshot.cn/v1"),
+            (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
+            (ProviderKind::Openai, "https://gw.example/v1"),
+            (ProviderKind::Gateway, "https://api.openai.com/v1"),
+            (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
+            (ProviderKind::Vllm, "http://127.0.0.1:8000/v1"),
+            (ProviderKind::Ollama, "http://127.0.0.1:11434/v1"),
         ] {
-            let compat = Compat::resolve_full(kind, Some("deepseek"), Some(&t.model), None);
+            let compat = Compat::resolve_full(kind, base_url, Some(&t.model), None);
             let body = super::build_body(&t, &req, &compat);
-            // DeepSeek caches automatically; only OpenAI takes these.
-            assert!(body.get("prompt_cache_key").is_none(), "{kind:?}");
-            assert!(body.get("prompt_cache_retention").is_none(), "{kind:?}");
-            assert!(body.get("prompt_cache_options").is_none(), "{kind:?}");
-            assert!(!body.to_string().contains("cache_control"), "{kind:?}");
+            // DeepSeek and Kimi cache automatically; only OpenAI takes these.
+            assert!(
+                body.get("prompt_cache_key").is_none(),
+                "{kind:?} {base_url}"
+            );
+            assert!(
+                body.get("prompt_cache_retention").is_none(),
+                "{kind:?} {base_url}"
+            );
+            assert!(
+                body.get("prompt_cache_options").is_none(),
+                "{kind:?} {base_url}"
+            );
+            assert!(
+                !body.to_string().contains("cache_control"),
+                "{kind:?} {base_url}"
+            );
         }
+    }
+
+    #[test]
+    fn build_body_follows_explicit_prompt_cache_options() {
+        use crate::utils::settings::nyan::{OpenaiCompatSettings, PromptCacheKeyMode};
+
+        let req = request(vec![user_text("hi")]);
+        let mut t = target(all());
+        t.cache_retention = CacheRetention::Long;
+        let body = |base_url: &str, settings: OpenaiCompatSettings| {
+            let compat = Compat::resolve_full(
+                ProviderKind::Openai,
+                base_url,
+                Some(&t.model),
+                Some(&settings),
+            );
+            super::build_body(&t, &req, &compat)
+        };
+        let enabled = |long: Option<bool>| OpenaiCompatSettings {
+            prompt_cache_key: Some(PromptCacheKeyMode::Enabled),
+            long_cache_retention: long,
+            ..Default::default()
+        };
+
+        // Enabled off OpenAI: the key, and 24h only when asked for.
+        let key_only = body("https://api.deepseek.com", enabled(None));
+        assert!(key_only["prompt_cache_key"].is_string(), "{key_only}");
+        assert!(key_only.get("prompt_cache_retention").is_none());
+        let long = body("https://api.deepseek.com", enabled(Some(true)));
+        assert!(long["prompt_cache_key"].is_string(), "{long}");
+        assert_eq!(long["prompt_cache_retention"], "24h");
+
+        // Disabled on OpenAI itself: nothing.
+        let disabled = OpenaiCompatSettings {
+            prompt_cache_key: Some(PromptCacheKeyMode::Disabled),
+            long_cache_retention: Some(true),
+            ..Default::default()
+        };
+        let none = body("https://api.openai.com/v1", disabled);
+        assert!(none.get("prompt_cache_key").is_none(), "{none}");
+        assert!(none.get("prompt_cache_retention").is_none(), "{none}");
+
+        // Auto is the default; the retention switch alone never adds a key.
+        let auto = |long| OpenaiCompatSettings {
+            prompt_cache_key: Some(PromptCacheKeyMode::Auto),
+            long_cache_retention: long,
+            ..Default::default()
+        };
+        let official = body("https://api.openai.com/v1", auto(Some(false)));
+        assert!(official["prompt_cache_key"].is_string(), "{official}");
+        assert!(official.get("prompt_cache_retention").is_none());
+        let elsewhere = body("https://api.moonshot.ai/v1", auto(Some(true)));
+        assert!(elsewhere.get("prompt_cache_key").is_none(), "{elsewhere}");
+        assert!(elsewhere.get("prompt_cache_retention").is_none());
     }
 
     #[test]

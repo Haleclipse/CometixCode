@@ -691,11 +691,14 @@ async fn the_chatgpt_sign_in_sends_its_headers_and_none_of_the_refused_fields() 
         access: Secret::new("tok-codex"),
         account_id: "acct_42".into(),
     };
-    let adapter = OpenAiAdapter::responses(target(
-        &mock.base_url,
-        ProviderProtocol::OpenaiResponses,
-        auth,
-    ));
+    let mut target = target(&mock.base_url, ProviderProtocol::OpenaiResponses, auth);
+    target.compat = Compat::resolve_full(
+        ProviderKind::Openai,
+        super::target::CODEX_BASE,
+        Some("gpt-5"),
+        None,
+    );
+    let adapter = OpenAiAdapter::responses(target);
     let mut r = request(hello());
     r.temperature = Some(0.5);
     let (_, error) = collect(&adapter, Protocol::OpenaiResponses, &r).await;
@@ -710,6 +713,10 @@ async fn the_chatgpt_sign_in_sends_its_headers_and_none_of_the_refused_fields() 
     assert!(sent.body.get("max_output_tokens").is_none());
     assert!(sent.body.get("temperature").is_none());
     assert!(sent.body["instructions"].is_string());
+    // Default long retention: the key, never the TTL fields.
+    assert!(sent.body["prompt_cache_key"].is_string());
+    assert!(sent.body.get("prompt_cache_retention").is_none());
+    assert!(sent.body.get("prompt_cache_options").is_none());
 }
 
 // ---------------------------------------------------------------------------
@@ -1089,4 +1096,109 @@ async fn chat_and_responses_wire_prompt_cache_retention_when_long() {
         reqs[1].body["prompt_cache_key"],
         reqs[0].body["prompt_cache_key"]
     );
+}
+
+/// The cache fields that reach the wire for a profile on `base_url`, both
+/// protocols. The compat is resolved from the configured host; only the socket
+/// goes to the mock.
+async fn wire_cache_fields(
+    kind: ProviderKind,
+    base_url: &str,
+    settings: Option<crate::utils::settings::nyan::OpenaiCompatSettings>,
+) -> [Value; 2] {
+    let mock = MockOpenAi::start(vec![
+        Reply::sse_data([chat_chunk(json!({"content": "ok"}), json!("stop"))]),
+        Reply::sse_data([created(), completed(json!({}))]),
+    ])
+    .await;
+    for protocol in [
+        ProviderProtocol::OpenaiChat,
+        ProviderProtocol::OpenaiResponses,
+    ] {
+        let mut target = target(&mock.base_url, protocol, key());
+        target.provider_kind = kind;
+        target.compat = Compat::resolve_full(kind, base_url, Some("gpt-5"), settings.as_ref());
+        let (adapter, protocol) = match protocol {
+            ProviderProtocol::OpenaiChat => (OpenAiAdapter::chat(target), Protocol::OpenaiChat),
+            _ => (OpenAiAdapter::responses(target), Protocol::OpenaiResponses),
+        };
+        let (_, error) = collect(&adapter, protocol, &request(hello())).await;
+        assert!(error.is_none(), "{error:?}");
+    }
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 2);
+    [0, 1].map(|i| {
+        let body = &requests[i].body;
+        json!({
+            "key": body.get("prompt_cache_key").is_some(),
+            "retention": body.get("prompt_cache_retention"),
+            "options": body.get("prompt_cache_options"),
+        })
+    })
+}
+
+#[tokio::test]
+async fn chat_and_responses_send_openai_cache_fields_by_host_and_compat() {
+    use crate::utils::settings::nyan::{OpenaiCompatSettings, PromptCacheKeyMode};
+
+    let _env = env();
+    let none = json!({"key": false, "retention": null, "options": null});
+    let key_only = json!({"key": true, "retention": null, "options": null});
+    let long = json!({"key": true, "retention": "24h", "options": null});
+    let compat = |key, long_retention| {
+        Some(OpenaiCompatSettings {
+            prompt_cache_key: Some(key),
+            long_cache_retention: long_retention,
+            ..Default::default()
+        })
+    };
+
+    // OpenAI's own host, as the default endpoint or written out.
+    for url in [super::target::API_BASE, "https://api.openai.com/v1/"] {
+        let sent = wire_cache_fields(ProviderKind::Openai, url, None).await;
+        assert_eq!(sent, [long.clone(), long.clone()], "{url}");
+    }
+    // DeepSeek, Kimi, OpenRouter and gateways cache on their own terms.
+    for (kind, url) in [
+        (ProviderKind::Openai, "https://api.deepseek.com"),
+        (ProviderKind::Openai, "https://api.moonshot.cn/v1"),
+        (ProviderKind::Openai, "https://api.moonshot.ai/v1"),
+        (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
+        (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
+        (ProviderKind::Gateway, "http://127.0.0.1:8317/v1"),
+    ] {
+        let sent = wire_cache_fields(kind, url, None).await;
+        assert_eq!(sent, [none.clone(), none.clone()], "{kind:?} {url}");
+    }
+    // Explicit compat: a proxy that takes the key, with and without 24h.
+    let deepseek = "https://api.deepseek.com";
+    let sent = wire_cache_fields(
+        ProviderKind::Openai,
+        deepseek,
+        compat(PromptCacheKeyMode::Enabled, None),
+    )
+    .await;
+    assert_eq!(sent, [key_only.clone(), key_only.clone()]);
+    let sent = wire_cache_fields(
+        ProviderKind::Gateway,
+        "http://127.0.0.1:8317/v1",
+        compat(PromptCacheKeyMode::Enabled, Some(true)),
+    )
+    .await;
+    assert_eq!(sent, [long.clone(), long.clone()]);
+    // Disabled wins on OpenAI itself; longCacheRetention alone adds nothing.
+    let sent = wire_cache_fields(
+        ProviderKind::Openai,
+        super::target::API_BASE,
+        compat(PromptCacheKeyMode::Disabled, Some(true)),
+    )
+    .await;
+    assert_eq!(sent, [none.clone(), none.clone()]);
+    let sent = wire_cache_fields(
+        ProviderKind::Openai,
+        super::target::API_BASE,
+        compat(PromptCacheKeyMode::Auto, Some(false)),
+    )
+    .await;
+    assert_eq!(sent, [key_only.clone(), key_only]);
 }

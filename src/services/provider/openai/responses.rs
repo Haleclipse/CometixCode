@@ -256,26 +256,25 @@ pub fn build_body(
             "strict": false,
         }});
     }
-    // Only the OpenAI kind takes OpenAI's cache parameters. The ChatGPT
-    // backend (always that kind) keeps the key but refuses the TTL fields.
-    if compat.openai_prompt_cache
+    if compat.prompt_cache_key
         && target.cache_retention != crate::utils::settings::nyan::CacheRetention::None
     {
         let session_id = crate::bootstrap::state::get_session_id();
         if !session_id.is_empty() {
             body["prompt_cache_key"] = json!(super::clamp_prompt_cache_key(&session_id));
         }
-    }
-    // Pi `openai-responses.ts` getPromptCacheOptions / getPromptCacheRetention:
-    // explicit-mode models take a 30m TTL option, older ones a 24h retention.
-    if backend == Backend::Api
-        && compat.openai_prompt_cache
-        && target.cache_retention == crate::utils::settings::nyan::CacheRetention::Long
-    {
-        if compat.explicit_prompt_cache_mode {
-            body["prompt_cache_options"] = json!({"ttl": "30m"});
-        } else {
-            body["prompt_cache_retention"] = json!("24h");
+        // Pi `openai-responses.ts` getPromptCacheOptions / getPromptCacheRetention:
+        // explicit-mode models take a 30m TTL option, older ones a 24h
+        // retention. The ChatGPT backend keeps the key but refuses both.
+        if backend == Backend::Api
+            && compat.long_cache_retention
+            && target.cache_retention == crate::utils::settings::nyan::CacheRetention::Long
+        {
+            if compat.explicit_prompt_cache_mode {
+                body["prompt_cache_options"] = json!({"ttl": "30m"});
+            } else {
+                body["prompt_cache_retention"] = json!("24h");
+            }
         }
     }
     crate::services::provider::adapter::merge_extra(&mut body, target.extra.as_ref());
@@ -811,14 +810,15 @@ mod tests {
     use crate::utils::model::profile::ResolvedCapabilities;
     use crate::utils::settings::nyan::ProviderKind;
 
-    /// The body an OpenAI-kind profile on `target.model` gets.
+    /// The body an OpenAI-kind profile on `target.model` gets from the default
+    /// endpoint of `backend`.
     fn build_body(target: &ResolvedTarget, request: &ModelRequest, backend: Backend) -> Value {
-        let compat = Compat::resolve_full(
-            ProviderKind::Openai,
-            Some("openai"),
-            Some(&target.model),
-            None,
-        );
+        let base_url = match backend {
+            Backend::Api => super::super::target::API_BASE,
+            Backend::Codex => super::super::target::CODEX_BASE,
+        };
+        let compat =
+            Compat::resolve_full(ProviderKind::Openai, base_url, Some(&target.model), None);
         super::build_body(target, request, backend, &compat)
     }
 
@@ -1465,21 +1465,84 @@ mod tests {
     }
 
     #[test]
-    fn responses_non_openai_kinds_get_no_openai_cache_fields() {
+    fn responses_off_openai_hosts_get_no_openai_cache_fields() {
         let req = request(vec![user_text("hi")]);
         let mut t = target(all());
         t.model = "gpt-5.6".into();
-        for kind in [
-            ProviderKind::Gateway,
-            ProviderKind::Openrouter,
-            ProviderKind::Vllm,
-            ProviderKind::Ollama,
+        for (kind, base_url) in [
+            (ProviderKind::Openai, "https://api.deepseek.com/v1"),
+            (ProviderKind::Openai, "https://api.moonshot.ai/v1"),
+            (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
+            (ProviderKind::Openai, "http://127.0.0.1:8317/v1"),
+            (ProviderKind::Gateway, "https://api.openai.com/v1"),
+            (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
+            (ProviderKind::Vllm, "http://127.0.0.1:8000/v1"),
+            (ProviderKind::Ollama, "http://127.0.0.1:11434/v1"),
         ] {
-            let compat = Compat::resolve_full(kind, Some("other"), Some(&t.model), None);
+            let compat = Compat::resolve_full(kind, base_url, Some(&t.model), None);
             let body = super::build_body(&t, &req, Backend::Api, &compat);
-            assert!(body.get("prompt_cache_key").is_none(), "{kind:?}");
-            assert!(body.get("prompt_cache_retention").is_none(), "{kind:?}");
-            assert!(body.get("prompt_cache_options").is_none(), "{kind:?}");
+            for field in [
+                "prompt_cache_key",
+                "prompt_cache_retention",
+                "prompt_cache_options",
+            ] {
+                assert!(body.get(field).is_none(), "{kind:?} {base_url}: {body}");
+            }
         }
+    }
+
+    #[test]
+    fn responses_follow_explicit_prompt_cache_options() {
+        use crate::utils::settings::nyan::{OpenaiCompatSettings, PromptCacheKeyMode};
+
+        let req = request(vec![user_text("hi")]);
+        let t = target(all());
+        let body = |base_url: &str, backend, key, long| {
+            let settings = OpenaiCompatSettings {
+                prompt_cache_key: Some(key),
+                long_cache_retention: long,
+                ..Default::default()
+            };
+            let compat = Compat::resolve_full(
+                ProviderKind::Openai,
+                base_url,
+                Some(&t.model),
+                Some(&settings),
+            );
+            super::build_body(&t, &req, backend, &compat)
+        };
+        let proxy = "http://127.0.0.1:8317/v1";
+
+        let key_only = body(proxy, Backend::Api, PromptCacheKeyMode::Enabled, None);
+        assert!(key_only["prompt_cache_key"].is_string(), "{key_only}");
+        assert!(key_only.get("prompt_cache_retention").is_none());
+        let long = body(proxy, Backend::Api, PromptCacheKeyMode::Enabled, Some(true));
+        assert!(long["prompt_cache_key"].is_string(), "{long}");
+        assert_eq!(long["prompt_cache_retention"], "24h");
+
+        let off = body(
+            super::super::target::API_BASE,
+            Backend::Api,
+            PromptCacheKeyMode::Disabled,
+            Some(true),
+        );
+        for field in [
+            "prompt_cache_key",
+            "prompt_cache_retention",
+            "prompt_cache_options",
+        ] {
+            assert!(off.get(field).is_none(), "{off}");
+        }
+
+        // The ChatGPT backend refuses the TTL fields whatever compat says.
+        let codex = body(
+            super::super::target::CODEX_BASE,
+            Backend::Codex,
+            PromptCacheKeyMode::Enabled,
+            Some(true),
+        );
+        assert!(codex["prompt_cache_key"].is_string(), "{codex}");
+        assert!(codex.get("prompt_cache_retention").is_none(), "{codex}");
+        assert!(codex.get("prompt_cache_options").is_none(), "{codex}");
     }
 }

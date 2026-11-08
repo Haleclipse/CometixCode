@@ -474,8 +474,10 @@ CLI --model <ref>[:effort]
   - `extra`: 可选原样 JSON 对象（`Option<serde_json::Value>`），请求时最后合并进底层请求体。
 - `cacheRetention`：`long`（默认）/ `short` / `none`，是缓存时长的唯一来源（照 Pi）：
   - Anthropic：`long` 在每个断点发 `cache_control.ttl: "1h"`，`short` 发 `"5m"`（显式，避免网关把无时长标记升成 1h），`none` 不打断点。
-  - OpenAI（仅 `openai` kind）：`long` 时，目录 cache 写入价 > 0 的模型（GPT-5.6 起）在 Responses 上发 `prompt_cache_options: {"ttl": "30m"}`，更早的模型发 `prompt_cache_retention: "24h"`；Chat 一律发 `"24h"`。ChatGPT 后端、网关、本地服务不发。
-  - DeepSeek、Gemini：自动缓存，不发任何缓存参数。
+  - OpenAI（`openai` kind 且 baseUrl 的 host 是 `api.openai.com` 或其子域，未设 baseUrl 即默认官方）：缓存开启时发 `prompt_cache_key`（会话 id，截断到 64 字符）；`long` 时，目录 cache 写入价 > 0 的模型（GPT-5.6 起）在 Responses 上发 `prompt_cache_options: {"ttl": "30m"}`，更早的模型发 `prompt_cache_retention: "24h"`；Chat 一律发 `"24h"`。ChatGPT 登录（不论 baseUrl）只发 key，不发时长字段。网关、OpenRouter、本地服务，以及 `openai` kind 指向 DeepSeek / Kimi 等其他 host 时都不发。
+  - 服务商按 baseUrl 的 host 识别（照 Pi `detectCompat`，但只比对 host，不对整串做包含匹配）：`deepseek.com`、`moonshot.cn` / `moonshot.ai` / `kimi.com`、`openrouter.ai`。识别结果还决定 `requiresReasoningContent` 的默认值（DeepSeek、Kimi 为真；模型名含 deepseek / kimi / moonshot 时同样为真，覆盖经网关或本地服务的情形）和 OpenRouter 上 `anthropic/`、`google/` 模型的 `cacheControlFormat`。
+  - 显式覆盖写在 provider 的 `compat` 里，优先于识别结果：`promptCacheKey`：`auto`（默认，即上面的规则）/ `enabled`（缓存开启时总发 key，用于接受该字段的代理）/ `disabled`（官方也不发）；`longCacheRetention`：布尔，只决定 `long` 时是否发上述时长字段，并且只在发 key 时生效（默认官方 host 为真，其他为假）。这两项 Chat 与 Responses 都读；其余 compat 选项只用于 `openaiChat`。比 Pi 保守：Pi 的 `auto` 还会给它认为支持长保留的非官方 host 发 key，nyan 默认只发给官方。
+  - DeepSeek、Kimi、Gemini：自动缓存，不发任何缓存参数。
   - 默认 `long` 的依据：Opus 5.5、10 万 token 前缀，1h cache 过期重写约 $0.80，续命读取约 $0.02。
 - 不添加 `temperature` / `top_p` / `stop` / `thinking_budget` 等冗余 profile 字段。
 - 子 agent 选择 `inherit` 时，整个 profile 完整跟随父会话当前生效的 profile（或临时配置）。

@@ -1357,8 +1357,19 @@ pub enum MaxTokensField {
     MaxTokens,
 }
 
-/// Explicit dialect options for an `openaiChat` endpoint. Nothing is probed;
-/// an unset field takes the default for the provider kind.
+/// Whether an OpenAI-protocol request carries `prompt_cache_key`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptCacheKeyMode {
+    /// Only to OpenAI's own hosts.
+    Auto,
+    /// Whenever caching is on, for servers that take it.
+    Enabled,
+    Disabled,
+}
+
+/// Explicit dialect options for an OpenAI-protocol endpoint. Nothing is
+/// probed; an unset field takes the default for the provider kind and host.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
@@ -1371,6 +1382,23 @@ pub struct OpenaiCompatSettings {
     pub cache_control_format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_reasoning_content: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_key: Option<PromptCacheKeyMode>,
+    /// Whether `cacheRetention: long` asks for OpenAI's long TTL. Only read
+    /// when `prompt_cache_key` is sent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub long_cache_retention: Option<bool>,
+}
+
+impl OpenaiCompatSettings {
+    /// Whether any option that only Chat Completions reads is set. The two
+    /// prompt-cache options also apply to Responses.
+    pub fn sets_chat_only_options(&self) -> bool {
+        self.max_tokens_field.is_some()
+            || self.include_usage.is_some()
+            || self.cache_control_format.is_some()
+            || self.requires_reasoning_content.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -1689,6 +1717,16 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
                     zod::enumeration(vec!["max_tokens", "max_completion_tokens"]).optional(),
                 ),
                 ("includeUsage", zod::boolean().optional()),
+                (
+                    "cacheControlFormat",
+                    zod::enumeration(vec!["anthropic"]).optional(),
+                ),
+                ("requiresReasoningContent", zod::boolean().optional()),
+                (
+                    "promptCacheKey",
+                    zod::enumeration(vec!["auto", "enabled", "disabled"]).optional(),
+                ),
+                ("longCacheRetention", zod::boolean().optional()),
             ])
             .optional(),
         ),
@@ -2461,6 +2499,48 @@ mod tests {
             json!({"providers": {"x": {"kind": "vllm", "compat": {"probe": true}}}}),
             json!({"providers": {"x": {"kind": "vllm", "compat": {"maxTokensField": "max_output"}}}}),
             json!({"providers": {"x": {"kind": "ollama", "protocol": "ollama"}}}),
+        ] {
+            assert!(
+                crate::utils::zod::safe_parse(&nyan_settings_schema(), &bad).is_err(),
+                "should reject {bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn prompt_cache_compat_options_parse_and_reject_unknown_values() {
+        let value = json!({
+            "providers": {
+                "deepseek": {
+                    "kind": "openai",
+                    "protocol": "openaiChat",
+                    "baseUrl": "https://api.deepseek.com",
+                    "compat": {
+                        "promptCacheKey": "enabled",
+                        "longCacheRetention": false,
+                        "requiresReasoningContent": true,
+                        "cacheControlFormat": "anthropic"
+                    }
+                }
+            }
+        });
+        let parsed =
+            crate::utils::zod::safe_parse(&nyan_settings_schema(), &value).expect("valid compat");
+        let settings: NyanSettings = serde_json::from_value(parsed).unwrap();
+        let compat = settings.providers.unwrap()["deepseek"]
+            .compat
+            .clone()
+            .unwrap();
+        assert_eq!(compat.prompt_cache_key, Some(PromptCacheKeyMode::Enabled));
+        assert_eq!(compat.long_cache_retention, Some(false));
+        assert_eq!(compat.requires_reasoning_content, Some(true));
+        assert_eq!(compat.cache_control_format.as_deref(), Some("anthropic"));
+
+        for bad in [
+            json!({"providers": {"x": {"kind": "openai", "compat": {"promptCacheKey": true}}}}),
+            json!({"providers": {"x": {"kind": "openai", "compat": {"promptCacheKey": "on"}}}}),
+            json!({"providers": {"x": {"kind": "openai", "compat": {"longCacheRetention": "24h"}}}}),
+            json!({"providers": {"x": {"kind": "openai", "compat": {"cacheControlFormat": "openai"}}}}),
         ] {
             assert!(
                 crate::utils::zod::safe_parse(&nyan_settings_schema(), &bad).is_err(),

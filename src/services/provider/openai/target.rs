@@ -16,24 +16,67 @@ use crate::utils::provider_auth::reference::{
 use crate::utils::provider_auth::resolve::{ResolveError, Resolved, Resolver, validate_reference};
 use crate::utils::provider_auth::store::AuthStore;
 use crate::utils::settings::nyan::{
-    CacheRetention, MaxTokensField, OpenaiCompatSettings, ProviderKind, ProviderProtocol,
+    CacheRetention, MaxTokensField, OpenaiCompatSettings, PromptCacheKeyMode, ProviderKind,
+    ProviderProtocol,
 };
 
 pub const API_BASE: &str = "https://api.openai.com/v1";
 pub const CODEX_BASE: &str = "https://chatgpt.com/backend-api/codex";
 
-/// Dialect options for an `openaiChat` endpoint with the kind's defaults
-/// applied. Settings say what the server takes; nothing is probed.
+/// Who serves an OpenAI-protocol endpoint, read from the base URL's host
+/// (after Pi's `detectCompat`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Vendor {
+    /// `api.openai.com` and its subdomains, or the ChatGPT backend.
+    OpenAi,
+    DeepSeek,
+    /// Moonshot's Kimi APIs.
+    Moonshot,
+    OpenRouter,
+    Other,
+}
+
+impl Vendor {
+    fn of(base_url: &str) -> Self {
+        let Ok(url) = url::Url::parse(base_url) else {
+            return Self::Other;
+        };
+        let Some(host) = url.host_str() else {
+            return Self::Other;
+        };
+        let within = |domain: &str| {
+            host.strip_suffix(domain)
+                .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
+        };
+        if within("api.openai.com") || within("chatgpt.com") {
+            Self::OpenAi
+        } else if within("deepseek.com") {
+            Self::DeepSeek
+        } else if within("moonshot.cn") || within("moonshot.ai") || within("kimi.com") {
+            Self::Moonshot
+        } else if within("openrouter.ai") {
+            Self::OpenRouter
+        } else {
+            Self::Other
+        }
+    }
+}
+
+/// Dialect options for an OpenAI-protocol endpoint, with the defaults for its
+/// kind and host applied. Settings say what the server takes; nothing is
+/// probed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Compat {
     pub max_tokens_field: MaxTokensField,
     pub include_usage: bool,
     pub cache_control_format: Option<String>,
     pub requires_reasoning_content: bool,
-    /// Whether the endpoint takes OpenAI's own cache parameters
-    /// (`prompt_cache_retention`, `prompt_cache_options`). Only the OpenAI
-    /// kind does; gateways, DeepSeek and local servers get none.
-    pub openai_prompt_cache: bool,
+    /// Whether `prompt_cache_key` is sent while caching is on.
+    pub prompt_cache_key: bool,
+    /// Whether long retention asks for OpenAI's long TTL
+    /// (`prompt_cache_retention` or `prompt_cache_options`). Only read when
+    /// the key is sent.
+    pub long_cache_retention: bool,
     /// The model bills prompt-cache writes (catalog `cacheWrite > 0`, GPT-5.6
     /// on), which is exactly the set that takes `prompt_cache_options` and
     /// rejects `prompt_cache_retention`. Follows Pi's `openai.ts` catalog.
@@ -41,16 +84,20 @@ pub struct Compat {
 }
 
 impl Compat {
+    /// The kind's defaults on the OpenAI API, for a model the catalog does not
+    /// know.
     pub fn resolve(kind: ProviderKind, settings: Option<&OpenaiCompatSettings>) -> Self {
-        Self::resolve_full(kind, None, None, settings)
+        Self::resolve_full(kind, API_BASE, None, settings)
     }
 
+    /// `base_url` is the endpoint requests go to, after the default is applied.
     pub fn resolve_full(
         kind: ProviderKind,
-        provider: Option<&str>,
+        base_url: &str,
         model: Option<&str>,
         settings: Option<&OpenaiCompatSettings>,
     ) -> Self {
+        let vendor = Vendor::of(base_url);
         // Local servers take `max_tokens`, the one cap name both vLLM and Ollama
         // accept; the OpenAI kind keeps its own `max_completion_tokens`.
         let default_field = if kind.is_local() {
@@ -61,39 +108,42 @@ impl Compat {
         let cache_control_format = settings
             .and_then(|s| s.cache_control_format.clone())
             .or_else(|| {
-                if let (Some(p), Some(m)) = (provider, model) {
-                    if p.eq_ignore_ascii_case("openrouter")
-                        && (m.starts_with("anthropic/") || m.starts_with("google/"))
-                    {
-                        return Some("anthropic".to_string());
-                    }
-                }
-                None
+                let model = model?;
+                (vendor == Vendor::OpenRouter
+                    && (model.starts_with("anthropic/") || model.starts_with("google/")))
+                .then(|| "anthropic".to_string())
             });
         let requires_reasoning_content = settings
             .and_then(|s| s.requires_reasoning_content)
             .unwrap_or_else(|| {
-                let p = provider.unwrap_or_default().to_lowercase();
-                let m = model.unwrap_or_default().to_lowercase();
-                p.contains("deepseek")
-                    || m.contains("deepseek")
-                    || p.contains("kimi")
-                    || m.contains("kimi")
-                    || p.contains("moonshot")
-                    || m.contains("moonshot")
+                // The model name still counts: DeepSeek and Kimi models are
+                // also served through gateways and local servers.
+                let model = model.unwrap_or_default().to_lowercase();
+                matches!(vendor, Vendor::DeepSeek | Vendor::Moonshot)
+                    || ["deepseek", "kimi", "moonshot"]
+                        .iter()
+                        .any(|name| model.contains(name))
             });
-        let openai_prompt_cache = kind == ProviderKind::Openai;
-        let explicit_prompt_cache_mode = openai_prompt_cache
-            && model
-                .and_then(|model| {
-                    crate::utils::model::metadata::metadata_provider_for_kind(kind).and_then(
-                        |snapshot| {
-                            crate::utils::model::metadata::find_model_metadata(snapshot, model)
-                        },
-                    )
-                })
-                .and_then(|entry| entry.cost.as_ref()?.cache_write)
-                .is_some_and(|price| price > 0.0);
+        // @nyan: stricter than Pi, which also sends the key to every host it
+        // believes takes long retention. Only OpenAI's own hosts get OpenAI's
+        // cache parameters unless the provider's compat asks for them.
+        let openai_host = kind == ProviderKind::Openai && vendor == Vendor::OpenAi;
+        let prompt_cache_key = match settings.and_then(|s| s.prompt_cache_key) {
+            None | Some(PromptCacheKeyMode::Auto) => openai_host,
+            Some(PromptCacheKeyMode::Enabled) => true,
+            Some(PromptCacheKeyMode::Disabled) => false,
+        };
+        let long_cache_retention = settings
+            .and_then(|s| s.long_cache_retention)
+            .unwrap_or(openai_host);
+        let explicit_prompt_cache_mode = model
+            .and_then(|model| {
+                crate::utils::model::metadata::metadata_provider_for_kind(kind).and_then(
+                    |snapshot| crate::utils::model::metadata::find_model_metadata(snapshot, model),
+                )
+            })
+            .and_then(|entry| entry.cost.as_ref()?.cache_write)
+            .is_some_and(|price| price > 0.0);
 
         Self {
             max_tokens_field: settings
@@ -102,7 +152,8 @@ impl Compat {
             include_usage: settings.and_then(|s| s.include_usage).unwrap_or(true),
             cache_control_format,
             requires_reasoning_content,
-            openai_prompt_cache,
+            prompt_cache_key,
+            long_cache_retention,
             explicit_prompt_cache_mode,
         }
     }
@@ -315,21 +366,29 @@ async fn resolve(
         OpenAiAuth::Codex { .. } => CODEX_BASE,
         _ => API_BASE,
     };
+    let base_url =
+        clean_base_url(profile.base_url.as_deref()).unwrap_or_else(|| default_base.into());
+    // The ChatGPT sign-in only ever reaches the ChatGPT backend, directly or
+    // through a proxy, so it takes that host's defaults whatever the base URL.
+    let compat_base = match auth {
+        OpenAiAuth::Codex { .. } => CODEX_BASE,
+        _ => base_url.as_str(),
+    };
+    let compat = Compat::resolve_full(
+        profile.provider_kind,
+        compat_base,
+        Some(&profile.model),
+        profile.compat.as_ref(),
+    );
     Ok(OpenAiTarget {
         profile: profile.profile.clone(),
         provider,
         provider_kind: profile.provider_kind,
         protocol: profile.protocol,
-        base_url: clean_base_url(profile.base_url.as_deref())
-            .unwrap_or_else(|| default_base.into()),
+        base_url,
         auth,
         optional_env,
-        compat: Compat::resolve_full(
-            profile.provider_kind,
-            Some(&profile.provider),
-            Some(&profile.model),
-            profile.compat.as_ref(),
-        ),
+        compat,
         cache_retention: profile.cache_retention,
     })
 }
@@ -522,5 +581,213 @@ mod tests {
         );
         p.base_url = Some("  ".into());
         assert_eq!(target_for_profile(&p).await.unwrap().base_url, API_BASE);
+    }
+
+    #[test]
+    fn the_vendor_is_read_from_the_host_not_the_whole_url() {
+        for (url, vendor) in [
+            ("https://api.openai.com/v1", Vendor::OpenAi),
+            ("https://us.api.openai.com/v1", Vendor::OpenAi),
+            ("https://API.OpenAI.com/v1/", Vendor::OpenAi),
+            (CODEX_BASE, Vendor::OpenAi),
+            ("https://api.deepseek.com", Vendor::DeepSeek),
+            ("https://api.deepseek.com/v1", Vendor::DeepSeek),
+            ("https://api.moonshot.cn/v1", Vendor::Moonshot),
+            ("https://api.moonshot.ai/v1", Vendor::Moonshot),
+            ("https://api.kimi.com/coding/v1", Vendor::Moonshot),
+            ("https://openrouter.ai/api/v1", Vendor::OpenRouter),
+            // Look-alikes and a vendor named only in the path or query.
+            ("https://api.openai.com.evil.example/v1", Vendor::Other),
+            ("https://notapi.openai.com/v1", Vendor::Other),
+            ("https://mydeepseek.com/v1", Vendor::Other),
+            ("https://gw.example/api.openai.com/v1", Vendor::Other),
+            ("https://gw.example/v1?upstream=deepseek.com", Vendor::Other),
+            ("https://api.openai.com@gw.example/v1", Vendor::Other),
+            ("http://127.0.0.1:8317/v1", Vendor::Other),
+            ("not a url", Vendor::Other),
+        ] {
+            assert_eq!(Vendor::of(url), vendor, "{url}");
+        }
+    }
+
+    #[test]
+    fn only_openai_hosts_of_the_openai_kind_get_openai_cache_parameters() {
+        let compat = |kind, url: &str| Compat::resolve_full(kind, url, Some("gpt-5"), None);
+        for url in [API_BASE, "https://us.api.openai.com/v1", CODEX_BASE] {
+            let c = compat(ProviderKind::Openai, url);
+            assert!(c.prompt_cache_key && c.long_cache_retention, "{url}");
+        }
+        for (kind, url) in [
+            (ProviderKind::Openai, "https://api.deepseek.com"),
+            (ProviderKind::Openai, "https://api.moonshot.cn/v1"),
+            (ProviderKind::Openai, "https://openrouter.ai/api/v1"),
+            (ProviderKind::Openai, "http://127.0.0.1:8317/v1"),
+            (ProviderKind::Gateway, API_BASE),
+            (ProviderKind::Openrouter, "https://openrouter.ai/api/v1"),
+            (ProviderKind::Vllm, "http://127.0.0.1:8000/v1"),
+        ] {
+            let c = compat(kind, url);
+            assert!(
+                !c.prompt_cache_key && !c.long_cache_retention,
+                "{kind:?} {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn reasoning_content_follows_the_host_then_the_model_name_and_compat_wins() {
+        let requires = |kind, url: &str, model: &str, explicit: Option<bool>| {
+            let settings = OpenaiCompatSettings {
+                requires_reasoning_content: explicit,
+                ..Default::default()
+            };
+            Compat::resolve_full(kind, url, Some(model), Some(&settings)).requires_reasoning_content
+        };
+        // The host alone decides for DeepSeek and Kimi, whatever the model id.
+        for url in [
+            "https://api.deepseek.com",
+            "https://api.moonshot.cn/v1",
+            "https://api.moonshot.ai/v1",
+            "https://api.kimi.com/coding/v1",
+        ] {
+            assert!(requires(ProviderKind::Openai, url, "chat", None), "{url}");
+        }
+        // Through a gateway or a local server, the model name still counts.
+        for (kind, url, model) in [
+            (
+                ProviderKind::Openai,
+                "https://openrouter.ai/api/v1",
+                "deepseek/deepseek-reasoner",
+            ),
+            (
+                ProviderKind::Openrouter,
+                "https://openrouter.ai/api/v1",
+                "moonshotai/kimi-k2-thinking",
+            ),
+            (
+                ProviderKind::Gateway,
+                "http://127.0.0.1:8317/v1",
+                "DeepSeek-V4-Flash",
+            ),
+            (ProviderKind::Vllm, "http://127.0.0.1:8000/v1", "kimi-k2.6"),
+        ] {
+            assert!(requires(kind, url, model, None), "{kind:?} {model}");
+        }
+        assert!(!requires(ProviderKind::Openai, API_BASE, "gpt-5", None));
+        assert!(!requires(
+            ProviderKind::Openai,
+            "https://openrouter.ai/api/v1",
+            "openai/gpt-5",
+            None
+        ));
+        // Explicit compat beats both.
+        assert!(!requires(
+            ProviderKind::Openai,
+            "https://api.deepseek.com",
+            "deepseek-reasoner",
+            Some(false)
+        ));
+        assert!(requires(
+            ProviderKind::Openai,
+            API_BASE,
+            "gpt-5",
+            Some(true)
+        ));
+    }
+
+    #[test]
+    fn openrouter_cache_control_follows_the_host() {
+        let format = |kind, url: &str, model: &str| {
+            Compat::resolve_full(kind, url, Some(model), None).cache_control_format
+        };
+        let openrouter = "https://openrouter.ai/api/v1";
+        assert_eq!(
+            format(
+                ProviderKind::Openai,
+                openrouter,
+                "anthropic/claude-opus-5.5"
+            )
+            .as_deref(),
+            Some("anthropic")
+        );
+        assert_eq!(
+            format(ProviderKind::Openrouter, openrouter, "google/gemini-3-pro").as_deref(),
+            Some("anthropic")
+        );
+        assert_eq!(
+            format(ProviderKind::Openai, openrouter, "openai/gpt-5"),
+            None
+        );
+        assert_eq!(
+            format(ProviderKind::Openai, API_BASE, "anthropic/claude-opus-5.5"),
+            None
+        );
+    }
+
+    /// The ChatGPT sign-in keeps its key, at the default backend and through a
+    /// proxy alike; the Responses body builder drops the TTL fields it refuses.
+    #[tokio::test]
+    async fn the_codex_sign_in_keeps_the_prompt_cache_key_at_any_base_url() {
+        use base64::Engine;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
+        use crate::utils::provider_auth::store::{OAuthCredential, ProviderAuth};
+
+        let root = crate::utils::node_os::tmpdir().join(format!(
+            "nyan-openai-target-codex-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let store = AuthStore::at(root.join("auth"));
+        let claims = serde_json::json!({
+            "https://api.openai.com/auth": {"chatgpt_account_id": "acct_1"}
+        });
+        let access = format!(
+            "{}.{}.sig",
+            URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#),
+            URL_SAFE_NO_PAD.encode(claims.to_string())
+        );
+        let mut auth = ProviderAuth::default();
+        auth.set_account(
+            "main",
+            OAuthCredential {
+                access,
+                refresh: "r".into(),
+                expires_at_ms: i64::MAX / 2,
+                account_id: None,
+                metadata: Default::default(),
+            },
+        );
+        store
+            .lock(openai_codex::PROVIDER_ID)
+            .unwrap()
+            .save(&auth)
+            .unwrap();
+        let resolver = Resolver::for_test(
+            store,
+            crate::utils::provider_auth::oauth::build_client(
+                crate::utils::proxy::client_builder().no_proxy(),
+            )
+            .unwrap(),
+            openai_codex::Endpoints::at("http://127.0.0.1:1"),
+        );
+        let oauth = CredentialReference {
+            oauth: Some(openai_codex::PROVIDER_ID.into()),
+            ..Default::default()
+        };
+
+        let mut p = profile(Some(oauth), ProviderProtocol::OpenaiResponses);
+        let mut targets = Vec::new();
+        for base_url in [None, Some("http://127.0.0.1:8317/backend-api/codex")] {
+            p.base_url = base_url.map(str::to_string);
+            targets.push(target_with_resolver(&p, &resolver).await);
+        }
+        let _ = std::fs::remove_dir_all(&root);
+        let [default, proxied] = <[_; 2]>::try_from(targets).unwrap().map(Result::unwrap);
+        assert_eq!(default.base_url, CODEX_BASE);
+        assert_eq!(proxied.base_url, "http://127.0.0.1:8317/backend-api/codex");
+        for target in [default, proxied] {
+            assert!(matches!(target.auth, OpenAiAuth::Codex { .. }));
+            assert!(target.compat.prompt_cache_key, "{}", target.base_url);
+        }
     }
 }
