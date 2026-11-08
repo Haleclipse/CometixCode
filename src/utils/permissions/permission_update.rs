@@ -539,7 +539,7 @@ mod persistence_tests {
             crate::bootstrap::state::set_original_cwd(root.join("workspace"));
             let fixture = Self {
                 original_cwd,
-                _config: EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+                _config: EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
                 _managed: EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root),
                 _writes: EnvVarGuard::set("NYAN_WRITE_ENABLED", "1"),
                 root,

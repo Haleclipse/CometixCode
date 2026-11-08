@@ -2331,7 +2331,7 @@ mod tests {
         .unwrap();
         let _cwd_guard = CwdGuard::set(&root);
         let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
 
         let settings = get_initial_settings();
         let config = convert_to_sandbox_runtime_config(&settings);
@@ -2451,7 +2451,7 @@ mod tests {
         .unwrap();
         let _cwd_guard = CwdGuard::set(&root);
         let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
 
         let settings = get_initial_settings();
         let config = convert_to_sandbox_runtime_config(&settings);
@@ -2514,7 +2514,7 @@ mod tests {
 
         {
             let _cwd_guard = CwdGuard::set(&workspace);
-            let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _managed_guard = EnvVarGuard::set(
                 "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
                 root.join("missing-managed-settings.json"),

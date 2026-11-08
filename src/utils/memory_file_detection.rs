@@ -30,7 +30,7 @@ fn to_comparable(path: &str) -> String {
 
 /// Maps to: CC `utils/memoryFileDetection.ts:40-58` `detectSessionFileType`.
 pub fn detect_session_file_type(file_path: &str) -> Option<SessionFileType> {
-    let config_dir = crate::utils::env_utils::get_claude_config_home_dir();
+    let config_dir = crate::utils::env_utils::get_config_home_dir();
     let normalized = to_comparable(file_path);
     let config_dir = to_comparable(&config_dir.display().to_string());
     if !normalized.starts_with(&config_dir) {
@@ -137,7 +137,7 @@ pub fn is_memory_directory(dir_path: &str) -> bool {
     }
 
     let config_dir = to_comparable(
-        &crate::utils::env_utils::get_claude_config_home_dir()
+        &crate::utils::env_utils::get_config_home_dir()
             .display()
             .to_string(),
     );
@@ -167,7 +167,7 @@ static ABSOLUTE_SHELL_PATH: LazyLock<regex::Regex> = LazyLock::new(|| {
 /// Maps to: CC `utils/memoryFileDetection.ts:215-269`
 /// `isShellCommandTargetingMemory`.
 pub fn is_shell_command_targeting_memory(command: &str) -> bool {
-    let config_dir = crate::utils::env_utils::get_claude_config_home_dir();
+    let config_dir = crate::utils::env_utils::get_config_home_dir();
     let memory_base = crate::memdir::paths::get_memory_base_dir();
     let auto_memory_enabled = crate::memdir::paths::is_auto_memory_enabled();
     let auto_mem_dir = auto_memory_enabled.then(crate::memdir::paths::get_auto_mem_path);
@@ -232,7 +232,7 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 
     const ENV_KEYS: [&str; 4] = [
-        "CLAUDE_CONFIG_DIR",
+        "NYAN_CONFIG_DIR",
         "CLAUDE_CODE_REMOTE_MEMORY_DIR",
         "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
         "CLAUDE_CODE_DISABLE_AUTO_MEMORY",
@@ -256,7 +256,7 @@ mod tests {
             for key in ENV_KEYS {
                 crate::utils::process_env::remove(key);
             }
-            crate::utils::process_env::set("CLAUDE_CONFIG_DIR", root.join("config"));
+            crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
             crate::utils::process_env::set(
                 "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
                 root.join("auto-memory"),

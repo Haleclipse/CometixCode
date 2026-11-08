@@ -569,7 +569,7 @@ pub fn get_api_metadata() -> ApiMetadata {
     }
 
     // Maps to CC `claude.ts:519-526`: the persisted `getOrCreateUserID()`
-    // (`~/.claude.json` `userID`) is the stable per-install device id — never a
+    // (state-file `userID`) is the stable per-install device id — never a
     // per-request random value, which gateways keyed on `user_id` would treat
     // as a new user on every call.
     extra.insert(
@@ -5210,7 +5210,7 @@ mod tests {
         let dir =
             std::env::temp_dir().join(format!("nyan-normalize-plan-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _project = PinnedProjectDir::at(&dir);
         let _local = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
         let tools = vec![crate::tools::exit_plan_mode_tool::exit_plan_mode_tool_schema()];
@@ -8887,7 +8887,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&config_dir).unwrap();
         let _guards = [
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir),
             EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
             EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
             EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
@@ -8949,7 +8949,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&config_dir).unwrap();
         let _guards = [
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir),
             EnvVarGuard::unset("ANTHROPIC_API_KEY"),
         ];
         crate::utils::settings::settings_cache::reset_settings_cache();

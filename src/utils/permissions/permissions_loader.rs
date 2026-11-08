@@ -368,7 +368,7 @@ mod persistence_tests {
             std::fs::create_dir_all(&root).unwrap();
             let root = root.canonicalize().unwrap();
             let result = Self {
-                _config: EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+                _config: EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
                 _managed: EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root),
                 _writes: EnvVarGuard::set("NYAN_WRITE_ENABLED", "1"),
                 root,
@@ -576,7 +576,7 @@ mod persistence_tests {
         assert_eq!(value["permissions"]["allow"], json!(["Read", "Grep"]));
         let linked = fixture.root.join("linked-config");
         symlink(&fixture.root, &linked).unwrap();
-        let _linked = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &linked);
+        let _linked = EnvVarGuard::set("NYAN_CONFIG_DIR", &linked);
         reset_settings_cache();
         assert!(add_permission_rules_to_settings(
             &[PermissionRuleValue::new("Glob", None)],

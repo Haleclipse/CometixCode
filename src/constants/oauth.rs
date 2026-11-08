@@ -205,40 +205,6 @@ pub fn get_oauth_config() -> anyhow::Result<OauthConfig> {
     )
 }
 
-/// Maps to: CC `constants/oauth.ts:18-29` `fileSuffixForOauthConfig`.
-/// L1 (`Compile-time distribution capability projection`): the explicit
-/// `BuildAudience` is a test-only projection; production enters through
-/// [`file_suffix_for_oauth_config`].
-pub fn file_suffix_for_oauth_config_for_audience(
-    get_env: impl Fn(&str) -> Option<String>,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> String {
-    use crate::utils::process_env::JsTruthy as _;
-    if get_env("CLAUDE_CODE_CUSTOM_OAUTH_URL").truthy().is_some() {
-        return "-custom-oauth".to_string();
-    }
-    if crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::Authentication,
-    ) {
-        if crate::utils::env_utils::is_env_truthy(get_env("USE_LOCAL_OAUTH").as_deref()) {
-            return "-local-oauth".to_string();
-        }
-        if crate::utils::env_utils::is_env_truthy(get_env("USE_STAGING_OAUTH").as_deref()) {
-            return "-staging-oauth".to_string();
-        }
-    }
-    String::new()
-}
-
-/// Maps to: CC `constants/oauth.ts:18-29` `fileSuffixForOauthConfig`.
-pub fn file_suffix_for_oauth_config() -> String {
-    file_suffix_for_oauth_config_for_audience(
-        |key| crate::utils::process_env::var(key),
-        crate::utils::build_profile::build_audience(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,41 +309,6 @@ mod tests {
                 crate::utils::build_profile::build_audience(),
             )
             .is_err()
-        );
-    }
-
-    #[test]
-    fn file_suffix_matches_official_selection_order() {
-        assert_eq!(
-            file_suffix_for_oauth_config_for_audience(
-                env(HashMap::new()),
-                crate::utils::build_profile::build_audience(),
-            ),
-            ""
-        );
-        assert_eq!(
-            file_suffix_for_oauth_config_for_audience(
-                env(HashMap::from([("USE_LOCAL_OAUTH", "1")])),
-                crate::utils::build_profile::BuildAudience::AnthropicInternal,
-            ),
-            "-local-oauth"
-        );
-        assert_eq!(
-            file_suffix_for_oauth_config_for_audience(
-                env(HashMap::from([(
-                    "CLAUDE_CODE_CUSTOM_OAUTH_URL",
-                    "https://claude.fedstart.com"
-                )])),
-                crate::utils::build_profile::build_audience(),
-            ),
-            "-custom-oauth"
-        );
-        assert_eq!(
-            file_suffix_for_oauth_config_for_audience(
-                env(HashMap::from([("CLAUDE_CODE_CUSTOM_OAUTH_URL", "")])),
-                crate::utils::build_profile::build_audience(),
-            ),
-            ""
         );
     }
 }

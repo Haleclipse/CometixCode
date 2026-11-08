@@ -1094,7 +1094,7 @@ impl QueryEnv {
         let root = std::env::temp_dir().join(format!("nyan-gemini-query-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let guards = vec![
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
             EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
             EnvVarGuard::set("TEST_GEMINI_KEY", "fake-gemini-key"),
             EnvVarGuard::set("API_TIMEOUT_MS", "5000"),

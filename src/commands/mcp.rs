@@ -552,7 +552,7 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         test(&dir);
         let _ = std::fs::remove_dir_all(&dir);
     }

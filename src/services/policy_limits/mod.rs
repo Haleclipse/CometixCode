@@ -29,7 +29,7 @@ struct PolicyRestriction {
 
 /// Maps to: CC `services/policyLimits/index.ts:119-121` `getCachePath`.
 fn cache_path() -> std::path::PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir().join(CACHE_FILENAME)
+    crate::utils::env_utils::get_config_home_dir().join(CACHE_FILENAME)
 }
 
 /// Maps to: CC `services/policyLimits/index.ts:392-405`

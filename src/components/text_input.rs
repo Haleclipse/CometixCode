@@ -328,7 +328,7 @@ mod tests {
             .join(".test/shared-escape")
             .join(format!("unit-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &directory);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &directory);
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _history = EnvVarGuard::unset("CLAUDE_CODE_SKIP_PROMPT_HISTORY");
         crate::utils::process_runtime::initialize_test_process_runtime();

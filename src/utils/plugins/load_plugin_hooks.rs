@@ -358,7 +358,7 @@ mod tests {
         let root =
             TestDir(std::env::temp_dir().join(format!("nyan-hook-swap-{}", uuid::Uuid::new_v4())));
         std::fs::create_dir_all(root.path().join("config")).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.path().join("config"));
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", root.path().join("config"));
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
         let previous_inline = crate::bootstrap::state::get_inline_plugins();
         let previous_hooks = get_registered_hooks();

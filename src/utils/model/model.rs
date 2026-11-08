@@ -267,7 +267,7 @@ mod tests {
         let config_dir =
             std::env::temp_dir().join(format!("nyan-opus1m-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&config_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
 
         // First-party with no credentials at all: the merge is on.
         assert!(is_opus_1m_merge_enabled());
@@ -312,7 +312,7 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-small-fast-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("settings.json"), "{}").unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _legacy = EnvVarGuard::set("ANTHROPIC_SMALL_FAST_MODEL", "legacy-haiku");
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::bootstrap::state::set_session_profile(None);
@@ -358,7 +358,7 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _legacy = EnvVarGuard::set("ANTHROPIC_MODEL", "legacy-model");
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::bootstrap::state::set_session_profile(None);
@@ -380,7 +380,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("settings.json"), "{}").unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _legacy = EnvVarGuard::set("ANTHROPIC_MODEL", "legacy-model");
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::bootstrap::state::set_session_profile(None);

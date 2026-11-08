@@ -328,7 +328,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(memory.join("unrelated.md"), "bananas and oranges\n").unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _override = EnvVarGuard::set(
             "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
             memory.to_str().unwrap(),

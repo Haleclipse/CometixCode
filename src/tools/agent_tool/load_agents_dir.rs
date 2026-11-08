@@ -289,7 +289,7 @@ fn get_project_nyan_agent_dirs(cwd: &Path) -> Vec<PathBuf> {
 fn load_agent_markdown_files(
     cwd: &Path,
 ) -> Vec<crate::utils::markdown_config_loader::MarkdownFile> {
-    let user_dir = crate::utils::env_utils::get_claude_config_home_dir().join("agents");
+    let user_dir = crate::utils::env_utils::get_config_home_dir().join("agents");
     let managed_dir = crate::utils::settings::managed_path::get_managed_file_path()
         .join(".nyan")
         .join("agents");
@@ -1018,7 +1018,7 @@ mod tests {
     /// `TEST_ENV_LOCK`.
     fn pin_loader_env(home: &Path, config_home: &Path) -> [EnvVarGuard; 4] {
         [
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_home),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", config_home),
             EnvVarGuard::set(HOME_VAR, home),
             EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
             EnvVarGuard::set(
@@ -1904,7 +1904,7 @@ mod tests {
         let result = get_agent_definitions_with_overrides(&root);
 
         // CC :277-281 `initializeFromSnapshot` → copySnapshotToLocal +
-        // saveSyncedMeta, into the USER memory dir (`$CLAUDE_CONFIG_DIR/agent-memory`).
+        // saveSyncedMeta, into the USER memory dir (`$NYAN_CONFIG_DIR/agent-memory`).
         let user_memory = config_home.join("agent-memory/usermem");
         assert_eq!(
             fs::read_to_string(user_memory.join("MEMORY.md")).ok(),

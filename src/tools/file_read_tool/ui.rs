@@ -143,7 +143,7 @@ fn javascript_truthy(value: &serde_json::Value) -> bool {
 
 /// Maps to: CC `tools/FileReadTool/UI.tsx#userFacingName`.
 pub fn user_facing_name(input: Option<&serde_json::Value>) -> String {
-    user_facing_name_for_config_home(input, crate::utils::env_utils::get_claude_config_home_dir())
+    user_facing_name_for_config_home(input, crate::utils::env_utils::get_config_home_dir())
 }
 
 /// Maps to: CC `tools/FileReadTool/UI.tsx#getToolUseSummary` (:177-188).

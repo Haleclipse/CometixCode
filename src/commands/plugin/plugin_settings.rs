@@ -1101,7 +1101,7 @@ mod tests {
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let home = std::env::temp_dir().join(format!("nyan-plugin-burst-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &home);
         for (paste, query) in [
             (false, "frontend"),
             (true, "frontend"),

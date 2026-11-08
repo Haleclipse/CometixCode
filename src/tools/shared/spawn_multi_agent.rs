@@ -1355,7 +1355,7 @@ mod tests {
             "nyan-spawn-multi-agent-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         let write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         crate::utils::swarm::team_helpers::clear_team_tool_state_for_test();

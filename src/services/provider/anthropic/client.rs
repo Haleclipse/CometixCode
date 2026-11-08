@@ -1453,7 +1453,7 @@ mod tests {
         let config_home =
             std::env::temp_dir().join(format!("nyan-api-key-oauth-gate-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
@@ -1488,7 +1488,7 @@ mod tests {
         let config_home =
             std::env::temp_dir().join(format!("nyan-sdk-defaults-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "oauth-ambient");
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
@@ -1533,7 +1533,7 @@ mod tests {
         let config_home =
             std::env::temp_dir().join(format!("nyan-keyless-target-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
         let _foundry = EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY");
@@ -1563,7 +1563,7 @@ mod tests {
         let config_home =
             std::env::temp_dir().join(format!("nyan-sdk-base-url-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
@@ -1828,7 +1828,7 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-vertex-defaults-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _guards = [
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home),
             EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
             EnvVarGuard::set("CLAUDE_CODE_USE_VERTEX", "1"),
             EnvVarGuard::unset("CLAUDE_CODE_USE_FOUNDRY"),
@@ -2690,7 +2690,7 @@ mod tests {
         let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_address = proxy.local_addr().unwrap();
         let _guards = [
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home),
             EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN"),
             EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK"),
             EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX"),
@@ -2757,7 +2757,7 @@ mod tests {
         let config_home =
             std::env::temp_dir().join(format!("nyan-blank-auth-token-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");
         let _vertex = EnvVarGuard::unset("CLAUDE_CODE_USE_VERTEX");
@@ -2792,7 +2792,7 @@ mod tests {
         let config_home =
             std::env::temp_dir().join(format!("nyan-oauth-ignored-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
         let _bedrock = EnvVarGuard::unset("CLAUDE_CODE_USE_BEDROCK");

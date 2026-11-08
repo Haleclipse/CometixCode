@@ -785,7 +785,7 @@ pub fn get_projects_dir() -> PathBuf {
         }
     }
 
-    crate::utils::env_utils::get_claude_config_home_dir().join("projects")
+    crate::utils::env_utils::get_config_home_dir().join("projects")
 }
 
 /// Maps to: CC `sessionStoragePortable.ts` `sanitizePath(name)`.

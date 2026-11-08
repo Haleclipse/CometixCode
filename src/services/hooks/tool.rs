@@ -403,7 +403,7 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         // The same executor now also carries CC's trust gate (`hooks.ts:1994`),
         // so the "allowed" half has to state trust rather than inherit it from
-        // the developer's `.claude.json`.
+        // the developer's `state.json`.
         let _trust = SessionTrustGuard::accepted();
 
         async fn run_both_events() -> (Vec<HookResult>, Vec<HookResult>) {

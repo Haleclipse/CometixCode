@@ -36,9 +36,11 @@ const DANGEROUS_FILES: &[&str] = &[
     ".profile",
     ".ripgreprc",
     ".mcp.json",
-    ".claude.json",
 ];
-const DANGEROUS_DIRECTORIES: &[&str] = &[".git", ".vscode", ".idea", ".claude"];
+// @nyan: CC lists `.claude.json` among the files because its state file sits
+// beside the config home. nyan's `state.json` lives inside `.nyan`, which is
+// protected as a directory.
+const DANGEROUS_DIRECTORIES: &[&str] = &[".git", ".vscode", ".idea", ".claude", ".nyan"];
 
 static DOS_DEVICE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\.(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$").expect("valid dos device regex")
@@ -626,7 +628,7 @@ pub(crate) fn check_editable_internal_path(
         .truthy()
         .map(PathBuf::from)
     {
-        let jobs_root = crate::utils::env_utils::get_claude_config_home_dir().join("jobs");
+        let jobs_root = crate::utils::env_utils::get_config_home_dir().join("jobs");
         let job_forms = paths_to_check(&job_dir.display().to_string(), cwd);
         let jobs_root_forms = paths_to_check(&jobs_root.display().to_string(), cwd);
         let job_dir_is_trusted = job_forms.iter().all(|job_form| {
@@ -736,7 +738,7 @@ pub(crate) fn check_readable_internal_path(
         });
     }
 
-    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
+    let config_home = crate::utils::env_utils::get_config_home_dir();
     let tasks_dir = normalize_permission_path_buf(config_home.join("tasks"));
     if normalized == tasks_dir || normalized.starts_with(&tasks_dir) {
         return Some(PermissionDecisionReason::Other {
@@ -1734,7 +1736,7 @@ mod tests {
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("secret.txt"), "secret").unwrap();
         symlink(&outside, config.join("tasks/escape")).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let escaped = config.join("tasks/escape/secret.txt");
         assert!(matches!(
             check_read_permission_for_tool(
@@ -1989,7 +1991,7 @@ mod tests {
         let outside = root.join("outside");
         std::fs::create_dir_all(&job).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _job = EnvVarGuard::set("CLAUDE_JOB_DIR", &job);
         let context = ToolPermissionContext::default();
         let inside = job.join("result.txt");
@@ -2183,7 +2185,7 @@ mod tests {
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::create_dir_all(&original_cwd).unwrap();
         std::fs::create_dir_all(&flag_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _restore = RootRestore {
             original_cwd: crate::bootstrap::state::get_original_cwd(),
             flag_path: crate::utils::settings::get_flag_settings_path(),
@@ -2343,6 +2345,7 @@ mod tests {
             "/repo/.claude/other/file.rs",
             "/repo/.claude/worktrees/topic/.BaShRc",
             "/repo/.vscode/settings.json",
+            "/home/user/.nyan/state.json",
             "//server/share/file.txt",
         ] {
             assert!(is_dangerous_file_path_to_auto_edit(path), "{path}");

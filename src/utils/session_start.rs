@@ -257,13 +257,13 @@ mod tests {
         .unwrap();
 
         let _env = [
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config")),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("config")),
             EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
         ];
         let previous_inline = crate::bootstrap::state::get_inline_plugins();
         let previous_registered_hooks = crate::bootstrap::state::get_registered_hooks();
-        // Relocating CLAUDE_CONFIG_DIR also relocates `~/.claude.json`
-        // (`utils/config.rs:119-120`), so the scratch root above carries no
+        // Relocating NYAN_CONFIG_DIR also relocates the state file
+        // (`utils/env.rs` `get_global_state_file`), so the scratch root above carries no
         // `hasTrustDialogAccepted` for any path — an UNTRUSTED workspace. CC
         // skips every hook in that state (`utils/hooks.ts:1994-1999` over
         // `computeTrustDialogAccepted`'s false default, `utils/config.ts:705`),

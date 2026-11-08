@@ -2375,7 +2375,7 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("nyan-mcp-manage-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &temp_dir);
         test(&temp_dir);
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -2486,7 +2486,7 @@ mod tests {
                 }),
             );
             std::fs::write(
-                temp_dir.join(".claude.json"),
+                temp_dir.join("state.json"),
                 serde_json::json!({ "projects": projects }).to_string(),
             )
             .unwrap();

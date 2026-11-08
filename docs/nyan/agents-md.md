@@ -17,7 +17,7 @@ nyan 是 provider 无关的通用 Agent，不应与特定厂商或特定工具�
    - 若项目中仅存在 `CLAUDE.md`，nyan 会直接忽略它，不会自动回退读取，也不会主动向用户提示迁移。
 3. **保留层级发现与 @import 机制**：
    - **Managed 作用域**：`<managed_path>/AGENTS.md`。
-   - **UserGlobal 作用域**：`$CLAUDE_CONFIG_DIR/AGENTS.md`（默认 `~/.nyan/AGENTS.md`）。
+   - **UserGlobal 作用域**：`$NYAN_CONFIG_DIR/AGENTS.md`（默认 `~/.nyan/AGENTS.md`）。
    - **Project 作用域**：从文件系统根目录向下至当前工作目录（CWD），逐层祖先目录遍历加载 `AGENTS.md`。
    - **Nested 作用域**：嵌套子目录内的 `AGENTS.md` 在按需加载时装载。
    - **@import 语法**：`AGENTS.md` 中依然支持 `@path/to/file` 引用外部文档，支持相对路径解析、跨目录包含安全门禁与深度限制（上限 5 层）。

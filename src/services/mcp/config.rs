@@ -1377,7 +1377,7 @@ mod tests {
         let config = root.join("config");
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let _project = ProjectRootGuard::pin(&root);
@@ -1782,7 +1782,7 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&managed_dir).unwrap();
         std::fs::create_dir_all(&project_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let _project_root = ProjectRootGuard::pin(&project_dir);
@@ -1828,7 +1828,7 @@ mod tests {
         let managed_dir = temp_dir.join("managed");
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&managed_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
         crate::utils::config::clear_global_config_cache_for_testing();
 
@@ -2155,7 +2155,7 @@ mod tests {
         )
         .unwrap();
 
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
         let _non_interactive = EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION");
         let previous_interactive = crate::bootstrap::state::get_is_interactive();
         crate::bootstrap::state::set_is_interactive(true);
@@ -2245,9 +2245,9 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("nyan-mcp-config-by-name-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &temp_dir);
         std::fs::write(
-            temp_dir.join(".claude.json"),
+            temp_dir.join("state.json"),
             serde_json::json!({
                 "mcpServers": {
                     "docs": {
@@ -2282,7 +2282,7 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&managed_dir).unwrap();
         std::fs::create_dir_all(&project_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_dir);
         let _project_root = ProjectRootGuard::pin(&project_dir);
 
@@ -2292,7 +2292,7 @@ mod tests {
         let project_key =
             crate::utils::config::normalize_project_path(&project_path_for_key.to_string_lossy());
         std::fs::write(
-            config_dir.join(".claude.json"),
+            config_dir.join("state.json"),
             serde_json::json!({
                 "mcpServers": {
                     "docs": { "type": "http", "url": "https://user.example/mcp" },
@@ -2385,7 +2385,7 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-mcp-set-enabled-{}", uuid::Uuid::new_v4()));
         let project_dir = temp_dir.join("project");
         std::fs::create_dir_all(&project_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &temp_dir);
         let _session_write = EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _project_root = ProjectRootGuard::pin(&project_dir);
@@ -2396,7 +2396,7 @@ mod tests {
         assert!(!is_mcp_server_disabled("docs"));
 
         let value: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(temp_dir.join(".claude.json")).unwrap())
+            serde_json::from_str(&std::fs::read_to_string(temp_dir.join("state.json")).unwrap())
                 .unwrap();
         let current_project_dir = std::env::current_dir().unwrap();
         let project_key =
@@ -2578,7 +2578,7 @@ mod tests {
             r#"{"duplicate":{"command":"echo","args":["same"]}}"#,
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _project = ProjectRootGuard::pin(&root);
         let _inline = InlinePluginsGuard(crate::bootstrap::state::get_inline_plugins());

@@ -108,16 +108,19 @@ pub fn is_nyan_write_enabled() -> bool {
 }
 
 /// Maps to: CC `utils/envUtils.ts:7-14` `getClaudeConfigHomeDir`:
-/// `(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.nyan'))
-/// .normalize('NFC')`, memoized keyed on `CLAUDE_CONFIG_DIR`. `??` keeps an
+/// `(process.env.NYAN_CONFIG_DIR ?? join(homedir(), '.nyan'))
+/// .normalize('NFC')`, memoized keyed on `NYAN_CONFIG_DIR`. `??` keeps an
 /// empty value. Each value of the variable is computed once, so with it unset
 /// the first `homedir()` answer stays, as lodash `memoize` keeps it under the
 /// `undefined` key.
-pub fn get_claude_config_home_dir() -> PathBuf {
+///
+/// @nyan: the variable is `NYAN_CONFIG_DIR` (CC: `CLAUDE_CONFIG_DIR`), so a
+/// nyan started from a Claude Code session does not adopt its directory.
+pub fn get_config_home_dir() -> PathBuf {
     static CACHE: std::sync::LazyLock<
         std::sync::Mutex<std::collections::HashMap<Option<std::ffi::OsString>, PathBuf>>,
     > = std::sync::LazyLock::new(Default::default);
-    let key = process_env::var_os("CLAUDE_CONFIG_DIR");
+    let key = process_env::var_os("NYAN_CONFIG_DIR");
     let mut cache = CACHE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -141,7 +144,7 @@ pub fn get_claude_config_home_dir() -> PathBuf {
 
 /// Maps to: CC `utils/envUtils.ts#getTeamsDir`.
 pub fn get_teams_dir() -> PathBuf {
-    get_claude_config_home_dir().join("teams")
+    get_config_home_dir().join("teams")
 }
 
 /// Pure audience-injected form of CC `utils/envUtils.ts#isRunningOnHomespace`.
@@ -178,9 +181,9 @@ mod tests {
         assert!(!super::is_env_defined_falsy(None));
     }
 
-    /// CC `envUtils.ts:7-14`: `??` keeps an empty `CLAUDE_CONFIG_DIR`, the
+    /// CC `envUtils.ts:7-14`: `??` keeps an empty `NYAN_CONFIG_DIR`, the
     /// result is NFC, and otherwise it is under `homedir()`. Memoized keyed
-    /// on `CLAUDE_CONFIG_DIR`: with it unset, a later home directory is not
+    /// on `NYAN_CONFIG_DIR`: with it unset, a later home directory is not
     /// seen.
     #[test]
     fn config_home_dir_matches_official_nullish_nfc_homedir_and_memo() {
@@ -188,21 +191,21 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _home = EnvVarGuard::set(HOME_VAR, "/home/first");
         {
-            let _dir = EnvVarGuard::set("CLAUDE_CONFIG_DIR", "");
-            assert_eq!(super::get_claude_config_home_dir(), PathBuf::from(""));
+            let _dir = EnvVarGuard::set("NYAN_CONFIG_DIR", "");
+            assert_eq!(super::get_config_home_dir(), PathBuf::from(""));
         }
         {
-            let _dir = EnvVarGuard::set("CLAUDE_CONFIG_DIR", "/tmp/cafe\u{301}");
+            let _dir = EnvVarGuard::set("NYAN_CONFIG_DIR", "/tmp/cafe\u{301}");
             assert_eq!(
-                super::get_claude_config_home_dir(),
+                super::get_config_home_dir(),
                 PathBuf::from("/tmp/caf\u{e9}")
             );
         }
-        let _dir = EnvVarGuard::unset("CLAUDE_CONFIG_DIR");
+        let _dir = EnvVarGuard::unset("NYAN_CONFIG_DIR");
         let first = PathBuf::from("/home/first").join(".nyan");
-        assert_eq!(super::get_claude_config_home_dir(), first);
+        assert_eq!(super::get_config_home_dir(), first);
         let _later = EnvVarGuard::set(HOME_VAR, "/home/later");
-        assert_eq!(super::get_claude_config_home_dir(), first);
+        assert_eq!(super::get_config_home_dir(), first);
     }
 
     #[test]

@@ -1250,7 +1250,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let config_dir = root.join("config");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("existing.txt");
         std::fs::write(&path, "old\n").unwrap();
@@ -1309,7 +1309,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let config_dir = root.join("config");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("existing.txt");
         std::fs::write(&path, "old history\n").unwrap();

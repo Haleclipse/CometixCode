@@ -41,11 +41,8 @@ pub fn generate_keybindings_template() -> String {
             Value::Object(object)
         })
         .collect::<Vec<_>>();
+    // @nyan: no `$schema` (CC: the SchemaStore Claude Code keybindings schema).
     let mut config = Map::new();
-    config.insert(
-        "$schema".to_string(),
-        Value::String("https://www.schemastore.org/claude-code-keybindings.json".to_string()),
-    );
     config.insert(
         "$docs".to_string(),
         Value::String("https://code.claude.com/docs/en/keybindings".to_string()),
@@ -67,10 +64,7 @@ mod tests {
         let template = generate_keybindings_template();
         let parsed: Value = serde_json::from_str(&template).unwrap();
         assert!(template.ends_with('\n'));
-        assert_eq!(
-            parsed["$schema"],
-            "https://www.schemastore.org/claude-code-keybindings.json"
-        );
+        assert!(parsed.get("$schema").is_none());
         assert_eq!(
             parsed["$docs"],
             "https://code.claude.com/docs/en/keybindings"

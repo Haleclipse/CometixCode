@@ -26,7 +26,7 @@ pub struct PastedImageContent {
 
 /// Maps to: CC `utils/imageStore.ts:15-20`.
 pub fn get_image_store_dir() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir()
+    crate::utils::env_utils::get_config_home_dir()
         .join(IMAGE_STORE_DIR)
         .join(crate::bootstrap::state::get_session_id())
 }
@@ -179,7 +179,7 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         clear_stored_image_paths();
         let tmp = std::env::temp_dir().join(format!("nyan-image-store-{}", uuid::Uuid::new_v4()));
-        let _config_restore = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &tmp);
+        let _config_restore = EnvVarGuard::set("NYAN_CONFIG_DIR", &tmp);
         let _session_restore = SessionRestore::set("session-1");
 
         let path = cache_image_path(&PastedImageContent {
@@ -242,7 +242,7 @@ mod tests {
         clear_stored_image_paths();
         let tmp =
             std::env::temp_dir().join(format!("nyan-image-store-write-{}", uuid::Uuid::new_v4()));
-        let _config_restore = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &tmp);
+        let _config_restore = EnvVarGuard::set("NYAN_CONFIG_DIR", &tmp);
         let _write_restore = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _session_restore = SessionRestore::set("session-write");
         let image = PastedImageContent {
@@ -273,7 +273,7 @@ mod tests {
         clear_stored_image_paths();
         let tmp =
             std::env::temp_dir().join(format!("nyan-image-store-nowrite-{}", uuid::Uuid::new_v4()));
-        let _config_restore = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &tmp);
+        let _config_restore = EnvVarGuard::set("NYAN_CONFIG_DIR", &tmp);
         let _write_restore = EnvVarGuard::set("NYAN_WRITE_ENABLED", "0");
         let _session_restore = SessionRestore::set("session-nowrite");
         let image = PastedImageContent {

@@ -41,7 +41,7 @@ pub fn get_dump_prompts_path(agent_id_or_session_id: Option<&str>) -> PathBuf {
     let session = agent_id_or_session_id
         .map(|s| s.to_string())
         .unwrap_or_else(crate::bootstrap::state::get_session_id);
-    crate::utils::env_utils::get_claude_config_home_dir()
+    crate::utils::env_utils::get_config_home_dir()
         .join("dump-prompts")
         .join(format!("{session}.jsonl"))
 }

@@ -5,7 +5,7 @@
 //! local background-session backlog; rename only needs this best-effort patch.
 
 fn current_pid_file() -> std::path::PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir()
+    crate::utils::env_utils::get_config_home_dir()
         .join("sessions")
         .join(format!("{}.json", std::process::id()))
 }
@@ -66,7 +66,7 @@ mod tests {
         )
         .unwrap();
         let _restore = RestoreConfigDir {
-            previous: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            previous: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             root: root.clone(),
         };
 

@@ -3186,7 +3186,7 @@ mod tests {
             r#"{"nyan": {"toolIo": {"maxLineChars": {"read": 100}}}}"#,
         )
         .unwrap();
-        let _home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+        let _home = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
         let path = root.join("min.js");
         std::fs::write(&path, format!("{}\nnext\n", "x".repeat(5_000))).unwrap();
         let context = crate::tool::ToolUseContext::default();
@@ -3347,7 +3347,7 @@ mod tests {
             r#"{"nyan": {"toolIo": {"readBatchMax": 0}}}"#,
         )
         .unwrap();
-        let _home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+        let _home = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
         let file = root.join("a.txt");
         std::fs::write(&file, "alpha\n").unwrap();
         let context = crate::tool::ToolUseContext::default();
@@ -3391,7 +3391,7 @@ mod tests {
             r#"{"nyan": {"toolIo": {"completionNotes": false}}}"#,
         )
         .unwrap();
-        let _home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+        let _home = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
         let file = root.join("a.txt");
         std::fs::write(&file, "alpha\n").unwrap();
         let context = crate::tool::ToolUseContext::default();
@@ -3743,7 +3743,7 @@ mod tests {
             r#"{"nyan": {"toolIo": {"readPartialOnOverflow": false}}}"#,
         )
         .unwrap();
-        let _home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+        let _home = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
         let dir = root.join("work");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("large.txt");

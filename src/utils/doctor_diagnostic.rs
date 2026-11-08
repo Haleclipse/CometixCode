@@ -13,7 +13,6 @@ use std::path::Path;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InstallationType {
     NpmGlobal,
-    NpmLocal,
     Native,
     PackageManager,
     Development,
@@ -24,7 +23,6 @@ impl InstallationType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::NpmGlobal => "npm-global",
-            Self::NpmLocal => "npm-local",
             Self::Native => "native",
             Self::PackageManager => "package-manager",
             Self::Development => "development",
@@ -118,9 +116,6 @@ pub fn get_current_installation_type() -> InstallationType {
     if combined.contains("/target/debug/") || combined.contains("/target/release/") {
         return InstallationType::Development;
     }
-    if combined.contains("/.claude/local/") {
-        return InstallationType::NpmLocal;
-    }
     if combined.contains("/node_modules/")
         || combined.contains("/.nvm/versions/node/")
         || combined.contains("/npm/")
@@ -163,49 +158,26 @@ pub fn get_invoked_binary() -> String {
 }
 
 /// Maps to CC local `detectMultipleInstallations()` safe filesystem subset.
+///
+/// @nyan: probes nyan's own install location (`install.sh` /
+/// `install.ps1` put the binary in `~/.local/bin`), not Claude Code's
+/// `~/.claude/local` npm prefix or its `~/.local/{bin,share}/claude`.
 pub fn detect_multiple_installations() -> Vec<InstallationRecord> {
-    let mut installations = Vec::new();
-    let home = crate::utils::node_os::homedir();
-
-    let local_path = home.join(".claude").join("local");
-    if local_path.exists() {
-        installations.push(InstallationRecord {
-            install_type: "npm-local".to_string(),
-            path: local_path.display().to_string(),
-        });
-    }
-
-    let native_bin = home
+    let native_bin = crate::utils::node_os::homedir()
         .join(".local")
         .join("bin")
         .join(if cfg!(target_os = "windows") {
-            "claude.exe"
+            "nyan.exe"
         } else {
-            "claude"
+            "nyan"
         });
-    if native_bin.exists() {
-        installations.push(InstallationRecord {
-            install_type: "native".to_string(),
-            path: native_bin.display().to_string(),
-        });
+    if !native_bin.exists() {
+        return Vec::new();
     }
-
-    let config = crate::utils::config::load_global_config();
-    if config.install_method.as_deref() == Some("native") {
-        let native_data = home.join(".local").join("share").join("claude");
-        if native_data.exists()
-            && !installations
-                .iter()
-                .any(|installation| installation.install_type == "native")
-        {
-            installations.push(InstallationRecord {
-                install_type: "native".to_string(),
-                path: native_data.display().to_string(),
-            });
-        }
-    }
-
-    installations
+    vec![InstallationRecord {
+        install_type: "native".to_string(),
+        path: native_bin.display().to_string(),
+    }]
 }
 
 /// Maps to CC local `detectConfigurationIssues(type)` managed-settings and
@@ -230,15 +202,6 @@ pub fn detect_configuration_issues(installation_type: &InstallationType) -> Vec<
         crate::utils::process_env::var("DISABLE_INSTALLATION_CHECKS").as_deref(),
     );
     if !installation_checks_disabled {
-        if *installation_type == InstallationType::NpmLocal && install_method != "local" {
-            warnings.push(DiagnosticWarning {
-                issue: format!(
-                    "Running from local installation but config install method is '{install_method}'"
-                ),
-                fix: "Consider using native installation: claude install".to_string(),
-            });
-        }
-
         if *installation_type == InstallationType::Native && install_method != "native" {
             warnings.push(DiagnosticWarning {
                 issue: format!(
@@ -247,13 +210,6 @@ pub fn detect_configuration_issues(installation_type: &InstallationType) -> Vec<
                 fix: "Run claude install to update configuration".to_string(),
             });
         }
-    }
-
-    if *installation_type == InstallationType::NpmGlobal && local_installation_exists() {
-        warnings.push(DiagnosticWarning {
-            issue: "Local installation exists but not being used".to_string(),
-            fix: "Consider using native installation: claude install".to_string(),
-        });
     }
 
     warnings
@@ -280,35 +236,6 @@ pub fn get_doctor_diagnostic() -> DiagnosticInfo {
     let multiple_installations = detect_multiple_installations();
     let mut warnings = detect_configuration_issues(&installation_type);
     warnings.extend(detect_linux_glob_pattern_warnings());
-
-    if installation_type == InstallationType::Native {
-        let is_windows = cfg!(target_os = "windows");
-        for install in multiple_installations.iter().filter(|install| {
-            matches!(
-                install.install_type.as_str(),
-                "npm-global" | "npm-global-orphan" | "npm-local"
-            )
-        }) {
-            match install.install_type.as_str() {
-                "npm-global" => warnings.push(DiagnosticWarning {
-                    issue: format!("Leftover npm global installation at {}", install.path),
-                    fix: "Run: npm -g uninstall @anthropic-ai/claude-code".to_string(),
-                }),
-                "npm-global-orphan" | "npm-local" => warnings.push(DiagnosticWarning {
-                    issue: format!(
-                        "Leftover {} installation at {}",
-                        install.install_type, install.path
-                    ),
-                    fix: if is_windows {
-                        format!("Run: rmdir /s /q \"{}\"", install.path)
-                    } else {
-                        format!("Run: rm -rf {}", install.path)
-                    },
-                }),
-                _ => {}
-            }
-        }
-    }
 
     let config = crate::utils::config::load_global_config();
     let config_install_method = config
@@ -465,13 +392,6 @@ fn json_type_name(value: &serde_json::Value) -> &'static str {
     }
 }
 
-fn local_installation_exists() -> bool {
-    crate::utils::node_os::homedir()
-        .join(".claude")
-        .join("local")
-        .exists()
-}
-
 fn path_contains_local_bin() -> bool {
     let local_bin = crate::utils::node_os::homedir().join(".local").join("bin");
     let Some(path) = crate::utils::process_env::var_os("PATH") else {
@@ -570,7 +490,7 @@ mod tests {
         let root = temp_dir("managed");
         let config_home = temp_dir("config");
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &root);
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         crate::utils::config::clear_global_config_cache_for_testing();
         fs::write(
             root.join("managed-settings.json"),

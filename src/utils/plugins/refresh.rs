@@ -255,7 +255,7 @@ mod tests {
             TestDir(std::env::temp_dir().join(format!("nyan-refresh-{}", uuid::Uuid::new_v4())));
         let config = root.path().join("config");
         std::fs::create_dir_all(&config).unwrap();
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "0");
         let previous_inline = crate::bootstrap::state::get_inline_plugins();
         let previous_cwd = crate::bootstrap::state::get_original_cwd();

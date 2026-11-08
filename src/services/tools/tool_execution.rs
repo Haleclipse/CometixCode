@@ -4171,7 +4171,7 @@ mod tests {
     /// whole path (five-source settings merge, session-hook merge, the
     /// managed-only gate, HookContext/env construction) ran in no test build.
     /// This is its first direct execution: the pinned harness environment
-    /// (CLAUDE_CONFIG_DIR + NYAN_TEST_PROJECT_DIR) has no hooks, so the
+    /// (NYAN_CONFIG_DIR + NYAN_TEST_PROJECT_DIR) has no hooks, so the
     /// loader returns None; registering a session hook makes the merge leg
     /// produce a config, exactly as CC merges `getSessionHooks` into the
     /// loaded settings (hooks.ts session merge the doc comment cites).
@@ -4689,7 +4689,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&config).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", config.to_string_lossy().as_ref());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", config.to_string_lossy().as_ref());
         let _overrides = EnvVarGuard::unset("CLAUDE_INTERNAL_FC_OVERRIDES");
         let content = "p".repeat(60_000);
         // The raw `toolUseResult` rides the row (trait projection), and
@@ -4734,7 +4734,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&config).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", config.to_string_lossy().as_ref());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", config.to_string_lossy().as_ref());
         let _overrides = EnvVarGuard::unset("CLAUDE_INTERNAL_FC_OVERRIDES");
         let content = "g".repeat(25_000);
         // The raw `toolUseResult` rides the row (trait projection), and
@@ -11925,7 +11925,7 @@ rl.on('line', line => {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let config_home =
             std::env::temp_dir().join(format!("nyan-exit-plan-tool-{}", uuid::Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let expected_plan_path = crate::utils::plans::get_plan_file_path(None);
 
         let enter_request = mock_permission_request_with_input(
@@ -12390,7 +12390,7 @@ rl.on('line', line => {
             "nyan-executor-team-tools-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_root);
         let _team_io_guard = EnvVarGuard::unset("NYAN_TEST_TEAM_FILE_IO");
         *TEAM_TOOL_STATE.lock().unwrap() = None;
         crate::utils::tasks::clear_leader_team_name();

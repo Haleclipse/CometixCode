@@ -305,7 +305,7 @@ mod tests {
             "nyan-team-delete-disk-auth-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
 
         let mut record = crate::utils::swarm::team_helpers::create_team_record(

@@ -48,7 +48,7 @@ pub fn get_session_env_dir_path() -> std::io::Result<PathBuf> {
             "session environment persistence is disabled by NYAN_WRITE_ENABLED=0",
         ));
     }
-    let path = crate::utils::env_utils::get_claude_config_home_dir()
+    let path = crate::utils::env_utils::get_config_home_dir()
         .join("session-env")
         .join(crate::bootstrap::state::get_session_id());
     std::fs::create_dir_all(&path)?;
@@ -163,7 +163,7 @@ mod tests {
             "nyan-session-env-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         invalidate_session_env_cache();
         let dir = get_session_env_dir_path().unwrap();

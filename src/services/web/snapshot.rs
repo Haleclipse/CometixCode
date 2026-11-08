@@ -1,7 +1,7 @@
 //! Content-addressed WebFetch snapshots and local range reads.
 //!
 //! @nyan: the old in-process body LRU is replaced by a URL → latest hash index;
-//! the body is durable, globally scoped under `$CLAUDE_CONFIG_DIR`, and never
+//! the body is durable, globally scoped under `$NYAN_CONFIG_DIR`, and never
 //! overwritten when a page changes.
 
 use std::collections::HashMap;
@@ -107,7 +107,7 @@ fn index() -> &'static Mutex<HashMap<String, UrlIndexEntry>> {
 }
 
 pub fn snapshots_root() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir().join("web-snapshots")
+    crate::utils::env_utils::get_config_home_dir().join("web-snapshots")
 }
 
 pub fn save_nyan(page: &FetchedPage) -> Result<Snapshot, std::io::Error> {
@@ -582,7 +582,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let guard = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let guard = crate::utils::test_env::EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         clear_index();
         let result = run(&dir);
         drop(guard);

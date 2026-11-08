@@ -267,7 +267,7 @@ mod tests {
             "---\nname: custom\ndescription: Custom style\nkeep-coding-instructions: false\n---\nPrompt body",
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&cwd).unwrap();
         let settings = SettingsJson {

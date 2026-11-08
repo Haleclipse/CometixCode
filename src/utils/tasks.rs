@@ -70,7 +70,7 @@ pub fn get_task_list_id() -> String {
 
 /// Maps to: CC `utils/tasks.ts#getTasksDir`.
 pub fn get_tasks_dir(task_list_id: &str) -> std::path::PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir()
+    crate::utils::env_utils::get_config_home_dir()
         .join("tasks")
         .join(sanitize_path_component(task_list_id))
 }
@@ -460,13 +460,13 @@ pub(crate) fn clear_task_tool_store_for_test() {
     let _ = reset_task_list(&get_task_list_id());
 }
 
-/// Isolates TodoV2 disk IO under a temp `CLAUDE_CONFIG_DIR` for tests.
+/// Isolates TodoV2 disk IO under a temp `NYAN_CONFIG_DIR` for tests.
 #[cfg(test)]
 pub(crate) struct TempTaskConfig {
     pub root: std::path::PathBuf,
     _guards: Vec<EnvVarGuard>,
-    /// Redirecting `CLAUDE_CONFIG_DIR` also redirects `~/.claude.json`
-    /// (`utils/config.rs:119-120`), so the temp root below carries no
+    /// Redirecting `NYAN_CONFIG_DIR` also redirects the state file
+    /// (`utils/env.rs` `get_global_state_file`), so the temp root below carries no
     /// `hasTrustDialogAccepted` for any path and the workspace reads as
     /// UNTRUSTED. CC skips every hook in an untrusted interactive session
     /// (`utils/hooks.ts:1994-1999` over `computeTrustDialogAccepted`'s `false`
@@ -486,7 +486,7 @@ impl TempTaskConfig {
         let root =
             std::env::temp_dir().join(format!("nyan-tasks-{}", uuid::Uuid::new_v4().simple()));
         let guards = vec![
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
             EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", list_id),
         ];
         let _ = reset_task_list(list_id);
@@ -571,7 +571,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("nyan-task-claim-{}", uuid::Uuid::new_v4().simple()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _list_guard = EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", "session");
         let _ = reset_task_list("session");
         create_task(
@@ -669,7 +669,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let root =
             std::env::temp_dir().join(format!("nyan-task-reset-{}", uuid::Uuid::new_v4().simple()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let task_list_id = "alpha";
         let dir = get_tasks_dir(task_list_id);
         ensure_tasks_dir(task_list_id).unwrap();

@@ -197,7 +197,7 @@ pub fn discover_claude_md_files_with_external_policy(
     let mut files = Vec::new();
     let mut processed = HashSet::new();
     let cwd = std::env::current_dir().unwrap_or_default();
-    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
+    let config_home = crate::utils::env_utils::get_config_home_dir();
     let global_config = config::load_global_config();
     let project_key = config::normalize_project_path(&cwd.to_string_lossy());
     let include_project_external = force_include_external
@@ -1247,7 +1247,7 @@ mod tests {
             let _current_dir = CurrentDirGuard::set(&cwd);
             let _original_cwd = OriginalCwdGuard::set(&cwd);
             let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-            let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _global_config =
                 GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
             crate::bootstrap::state::set_allowed_setting_sources(Vec::new());
@@ -1321,7 +1321,7 @@ mod tests {
             let _current_dir = CurrentDirGuard::set(&nested);
             let _original_cwd = OriginalCwdGuard::set(&nested);
             let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-            let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _global_config =
                 GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
             crate::bootstrap::state::set_allowed_setting_sources(vec![
@@ -1418,7 +1418,7 @@ mod tests {
             let _current_dir = CurrentDirGuard::set(&cwd);
             let _original_cwd = OriginalCwdGuard::set(&cwd);
             let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-            let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _global_config =
                 GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
             crate::bootstrap::state::set_allowed_setting_sources(vec![
@@ -1651,7 +1651,7 @@ mod tests {
             let _current_dir = CurrentDirGuard::set(&cwd);
             let _original_cwd = OriginalCwdGuard::set(&cwd);
             let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-            let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _global_config =
                 GlobalConfigGuard::set(crate::utils::config::GlobalConfig::default());
             crate::bootstrap::state::set_allowed_setting_sources(vec![

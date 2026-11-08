@@ -2,7 +2,7 @@
 //!
 //! Nyan does not initialize or refresh GrowthBook here. `get_channel_allowlist`
 //! resolves the `tengu_harbor_ledger` payload from the source-controlled switch
-//! table, so a ledger written to `~/.claude.json` by anything else on the
+//! table, so a ledger written to the state file by anything else on the
 //! machine cannot allowlist a channel.
 
 use serde_json::Value;

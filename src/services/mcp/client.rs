@@ -1798,7 +1798,7 @@ mod runtime {
 
     fn mcp_auth_cache_path() -> PathBuf {
         // Maps to: CC `getMcpAuthCachePath()`.
-        crate::utils::env_utils::get_claude_config_home_dir().join("mcp-needs-auth-cache.json")
+        crate::utils::env_utils::get_config_home_dir().join("mcp-needs-auth-cache.json")
     }
 
     fn remote_transport_uses_auth_cache(transport: Transport) -> bool {
@@ -5019,7 +5019,7 @@ rl.on('line', line => {
         crate::bootstrap::state::set_original_cwd("/tmp/nyan-project");
         crate::bootstrap::state::set_session_id("session-mcp-large-output-test");
         let (endpoint, server) = spawn_count_tokens_server(r#"{"inputTokens":999}"#);
-        let _config_home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_home = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _max_tokens = EnvVarGuard::set("MAX_MCP_OUTPUT_TOKENS", "5");
         let _large_output = EnvVarGuard::set("ENABLE_MCP_LARGE_OUTPUT_FILES", "1");
         let _bedrock = EnvVarGuard::set("CLAUDE_CODE_USE_BEDROCK", "1");
@@ -8784,7 +8784,7 @@ rl.on('line', line => {
         let config_home =
             std::env::temp_dir().join(format!("nyan-mcp-http-401-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).expect("create config home");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
 
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -9110,7 +9110,7 @@ rl.on('line', line => {
         let temp_dir =
             std::env::temp_dir().join(format!("nyan-mcp-auth-cache-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &temp_dir);
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

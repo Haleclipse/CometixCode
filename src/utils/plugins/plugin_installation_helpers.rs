@@ -593,10 +593,10 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    /// Points `CLAUDE_CONFIG_DIR` at an isolated root and drops the caches
+    /// Points `NYAN_CONFIG_DIR` at an isolated root and drops the caches
     /// derived from the previous one.
     fn set_config_dir(value: impl AsRef<std::ffi::OsStr>) -> EnvVarGuard {
-        let env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", value);
+        let env = EnvVarGuard::set("NYAN_CONFIG_DIR", value);
         // Every isolated fixture starts a new process-scope registry;
         // do not reset it inside install_fixture, after the session
         // snapshot assertion has deliberately captured the old memo.

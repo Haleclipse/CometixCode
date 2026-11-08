@@ -898,7 +898,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _config_home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config_home = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         test(&dir);
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -1871,7 +1871,7 @@ mod tests {
             r#"{"sandbox":{"enabled":true}}"#,
         )
         .unwrap();
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         // The sandbox gate reads merged settings, which are cached
         // process-wide (`settings_cache.rs:10-12`); without the reset an
         // earlier test's snapshot hides the `sandbox.enabled` written above.

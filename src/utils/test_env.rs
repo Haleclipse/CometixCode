@@ -36,7 +36,7 @@ impl TestEnvLock {
 /// from settings are cleared on both edges of the critical section.
 ///
 /// Neither cache is keyed — the merged-settings caches and the hooks-config
-/// snapshot memoise a read of `CLAUDE_CONFIG_DIR` plus `get_original_cwd()`,
+/// snapshot memoise a read of `NYAN_CONFIG_DIR` plus `get_original_cwd()`,
 /// the exact state this lock exists to let a test move, and both populate
 /// lazily on first read. A test that moved either and restored it left the
 /// snapshot taken from its scratch directory behind for everyone after it, and
@@ -176,8 +176,8 @@ impl TestStateLock {
 
 /// Pins `projectSettings` to the isolated test workdir for the duration of a test.
 ///
-/// `just test` pins `CLAUDE_CONFIG_DIR`, which covers `userSettings` and
-/// `~/.claude.json`. But settings merge from five sources and `projectSettings`
+/// `just test` pins `NYAN_CONFIG_DIR`, which covers `userSettings` and
+/// the state file. But settings merge from five sources and `projectSettings`
 /// is `${cwd}/.claude/settings.json` (`utils/settings/mod.rs:1-8`), rooted at
 /// `bootstrap::state::get_original_cwd()` — process state, not an env var, so no
 /// recipe can pin it. Without this, a test that reads settings reads THIS

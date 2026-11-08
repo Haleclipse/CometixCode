@@ -763,7 +763,7 @@ pub(crate) mod test_support {
 
     /// Installs a managed (policy) settings file for the lifetime of the guard.
     ///
-    /// `CLAUDE_CONFIG_DIR` (pinned by `just test`) does NOT cover the managed
+    /// `NYAN_CONFIG_DIR` (pinned by `just test`) does NOT cover the managed
     /// settings root, so a hook test that means to assert on policy behaviour —
     /// or to assert that policy is ABSENT — has to redirect
     /// `CLAUDE_CODE_MANAGED_SETTINGS_PATH` itself. Requires `TEST_ENV_LOCK`.
@@ -814,7 +814,7 @@ pub(crate) mod test_support {
     /// as a product bug instead of a missing fixture.
     ///
     /// Under `just test` the answer today is TRUSTED, not untrusted: `just
-    /// _prep` rebuilds mutable `target/test-home`, serializes `.claude.json`
+    /// _prep` rebuilds mutable `target/test-home`, serializes `state.json`
     /// with exactly the canonical tracked `tests/fixtures/isolated-project`
     /// trust key, and pins that project as the original cwd. So this guard is
     /// belt-and-braces against a test that relocates the config home — it is
@@ -853,7 +853,7 @@ pub(crate) mod test_support {
     /// - the latched `TRUST_DIALOG_ACCEPTED_CACHE` reset;
     /// - `set_original_cwd(<scratch>)`, because the tracked
     ///   `tests/fixtures/isolated-project` IS trusted by the canonical JSON in
-    ///   `target/test-home/.claude.json` — an untrusted test that skipped this
+    ///   `target/test-home/state.json` — an untrusted test that skipped this
     ///   step would silently assert nothing.
     ///
     /// Requires `TEST_ENV_LOCK`.
@@ -1355,7 +1355,7 @@ mod tests {
     /// `should_skip_hook_execution`'s trust arm makes "is this workspace
     /// trusted?" an input to every hook test. Under `just test` the answer is
     /// yes because `just _prep` rebuilds mutable `target/test-home` from tracked
-    /// fixtures and serializes `.claude.json` with exactly the canonical
+    /// fixtures and serializes `state.json` with exactly the canonical
     /// `tests/fixtures/isolated-project` trust key that
     /// `NYAN_TEST_PROJECT_DIR` pins as the original cwd.
     ///
@@ -1535,7 +1535,7 @@ mod tests {
         // the developer's real managed root must not decide this test.
         let _managed = test_support::ManagedSettingsGuard::install(None);
         // …and every executor now consults the trust gate too, so the fixture
-        // states trust rather than inheriting it from the scratch `.claude.json`
+        // states trust rather than inheriting it from the scratch `state.json`
         // (which is gitignored, i.e. not a contract).
         let _trust = test_support::SessionTrustGuard::accepted();
 

@@ -417,7 +417,7 @@ mod tests {
             r#"{"nyan":{"toolIo":{"bashHeadTail":false}}}"#,
         )
         .unwrap();
-        let _home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+        let _home = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
         let _env = EnvVarGuard::set("BASH_MAX_OUTPUT_LENGTH", "5");
         let formatted = format_output("12345\n678\n9");
         assert_eq!(

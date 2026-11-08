@@ -464,7 +464,7 @@ mod tests {
             serde_json::to_vec(&settings).unwrap(),
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_root);
 
         let plugin_root = std::env::temp_dir().display().to_string();
         let result = exec_command_hook(

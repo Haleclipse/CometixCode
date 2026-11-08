@@ -128,7 +128,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-keybindings-command-{}", uuid::Uuid::new_v4()));
         let _restore = RestoreEnv {
-            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            config_dir: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             write_enabled: Some(EnvVarGuard::set("NYAN_WRITE_ENABLED", "1")),
             root: root.clone(),
         };
@@ -140,7 +140,7 @@ mod tests {
         };
         assert!(!file_exists);
         let template = std::fs::read_to_string(&path).unwrap();
-        assert!(template.contains("claude-code-keybindings.json"));
+        assert!(template.contains("\"bindings\""));
         std::fs::write(&path, "custom-content").unwrap();
 
         assert_eq!(
@@ -175,7 +175,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreEnv {
-            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            config_dir: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             write_enabled: Some(EnvVarGuard::set("NYAN_WRITE_ENABLED", "0")),
             root: root.clone(),
         };
@@ -280,7 +280,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreEnv {
-            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            config_dir: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             write_enabled: Some(EnvVarGuard::set("NYAN_WRITE_ENABLED", "1")),
             root: root.clone(),
         };

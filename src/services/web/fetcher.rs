@@ -416,7 +416,7 @@ fn html_to_markdown(html: &str) -> String {
 }
 
 async fn convert_pdf(body: &[u8]) -> Result<String, FetchError> {
-    let snapshots = crate::utils::env_utils::get_claude_config_home_dir().join("web-snapshots");
+    let snapshots = crate::utils::env_utils::get_config_home_dir().join("web-snapshots");
     let directory = snapshots.join("tmp");
     std::fs::create_dir_all(&directory).map_err(|_| FetchError::PdfConversionFailed)?;
     set_private_directory(&snapshots);
@@ -733,7 +733,7 @@ mod network_tests {
         let home = std::env::temp_dir().join(format!("nyan-pdf-{}", uuid::Uuid::new_v4().simple()));
         std::fs::create_dir_all(&home).unwrap();
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &home);
+        let _home = EnvVarGuard::set("NYAN_CONFIG_DIR", &home);
         let server = serve(vec![(
             "/doc.pdf",
             Route::new(200, "application/pdf", pdf.clone()),

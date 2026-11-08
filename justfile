@@ -15,9 +15,9 @@
 # clock, which is worth it for a result you can act on.
 #
 # The env pinning below is worth the remaining handful, in both directions:
-#   CLAUDE_CONFIG_DIR  redirects the settings root AND ~/.claude.json
-#                      (utils/config.rs:119-120), so tests stop asserting
-#                      against the developer's own config.
+#   NYAN_CONFIG_DIR    redirects the settings root and the state.json inside
+#                      it (utils/env.rs `get_global_state_file`), so tests stop
+#                      asserting against the developer's own config.
 #   privacy vars       gate analytics, which decides whether growthbook
 #                      features are read at all (services/analytics/config.rs:6).
 #                      A dev shell exporting CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
@@ -34,7 +34,7 @@
 # It is recipe-scoped, so `cargo run` still uses the real config.
 #
 # What the pinning does NOT cover: `projectSettings`. Settings merge from five
-# sources (utils/settings/mod.rs:1-8) and CLAUDE_CONFIG_DIR only moves the USER
+# sources (utils/settings/mod.rs:1-8) and NYAN_CONFIG_DIR only moves the USER
 # one. `projectSettings` is `${cwd}/.claude/settings.json`, rooted at
 # `get_original_cwd()` — process state, not an env var, so no recipe can pin it.
 # A test that reads settings therefore reads THIS repository's
@@ -47,12 +47,9 @@
 # reference guard.
 #
 # Mutable harness state lives under `target/test-home`, so a clean checkout has
-# every immutable input and `cargo clean` reliably resets generated state. CC
-# puts BOTH the settings root and the global config file under CLAUDE_CONFIG_DIR when it is set
-# (utils/env.ts:25
-# `join(process.env.CLAUDE_CONFIG_DIR || homedir(), '.claude.json')`), even
-# though ~/.claude.json is a sibling of ~/.claude/ by default — so one variable
-# really does cover both.
+# every immutable input and `cargo clean` reliably resets generated state. The
+# settings root and the global state file both live in the config home, so one
+# variable covers both.
 
 home    := justfile_directory() / "target/test-home"
 project := justfile_directory() / "tests/fixtures/isolated-project"

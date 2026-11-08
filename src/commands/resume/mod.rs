@@ -1196,7 +1196,7 @@ mod tests {
         let active = root.join("active-session-dir");
         std::fs::create_dir_all(&original).unwrap();
         std::fs::create_dir_all(&active).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config"));
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("config"));
         let _project = PinnedProjectDir::at(&original);
         struct Restore(String, Option<PathBuf>, PathBuf);
         impl Drop for Restore {
@@ -1267,7 +1267,7 @@ mod tests {
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("resume-plan-{}", Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _project = PinnedProjectDir::at(&root);
         let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "byoc");
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");

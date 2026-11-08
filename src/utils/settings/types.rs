@@ -59,9 +59,6 @@ pub const DEFAULT_VIEWS: &[&str] = &["chat", "transcript"];
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 pub struct SettingsJson {
-    #[serde(rename = "$schema")]
-    pub schema: Option<String>,
-
     pub api_key_helper: Option<String>,
     pub aws_credential_export: Option<String>,
     pub aws_auth_refresh: Option<String>,
@@ -645,13 +642,9 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
         let is_ant = crate::utils::build_profile::build_audience().is_internal();
         let xaa = is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_ENABLE_XAA").as_deref());
 
+        // @nyan: no `$schema` key. CC's points at the SchemaStore schema for
+        // Claude Code settings, which rejects nyan's own keys.
         let mut shape = vec![
-            (
-                "$schema",
-                zod::literal(json!(super::constants::CLAUDE_CODE_SETTINGS_SCHEMA_URL))
-                    .optional()
-                    .describe("JSON Schema reference for nyan settings"),
-            ),
             (
                 "apiKeyHelper",
                 zod::string()
@@ -1538,7 +1531,6 @@ mod zod_schema_tests {
     #[test]
     fn settings_schema_parses_a_realistic_file_end_to_end() {
         let ok = serde_json::json!({
-            "$schema": "https://json.schemastore.org/claude-code-settings.json",
             "language": "zh",
             "env": {"PORT": 8080},
             "permissions": {"allow": ["Bash(npm run:*)"], "defaultMode": "plan"},
@@ -1554,11 +1546,12 @@ mod zod_schema_tests {
         // The env family coerced through the carrier.
         assert_eq!(parsed["env"]["PORT"], "8080");
 
-        // A wrong $schema literal fails.
+        // `$schema` is not a nyan settings key: the edit-time strict schema
+        // rejects it like any other unknown top-level key.
         assert!(
             crate::utils::zod::safe_parse(
-                settings_schema(),
-                &serde_json::json!({"$schema": "https://example.com/other.json"}),
+                &settings_schema().clone().strict(),
+                &serde_json::json!({"$schema": "https://json.schemastore.org/claude-code-settings.json"}),
             )
             .is_err()
         );

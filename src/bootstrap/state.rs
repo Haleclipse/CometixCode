@@ -220,7 +220,7 @@ static ORIGINAL_CWD: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
     // repository the tests happen to run in. `IsolatedProjectSettings` remains
     // the per-test override. This is environment injection, not a behavior
     // fork: the value only changes where the cwd APPEARS to be, exactly like
-    // CLAUDE_CONFIG_DIR.
+    // NYAN_CONFIG_DIR.
 
     #[cfg(test)]
     if let Some(pinned) = crate::utils::process_env::var("NYAN_TEST_PROJECT_DIR")

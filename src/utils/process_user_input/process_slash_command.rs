@@ -2451,7 +2451,7 @@ mod tests {
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("rename-receipt-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _project = PinnedProjectDir::at(&root);
         struct RestoreSession(String, Option<std::path::PathBuf>, std::path::PathBuf);
         impl Drop for RestoreSession {

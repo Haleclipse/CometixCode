@@ -13,7 +13,7 @@ use crate::utils::buffered_writer::{
     BufferedWriter, BufferedWriterOptions, create_buffered_writer,
 };
 use crate::utils::debug::log_for_debugging;
-use crate::utils::env_utils::{get_claude_config_home_dir, is_env_truthy};
+use crate::utils::env_utils::{get_config_home_dir, is_env_truthy};
 use crate::utils::session_storage::sanitize_path;
 
 /// Maps to: CC `utils/asciicast.ts#recordingState:13-16`.
@@ -44,7 +44,7 @@ pub fn get_record_file_path() -> Option<PathBuf> {
         .unwrap_or_default()
         .as_millis();
     state.file_path = Some(
-        get_claude_config_home_dir()
+        get_config_home_dir()
             .join("projects")
             .join(sanitize_path(&get_original_cwd().to_string_lossy()))
             .join(format!("{}-{}.cast", get_session_id(), state.timestamp)),
@@ -60,7 +60,7 @@ pub fn _reset_recording_state_for_testing() {
 /// Maps to: CC `utils/asciicast.ts#getSessionRecordingPaths:55-74`.
 pub fn get_session_recording_paths() -> Vec<PathBuf> {
     let session_id = get_session_id();
-    let project_dir = get_claude_config_home_dir()
+    let project_dir = get_config_home_dir()
         .join("projects")
         .join(sanitize_path(&get_original_cwd().to_string_lossy()));
     let Ok(entries) = fs::read_dir(&project_dir) else {
@@ -96,7 +96,7 @@ pub fn rename_recording_for_session() {
         }
         (path, state.timestamp)
     };
-    let new_path = get_claude_config_home_dir()
+    let new_path = get_config_home_dir()
         .join("projects")
         .join(sanitize_path(&get_original_cwd().to_string_lossy()))
         .join(format!("{}-{timestamp}.cast", get_session_id()));
@@ -308,7 +308,7 @@ mod tests {
             let root =
                 std::env::temp_dir().join(format!("nyan-asciicast-{}", uuid::Uuid::new_v4()));
             fs::create_dir_all(&root).unwrap();
-            let config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+            let config = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
             let cwd = get_original_cwd();
             let session = get_session_id();
             let project = crate::bootstrap::state::get_session_project_dir();
@@ -323,7 +323,7 @@ mod tests {
             }
         }
         fn seed_path(&self) -> PathBuf {
-            let path = get_claude_config_home_dir().join("projects/-oracle/source-100000.cast");
+            let path = get_config_home_dir().join("projects/-oracle/source-100000.cast");
             *RECORDING_STATE.lock().unwrap() = RecordingState {
                 file_path: Some(path.clone()),
                 timestamp: 100000,

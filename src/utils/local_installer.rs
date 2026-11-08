@@ -15,9 +15,9 @@ use std::path::PathBuf;
 
 /// Maps to: CC `localInstaller.ts:19-21` `getLocalInstallDir` —
 /// `join(getClaudeConfigHomeDir(), 'local')`, evaluated lazily so
-/// `CLAUDE_CONFIG_DIR` set after process start is respected.
+/// `NYAN_CONFIG_DIR` set after process start is respected.
 pub fn get_local_install_dir() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir().join("local")
+    crate::utils::env_utils::get_config_home_dir().join("local")
 }
 
 /// Maps to: CC `localInstaller.ts:144-151` `localInstallationExists` —
@@ -48,7 +48,7 @@ mod tests {
             "nyan-local-installer-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
 
         assert!(
             !local_installation_exists(),

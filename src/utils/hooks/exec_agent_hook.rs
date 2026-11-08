@@ -735,7 +735,7 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let workdir = root.join(".test/kitty-workdir");
         assert_eq!(
-            crate::utils::process_env::var("CLAUDE_CONFIG_DIR").unwrap(),
+            crate::utils::process_env::var("NYAN_CONFIG_DIR").unwrap(),
             root.join(".test/kitty-config").display().to_string()
         );
         std::env::set_current_dir(&workdir).unwrap();

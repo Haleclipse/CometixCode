@@ -372,7 +372,7 @@ mod tests {
     fn it2_setup_config_flags_match_official_global_config_keys() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let dir = temp_config_dir("flags");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _session_write_guard = EnvVarGuard::set("SESSION_WRITE_ENABLED", "1");
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
 
@@ -384,7 +384,7 @@ mod tests {
         assert_eq!(config.iterm2_it2_setup_complete, Some(true));
         assert_eq!(config.prefer_tmux_over_iterm2, Some(true));
 
-        let raw = std::fs::read_to_string(crate::utils::env::get_global_claude_file()).unwrap();
+        let raw = std::fs::read_to_string(crate::utils::env::get_global_state_file()).unwrap();
         assert!(raw.contains("iterm2It2SetupComplete"));
         assert!(raw.contains("preferTmuxOverIterm2"));
     }

@@ -784,7 +784,7 @@ mod tests {
         let root = temp_dir("user-config");
         let config_home = temp_dir("user-config-settings");
         let _env = [
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home),
             EnvVarGuard::set("NYAN_LSP_TOKEN", "env-token"),
         ];
         let plugin_name = format!("toolbox-{}", uuid::Uuid::new_v4().simple());

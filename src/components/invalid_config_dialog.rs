@@ -174,7 +174,7 @@ mod tests {
         let text = element! {
             ContextProvider(value: Context::owned(*theme::current())) {
                 InvalidConfigDialog(
-                    file_path: "/tmp/claude.json".to_string(),
+                    file_path: "/tmp/state.json".to_string(),
                     error_description: "Unexpected token }".to_string(),
                 )
             }
@@ -184,7 +184,7 @@ mod tests {
 
         assert!(text.contains("Configuration Error"), "canvas=\n{text}");
         assert!(
-            text.contains("The configuration file at /tmp/claude.json contains invalid JSON."),
+            text.contains("The configuration file at /tmp/state.json contains invalid JSON."),
             "canvas=\n{text}"
         );
         assert!(text.contains("Unexpected token }"), "canvas=\n{text}");
@@ -207,7 +207,7 @@ mod tests {
             let mut app = element! {
                 ContextProvider(value: Context::owned(*theme::current())) {
                     InvalidConfigDialog(
-                        file_path: "/tmp/claude.json".to_string(),
+                        file_path: "/tmp/state.json".to_string(),
                         error_description: "Unexpected token".to_string(),
                         on_exit: move |_| {
                             *exited_for_handler.lock().expect("exited mutex") += 1;
@@ -251,7 +251,7 @@ mod tests {
             let mut app = element! {
                 ContextProvider(value: Context::owned(*theme::current())) {
                     InvalidConfigDialog(
-                        file_path: "/tmp/claude.json".to_string(),
+                        file_path: "/tmp/state.json".to_string(),
                         error_description: "Unexpected token".to_string(),
                         on_exit: move |_| {
                             *exited_for_handler.lock().expect("exited mutex") += 1;

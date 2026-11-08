@@ -7,9 +7,9 @@ must stay byte-for-byte equivalent to what the justfile used to inline:
   - `target/test-home` is removed and recreated, so no test inherits state
     another run left behind;
   - the synthetic identity fixture is copied to `.credentials.json`
-    (`get_config_home()` is `CLAUDE_CONFIG_DIR`, and tests read the file
+    (`get_config_home()` is `NYAN_CONFIG_DIR`, and tests read the file
     backend there);
-  - `.claude.json` carries a hash-independent trust entry for the tracked
+  - `state.json` carries a hash-independent trust entry for the tracked
     `tests/fixtures/isolated-project`, serialized through a JSON encoder so
     path text is never interpolated into JSON syntax.
 
@@ -32,7 +32,7 @@ def prepare(root: pathlib.Path) -> pathlib.Path:
     shutil.copyfile(root / "tests" / "fixtures" / "credentials.mock.json", home / ".credentials.json")
 
     payload = {"projects": {str(project): {"hasTrustDialogAccepted": True}}}
-    (home / ".claude.json").write_text(
+    (home / "state.json").write_text(
         json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n"
     )
     return home

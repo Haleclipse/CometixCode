@@ -46,7 +46,10 @@ fn get_project_dir(cwd: &str) -> String {
 /// Native dependency adapter for `envPaths('claude-cli').cache` at CC
 /// `utils/cachePaths.ts:6`. The env-paths implementation is outside the allowed
 /// source tree; this conventional platform layout is not a claim of full
-/// dependency equivalence. macOS layout is also observed in the original cache.
+/// dependency equivalence.
+///
+/// @nyan: the directory is named `nyan` (CC: `claude-cli-nodejs`), so nyan
+/// never shares a log cache with Claude Code.
 ///
 /// `const paths = envPaths('claude-cli')` runs at import, before settings env
 /// applies, so `entrypoints/cli.rs` forces this in the startup window.
@@ -54,23 +57,20 @@ fn get_project_dir(cwd: &str) -> String {
 pub(crate) static CACHE_ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
     let home = crate::utils::node_os::homedir();
     #[cfg(target_os = "macos")]
-    let root = home
-        .join("Library")
-        .join("Caches")
-        .join("claude-cli-nodejs");
+    let root = home.join("Library").join("Caches").join("nyan");
     #[cfg(target_os = "windows")]
     let root = crate::utils::process_env::var_os("LOCALAPPDATA")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join("AppData").join("Local"))
-        .join("claude-cli-nodejs")
+        .join("nyan")
         .join("Cache");
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     let root = crate::utils::process_env::var_os("XDG_CACHE_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .unwrap_or_else(|| home.join(".cache"))
-        .join("claude-cli-nodejs");
+        .join("nyan");
     root
 });
 
@@ -129,10 +129,15 @@ mod tests {
             CACHE_PATHS.mcp_logs("stdio: server/😀").unwrap(),
             base.join("mcp-logs-stdio--server---")
         );
+        assert_eq!(base.parent().unwrap(), CACHE_ROOT.as_path());
         #[cfg(target_os = "macos")]
         assert_eq!(
-            base.parent().unwrap(),
-            crate::utils::node_os::homedir().join("Library/Caches/claude-cli-nodejs")
+            *CACHE_ROOT,
+            crate::utils::node_os::homedir().join("Library/Caches/nyan")
         );
+        #[cfg(target_os = "windows")]
+        assert!(CACHE_ROOT.ends_with("nyan/Cache"));
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        assert_eq!(CACHE_ROOT.file_name().unwrap(), "nyan");
     }
 }

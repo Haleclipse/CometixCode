@@ -2205,7 +2205,7 @@ mod sdk_mapper_tests {
         if let Some(root) = crate::utils::process_env::var_os(CHILD) {
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
-            crate::utils::process_env::set("CLAUDE_CONFIG_DIR", root.join("config"));
+            crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
             // Exercise the full tool registry, including Agent's eager schema.
             crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "0");
             crate::bootstrap::state::set_original_cwd(&root);

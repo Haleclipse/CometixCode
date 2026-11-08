@@ -43,7 +43,7 @@ pub fn get_memory_base_dir() -> PathBuf {
     crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
         .truthy()
         .map(PathBuf::from)
-        .unwrap_or_else(crate::utils::env_utils::get_claude_config_home_dir)
+        .unwrap_or_else(crate::utils::env_utils::get_config_home_dir)
 }
 
 /// Maps to CC `memdir/paths.ts:161-166` `getAutoMemPathOverride()`.
@@ -250,7 +250,7 @@ mod tests {
         let env = AUTO_MEMORY_ENV_KEYS
             .into_iter()
             .map(|key| match key {
-                "CLAUDE_CONFIG_DIR" => EnvVarGuard::set(key, CONFIG_HOME),
+                "NYAN_CONFIG_DIR" => EnvVarGuard::set(key, CONFIG_HOME),
                 _ => EnvVarGuard::unset(key),
             })
             .chain([EnvVarGuard::set(HOME_VAR, HOME)])
@@ -277,7 +277,7 @@ mod tests {
         "CLAUDE_CODE_SIMPLE",
         "CLAUDE_CODE_REMOTE",
         "CLAUDE_CODE_REMOTE_MEMORY_DIR",
-        "CLAUDE_CONFIG_DIR",
+        "NYAN_CONFIG_DIR",
         "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
     ];
 
@@ -382,7 +382,7 @@ mod tests {
         .unwrap();
         // `projectSettings` is rooted at the original cwd, not the process cwd.
         let _project = PinnedProjectDir::at(&project);
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _managed = EnvVarGuard::set(
             "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
             root.join("missing-managed-root"),

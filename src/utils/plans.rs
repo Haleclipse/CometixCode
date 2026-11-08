@@ -131,7 +131,7 @@ pub fn get_plans_directory_with_settings(settings: &SettingsJson) -> PathBuf {
         )));
     }
 
-    ensure_plans_directory(crate::utils::env_utils::get_claude_config_home_dir().join("plans"))
+    ensure_plans_directory(crate::utils::env_utils::get_config_home_dir().join("plans"))
 }
 
 /// Maps to: CC `plans.ts:103-108` — `getPlansDirectory` itself owns the
@@ -446,7 +446,7 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -494,7 +494,7 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -571,7 +571,7 @@ mod tests {
         settings.plans_directory = Some("../outside".to_string());
         assert_eq!(
             get_plans_directory_with_settings(&settings),
-            crate::utils::env_utils::get_claude_config_home_dir().join("plans")
+            crate::utils::env_utils::get_config_home_dir().join("plans")
         );
     }
     #[test]
@@ -579,7 +579,7 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let _local = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -635,7 +635,7 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let path = get_plans_directory();
         std::fs::remove_dir(&path).unwrap();
@@ -848,7 +848,7 @@ mod tests {
         // actual writer so this exercises CC plans.ts:392-393 recordTranscript.
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let temp = PlanFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "anthropic_cloud");
         let old_id = crate::bootstrap::state::get_session_id();

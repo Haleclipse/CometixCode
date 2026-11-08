@@ -10128,7 +10128,7 @@ mod tests {
         let managed = directory.path().join("managed");
         std::fs::create_dir_all(&config).unwrap();
         std::fs::create_dir_all(&managed).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _simple = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let _remote = EnvVarGuard::set("ENABLE_CLAUDEAI_MCP_SERVERS", "0");
@@ -10366,7 +10366,7 @@ mod tests {
         // macOS exposes the temp root through `/var` -> `/private/var`.
         let root = std::fs::canonicalize(&root).unwrap();
         let _cwd = OriginalCwdGuard::set(&root);
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root.join("config"));
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root.join("config"));
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", &PathBuf::from("1"));
 
         let store = crate::state::store::AppStore::new(
@@ -11423,7 +11423,7 @@ mod tests {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let temp = BranchFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let _projects = crate::utils::session_storage::set_test_projects_dir_override(
             temp.path().join("projects"),
@@ -11732,7 +11732,7 @@ mod tests {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let temp = BranchFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let _no_hooks = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         struct RestoreSession {
@@ -11829,7 +11829,7 @@ mod tests {
     fn fork_resume_matches_official_session_end_then_explicit_target_start_identity() {
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let temp = BranchFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");
         // Moving config/cwd away from just's trusted fixture removes its
@@ -15096,7 +15096,7 @@ mod tests {
 
     fn install_keybindings_test_env(root: std::path::PathBuf) -> KeybindingsTestEnv {
         let restore = KeybindingsTestEnv {
-            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            config_dir: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             write_enabled: Some(EnvVarGuard::set("NYAN_WRITE_ENABLED", "1")),
             root: root.clone(),
         };
@@ -16025,7 +16025,7 @@ mod tests {
         let config_home = root.join("config");
         std::fs::create_dir_all(&config_home).unwrap();
         let _cwd_guard = OriginalCwdGuard::set(&root);
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", &PathBuf::from("0"));
 
         let empty_text = last_repl_text(stream::empty::<TerminalEvent>(), 100, 3);
@@ -16556,7 +16556,7 @@ mod tests {
         let config_home = root.join("config");
         std::fs::create_dir_all(&config_home).unwrap();
         let _cwd_guard = OriginalCwdGuard::set(&root);
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", &PathBuf::from("0"));
 
         // Esc goes out only once the Settings tab header is on screen: an Esc
@@ -17361,7 +17361,7 @@ mod tests {
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-empty-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17417,7 +17417,7 @@ mod tests {
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-select-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17495,7 +17495,7 @@ mod tests {
         let _single_worktree = EnvVarGuard::set("NYAN_TEST_SINGLE_WORKTREE", "1");
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-select-error-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17574,7 +17574,7 @@ mod tests {
         let _project_dir = PinnedProjectDir::at_manifest_root();
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-id-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17629,7 +17629,7 @@ mod tests {
         let _project_dir = PinnedProjectDir::at_manifest_root();
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-title-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17693,7 +17693,7 @@ mod tests {
             "nyan-repl-resume-title-ambiguous-{}",
             Uuid::new_v4()
         ));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17781,7 +17781,7 @@ mod tests {
         let _project_dir = PinnedProjectDir::at_manifest_root();
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-missing-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17843,7 +17843,7 @@ mod tests {
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-filter-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -17955,7 +17955,7 @@ mod tests {
         let _single_worktree = EnvVarGuard::set("NYAN_TEST_SINGLE_WORKTREE", "1");
         let config_home =
             std::env::temp_dir().join(format!("nyan-repl-resume-cross-{}", Uuid::new_v4()));
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             config_home.join("projects"),
         );
@@ -18189,7 +18189,7 @@ mod tests {
             let directory =
                 std::env::temp_dir().join(format!("nyan-resume-copy-race-{}", Uuid::new_v4()));
             std::fs::create_dir_all(&directory).unwrap();
-            let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", directory.join("config"));
+            let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", directory.join("config"));
             let _projects = crate::utils::session_storage::set_test_projects_dir_override(
                 directory.join("projects"),
             );
@@ -18923,7 +18923,7 @@ mod tests {
         // consumes messages+hooks with log.projectPath, and no separate hook write.
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let temp = BranchFixtureDirectory::new();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp.path().join("config"));
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path().join("config"));
         let _project = PinnedProjectDir::at(temp.path());
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _simple = EnvVarGuard::unset("CLAUDE_CODE_SIMPLE");

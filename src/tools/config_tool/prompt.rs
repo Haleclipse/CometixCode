@@ -49,7 +49,7 @@ pub fn generate_prompt() -> String {
     }
 
     format!(
-        "Get or set nyan configuration settings.\n\n  View or change nyan settings. Use when the user requests configuration changes, asks about current settings, or when adjusting a setting would benefit them.\n\n\n## Usage\n- **Get current value:** Omit the \"value\" parameter\n- **Set new value:** Include the \"value\" parameter\n\n## Configurable settings list\nThe following settings are available for you to change:\n\n### Global Settings (stored in ~/.claude.json)\n{}\n\n### Project Settings (stored in settings.json)\n{}\n\n## Examples\n- Get theme: {{ \"setting\": \"theme\" }}\n- Set dark theme: {{ \"setting\": \"theme\", \"value\": \"dark\" }}\n- Enable vim mode: {{ \"setting\": \"editorMode\", \"value\": \"vim\" }}\n- Enable verbose: {{ \"setting\": \"verbose\", \"value\": true }}\n- Enable plan mode permissions: {{ \"setting\": \"permissions.defaultMode\", \"value\": \"plan\" }}\n",
+        "Get or set nyan configuration settings.\n\n  View or change nyan settings. Use when the user requests configuration changes, asks about current settings, or when adjusting a setting would benefit them.\n\n\n## Usage\n- **Get current value:** Omit the \"value\" parameter\n- **Set new value:** Include the \"value\" parameter\n\n## Configurable settings list\nThe following settings are available for you to change:\n\n### Global Settings (stored in ~/.nyan/state.json)\n{}\n\n### Project Settings (stored in settings.json)\n{}\n\n## Examples\n- Get theme: {{ \"setting\": \"theme\" }}\n- Set dark theme: {{ \"setting\": \"theme\", \"value\": \"dark\" }}\n- Enable vim mode: {{ \"setting\": \"editorMode\", \"value\": \"vim\" }}\n- Enable verbose: {{ \"setting\": \"verbose\", \"value\": true }}\n- Enable plan mode permissions: {{ \"setting\": \"permissions.defaultMode\", \"value\": \"plan\" }}\n",
         global_settings.join("\n"),
         project_settings.join("\n"),
     )
@@ -73,7 +73,7 @@ pub(super) mod tests {
             ));
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(root.join("settings.json"), "{}").unwrap();
-            let config_dir = Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root));
+            let config_dir = Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root));
             let cleared_env = [
                 "CLAUDE_CODE_USE_BEDROCK",
                 "CLAUDE_CODE_USE_VERTEX",

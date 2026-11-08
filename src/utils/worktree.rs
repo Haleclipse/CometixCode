@@ -863,7 +863,7 @@ mod tests {
         let config_dir = temp_root("worktree-session-slot-config");
         std::fs::create_dir_all(&config_dir).unwrap();
         let _config_dir =
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
+            EnvVarGuard::set("NYAN_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
 
         // keep/cleanup now mirror CC's try/catch: a failing chdir aborts the
         // teardown, so the session must point at a real directory.
@@ -947,9 +947,9 @@ mod tests {
         let config_dir = temp_root("worktree-create-slot-config");
         std::fs::create_dir_all(&config_dir).unwrap();
         let _config_dir =
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
-        // The scratch root above also relocates `~/.claude.json`
-        // (`utils/config.rs:119-120`), leaving the workspace UNTRUSTED — and CC
+            EnvVarGuard::set("NYAN_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
+        // The scratch root above also relocates the state file
+        // (`utils/env.rs` `get_global_state_file`), leaving the workspace UNTRUSTED — and CC
         // runs no hooks at all in that state (`utils/hooks.ts:1994-1999`,
         // `utils/config.ts:705-743`), which `should_skip_hook_execution` now
         // honours. This test is about the WorktreeCreate hook supplying the

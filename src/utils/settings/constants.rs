@@ -2,11 +2,6 @@
 //!
 //! Maps to CC `utils/settings/constants.ts`.
 
-/// Maps to: CC `utils/settings/constants.ts:201-203` — the `$schema` value
-/// settings.json files may carry (editable at SchemaStore).
-pub const CLAUDE_CODE_SETTINGS_SCHEMA_URL: &str =
-    "https://json.schemastore.org/claude-code-settings.json";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SettingSource {
     User,

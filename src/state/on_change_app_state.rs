@@ -296,7 +296,7 @@ mod tests {
             r#"{"env":{"NYAN_ENV_REFERENCE_PROBE":"applied"}}"#,
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _probe = EnvVarGuard::unset("NYAN_ENV_REFERENCE_PROBE");
         crate::utils::settings::settings_cache::reset_settings_cache();
 

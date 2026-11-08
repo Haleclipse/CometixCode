@@ -286,8 +286,8 @@ jobs:
           $releaseVendor = Join-Path $env:GITHUB_WORKSPACE 'target/release/vendor/ripgrep/x64-win32'
           New-Item -ItemType Directory -Force $releaseVendor | Out-Null
           Copy-Item (Join-Path $env:GITHUB_WORKSPACE 'vendor/ripgrep/x64-win32/rg.exe') (Join-Path $releaseVendor 'rg.exe')
-          $env:CLAUDE_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'nyan-config'
-          New-Item -ItemType Directory -Force $env:CLAUDE_CONFIG_DIR | Out-Null
+          $env:NYAN_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'nyan-config'
+          New-Item -ItemType Directory -Force $env:NYAN_CONFIG_DIR | Out-Null
 
           $version = & $exe --version
           if ($LASTEXITCODE -ne 0 -or "$version" -notmatch '^nyan ') { throw "nyan.exe --version failed: $version" }

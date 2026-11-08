@@ -8,7 +8,7 @@
 //! consolidation flows only ever apply deterministic rules. This module asks
 //! the decision model for those five points in **shadow** mode: the model's
 //! answer and the deterministic answer are compared and appended to
-//! `$CLAUDE_CONFIG_DIR/decision/memory.<point>.jsonl`, while the memory
+//! `$NYAN_CONFIG_DIR/decision/memory.<point>.jsonl`, while the memory
 //! pipeline keeps using the deterministic rule byte for byte.
 //!
 //! # Contract
@@ -46,7 +46,7 @@ pub const MEMORY_POINTS: &[DecisionPoint] = &[
     DecisionPoint::MemoryConsolidate,
 ];
 
-/// File-stem suffix for `$CLAUDE_CONFIG_DIR/decision/memory.<suffix>.jsonl`.
+/// File-stem suffix for `$NYAN_CONFIG_DIR/decision/memory.<suffix>.jsonl`.
 pub fn log_suffix(point: DecisionPoint) -> Option<&'static str> {
     match point {
         DecisionPoint::MemoryExtractNow => Some("extract_now"),
@@ -146,7 +146,7 @@ fn cached_provider(
 /// Log path for one memory point.
 pub fn log_path(point: DecisionPoint) -> Option<PathBuf> {
     log_suffix(point).map(|suffix| {
-        crate::utils::env_utils::get_claude_config_home_dir()
+        crate::utils::env_utils::get_config_home_dir()
             .join("decision")
             .join(format!("memory.{suffix}.jsonl"))
     })
@@ -961,7 +961,7 @@ mod tests {
         let config_dir = root.join("config");
         std::fs::create_dir_all(&config_dir).unwrap();
         let env = vec![
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir),
             EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &memory_dir),
         ];
         let memory = MemorySettings {

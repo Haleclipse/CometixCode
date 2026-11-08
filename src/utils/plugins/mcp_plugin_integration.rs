@@ -654,14 +654,14 @@ mod tests {
     ///
     /// `load_plugin_options` reads `pluginConfigs` through
     /// `get_initial_settings`, which is cached process-wide
-    /// (`settings_cache.rs:10-12`). Moving `CLAUDE_CONFIG_DIR` alone leaves the
+    /// (`settings_cache.rs:10-12`). Moving `NYAN_CONFIG_DIR` alone leaves the
     /// previous test's snapshot in place, so each of these tests reads a
     /// sibling's `pluginConfigs` and reports its own options as missing.
     struct ConfigHomeGuard(Option<EnvVarGuard>);
 
     impl ConfigHomeGuard {
         fn pin(config_home: &Path) -> Self {
-            let guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_home);
+            let guard = EnvVarGuard::set("NYAN_CONFIG_DIR", config_home);
             crate::utils::settings::settings_cache::reset_settings_cache();
             Self(Some(guard))
         }

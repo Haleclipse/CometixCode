@@ -4417,7 +4417,7 @@ mod tests {
         let config_home =
             std::env::temp_dir().join(format!("nyan-agent-terminal-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_home.to_string_lossy().as_ref());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", config_home.to_string_lossy().as_ref());
         let _dump_on = EnvVarGuard::set("NYAN_DUMP_PROMPTS", "1");
         crate::bootstrap::state::clear_invoked_skills(None);
         crate::services::api::dump_prompts::clear_all_dump_state();

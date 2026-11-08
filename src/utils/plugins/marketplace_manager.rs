@@ -2049,7 +2049,7 @@ mod tests {
             "nyan-hint-marketplace-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let marketplace = root.join("market");
         std::fs::create_dir_all(marketplace.join(".claude-plugin")).unwrap();
         std::fs::create_dir_all(root.join("plugins")).unwrap();
@@ -2085,7 +2085,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("marketplace-reader-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _cache = EnvVarGuard::set("CLAUDE_CODE_PLUGIN_CACHE_DIR", "");
         let _cowork = EnvVarGuard::set("CLAUDE_CODE_USE_COWORK_PLUGINS", "0");
         // Verbatim Bun oracle outputs for marketplaceManager.ts:264-299 and
@@ -2772,7 +2772,7 @@ mod tests {
     async fn marketplace_service_local_settings_memo_and_mutations_match_original() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("market-service-{}", uuid::Uuid::new_v4()));
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let name = format!("fixture-{}", uuid::Uuid::new_v4().simple());
         let source = serde_json::json!({"source":"settings","name":name,"plugins":[]});
         let added = add_marketplace_source(&source, None).await.unwrap();

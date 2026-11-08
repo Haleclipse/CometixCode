@@ -868,7 +868,7 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         clear_mailboxes_for_test();
         let root = unique_config_dir("mailbox");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
 
@@ -1008,7 +1008,7 @@ mod tests {
         clear_mailboxes_for_test();
         let root = unique_config_dir("mailbox-invalid-root");
         std::fs::write(&root, "not a directory").unwrap();
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
 

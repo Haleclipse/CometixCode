@@ -62,7 +62,7 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-lsp-config-home-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join(".claude-plugin")).expect("plugin dir");
         std::fs::create_dir_all(&config_home).expect("config home");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let previous_inline = crate::bootstrap::state::get_inline_plugins();
         crate::bootstrap::state::set_inline_plugins(vec![root.clone()]);
         std::fs::write(

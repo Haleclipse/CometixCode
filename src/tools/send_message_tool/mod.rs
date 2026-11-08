@@ -1348,14 +1348,14 @@ mod tests {
 
     /// Seeds the team both in memory AND on disk: broadcast and
     /// shutdown-approval read the team file like CC `readTeamFileAsync`, so
-    /// the returned guards (CLAUDE_CONFIG_DIR + NYAN_TEST_TEAM_FILE_IO)
+    /// the returned guards (NYAN_CONFIG_DIR + NYAN_TEST_TEAM_FILE_IO)
     /// must stay alive for the test body.
     fn seed_team_for_send_message(team_name: &str) -> (EnvVarGuard, EnvVarGuard, EnvVarGuard) {
         let root = std::env::temp_dir().join(format!(
             "nyan-send-message-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         // The mailbox write path also checks the session write gate.
         let write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");

@@ -652,7 +652,7 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(root.join("input.txt"), "provided").unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _prefix = EnvVarGuard::unset("CLAUDE_CODE_SHELL_PREFIX");
         let _restore = Restore(root.clone());
         reset_shell_config_for_test();

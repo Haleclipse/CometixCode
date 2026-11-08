@@ -722,7 +722,7 @@ mod tests {
     async fn local_search_returns_verified_current_source_without_semantic_configuration() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, root) = isolated_project("retrieval");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(
             root.join("src/lib.rs"),
             "fn needle() {\n  let needle = 1;\n}\n",
@@ -755,7 +755,7 @@ mod tests {
     async fn branch_status_renders_building_instead_of_zero_matches() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, root) = isolated_project("building");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(root.join("src/lib.rs"), "fn needle() {}\n").unwrap();
         // First open takes the writer lock; a second live opener is read-only
         // and Ready, so force a new generation to get a Rebuilding view.

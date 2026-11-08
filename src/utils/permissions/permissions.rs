@@ -4522,7 +4522,7 @@ mod tests {
     /// Installs a managed policy file for the lifetime of the returned guards
     /// and pins the settings cache to it.
     ///
-    /// `CLAUDE_CONFIG_DIR` (pinned by `just test`) does NOT cover the managed
+    /// `NYAN_CONFIG_DIR` (pinned by `just test`) does NOT cover the managed
     /// settings root, so a test that means to assert on policy behaviour has to
     /// redirect `CLAUDE_CODE_MANAGED_SETTINGS_PATH` itself. Requires
     /// `TEST_ENV_LOCK`. Trust is untouched: this relocates the POLICY root, not

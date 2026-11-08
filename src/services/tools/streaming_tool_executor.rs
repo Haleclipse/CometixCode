@@ -1928,7 +1928,7 @@ pub(crate) mod streaming_hook_decision_tests {
             )
             .unwrap();
             Self {
-                _config: EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config")),
+                _config: EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("config")),
                 _writes: EnvVarGuard::set("NYAN_WRITE_ENABLED", writes),
                 _simple: EnvVarGuard::unset("CLAUDE_CODE_SIMPLE"),
                 _managed: crate::services::hooks::test_support::ManagedSettingsGuard::install(

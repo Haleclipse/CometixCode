@@ -2761,7 +2761,7 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-settings-readonly-{}", uuid::Uuid::new_v4()));
         let config_home = temp_root.join("config-home");
         fs::create_dir_all(&config_home).expect("temp config home should be created");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _projects_guard = crate::utils::session_storage::set_test_projects_dir_override(
             temp_root.join("session-projects"),
         );
@@ -2769,8 +2769,7 @@ mod tests {
 
         let cwd = std::env::current_dir().expect("test should know current directory");
         let snapshots = vec![
-            PathSnapshot::capture(config_home.join(".claude.json")),
-            PathSnapshot::capture(config_home.join(".config.json")),
+            PathSnapshot::capture(config_home.join("state.json")),
             PathSnapshot::capture(config_home.join("settings.json")),
             PathSnapshot::capture(config_home.join("projects")),
             PathSnapshot::capture(cwd.join(".claude/settings.json")),
@@ -3231,7 +3230,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         fs::create_dir_all(&dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _syntax = EnvVarGuard::unset("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
         // Frame-driven: ctrl+t goes out once the picker registered its context.
         let canvases = drive_config_with_provider(vec![open_theme_submenu(), vec![ctrl_char('t')]]);
@@ -3337,7 +3336,7 @@ mod tests {
         let config_home = temp_root.join("config");
         fs::create_dir_all(&cwd).unwrap();
         fs::create_dir_all(&config_home).unwrap();
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _cwd_guard = CurrentDirGuard::set(&cwd);
         let text = drive_output_style_submenu_text(Vec::new());
         let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");

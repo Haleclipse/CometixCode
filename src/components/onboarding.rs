@@ -1040,7 +1040,7 @@ mod tests {
             // A host IDE's bundle ID would be detected before TERM_PROGRAM.
             EnvVarGuard::unset("__CFBundleIdentifier"),
             EnvVarGuard::set("XDG_CONFIG_HOME", root.join("xdg")),
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("config")),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("config")),
             EnvVarGuard::set("NYAN_WRITE_ENABLED", "1"),
         ];
         if fail_write {

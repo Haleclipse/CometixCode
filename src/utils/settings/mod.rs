@@ -58,7 +58,7 @@ pub struct ManagedFileSettingsPresence {
 /// Maps to: CC `utils/settings/settings.ts#getSettingsRootPathForSource`.
 pub(crate) fn get_settings_root_path_for_source(source: SettingSource) -> PathBuf {
     match source {
-        SettingSource::User => crate::utils::env_utils::get_claude_config_home_dir(),
+        SettingSource::User => crate::utils::env_utils::get_config_home_dir(),
         SettingSource::Project | SettingSource::Local | SettingSource::Policy => {
             crate::bootstrap::state::get_original_cwd()
         }
@@ -1196,7 +1196,7 @@ mod tests {
         let drop_ins = managed.join("managed-settings.d");
         fs::create_dir_all(config_home.as_path()).expect("create config home");
         fs::create_dir_all(drop_ins.as_path()).expect("create drop-ins");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         settings_cache::reset_settings_cache();
 
@@ -1308,7 +1308,7 @@ mod tests {
         let _lock = env_lock().lock().expect("env lock");
         let root = unique_temp_dir("settings-patch");
         fs::create_dir_all(&root).expect("create config home");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         settings_cache::reset_settings_cache();
         fs::write(
             root.join("settings.json"),
@@ -1365,7 +1365,7 @@ mod tests {
         let _lock = env_lock().lock().expect("env lock");
         let root = unique_temp_dir("settings-deep-merge");
         fs::create_dir_all(&root).expect("create config home");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         settings_cache::reset_settings_cache();
         fs::write(
             root.join("settings.json"),
@@ -1427,7 +1427,7 @@ mod tests {
         let _lock = env_lock().lock().expect("env lock");
         let root = unique_temp_dir("settings-array-replace");
         fs::create_dir_all(&root).expect("create config home");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         settings_cache::reset_settings_cache();
         fs::write(
             root.join("settings.json"),
@@ -1486,7 +1486,7 @@ mod tests {
         let _lock = env_lock().lock().expect("env lock");
         let root = unique_temp_dir("settings-nested-delete");
         fs::create_dir_all(&root).expect("create config home");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         settings_cache::reset_settings_cache();
         fs::write(
             root.join("settings.json"),

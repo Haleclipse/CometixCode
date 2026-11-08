@@ -44,7 +44,7 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
 
 ### M1 存储：沿用 CC 的 memdir（Persistent Memory）
 
-- 不新建存储层。CC 的 memdir 已满足 legacy 的全部存储要求：按项目 scope、类型固定、位于 `$CLAUDE_CONFIG_DIR/projects/`
+- 不新建存储层。CC 的 memdir 已满足 legacy 的全部存储要求：按项目 scope、类型固定、位于 `$NYAN_CONFIG_DIR/projects/`
   之下（与会话 transcript 同根，符合 Decision #1）。
 - **scope = canonical git root**：`get_auto_mem_base` 先 `find_canonical_git_root(original_cwd)`，worktree 会解析到主仓库
   根，非 git 目录才退回原始 cwd（`memdir/paths.rs:89-92`）。所以**同一仓库的所有 worktree 共用一份记忆**——接受：
@@ -105,7 +105,7 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
 #### M2.2 提取游标（"上次提取到哪里"）
 
 - **存储**：主 transcript 里的一个元数据条目 `{"type":"memory-extract-cursor","uuid":<最后一条已提取消息的 uuid>,
-  "at":<时间>}`（`@nyan`），由主线程在提取成功后追加（提取分叉本身 `skip_transcript`）。位于 `$CLAUDE_CONFIG_DIR`
+  "at":<时间>}`（`@nyan`），由主线程在提取成功后追加（提取分叉本身 `skip_transcript`）。位于 `$NYAN_CONFIG_DIR`
   下的 transcript 中，不写工作树（README 第一节第 6 条）。
 - 加进 `METADATA_MARKERS`（`utils/session_storage.rs` 中该常量，压缩切片 A 已在同一处加 `content-replacement`），
   大 transcript resume 时 boundary 之前的游标条目不丢。

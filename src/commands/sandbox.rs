@@ -205,7 +205,7 @@ mod tests {
 
         {
             let _cwd_guard = CwdGuard::set(&workspace);
-            let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+            let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
             let _managed_guard = EnvVarGuard::set(
                 "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
                 root.join("missing-managed-settings.json"),
@@ -261,7 +261,7 @@ mod tests {
         std::fs::create_dir_all(&config_home).unwrap();
         let _cwd_guard = CwdGuard::set(&root);
         let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
 
         let output = local_output_for_args("exclude \"npm run test:*\"");

@@ -170,7 +170,7 @@ jobs:
           set -euo pipefail
           mkdir smoke
           tar -xzf "$ARCHIVE" -C smoke
-          CLAUDE_CONFIG_DIR="$RUNNER_TEMP/nyan-config" smoke/nyan --version
+          NYAN_CONFIG_DIR="$RUNNER_TEMP/nyan-config" smoke/nyan --version
       - name: Smoke test Windows archive
         if: matrix.platform == 'windows'
         shell: pwsh
@@ -180,7 +180,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           Expand-Archive -Path $env:ARCHIVE -DestinationPath smoke
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/nyan-config" | Out-Null
-          $env:CLAUDE_CONFIG_DIR = "$env:RUNNER_TEMP/nyan-config"
+          $env:NYAN_CONFIG_DIR = "$env:RUNNER_TEMP/nyan-config"
           & .\smoke\nyan.exe --version
           if ($LASTEXITCODE -ne 0) { throw "nyan.exe --version failed: $LASTEXITCODE" }
           & .\smoke\vendor\ripgrep\x64-win32\rg.exe --version

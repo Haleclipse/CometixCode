@@ -207,7 +207,7 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("nyan-plan-command-{}", uuid::Uuid::new_v4()));
         let restore = PlanEnvRestore {
-            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &temp_dir)),
+            config_dir: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &temp_dir)),
             session_id: crate::bootstrap::state::get_session_id(),
             temp_dir: temp_dir.clone(),
         };

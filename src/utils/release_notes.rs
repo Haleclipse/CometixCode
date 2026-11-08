@@ -26,7 +26,7 @@ pub fn changelog_cache_path_from_config_home(config_home: &Path) -> PathBuf {
 
 /// Maps to: CC `utils/releaseNotes.ts` `getChangelogCachePath`.
 pub fn changelog_cache_path() -> PathBuf {
-    changelog_cache_path_from_config_home(&crate::utils::env_utils::get_claude_config_home_dir())
+    changelog_cache_path_from_config_home(&crate::utils::env_utils::get_config_home_dir())
 }
 
 /// Maps to: CC `utils/releaseNotes.ts` `getStoredChangelogFromMemory` render seam.

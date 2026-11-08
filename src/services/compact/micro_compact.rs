@@ -334,7 +334,7 @@ pub fn mask_tool_results_if_needed(
 
     // @nyan: compaction.keep shadow mode (C14, decision-provider 4.4).
     // Evaluate keep-ordering vs actual-ordering and append comparison to
-    // $CLAUDE_CONFIG_DIR/decision/compaction.keep.jsonl. The actual compression
+    // $NYAN_CONFIG_DIR/decision/compaction.keep.jsonl. The actual compression
     // outcome below remains 100% unchanged.
     if crate::services::compact::decision::is_keep_shadow_enabled() {
         let candidate_infos: Vec<_> = candidates
@@ -968,7 +968,7 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("nyan-keep-shadow-test-{}", uuid::Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&temp_dir);
-        crate::utils::process_env::set("CLAUDE_CONFIG_DIR", temp_dir.to_str().unwrap());
+        crate::utils::process_env::set("NYAN_CONFIG_DIR", temp_dir.to_str().unwrap());
 
         // Install mock decision provider
         let mut decision_settings = crate::utils::settings::nyan::DecisionSettings::default();
@@ -1034,6 +1034,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_dir);
         crate::services::compact::decision::test_override::clear();
         crate::utils::process_env::remove("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
-        crate::utils::process_env::remove("CLAUDE_CONFIG_DIR");
+        crate::utils::process_env::remove("NYAN_CONFIG_DIR");
     }
 }

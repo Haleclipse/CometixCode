@@ -14,7 +14,7 @@
 use crate::bootstrap::state::{get_is_non_interactive_session, get_original_cwd, get_session_id};
 use crate::state::store::AppStore;
 use crate::utils::config::load_global_config;
-use crate::utils::env_utils::get_claude_config_home_dir;
+use crate::utils::env_utils::get_config_home_dir;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -607,7 +607,7 @@ pub fn resolve_backup_path(backup_file_name: &str, session_id: Option<&str>) -> 
     let session = session_id
         .map(str::to_string)
         .unwrap_or_else(get_session_id);
-    get_claude_config_home_dir()
+    get_config_home_dir()
         .join("file-history")
         .join(session)
         .join(backup_file_name)
@@ -791,9 +791,7 @@ pub async fn copy_file_history_for_resume(
     }
 
     // All backups share {configDir}/file-history/{sessionId}/ — create once.
-    let new_backup_dir = get_claude_config_home_dir()
-        .join("file-history")
-        .join(&session_id);
+    let new_backup_dir = get_config_home_dir().join("file-history").join(&session_id);
     if tokio::fs::create_dir_all(&new_backup_dir).await.is_err() {
         // CC: logError.
         return;
@@ -885,7 +883,7 @@ mod tests {
         let path = resolve_backup_path("abcd@v1", Some("session-x"));
         assert_eq!(
             path,
-            get_claude_config_home_dir()
+            get_config_home_dir()
                 .join("file-history")
                 .join("session-x")
                 .join("abcd@v1")

@@ -38,7 +38,7 @@ impl Env {
             std::env::temp_dir().join(format!("nyan-anthropic-fixture-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
         let mut guards = vec![
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
             EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
             EnvVarGuard::set(KEY_VAR, KEY),
             EnvVarGuard::set("CLAUDE_CODE_MAX_RETRIES", "0"),

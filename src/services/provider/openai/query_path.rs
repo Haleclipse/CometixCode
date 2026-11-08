@@ -66,7 +66,7 @@ impl Env {
         std::fs::create_dir_all(&root).unwrap();
         let mut guards = extra();
         guards.extend([
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+            EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
             EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
             EnvVarGuard::set(KEY_VAR, "sk-query-path"),
             EnvVarGuard::set("API_TIMEOUT_MS", "5000"),

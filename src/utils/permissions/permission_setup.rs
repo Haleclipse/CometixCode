@@ -1468,7 +1468,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::utils::permissions::auto_mode_state::reset_for_testing();
 

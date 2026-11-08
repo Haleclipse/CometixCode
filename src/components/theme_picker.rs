@@ -703,7 +703,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         std::fs::create_dir_all(&dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _syntax = EnvVarGuard::unset("CLAUDE_CODE_SYNTAX_HIGHLIGHT");
         let mut ctrl_t = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('t'));
         ctrl_t.modifiers = KeyModifiers::CONTROL;

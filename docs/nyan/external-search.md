@@ -386,7 +386,7 @@ allow / deny / ask。权限是"用户是否同意访问这个域名"，主机判
 在权限通过之后、发请求之前执行，`allow` 规则不能放行私网地址。`allowHosts` / `denyHosts` 是配置层的硬限制，不弹窗、
 不可被权限规则覆盖。
 
-**PDF**：`application/pdf` 先写入 `$CLAUDE_CONFIG_DIR/web-snapshots/tmp/<uuid>.pdf`（0600），用 `pdftotext`（poppler，
+**PDF**：`application/pdf` 先写入 `$NYAN_CONFIG_DIR/web-snapshots/tmp/<uuid>.pdf`（0600），用 `pdftotext`（poppler，
 与 `utils/pdf.rs` 依赖的 `pdftoppm` 同包）转为文本；快照正文存文本，`sha256` 为原始 PDF 字节的 hash，头部
 `content_type: application/pdf`、`converted_by: pdftotext`；转换完删除临时文件。`pdftotext` 不可用 → `content_type_denied:
 pdf conversion unavailable`。不复用 `read_pdf`（`utils/pdf.rs:56`，返回 base64 文档块给模型，不是文本）。其他二进制一律
@@ -402,7 +402,7 @@ legacy 的 FetchRecord / EvidenceRecord 在本项目里就是一个快照文件�
     `provider_format`（markdown / text）。
 - 正文：nyan 自己抓取时 HTML → Markdown（沿用 CC 的 `supermarkdown`），去 script/style；provider 回退时存 provider
   返回的正文原样。
-- 快照存储：`$CLAUDE_CONFIG_DIR/web-snapshots/<responseHash 前 2 位>/<responseHash>.md`——**全局一份**，不按项目
+- 快照存储：`$NYAN_CONFIG_DIR/web-snapshots/<responseHash 前 2 位>/<responseHash>.md`——**全局一份**，不按项目
   （网页内容与项目无关；内容寻址天然去重）。同 URL 不同 hash 即新版本，不覆盖；Decision #7 默认保留 30 天，
   按文件 mtime 清理，启动时顺带执行。
 - **URL 索引替代 CC 的 15 分钟内容缓存**：CC 的进程内缓存（`utils.rs:27-29,152,293`，存整份 Markdown）删除；改为

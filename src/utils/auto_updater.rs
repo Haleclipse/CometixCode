@@ -331,10 +331,6 @@ pub async fn perform_js_update_install(channel: ReleaseChannel) -> Option<Instal
             log_for_debugging("AutoUpdater: Cannot auto-update development build");
             None
         }
-        InstallationType::NpmLocal => {
-            log_for_debugging("AutoUpdater: Using local update method");
-            Some(install_or_update_claude_package(channel).await)
-        }
         InstallationType::NpmGlobal => {
             log_for_debugging("AutoUpdater: Using global update method");
             Some(install_global_package(None).await)

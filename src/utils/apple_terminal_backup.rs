@@ -279,7 +279,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-terminal-backup-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         mark_terminal_setup_in_progress("/fixture/Terminal.plist.bak").unwrap();
         assert_eq!(
@@ -288,7 +288,7 @@ mod tests {
         );
         mark_terminal_setup_complete().unwrap();
         let config: Value = serde_json::from_slice(
-            &std::fs::read(crate::utils::env::get_global_claude_file()).unwrap(),
+            &std::fs::read(crate::utils::env::get_global_state_file()).unwrap(),
         )
         .unwrap();
         // CC utils/appleTerminalBackup.ts:7-20 clears only the progress flag;

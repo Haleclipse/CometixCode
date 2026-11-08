@@ -4650,7 +4650,7 @@ mod input_contract_tests {
         if let Some(root) = crate::utils::process_env::var_os(CHILD) {
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
-            crate::utils::process_env::set("CLAUDE_CONFIG_DIR", root.join("config"));
+            crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
             crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "0");
             crate::utils::process_env::set("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
             crate::bootstrap::state::set_original_cwd(&root);

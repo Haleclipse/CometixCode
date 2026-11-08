@@ -1602,7 +1602,7 @@ mod tests {
     async fn search_validates_readiness_and_decodes_base64_vectors() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_worktree("search");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(project.join("src/a.rs"), "fn needle() {}\n").unwrap();
         let index = open_index(&project);
         let file = index.file("src/a.rs").unwrap();
@@ -1664,7 +1664,7 @@ mod tests {
     async fn readiness_rejects_a_wrong_model_and_wrong_dimension() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_worktree("readiness");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(project.join("src/a.rs"), "fn needle() {}\n").unwrap();
         let index = open_index(&project);
         let budget = crate::utils::settings::nyan::RetrievalBudgetSettings::default();
@@ -1717,7 +1717,7 @@ mod tests {
     async fn sync_embeds_pending_chunks_and_never_sends_source_text_to_qdrant() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_worktree("sync");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let secret_free = "fn needle() {\n    let marker_value = 1;\n}\n";
         std::fs::write(project.join("src/a.rs"), secret_free).unwrap();
         std::fs::write(project.join("src/b.rs"), "fn second() { let other = 2; }\n").unwrap();
@@ -1788,7 +1788,7 @@ mod tests {
     async fn prune_deletes_only_this_machines_replaced_collections() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_worktree("prune");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(project.join("src/a.rs"), "fn needle() {}\n").unwrap();
         let index = open_index(&project);
         let services = MockServices::start(

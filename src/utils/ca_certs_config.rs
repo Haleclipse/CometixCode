@@ -28,7 +28,7 @@ pub fn apply_extra_ca_certs_from_config() {
 }
 
 /// Maps to: CC `utils/caCertsConfig.ts:59-88` `getExtraCertsPathFromConfig`:
-/// `~/.claude/settings.json` over `~/.claude.json`, with JS truthiness.
+/// user `settings.json` over the global state file, with JS truthiness.
 ///
 /// CC wraps this in `try`; the Rust readers return defaults instead of
 /// throwing, so there is no failure branch to log.
@@ -94,7 +94,7 @@ mod tests {
             r#"{"env":{"NODE_EXTRA_CA_CERTS":"/from/settings.pem"}}"#,
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         crate::utils::settings::settings_cache::reset_settings_cache();
 
         let _unset = EnvVarGuard::unset("NODE_EXTRA_CA_CERTS");

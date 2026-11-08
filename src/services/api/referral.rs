@@ -261,7 +261,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "ambient-oauth-token");
 
         let eligibility = check_cached_passes_eligibility(&config, 2_000);

@@ -4582,7 +4582,7 @@ mod tests {
         ));
         let config = root.join("config");
         let config_text = config.display().to_string();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_text);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_text);
         let session_file = config.join("session-memory/nested/session.md");
         let session_search_dir = config.join("session-memory/nested");
         let session_file_text = session_file.display().to_string();
@@ -4646,7 +4646,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let config_text = root.join("config").display().to_string();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_text);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_text);
         let session_file = root
             .join("config/session-memory/nested/session.md")
             .display()

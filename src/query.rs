@@ -12617,7 +12617,7 @@ mod tests {
         let config_dir = root.join("config");
         std::fs::create_dir_all(&config_dir).unwrap();
         let _config_dir =
-            EnvVarGuard::set("CLAUDE_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
+            EnvVarGuard::set("NYAN_CONFIG_DIR", config_dir.to_string_lossy().as_ref());
         let file = root.join("target.txt");
         std::fs::write(&file, "old").unwrap();
 

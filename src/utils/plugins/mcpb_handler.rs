@@ -1019,7 +1019,7 @@ mod tests {
     fn mcp_server_user_config_merges_settings_and_secure_storage() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let config_home = temp_dir("config");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         std::fs::write(
             config_home.join("settings.json"),
             serde_json::json!({
@@ -1300,7 +1300,7 @@ mod tests {
         let dir = temp_dir("schema-dialog");
         let config = dir.join("config");
         std::fs::create_dir_all(&config).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(
             dir.join("probe.mcpb"),
             include_bytes!("../../../tests/fixtures/oracles/mcpb-schema-0915/needs-config.mcpb"),

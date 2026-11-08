@@ -290,7 +290,7 @@ pub fn apply_safe_config_environment_variables() {
     // Capture CCD spawn-env keys before any settings.env is applied (:126-131).
     capture_ccd_spawn_env_keys(&update.snapshot());
 
-    // Global config (~/.claude.json) env, user-controlled (:133-136).
+    // Global config (state.json) env, user-controlled (:133-136).
     apply_filtered(&mut update, global.env.as_ref());
 
     // Trusted setting sources; policySettings is deferred below (:138-149).

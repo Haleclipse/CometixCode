@@ -731,7 +731,7 @@ mod tests {
             let original_cwd = crate::bootstrap::state::get_original_cwd();
             crate::bootstrap::state::set_original_cwd(&root);
             let mut env = vec![
-                EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root),
+                EnvVarGuard::set("NYAN_CONFIG_DIR", &root),
                 EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1"),
                 EnvVarGuard::set("NYAN_SIDE_QUERY_TEST_KEY", "sk-ant-local-side-query-test"),
                 EnvVarGuard::set("API_TIMEOUT_MS", "5000"),

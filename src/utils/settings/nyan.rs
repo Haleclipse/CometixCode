@@ -45,7 +45,7 @@ pub struct CompactionSettings {
     pub mask_headroom: Option<f64>,
     /// Shadow mode for compaction.keep (compaction C14, decision-provider 4.4).
     /// When true, records keep-ordering vs actual-ordering comparisons to
-    /// `$CLAUDE_CONFIG_DIR/decision/compaction.keep.jsonl` without altering
+    /// `$NYAN_CONFIG_DIR/decision/compaction.keep.jsonl` without altering
     /// the actual compression outcome.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keep_shadow: Option<bool>,

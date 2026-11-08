@@ -1433,7 +1433,7 @@ mod tests {
         )
         .unwrap();
         let _config = ConfigGuard {
-            config_dir: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            config_dir: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             previous_original_cwd: crate::bootstrap::state::get_original_cwd(),
             root: root.clone(),
         };

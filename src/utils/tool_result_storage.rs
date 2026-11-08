@@ -1097,12 +1097,12 @@ mod tests {
         ));
         std::fs::create_dir_all(&root).expect("create temp config dir");
         std::fs::write(
-            root.join(".claude.json"),
+            root.join("state.json"),
             r#"{"cachedGrowthBookFeatures":{"tengu_hawthorn_steeple":true},"growthBookOverrides":{"tengu_hawthorn_steeple":true}}"#,
         )
         .expect("write temp global config");
 
-        crate::utils::process_env::set("CLAUDE_CONFIG_DIR", &root);
+        crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
         crate::utils::process_env::set(
             "CLAUDE_INTERNAL_FC_OVERRIDES",
             r#"{"tengu_hawthorn_steeple":true}"#,
@@ -1115,7 +1115,7 @@ mod tests {
         );
         assert!(is_content_replacement_enabled());
 
-        crate::utils::process_env::remove("CLAUDE_CONFIG_DIR");
+        crate::utils::process_env::remove("NYAN_CONFIG_DIR");
         crate::utils::process_env::remove("CLAUDE_INTERNAL_FC_OVERRIDES");
         let _ = std::fs::remove_dir_all(root);
     }
@@ -1140,12 +1140,12 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-tool-result-window-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).expect("create temp config dir");
         std::fs::write(
-            root.join(".claude.json"),
+            root.join("state.json"),
             r#"{"cachedGrowthBookFeatures":{"tengu_hawthorn_window":12345},"growthBookOverrides":{"tengu_hawthorn_window":12345}}"#,
         )
         .expect("write temp global config");
 
-        crate::utils::process_env::set("CLAUDE_CONFIG_DIR", &root);
+        crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
         crate::utils::process_env::set(
             "CLAUDE_INTERNAL_FC_OVERRIDES",
             r#"{"tengu_hawthorn_window":12345}"#,
@@ -1155,7 +1155,7 @@ mod tests {
             MAX_TOOL_RESULTS_PER_MESSAGE_CHARS
         );
 
-        crate::utils::process_env::remove("CLAUDE_CONFIG_DIR");
+        crate::utils::process_env::remove("NYAN_CONFIG_DIR");
         crate::utils::process_env::remove("CLAUDE_INTERNAL_FC_OVERRIDES");
         let _ = std::fs::remove_dir_all(root);
     }

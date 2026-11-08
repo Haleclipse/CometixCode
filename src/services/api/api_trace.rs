@@ -130,7 +130,7 @@ pub fn get_trace_dir() -> PathBuf {
             return PathBuf::from(trimmed);
         }
     }
-    crate::utils::env_utils::get_claude_config_home_dir().join("trace")
+    crate::utils::env_utils::get_config_home_dir().join("trace")
 }
 
 /// Path for the current session's trace file.

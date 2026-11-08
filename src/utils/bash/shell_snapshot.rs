@@ -250,8 +250,7 @@ pub fn create_and_save_snapshot(bin_shell: &str) -> Option<PathBuf> {
         "sh"
     };
     let config = get_config_file(bin_shell);
-    let snapshots_dir =
-        crate::utils::env_utils::get_claude_config_home_dir().join("shell-snapshots");
+    let snapshots_dir = crate::utils::env_utils::get_config_home_dir().join("shell-snapshots");
     if std::fs::create_dir_all(&snapshots_dir).is_err() {
         return None;
     }

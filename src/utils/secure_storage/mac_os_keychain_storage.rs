@@ -29,56 +29,29 @@ impl SecureStorageBackend for MacOsKeychainStorage {
         #[cfg(all(target_os = "macos", not(test)))]
         let parsed = (|| -> Option<SecureStorageData> {
             let username = get_username();
-            let mut service_names =
-                vec![get_mac_os_keychain_storage_service_name(CREDENTIALS_SERVICE_SUFFIX).ok()?];
-            service_names.extend(
-                super::mac_os_keychain_helpers::legacy_keychain_service_names(
-                    CREDENTIALS_SERVICE_SUFFIX,
-                ),
-            );
+            let service_name =
+                get_mac_os_keychain_storage_service_name(CREDENTIALS_SERVICE_SUFFIX).ok()?;
             crate::utils::auth::record_auth_io(
                 crate::utils::auth::AuthIoOperation::KeychainSubprocess,
             );
-            let mut imported_from_legacy = false;
-            let mut parsed = None;
-            for (index, service_name) in service_names.iter().enumerate() {
-                let mut security = std::process::Command::new("security");
-                crate::utils::subprocess_env::apply_process_env_std(&mut security);
-                let Ok(output) = security
-                    .args([
-                        "find-generic-password",
-                        "-a",
-                        &username,
-                        "-w",
-                        "-s",
-                        service_name,
-                    ])
-                    .output()
-                else {
-                    continue;
-                };
-                if !output.status.success() {
-                    continue;
-                }
-                let Ok(value) = String::from_utf8(output.stdout) else {
-                    continue;
-                };
-                if let Ok(data) = serde_json::from_str(value.trim()) {
-                    imported_from_legacy = index > 0;
-                    parsed = Some(data);
-                    break;
-                }
+            let mut security = std::process::Command::new("security");
+            crate::utils::subprocess_env::apply_process_env_std(&mut security);
+            let output = security
+                .args([
+                    "find-generic-password",
+                    "-a",
+                    &username,
+                    "-w",
+                    "-s",
+                    &service_name,
+                ])
+                .output()
+                .ok()?;
+            if !output.status.success() {
+                return None;
             }
-            if imported_from_legacy {
-                if let Some(data) = parsed.as_ref() {
-                    // Copy into the new service name only. The legacy item is left
-                    // untouched. The product gate still owns whether that write runs.
-                    if crate::constants::oauth::OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED {
-                        let _ = MacOsKeychainStorage.update(data);
-                    }
-                }
-            }
-            parsed
+            let value = String::from_utf8(output.stdout).ok()?;
+            serde_json::from_str(value.trim()).ok()
         })();
         #[cfg(any(not(target_os = "macos"), test))]
         let parsed: Option<SecureStorageData> = {

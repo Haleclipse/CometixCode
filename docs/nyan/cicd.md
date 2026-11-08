@@ -456,7 +456,7 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 一份，两边必然漂移。Phase 0 把它们搬进：
 
 - `scripts/ci/prepare-test-home.py`：重建 `target/test-home`，复制 `credentials.mock.json`，写带
-  `hasTrustDialogAccepted` 的 `.claude.json`。
+  `hasTrustDialogAccepted` 的 `state.json`。
 - `scripts/ci/test.sh`：调用上面的脚本、导出钉住变量、拼 nextest 命令；`--archive`/`--partition` 可选。
 - justfile 的 `_prep`、`test`、`t`、`test-one`、`test-ant` 改成调用同一个脚本，行为不变。
 
@@ -466,7 +466,7 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 
 | 轴 | 变量 | 原因 |
 |---|---|---|
-| 设置根 | `CLAUDE_CONFIG_DIR=target/test-home` | 同时重定向 settings 与 `~/.claude.json`（justfile:17-19） |
+| 设置根 | `NYAN_CONFIG_DIR=target/test-home` | 同时重定向 settings 与其中的 `state.json` |
 | 隐私/分析 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=`、`DISABLE_TELEMETRY=`、`NODE_ENV=` | 置空，避免宿主开关改变 growthbook 读取 |
 | cwd | `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=` | 否则 `reset_cwd_if_outside_project` 永远报项目根 |
 | 项目设置 | `NYAN_TEST_PROJECT_DIR=tests/fixtures/isolated-project` | 补掉 `projectSettings` 读本仓库 `.claude/settings.json` 的洞 |
@@ -615,12 +615,12 @@ Windows 是 zip，Linux/macOS 是 tar.gz。LICENSE（AGPL-3.0）必须随包。
 冒烟命令（每个平台）：
 
 ```sh
-CLAUDE_CONFIG_DIR=$(mktemp -d) ./nyan --version    # 输出以版本号开头
-CLAUDE_CONFIG_DIR=$(mktemp -d) ./nyan --help       # 退出码 0
+NYAN_CONFIG_DIR=$(mktemp -d) ./nyan --version    # 输出以版本号开头
+NYAN_CONFIG_DIR=$(mktemp -d) ./nyan --help       # 退出码 0
 vendor/ripgrep/<dir>/rg --version                     # 结构化验证 vendor 路径存在且可执行
 ```
 
-`--version` 不需要模型；用临时 `CLAUDE_CONFIG_DIR` 避免写 runner 的 home。
+`--version` 不需要模型；用临时 `NYAN_CONFIG_DIR` 避免写 runner 的 home。
 
 - `attest` job 汇总全部产物，生成 `SHA256SUMS`，用 `actions/attest` 对归档和 checksum 签名
   （`permissions: {contents: read, id-token: write, attestations: write}`；`attest-build-provenance` 是它的包装，
@@ -745,7 +745,7 @@ sccache 实验、release-profile 测试、小范围 mutation、coverage、merge 
 
 ```sh
 just _prep
-env CLAUDE_CONFIG_DIR="$PWD/target/test-home" \
+env NYAN_CONFIG_DIR="$PWD/target/test-home" \
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC= DISABLE_TELEMETRY= NODE_ENV= \
     CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR= \
     NYAN_TEST_PROJECT_DIR="$PWD/tests/fixtures/isolated-project" \

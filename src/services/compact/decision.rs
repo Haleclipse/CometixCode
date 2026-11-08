@@ -6,7 +6,7 @@
 //! `compaction.keep` shadow mode is enabled, evaluate which candidate tool
 //! results the keep policy would preserve vs clear, compare against the actual
 //! C2 ordering (the status quo), and append a structured record to
-//! `$CLAUDE_CONFIG_DIR/decision/compaction.keep.jsonl`.
+//! `$NYAN_CONFIG_DIR/decision/compaction.keep.jsonl`.
 //!
 //! # Contract
 //! 1. In shadow mode, the actual masking result remains 100% unchanged.
@@ -85,7 +85,7 @@ pub struct CandidateComparison {
     pub action_actual: String, // "clear" or "preserve"
 }
 
-/// Structured shadow record appended to `$CLAUDE_CONFIG_DIR/decision/compaction.keep.jsonl`.
+/// Structured shadow record appended to `$NYAN_CONFIG_DIR/decision/compaction.keep.jsonl`.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CompactionKeepShadowRecord {
@@ -147,7 +147,7 @@ pub fn is_keep_shadow_enabled() -> bool {
 
 /// Target path for compaction.keep shadow logs.
 pub fn shadow_log_path() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir().join("decision/compaction.keep.jsonl")
+    crate::utils::env_utils::get_config_home_dir().join("decision/compaction.keep.jsonl")
 }
 
 /// Extracts a representative task excerpt/summary from recent conversation messages.

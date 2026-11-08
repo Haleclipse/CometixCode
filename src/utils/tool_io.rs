@@ -276,7 +276,7 @@ mod tests {
             format!("{{\"nyan\": {{\"toolIo\": {tool_io}}}}}"),
         )
         .unwrap();
-        let home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.to_str().unwrap());
+        let home = EnvVarGuard::set("NYAN_CONFIG_DIR", root.to_str().unwrap());
         ConfigHomeGuard {
             _home: home,
             _lock: lock,

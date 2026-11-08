@@ -1024,7 +1024,7 @@ mod tests {
         let fixture = Fixture::new();
         let config = fixture.0.join("config");
         std::fs::create_dir_all(&config).unwrap();
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let previous_session = crate::bootstrap::state::get_session_id();
         struct Restore(String);
         impl Drop for Restore {
@@ -1117,7 +1117,7 @@ mod tests {
         let fixture = Fixture::new();
         let config = fixture.0.join("config");
         std::fs::create_dir_all(&config).unwrap();
-        let _env = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _bare = EnvVarGuard::set("CLAUDE_CODE_SIMPLE", "1");
         let original = crate::bootstrap::state::get_inline_plugins();
         struct Restore(Vec<PathBuf>);

@@ -27,7 +27,7 @@ pub fn get_enterprise_mcp_file_path_readonly() -> PathBuf {
 /// Maps to: CC `services/mcp/utils.ts#describeMcpConfigFilePath`.
 pub fn describe_mcp_config_file_path(scope: ConfigScope) -> String {
     match scope {
-        ConfigScope::User => crate::utils::env::get_global_claude_file()
+        ConfigScope::User => crate::utils::env::get_global_state_file()
             .display()
             .to_string(),
         ConfigScope::Project => std::env::current_dir()
@@ -37,7 +37,7 @@ pub fn describe_mcp_config_file_path(scope: ConfigScope) -> String {
             .to_string(),
         ConfigScope::Local => format!(
             "{} [project: {}]",
-            crate::utils::env::get_global_claude_file().display(),
+            crate::utils::env::get_global_state_file().display(),
             std::env::current_dir().unwrap_or_default().display()
         ),
         ConfigScope::Dynamic => "Dynamically configured".to_string(),
@@ -525,7 +525,7 @@ mod tests {
 
     #[test]
     fn describe_mcp_config_file_path_matches_official_scope_shapes() {
-        assert!(describe_mcp_config_file_path(ConfigScope::User).contains(".claude"));
+        assert!(describe_mcp_config_file_path(ConfigScope::User).ends_with("state.json"));
         assert!(describe_mcp_config_file_path(ConfigScope::Project).ends_with(".mcp.json"));
         assert!(describe_mcp_config_file_path(ConfigScope::Local).contains("[project:"));
         assert_eq!(

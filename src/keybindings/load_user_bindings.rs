@@ -165,7 +165,7 @@ pub fn is_keybinding_customization_enabled() -> bool {
 
 /// Maps to: CC `getKeybindingsPath()`.
 pub fn get_keybindings_path() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir().join("keybindings.json")
+    crate::utils::env_utils::get_config_home_dir().join("keybindings.json")
 }
 
 fn parse_error(
@@ -384,7 +384,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-keybindings-loader-{}", uuid::Uuid::new_v4()));
         let _restore = RestoreConfigDir {
-            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            value: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -421,7 +421,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreConfigDir {
-            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            value: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -447,7 +447,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let _restore = RestoreConfigDir {
-            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            value: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();
@@ -475,7 +475,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-keybindings-watcher-{}", uuid::Uuid::new_v4()));
         let _restore = RestoreConfigDir {
-            value: Some(EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root)),
+            value: Some(EnvVarGuard::set("NYAN_CONFIG_DIR", &root)),
             root: root.clone(),
         };
         crate::utils::config::clear_global_config_cache_for_testing();

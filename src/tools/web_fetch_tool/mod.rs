@@ -864,7 +864,7 @@ mod tests {
                 uuid::Uuid::new_v4().simple()
             ));
             std::fs::create_dir_all(&dir).unwrap();
-            let guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+            let guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
             (dir, guard)
         }
 

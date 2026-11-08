@@ -707,7 +707,7 @@ mod tests {
             format!(r#"{{"apiKeyHelper":"{command}"}}"#),
         )
         .unwrap();
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _cwd_guard = CurrentDirGuard::set(&project);
         let _original_cwd_guard = OriginalCwdGuard::set(&project);
 
@@ -735,7 +735,7 @@ mod tests {
         let _ttl = EnvVarGuard::set("CLAUDE_CODE_API_KEY_HELPER_TTL_MS", "300000");
         let dir = unique_temp_dir("helper-cache");
         std::fs::create_dir_all(&dir).unwrap();
-        let _config_home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config_home = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         clear_api_key_helper_cache();
 
         let command = if cfg!(target_os = "windows") {
@@ -786,7 +786,7 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let dir = unique_temp_dir("api-key-precedence");
         std::fs::create_dir_all(&dir).unwrap();
-        let _config_home = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &dir);
+        let _config_home = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _api_key = EnvVarGuard::unset("ANTHROPIC_API_KEY");
         let _homespace = EnvVarGuard::unset("COO_RUNNING_ON_HOMESPACE");
         let _ci = EnvVarGuard::unset("CI");

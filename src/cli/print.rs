@@ -2968,7 +2968,7 @@ mod tests {
             .to_string(),
         )
         .unwrap();
-        let guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         crate::utils::settings::settings_cache::reset_settings_cache();
         (guard, root)
     }
@@ -3417,7 +3417,7 @@ mod sdk_mapper_tests {
             // whose multithread executor would conceal the production deadlock.
             assert!(crate::utils::process_runtime::process_runtime_handle().is_none());
             let root = std::path::PathBuf::from(root);
-            crate::utils::process_env::set("CLAUDE_CONFIG_DIR", root.join("config"));
+            crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
             crate::utils::process_env::set("CLAUDE_CODE_SIMPLE", "0");
             crate::bootstrap::state::set_original_cwd(&root);
             crate::bootstrap::state::set_inline_plugins(vec![root.join("plugin")]);

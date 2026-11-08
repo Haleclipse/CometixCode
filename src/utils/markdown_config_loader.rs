@@ -190,7 +190,7 @@ pub(crate) fn load_markdown_files_from_dir(
 /// Maps to: CC `utils/markdownConfigLoader.ts#loadMarkdownFilesForSubdir`.
 pub fn load_markdown_files_for_subdir(subdir: &str, cwd: &Path) -> Vec<MarkdownFile> {
     // CC :303-305 order.
-    let user_dir = crate::utils::env_utils::get_claude_config_home_dir().join(subdir);
+    let user_dir = crate::utils::env_utils::get_config_home_dir().join(subdir);
     let managed_dir = get_managed_file_path().join(".claude").join(subdir);
     let mut project_dirs = get_project_dirs_up_to_home(subdir, cwd);
 
@@ -374,7 +374,7 @@ mod tests {
         // missing, and the project walk from `root` stops at once at home.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _managed = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed_root);
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.join("missing-user"));
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", root.join("missing-user"));
         let _home = EnvVarGuard::set(HOME_VAR, &root);
         let files = load_markdown_files_for_subdir("commands", &root);
         let names = files
@@ -418,7 +418,7 @@ mod tests {
         let managed = root.join("managed");
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::create_dir_all(&managed).unwrap();
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let _sources_guard = AllowedSourcesGuard::capture();
         crate::bootstrap::state::set_allowed_setting_sources(vec![
@@ -467,7 +467,7 @@ mod tests {
         )
         .unwrap();
 
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _managed_guard = EnvVarGuard::set("CLAUDE_CODE_MANAGED_SETTINGS_PATH", &managed);
         let old_cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(&project).unwrap();

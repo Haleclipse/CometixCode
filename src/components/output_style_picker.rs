@@ -359,7 +359,7 @@ mod tests {
             "---\nname: Mentor\ndescription: Project mentor\n---\nPrompt",
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let options = output_style_options_for_cwd(&cwd);
         let _ = std::fs::remove_dir_all(root);
 

@@ -811,7 +811,7 @@ mod setup_screens_snapshot_tests {
         .expect("write agent definition");
 
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_home);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
         let _home = EnvVarGuard::set(HOME_VAR, &root);
         // A host's `CLAUDE_CODE_SIMPLE` (CC `--bare`) would skip custom agents;
         // unsetting the managed override would read the machine's real managed
@@ -1101,7 +1101,7 @@ mod tests {
             r#"{"env":{"NYAN_SETUP_ENV_PROBE":"applied"}}"#,
         )
         .unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _probe = EnvVarGuard::unset("NYAN_SETUP_ENV_PROBE");
         // `.mcp.json` approvals walk up from the cwd; keep a host's out.
         let project = root.join("project");

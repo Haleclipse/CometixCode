@@ -436,7 +436,7 @@ fn interpolate_json_stringify(value: Option<&serde_json::Value>) -> String {
 /// serialize as JSON `null` — an absent key and an on-disk `null` collapse
 /// into the same value before this function can see them. The projection
 /// therefore reads a `null` leaf as `undefined`, which is right for the case
-/// that actually occurs (key absent from `~/.claude.json` / `settings.json`)
+/// that actually occurs (key absent from `state.json` / `settings.json`)
 /// and wrong only for a settings file that literally stores `"model": null`,
 /// which would read back as `undefined` instead of `'default'`. Undoing that
 /// needs raw-JSON reads in `utils/settings`, not a change here.
@@ -1050,7 +1050,7 @@ mod tests {
         use_real_global_config_file();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
 
-        let path = crate::utils::env::get_global_claude_file();
+        let path = crate::utils::env::get_global_state_file();
         assert!(
             !path.exists(),
             "fixture starts without a global config file"

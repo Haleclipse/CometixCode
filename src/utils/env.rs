@@ -8,8 +8,8 @@
 //!   never reaches them, as in CC;
 //! - call time: `isSSH` (`env.ts:308-314`) reads the environment on every
 //!   call ([`is_ssh_session`]);
-//! - first call: `getGlobalClaudeFile` (`env.ts:14-26`) is memoized without a
-//!   key ([`get_global_claude_file`]).
+//! - first call: the global state file (CC `getGlobalClaudeFile`,
+//!   `env.ts:14-26`) is memoized without a key ([`get_global_state_file`]).
 //!
 //! The rest of CC's `env` (package managers, runtimes, WSL, deployment
 //! environment) has no Rust caller yet.
@@ -35,41 +35,33 @@ pub enum Platform {
     Windows,
 }
 
+/// File name of the global state file inside the config home.
+pub const GLOBAL_STATE_FILE_NAME: &str = "state.json";
+
 /// Maps to: CC `utils/env.ts:14-26` `getGlobalClaudeFile`, memoized without a
-/// key: the first call fixes the path for the process. That is the legacy
-/// `.config.json` under the config home when it exists, else
-/// `.claude<suffix>.json` under `CLAUDE_CONFIG_DIR || homedir()`, the suffix
-/// naming a non-production OAuth config.
+/// key: the first call fixes the path for the process.
+///
+/// @nyan: always `<config home>/state.json`. CC puts `.claude<suffix>.json`
+/// beside the config home (`~/.claude.json`) unless `CLAUDE_CONFIG_DIR` is
+/// set, and falls back to a legacy `.config.json`; nyan keeps all of its
+/// state inside its own directory and reads no other file.
 ///
 /// Test builds compute it on every call instead: under `cargo test` many tests
 /// share a process, and a path fixed by the first would send every later
-/// test's writes there, the real `~/.claude.json` among them.
-pub fn get_global_claude_file() -> std::path::PathBuf {
+/// test's writes there, the real `~/.nyan/state.json` among them.
+pub fn get_global_state_file() -> std::path::PathBuf {
     #[cfg(not(test))]
     {
         static FILE: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
-        FILE.get_or_init(global_claude_file).clone()
+        FILE.get_or_init(global_state_file).clone()
     }
     #[cfg(test)]
-    global_claude_file()
+    global_state_file()
 }
 
-/// The body of [`get_global_claude_file`].
-fn global_claude_file() -> std::path::PathBuf {
-    // Legacy fallback for backwards compatibility
-    let legacy = crate::utils::env_utils::get_claude_config_home_dir().join(".config.json");
-    if crate::utils::fs_operations::get_fs_implementation().exists_sync(&legacy) {
-        return legacy;
-    }
-    let filename = format!(
-        ".claude{}.json",
-        crate::constants::oauth::file_suffix_for_oauth_config()
-    );
-    let env = process_env::snapshot();
-    match env.var_os("CLAUDE_CONFIG_DIR").truthy() {
-        Some(dir) => std::path::PathBuf::from(dir).join(filename),
-        None => crate::utils::node_os::homedir().join(filename),
-    }
+/// The body of [`get_global_state_file`].
+fn global_state_file() -> std::path::PathBuf {
+    crate::utils::env_utils::get_config_home_dir().join(GLOBAL_STATE_FILE_NAME)
 }
 
 #[derive(Debug)]
@@ -262,35 +254,33 @@ mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
-    /// CC `env.ts:14-26`: `.claude<suffix>.json` under `CLAUDE_CONFIG_DIR`,
-    /// unless the legacy `.config.json` exists under the config home. (The
-    /// memoization is production-only; see [`get_global_claude_file`].)
+    /// The state file is `state.json` inside the config home whatever else
+    /// exists there: CC's legacy `.config.json`, its `.claude.json`, and the
+    /// OAuth-config suffix are not consulted. (The memoization is
+    /// production-only; see [`get_global_state_file`].)
     #[test]
-    fn global_claude_file_matches_official_legacy_and_suffix() {
+    fn global_state_file_is_state_json_in_the_config_home() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root =
-            std::env::temp_dir().join(format!("nyan-global-claude-file-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("nyan-global-state-file-{}", uuid::Uuid::new_v4()));
         let config = root.join("config");
         std::fs::create_dir_all(&config).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
-        let _oauth = [
-            EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
-            EnvVarGuard::unset("USE_LOCAL_OAUTH"),
-            EnvVarGuard::unset("USE_STAGING_OAUTH"),
-        ];
-        assert_eq!(global_claude_file(), config.join(".claude.json"));
-        {
-            let _oauth = EnvVarGuard::set(
-                "CLAUDE_CODE_CUSTOM_OAUTH_URL",
-                "https://claude.fedstart.com",
-            );
-            assert_eq!(
-                global_claude_file(),
-                config.join(".claude-custom-oauth.json")
-            );
-        }
         std::fs::write(config.join(".config.json"), "{}").unwrap();
-        assert_eq!(global_claude_file(), config.join(".config.json"));
+        std::fs::write(config.join(".claude.json"), "{}").unwrap();
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
+        let _oauth = EnvVarGuard::set(
+            "CLAUDE_CODE_CUSTOM_OAUTH_URL",
+            "https://claude.fedstart.com",
+        );
+        assert_eq!(global_state_file(), config.join("state.json"));
+
+        let _home = EnvVarGuard::set(crate::utils::test_env::HOME_VAR, &root);
+        let _config = EnvVarGuard::unset("NYAN_CONFIG_DIR");
+        assert_eq!(
+            global_state_file(),
+            crate::utils::env_utils::get_config_home_dir().join("state.json")
+        );
+        assert_ne!(global_state_file(), root.join(".claude.json"));
         let _ = std::fs::remove_dir_all(root);
     }
 

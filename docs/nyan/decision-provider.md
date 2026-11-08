@@ -298,7 +298,7 @@ pub trait DecisionBackend: Send + Sync {
 
 ## 七、日志与放权
 
-- 每次决策写一行 `$CLAUDE_CONFIG_DIR/decision/<point>.jsonl`：时间、模型、延迟、答案与置信度、确定性答案、是否一致、事后信号；
+- 每次决策写一行 `$NYAN_CONFIG_DIR/decision/<point>.jsonl`：时间、模型、延迟、答案与置信度、确定性答案、是否一致、事后信号；
   `state` 只记 hash 与长度。保留 30 天。
 - **事后信号**：
   - `retrieval.answers` / `web.answers`：模型最后实际 Read / WebFetch 了哪些候选（被标"回答查询"的是否被用了）；

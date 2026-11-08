@@ -382,7 +382,7 @@ pub fn MemoryFileSelector<'a>(
 ) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<crate::utils::theme::Theme>();
     let cwd = crate::bootstrap::state::get_original_cwd();
-    let config_home = crate::utils::env_utils::get_claude_config_home_dir();
+    let config_home = crate::utils::env_utils::get_config_home_dir();
     let initial_auto_memory = auto_memory_snapshot();
     let resolved_auto_memory_path = crate::memdir::paths::get_auto_mem_path();
     let mut auto_memory_on = hooks.use_state({
@@ -878,7 +878,7 @@ mod tests {
         assert!(text.contains("Auto-dream: on"), "canvas=\n{text}");
         let options = memory_select_options(
             &crate::bootstrap::state::get_original_cwd(),
-            &crate::utils::env_utils::get_claude_config_home_dir(),
+            &crate::utils::env_utils::get_config_home_dir(),
             &discover_claude_md_files(),
             Some(Path::new("/tmp/nyan-auto-memory")),
         );
@@ -909,7 +909,7 @@ mod tests {
         assert!(text.contains("User memory"), "canvas=\n{text}");
         let options = memory_select_options(
             &crate::bootstrap::state::get_original_cwd(),
-            &crate::utils::env_utils::get_claude_config_home_dir(),
+            &crate::utils::env_utils::get_config_home_dir(),
             &discover_claude_md_files(),
             None,
         );

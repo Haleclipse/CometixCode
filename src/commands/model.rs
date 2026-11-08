@@ -227,7 +227,7 @@ mod tests {
                 std::env::temp_dir().join(format!("nyan-model-cmd-{}", uuid::Uuid::new_v4()));
             std::fs::create_dir_all(&root).unwrap();
             std::fs::write(root.join("settings.json"), user_settings).unwrap();
-            let config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+            let config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
             crate::utils::settings::settings_cache::reset_settings_cache();
             crate::bootstrap::state::set_session_profile(None);
             Self {

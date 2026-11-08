@@ -205,7 +205,7 @@ query → 选分支（4.3 的规则）
 
 ### 4.5 本机索引（symbol / text / semantic 的数据来源）
 
-- **位置**：`$CLAUDE_CONFIG_DIR/projects/<sanitize_path(worktree 根)>/retrieval/`（`session_storage::get_project_dir`，
+- **位置**：`$NYAN_CONFIG_DIR/projects/<sanitize_path(worktree 根)>/retrieval/`（`session_storage::get_project_dir`，
   `utils/session_storage.rs:773`；符合 legacy Decision #1 与 03 IX-1：**永不写进工作树**）。
 - **按 worktree 区分，不按 git 仓库共用**：memdir 用 canonical git root（`memdir/paths.rs:89-91`），同仓库的所有
   worktree 共用一份记忆；索引不能照抄——不同 worktree 的内容不同，必须各自一份（legacy GEN-6，`worktreeId` 进 generation）。

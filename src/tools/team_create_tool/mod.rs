@@ -386,7 +386,7 @@ mod tests {
         crate::bootstrap::state::clear_session_created_teams();
         crate::utils::tasks::clear_leader_team_name();
         let root = unique_config_dir("unique");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         let existing_dir = root.join("teams").join("alpha");
         std::fs::create_dir_all(&existing_dir).unwrap();
@@ -434,7 +434,7 @@ mod tests {
         crate::bootstrap::state::clear_session_created_teams();
         crate::utils::tasks::clear_leader_team_name();
         let root = unique_config_dir("appstate");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
 
         let store = crate::state::store::AppStore::new(
@@ -518,7 +518,7 @@ mod tests {
         crate::bootstrap::state::clear_session_created_teams();
         crate::utils::tasks::clear_leader_team_name();
         let root = unique_config_dir("tasks");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _list_guard = EnvVarGuard::set("CLAUDE_CODE_TASK_LIST_ID", "alpha-team");
         crate::utils::tasks::TASK_TOOL_STORE.lock().unwrap().push(
             crate::utils::tasks::TaskRecord {

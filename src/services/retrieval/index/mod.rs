@@ -1352,7 +1352,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_project("index");
         std::fs::write(project.join("lib.rs"), "fn hello() {}\n").unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let index = open(&project);
         assert!(index.storage().starts_with(&config));
         assert!(!index.storage().starts_with(&project));
@@ -1363,7 +1363,7 @@ mod tests {
     fn incremental_refresh_reuses_unchanged_files_and_updates_changed_ones() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_project("incremental");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(project.join("a.rs"), "fn alpha() {}\n").unwrap();
         let first = open(&project);
         assert_eq!(first.files().len(), 1);
@@ -1407,7 +1407,7 @@ mod tests {
     fn second_process_is_read_only_and_serves_the_persisted_generation() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_project("lock");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(project.join("a.rs"), "fn alpha() {}\n").unwrap();
         let writer = open(&project);
         assert!(writer.is_writable());
@@ -1437,7 +1437,7 @@ mod tests {
     fn text_and_symbol_branches_respect_path_and_glob_filters() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_project("filters");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::create_dir_all(project.join("src")).unwrap();
         std::fs::create_dir_all(project.join("docs")).unwrap();
         std::fs::write(project.join("src/alpha.rs"), "fn alpha() {}\n").unwrap();
@@ -1471,7 +1471,7 @@ mod tests {
     fn callers_and_references_come_from_the_symbol_table() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_project("callers");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(
             project.join("a.rs"),
             "fn target() {}\nfn caller() {\n    target();\n}\n",
@@ -1495,7 +1495,7 @@ mod tests {
     fn stale_lock_from_a_dead_process_is_taken_over() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_project("stale-lock");
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config);
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         std::fs::write(project.join("a.rs"), "fn alpha() {}\n").unwrap();
         let first = open(&project);
         let lock_path = first.storage().join("index.lock");

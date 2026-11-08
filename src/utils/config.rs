@@ -133,7 +133,7 @@ pub fn is_project_config_key(key: &str) -> bool {
 // ════════════════════════════════════════════════════════════
 
 pub fn get_config_backup_dir() -> PathBuf {
-    crate::utils::env_utils::get_claude_config_home_dir().join("backups")
+    crate::utils::env_utils::get_config_home_dir().join("backups")
 }
 
 pub fn normalize_project_path(path: &str) -> String {
@@ -150,10 +150,8 @@ fn get_project_path_for_config() -> PathBuf {
 /// Maps to CC `utils/config.ts#getMemoryPath`.
 pub fn get_memory_path(memory_type: &str) -> PathBuf {
     match memory_type {
-        "User" | "user" => crate::utils::env_utils::get_claude_config_home_dir().join("AGENTS.md"),
-        "Local" | "local" => {
-            crate::utils::env_utils::get_claude_config_home_dir().join("AGENTS.md")
-        }
+        "User" | "user" => crate::utils::env_utils::get_config_home_dir().join("AGENTS.md"),
+        "Local" | "local" => crate::utils::env_utils::get_config_home_dir().join("AGENTS.md"),
         "Managed" | "managed" => {
             crate::utils::settings::managed_path::get_managed_file_path().join("AGENTS.md")
         }
@@ -375,7 +373,7 @@ pub struct ClaudeCodeHintsConfig {
 /// string is the header value. `Option<String>` collapses the first two.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum CachedExtraUsageDisabledReason {
-    /// JavaScript `undefined` — the key is absent from `~/.claude.json`.
+    /// JavaScript `undefined` — the key is absent from the state file.
     #[default]
     Uncached,
     /// JavaScript `null` — extra usage carries no disabled reason.
@@ -1180,7 +1178,7 @@ fn start_global_config_freshness_watcher() {
         return;
     }
 
-    let path = crate::utils::env::get_global_claude_file();
+    let path = crate::utils::env::get_global_state_file();
     // The launchers' first config load starts this thread before
     // `process_env::publish_startup_environment` writes the real environment,
     // so it must never reach libc's getenv (no `node_os::homedir`, local time
@@ -1247,7 +1245,7 @@ fn backup_corrupted_config(path: &Path, content: &str) {
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or(".claude.json");
+        .unwrap_or(crate::utils::env::GLOBAL_STATE_FILE_NAME);
     let backup_path = backup_dir.join(format!("{file_name}.corrupted.{}", current_time_millis()));
     let _ = fs::write(backup_path, content);
 }
@@ -1287,7 +1285,7 @@ fn create_config_backup(path: &Path) {
     let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or(".claude.json");
+        .unwrap_or(crate::utils::env::GLOBAL_STATE_FILE_NAME);
     let backup_prefix = format!("{file_name}.backup.");
     let now = current_time_millis();
 
@@ -1426,7 +1424,7 @@ pub fn load_global_config() -> GlobalConfig {
             return config;
         }
     }
-    let path = crate::utils::env::get_global_claude_file();
+    let path = crate::utils::env::get_global_state_file();
 
     // Claude Code keeps the normal read path as a pure memory hit after the
     // startup load. A background freshness watcher refreshes external writes.
@@ -1466,7 +1464,7 @@ pub fn load_global_config() -> GlobalConfig {
 }
 
 pub fn enable_configs() -> anyhow::Result<()> {
-    let path = crate::utils::env::get_global_claude_file();
+    let path = crate::utils::env::get_global_state_file();
     if path.exists() {
         let config = read_global_config_value(&path).and_then(load_global_config_from_value)?;
         write_through_global_config_cache(&path, config);
@@ -1496,7 +1494,7 @@ pub fn save_global_config(updater: impl FnOnce(&mut GlobalConfig)) -> anyhow::Re
         return Ok(());
     }
 
-    let path = crate::utils::env::get_global_claude_file();
+    let path = crate::utils::env::get_global_state_file();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1561,7 +1559,7 @@ fn generate_official_user_id() -> String {
 
 /// Maps to: CC `utils/config.ts:1757-1766` `getOrCreateUserID`.
 ///
-/// Returns the persisted `~/.claude.json` `userID`, minting one on first use.
+/// Returns the persisted state-file `userID`, minting one on first use.
 /// `getAPIMetadata` (`services/api/claude.ts:522`) puts this in
 /// `metadata.user_id.device_id`; a new value on every request is treated as a
 /// new user by any gateway that keys on `user_id`.
@@ -1606,7 +1604,7 @@ fn pin_created_user_id(user_id: &str) {
         return;
     }
     config.user_id = Some(user_id.to_string());
-    write_through_global_config_cache(&crate::utils::env::get_global_claude_file(), config);
+    write_through_global_config_cache(&crate::utils::env::get_global_state_file(), config);
 }
 
 pub fn record_first_start_time() {
@@ -1698,10 +1696,10 @@ pub fn get_remote_control_at_startup() -> bool {
 
 pub fn find_most_recent_backup() -> Option<PathBuf> {
     let backup_dir = get_config_backup_dir();
-    let global_config_file_name = crate::utils::env::get_global_claude_file()
+    let global_config_file_name = crate::utils::env::get_global_state_file()
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or(".claude.json")
+        .unwrap_or(crate::utils::env::GLOBAL_STATE_FILE_NAME)
         .to_string();
     let backup_prefix = format!("{global_config_file_name}.backup.");
 
@@ -2108,7 +2106,7 @@ mod tests {
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_temp_dir("user-id-persist");
         fs::create_dir_all(&root).unwrap();
-        let _config_dir = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_dir = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let previous = replace_test_global_config(None);
         clear_global_config_cache_for_testing();
@@ -2141,7 +2139,7 @@ mod tests {
         let _env = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_temp_dir("mcp-raw-snapshot");
         fs::create_dir_all(&root).unwrap();
-        let _config_dir = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_dir = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         clear_global_config_cache_for_testing();
         let raw = serde_json::json!({
@@ -2149,7 +2147,7 @@ mod tests {
             "bad":{"type":"http","url":"u","oauth":null},
             "nullArgs":{"command":"g","args":null,"env":null,"type":null}
         });
-        let file = crate::utils::env::get_global_claude_file();
+        let file = crate::utils::env::get_global_state_file();
         let project_key = normalize_project_path(&get_project_path_for_config().to_string_lossy());
         let initial = serde_json::json!({"mcpServers":raw,"projects":{project_key.clone():{"mcpServers":raw}}});
         fs::write(&file, initial.to_string()).unwrap();

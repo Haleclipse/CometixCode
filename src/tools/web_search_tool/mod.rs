@@ -1159,7 +1159,7 @@ mod tests {
             }"#,
         )
         .unwrap();
-        let _config_dir = crate::utils::test_env::EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_dir = crate::utils::test_env::EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::utils::process_env::set("MAX_THINKING_TOKENS", "2048");
         let config = crate::utils::config::GlobalConfig::default();

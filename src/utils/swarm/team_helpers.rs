@@ -691,11 +691,11 @@ mod tests {
     /// `readTeamFile`, `teamHelpers.ts:131-142`), so a memory-only
     /// `write_team_record` seed is a no-op fixture: `maybe_skip_disk_io_in_tests`
     /// suppresses the write and the mutator then reads nothing. Pin a scratch
-    /// `CLAUDE_CONFIG_DIR` and re-enable team-file IO; the returned guards must
+    /// `NYAN_CONFIG_DIR` and re-enable team-file IO; the returned guards must
     /// stay alive for the whole test body.
     fn team_disk_guards(prefix: &str) -> (PathBuf, EnvVarGuard, EnvVarGuard) {
         let root = unique_config_dir(prefix);
-        let config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         super::clear_team_tool_state_for_test();
         (root, config_guard, io_guard)
@@ -776,7 +776,7 @@ mod tests {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_config_dir("team-file");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         super::clear_team_tool_state_for_test();
 
@@ -972,7 +972,7 @@ mod tests {
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_config_dir("cleanup");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         super::clear_team_tool_state_for_test();
 
@@ -1025,7 +1025,7 @@ mod tests {
         let _task_lock = crate::utils::tasks::TASK_TOOL_TEST_LOCK.lock().unwrap();
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = unique_config_dir("session-cleanup");
-        let _config_guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &root);
+        let _config_guard = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _io_guard = EnvVarGuard::set("NYAN_TEST_TEAM_FILE_IO", "1");
         super::clear_team_tool_state_for_test();
         crate::bootstrap::state::clear_session_created_teams();

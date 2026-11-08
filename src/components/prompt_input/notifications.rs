@@ -560,7 +560,7 @@ mod tests {
         "CLAUDE_CODE_USE_BEDROCK",
         "CLAUDE_CODE_USE_FOUNDRY",
         "CLAUDE_CODE_USE_VERTEX",
-        "CLAUDE_CONFIG_DIR",
+        "NYAN_CONFIG_DIR",
         "NODE_ENV",
     ];
 
@@ -601,7 +601,7 @@ mod tests {
             std::fs::create_dir_all(workspace.join(".claude"))
                 .expect("create notifications fixture");
 
-            crate::utils::process_env::set("CLAUDE_CONFIG_DIR", &root);
+            crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
             crate::utils::process_env::set(
                 "CLAUDE_CODE_MANAGED_SETTINGS_PATH",
                 root.join("missing-managed-settings.json"),

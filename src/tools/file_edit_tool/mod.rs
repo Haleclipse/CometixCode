@@ -1667,7 +1667,7 @@ mod tests {
         let _checkpointing = EnvVarGuard::set("CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING", "0");
         let root = temp_root("history");
         let config_dir = root.join("config");
-        let _config_dir = EnvVarGuard::set("CLAUDE_CONFIG_DIR", &config_dir);
+        let _config_dir = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
         let _config_restore =
             TestGlobalConfigRestore::set(crate::utils::config::GlobalConfig::default());
         let path = root.join("existing.txt");

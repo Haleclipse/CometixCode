@@ -210,7 +210,7 @@ mod tests {
         let temp_dir =
             std::env::temp_dir().join(format!("nyan-mcp-headers-helper-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
-        let _config = EnvVarGuard::set("CLAUDE_CONFIG_DIR", temp_dir.join("config"));
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp_dir.join("config"));
         let previous_original_cwd = crate::bootstrap::state::get_original_cwd();
         let _non_interactive = EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION");
         crate::bootstrap::state::set_original_cwd(temp_dir.join("workspace"));

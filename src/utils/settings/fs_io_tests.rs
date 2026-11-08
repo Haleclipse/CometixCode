@@ -246,7 +246,7 @@ impl Drop for TestRoot {
 fn environment() -> (TestRoot, EnvVarGuard) {
     let root = TestRoot(std::env::temp_dir().join(format!("fs-consumer-{}", uuid::Uuid::new_v4())));
     std::fs::create_dir_all(root.path()).unwrap();
-    let guard = EnvVarGuard::set("CLAUDE_CONFIG_DIR", root.path());
+    let guard = EnvVarGuard::set("NYAN_CONFIG_DIR", root.path());
     (root, guard)
 }
 
