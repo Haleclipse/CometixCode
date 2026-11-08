@@ -721,6 +721,9 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
         context.abort_controller = crate::tool::AbortController::default();
     }
     let command_permission_store = context.app_store.store.clone();
+    // A local command runs no query, so nothing hands this context back; the
+    // carry for the next submit is this copy.
+    let local_command_context = context.clone();
     // Headless input carries no pasted images.
     // Maps to QueryEngine.ts:416 await processUserInput. The existing Rust
     // async submitter still includes synchronous local command callbacks; run
@@ -773,7 +776,16 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
             state.starting_query = false;
             state.pending_abort = false;
         }
-        return Err("prompt produced no model query".to_string());
+        let mut context = local_command_context;
+        context.tool_permission_context = command_permission_context;
+        return finish_local_command(
+            submitted.messages,
+            prior_history,
+            prior_persist_start,
+            context,
+            stream_json.then_some(output_sink).flatten(),
+        )
+        .await;
     };
     base.tool_use_context.tool_permission_context = command_permission_context;
     // Maps to CC `QueryEngine.ts:292-298` `fetchSystemPromptParts({...,
@@ -1184,6 +1196,78 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
         state.starting_query = false;
         state.pending_abort = false;
     }
+    Ok(outcome)
+}
+
+/// Maps to: CC `QueryEngine.ts` `submitMessage()`'s `!shouldQuery` branch — a
+/// local slash command (`/retrieval status`, `/cost`, …) runs without a model
+/// call. Its rows are recorded to the transcript like any turn, every command
+/// output is yielded as the SDK's synthetic assistant message
+/// (`localCommandOutputToSDKAssistantMessage`), and the result carries the
+/// output text. A command that writes to stderr is a failed result.
+async fn finish_local_command(
+    rows: Vec<crate::types::message::RenderableMessage>,
+    mut history: Vec<Message>,
+    persist_start: usize,
+    mut context: crate::tool::ToolUseContext,
+    output_sink: Option<&QueryEngineOutputSink>,
+) -> Result<QueryEngineOutcome, String> {
+    use crate::constants::xml::{LOCAL_COMMAND_STDERR_TAG, LOCAL_COMMAND_STDOUT_TAG};
+    use crate::types::message::{RenderableMessageKind, SystemMessage, UserContent};
+
+    let mut outcome = QueryEngineOutcome {
+        reason: "completed".to_string(),
+        ..Default::default()
+    };
+    let mut output = Vec::new();
+    for row in rows {
+        let message = match row.kind {
+            RenderableMessageKind::User { message } => Message::User(message),
+            RenderableMessageKind::System(mut message @ SystemMessage::LocalCommand { .. }) => {
+                message.base_mut().uuid = row.uuid;
+                Message::System(message)
+            }
+            _ => continue,
+        };
+        let text = match &message {
+            Message::User(user) => match user.content.as_slice() {
+                [UserContent::Text(text)] => Some(text.as_str()),
+                _ => None,
+            },
+            Message::System(SystemMessage::LocalCommand { content, .. }) => Some(content.as_str()),
+            _ => None,
+        };
+        if let Some(text) = text {
+            let is_stderr = text.contains(&format!("<{LOCAL_COMMAND_STDERR_TAG}>"));
+            if is_stderr || text.contains(&format!("<{LOCAL_COMMAND_STDOUT_TAG}>")) {
+                let clean = crate::utils::messages::mappers::local_command_output_text(text);
+                if is_stderr {
+                    outcome.errors.push(clean.clone());
+                }
+                output.push(clean);
+                if let Some(sink) = output_sink {
+                    sink(
+                        crate::utils::messages::mappers::local_command_output_to_sdk_assistant_message(
+                            text,
+                            message.uuid(),
+                        ),
+                    );
+                }
+            }
+        }
+        history.push(message);
+    }
+    outcome.text = output.join("\n");
+
+    crate::utils::session_storage::record_typed_messages(&history[persist_start..])
+        .map_err(|error| format!("Failed to persist session transcript: {error}"))?;
+    if crate::utils::session_storage::is_session_write_enabled() {
+        crate::utils::session_storage::flush_session_storage()
+            .await
+            .map_err(|error| format!("Failed to persist session transcript: {error}"))?;
+    }
+    context.messages = history.clone();
+    outcome.carry = Some(HeadlessCarry { history, context });
     Ok(outcome)
 }
 
@@ -2068,14 +2152,116 @@ mod tests {
 
         let result = engine.submit_message("/help".to_string(), None).await;
 
-        assert!(
-            result.is_err(),
-            "local command should not start a model query"
-        );
+        let outcome = result.expect("a local command is a completed turn");
+        assert_eq!(outcome.reason, "completed");
+        assert_eq!(outcome.turns, 0, "no model turn ran");
         assert_eq!(
             store.tool_permission_context().always_allow_rules
                 [&crate::types::permissions::PermissionRuleSource::Command],
             Vec::new()
+        );
+    }
+
+    /// CC `QueryEngine.ts` `!shouldQuery`: a local command's output is the
+    /// result (`-p "/retrieval status"` used to fail with "prompt produced no
+    /// model query"), stderr output makes it an error, stream-json yields the
+    /// output as a synthetic assistant message, and the rows reach the next
+    /// submit's history.
+    #[tokio::test]
+    async fn headless_local_command_output_is_the_result() {
+        use crate::utils::settings::settings_cache;
+        use crate::utils::settings::validation::SettingsWithErrors;
+
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _settings = IsolatedProjectSettings::pin();
+        settings_cache::set_session_settings_cache(SettingsWithErrors {
+            settings: crate::utils::settings::SettingsJson {
+                nyan: Some(Box::new(crate::utils::settings::nyan::NyanSettings {
+                    retrieval: Some(crate::utils::settings::nyan::RetrievalSettings {
+                        enabled: Some(false),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        struct ResetSettings;
+        impl Drop for ResetSettings {
+            fn drop(&mut self) {
+                crate::utils::settings::settings_cache::reset_settings_cache();
+            }
+        }
+        let _reset = ResetSettings;
+
+        let emitted = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink_values = emitted.clone();
+        let store = crate::state::store::AppStore::new(Default::default(), None);
+        let mut engine = QueryEngine::new(QueryEngineConfig {
+            cli_config: CliConfig::default(),
+            schema: None,
+            resume_seed: None,
+            mcp_state: Some(crate::state::app_state_store::McpState::default()),
+            output_sink: Some(Arc::new(move |value| {
+                sink_values.lock().unwrap().push(value)
+            })),
+            permission_resolver: None,
+            handle_elicitation: crate::tool::HandleElicitationCallback::default(),
+        });
+        engine.carry = Some(HeadlessCarry {
+            history: Vec::new(),
+            context: crate::tool::ToolUseContext::default().with_app_store(store.clone()),
+        });
+        engine.app_store = Some(store);
+        engine.session_start_completed = true;
+
+        let outcome = engine
+            .submit_message("/retrieval status".into(), None)
+            .await
+            .expect("a local command completes");
+        assert_eq!(
+            outcome.text,
+            "Retrieval is disabled (nyan.retrieval.enabled = false)."
+        );
+        assert!(outcome.errors.is_empty());
+        assert_eq!(outcome.reason, "completed");
+        let assistant = emitted
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|value| value["type"] == "assistant")
+            .map(|value| value["message"]["content"][0]["text"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            assistant,
+            vec![serde_json::json!(
+                "Retrieval is disabled (nyan.retrieval.enabled = false)."
+            )]
+        );
+        let carried = &engine.carry.as_ref().expect("carry").history;
+        assert!(
+            carried.iter().any(|message| matches!(
+                message,
+                Message::User(user) if matches!(
+                    user.content.as_slice(),
+                    [crate::types::message::UserContent::Text(text)]
+                        if text.contains("Retrieval is disabled")
+                )
+            )),
+            "the output row stays in the session history"
+        );
+
+        let failed = engine
+            .submit_message("/retrieval bogus".into(), None)
+            .await
+            .expect("a failing local command still completes the turn");
+        assert_eq!(
+            failed.errors,
+            vec![
+                "unknown /retrieval subcommand bogus; use status, sync [--wait], or prune"
+                    .to_string()
+            ]
         );
     }
 
@@ -2116,10 +2302,7 @@ mod tests {
         engine.session_start_completed = true;
         for _ in 0..2 {
             let result = engine.submit_message("/help".into(), None).await;
-            assert_eq!(
-                result.err().as_deref(),
-                Some("prompt produced no model query")
-            );
+            assert_eq!(result.expect("local command").reason, "completed");
             assert_eq!(
                 engine
                     .app_store
@@ -2238,12 +2421,9 @@ mod sdk_mapper_tests {
                 .await
                 .expect("first local query kept its event loop running")
             });
-            // Existing headless handling of a non-querying local command. This
-            // fixture never reaches a model call, and does not alter its result.
-            match result {
-                Err(error) => assert_eq!(error, "prompt produced no model query"),
-                Ok(_) => panic!("local /cost must not launch a model query"),
-            }
+            // A non-querying local command completes without a model call.
+            let outcome = result.expect("local /cost completes without a model query");
+            assert_eq!(outcome.turns, 0);
             let state = engine.app_store.as_ref().unwrap().get();
             assert!(
                 state

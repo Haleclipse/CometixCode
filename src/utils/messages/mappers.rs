@@ -184,6 +184,20 @@ pub(crate) fn local_command_output_to_sdk_assistant_message(
     raw_content: &str,
     uuid: &str,
 ) -> Value {
+    let synthetic = super::create_assistant_message_value(local_command_output_text(raw_content));
+    json!({
+        "type": "assistant",
+        "message": synthetic["message"],
+        "parent_tool_use_id": null,
+        "session_id": crate::bootstrap::state::get_session_id(),
+        "uuid": uuid,
+    })
+}
+
+/// The text `localCommandOutputToSDKAssistantMessage` gives the synthetic
+/// assistant message: ANSI stripped, the first `<local-command-stdout>` and
+/// `<local-command-stderr>` unwrapped, and trimmed.
+pub(crate) fn local_command_output_text(raw_content: &str) -> String {
     // Carrier for strip-ansi: CSI, OSC (BEL/ST terminated), and two-byte ESC
     // control sequences. Unlike a color-only regex this also removes OSC links.
     static ANSI: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
@@ -198,20 +212,11 @@ pub(crate) fn local_command_output_to_sdk_assistant_message(
     let clean_content = ANSI.replace_all(raw_content, "");
     let clean_content = STDOUT.replace(&clean_content, "$1");
     let clean_content = STDERR.replace(&clean_content, "$1");
-    let synthetic = super::create_assistant_message_value(
-        clean_content
-            .trim_matches(|character: char| {
-                (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
-            })
-            .to_string(),
-    );
-    json!({
-        "type": "assistant",
-        "message": synthetic["message"],
-        "parent_tool_use_id": null,
-        "session_id": crate::bootstrap::state::get_session_id(),
-        "uuid": uuid,
-    })
+    clean_content
+        .trim_matches(|character: char| {
+            (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
+        })
+        .to_string()
 }
 
 /// Maps to: CC `utils/messages/mappers.ts:221-252#toSDKRateLimitInfo`.
