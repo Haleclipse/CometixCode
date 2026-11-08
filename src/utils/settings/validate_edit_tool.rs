@@ -49,7 +49,7 @@ mod tests {
     use super::*;
 
     fn settings_path() -> std::path::PathBuf {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".claude/settings.json")
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".nyan/settings.json")
     }
 
     fn cwd() -> std::path::PathBuf {

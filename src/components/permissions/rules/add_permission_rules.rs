@@ -54,7 +54,7 @@ pub fn option_for_permission_save_destination(
         ),
         SettingSource::User => (
             "User settings",
-            "Saved in at ~/.claude/settings.json".to_string(),
+            "Saved in at ~/.nyan/settings.json".to_string(),
             "userSettings",
         ),
         _ => return None,
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(options[0].label, "Project settings (local)");
         assert_eq!(
             options[0].description.as_deref(),
-            Some("Saved in .claude/settings.local.json")
+            Some("Saved in .nyan/settings.local.json")
         );
     }
 
@@ -350,7 +350,7 @@ mod tests {
         let setter_order = order.clone();
         let result_order = order.clone();
         let (completed, results) = async_channel::unbounded();
-        let settings_file = workdir.join(".claude/settings.local.json");
+        let settings_file = workdir.join(".nyan/settings.local.json");
         let (setter_entered, entered) = async_channel::bounded(1);
         let (release, waiting) = std::sync::mpsc::channel();
         let waiting = std::sync::Mutex::new(waiting);
@@ -454,7 +454,7 @@ mod tests {
             "pre-existing unreachable Read must be filtered out"
         );
         assert_eq!(unreachable[0].rule.rule_value.tool_name, "Bash");
-        assert!(!workdir.join(".claude/settings.json").exists());
+        assert!(!workdir.join(".nyan/settings.json").exists());
         assert!(!root.join("config/settings.json").exists());
         drop(frames);
         crate::bootstrap::state::set_original_cwd(prior_cwd);

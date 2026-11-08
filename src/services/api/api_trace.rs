@@ -1,6 +1,6 @@
 //! API request lifecycle tracing.
 //!
-//! Writes stage events to `~/.claude/trace/{session}.jsonl` (or
+//! Writes stage events to `~/.nyan/trace/{session}.jsonl` (or
 //! `NYAN_TRACE_DIR`) and mirrors summaries into `--debug` logs as
 //! `api: [API:trace] ...` so `--debug=api` filters match.
 //!

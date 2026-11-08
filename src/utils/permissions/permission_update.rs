@@ -783,7 +783,7 @@ mod persistence_tests {
             "invalid json"
         );
         let project: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(fixture.root.join("workspace/.claude/settings.json")).unwrap(),
+            &std::fs::read_to_string(fixture.root.join("workspace/.nyan/settings.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(project["permissions"]["allow"], json!(["Read"]));

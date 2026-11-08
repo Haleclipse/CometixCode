@@ -1265,11 +1265,11 @@ mod tests {
     fn path_extractors_match_official_double_dash_and_defaults() {
         let rm_args = vec![
             "--".to_string(),
-            "-/../.claude/settings.local.json".to_string(),
+            "-/../.nyan/settings.local.json".to_string(),
         ];
         assert_eq!(
             filter_out_flags(&rm_args),
-            vec!["-/../.claude/settings.local.json".to_string()]
+            vec!["-/../.nyan/settings.local.json".to_string()]
         );
         assert_eq!(extract_paths(PathCommand::Ls, &[]), vec![".".to_string()]);
         assert_eq!(extract_paths(PathCommand::Find, &[]), vec![".".to_string()]);

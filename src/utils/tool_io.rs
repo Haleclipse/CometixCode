@@ -270,7 +270,7 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let root =
             std::env::temp_dir().join(format!("nyan-tool-io-{}", uuid::Uuid::new_v4().simple()));
-        std::fs::create_dir_all(root.join(".claude")).unwrap();
+        std::fs::create_dir_all(root.join(".nyan")).unwrap();
         std::fs::write(
             root.join("settings.json"),
             format!("{{\"nyan\": {{\"toolIo\": {tool_io}}}}}"),

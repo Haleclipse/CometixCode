@@ -70,7 +70,7 @@ struct SyncedMeta {
 
 /// Maps to: CC `agentMemorySnapshot.ts#getSnapshotDirForAgent`.
 pub fn get_snapshot_dir_for_agent(agent_type: &str, cwd: &Path) -> PathBuf {
-    cwd.join(".claude").join(SNAPSHOT_BASE).join(agent_type)
+    cwd.join(".nyan").join(SNAPSHOT_BASE).join(agent_type)
 }
 
 fn get_snapshot_json_path(agent_type: &str, cwd: &Path) -> PathBuf {

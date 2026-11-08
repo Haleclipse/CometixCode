@@ -157,7 +157,7 @@ pub fn parse_skill_updates_response(content: &str) -> Vec<SkillUpdate> {
 
 /// Maps to: CC `applySkillImprovement(...)` file path construction.
 pub fn skill_improvement_file_path(cwd: &std::path::Path, skill_name: &str) -> std::path::PathBuf {
-    cwd.join(".claude")
+    cwd.join(".nyan")
         .join("skills")
         .join(skill_name)
         .join("SKILL.md")
@@ -267,7 +267,7 @@ mod tests {
             },
             InvokedSkillInfo {
                 skill_name: "project".to_string(),
-                skill_path: "projectSettings:/repo/.claude/skills/project".to_string(),
+                skill_path: "projectSettings:/repo/.nyan/skills/project".to_string(),
                 content: "project".to_string(),
             },
         ];
@@ -322,7 +322,7 @@ mod tests {
         assert!(prompt.contains("<improvements>\n- new step: Ask energy"));
         assert_eq!(
             skill_improvement_file_path(std::path::Path::new("/repo"), "daily"),
-            std::path::Path::new("/repo/.claude/skills/daily/SKILL.md")
+            std::path::Path::new("/repo/.nyan/skills/daily/SKILL.md")
         );
     }
 
@@ -330,7 +330,7 @@ mod tests {
     fn safe_apply_writes_only_supplied_updated_file_tag() {
         let dir =
             std::env::temp_dir().join(format!("nyan-skill-improvement-{}", uuid::Uuid::new_v4()));
-        let skill_dir = dir.join(".claude/skills/daily");
+        let skill_dir = dir.join(".nyan/skills/daily");
         std::fs::create_dir_all(&skill_dir).unwrap();
         let path = apply_skill_improvement_updated_file(
             &dir,

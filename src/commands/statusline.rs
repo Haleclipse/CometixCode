@@ -29,14 +29,10 @@ pub fn command() -> super::Command {
         .prompt_metadata("setting up statusLine", 0)
         .disable_non_interactive()
         .prompt_executable(get_prompt_for_command);
-    command.allowed_tools = [
-        AGENT_TOOL_NAME,
-        "Read(~/**)",
-        "Edit(~/.claude/settings.json)",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect();
+    command.allowed_tools = [AGENT_TOOL_NAME, "Read(~/**)", "Edit(~/.nyan/settings.json)"]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
     command
 }
 
@@ -62,7 +58,7 @@ mod tests {
         assert!(command.prompt_command.is_none());
         assert_eq!(
             command.allowed_tools,
-            ["Agent", "Read(~/**)", "Edit(~/.claude/settings.json)"]
+            ["Agent", "Read(~/**)", "Edit(~/.nyan/settings.json)"]
         );
     }
 

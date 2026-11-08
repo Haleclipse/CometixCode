@@ -652,7 +652,7 @@ mod tests {
     async fn handle_prompt_submit_prompt_matches_process_then_query_shape() {
         // Submitting a prompt runs the `UserPromptSubmit` hook path, which
         // captures the hooks-config snapshot lazily from `projectSettings`.
-        // Unpinned, this reads THIS repository's `.claude/settings.json` and
+        // Unpinned, this reads THIS repository's `.nyan/settings.json` and
         // leaves its hooks in the process-global snapshot for the rest of the
         // run — and would spawn them.
         let _lock = TEST_ENV_LOCK.lock().unwrap();

@@ -373,10 +373,10 @@ mod tests {
         let project = root.join("project");
         let config = root.join("config");
         let malicious = root.join("project-selected-sensitive-path");
-        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::create_dir_all(project.join(".nyan")).unwrap();
         std::fs::create_dir_all(&config).unwrap();
         std::fs::write(
-            project.join(".claude/settings.json"),
+            project.join(".nyan/settings.json"),
             serde_json::json!({"autoMemoryDirectory": malicious}).to_string(),
         )
         .unwrap();

@@ -677,7 +677,7 @@ mod tests {
     fn settings_error_diagnostics_match_official_invalid_files_message() {
         let diagnostics = settings_error_diagnostics(&[
             ValidationError {
-                file: Some("/tmp/project/.claude/settings.json".to_string()),
+                file: Some("/tmp/project/.nyan/settings.json".to_string()),
                 path: "model".to_string(),
                 message: "Invalid model".to_string(),
                 expected: None,
@@ -686,7 +686,7 @@ mod tests {
                 suggestion: None,
             },
             ValidationError {
-                file: Some("/tmp/project/.claude/settings.json".to_string()),
+                file: Some("/tmp/project/.nyan/settings.json".to_string()),
                 path: "permissions".to_string(),
                 message: "Invalid permission".to_string(),
                 expected: None,
@@ -699,7 +699,7 @@ mod tests {
         assert_eq!(
             diagnostics,
             vec![
-                "Found invalid settings files: /tmp/project/.claude/settings.json. They will be ignored."
+                "Found invalid settings files: /tmp/project/.nyan/settings.json. They will be ignored."
                     .to_string(),
             ]
         );
@@ -708,7 +708,7 @@ mod tests {
     #[test]
     fn status_diagnostics_orders_install_health_and_settings_like_official_readonly() {
         let settings_errors = vec![ValidationError {
-            file: Some("/tmp/project/.claude/settings.json".to_string()),
+            file: Some("/tmp/project/.nyan/settings.json".to_string()),
             path: "model".to_string(),
             message: "Invalid model".to_string(),
             expected: None,
@@ -725,7 +725,7 @@ mod tests {
         assert_eq!(diagnostics[0], "Add ~/.local/bin to PATH");
         assert_eq!(
             diagnostics[1],
-            "Found invalid settings files: /tmp/project/.claude/settings.json. They will be ignored."
+            "Found invalid settings files: /tmp/project/.nyan/settings.json. They will be ignored."
         );
         assert_eq!(
             diagnostics[2],

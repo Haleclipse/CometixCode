@@ -309,9 +309,9 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let temp_dir =
             std::env::temp_dir().join(format!("nyan-mcp-approval-write-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(temp_dir.join(".claude")).unwrap();
+        std::fs::create_dir_all(temp_dir.join(".nyan")).unwrap();
         std::fs::write(
-            temp_dir.join(".claude/settings.local.json"),
+            temp_dir.join(".nyan/settings.local.json"),
             serde_json::json!({
                 "language": "en",
                 "enabledMcpjsonServers": ["existing"]
@@ -322,7 +322,7 @@ mod tests {
         // `localSettings` is rooted at `get_original_cwd()`, not the process
         // cwd (`utils/settings/mod.rs:54-56`). Moving only the process cwd let
         // this test read and REWRITE the repository's own
-        // `.claude/settings.local.json` whenever `ORIGINAL_CWD` had already
+        // `.nyan/settings.local.json` whenever `ORIGINAL_CWD` had already
         // been initialised by an earlier test.
         struct ProjectRootGuard {
             previous_cwd: std::path::PathBuf,
@@ -351,7 +351,7 @@ mod tests {
         .unwrap();
 
         let written: Value = serde_json::from_str(
-            &std::fs::read_to_string(temp_dir.join(".claude/settings.local.json")).unwrap(),
+            &std::fs::read_to_string(temp_dir.join(".nyan/settings.local.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(written["language"], "en");

@@ -1,4 +1,4 @@
-# CLAUDE.md (nyan 仓库规则)
+# AGENTS.md (nyan 仓库规则)
 
 面向本仓库 AI 代理开发的自动化与规范指南。所有在此代码库工作的 Agent 必须严格遵守。
 

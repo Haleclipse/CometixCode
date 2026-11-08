@@ -707,7 +707,7 @@ fn append_macos_mandatory_write_denies(profile: &mut String) {
         "(deny file-write* (regex #\"(^|/)\\.(gitconfig|gitmodules|bashrc|bash_profile|zshrc|zprofile|profile|ripgreprc|mcp\\.json)$\"))\n",
     );
     profile.push_str("(deny file-write* (regex #\"(^|/)\\.(vscode|idea)(/|$)\"))\n");
-    profile.push_str("(deny file-write* (regex #\"(^|/)\\.claude/(commands|agents)(/|$)\"))\n");
+    profile.push_str("(deny file-write* (regex #\"(^|/)\\.nyan/(commands|agents)(/|$)\"))\n");
     profile.push_str("(deny file-write* (regex #\"(^|/)\\.git/hooks(/|$)\"))\n");
     profile.push_str("(deny file-write* (regex #\"(^|/)\\.git/config$\"))\n");
 }
@@ -762,7 +762,7 @@ fn linux_existing_mandatory_write_denies(cwd: &Path) -> Vec<PathBuf> {
             let protected = matches!(name.as_ref(), ".vscode" | ".idea")
                 || (matches!(name.as_ref(), "commands" | "agents")
                     && path.parent().is_some_and(|parent| {
-                        parent.file_name().is_some_and(|name| name == ".claude")
+                        parent.file_name().is_some_and(|name| name == ".nyan")
                     }))
                 || (name == "hooks"
                     && path.parent().is_some_and(|parent| {
@@ -1353,17 +1353,13 @@ pub fn convert_to_sandbox_runtime_config(settings: &SettingsJson) -> SandboxRunt
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let original_cwd = get_original_cwd();
     if cwd != original_cwd {
-        deny_write.push(cwd.join(".claude/settings.json").display().to_string());
-        deny_write.push(
-            cwd.join(".claude/settings.local.json")
-                .display()
-                .to_string(),
-        );
+        deny_write.push(cwd.join(".nyan/settings.json").display().to_string());
+        deny_write.push(cwd.join(".nyan/settings.local.json").display().to_string());
     }
 
-    deny_write.push(original_cwd.join(".claude/skills").display().to_string());
+    deny_write.push(original_cwd.join(".nyan/skills").display().to_string());
     if cwd != original_cwd {
-        deny_write.push(cwd.join(".claude/skills").display().to_string());
+        deny_write.push(cwd.join(".nyan/skills").display().to_string());
     }
 
     if let Some(additional) = settings
@@ -2297,11 +2293,11 @@ mod tests {
         ));
         let managed = root.join("managed");
         let config_home = root.join("user-config");
-        std::fs::create_dir_all(root.join(".claude")).unwrap();
+        std::fs::create_dir_all(root.join(".nyan")).unwrap();
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::write(
-            root.join(".claude/settings.json"),
+            root.join(".nyan/settings.json"),
             r#"{
               "sandbox": {
                 "network": {
@@ -2412,11 +2408,11 @@ mod tests {
         ));
         let managed = root.join("managed");
         let config_home = root.join("user-config");
-        std::fs::create_dir_all(root.join(".claude")).unwrap();
+        std::fs::create_dir_all(root.join(".nyan")).unwrap();
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::write(
-            root.join(".claude/settings.json"),
+            root.join(".nyan/settings.json"),
             r#"{
               "sandbox": {
                 "network": {"allowedDomains": ["project.example"]},

@@ -348,8 +348,8 @@ mod tests {
     #[test]
     fn build_worktree_notice_matches_official_copy() {
         assert_eq!(
-            build_worktree_notice("/repo", "/repo/.claude/worktrees/agent"),
-            "You've inherited the conversation context above from a parent agent working in /repo. You are operating in an isolated git worktree at /repo/.claude/worktrees/agent — same repository, same relative file structure, separate working copy. Paths in the inherited context refer to the parent's working directory; translate them to your worktree root. Re-read files before editing if the parent may have modified them since they appear in the context. Your changes stay in this worktree and will not affect the parent's files."
+            build_worktree_notice("/repo", "/repo/.nyan/worktrees/agent"),
+            "You've inherited the conversation context above from a parent agent working in /repo. You are operating in an isolated git worktree at /repo/.nyan/worktrees/agent — same repository, same relative file structure, separate working copy. Paths in the inherited context refer to the parent's working directory; translate them to your worktree root. Re-read files before editing if the parent may have modified them since they appear in the context. Your changes stay in this worktree and will not affect the parent's files."
         );
     }
 

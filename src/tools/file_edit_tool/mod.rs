@@ -1457,7 +1457,7 @@ mod tests {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let root = temp_root("settings");
-        let path = root.join(".claude/settings.json");
+        let path = root.join(".nyan/settings.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let original = "{\"defaultShell\":\"bash\"}\n";
         std::fs::write(&path, original).unwrap();
@@ -1841,7 +1841,7 @@ mod tests {
         crate::skills::load_skills_dir::clear_dynamic_skills();
         let root = temp_root("dynamic-error");
         let package = root.join("package");
-        let skill_dir = package.join(".claude/skills");
+        let skill_dir = package.join(".nyan/skills");
         std::fs::create_dir_all(skill_dir.join("edit-skill")).unwrap();
         std::fs::write(
             skill_dir.join("edit-skill/SKILL.md"),

@@ -12855,7 +12855,7 @@ mod tests {
                     // actor legitimately emits attachment rows first — a
                     // `SkillListing` for whatever skills the cwd has — so
                     // "first event is StreamRequestStart" was an assertion
-                    // about the developer's `.claude/skills/` directory, and it
+                    // about the developer's `.nyan/skills/` directory, and it
                     // started failing when that directory grew.
                     let mut saw_stream_start = false;
                     for _ in 0..32 {

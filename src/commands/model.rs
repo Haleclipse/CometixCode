@@ -436,9 +436,9 @@ mod tests {
     fn ctrl_s_reports_a_project_selection_that_still_wins() {
         let fixture = Fixture::new(PROFILES);
         let project = fixture.root.join("project");
-        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::create_dir_all(project.join(".nyan")).unwrap();
         std::fs::write(
-            project.join(".claude/settings.json"),
+            project.join(".nyan/settings.json"),
             r#"{"nyan": {"selection": {"main": "qwen3:32b"}}}"#,
         )
         .unwrap();

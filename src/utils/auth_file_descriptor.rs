@@ -5,12 +5,11 @@
 use crate::utils::process_env::JsTruthy;
 
 /// Maps to: CC `utils/authFileDescriptor.ts:23` `CCR_OAUTH_TOKEN_PATH`.
-pub const CCR_OAUTH_TOKEN_PATH: &str = "/home/claude/.claude/remote/.oauth_token";
+pub const CCR_OAUTH_TOKEN_PATH: &str = "/home/claude/.nyan/remote/.oauth_token";
 /// Maps to: CC `utils/authFileDescriptor.ts:24` `CCR_API_KEY_PATH`.
-pub const CCR_API_KEY_PATH: &str = "/home/claude/.claude/remote/.api_key";
+pub const CCR_API_KEY_PATH: &str = "/home/claude/.nyan/remote/.api_key";
 /// Maps to: CC `utils/authFileDescriptor.ts:25` `CCR_SESSION_INGRESS_TOKEN_PATH`.
-pub const CCR_SESSION_INGRESS_TOKEN_PATH: &str =
-    "/home/claude/.claude/remote/.session_ingress_token";
+pub const CCR_SESSION_INGRESS_TOKEN_PATH: &str = "/home/claude/.nyan/remote/.session_ingress_token";
 
 /// Maps to: CC `utils/authFileDescriptor.ts:67-91` `readTokenFromWellKnownFile`.
 pub fn read_token_from_well_known_file(path: &str, _token_name: &str) -> Option<String> {

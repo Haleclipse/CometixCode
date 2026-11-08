@@ -100,7 +100,7 @@ pub fn SelectEventMode<'a>(
                                 wrap: TextWrap::Wrap,
                             )
                             Text(
-                                content: "Only hooks from managed settings can run. User-defined hooks from ~/.claude/settings.json, .claude/settings.json, and .claude/settings.local.json are blocked.".to_string(),
+                                content: "Only hooks from managed settings can run. User-defined hooks from ~/.nyan/settings.json, .nyan/settings.json, and .nyan/settings.local.json are blocked.".to_string(),
                                 dim: true,
                                 wrap: TextWrap::Wrap,
                             )

@@ -2234,7 +2234,7 @@ mod tests {
 
         let raw = exit_raw(
             serde_json::json!("## Plan\nShip it"),
-            Some("/tmp/project/.claude/plans/plan.md"),
+            Some("/tmp/project/.nyan/plans/plan.md"),
             false,
         );
         let approved = render_tool_result_lines_for_result(
@@ -2255,14 +2255,14 @@ mod tests {
         );
         assert_eq!(
             approved[1].text,
-            "Plan saved to: /tmp/project/.claude/plans/plan.md · /plan to edit"
+            "Plan saved to: /tmp/project/.nyan/plans/plan.md · /plan to edit"
         );
         assert_eq!(approved[1].tone, ToolRenderTone::Inactive);
         assert_eq!(approved[2].text, "## Plan");
 
         let raw = exit_raw(
             serde_json::json!("## Plan"),
-            Some("/tmp/project/.claude/plans/plan.md"),
+            Some("/tmp/project/.nyan/plans/plan.md"),
             true,
         );
         let awaiting = render_tool_result_lines_for_result(

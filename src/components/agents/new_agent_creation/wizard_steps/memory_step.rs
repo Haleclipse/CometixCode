@@ -21,20 +21,20 @@ pub fn MemoryStep(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let is_user = string(&wizard.wizard_data, "location").as_deref() == Some("userSettings");
     let options = if is_user {
         vec![
-            option("User scope (~/.claude/agent-memory/) (Recommended)", "user"),
+            option("User scope (~/.nyan/agent-memory/) (Recommended)", "user"),
             option("None (no persistent memory)", "none"),
-            option("Project scope (.claude/agent-memory/)", "project"),
-            option("Local scope (.claude/agent-memory-local/)", "local"),
+            option("Project scope (.nyan/agent-memory/)", "project"),
+            option("Local scope (.nyan/agent-memory-local/)", "local"),
         ]
     } else {
         vec![
             option(
-                "Project scope (.claude/agent-memory/) (Recommended)",
+                "Project scope (.nyan/agent-memory/) (Recommended)",
                 "project",
             ),
             option("None (no persistent memory)", "none"),
-            option("User scope (~/.claude/agent-memory/)", "user"),
-            option("Local scope (.claude/agent-memory-local/)", "local"),
+            option("User scope (~/.nyan/agent-memory/)", "user"),
+            option("Local scope (.nyan/agent-memory-local/)", "local"),
         ]
     };
     let select = wizard.clone();

@@ -598,8 +598,7 @@ mod tests {
                 uuid::Uuid::new_v4().simple()
             ));
             let workspace = root.join("workspace");
-            std::fs::create_dir_all(workspace.join(".claude"))
-                .expect("create notifications fixture");
+            std::fs::create_dir_all(workspace.join(".nyan")).expect("create notifications fixture");
 
             crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
             crate::utils::process_env::set(

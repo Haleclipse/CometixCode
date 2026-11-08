@@ -345,14 +345,14 @@ mod tests {
             "Added /saved-extra as a working directory and saved to local settings · /permissions to manage"
         );
         let settings: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(workdir.join(".claude/settings.local.json")).unwrap(),
+            &std::fs::read(workdir.join(".nyan/settings.local.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(
             settings["permissions"]["additionalDirectories"],
             serde_json::json!(["/saved-extra"])
         );
-        assert!(!workdir.join(".claude/settings.json").exists());
+        assert!(!workdir.join(".nyan/settings.json").exists());
         assert!(!root.join("config/settings.json").exists());
         crate::bootstrap::state::set_original_cwd(old_cwd);
         set_additional_directories_for_claude_md(old_dirs);

@@ -69,7 +69,7 @@ fn upsert_style_ordered(
 ///
 /// Plugin output style loading (`loadPluginOutputStyles`) remains an explicit
 /// no-op until plugin runtime parity lands; directory styles are now loaded via
-/// the official `.claude/output-styles/*.md` path and source priority.
+/// the official `.nyan/output-styles/*.md` path and source priority.
 pub fn get_all_output_styles_ordered(cwd: &Path) -> Vec<(String, Option<OutputStyleConfig>)> {
     let mut all_styles = built_in_output_styles_ordered();
     let custom_styles =
@@ -260,10 +260,10 @@ mod tests {
         let config_home = root.join("config");
         let cwd = root.join("repo");
         std::fs::create_dir_all(cwd.join(".git")).unwrap();
-        std::fs::create_dir_all(cwd.join(".claude/output-styles")).unwrap();
+        std::fs::create_dir_all(cwd.join(".nyan/output-styles")).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
         std::fs::write(
-            cwd.join(".claude/output-styles/custom.md"),
+            cwd.join(".nyan/output-styles/custom.md"),
             "---\nname: custom\ndescription: Custom style\nkeep-coding-instructions: false\n---\nPrompt body",
         )
         .unwrap();

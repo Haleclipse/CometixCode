@@ -149,7 +149,7 @@ mod tests {
         execute_instructions_loaded_hooks_with_config(
             &config,
             InstructionsLoadedInput {
-                file_path: "/repo/.claude/rules/rust.md".to_string(),
+                file_path: "/repo/.nyan/rules/rust.md".to_string(),
                 memory_type: "Project",
                 load_reason: "path_glob_match",
                 globs: Some(vec!["src/**/*.rs".to_string()]),

@@ -407,7 +407,7 @@ mod tests {
                 .is_some_and(|rules| rules.contains(&persisted_rule))
         );
         let settings: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(".claude/settings.local.json").unwrap())
+            serde_json::from_str(&std::fs::read_to_string(".nyan/settings.local.json").unwrap())
                 .unwrap();
         assert_eq!(
             settings["permissions"]["allow"],
@@ -419,8 +419,8 @@ mod tests {
             "persistPermissions updates the live permission context directly without reloading AppState.settings",
         );
 
-        std::fs::remove_dir_all(".claude").unwrap();
-        std::fs::create_dir_all(".claude/settings.local.json").unwrap();
+        std::fs::remove_dir_all(".nyan").unwrap();
+        std::fs::create_dir_all(".nyan/settings.local.json").unwrap();
         let failed_rule = PermissionRuleValue::new("Bash", Some("cargo clippy".to_string()));
         let disk_failure = PermissionUpdate::AddRules {
             destination: PermissionUpdateDestination::LocalSettings,
@@ -438,7 +438,7 @@ mod tests {
                 .get(&PermissionRuleSource::LocalSettings)
                 .is_some_and(|rules| rules.contains(&failed_rule))
         );
-        assert!(std::path::Path::new(".claude/settings.local.json").is_dir());
+        assert!(std::path::Path::new(".nyan/settings.local.json").is_dir());
     }
 
     fn context_for(agent_id: Option<&str>) -> crate::tool::ToolUseContext {

@@ -10406,7 +10406,7 @@ mod tests {
 
     fn persisted_local_rules(fixture: &RacingPermissionFixture) -> Option<serde_json::Value> {
         let settings =
-            std::fs::read_to_string(fixture.root.join(".claude/settings.local.json")).ok()?;
+            std::fs::read_to_string(fixture.root.join(".nyan/settings.local.json")).ok()?;
         serde_json::from_str::<serde_json::Value>(&settings)
             .ok()
             .map(|settings| settings["permissions"]["allow"].clone())

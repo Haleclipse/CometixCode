@@ -6,10 +6,11 @@
 
 # Project-local runtime, session, and test artifacts. The last two are
 # written into the repository root by tests that need a scratch
-# CLAUDE_CONFIG_DIR: components/text_input.rs and utils/attachments.rs.
+# NYAN_CONFIG_DIR: components/text_input.rs and utils/attachments.rs.
 /.tmp/
 /.agents/
 /.claude/
+/.nyan/
 /.test/
 .cometix-nested-race-*/
 

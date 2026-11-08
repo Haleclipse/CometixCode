@@ -635,11 +635,11 @@ mod tests {
     #[test]
     fn compound_cwd_change_with_a_write_blocks_auto_allow() {
         let parsed = parsed(vec![
-            statement(vec![cmd("Set-Location", &["./.claude"], &literals(1))]),
+            statement(vec![cmd("Set-Location", &["./.nyan"], &literals(1))]),
             statement(vec![cmd("Set-Content", &["./settings.json"], &literals(1))]),
         ]);
         assert!(matches!(
-            check_permission_mode("Set-Location ./.claude; Set-Content ./settings.json", &parsed, &accept_edits()),
+            check_permission_mode("Set-Location ./.nyan; Set-Content ./settings.json", &parsed, &accept_edits()),
             PermissionResult::Passthrough { ref message, .. }
                 if message.starts_with("Compound command contains a directory-changing command")
         ));

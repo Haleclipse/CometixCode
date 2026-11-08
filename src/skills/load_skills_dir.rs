@@ -79,15 +79,13 @@ pub fn get_skills_path(source: SkillsPathSource, dir: &str) -> PathBuf {
     match source {
         SkillsPathSource::Setting(SettingSource::Policy) => {
             crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".claude")
+                .join(".nyan")
                 .join(dir)
         }
         SkillsPathSource::Setting(SettingSource::User) => {
             crate::utils::env_utils::get_config_home_dir().join(dir)
         }
-        SkillsPathSource::Setting(SettingSource::Project) => {
-            PathBuf::from(format!(".claude/{dir}"))
-        }
+        SkillsPathSource::Setting(SettingSource::Project) => PathBuf::from(format!(".nyan/{dir}")),
         SkillsPathSource::Plugin => PathBuf::from("plugin"),
         SkillsPathSource::Setting(SettingSource::Local | SettingSource::Flag) => PathBuf::new(),
     }
@@ -429,7 +427,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
     if crate::utils::env_utils::is_bare_mode() {
         if project_enabled {
             for add_dir in additional_dirs {
-                let candidate = add_dir.join(".claude").join("skills");
+                let candidate = add_dir.join(".nyan").join("skills");
                 if candidate.is_dir() {
                     skill_dirs.push(SkillDir {
                         path: candidate,
@@ -443,7 +441,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
             crate::utils::process_env::var("CLAUDE_CODE_DISABLE_POLICY_SKILLS").as_deref(),
         ) {
             let managed = crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".claude")
+                .join(".nyan")
                 .join("skills");
             if managed.is_dir() {
                 skill_dirs.push(SkillDir {
@@ -473,7 +471,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
                 });
             }
             for add_dir in additional_dirs {
-                let candidate = add_dir.join(".claude").join("skills");
+                let candidate = add_dir.join(".nyan").join("skills");
                 if candidate.is_dir() {
                     skill_dirs.push(SkillDir {
                         path: candidate,
@@ -488,7 +486,7 @@ fn load_skill_dir_commands(cwd: &Path) -> Vec<SkillCommand> {
         // managed commands.
         if !skills_locked {
             let managed_commands = crate::utils::settings::managed_path::get_managed_file_path()
-                .join(".claude")
+                .join(".nyan")
                 .join("commands");
             if managed_commands.is_dir() {
                 legacy_command_dirs.push(SkillDir {
@@ -600,7 +598,7 @@ pub fn discover_skill_dirs_for_paths(file_paths: &[PathBuf], cwd: &Path) -> Vec<
             if directory == resolved_cwd || !directory.starts_with(&resolved_cwd) {
                 break;
             }
-            let skill_dir = directory.join(".claude").join("skills");
+            let skill_dir = directory.join(".nyan").join("skills");
             if checked.insert(skill_dir.clone())
                 && std::fs::metadata(&skill_dir).is_ok()
                 && !crate::utils::git::gitignore::is_path_gitignored(&directory, &resolved_cwd)
@@ -1326,16 +1324,16 @@ mod tests {
         std::fs::create_dir_all(project.join(".git")).unwrap();
         for (path, description) in [
             (
-                managed.join(".claude/skills/managed-skill/SKILL.md"),
+                managed.join(".nyan/skills/managed-skill/SKILL.md"),
                 "Managed skill",
             ),
             (config.join("skills/user-skill/SKILL.md"), "User skill"),
             (
-                project.join(".claude/skills/project-skill/SKILL.md"),
+                project.join(".nyan/skills/project-skill/SKILL.md"),
                 "Project skill",
             ),
             (
-                additional.join(".claude/skills/additional-skill/SKILL.md"),
+                additional.join(".nyan/skills/additional-skill/SKILL.md"),
                 "Additional skill",
             ),
         ] {
@@ -1346,12 +1344,12 @@ mod tests {
         }
         for (path, body) in [
             (
-                managed.join(".claude/commands/managed-command.md"),
+                managed.join(".nyan/commands/managed-command.md"),
                 "Managed command",
             ),
             (config.join("commands/user-command.md"), "User command"),
             (
-                project.join(".claude/commands/project-command.md"),
+                project.join(".nyan/commands/project-command.md"),
                 "Project command",
             ),
         ] {
@@ -1500,7 +1498,7 @@ mod tests {
             "nyan-braced-conditional-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skill_dir = root.join(".claude/skills/typescript-only");
+        let skill_dir = root.join(".nyan/skills/typescript-only");
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(
@@ -1761,9 +1759,9 @@ mod tests {
             "nyan-dynamic-skills-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let nested_skills = root.join("packages/pkg/.claude/skills");
+        let nested_skills = root.join("packages/pkg/.nyan/skills");
         let dynamic_skill = nested_skills.join("nested");
-        let conditional_skill = root.join(".claude/skills/rust-only");
+        let conditional_skill = root.join(".nyan/skills/rust-only");
         std::fs::create_dir_all(&dynamic_skill).unwrap();
         std::fs::create_dir_all(&conditional_skill).unwrap();
         std::fs::create_dir_all(root.join("src")).unwrap();
@@ -1834,7 +1832,7 @@ mod tests {
         let root = temp_dir("dynamic-precedence");
         let name = format!("collision-{}", uuid::Uuid::new_v4().simple());
         write_file(
-            &root.join(".claude/skills").join(&name).join("SKILL.md"),
+            &root.join(".nyan/skills").join(&name).join("SKILL.md"),
             &format!("---\nname: {name}\ndescription: Visible project skill\n---\nVisible"),
         );
         let dynamic_root = root.join("discovered");
@@ -1915,7 +1913,7 @@ mod tests {
         clear_dynamic_skills();
 
         let root = temp_dir("empty-dynamic-dir");
-        let empty_dir = root.join(".claude/skills");
+        let empty_dir = root.join(".nyan/skills");
         fs::create_dir_all(&empty_dir).unwrap();
 
         let before = dynamic_skills_generation();
@@ -2031,14 +2029,14 @@ mod tests {
 
         let root = temp_dir("skills-memo");
         write_file(
-            &root.join(".claude/skills/first/SKILL.md"),
+            &root.join(".nyan/skills/first/SKILL.md"),
             "---\ndescription: First\n---\nBody",
         );
         let first = get_skill_dir_commands(&root);
         assert!(first.iter().any(|skill| skill.name == "first"));
 
         write_file(
-            &root.join(".claude/skills/second/SKILL.md"),
+            &root.join(".nyan/skills/second/SKILL.md"),
             "---\ndescription: Second\n---\nBody",
         );
         assert!(

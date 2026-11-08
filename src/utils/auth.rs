@@ -695,7 +695,7 @@ mod tests {
         let dir = unique_temp_dir("project-helper-trust");
         let config_home = dir.join("config");
         let project = dir.join("project");
-        std::fs::create_dir_all(project.join(".claude")).unwrap();
+        std::fs::create_dir_all(project.join(".nyan")).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
         let command = if cfg!(target_os = "windows") {
             "echo project-key"
@@ -703,7 +703,7 @@ mod tests {
             "printf project-key"
         };
         std::fs::write(
-            project.join(".claude/settings.json"),
+            project.join(".nyan/settings.json"),
             format!(r#"{{"apiKeyHelper":"{command}"}}"#),
         )
         .unwrap();

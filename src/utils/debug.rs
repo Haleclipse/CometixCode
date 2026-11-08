@@ -4,7 +4,7 @@
 //! [`crate::utils::debug_filter`] (CC `utils/debugFilter.ts`).
 //!
 //! Developer defaults (aligned with CC):
-//! - `--debug` / `-d` → write to `~/.claude/debug/{session}.log` (TUI-safe;
+//! - `--debug` / `-d` → write to `~/.nyan/debug/{session}.log` (TUI-safe;
 //!   Nyan uses `.log`; CC uses `.txt`)
 //! - `--debug-to-stderr` / `-d2e` → stderr instead of file
 //! - `--debug-file <path>` → explicit file (implies debug mode)

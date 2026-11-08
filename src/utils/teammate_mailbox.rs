@@ -3,7 +3,7 @@
 //! Maps to: CC `utils/teammateMailbox.ts`.
 //!
 //! Official Claude Code persists inbox JSON files under
-//! `~/.claude/teams/{team}/inboxes/{agent}.json` with file locking. Nyan
+//! `~/.nyan/teams/{team}/inboxes/{agent}.json` with file locking. Nyan
 //! now mirrors that file lifecycle for pane-backed teammates while retaining an
 //! in-memory cache for the current in-process runner.
 

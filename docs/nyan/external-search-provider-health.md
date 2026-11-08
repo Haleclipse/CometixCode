@@ -4,7 +4,7 @@
 冲突处。
 
 已定：实现放独立的 `services/web/provider_health.rs`，不改 `service_health.rs`；3.2 的数值确认可用（常量，不进 settings）。
-构建、测试、分支与交付流程按仓库 `CLAUDE.md`，本文不重复。
+构建、测试、分支与交付流程按仓库 `AGENTS.md`，本文不重复。
 
 设计来源：对照 konbakuyomu/smartsearch 的 `provider_health.py`、`providers/deepseek.py`。它是 CLI 短进程、逐渠道选路，
 架构与本项目相反；只借健康记录这一块。

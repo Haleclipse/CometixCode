@@ -1538,7 +1538,7 @@ mod tests {
         let mut blocks = Vec::new();
         for (index, branch) in ["a", "b"].into_iter().enumerate() {
             let branch_root = root.join(branch);
-            let skill_dir = branch_root.join(".claude/skills");
+            let skill_dir = branch_root.join(".nyan/skills");
             let source = branch_root.join("src/value.txt");
             std::fs::create_dir_all(skill_dir.join(format!("skill-{branch}"))).unwrap();
             std::fs::create_dir_all(source.parent().unwrap()).unwrap();
@@ -1704,7 +1704,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("ship")
             .join("SKILL.md");
@@ -1962,7 +1962,7 @@ pub(crate) mod streaming_hook_decision_tests {
         }
 
         pub(crate) fn local_settings(&self) -> std::path::PathBuf {
-            self.root.join("workspace/.claude/settings.local.json")
+            self.root.join("workspace/.nyan/settings.local.json")
         }
 
         pub(crate) fn install_hooks(&self, decide: bool) {

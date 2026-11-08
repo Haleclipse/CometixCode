@@ -57,7 +57,7 @@ fn builtin_tips(ctx: &TipContext) -> Vec<Tip> {
         },
         Tip {
             id: "custom-commands".to_string(),
-            content: "Create project commands in .claude/commands/".to_string(),
+            content: "Create project commands in .nyan/commands/".to_string(),
             cooldown_sessions: 15,
         },
         Tip {

@@ -2143,7 +2143,7 @@ mod tests {
         let config_dir = temp_dir.join("config");
         let project_dir = temp_dir.join("project");
         std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(project_dir.join(".claude")).unwrap();
+        std::fs::create_dir_all(project_dir.join(".nyan")).unwrap();
         std::fs::write(
             project_dir.join(".mcp.json"),
             serde_json::json!({
@@ -2167,7 +2167,7 @@ mod tests {
         assert!(!unapproved.contains_key("docs"));
 
         std::fs::write(
-            project_dir.join(".claude/settings.local.json"),
+            project_dir.join(".nyan/settings.local.json"),
             serde_json::json!({ "enabledMcpjsonServers": ["docs"] }).to_string(),
         )
         .unwrap();

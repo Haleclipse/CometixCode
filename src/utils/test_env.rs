@@ -178,10 +178,10 @@ impl TestStateLock {
 ///
 /// `just test` pins `NYAN_CONFIG_DIR`, which covers `userSettings` and
 /// the state file. But settings merge from five sources and `projectSettings`
-/// is `${cwd}/.claude/settings.json` (`utils/settings/mod.rs:1-8`), rooted at
+/// is `${cwd}/.nyan/settings.json` (`utils/settings/mod.rs:1-8`), rooted at
 /// `bootstrap::state::get_original_cwd()` — process state, not an env var, so no
 /// recipe can pin it. Without this, a test that reads settings reads THIS
-/// repository's `.claude/settings.json`, which configures hooks; anything that
+/// repository's `.nyan/settings.json`, which configures hooks; anything that
 /// then runs those hooks tries to spawn a process.
 ///
 /// `tests/fixtures/isolated-project` is the tracked hook-free workdir used by

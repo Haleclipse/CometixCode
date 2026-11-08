@@ -1,7 +1,7 @@
 //! Maps to: CC `utils/releaseNotes.ts` and `utils/logoV2Utils.ts` release-note helpers.
 //!
 //! Official Claude Code fetches the public changelog in the background and
-//! stores it under `~/.claude/cache/changelog.md`, then render paths read an
+//! stores it under `~/.nyan/cache/changelog.md`, then render paths read an
 //! in-memory cache. Nyan keeps this runtime producer read-only: it only reads
 //! an existing cache file and never fetches from GitHub, writes cache/config, or
 //! updates `lastReleaseNotesSeen`.

@@ -598,7 +598,7 @@ mod tests {
         crate::utils::worktree::restore_worktree_session(Some(
             crate::utils::worktree::WorktreeSession {
                 original_cwd: "/repo".into(),
-                worktree_path: "/repo/.claude/worktrees/wt".into(),
+                worktree_path: "/repo/.nyan/worktrees/wt".into(),
                 worktree_name: "wt".into(),
                 session_id: "sess-old".into(),
                 ..crate::utils::worktree::WorktreeSession::default()
@@ -617,7 +617,7 @@ mod tests {
                 .as_ref()
                 .and_then(|v| v.get("worktreePath"))
                 .and_then(|v| v.as_str()),
-            Some("/repo/.claude/worktrees/wt")
+            Some("/repo/.nyan/worktrees/wt")
         );
         // Live process session still present (CC getCurrentWorktreeSession).
         assert!(crate::utils::worktree::get_current_worktree_session().is_some());

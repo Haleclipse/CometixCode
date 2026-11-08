@@ -90,7 +90,7 @@ fn relative_to_cwd(path: &Path) -> PathBuf {
 fn local_settings_relative_path() -> PathBuf {
     get_settings_file_path_for_source(SettingSource::Local)
         .map(|path| relative_to_cwd(&path))
-        .unwrap_or_else(|| PathBuf::from(".claude/settings.local.json"))
+        .unwrap_or_else(|| PathBuf::from(".nyan/settings.local.json"))
 }
 
 /// Maps to: CC `commands/sandbox-toggle/sandbox-toggle.tsx#call` no-argument
@@ -256,7 +256,7 @@ mod tests {
         ));
         let managed = root.join("managed");
         let config_home = root.join("user-config");
-        std::fs::create_dir_all(root.join(".claude")).unwrap();
+        std::fs::create_dir_all(root.join(".nyan")).unwrap();
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&config_home).unwrap();
         let _cwd_guard = CwdGuard::set(&root);
@@ -267,9 +267,9 @@ mod tests {
         let output = local_output_for_args("exclude \"npm run test:*\"");
         assert_eq!(
             output,
-            "Added \"npm run test:*\" to excluded commands in .claude/settings.local.json"
+            "Added \"npm run test:*\" to excluded commands in .nyan/settings.local.json"
         );
-        let settings = std::fs::read_to_string(root.join(".claude/settings.local.json")).unwrap();
+        let settings = std::fs::read_to_string(root.join(".nyan/settings.local.json")).unwrap();
         assert!(
             settings.contains("npm run test:*"),
             "settings.local.json=\n{settings}"
@@ -278,10 +278,10 @@ mod tests {
         let output_again = local_output_for_args("exclude 'npm run test:*'");
         assert_eq!(
             output_again,
-            "Added \"npm run test:*\" to excluded commands in .claude/settings.local.json"
+            "Added \"npm run test:*\" to excluded commands in .nyan/settings.local.json"
         );
         let value: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(root.join(".claude/settings.local.json")).unwrap(),
+            &std::fs::read_to_string(root.join(".nyan/settings.local.json")).unwrap(),
         )
         .unwrap();
         let excluded = value

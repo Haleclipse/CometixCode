@@ -609,7 +609,7 @@ mod tests {
 
         context.mode = PermissionMode::AcceptEdits;
         let unsafe_result = validate_path(
-            ".claude/settings.json",
+            ".nyan/settings.json",
             &cwd.display().to_string(),
             &context,
             FileOperationType::Write,

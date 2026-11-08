@@ -236,7 +236,7 @@ pub fn generate_file_permission_suggestions(
 /// Maps to: CC `FilePermissionDialog/permissionOptions.tsx` `isInClaudeFolder`.
 pub fn is_in_claude_folder(file_path: &str) -> bool {
     let path = normalize_absolute_path(file_path);
-    let claude_dir = normalize_path(&crate::bootstrap::state::get_original_cwd().join(".claude"));
+    let claude_dir = normalize_path(&crate::bootstrap::state::get_original_cwd().join(".nyan"));
     is_descendant_of(&path, &claude_dir)
 }
 
@@ -244,7 +244,7 @@ pub fn is_in_claude_folder(file_path: &str) -> bool {
 /// `isInGlobalClaudeFolder`.
 pub fn is_in_global_claude_folder(file_path: &str) -> bool {
     let path = normalize_absolute_path(file_path);
-    let claude_dir = normalize_path(&crate::utils::node_os::homedir().join(".claude"));
+    let claude_dir = normalize_path(&crate::utils::node_os::homedir().join(".nyan"));
     is_descendant_of(&path, &claude_dir)
 }
 
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(read_options[1].label, "Yes, during this session");
 
         let claude_path = crate::bootstrap::state::get_original_cwd()
-            .join(".claude")
+            .join(".nyan")
             .join("settings.json");
         let claude_options = get_file_permission_options(
             &claude_path.display().to_string(),

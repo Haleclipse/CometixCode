@@ -1405,9 +1405,9 @@ fn check_path_constraints_for_statement(
     let mut first_ask: Option<PermissionResult> = None;
 
     // SECURITY: BashTool parity — block path operations in compound commands
-    // that change the working directory. `Set-Location ./.claude; Set-Content
+    // that change the working directory. `Set-Location ./.nyan; Set-Content
     // ./settings.json '...'` looks like a write to /project/settings.json to
-    // this validator while PowerShell writes /project/.claude/settings.json.
+    // this validator while PowerShell writes /project/.nyan/settings.json.
     //
     // Unlike BashTool, reads are blocked too: `Set-Location ~; Get-Content
     // ./.ssh/id_rsa` would otherwise bypass a `Read(~/.ssh/**)` deny rule.

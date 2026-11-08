@@ -94,7 +94,7 @@ fn now_ms() -> u64 {
 /// Maps to: CC `permissionSync.ts#getPermissionDir`.
 pub fn get_permission_dir(team_name: &str) -> String {
     format!(
-        "~/.claude/teams/{}/permissions",
+        "~/.nyan/teams/{}/permissions",
         crate::utils::swarm::team_helpers::sanitize_name(team_name)
     )
 }

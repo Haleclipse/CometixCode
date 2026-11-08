@@ -1666,8 +1666,8 @@ mod tests {
         assert!(command.prompt_command.is_none());
         for (declared, expected) in [
             (
-                vec!["Agent", "Read(~/**)", "Edit(~/.claude/settings.json)"],
-                vec!["Agent", "Read(~/**)", "Edit(~/.claude/settings.json)"],
+                vec!["Agent", "Read(~/**)", "Edit(~/.nyan/settings.json)"],
+                vec!["Agent", "Read(~/**)", "Edit(~/.nyan/settings.json)"],
             ),
             (
                 vec!["Read,Grep", "Bash(echo hi)"],

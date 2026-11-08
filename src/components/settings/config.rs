@@ -2772,8 +2772,8 @@ mod tests {
             PathSnapshot::capture(config_home.join("state.json")),
             PathSnapshot::capture(config_home.join("settings.json")),
             PathSnapshot::capture(config_home.join("projects")),
-            PathSnapshot::capture(cwd.join(".claude/settings.json")),
-            PathSnapshot::capture(cwd.join(".claude/settings.local.json")),
+            PathSnapshot::capture(cwd.join(".nyan/settings.json")),
+            PathSnapshot::capture(cwd.join(".nyan/settings.local.json")),
         ];
 
         // Frame-driven throughout: a timed stream loses the tail of a key

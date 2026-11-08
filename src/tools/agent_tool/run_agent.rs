@@ -2163,7 +2163,7 @@ mod tests {
             "nyan-agent-system-memory-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let memory_dir = root.join(".claude/agent-memory/reviewer");
+        let memory_dir = root.join(".nyan/agent-memory/reviewer");
         std::fs::create_dir_all(&memory_dir).unwrap();
         std::fs::write(memory_dir.join("MEMORY.md"), "- Use focused review notes\n").unwrap();
 
@@ -2577,7 +2577,7 @@ mod tests {
     fn preloads_agent_frontmatter_skills_like_official_run_agent() {
         let root =
             std::env::temp_dir().join(format!("nyan-agent-skill-preload-{}", uuid::Uuid::new_v4()));
-        let skills_dir = root.join(".claude").join("skills");
+        let skills_dir = root.join(".nyan").join("skills");
         let skill_file = skills_dir.join("audit").join("SKILL.md");
         std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
         let mut file = std::fs::File::create(&skill_file).unwrap();
@@ -2665,7 +2665,7 @@ mod tests {
         let discovered = root
             .join("packages")
             .join("pkg")
-            .join(".claude")
+            .join(".nyan")
             .join("skills");
         std::fs::create_dir_all(discovered.join("dynamic-audit")).unwrap();
         std::fs::write(
@@ -2708,7 +2708,7 @@ mod tests {
             "nyan-agent-plugin-skill-preload-{}",
             uuid::Uuid::new_v4()
         ));
-        let skills_dir = root.join(".claude").join("skills");
+        let skills_dir = root.join(".nyan").join("skills");
         let skill_file = skills_dir.join("plugin:docs").join("SKILL.md");
         std::fs::create_dir_all(skill_file.parent().unwrap()).unwrap();
         let mut file = std::fs::File::create(&skill_file).unwrap();

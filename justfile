@@ -35,10 +35,10 @@
 #
 # What the pinning does NOT cover: `projectSettings`. Settings merge from five
 # sources (utils/settings/mod.rs:1-8) and NYAN_CONFIG_DIR only moves the USER
-# one. `projectSettings` is `${cwd}/.claude/settings.json`, rooted at
+# one. `projectSettings` is `${cwd}/.nyan/settings.json`, rooted at
 # `get_original_cwd()` — process state, not an env var, so no recipe can pin it.
 # A test that reads settings therefore reads THIS repository's
-# `.claude/settings.json`, which configures hooks; that is how a
+# `.nyan/settings.json`, which configures hooks; that is how a
 # `UserPromptSubmit` assertion in process_user_input silently picked up the
 # repo's own Trellis hook and failed. Tests that care must pin it themselves
 # with `bootstrap::state::set_original_cwd(...)` plus a Drop guard that restores

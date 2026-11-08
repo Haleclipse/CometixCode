@@ -1,6 +1,6 @@
 //! Incremental port of official `ScheduleCronTool/*`.
 //! Schema/prompt metadata is API-visible. Session-only create/delete/list +
-//! scheduler enable are live; durable `.claude/scheduled_tasks.json` writes
+//! scheduler enable are live; durable `.nyan/scheduled_tasks.json` writes
 //! stay gated behind DurableCron.
 
 pub mod prompt;
@@ -35,7 +35,7 @@ pub fn cron_create_input_schema() -> &'static crate::utils::zod::Schema {
             (
                 "durable",
                 semantic_boolean(zod::boolean().optional()).describe(
-                    "true = persist to .claude/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends. Use true only when the user asks the task to survive across sessions.",
+                    "true = persist to .nyan/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends. Use true only when the user asks the task to survive across sessions.",
                 ),
             ),
         ])
@@ -231,7 +231,7 @@ pub(crate) fn cron_create_output(input: &serde_json::Value) -> Result<CreateOutp
 pub(crate) fn cron_create_model_content(output: &CreateOutput) -> String {
     // JS truthiness: an absent `durable` reads falsy.
     let where_text = if output.durable.unwrap_or(false) {
-        "Persisted to .claude/scheduled_tasks.json"
+        "Persisted to .nyan/scheduled_tasks.json"
     } else {
         "Session-only (not written to disk, dies when Claude exits)"
     };

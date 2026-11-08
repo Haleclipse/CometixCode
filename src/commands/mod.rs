@@ -1562,7 +1562,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("registry-review")
             .join("SKILL.md");
@@ -1608,7 +1608,7 @@ mod tests {
         );
 
         let second_skill = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("registry-second")
             .join("SKILL.md");
@@ -1659,7 +1659,7 @@ mod tests {
             "nyan-dynamic-builtin-collision-{}",
             uuid::Uuid::new_v4()
         ));
-        let discovered = root.join("packages/pkg/.claude/skills");
+        let discovered = root.join("packages/pkg/.nyan/skills");
         std::fs::create_dir_all(discovered.join("clear")).unwrap();
         std::fs::write(
             discovered.join("clear").join("SKILL.md"),

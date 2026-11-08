@@ -2544,7 +2544,7 @@ fn normalize_permission_path(path: &std::path::Path) -> std::path::PathBuf {
 fn path_has_sensitive_component(path: &std::path::Path) -> bool {
     path.components().any(|component| {
         let value = component.as_os_str().to_string_lossy();
-        matches!(value.as_ref(), ".git" | ".claude" | ".vscode" | ".idea")
+        matches!(value.as_ref(), ".git" | ".nyan" | ".vscode" | ".idea")
     })
 }
 

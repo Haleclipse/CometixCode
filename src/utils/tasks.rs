@@ -1,6 +1,6 @@
 //! Task utility seam.
 //!
-//! Maps to CC `utils/tasks.ts` (TodoV2 disk store under `~/.claude/tasks/`).
+//! Maps to CC `utils/tasks.ts` (TodoV2 disk store under `~/.nyan/tasks/`).
 //! Local Bash lifecycle state belongs to `tasks/local_shell_task`, matching
 //! CC's source ownership.
 

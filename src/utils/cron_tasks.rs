@@ -3,7 +3,7 @@
 //! Maps to: CC `utils/cronTasks.ts` (`addCronTask`, `removeCronTasks`,
 //! `listAllCronTasks`, `nextCronRunMs`, jitter helpers).
 //!
-//! Session and file-backed `.claude/scheduled_tasks.json` paths are live.
+//! Session and file-backed `.nyan/scheduled_tasks.json` paths are live.
 
 use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, Mutex};
@@ -119,7 +119,7 @@ pub fn remove_session_cron_tasks(ids: &[String]) -> usize {
 pub(crate) fn get_cron_file_path() -> std::path::PathBuf {
     std::env::current_dir()
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
-        .join(".claude")
+        .join(".nyan")
         .join("scheduled_tasks.json")
 }
 
@@ -399,7 +399,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let path = root.join(".claude/scheduled_tasks.json");
+        let path = root.join(".nyan/scheduled_tasks.json");
         let raw = std::fs::read_to_string(&path).unwrap();
         assert!(raw.contains(&id));
         assert!(!raw.contains("\"durable\""));

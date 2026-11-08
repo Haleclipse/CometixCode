@@ -784,7 +784,7 @@ mod tests {
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         // MCPSettings reads agent definitions from the cwd; a scratch cwd keeps
-        // the repository's own `.claude/agents` out of the server list.
+        // the repository's own `.nyan/agents` out of the server list.
         struct CwdGuard(std::path::PathBuf);
         impl Drop for CwdGuard {
             fn drop(&mut self) {

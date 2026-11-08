@@ -268,7 +268,7 @@ fn apply_filtered(update: &mut EnvUpdate<'_>, env: Option<&IndexMap<String, Stri
 /// Trusted sources (user settings, `--settings` flag, managed policy) apply
 /// ALL their env vars; project-scoped sources contribute only the
 /// [`SAFE_ENV_VARS`] allowlist, so a repository-controlled
-/// `.claude/settings.json` cannot redirect provider routing (e.g.
+/// `.nyan/settings.json` cannot redirect provider routing (e.g.
 /// `ANTHROPIC_BASE_URL`) before trust is established.
 ///
 /// Maps to: CC `utils/managedEnv.ts:124-178` `applySafeConfigEnvironmentVariables`.

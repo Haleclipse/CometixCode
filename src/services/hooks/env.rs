@@ -619,7 +619,7 @@ mod tests {
         let results = execute_config_change_hooks_with_config(
             &config_change_config(r#"cat > "$NYAN_TEST_CONFIG_CHANGE_CAPTURE""#),
             ConfigChangeSource::ProjectSettings,
-            Some("/repo/.claude/settings.json"),
+            Some("/repo/.nyan/settings.json"),
             create_base_hook_input(&HookContext::default()),
             vec![(
                 "NYAN_TEST_CONFIG_CHANGE_CAPTURE".to_string(),
@@ -636,7 +636,7 @@ mod tests {
         let _ = std::fs::remove_file(&capture);
         assert_eq!(input["hook_event_name"], "ConfigChange");
         assert_eq!(input["source"], "project_settings");
-        assert_eq!(input["file_path"], "/repo/.claude/settings.json");
+        assert_eq!(input["file_path"], "/repo/.nyan/settings.json");
     }
 
     /// `file_path` is `z.string().optional()` (`coreSchemas.ts:675`), and CC
@@ -707,7 +707,7 @@ mod tests {
         let user = execute_config_change_hooks_with_config(
             &blocking,
             ConfigChangeSource::UserSettings,
-            Some("/home/dev/.claude/settings.json"),
+            Some("/home/dev/.nyan/settings.json"),
             create_base_hook_input(&HookContext::default()),
             vec![],
             5_000,

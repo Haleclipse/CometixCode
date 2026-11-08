@@ -3149,7 +3149,7 @@ mod tests {
             "nyan-at-mention-dynamic-skill-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skill_dir = root.join("nested/.claude/skills");
+        let skill_dir = root.join("nested/.nyan/skills");
         let source_dir = root.join("nested/src");
         std::fs::create_dir_all(skill_dir.join("alpha")).unwrap();
         std::fs::create_dir_all(&source_dir).unwrap();
@@ -3196,7 +3196,7 @@ mod tests {
             "nyan-at-mention-missing-dynamic-skill-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skill_dir = root.join("nested/.claude/skills");
+        let skill_dir = root.join("nested/.nyan/skills");
         std::fs::create_dir_all(skill_dir.join("alpha")).unwrap();
         std::fs::create_dir_all(root.join("nested/src")).unwrap();
         std::fs::write(skill_dir.join("alpha/SKILL.md"), "# Alpha").unwrap();
@@ -3665,7 +3665,7 @@ mod tests {
             "nyan-dynamic-skill-attachment-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skills_dir = root.join("nested/.claude/skills");
+        let skills_dir = root.join("nested/.nyan/skills");
         std::fs::create_dir_all(skills_dir.join("alpha")).unwrap();
         std::fs::write(skills_dir.join("alpha/SKILL.md"), "# Alpha").unwrap();
         let mut context = ToolUseContext::default();
@@ -3706,7 +3706,7 @@ mod tests {
                 skill_names,
                 display_path,
                 ..
-            }) if skill_names == &["alpha"] && display_path == "nested/.claude/skills"
+            }) if skill_names == &["alpha"] && display_path == "nested/.nyan/skills"
         ));
         let Message::Attachment(model) = &dynamic_attachments[0].model_message else {
             panic!("expected local dynamic_skill attachment")
@@ -3721,9 +3721,9 @@ mod tests {
         assert_eq!(
             relative_display_path(
                 std::path::Path::new("/tmp/project/worktree"),
-                std::path::Path::new("/tmp/project/shared/.claude/skills"),
+                std::path::Path::new("/tmp/project/shared/.nyan/skills"),
             ),
-            "../shared/.claude/skills"
+            "../shared/.nyan/skills"
         );
     }
 
@@ -3804,7 +3804,7 @@ mod tests {
             "nyan-dynamic-skill-order-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skills_dir = root.join("nested/.claude/skills");
+        let skills_dir = root.join("nested/.nyan/skills");
         std::fs::create_dir_all(skills_dir.join("alpha")).unwrap();
         std::fs::write(skills_dir.join("alpha/SKILL.md"), "# Alpha").unwrap();
         let mut context = ToolUseContext::default();

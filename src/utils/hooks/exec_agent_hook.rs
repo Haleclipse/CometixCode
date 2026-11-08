@@ -740,7 +740,7 @@ mod tests {
         );
         std::env::set_current_dir(&workdir).unwrap();
         crate::bootstrap::state::set_original_cwd(&workdir);
-        let settings = crate::utils::node_os::homedir().join(".claude/settings.grok.json");
+        let settings = crate::utils::node_os::homedir().join(".nyan/settings.grok.json");
         crate::main::apply_live_startup_flags(&[
             "nyan".into(),
             "--settings".into(),

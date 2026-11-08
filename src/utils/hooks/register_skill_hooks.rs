@@ -94,7 +94,7 @@ mod tests {
             "session-1",
             &hooks,
             "demo-skill",
-            Some("/repo/.claude/skills/demo".to_string()),
+            Some("/repo/.nyan/skills/demo".to_string()),
         );
 
         assert_eq!(result.registered_count, 2);
@@ -105,7 +105,7 @@ mod tests {
         assert_eq!(pre[0].matcher, "Bash");
         assert_eq!(
             pre[0].skill_root.as_deref(),
-            Some("/repo/.claude/skills/demo")
+            Some("/repo/.nyan/skills/demo")
         );
         assert_eq!(pre[0].hooks[0].command, "echo pre");
         clear_all_session_hooks();

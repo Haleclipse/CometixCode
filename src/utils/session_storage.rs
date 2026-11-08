@@ -4,7 +4,7 @@
 //!
 //! ## File path
 //!
-//! `~/.claude/projects/${sanitizedProjectPath}/${sessionId}.jsonl`
+//! `~/.nyan/projects/${sanitizedProjectPath}/${sessionId}.jsonl`
 //!
 //! ## JSONL shape
 //!

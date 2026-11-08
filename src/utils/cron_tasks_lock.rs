@@ -1,4 +1,4 @@
-//! Scheduler lease lock for `.claude/scheduled_tasks.json`.
+//! Scheduler lease lock for `.nyan/scheduled_tasks.json`.
 //!
 //! Maps to: CC `utils/cronTasksLock.ts`. The lock uses atomic `create_new`,
 //! PID liveness recovery, owner identity checks, and RAII cleanup.
@@ -25,7 +25,7 @@ pub struct SchedulerLockGuard {
 impl SchedulerLockGuard {
     pub fn new(project_root: &Path, identity: impl Into<String>) -> Self {
         Self {
-            path: project_root.join(".claude").join("scheduled_tasks.lock"),
+            path: project_root.join(".nyan").join("scheduled_tasks.lock"),
             identity: identity.into(),
             owned: false,
         }

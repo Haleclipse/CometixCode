@@ -1,11 +1,11 @@
 //! Maps to: CC `utils/settings/settings.ts`.
 //!
-//! 1. userSettings     — ~/.claude/settings.json
-//! 2. projectSettings  — ${cwd}/.claude/settings.json
-//! 3. localSettings    — ${cwd}/.claude/settings.local.json
+//! 1. userSettings     — ~/.nyan/settings.json
+//! 2. projectSettings  — ${cwd}/.nyan/settings.json
+//! 3. localSettings    — ${cwd}/.nyan/settings.local.json
 //! 5. policySettings   — managed-settings.json + drop-in (Phase 2: remote, MDM, HKCU)
 //! - [ ] Policy: HKCU (Windows user registry)
-//! - [ ] Cowork mode: ~/.claude/cowork_settings.json
+//! - [ ] Cowork mode: ~/.nyan/cowork_settings.json
 
 pub mod apply_settings_change;
 pub mod change_detector;
@@ -54,7 +54,7 @@ pub struct ManagedFileSettingsPresence {
 // ════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════
 
-/// User → ~/.claude/
+/// User → ~/.nyan/
 /// Maps to: CC `utils/settings/settings.ts#getSettingsRootPathForSource`.
 pub(crate) fn get_settings_root_path_for_source(source: SettingSource) -> PathBuf {
     match source {
@@ -71,8 +71,8 @@ pub(crate) fn get_settings_root_path_for_source(source: SettingSource) -> PathBu
 /// Maps to: CC `utils/settings/settings.ts#getRelativeSettingsFilePathForSource`.
 pub(crate) fn get_relative_settings_file_path_for_source(source: SettingSource) -> &'static str {
     match source {
-        SettingSource::Project => ".claude/settings.json",
-        SettingSource::Local => ".claude/settings.local.json",
+        SettingSource::Project => ".nyan/settings.json",
+        SettingSource::Local => ".nyan/settings.local.json",
         _ => "",
     }
 }
@@ -1239,7 +1239,7 @@ mod tests {
 
     #[test]
     fn project_and_local_settings_cannot_define_or_invent_profiles() {
-        let path = Path::new("/tmp/project/.claude/settings.json");
+        let path = Path::new("/tmp/project/.nyan/settings.json");
         let mut project: SettingsJson = serde_json::from_value(serde_json::json!({
             "nyan": {
                 "providers": {"evil": {"kind": "anthropic"}},
@@ -1294,7 +1294,7 @@ mod tests {
 
     #[test]
     fn project_and_local_settings_can_select_trusted_profiles() {
-        let path = Path::new("/tmp/project/.claude/settings.local.json");
+        let path = Path::new("/tmp/project/.nyan/settings.local.json");
         let local: SettingsJson = serde_json::from_value(serde_json::json!({
             "nyan": {"selection": {"main": "main", "subagent": "inherit"}}
         }))

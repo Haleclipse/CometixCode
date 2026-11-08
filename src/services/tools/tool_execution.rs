@@ -6333,7 +6333,7 @@ mod tests {
             "nyan-edit-dynamic-context-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skill_dir = root.join("packages/pkg/.claude/skills");
+        let skill_dir = root.join("packages/pkg/.nyan/skills");
         std::fs::create_dir_all(skill_dir.join("nested")).unwrap();
         std::fs::write(
             skill_dir.join("nested/SKILL.md"),
@@ -6414,7 +6414,7 @@ mod tests {
             "nyan-write-dynamic-context-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skill_dir = root.join("packages/pkg/.claude/skills");
+        let skill_dir = root.join("packages/pkg/.nyan/skills");
         std::fs::create_dir_all(skill_dir.join("nested")).unwrap();
         std::fs::write(
             skill_dir.join("nested/SKILL.md"),
@@ -6484,7 +6484,7 @@ mod tests {
             "nyan-write-failed-dynamic-context-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skill_dir = root.join("packages/pkg/.claude/skills");
+        let skill_dir = root.join("packages/pkg/.nyan/skills");
         std::fs::create_dir_all(skill_dir.join("nested")).unwrap();
         std::fs::write(
             skill_dir.join("nested/SKILL.md"),
@@ -6941,7 +6941,7 @@ mod tests {
             uuid::Uuid::new_v4()
         ));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("release")
             .join("SKILL.md");
@@ -11986,7 +11986,7 @@ rl.on('line', line => {
             "approve plan".to_string(),
             serde_json::json!({
                 "plan": "## Plan\nShip it",
-                "planFilePath": "/tmp/project/.claude/plans/plan.md"
+                "planFilePath": "/tmp/project/.nyan/plans/plan.md"
             }),
             PermissionMode::Plan,
         );
@@ -12421,7 +12421,7 @@ rl.on('line', line => {
                 assert_eq!(payload["team_name"], "reviewers");
                 assert_eq!(payload["lead_agent_id"], "team-lead@reviewers");
                 assert!(payload["team_file_path"].as_str().is_some_and(|path| {
-                    path.ends_with(".claude/teams/reviewers/config.json")
+                    path.ends_with(".nyan/teams/reviewers/config.json")
                         || path.ends_with("teams/reviewers/config.json")
                 }));
                 // CC TeamCreateTool defines no renderToolResultMessage

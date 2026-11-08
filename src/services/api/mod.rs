@@ -4,7 +4,7 @@
 //! Contains the Claude API interaction layer: client construction, streaming
 //! queries, retry logic, error classification, and message conversion.
 
-/// Stage-based API request tracing (`NYAN_TRACE` → `~/.claude/trace/`).
+/// Stage-based API request tracing (`NYAN_TRACE` → `~/.nyan/trace/`).
 pub mod api_trace;
 
 /// Claude API interaction: message conversion, caching, usage tracking, query wrappers.

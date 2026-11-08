@@ -148,9 +148,9 @@ Skills add capabilities the agent can use on demand without bloating every sessi
 
 For each suggested skill, provide: name, one-line purpose, and why it fits this repo.
 
-If `.claude/skills/` already exists with skills, review them first. Do not overwrite existing skills — only propose new ones that complement what is already there.
+If `.nyan/skills/` already exists with skills, review them first. Do not overwrite existing skills — only propose new ones that complement what is already there.
 
-Create each skill at `.claude/skills/<skill-name>/SKILL.md`:
+Create each skill at `.nyan/skills/<skill-name>/SKILL.md`:
 
 ```yaml
 ---
@@ -177,7 +177,7 @@ Check the environment and ask about each gap you find (use AskUserQuestion):
 
   For each hook preference (from the queue or the formatter fallback):
 
-  1. Target file: default to `.claude/settings.json` (team-shared, committed) or personal settings.
+  1. Target file: default to `.nyan/settings.json` (team-shared, committed) or personal settings.
 
   2. Pick the event and matcher from the preference:
      - "after every edit" → `PostToolUse` with matcher `Write|Edit`
@@ -186,7 +186,7 @@ Check the environment and ask about each gap you find (use AskUserQuestion):
      - "before committing" (literal git-commit gate) → **not a hooks.json hook.** Matchers can't filter Bash by command content, so there's no way to target only `git commit`. Route this to a git pre-commit hook (`.git/hooks/pre-commit`, husky, pre-commit framework) instead — offer to write one. If the user actually means "before I review and commit output", that's `Stop` — probe to disambiguate.
      Probe if the preference is ambiguous.
 
-  3. **Load the hook reference** (once per `/init` run, before the first hook): invoke the Skill tool with `skill: 'update-config'` and args starting with `[hooks-only]` followed by a one-line summary of what you're building — e.g., `[hooks-only] Constructing a PostToolUse/Write|Edit format hook for .claude/settings.json using ruff`. This loads the hooks schema and verification flow into context. Subsequent hooks reuse it — don't re-invoke.
+  3. **Load the hook reference** (once per `/init` run, before the first hook): invoke the Skill tool with `skill: 'update-config'` and args starting with `[hooks-only]` followed by a one-line summary of what you're building — e.g., `[hooks-only] Constructing a PostToolUse/Write|Edit format hook for .nyan/settings.json using ruff`. This loads the hooks schema and verification flow into context. Subsequent hooks reuse it — don't re-invoke.
 
   4. Follow the skill's **"Constructing a Hook"** flow: dedup check → construct for THIS project → pipe-test raw → wrap → write JSON → `jq -e` validate → live-proof (for `Pre|PostToolUse` on triggerable matchers) → cleanup → handoff. Target file and event/matcher come from steps 1–2 above.
 
@@ -287,10 +287,10 @@ mod tests {
             sha256(OLD_INIT_PROMPT),
             "16b988f277f3110ed27b4a8f45a69628de6382870a0029d4148380a9ca059a7e"
         );
-        assert_eq!(NEW_INIT_PROMPT.len(), 14097);
+        assert_eq!(NEW_INIT_PROMPT.len(), 14089);
         assert_eq!(
             sha256(NEW_INIT_PROMPT),
-            "e1566c6f314591d69b31ccb8a358e6502f544061bd8228ac2cdd1d7c9865e989"
+            "e1b6ca35a7808cd91052be4cc7083a77649266fa3c4a6118ee1c1645b01cc90f"
         );
     }
 

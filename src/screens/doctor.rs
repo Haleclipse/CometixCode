@@ -641,7 +641,7 @@ mod tests {
             ContextProvider(value: Context::owned(current_theme)) {
                 Doctor(
                     keybinding_customization_enabled: true,
-                    keybindings_path: "/repo/.claude/keybindings.json".to_string(),
+                    keybindings_path: "/repo/.nyan/keybindings.json".to_string(),
                     keybinding_warnings: vec![KeybindingWarningItem::error(
                         "Unknown action custom:missing",
                         Some("Remove or rename the binding"),
@@ -657,7 +657,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("/repo/.claude/keybindings.json"),
+            text.contains("/repo/.nyan/keybindings.json"),
             "canvas=\n{text}"
         );
         assert!(
@@ -730,7 +730,7 @@ mod tests {
             ContextProvider(value: Context::owned(current_theme)) {
                 Doctor(
                     agent_parse_errors: vec![FailedAgentFile {
-                        path: std::path::PathBuf::from("/repo/.claude/agents/bad.md"),
+                        path: std::path::PathBuf::from("/repo/.nyan/agents/bad.md"),
                         error: "missing required description".to_string(),
                         source: None,
                     }, FailedAgentFile {
@@ -755,7 +755,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("/repo/.claude/agents/bad.md: missing required description"),
+            text.contains("/repo/.nyan/agents/bad.md: missing required description"),
             "canvas=\n{text}"
         );
         assert!(

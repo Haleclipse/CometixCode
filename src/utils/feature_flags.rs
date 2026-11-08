@@ -387,7 +387,7 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::DynamicSkillDiscovery,
         cc_growthbook_name: "tengu_skill_dynamic_discovery",
         enabled: true,
-        note: "Read-time nested .claude/skills discovery is locally available; remote cohort delivery is represented by this explicit source-controlled seam.",
+        note: "Read-time nested .nyan/skills discovery is locally available; remote cohort delivery is represented by this explicit source-controlled seam.",
     },
     FeatureSwitch {
         flag: FeatureFlag::BridgeMode,

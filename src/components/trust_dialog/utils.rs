@@ -8,8 +8,8 @@ use crate::tools::bash_tool::tool_name::BASH_TOOL_NAME;
 use crate::utils::managed_env::is_safe_managed_env_var;
 use crate::utils::settings::{SettingsJson, types::PermissionsSettings};
 
-const PROJECT_SETTINGS_LABEL: &str = ".claude/settings.json";
-const LOCAL_SETTINGS_LABEL: &str = ".claude/settings.local.json";
+const PROJECT_SETTINGS_LABEL: &str = ".nyan/settings.json";
+const LOCAL_SETTINGS_LABEL: &str = ".nyan/settings.local.json";
 
 fn has_hooks(settings: Option<&SettingsJson>) -> bool {
     let Some(settings) = settings else {

@@ -9,7 +9,7 @@ pub fn get_add_dir_enabled_plugins() -> Map<String, Value> {
         for file in SETTINGS_FILES {
             // Node join resolves all lexical segments before filesystem I/O.
             let mut path = std::path::PathBuf::new();
-            for component in dir.join(".claude").join(file).components() {
+            for component in dir.join(".nyan").join(file).components() {
                 match component {
                     std::path::Component::CurDir => {}
                     std::path::Component::ParentDir => {
@@ -38,7 +38,7 @@ pub fn get_add_dir_extra_marketplaces() -> Map<String, Value> {
         for file in SETTINGS_FILES {
             // Node join resolves all lexical segments before filesystem I/O.
             let mut path = std::path::PathBuf::new();
-            for component in dir.join(".claude").join(file).components() {
+            for component in dir.join(".nyan").join(file).components() {
                 match component {
                     std::path::Component::CurDir => {}
                     std::path::Component::ParentDir => {

@@ -2527,15 +2527,15 @@ mod tests {
         let first = temp_dir("add-dir-first");
         let second = temp_dir("add-dir-second");
         write_file(
-            &first.join(".claude/settings.json"),
+            &first.join(".nyan/settings.json"),
             r#"{"enabledPlugins":{"alpha@market":true,"beta@market":true}}"#,
         );
         write_file(
-            &first.join(".claude/settings.local.json"),
+            &first.join(".nyan/settings.local.json"),
             r#"{"enabledPlugins":{"beta@market":false}}"#,
         );
         write_file(
-            &second.join(".claude/settings.json"),
+            &second.join(".nyan/settings.json"),
             r#"{"enabledPlugins":{"alpha@market":false,"gamma@market":true}}"#,
         );
         crate::bootstrap::state::set_additional_directories_for_claude_md(vec![first, second]);

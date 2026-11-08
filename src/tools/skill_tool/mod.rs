@@ -855,7 +855,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-skill-tool-call-{}", uuid::Uuid::new_v4()));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("commit")
             .join("SKILL.md");
@@ -934,7 +934,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-skill-tool-shell-{}", uuid::Uuid::new_v4()));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("shell")
             .join("SKILL.md");
@@ -1192,7 +1192,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-skill-tool-modifier-{}", uuid::Uuid::new_v4()));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("review")
             .join("SKILL.md");
@@ -1314,7 +1314,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-skill-tool-fork-{}", uuid::Uuid::new_v4()));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("deep")
             .join("SKILL.md");
@@ -1368,7 +1368,7 @@ mod tests {
         let root =
             std::env::temp_dir().join(format!("nyan-skill-tool-fork-{}", uuid::Uuid::new_v4()));
         let skill_file = root
-            .join(".claude")
+            .join(".nyan")
             .join("skills")
             .join("deep")
             .join("SKILL.md");

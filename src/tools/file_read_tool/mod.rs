@@ -3781,7 +3781,7 @@ mod tests {
             "nyan-read-preabort-effects-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let skill_dir = root.join("packages/pkg/.claude/skills");
+        let skill_dir = root.join("packages/pkg/.nyan/skills");
         let source = root.join("packages/pkg/src/value.txt");
         std::fs::create_dir_all(skill_dir.join("sample")).unwrap();
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();

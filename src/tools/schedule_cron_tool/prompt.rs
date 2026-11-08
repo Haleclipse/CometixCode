@@ -25,7 +25,7 @@ pub fn is_durable_cron_enabled() -> bool {
 
 pub fn build_cron_create_description(durable_enabled: bool) -> String {
     if durable_enabled {
-        "Schedule a prompt to run at a future time — either recurring on a cron schedule, or once at a specific time. Pass durable: true to persist to .claude/scheduled_tasks.json; otherwise session-only."
+        "Schedule a prompt to run at a future time — either recurring on a cron schedule, or once at a specific time. Pass durable: true to persist to .nyan/scheduled_tasks.json; otherwise session-only."
             .to_string()
     } else {
         "Schedule a prompt to run at a future time within this Claude session — either recurring on a cron schedule, or once at a specific time."
@@ -36,13 +36,13 @@ pub fn build_cron_create_description(durable_enabled: bool) -> String {
 /// Maps to: CC `ScheduleCronTool/prompt.ts:74-121` `buildCronCreatePrompt`.
 pub fn build_cron_create_prompt(durable_enabled: bool) -> String {
     let durability_section = if durable_enabled {
-        "## Durability\n\nBy default (durable: false) the job lives only in this Claude session — nothing is written to disk, and the job is gone when Claude exits. Pass durable: true to write to .claude/scheduled_tasks.json so the job survives restarts. Only use durable: true when the user explicitly asks for the task to persist (\"keep doing this every day\", \"set this up permanently\"). Most \"remind me in 5 minutes\" / \"check back in an hour\" requests should stay session-only."
+        "## Durability\n\nBy default (durable: false) the job lives only in this Claude session — nothing is written to disk, and the job is gone when Claude exits. Pass durable: true to write to .nyan/scheduled_tasks.json so the job survives restarts. Only use durable: true when the user explicitly asks for the task to persist (\"keep doing this every day\", \"set this up permanently\"). Most \"remind me in 5 minutes\" / \"check back in an hour\" requests should stay session-only."
     } else {
         "## Session-only\n\nJobs live only in this Claude session — nothing is written to disk, and the job is gone when Claude exits."
     };
 
     let durable_runtime_note = if durable_enabled {
-        "Durable jobs persist to .claude/scheduled_tasks.json and survive session restarts — on next launch they resume automatically. One-shot durable tasks that were missed while the REPL was closed are surfaced for catch-up. Session-only jobs die with the process. "
+        "Durable jobs persist to .nyan/scheduled_tasks.json and survive session restarts — on next launch they resume automatically. One-shot durable tasks that were missed while the REPL was closed are surfaced for catch-up. Session-only jobs die with the process. "
     } else {
         ""
     };
@@ -57,7 +57,7 @@ pub const CRON_DELETE_DESCRIPTION: &str = "Cancel a scheduled cron job by ID";
 pub fn build_cron_delete_prompt(durable_enabled: bool) -> String {
     if durable_enabled {
         format!(
-            "Cancel a cron job previously scheduled with {CRON_CREATE_TOOL_NAME}. Removes it from .claude/scheduled_tasks.json (durable jobs) or the in-memory session store (session-only jobs)."
+            "Cancel a cron job previously scheduled with {CRON_CREATE_TOOL_NAME}. Removes it from .nyan/scheduled_tasks.json (durable jobs) or the in-memory session store (session-only jobs)."
         )
     } else {
         format!(
@@ -71,7 +71,7 @@ pub const CRON_LIST_DESCRIPTION: &str = "List scheduled cron jobs";
 pub fn build_cron_list_prompt(durable_enabled: bool) -> String {
     if durable_enabled {
         format!(
-            "List all cron jobs scheduled via {CRON_CREATE_TOOL_NAME}, both durable (.claude/scheduled_tasks.json) and session-only."
+            "List all cron jobs scheduled via {CRON_CREATE_TOOL_NAME}, both durable (.nyan/scheduled_tasks.json) and session-only."
         )
     } else {
         format!("List all cron jobs scheduled via {CRON_CREATE_TOOL_NAME} in this session.")

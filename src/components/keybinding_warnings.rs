@@ -118,7 +118,7 @@ mod tests {
             ContextProvider(value: Context::owned(*theme::current())) {
                 KeybindingWarnings(
                     enabled: enabled,
-                    keybindings_path: "/home/me/.claude/keybindings.json".to_string(),
+                    keybindings_path: "/home/me/.nyan/keybindings.json".to_string(),
                     warnings: warnings,
                 )
             }
@@ -158,7 +158,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("Location: /home/me/.claude/keybindings.json"),
+            text.contains("Location: /home/me/.nyan/keybindings.json"),
             "canvas=\n{text}"
         );
         let error_pos = text.find("[Error] invalid key").expect("error row");

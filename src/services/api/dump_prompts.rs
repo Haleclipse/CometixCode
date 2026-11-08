@@ -3,7 +3,7 @@
 //! Maps to: CC `services/api/dumpPrompts.ts`, but enabled via
 //! `NYAN_DUMP_PROMPTS=1` instead of ant-only USER_TYPE gating.
 //!
-//! Writes to `~/.claude/dump-prompts/{session}.jsonl`.
+//! Writes to `~/.nyan/dump-prompts/{session}.jsonl`.
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};

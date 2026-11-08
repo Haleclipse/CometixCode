@@ -218,7 +218,7 @@ pub fn SkillsMenu<'a>(
                 hide_input_guide: true,
                 on_cancel: cancel,
             ) {
-                Text(content: "Create skills in .claude/skills/ or ~/.claude/skills/".to_string(), dim: true)
+                Text(content: "Create skills in .nyan/skills/ or ~/.nyan/skills/".to_string(), dim: true)
                 ConfigurableShortcutHint(
                     action: "confirm:no".to_string(), context: "Confirmation".to_string(),
                     fallback: "Esc".to_string(), description: "close".to_string(),
@@ -307,7 +307,7 @@ mod tests {
         let text = canvas.to_string();
         assert!(text.contains("Skills"));
         assert!(text.contains("No skills found"));
-        assert!(text.contains("Create skills in .claude/skills/ or ~/.claude/skills/"));
+        assert!(text.contains("Create skills in .nyan/skills/ or ~/.nyan/skills/"));
         assert!(text.contains("Esc to close"));
         assert!(text.contains("\n\n  Esc to close"), "canvas=\n{text}");
 
@@ -369,7 +369,7 @@ mod tests {
             .render(Some(160))
             .to_string();
         assert!(text.contains("5 skills"));
-        assert!(text.contains("Project skills (.claude/skills, .claude/commands)"));
+        assert!(text.contains("Project skills (.nyan/skills, .nyan/commands)"));
         assert!(text.find("alpha").unwrap() < text.find("zebra").unwrap());
         assert!(text.contains("zeta · demo-plugin · ~"));
         assert!(text.contains("MCP skills (server-a, server-b)"));

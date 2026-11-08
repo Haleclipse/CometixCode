@@ -1969,7 +1969,7 @@ mod tests {
             json!({
                 "type": "user",
                 "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_2", "content": "User has approved your plan", "is_error": false}]},
-                "toolUseResult": {"plan": "## Plan\nShip it", "filePath": "/tmp/project/.claude/plans/plan.md", "isAgent": false}
+                "toolUseResult": {"plan": "## Plan\nShip it", "filePath": "/tmp/project/.nyan/plans/plan.md", "isAgent": false}
             }),
         ];
 
@@ -2177,9 +2177,9 @@ mod tests {
             "type": "attachment",
             "attachment": {
                 "type": "dynamic_skill",
-                "skillDir": "/tmp/project/.claude/skills",
+                "skillDir": "/tmp/project/.nyan/skills",
                 "skillNames": ["alpha", "beta"],
-                "displayPath": ".claude/skills"
+                "displayPath": ".nyan/skills"
             }
         })];
 
@@ -2191,9 +2191,9 @@ mod tests {
                 skill_dir,
                 skill_names,
                 display_path,
-            }) if skill_dir == "/tmp/project/.claude/skills"
+            }) if skill_dir == "/tmp/project/.nyan/skills"
                 && skill_names == &["alpha".to_string(), "beta".to_string()]
-                && display_path == ".claude/skills"
+                && display_path == ".nyan/skills"
         ));
     }
 

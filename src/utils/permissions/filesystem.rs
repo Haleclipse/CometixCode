@@ -39,8 +39,8 @@ const DANGEROUS_FILES: &[&str] = &[
 ];
 // @nyan: CC lists `.claude.json` among the files because its state file sits
 // beside the config home. nyan's `state.json` lives inside `.nyan`, which is
-// protected as a directory.
-const DANGEROUS_DIRECTORIES: &[&str] = &[".git", ".vscode", ".idea", ".claude", ".nyan"];
+// protected as a directory (CC: `.claude`).
+const DANGEROUS_DIRECTORIES: &[&str] = &[".git", ".vscode", ".idea", ".nyan"];
 
 static DOS_DEVICE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\.(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$").expect("valid dos device regex")
@@ -508,8 +508,8 @@ pub fn is_claude_settings_path(file_path: &str, cwd: &Path) -> bool {
     let expanded = crate::utils::path::expand_path(file_path, Some(cwd))
         .unwrap_or_else(|_| PathBuf::from(file_path));
     let normalized = normalize_for_permission_comparison(&expanded.display().to_string());
-    if normalized.ends_with("/.claude/settings.json")
-        || normalized.ends_with("/.claude/settings.local.json")
+    if normalized.ends_with("/.nyan/settings.json")
+        || normalized.ends_with("/.nyan/settings.local.json")
     {
         return true;
     }
@@ -528,7 +528,7 @@ fn is_claude_config_file_path(file_path: &str) -> bool {
     ["commands", "agents", "skills"].iter().any(|directory| {
         path_in_working_path(
             file_path,
-            &cwd.join(".claude").join(directory).display().to_string(),
+            &cwd.join(".nyan").join(directory).display().to_string(),
         )
     })
 }
@@ -543,7 +543,7 @@ fn is_dangerous_file_path_to_auto_edit(path: &str) -> bool {
     let segments: Vec<_> = expanded.split('/').collect();
     for (index, segment) in segments.iter().enumerate() {
         if DANGEROUS_DIRECTORIES.contains(segment) {
-            if *segment == ".claude" && segments.get(index + 1) == Some(&"worktrees") {
+            if *segment == ".nyan" && segments.get(index + 1) == Some(&"worktrees") {
                 continue;
             }
             return true;
@@ -667,7 +667,7 @@ pub(crate) fn check_editable_internal_path(
     if normalize_for_permission_comparison(&normalized.display().to_string())
         == normalize_for_permission_comparison(
             &crate::bootstrap::state::get_original_cwd()
-                .join(".claude")
+                .join(".nyan")
                 .join("launch.json")
                 .display()
                 .to_string(),
@@ -1070,8 +1070,8 @@ fn claude_folder_session_allow_rule(
         cwd,
     )?;
     let content = rule.rule_value.rule_content.as_deref()?;
-    let project_prefix = "/.claude/**".trim_end_matches("**");
-    let global_prefix = "~/.claude/**".trim_end_matches("**");
+    let project_prefix = "/.nyan/**".trim_end_matches("**");
+    let global_prefix = "~/.nyan/**".trim_end_matches("**");
     ((content.starts_with(project_prefix) || content.starts_with(global_prefix))
         && !content.contains("..")
         && content.ends_with("/**"))
@@ -1085,15 +1085,15 @@ pub fn get_claude_skill_scope(file_path: &str) -> Option<(String, String)> {
     let bases = [
         (
             crate::bootstrap::state::get_original_cwd()
-                .join(".claude")
+                .join(".nyan")
                 .join("skills"),
-            "/.claude/skills/",
+            "/.nyan/skills/",
         ),
         (
             crate::utils::node_os::homedir()
-                .join(".claude")
+                .join(".nyan")
                 .join("skills"),
-            "~/.claude/skills/",
+            "~/.nyan/skills/",
         ),
     ];
     for (base, prefix) in bases {
@@ -1824,13 +1824,11 @@ mod tests {
     fn claude_settings_path_detection_normalizes_structure_and_case() {
         let cwd = std::env::temp_dir().join("nyan-settings-path-detection");
         assert!(is_claude_settings_path(
-            &cwd.join(".claude/./settings.json").display().to_string(),
+            &cwd.join(".nyan/./settings.json").display().to_string(),
             &cwd,
         ));
         assert!(is_claude_settings_path(
-            &cwd.join(".cLaUdE/settings.local.json")
-                .display()
-                .to_string(),
+            &cwd.join(".nYaN/settings.local.json").display().to_string(),
             &cwd,
         ));
         assert!(!is_claude_settings_path(
@@ -2048,7 +2046,7 @@ mod tests {
             "nyan-agent-memory-permission-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let path = cwd.join(".claude/agent-memory/reviewer/MEMORY.md");
+        let path = cwd.join(".nyan/agent-memory/reviewer/MEMORY.md");
         assert!(matches!(
             check_write_permission_for_tool(
                 &path.display().to_string(),
@@ -2142,21 +2140,21 @@ mod tests {
         assert_eq!(
             get_claude_skill_scope(
                 &root
-                    .join(".claude/skills/reviewer/SKILL.md")
+                    .join(".nyan/skills/reviewer/SKILL.md")
                     .display()
                     .to_string()
             ),
             Some((
                 "reviewer".to_string(),
-                "/.claude/skills/reviewer/**".to_string()
+                "/.nyan/skills/reviewer/**".to_string()
             ))
         );
         assert!(
-            get_claude_skill_scope(&root.join(".claude/skills/*/SKILL.md").display().to_string())
+            get_claude_skill_scope(&root.join(".nyan/skills/*/SKILL.md").display().to_string())
                 .is_none()
         );
         assert!(
-            get_claude_skill_scope(&root.join(".claude/skills/direct.md").display().to_string())
+            get_claude_skill_scope(&root.join(".nyan/skills/direct.md").display().to_string())
                 .is_none()
         );
     }
@@ -2327,9 +2325,9 @@ mod tests {
     #[test]
     fn auto_edit_safety_matches_official_worktree_and_basename_boundaries() {
         for path in [
-            "/repo/.claude/worktrees/topic/src/lib.rs",
+            "/repo/.nyan/worktrees/topic/src/lib.rs",
             "/repo/.ClAuDe/WORKTREES/topic/src/lib.rs",
-            "/repo/.claude/worktrees/topic/.claude/worktrees/nested/file.rs",
+            "/repo/.nyan/worktrees/topic/.nyan/worktrees/nested/file.rs",
             "/repo/.bashrc/ordinary.txt",
         ] {
             assert!(!is_dangerous_file_path_to_auto_edit(path), "{path}");
@@ -2340,10 +2338,10 @@ mod tests {
             );
         }
         for path in [
-            "/repo/.claude/worktrees/topic/.claude/secrets.txt",
-            "/repo/.claude/worktrees/topic/.git/config",
-            "/repo/.claude/other/file.rs",
-            "/repo/.claude/worktrees/topic/.BaShRc",
+            "/repo/.nyan/worktrees/topic/.nyan/secrets.txt",
+            "/repo/.nyan/worktrees/topic/.git/config",
+            "/repo/.nyan/other/file.rs",
+            "/repo/.nyan/worktrees/topic/.BaShRc",
             "/repo/.vscode/settings.json",
             "/home/user/.nyan/state.json",
             "//server/share/file.txt",
@@ -2366,7 +2364,7 @@ mod tests {
         crate::bootstrap::state::set_session_id(&session_id);
         crate::utils::plans::set_plan_slug(&session_id, "bright-maple");
         let settings = crate::utils::settings::types::SettingsJson {
-            plans_directory: Some(".claude/plans".to_string()),
+            plans_directory: Some(".nyan/plans".to_string()),
             ..crate::utils::settings::types::SettingsJson::default()
         };
         let plans_dir = crate::utils::plans::get_plans_directory_with_settings(&settings);

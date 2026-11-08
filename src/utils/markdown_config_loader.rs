@@ -1,7 +1,7 @@
 //! Markdown config directory loader.
 //! Maps to: CC `utils/markdownConfigLoader.ts`.
 //!
-//! Collects managed/user/project `.claude/<subdir>/*.md` files, follows
+//! Collects managed/user/project `.nyan/<subdir>/*.md` files, follows
 //! symlinks with physical-directory cycle detection, applies worktree fallback
 //! and source/policy gates, parses frontmatter, and deduplicates file identity.
 //! Telemetry and the alternate ripgrep implementation remain intentionally
@@ -86,7 +86,7 @@ pub fn get_project_dirs_up_to_home(subdir: &str, cwd: &Path) -> Vec<PathBuf> {
             break;
         }
 
-        let candidate = current.join(".claude").join(subdir);
+        let candidate = current.join(".nyan").join(subdir);
         if candidate.is_dir() {
             dirs.push(candidate);
         }
@@ -191,24 +191,24 @@ pub(crate) fn load_markdown_files_from_dir(
 pub fn load_markdown_files_for_subdir(subdir: &str, cwd: &Path) -> Vec<MarkdownFile> {
     // CC :303-305 order.
     let user_dir = crate::utils::env_utils::get_config_home_dir().join(subdir);
-    let managed_dir = get_managed_file_path().join(".claude").join(subdir);
+    let managed_dir = get_managed_file_path().join(".nyan").join(subdir);
     let mut project_dirs = get_project_dirs_up_to_home(subdir, cwd);
 
     // Worktree sparse-checkout fallback: only consult the main repository when
-    // the worktree itself has no `.claude/<subdir>` directory.
+    // the worktree itself has no `.nyan/<subdir>` directory.
     if let (Some(git_root), Some(canonical_root)) = (
         crate::utils::git::find_git_root(cwd),
         crate::utils::git::find_canonical_git_root(cwd),
     ) && normalize_path_for_comparison(&git_root)
         != normalize_path_for_comparison(&canonical_root)
     {
-        let worktree_subdir = git_root.join(".claude").join(subdir);
+        let worktree_subdir = git_root.join(".nyan").join(subdir);
         let worktree_has_subdir = project_dirs.iter().any(|directory| {
             normalize_path_for_comparison(directory)
                 == normalize_path_for_comparison(&worktree_subdir)
         });
         if !worktree_has_subdir {
-            let main_subdir = canonical_root.join(".claude").join(subdir);
+            let main_subdir = canonical_root.join(".nyan").join(subdir);
             if !project_dirs.iter().any(|directory| {
                 normalize_path_for_comparison(directory)
                     == normalize_path_for_comparison(&main_subdir)
@@ -358,7 +358,7 @@ mod tests {
 
         let root = temp_dir("nyan-md-loader-symlink");
         let managed_root = root.join("managed");
-        let managed = managed_root.join(".claude/commands");
+        let managed = managed_root.join(".nyan/commands");
         let external = root.join("external");
         std::fs::create_dir_all(&managed).unwrap();
         std::fs::create_dir_all(&external).unwrap();
@@ -395,10 +395,10 @@ mod tests {
         let worktree = root.join("worktree");
         let worktree_git_dir = main.join(".git/worktrees/worktree");
         std::fs::create_dir_all(&worktree_git_dir).unwrap();
-        std::fs::create_dir_all(main.join(".claude/agents")).unwrap();
+        std::fs::create_dir_all(main.join(".nyan/agents")).unwrap();
         std::fs::create_dir_all(&worktree).unwrap();
         std::fs::write(
-            main.join(".claude/agents/reviewer.md"),
+            main.join(".nyan/agents/reviewer.md"),
             "---\nname: reviewer\n---\nreview",
         )
         .unwrap();
@@ -431,7 +431,7 @@ mod tests {
 
         assert!(files.iter().any(|file| {
             file.source == MarkdownConfigSource::ProjectSettings
-                && file.file_path.ends_with(".claude/agents/reviewer.md")
+                && file.file_path.ends_with(".nyan/agents/reviewer.md")
         }));
         let _ = std::fs::remove_dir_all(root);
     }
@@ -446,13 +446,13 @@ mod tests {
         std::fs::create_dir_all(project.join(".git")).unwrap();
         for dir in [
             config_home.join("output-styles"),
-            managed.join(".claude/output-styles"),
-            project.join(".claude/output-styles"),
+            managed.join(".nyan/output-styles"),
+            project.join(".nyan/output-styles"),
         ] {
             std::fs::create_dir_all(dir).unwrap();
         }
         std::fs::write(
-            managed.join(".claude/output-styles/managed.md"),
+            managed.join(".nyan/output-styles/managed.md"),
             "---\nname: Managed\n---\nmanaged prompt",
         )
         .unwrap();
@@ -462,7 +462,7 @@ mod tests {
         )
         .unwrap();
         std::fs::write(
-            project.join(".claude/output-styles/project.md"),
+            project.join(".nyan/output-styles/project.md"),
             "---\nname: Project\n---\nproject prompt",
         )
         .unwrap();

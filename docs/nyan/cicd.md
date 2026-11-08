@@ -469,7 +469,7 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 | 设置根 | `NYAN_CONFIG_DIR=target/test-home` | 同时重定向 settings 与其中的 `state.json` |
 | 隐私/分析 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=`、`DISABLE_TELEMETRY=`、`NODE_ENV=` | 置空，避免宿主开关改变 growthbook 读取 |
 | cwd | `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=` | 否则 `reset_cwd_if_outside_project` 永远报项目根 |
-| 项目设置 | `NYAN_TEST_PROJECT_DIR=tests/fixtures/isolated-project` | 补掉 `projectSettings` 读本仓库 `.claude/settings.json` 的洞 |
+| 项目设置 | `NYAN_TEST_PROJECT_DIR=tests/fixtures/isolated-project` | 补掉 `projectSettings` 读本仓库 `.nyan/settings.json` 的洞 |
 | 宿主模型/网关 | `env -u` 掉 19 个 `ANTHROPIC_*` / `CLAUDE_*` 变量 | 空字符串会被当成模型名（justfile:86） |
 | 身份 | `tests/fixtures/credentials.mock.json` | 合成 token，固定登录态 |
 | 终端尺寸 | `TERM=xterm-256color`、`COLUMNS=80`、`LINES=24` | **CI 新增**：hosted runner 没有 TTY 也没有 `TERM`，crossterm 的 `window_size()` 失败后退到 `tput`，`tput` 因缺 `TERM` 再失败，`terminal::size()` 变成 `(0,0)`——Pane 分隔线、logo、spinner 计时、picker 描述宽度全部塌成 0。钉成开发机实测值 |

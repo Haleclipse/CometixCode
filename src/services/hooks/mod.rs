@@ -1802,7 +1802,7 @@ mod tests {
         env::execute_config_change_hooks_with_config(
             &capture.config("ConfigChange", Some("user_settings")),
             env::ConfigChangeSource::UserSettings,
-            Some("/repo/.claude/settings.json"),
+            Some("/repo/.nyan/settings.json"),
             create_base_hook_input(&HookContext::default()),
             capture.base_env(),
             5_000,

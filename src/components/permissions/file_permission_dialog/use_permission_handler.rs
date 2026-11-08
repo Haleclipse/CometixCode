@@ -37,7 +37,7 @@ pub struct PermissionHandlerOutcome {
 }
 
 /// Maps to: CC `usePermissionHandler.ts#handleAcceptSession` special
-/// `.claude/` session-scope update branch.
+/// `.nyan/` session-scope update branch.
 pub fn claude_folder_permission_update(scope: PermissionSessionScope) -> PermissionUpdate {
     let pattern = match scope {
         PermissionSessionScope::ClaudeFolder => CLAUDE_FOLDER_PERMISSION_PATTERN,

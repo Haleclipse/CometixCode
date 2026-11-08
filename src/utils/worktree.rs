@@ -129,7 +129,7 @@ pub fn worktree_branch_name(slug: &str) -> String {
 
 /// Maps to: CC `utils/worktree.ts` `worktreesDir(...)`.
 pub fn worktrees_dir(repo_root: impl AsRef<Path>) -> PathBuf {
-    repo_root.as_ref().join(".claude").join("worktrees")
+    repo_root.as_ref().join(".nyan").join("worktrees")
 }
 
 /// Maps to: CC `utils/worktree.ts` `worktreePathFor(...)`.
@@ -834,7 +834,7 @@ mod tests {
         );
         assert_eq!(
             worktree_path_for("/repo", "user/feature"),
-            PathBuf::from("/repo/.claude/worktrees/user+feature")
+            PathBuf::from("/repo/.nyan/worktrees/user+feature")
         );
         assert_eq!(
             generate_tmux_session_name("/tmp/my.repo", "feature/foo.bar"),

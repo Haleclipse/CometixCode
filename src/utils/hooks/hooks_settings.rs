@@ -278,10 +278,10 @@ pub fn get_hooks_for_event(session_id: &str, event: HookEvent) -> Vec<Individual
 /// Maps to: CC `hookSourceDescriptionDisplayString(...)`.
 pub fn hook_source_description_display_string(source: HookSource) -> &'static str {
     match source {
-        HookSource::UserSettings => "User settings (~/.claude/settings.json)",
-        HookSource::ProjectSettings => "Project settings (.claude/settings.json)",
-        HookSource::LocalSettings => "Local settings (.claude/settings.local.json)",
-        HookSource::PluginHook => "Plugin hooks (~/.claude/plugins/*/hooks/hooks.json)",
+        HookSource::UserSettings => "User settings (~/.nyan/settings.json)",
+        HookSource::ProjectSettings => "Project settings (.nyan/settings.json)",
+        HookSource::LocalSettings => "Local settings (.nyan/settings.local.json)",
+        HookSource::PluginHook => "Plugin hooks (~/.nyan/plugins/*/hooks/hooks.json)",
         HookSource::SessionHook => "Session hooks (in-memory, temporary)",
         HookSource::BuiltinHook => "Built-in hooks (registered internally by nyan)",
         HookSource::PolicySettings => "policySettings",
@@ -480,7 +480,7 @@ mod tests {
     fn source_display_strings_match_official_copy() {
         assert_eq!(
             hook_source_description_display_string(HookSource::UserSettings),
-            "User settings (~/.claude/settings.json)"
+            "User settings (~/.nyan/settings.json)"
         );
         assert_eq!(
             hook_source_header_display_string(HookSource::PluginHook),

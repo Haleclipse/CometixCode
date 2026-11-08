@@ -1534,7 +1534,7 @@ mod tests {
             AllowedSourcesRestore(crate::bootstrap::state::get_allowed_setting_sources());
         crate::bootstrap::state::set_allowed_setting_sources(vec!["projectSettings".to_string()]);
         let root = TestDir::new();
-        let skills_dir = root.path().join(".claude/skills");
+        let skills_dir = root.path().join(".nyan/skills");
         let skill_dir = skills_dir.join("system-guidance-wiring");
         std::fs::create_dir_all(&skill_dir).unwrap();
         std::fs::write(skill_dir.join("SKILL.md"), "Review the working tree.\n").unwrap();

@@ -39,7 +39,7 @@ pub fn sanitize_agent_type_for_path(agent_type: &str) -> String {
 pub fn get_agent_memory_dir(agent_type: &str, scope: AgentMemoryScope, cwd: &Path) -> PathBuf {
     let dir_name = sanitize_agent_type_for_path(agent_type);
     match scope {
-        AgentMemoryScope::Project => cwd.join(".claude").join("agent-memory").join(dir_name),
+        AgentMemoryScope::Project => cwd.join(".nyan").join("agent-memory").join(dir_name),
         AgentMemoryScope::Local => get_local_agent_memory_dir(&dir_name, cwd),
         AgentMemoryScope::User => get_memory_base_dir().join("agent-memory").join(dir_name),
     }
@@ -68,7 +68,7 @@ pub fn is_agent_memory_path(absolute_path: &Path, cwd: &Path) -> bool {
     let normalized = normalize_lexically(absolute_path);
     let memory_base = get_memory_base_dir();
     if is_strictly_inside(&normalized, &memory_base.join("agent-memory"))
-        || is_strictly_inside(&normalized, &cwd.join(".claude").join("agent-memory"))
+        || is_strictly_inside(&normalized, &cwd.join(".nyan").join("agent-memory"))
     {
         return true;
     }
@@ -81,7 +81,7 @@ pub fn is_agent_memory_path(absolute_path: &Path, cwd: &Path) -> bool {
                 component.as_os_str() == std::ffi::OsStr::new("agent-memory-local")
             })
     } else {
-        is_strictly_inside(&normalized, &cwd.join(".claude").join("agent-memory-local"))
+        is_strictly_inside(&normalized, &cwd.join(".nyan").join("agent-memory-local"))
     }
 }
 
@@ -100,7 +100,7 @@ pub fn get_memory_scope_display(memory: Option<AgentMemoryScope>, cwd: &Path) ->
         Some(AgentMemoryScope::User) => {
             format!("User ({}/agent-memory/)", get_memory_base_dir().display())
         }
-        Some(AgentMemoryScope::Project) => "Project (.claude/agent-memory/)".to_string(),
+        Some(AgentMemoryScope::Project) => "Project (.nyan/agent-memory/)".to_string(),
         Some(AgentMemoryScope::Local) => {
             format!(
                 "Local ({}/)",
@@ -166,9 +166,7 @@ fn get_local_agent_memory_dir(dir_name: &str, cwd: &Path) -> PathBuf {
             .join("agent-memory-local")
             .join(dir_name);
     }
-    cwd.join(".claude")
-        .join("agent-memory-local")
-        .join(dir_name)
+    cwd.join(".nyan").join("agent-memory-local").join(dir_name)
 }
 
 #[cfg(test)]
@@ -193,18 +191,18 @@ mod tests {
         );
         assert!(
             get_agent_memory_dir("plugin:reviewer", AgentMemoryScope::Project, cwd)
-                .ends_with(".claude/agent-memory/plugin-reviewer")
+                .ends_with(".nyan/agent-memory/plugin-reviewer")
         );
         assert!(
             get_agent_memory_dir("plugin:reviewer", AgentMemoryScope::Local, cwd)
-                .ends_with(".claude/agent-memory-local/plugin-reviewer")
+                .ends_with(".nyan/agent-memory-local/plugin-reviewer")
         );
         assert!(is_agent_memory_path(
-            &cwd.join(".claude/agent-memory/reviewer/MEMORY.md"),
+            &cwd.join(".nyan/agent-memory/reviewer/MEMORY.md"),
             cwd,
         ));
         assert!(is_agent_memory_path(
-            &cwd.join(".claude/agent-memory-local/reviewer/MEMORY.md"),
+            &cwd.join(".nyan/agent-memory-local/reviewer/MEMORY.md"),
             cwd,
         ));
 
@@ -226,7 +224,7 @@ mod tests {
             "nyan-agent-memory-prompt-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let memory_dir = root.join(".claude/agent-memory/reviewer");
+        let memory_dir = root.join(".nyan/agent-memory/reviewer");
         std::fs::create_dir_all(&memory_dir).unwrap();
         std::fs::write(memory_dir.join("MEMORY.md"), "- Prefer focused reviews\n").unwrap();
 

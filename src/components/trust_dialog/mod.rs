@@ -304,7 +304,7 @@ mod tests {
         assert!(!has_skills_bash(&[ignored]));
         assert!(has_any_bash_execution(&[], &[slash]));
         assert!(has_any_bash_execution(
-            &[".claude/settings.json".to_string()],
+            &[".nyan/settings.json".to_string()],
             &[]
         ));
     }

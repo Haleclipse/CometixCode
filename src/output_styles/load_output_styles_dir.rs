@@ -76,10 +76,10 @@ mod tests {
         let cwd = root.join("repo");
         let config_home = root.join("config");
         std::fs::create_dir_all(cwd.join(".git")).unwrap();
-        std::fs::create_dir_all(cwd.join(".claude/output-styles")).unwrap();
+        std::fs::create_dir_all(cwd.join(".nyan/output-styles")).unwrap();
         std::fs::create_dir_all(config_home.join("output-styles")).unwrap();
         std::fs::write(
-            cwd.join(".claude/output-styles/mentor.md"),
+            cwd.join(".nyan/output-styles/mentor.md"),
             "---\nname: Mentor\ndescription: 123\nkeep-coding-instructions: 'false'\nforce-for-plugin: true\n---\n# Mentor prompt\nBody",
         )
         .unwrap();

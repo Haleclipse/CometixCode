@@ -560,12 +560,12 @@ mod tests {
     fn plans_directory_setting_must_stay_within_project() {
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let mut settings = SettingsJson {
-            plans_directory: Some(".claude/plans".to_string()),
+            plans_directory: Some(".nyan/plans".to_string()),
             ..SettingsJson::default()
         };
         assert_eq!(
             get_plans_directory_with_settings(&settings),
-            normalize_path_lexically(cwd.join(".claude/plans"))
+            normalize_path_lexically(cwd.join(".nyan/plans"))
         );
 
         settings.plans_directory = Some("../outside".to_string());

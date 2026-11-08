@@ -885,7 +885,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 // whole managed-settings file; .catch drops the field instead.
                 .catch_undefined()
                 .describe(
-                    "When set in managed settings, blocks non-plugin customization sources for the listed surfaces. Array form locks specific surfaces (e.g. [\"skills\", \"hooks\"]); `true` locks all four; `false` is an explicit no-op. Blocked: ~/.claude/{surface}/, .claude/{surface}/ (project), settings.json hooks, .mcp.json. NOT blocked: managed (policySettings) sources, plugin-provided customizations. Composes with strictKnownMarketplaces for end-to-end admin control — plugins gated by marketplace allowlist, everything else blocked here.",
+                    "When set in managed settings, blocks non-plugin customization sources for the listed surfaces. Array form locks specific surfaces (e.g. [\"skills\", \"hooks\"]); `true` locks all four; `false` is an explicit no-op. Blocked: ~/.nyan/{surface}/, .nyan/{surface}/ (project), settings.json hooks, .mcp.json. NOT blocked: managed (policySettings) sources, plugin-provided customizations. Composes with strictKnownMarketplaces for end-to-end admin control — plugins gated by marketplace allowlist, everything else blocked here.",
                 ),
             ),
             (
@@ -915,7 +915,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                     .check(extra_known_marketplaces_settings_key_check)
                     .optional()
                     .describe(
-                        "Additional marketplaces to make available for this repository. Typically used in repository .claude/settings.json to ensure team members have required plugin sources.",
+                        "Additional marketplaces to make available for this repository. Typically used in repository .nyan/settings.json to ensure team members have required plugin sources.",
                     ),
             ),
             (
@@ -1112,7 +1112,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             (
                 "plansDirectory",
                 zod::string().optional().describe(
-                    "Custom directory for plan files, relative to project root. If not set, defaults to ~/.claude/plans/",
+                    "Custom directory for plan files, relative to project root. If not set, defaults to ~/.nyan/plans/",
                 ),
             ),
         ]);
@@ -1167,7 +1167,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             (
                 "autoMemoryDirectory",
                 zod::string().optional().describe(
-                    "Custom directory path for auto-memory storage. Supports ~/ prefix for home directory expansion. Ignored if set in projectSettings (checked-in .claude/settings.json) for security. When unset, defaults to ~/.claude/projects/<sanitized-cwd>/memory/.",
+                    "Custom directory path for auto-memory storage. Supports ~/ prefix for home directory expansion. Ignored if set in projectSettings (checked-in .nyan/settings.json) for security. When unset, defaults to ~/.nyan/projects/<sanitized-cwd>/memory/.",
                 ),
             ),
             (

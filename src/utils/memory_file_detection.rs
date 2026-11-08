@@ -334,7 +334,7 @@ mod tests {
         let _env = DetectionTestEnv::new(&root);
         let auto_file = root.join("auto-memory/MEMORY.md");
         let session_dir = root.join("config/session-memory/nested");
-        let agent_file = root.join("project/.claude/agent-memory/reviewer/MEMORY.md");
+        let agent_file = root.join("project/.nyan/agent-memory/reviewer/MEMORY.md");
 
         assert!(is_auto_mem_file(&auto_file));
         assert!(is_auto_managed_memory_file(

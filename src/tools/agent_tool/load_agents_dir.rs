@@ -13,7 +13,7 @@
 //! project snapshot when the `AGENT_MEMORY_SNAPSHOT` build feature and auto
 //! memory are both on. Everything it writes lives under the agent memory dir
 //! (`agent_memory_snapshot.rs`), and it is a no-op unless
-//! `<cwd>/.claude/agent-memory-snapshots/<agentType>/snapshot.json` exists.
+//! `<cwd>/.nyan/agent-memory-snapshots/<agentType>/snapshot.json` exists.
 
 use super::agent_memory::AgentMemoryScope;
 use super::built_in_agents::get_built_in_agents;
@@ -1862,7 +1862,7 @@ mod tests {
 
     fn write_snapshot(cwd: &Path, agent_type: &str, updated_at: &str, payload: &str) {
         let snapshot_dir = cwd
-            .join(".claude")
+            .join(".nyan")
             .join("agent-memory-snapshots")
             .join(agent_type);
         write_file(
@@ -1928,7 +1928,7 @@ mod tests {
 
         // CC :267 — project scope is filtered out before the check runs.
         assert!(!config_home.join("agent-memory/projectmem").exists());
-        assert!(!root.join(".claude/agent-memory/projectmem").exists());
+        assert!(!root.join(".nyan/agent-memory/projectmem").exists());
         let projectmem = result
             .active_agents
             .iter()

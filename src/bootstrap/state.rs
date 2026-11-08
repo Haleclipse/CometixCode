@@ -213,7 +213,7 @@ pub async fn wait_for_scroll_idle() {
 
 static ORIGINAL_CWD: LazyLock<RwLock<PathBuf>> = LazyLock::new(|| {
     // Harness pin, test builds only: `projectSettings` roots at this value
-    // (`${cwd}/.claude/settings.json`), and it is process state no recipe-
+    // (`${cwd}/.nyan/settings.json`), and it is process state no recipe-
     // scoped env can otherwise reach. `just _prep` rebuilds mutable config in
     // `target/test-home`, serializes its canonical trust JSON, and points this
     // value at the tracked `tests/fixtures/isolated-project` instead of whatever
