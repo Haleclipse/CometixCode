@@ -484,6 +484,14 @@ fn same_entry(a: &MemoryFileSnapshot, b: &MemoryFileSnapshot) -> bool {
         && a.body_excerpt == b.body_excerpt
 }
 
+/// Question ids are JSON object keys on the wire, and the service resolves
+/// them as paths: a `/` anywhere in an id makes the whole request fail with
+/// HTTP 400 `invalid_request_error` (code 5006). Memory file paths therefore
+/// stay in `state` / `detail`; only these flat index ids are sent.
+fn question_key(index: usize) -> String {
+    format!("m{index}")
+}
+
 /// Files created or rewritten by the run that just finished, plus the
 /// pre-run snapshot they are compared against.
 pub fn changed_since(
@@ -540,8 +548,8 @@ pub async fn evaluate_types(
     });
     let mut questions = std::collections::BTreeMap::new();
     let mut deterministic = std::collections::BTreeMap::new();
-    for file in &batch {
-        let key = file.path.display().to_string();
+    for (index, file) in batch.iter().enumerate() {
+        let key = question_key(index);
         questions.insert(
             key.clone(),
             Question::choice("Which memory type best fits this entry?", &MEMORY_TYPES),
@@ -554,16 +562,16 @@ pub async fn evaluate_types(
     let result = evaluate(DecisionPoint::MemoryType, state, questions, &deterministic).await?;
     let entries: Vec<serde_json::Value> = batch
         .iter()
-        .map(|file| {
-            let key = file.path.display().to_string();
-            let (model_type, confidence) = match result.answers.get(&key) {
+        .enumerate()
+        .map(|(index, file)| {
+            let (model_type, confidence) = match result.answers.get(&question_key(index)) {
                 Some(Answer::Choice {
                     choice, confidence, ..
                 }) => (Some(choice.clone()), Some(*confidence)),
                 _ => (None, None),
             };
             json!({
-                "path": key,
+                "path": file.path.display().to_string(),
                 "name": file.name,
                 "deterministicType": file.memory_type,
                 "modelType": model_type,
@@ -620,8 +628,8 @@ pub async fn evaluate_duplicates(
     });
     let mut questions = std::collections::BTreeMap::new();
     let mut deterministic = std::collections::BTreeMap::new();
-    for file in &batch {
-        let key = file.path.display().to_string();
+    for (index, file) in batch.iter().enumerate() {
+        let key = question_key(index);
         questions.insert(
             key.clone(),
             Question::noul(
@@ -642,16 +650,16 @@ pub async fn evaluate_duplicates(
     .await?;
     let entries: Vec<serde_json::Value> = batch
         .iter()
-        .map(|file| {
-            let key = file.path.display().to_string();
-            let (probability, confidence) =
-                noul(&result.answers, &key).map_or((None, None), |(p, c)| (Some(p), Some(c)));
+        .enumerate()
+        .map(|(index, file)| {
+            let (probability, confidence) = noul(&result.answers, &question_key(index))
+                .map_or((None, None), |(p, c)| (Some(p), Some(c)));
             let model_says_duplicate = probability.map(|p| p >= 0.5);
             let deterministic_duplicate = before
                 .iter()
                 .any(|old| old.path == file.path && old.name == file.name);
             json!({
-                "path": key,
+                "path": file.path.display().to_string(),
                 "name": file.name,
                 "deterministicDuplicate": deterministic_duplicate,
                 "modelProbability": probability,
@@ -1095,7 +1103,8 @@ mod tests {
     #[tokio::test]
     async fn type_and_duplicate_compare_against_the_extraction_agent() {
         let fixture = fixture(None);
-        install(MockBackend::new(0.1, Some("feedback")));
+        let backend = MockBackend::new(0.1, Some("feedback"));
+        install(backend.clone());
         let before = vec![MemoryFileSnapshot {
             path: fixture.memory_dir.join("a.md"),
             name: "a".into(),
@@ -1123,6 +1132,80 @@ mod tests {
         assert_eq!(entry["agrees"], false);
         assert_eq!(read_log(&fixture.config_dir, "memory.type").len(), 1);
         assert_eq!(read_log(&fixture.config_dir, "memory.duplicate").len(), 1);
+
+        // Regression: the service reads question ids as paths, so a `/` in an
+        // id fails the whole request with HTTP 400 (invalid_request_error).
+        let requests = backend.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            let keys: Vec<_> = request.questions.keys().map(String::as_str).collect();
+            assert_eq!(keys, vec!["m0"]);
+        }
+    }
+
+    #[tokio::test]
+    async fn batched_type_and_duplicate_keep_paths_out_of_question_ids() {
+        let fixture = fixture(None);
+        let backend = MockBackend::new(0.9, Some("project"));
+        install(backend.clone());
+        let changed = vec![
+            MemoryFileSnapshot {
+                path: fixture.memory_dir.join("a.md"),
+                name: "a".into(),
+                description: Some("a".into()),
+                memory_type: Some("project".into()),
+                body_excerpt: "a body".into(),
+            },
+            MemoryFileSnapshot {
+                path: fixture.memory_dir.join("b.md"),
+                name: "b".into(),
+                description: Some("b".into()),
+                memory_type: Some("project".into()),
+                body_excerpt: "b body".into(),
+            },
+        ];
+
+        let type_record = evaluate_types(&changed, 30).await.unwrap();
+        assert_eq!(type_record.detail["entries"].as_array().unwrap().len(), 2);
+        for (index, file) in changed.iter().enumerate() {
+            assert_eq!(
+                type_record.detail["entries"][index]["path"],
+                file.path.display().to_string()
+            );
+            assert_eq!(type_record.detail["entries"][index]["modelType"], "project");
+        }
+
+        let duplicate_record = evaluate_duplicates(&[], &changed, 30, 30).await.unwrap();
+        assert_eq!(
+            duplicate_record.detail["entries"].as_array().unwrap().len(),
+            2
+        );
+        for (index, file) in changed.iter().enumerate() {
+            assert_eq!(
+                duplicate_record.detail["entries"][index]["path"],
+                file.path.display().to_string()
+            );
+            assert_eq!(
+                duplicate_record.detail["entries"][index]["modelSaysDuplicate"],
+                true
+            );
+        }
+
+        let requests = backend.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        for request in requests.iter() {
+            let keys: Vec<_> = request.questions.keys().map(String::as_str).collect();
+            assert_eq!(keys, vec!["m0", "m1"]);
+            assert!(
+                keys.iter().all(|key| !key.contains('/')),
+                "question ids must not be paths: {keys:?}"
+            );
+            // The path still reaches the model as state context.
+            assert_eq!(
+                request.state["newMemories"][0]["path"],
+                changed[0].path.display().to_string()
+            );
+        }
     }
 
     #[tokio::test]
