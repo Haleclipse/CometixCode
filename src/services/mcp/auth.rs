@@ -2593,7 +2593,6 @@ mod tests {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             };
             let key = get_server_key("docs", "http", "https://example.test/mcp", &BTreeMap::new());
@@ -2824,7 +2823,6 @@ mod tests {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         }
     }

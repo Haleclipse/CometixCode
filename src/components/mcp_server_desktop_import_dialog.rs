@@ -22,7 +22,6 @@ pub enum McpConfigScope {
     User,
     Project,
     Dynamic,
-    ClaudeAi,
 }
 
 impl McpConfigScope {
@@ -32,7 +31,6 @@ impl McpConfigScope {
             Self::User => "user",
             Self::Project => "project",
             Self::Dynamic => "dynamic",
-            Self::ClaudeAi => "claudeai",
         }
     }
 }

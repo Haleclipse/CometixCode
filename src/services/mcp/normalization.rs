@@ -1,11 +1,9 @@
-//! Maps to: CC `services/mcp/normalization.ts`.
-
-const CLAUDEAI_SERVER_PREFIX: &str = "claude.ai ";
+//! Maps to: CC `services/mcp/normalization.ts`. @nyan: no claude.ai connector
+//! name prefix, so there is no underscore collapsing for it.
 
 /// Maps to: CC `normalizeNameForMCP(name)`.
 pub fn normalize_name_for_mcp(name: &str) -> String {
-    let mut normalized = name
-        .chars()
+    name.chars()
         .map(|ch| {
             if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
                 ch
@@ -13,26 +11,7 @@ pub fn normalize_name_for_mcp(name: &str) -> String {
                 '_'
             }
         })
-        .collect::<String>();
-
-    if name.starts_with(CLAUDEAI_SERVER_PREFIX) {
-        let mut collapsed = String::with_capacity(normalized.len());
-        let mut previous_underscore = false;
-        for ch in normalized.chars() {
-            if ch == '_' {
-                if !previous_underscore {
-                    collapsed.push(ch);
-                }
-                previous_underscore = true;
-            } else {
-                collapsed.push(ch);
-                previous_underscore = false;
-            }
-        }
-        normalized = collapsed.trim_matches('_').to_string();
-    }
-
-    normalized
+        .collect()
 }
 
 #[cfg(test)]
@@ -47,9 +26,8 @@ mod tests {
         );
         assert_eq!(normalize_name_for_mcp("abc-DEF_123"), "abc-DEF_123");
         assert_eq!(
-            normalize_name_for_mcp("claude.ai GitHub Connector"),
-            "claude_ai_GitHub_Connector"
+            normalize_name_for_mcp("claude.ai  a..b  "),
+            "claude_ai__a__b__"
         );
-        assert_eq!(normalize_name_for_mcp("claude.ai  a..b  "), "claude_ai_a_b");
     }
 }

@@ -2091,7 +2091,6 @@ mod tests {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         };
         let startup = McpStartupConfig {

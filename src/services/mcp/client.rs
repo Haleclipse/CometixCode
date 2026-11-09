@@ -68,7 +68,6 @@ pub fn are_mcp_configs_equal(a: &ScopedMcpServerConfig, b: &ScopedMcpServerConfi
         && a.oauth == b.oauth
         && a.ide_name == b.ide_name
         && a.auth_token == b.auth_token
-        && a.id == b.id
         && a.plugin_source == b.plugin_source
 }
 
@@ -1802,10 +1801,7 @@ mod runtime {
     }
 
     fn remote_transport_uses_auth_cache(transport: Transport) -> bool {
-        matches!(
-            transport,
-            Transport::Sse | Transport::Http | Transport::ClaudeAiProxy
-        )
+        matches!(transport, Transport::Sse | Transport::Http)
     }
 
     fn read_mcp_auth_cache() -> McpAuthCacheData {
@@ -1995,17 +1991,6 @@ mod runtime {
             .build()?)
     }
 
-    async fn serve_claude_ai_proxy_http(
-        _name: &str,
-        _proxy_url: &str,
-    ) -> anyhow::Result<RunningService<RoleClient, NyanMcpClientHandler>> {
-        // Maps to: CC `services/mcp/client.ts:369-424`
-        // `createClaudeAiProxyFetch`. The proxy authenticates with the claude.ai
-        // OAuth token, which does not exist: Anthropic is API-key only, so there
-        // is no token to attach, refresh, or retry with.
-        Err(anyhow::anyhow!("No claude.ai OAuth token found"))
-    }
-
     async fn serve_legacy_sse(
         name: &str,
         config: &ScopedMcpServerConfig,
@@ -2154,23 +2139,6 @@ mod runtime {
                     .as_deref()
                     .ok_or_else(|| anyhow::anyhow!("WebSocket IDE MCP server is missing URL"))?;
                 serve_websocket_ide(name, config, url).await
-            }
-            Transport::ClaudeAiProxy => {
-                // Maps to: CC `services/mcp/client.ts:879-890` claude.ai-proxy
-                // branch, consuming the MCP proxy base URL and path.
-                let id = config
-                    .id
-                    .as_deref()
-                    .filter(|id| !id.trim().is_empty())
-                    .ok_or_else(|| {
-                        anyhow::anyhow!("claude.ai MCP proxy server is missing connector id")
-                    })?;
-                let proxy_url = format!(
-                    "{}{}",
-                    crate::constants::oauth::MCP_PROXY_URL,
-                    crate::constants::oauth::MCP_PROXY_PATH.replace("{server_id}", id)
-                );
-                serve_claude_ai_proxy_http(name, &proxy_url).await
             }
             Transport::Sdk => Err(anyhow::anyhow!(
                 "SDK MCP servers are owned by the SDK boundary"
@@ -2464,13 +2432,13 @@ mod runtime {
     /// Maps to: CC `callMCPTool`'s session-expiry test (`client.ts:3210-3223`):
     /// [`is_mcp_session_expired_error`], or the SDK's -32000 "Connection
     /// closed" — rmcp's `ServiceError::TransportClosed` — for a call whose
-    /// `http` or `claudeai-proxy` transport closed under it.
+    /// `http` transport closed under it.
     fn is_tool_call_session_expired_error(
         error: &anyhow::Error,
         config: &ScopedMcpServerConfig,
     ) -> bool {
         is_mcp_session_expired_error(error)
-            || (matches!(config.transport, Transport::Http | Transport::ClaudeAiProxy)
+            || (config.transport == Transport::Http
                 && error.chain().any(|cause| {
                     matches!(
                         cause.downcast_ref::<ServiceError>(),
@@ -2480,16 +2448,12 @@ mod runtime {
     }
 
     /// Maps to: CC the connection's `onerror` session-expiry branch
-    /// (`client.ts:1313-1327`): an `http` or `claudeai-proxy` request that
+    /// (`client.ts:1313-1327`): an `http` request that
     /// failed on an expired session closes its transport, whose `onclose`
     /// drops the connection from the memo and the fetch caches — whatever the
     /// request was, so the next `ensureConnectedClient` reconnects.
     fn close_on_expired_session(client: &McpClient, error: &anyhow::Error) {
-        if matches!(
-            client.config().transport,
-            Transport::Http | Transport::ClaudeAiProxy
-        ) && is_mcp_session_expired_error(error)
-        {
+        if client.config().transport == Transport::Http && is_mcp_session_expired_error(error) {
             tracing::debug!(
                 server = client.name(),
                 "MCP session expired (server returned 404 with session-not-found), triggering reconnection"
@@ -3380,9 +3344,6 @@ mod runtime {
         clear_server_cache(name, Some(config)).await;
         let client = connect_to_server(name, config).await;
         let mut result = if client.connection_type() == McpServerConnectionType::Connected {
-            if config.transport == Transport::ClaudeAiProxy {
-                mark_claude_ai_mcp_connected(name);
-            }
             fetch_connected_capabilities(client).await
         } else {
             McpConnectionDiscovery::from(client)
@@ -3415,14 +3376,6 @@ mod runtime {
         }
     }
 
-    /// Maps to: CC `markClaudeAiMcpConnected(name)`; a failed config write is
-    /// logged, as CC's `saveGlobalConfig` does.
-    fn mark_claude_ai_mcp_connected(name: &str) {
-        if let Err(error) = crate::services::mcp::claudeai::mark_claude_ai_mcp_connected(name) {
-            tracing::debug!(server = name, error = %error, "failed to record claude.ai MCP connection");
-        }
-    }
-
     /// Maps to: CC `client.ts:2286-2357`, `processServer` from the needs-auth
     /// gate through the fetches.
     async fn discover_mcp_connection_entry(
@@ -3438,12 +3391,7 @@ mod runtime {
         }
         let client = connect_to_server(&name, &config).await;
         match client.connection_type() {
-            McpServerConnectionType::Connected => {
-                if config.transport == Transport::ClaudeAiProxy {
-                    mark_claude_ai_mcp_connected(&name);
-                }
-                fetch_connected_capabilities(client).await
-            }
+            McpServerConnectionType::Connected => fetch_connected_capabilities(client).await,
             McpServerConnectionType::NeedsAuth => McpConnectionDiscovery::needs_auth(name, &config),
             _ => McpConnectionDiscovery::from(client),
         }
@@ -4093,7 +4041,6 @@ pub(crate) mod session_http_fixture {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             }
         }
@@ -4163,7 +4110,6 @@ pub(crate) mod counting_fixture {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             }
         }
@@ -4777,7 +4723,6 @@ rl.on('line', line => {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: Some("token".to_string()),
-            id: Some("server-id".to_string()),
             plugin_source: Some("plugin".to_string()),
         };
 
@@ -5427,7 +5372,6 @@ rl.on('line', line => {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             },
         );
@@ -5488,7 +5432,6 @@ rl.on('line', line => {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             },
         );
@@ -5621,7 +5564,6 @@ rl.on('line', line => {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         };
         // One `tools/list` entry, mapped as `fetchToolsForClient` maps it.
@@ -5699,7 +5641,6 @@ rl.on('line', line => {
             ide_running_in_windows: None,
             ide_name: Some("IDE".to_string()),
             auth_token: None,
-            id: None,
             plugin_source: None,
         };
         let tool = |name: &str| {
@@ -5756,7 +5697,6 @@ rl.on('line', line => {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         };
         let discovery = McpConnectionDiscovery::needs_auth("docs", &config);
@@ -6300,7 +6240,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -7545,7 +7484,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let store = crate::state::store::AppStore::new(
@@ -7861,7 +7799,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -8026,7 +7963,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -8119,7 +8055,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -8221,7 +8156,6 @@ rl.on('line', line => {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             };
             let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -8400,7 +8334,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -8585,7 +8518,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -8745,7 +8677,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -8841,7 +8772,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let client = runtime::connect_to_server(SERVER, &config).await;
@@ -9014,7 +8944,6 @@ rl.on('line', line => {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 };
                 let discovery = runtime::reconnect_mcp_server_impl(SERVER, &config).await;
@@ -9123,7 +9052,6 @@ rl.on('line', line => {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         };
         let discoveries = std::sync::Mutex::new(Vec::new());
@@ -9223,7 +9151,6 @@ rl.on('line', line => {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             },
         );

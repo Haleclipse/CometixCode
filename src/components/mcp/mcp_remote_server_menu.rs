@@ -15,7 +15,7 @@ use crate::components::design_system::keyboard_shortcut_hint::{
 use crate::components::spinner::Spinner;
 use crate::constants::figures;
 use crate::hooks::use_exit::use_exit_on_ctrl_cd_with_keybindings;
-use crate::services::mcp::types::{McpServerConnectionType, Transport};
+use crate::services::mcp::types::McpServerConnectionType;
 use crate::services::mcp::utils::describe_mcp_config_file_path;
 use iocraft::prelude::*;
 
@@ -26,8 +26,6 @@ pub enum RemoteServerMenuAction {
     Authenticate,
     ReAuthenticate,
     ClearAuthentication,
-    ClaudeAiAuthenticate,
-    ClaudeAiClearAuthentication,
     Reconnect,
     Disable,
     Back,
@@ -79,7 +77,6 @@ pub fn is_effectively_authenticated(server: &ServerInfo) -> bool {
 pub fn menu_actions_for_remote_server(server: &ServerInfo) -> Vec<RemoteServerMenuAction> {
     let mut actions = Vec::new();
     let is_authenticated = is_effectively_authenticated(server);
-    let is_claude_ai = server.transport == Transport::ClaudeAiProxy;
 
     if server.official_client_type() == McpServerConnectionType::Disabled {
         actions.push(RemoteServerMenuAction::Enable);
@@ -91,13 +88,7 @@ pub fn menu_actions_for_remote_server(server: &ServerInfo) -> Vec<RemoteServerMe
         actions.push(RemoteServerMenuAction::ViewTools);
     }
 
-    if is_claude_ai {
-        if server.official_client_type() == McpServerConnectionType::Connected {
-            actions.push(RemoteServerMenuAction::ClaudeAiClearAuthentication);
-        } else if server.official_client_type() != McpServerConnectionType::Disabled {
-            actions.push(RemoteServerMenuAction::ClaudeAiAuthenticate);
-        }
-    } else if is_authenticated {
+    if is_authenticated {
         actions.push(RemoteServerMenuAction::ReAuthenticate);
         actions.push(RemoteServerMenuAction::ClearAuthentication);
     } else {
@@ -121,12 +112,9 @@ fn option_for_action(action: RemoteServerMenuAction) -> SelectOptionData {
     let label = match action {
         RemoteServerMenuAction::Enable => "Enable",
         RemoteServerMenuAction::ViewTools => "View tools",
-        RemoteServerMenuAction::Authenticate | RemoteServerMenuAction::ClaudeAiAuthenticate => {
-            "Authenticate"
-        }
+        RemoteServerMenuAction::Authenticate => "Authenticate",
         RemoteServerMenuAction::ReAuthenticate => "Re-authenticate",
-        RemoteServerMenuAction::ClearAuthentication
-        | RemoteServerMenuAction::ClaudeAiClearAuthentication => "Clear authentication",
+        RemoteServerMenuAction::ClearAuthentication => "Clear authentication",
         RemoteServerMenuAction::Reconnect => "Reconnect",
         RemoteServerMenuAction::Disable => "Disable",
         RemoteServerMenuAction::Back => "Back",
@@ -158,31 +146,6 @@ pub fn auth_url_copy_hint(copied: bool) -> &'static str {
     if copied { "(Copied!)" } else { "(c copy)" }
 }
 
-/// Maps to: CC `components/mcp/MCPRemoteServerMenu.tsx:284-313`
-/// `MCPRemoteServerMenu` local `handleClaudeAIAuth`.
-///
-/// Deviation (L2, user-authorized OAuth safety gate): the source-owned URL,
-/// account, environment, and component-state preparation remain complete;
-/// `open_browser` rejects only at its final process-launch outlet.
-async fn handle_claude_ai_auth(
-    _config: &crate::services::mcp::types::ScopedMcpServerConfig,
-    on_auth_started: impl FnOnce(String),
-) -> anyhow::Result<()> {
-    // CC builds an organization-scoped `start-auth` deep link from
-    // `getOauthAccountInfo()`. There is no claude.ai OAuth account, so the
-    // organization is never known and the connectors settings page is the only
-    // target.
-    let auth_url = format!(
-        "{}/settings/connectors",
-        crate::constants::oauth::CLAUDE_AI_ORIGIN
-    );
-
-    on_auth_started(auth_url.clone());
-    // CC: logEvent('tengu_claudeai_mcp_auth_started', {}) — joins with analytics.
-    let _ = crate::utils::browser::open_browser(&auth_url).await?;
-    Ok(())
-}
-
 #[component]
 pub fn MCPRemoteServerMenu<'a>(
     props: &mut MCPRemoteServerMenuProps<'a>,
@@ -200,8 +163,8 @@ pub fn MCPRemoteServerMenu<'a>(
     let mut pending_action = hooks.use_state(|| Option::<RemoteServerMenuAction>::None);
     let mut pending_cancel = hooks.use_state(|| false);
     // Maps to: CC `MCPRemoteServerMenu.tsx:81,131,282` — the menu holds
-    // `useSetAppState()` for the flows CC writes itself (clear-auth, `:166` and
-    // `:443`) and the two manager hooks for the flows the manager owns.
+    // `useSetAppState()` for the flow CC writes itself (clear-auth, `:443`) and
+    // the two manager hooks for the flows the manager owns.
     let runtime_mcp = crate::state::app_state::use_app_state_store(&mut hooks);
     let runtime_mcp = crate::state::app_state_store::McpWriter::new(runtime_mcp);
     let reconnect_mcp_server =
@@ -220,35 +183,10 @@ pub fn MCPRemoteServerMenu<'a>(
         .handle
         .clone();
     let mut callback_url_input = hooks.use_state(String::new);
-    let mut is_claude_ai_authenticating = hooks.use_state(|| false);
-    let mut claude_ai_auth_url = hooks.use_state(|| Option::<String>::None);
-    let mut is_claude_ai_clearing_auth = hooks.use_state(|| false);
-    let mut claude_ai_clear_auth_url = hooks.use_state(|| Option::<String>::None);
-    let mut claude_ai_clear_auth_browser_opened = hooks.use_state(|| false);
     let mut url_copied = hooks.use_state(|| false);
-    let mut auth_error = hooks.use_state(|| Option::<String>::None);
+    let auth_error = hooks.use_state(|| Option::<String>::None);
     let mut pending_runtime_result = hooks.use_state(|| Option::<String>::None);
     let mut pending_runtime_cancel = hooks.use_state(|| false);
-    let handle_claude_ai_auth_action = hooks.use_async_handler({
-        let config = server.config.clone();
-        let mut claude_ai_auth_url = claude_ai_auth_url;
-        let mut is_claude_ai_authenticating = is_claude_ai_authenticating;
-        let mut auth_error = auth_error;
-        move |()| {
-            let config = config.clone();
-            async move {
-                auth_error.set(None);
-                if let Err(error) = handle_claude_ai_auth(&config, move |url| {
-                    claude_ai_auth_url.set(Some(url));
-                    is_claude_ai_authenticating.set(true);
-                })
-                .await
-                {
-                    auth_error.set(Some(error.to_string()));
-                }
-            }
-        }
-    });
     let runtime_action = hooks.use_async_handler({
         let server = server.clone();
         let mut is_reconnecting = is_reconnecting;
@@ -258,9 +196,6 @@ pub fn MCPRemoteServerMenu<'a>(
         let mut auth_abort_handle = auth_abort_handle;
         let auth_abort_cleanup = auth_abort_cleanup.clone();
         let mut callback_url_input = callback_url_input;
-        let mut is_claude_ai_authenticating = is_claude_ai_authenticating;
-        let mut is_claude_ai_clearing_auth = is_claude_ai_clearing_auth;
-        let mut claude_ai_clear_auth_browser_opened = claude_ai_clear_auth_browser_opened;
         let mut auth_error = auth_error;
         let mut pending_runtime_result = pending_runtime_result;
         let mut pending_runtime_cancel = pending_runtime_cancel;
@@ -400,57 +335,6 @@ pub fn MCPRemoteServerMenu<'a>(
                         }
                         callback_url_input.set(String::new());
                     }
-                    RemoteServerMenuAction::ClaudeAiAuthenticate => {
-                        // CC `handleClaudeAIAuthComplete` (`:133-158`) — `:138`
-                        // is `await reconnectMcpServer(server.name)`; the state
-                        // write is the manager's, not this menu's.
-                        is_claude_ai_authenticating.set(false);
-                        is_reconnecting.set(true);
-                        let updated = reconnect_mcp_server.call(&server.name).await;
-                        let success = updated.as_ref().is_some_and(|updated| {
-                            updated.connection_type() == McpServerConnectionType::Connected
-                        });
-                        if success {
-                            pending_runtime_result.set(Some(format!(
-                                "Authentication successful. Connected to {}.",
-                                server.name
-                            )));
-                        } else if updated.as_ref().is_some_and(|updated| {
-                            updated.connection_type() == McpServerConnectionType::NeedsAuth
-                        }) {
-                            pending_runtime_result.set(Some(
-                                "Authentication successful, but server still requires authentication. You may need to manually restart nyan."
-                                    .to_string(),
-                            ));
-                        } else {
-                            pending_runtime_result.set(Some(
-                                "Authentication successful, but server reconnection failed. You may need to manually restart nyan for the changes to take effect."
-                                    .to_string(),
-                            ));
-                        }
-                        is_reconnecting.set(false);
-                    }
-                    RemoteServerMenuAction::ClaudeAiClearAuthentication => {
-                        // CC `clearServerCache(server.name, { ...server.config, scope: server.scope })`.
-                        let server_ref = crate::services::mcp::types::ScopedMcpServerConfig {
-                            scope: server.scope,
-                            ..server.config.clone()
-                        };
-                        crate::services::mcp::client::clear_server_cache(&server.name, Some(&server_ref))
-                            .await;
-                        runtime_mcp.update(|mcp| {
-                            crate::services::mcp::use_manage_mcp_connections::claude_ai_clear_authentication_state(
-                                mcp,
-                                &server.name,
-                            )
-                        });
-                        is_claude_ai_clearing_auth.set(false);
-                        claude_ai_clear_auth_browser_opened.set(false);
-                        pending_runtime_result.set(Some(format!(
-                            "Disconnected from {}.",
-                            server.name
-                        )));
-                    }
                     RemoteServerMenuAction::ViewTools | RemoteServerMenuAction::Back => {}
                 }
             }
@@ -499,18 +383,7 @@ pub fn MCPRemoteServerMenu<'a>(
         copy_url_observer(copy);
     });
 
-    let open_browser_action = hooks.use_async_handler({
-        let mut auth_error = auth_error;
-        move |url: String| async move {
-            if let Err(error) = crate::utils::browser::open_browser(&url).await {
-                auth_error.set(Some(error.to_string()));
-            }
-        }
-    });
-
-    let runtime_action_for_events = runtime_action.clone();
     let copy_url_action_for_events = copy_url_action.clone();
-    let open_browser_action_for_events = open_browser_action.clone();
     hooks.use_propagated_terminal_events({
         let actions = actions.clone();
         let auth_abort_cleanup = auth_abort_cleanup.clone();
@@ -546,65 +419,6 @@ pub fn MCPRemoteServerMenu<'a>(
                             manual_callback_submit.set(None);
                             auth_abort_handle.set(None);
                             callback_url_input.set(String::new());
-                            event.stop_propagation();
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
-
-                if is_claude_ai_authenticating.get() {
-                    match code {
-                        KeyCode::Enter => {
-                            runtime_action_for_events(RemoteServerMenuAction::ClaudeAiAuthenticate);
-                            event.stop_propagation();
-                        }
-                        KeyCode::Char('c') if !url_copied.get() => {
-                            if let Some(url) = { claude_ai_auth_url.read().clone() } {
-                                copy_url_action_for_events(url);
-                                event.stop_propagation();
-                            }
-                        }
-                        KeyCode::Esc => {
-                            is_claude_ai_authenticating.set(false);
-                            claude_ai_auth_url.set(None);
-                            event.stop_propagation();
-                        }
-                        _ => {}
-                    }
-                    return;
-                }
-
-                if is_claude_ai_clearing_auth.get() {
-                    match code {
-                        KeyCode::Enter => {
-                            if claude_ai_clear_auth_browser_opened.get() {
-                                runtime_action_for_events(
-                                    RemoteServerMenuAction::ClaudeAiClearAuthentication,
-                                );
-                            } else {
-                                // Maps to: CC `components/mcp/MCPRemoteServerMenu.tsx:242-256`
-                                // clear-auth first-Enter connectors URL/browser branch.
-                                let connectors_url = format!(
-                                    "{}/settings/connectors",
-                                    crate::constants::oauth::CLAUDE_AI_ORIGIN
-                                );
-                                claude_ai_clear_auth_url.set(Some(connectors_url.clone()));
-                                claude_ai_clear_auth_browser_opened.set(true);
-                                open_browser_action_for_events(connectors_url);
-                            }
-                            event.stop_propagation();
-                        }
-                        KeyCode::Char('c') if !url_copied.get() => {
-                            if let Some(url) = { claude_ai_clear_auth_url.read().clone() } {
-                                copy_url_action_for_events(url);
-                                event.stop_propagation();
-                            }
-                        }
-                        KeyCode::Esc => {
-                            is_claude_ai_clearing_auth.set(false);
-                            claude_ai_clear_auth_url.set(None);
-                            claude_ai_clear_auth_browser_opened.set(false);
                             event.stop_propagation();
                         }
                         _ => {}
@@ -669,27 +483,17 @@ pub fn MCPRemoteServerMenu<'a>(
             RemoteServerMenuAction::Enable | RemoteServerMenuAction::Disable => {
                 runtime_action(action)
             }
-            RemoteServerMenuAction::ClaudeAiAuthenticate => {
-                handle_claude_ai_auth_action(());
-            }
-            RemoteServerMenuAction::ClaudeAiClearAuthentication => {
-                auth_error.set(None);
-                claude_ai_clear_auth_url.set(None);
-                claude_ai_clear_auth_browser_opened.set(false);
-                is_claude_ai_clearing_auth.set(true);
-            }
             RemoteServerMenuAction::Back => (props.on_cancel)(()),
         }
     }
 
     if is_authenticating.get() {
-        let auth_copy = if server.transport != Transport::ClaudeAiProxy
-            && server
-                .config
-                .oauth
-                .as_ref()
-                .and_then(|oauth| oauth.get("xaa"))
-                .is_some()
+        let auth_copy = if server
+            .config
+            .oauth
+            .as_ref()
+            .and_then(|oauth| oauth.get("xaa"))
+            .is_some()
         {
             " Authenticating via your identity provider"
         } else {
@@ -732,74 +536,6 @@ pub fn MCPRemoteServerMenu<'a>(
                     }.into_any())
                 } else { None })
                 Text(content: "Return here after authenticating in your browser. Press Esc to go back.".to_string(), dim: true, wrap: TextWrap::NoWrap)
-            }
-        }.into_any();
-    }
-
-    if is_claude_ai_authenticating.get() {
-        let claude_ai_auth_url_value = { claude_ai_auth_url.read().clone() };
-        let url_copied_value = url_copied.get();
-        return element! {
-            View(flex_direction: FlexDirection::Column, padding: 1u32, row_gap: 1u32) {
-                Text(content: format!("Authenticating with {}…", server.name), color: theme.claude, wrap: TextWrap::NoWrap)
-                View(flex_direction: FlexDirection::Row) {
-                    Spinner
-                    Text(content: " A browser window will open for authentication".to_string(), wrap: TextWrap::NoWrap)
-                }
-                #(claude_ai_auth_url_value.map(|url| element! {
-                    View(flex_direction: FlexDirection::Column) {
-                        View(flex_direction: FlexDirection::Row) {
-                            Text(content: "If your browser doesn't open automatically, copy this URL manually ".to_string(), dim: true, wrap: TextWrap::NoWrap)
-                            Text(content: auth_url_copy_hint(url_copied_value).to_string(), color: if url_copied_value { theme.success } else { theme.inactive }, wrap: TextWrap::NoWrap)
-                        }
-                        Link(url: url)
-                    }
-                }.into_any()))
-                View(flex_direction: FlexDirection::Column, margin_left: 3u32) {
-                    Text(content: "Press Enter after authenticating in your browser.".to_string(), color: theme.permission, wrap: TextWrap::NoWrap)
-                    Text(content: "Esc to back".to_string(), dim: true, italic: true, wrap: TextWrap::NoWrap)
-                }
-            }
-        }.into_any();
-    }
-
-    if is_claude_ai_clearing_auth.get() {
-        let browser_opened = claude_ai_clear_auth_browser_opened.get();
-        let clear_url_value = { claude_ai_clear_auth_url.read().clone() };
-        let url_copied_value = url_copied.get();
-        return element! {
-            View(flex_direction: FlexDirection::Column, padding: 1u32, row_gap: 1u32) {
-                Text(content: format!("Clear authentication for {}", server.name), color: theme.claude, wrap: TextWrap::NoWrap)
-                #(if browser_opened {
-                    Some(element! {
-                        View(flex_direction: FlexDirection::Column) {
-                            Text(content: "Find the MCP server in the browser and click \"Disconnect\".".to_string(), wrap: TextWrap::Wrap)
-                            #(clear_url_value.map(|url| element! {
-                                View(flex_direction: FlexDirection::Column) {
-                                    View(flex_direction: FlexDirection::Row) {
-                                        Text(content: "If your browser didn't open automatically, copy this URL manually ".to_string(), dim: true, wrap: TextWrap::NoWrap)
-                                        Text(content: auth_url_copy_hint(url_copied_value).to_string(), color: if url_copied_value { theme.success } else { theme.inactive }, wrap: TextWrap::NoWrap)
-                                    }
-                                    Link(url: url)
-                                }
-                            }.into_any()))
-                            View(flex_direction: FlexDirection::Column, margin_left: 3u32) {
-                                Text(content: "Press Enter when done.".to_string(), color: theme.permission, wrap: TextWrap::NoWrap)
-                                Text(content: "Esc to back".to_string(), dim: true, italic: true, wrap: TextWrap::NoWrap)
-                            }
-                        }
-                    }.into_any())
-                } else {
-                    Some(element! {
-                        View(flex_direction: FlexDirection::Column) {
-                            Text(content: "This will open claude.ai in the browser. Find the MCP server in the list and click \"Disconnect\".".to_string(), wrap: TextWrap::Wrap)
-                            View(flex_direction: FlexDirection::Column, margin_left: 3u32) {
-                                Text(content: "Press Enter to open the browser.".to_string(), color: theme.permission, wrap: TextWrap::NoWrap)
-                                Text(content: "Esc to back".to_string(), dim: true, italic: true, wrap: TextWrap::NoWrap)
-                            }
-                        }
-                    }.into_any())
-                })
             }
         }.into_any();
     }
@@ -855,13 +591,11 @@ pub fn MCPRemoteServerMenu<'a>(
                         Text(content: icon.to_string(), color: status_color, wrap: TextWrap::NoWrap)
                         Text(content: format!(" {text}"), wrap: TextWrap::NoWrap)
                     }
-                    #(if server.transport == Transport::ClaudeAiProxy { None } else { Some(element! {
-                        View(flex_direction: FlexDirection::Row) {
-                            Text(content: "Auth: ".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap)
-                            Text(content: if auth_ok { figures::get().tick.to_string() } else { figures::get().cross.to_string() }, color: if auth_ok { theme.success } else { theme.error }, wrap: TextWrap::NoWrap)
-                            Text(content: if auth_ok { " authenticated".to_string() } else { " not authenticated".to_string() }, wrap: TextWrap::NoWrap)
-                        }
-                    })})
+                    View(flex_direction: FlexDirection::Row) {
+                        Text(content: "Auth: ".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap)
+                        Text(content: if auth_ok { figures::get().tick.to_string() } else { figures::get().cross.to_string() }, color: if auth_ok { theme.success } else { theme.error }, wrap: TextWrap::NoWrap)
+                        Text(content: if auth_ok { " authenticated".to_string() } else { " not authenticated".to_string() }, wrap: TextWrap::NoWrap)
+                    }
                     View(flex_direction: FlexDirection::Row) {
                         Text(content: "URL: ".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap)
                         Text(content: url, dim: true, wrap: TextWrap::NoWrap)
@@ -939,7 +673,7 @@ mod tests {
     use super::*;
     use crate::components::mcp::types::mcp_client_state_from_parts;
     use crate::services::mcp::client::McpConnectionDiscovery;
-    use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig};
+    use crate::services::mcp::types::{ConfigScope, ScopedMcpServerConfig, Transport};
     use crate::state::app_state_store::McpState;
     use crate::utils::test_env::{
         CLIPBOARD_OFF_SYSTEM, EnvVarGuard, TEST_ENV_LOCK, in_child_process,
@@ -947,22 +681,6 @@ mod tests {
     use futures::StreamExt;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
-
-    struct GlobalConfigRestore(Option<crate::utils::config::GlobalConfig>);
-
-    impl GlobalConfigRestore {
-        fn install(config: crate::utils::config::GlobalConfig) -> Self {
-            Self(crate::utils::config::replace_test_global_config(Some(
-                config,
-            )))
-        }
-    }
-
-    impl Drop for GlobalConfigRestore {
-        fn drop(&mut self) {
-            crate::utils::config::replace_test_global_config(self.0.take());
-        }
-    }
 
     fn server(
         status: McpServerConnectionType,
@@ -990,7 +708,6 @@ mod tests {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             },
             reconnect_attempt: None,
@@ -1184,44 +901,6 @@ mod tests {
     }
 
     #[test]
-    fn handle_claude_ai_auth_targets_connectors_page_and_ignores_a_stored_account() {
-        let _env_lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // A leftover claude.ai account from an older build must not produce the
-        // organization-scoped deep link: there is no claude.ai OAuth account.
-        let _global_config = GlobalConfigRestore::install(
-            serde_json::from_value(serde_json::json!({
-                "oauthAccount": { "organizationUuid": "org_123" }
-            }))
-            .expect("legacy global config"),
-        );
-
-        let mut config = server(
-            McpServerConnectionType::NeedsAuth,
-            Transport::ClaudeAiProxy,
-            None,
-        )
-        .config;
-        config.id = Some("mcprs_abc".to_string());
-        let url = Arc::new(Mutex::new(None::<String>));
-        let url_for_callback = Arc::clone(&url);
-        let error = futures::executor::block_on(handle_claude_ai_auth(&config, move |url| {
-            *url_for_callback.lock().expect("URL mutex") = Some(url);
-        }))
-        .expect_err("the prepared OAuth browser outlet must remain default-closed");
-        assert!(
-            error
-                .downcast_ref::<crate::constants::oauth::OAuthCredentialSideEffectsUnavailable>()
-                .is_some()
-        );
-        assert_eq!(
-            url.lock().expect("URL mutex").as_deref(),
-            Some("https://claude.ai/settings/connectors")
-        );
-    }
-
-    #[test]
     fn remote_oauth_cleanup_aborts_on_drop_like_official_unmount() {
         let handle = crate::services::mcp::auth::McpOAuthAbortHandle::new();
         let signal = handle.signal();
@@ -1270,25 +949,19 @@ mod tests {
         );
     }
 
-    #[test]
-    fn claudeai_proxy_menu_uses_claudeai_auth_options() {
-        assert_eq!(
-            menu_actions_for_remote_server(&server(
-                McpServerConnectionType::Pending,
-                Transport::ClaudeAiProxy,
-                None
-            )),
-            vec![
-                RemoteServerMenuAction::ClaudeAiAuthenticate,
-                RemoteServerMenuAction::Reconnect,
-                RemoteServerMenuAction::Disable,
-            ]
-        );
+    const TEST_AUTHORIZATION_URL: &str = "https://auth.example.test/authorize?state=fixture";
+
+    /// The OAuth side-effect gate stops real flows before the URL exists, so
+    /// these tests stand in a flow that publishes this URL and waits.
+    fn install_test_authorization_url() {
+        *crate::services::mcp::use_manage_mcp_connections::TEST_OAUTH_AUTHORIZATION_URL
+            .lock()
+            .unwrap() = Some(TEST_AUTHORIZATION_URL.to_string());
     }
 
     /// CC :257-269 ignores c while copied, then restores the hint after 2000ms.
-    /// The browser outlet is the existing closed OAuth boundary; only the
-    /// canonical SSH OSC clipboard path runs, without native clipboard writes.
+    /// Only the canonical SSH OSC clipboard path runs, without native
+    /// clipboard writes.
     #[tokio::test]
     async fn remote_clipboard_matches_official_feedback_and_copy_timeout() {
         // iocraft reads the session's terminal from the OS environment.
@@ -1300,10 +973,11 @@ mod tests {
             return;
         }
         crate::utils::process_runtime::initialize_test_process_runtime();
+        install_test_authorization_url();
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {
             ContextProvider(value: Context::owned(crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings())) {
-                RemoteToggleHarness(server: Some(server(McpServerConnectionType::NeedsAuth, Transport::ClaudeAiProxy, None)), cancels: Arc::new(Mutex::new(0)))
+                RemoteToggleHarness(server: Some(server(McpServerConnectionType::NeedsAuth, Transport::Http, None)), cancels: Arc::new(Mutex::new(0)))
             }
         };
         let mut app = element! {
@@ -1341,6 +1015,7 @@ mod tests {
             "{frames:?}"
         );
         let last = frames.last().unwrap();
+        assert!(last.contains(TEST_AUTHORIZATION_URL), "{frames:?}");
         assert!(last.contains("(c copy)"), "{frames:?}");
         assert!(!last.contains("(Copied!)"), "{frames:?}");
     }
@@ -1363,6 +1038,7 @@ mod tests {
             return;
         }
         crate::utils::process_runtime::initialize_test_process_runtime();
+        install_test_authorization_url();
         let directory =
             std::env::temp_dir().join(format!("nyan-mcp-clipboard-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
@@ -1374,7 +1050,7 @@ mod tests {
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {
             ContextProvider(value: Context::owned(crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings())) {
-                RemoteToggleHarness(server: Some(server(McpServerConnectionType::NeedsAuth, Transport::ClaudeAiProxy, None)), cancels: Arc::new(Mutex::new(0)), unmount_on_escape: true)
+                RemoteToggleHarness(server: Some(server(McpServerConnectionType::NeedsAuth, Transport::Http, None)), cancels: Arc::new(Mutex::new(0)), unmount_on_escape: true)
             }
         };
         let mut app = element! {
@@ -1410,7 +1086,7 @@ mod tests {
         assert!(
             std::fs::read_to_string(directory.join("input"))
                 .unwrap()
-                .contains("/settings/connectors")
+                .contains(TEST_AUTHORIZATION_URL)
         );
         assert!(
             !frames.iter().any(|frame| frame.contains("(Copied!)")),

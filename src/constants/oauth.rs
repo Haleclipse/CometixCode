@@ -3,20 +3,11 @@
 //! Anthropic account OAuth is gone: nyan has no claude.ai/Console login, token
 //! refresh, or account-scoped credential state, and reaches Anthropic through a
 //! provider profile API key only. What remains here is the MCP client identity
-//! and the claude.ai MCP connector/proxy endpoints, plus the default-closed
-//! side-effect gate that the inherited credential outlets still consult.
+//! plus the default-closed side-effect gate that the inherited credential
+//! outlets still consult.
 
 /// Maps to: CC `constants/oauth.ts:113-114` `MCP_CLIENT_METADATA_URL`.
 pub const MCP_CLIENT_METADATA_URL: &str = "https://claude.ai/oauth/claude-code-client-metadata";
-
-/// Origin of the claude.ai MCP connector settings page.
-pub const CLAUDE_AI_ORIGIN: &str = "https://claude.ai";
-
-/// Base URL of the claude.ai MCP proxy.
-pub const MCP_PROXY_URL: &str = "https://mcp-proxy.anthropic.com";
-
-/// Path template of the claude.ai MCP proxy; `{server_id}` is the connector id.
-pub const MCP_PROXY_PATH: &str = "/v1/mcp/{server_id}";
 
 /// No CC counterpart. This is the sole user-authorized L2 product switch for
 /// OAuth network, process/listener, credential-storage, revocation, and

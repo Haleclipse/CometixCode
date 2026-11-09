@@ -3,15 +3,14 @@
 //!
 //! The UI slice consumes snapshot state, while the runtime slice maps CC's
 //! `@modelcontextprotocol/sdk` client usage to the official Rust SDK
-//! (`modelcontextprotocol/rust-sdk`, crate `rmcp`). OAuth/settings writes and
-//! Claude.ai connector mutation still live in their official modules and are
-//! not hidden inside command/UI code.
+//! (`modelcontextprotocol/rust-sdk`, crate `rmcp`). OAuth/settings writes
+//! still live in their official modules and are not hidden inside command/UI
+//! code.
 
 pub mod auth;
 pub mod channel_allowlist;
 pub mod channel_notification;
 pub mod channel_permissions;
-pub mod claudeai;
 pub mod client;
 pub mod config;
 pub mod elicitation_handler;

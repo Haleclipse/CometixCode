@@ -13,7 +13,7 @@ use crate::components::design_system::keyboard_shortcut_hint::{
     KeyboardShortcutHint, KeyboardShortcutHintStyleContext,
 };
 use crate::constants::figures;
-use crate::services::mcp::types::{ConfigScope, McpServerConnectionType, Transport};
+use crate::services::mcp::types::{ConfigScope, McpServerConnectionType};
 use crate::services::mcp::utils::describe_mcp_config_file_path;
 use iocraft::prelude::*;
 use std::collections::BTreeMap;
@@ -58,7 +58,6 @@ pub fn get_scope_heading(scope: ConfigScope) -> (String, Option<String>) {
             "Built-in MCPs".to_string(),
             Some("always available".to_string()),
         ),
-        ConfigScope::ClaudeAi => (scope.as_str().to_string(), None),
     }
 }
 
@@ -78,25 +77,13 @@ pub fn selectable_servers_in_official_order(
     servers: &[ServerInfo],
     agent_servers: &[AgentMcpServerInfo],
 ) -> Vec<String> {
-    let regular = servers
-        .iter()
-        .filter(|server| server.transport != Transport::ClaudeAiProxy)
-        .cloned()
-        .collect::<Vec<_>>();
-    let groups = group_servers_by_scope(&regular);
+    let groups = group_servers_by_scope(servers);
     let mut names = Vec::new();
     for scope in SCOPE_ORDER {
         if let Some(scope_servers) = groups.get(&scope) {
             names.extend(scope_servers.iter().map(|server| server.name.clone()));
         }
     }
-    let mut claude_ai = servers
-        .iter()
-        .filter(|server| server.transport == Transport::ClaudeAiProxy)
-        .map(|server| server.name.clone())
-        .collect::<Vec<_>>();
-    claude_ai.sort();
-    names.extend(claude_ai);
     names.extend(agent_servers.iter().map(|server| server.name.clone()));
     if let Some(dynamic_servers) = groups.get(&ConfigScope::Dynamic) {
         names.extend(dynamic_servers.iter().map(|server| server.name.clone()));
@@ -108,25 +95,13 @@ fn selectable_items_in_official_order(
     servers: &[ServerInfo],
     agent_servers: &[AgentMcpServerInfo],
 ) -> Vec<SelectableMcpItem> {
-    let regular = servers
-        .iter()
-        .filter(|server| server.transport != Transport::ClaudeAiProxy)
-        .cloned()
-        .collect::<Vec<_>>();
-    let groups = group_servers_by_scope(&regular);
+    let groups = group_servers_by_scope(servers);
     let mut items = Vec::new();
     for scope in SCOPE_ORDER {
         if let Some(scope_servers) = groups.get(&scope) {
             items.extend(scope_servers.iter().cloned().map(SelectableMcpItem::Server));
         }
     }
-    let mut claude_ai = servers
-        .iter()
-        .filter(|server| server.transport == Transport::ClaudeAiProxy)
-        .cloned()
-        .collect::<Vec<_>>();
-    claude_ai.sort_by(|a, b| a.name.cmp(&b.name));
-    items.extend(claude_ai.into_iter().map(SelectableMcpItem::Server));
     items.extend(
         agent_servers
             .iter()
@@ -348,21 +323,7 @@ pub fn MCPListPanel<'a>(
         }
     }
 
-    let regular = servers
-        .iter()
-        .filter(|server| server.transport != Transport::ClaudeAiProxy)
-        .cloned()
-        .collect::<Vec<_>>();
-    let groups = group_servers_by_scope(&regular);
-    let claude_ai_servers = {
-        let mut list = servers
-            .iter()
-            .filter(|server| server.transport == Transport::ClaudeAiProxy)
-            .cloned()
-            .collect::<Vec<_>>();
-        list.sort_by(|a, b| a.name.cmp(&b.name));
-        list
-    };
+    let groups = group_servers_by_scope(&servers);
     let dynamic_servers = groups
         .get(&ConfigScope::Dynamic)
         .cloned()
@@ -402,16 +363,6 @@ pub fn MCPListPanel<'a>(
                             }
                         })
                     }))
-                    #(if claude_ai_servers.is_empty() { None } else {
-                        let start_index = flat_index;
-                        flat_index += claude_ai_servers.len();
-                        Some(element! {
-                            View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
-                                View(padding_left: 2u32) { Text(content: "claude.ai".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap) }
-                                #(claude_ai_servers.into_iter().enumerate().map(|(offset, server)| render_server_item(server, start_index + offset, selected_index.get(), theme)))
-                            }
-                        })
-                    })
                     #(if agent_servers.is_empty() { None } else {
                         let start_index = flat_index;
                         flat_index += agent_servers.len();
@@ -502,7 +453,6 @@ mod tests {
                 ide_running_in_windows: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             },
             reconnect_attempt: None,

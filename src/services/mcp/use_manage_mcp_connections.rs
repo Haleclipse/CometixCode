@@ -151,38 +151,27 @@ pub fn failed_reconnect_server_update(server: &McpServerConnection) -> McpServer
     McpServerConnection::failed(server.name(), server.config().clone(), None)
 }
 
-/// The `setAppState` both of `MCPRemoteServerMenu`'s clear-auth paths make:
-/// the server's existing client takes the new type and keeps its other fields
-/// (`clients.map(c => ... { ...c, type })`, never an append), and its tools,
-/// commands and resources go (`excludeToolsByServer`,
-/// `excludeCommandsByServer`, `excludeResourcesByServer`).
-fn exclude_server_after_clearing_auth(
-    state: &mut McpState,
-    server_name: &str,
-    retype: fn(&McpServerConnection) -> McpServerConnection,
-) {
+/// Maps to: CC `MCPRemoteServerMenu.tsx:443-469` `handleClearAuth`'s
+/// `setAppState`, after the tokens are revoked and the cache cleared: the
+/// client is marked failed ("a misnomer here") and loses its capabilities.
+/// The existing client keeps its other fields (`clients.map(c => ... { ...c,
+/// type })`, never an append), and its tools, commands and resources go
+/// (`excludeToolsByServer`, `excludeCommandsByServer`,
+/// `excludeResourcesByServer`).
+pub fn clear_authentication_state(state: &mut McpState, server_name: &str) {
     for server in &mut state.clients {
         if server.name() == server_name {
-            *server = retype(server);
+            // `{ ...c, type: 'failed' }` keeps an error only a failed `c` had.
+            let error = match server {
+                McpServerConnection::Failed(failed) => failed.error.clone(),
+                _ => None,
+            };
+            *server = McpServerConnection::failed(server.name(), server.config().clone(), error);
         }
     }
     state.tools = super::utils::exclude_tools_by_server(&state.tools, server_name);
     state.commands = super::utils::exclude_commands_by_server(&state.commands, server_name);
     state.resources = super::utils::exclude_resources_by_server(&state.resources, server_name);
-}
-
-/// Maps to: CC `MCPRemoteServerMenu.tsx:443-469` `handleClearAuth`'s
-/// `setAppState`, after the tokens are revoked and the cache cleared: the
-/// client is marked failed ("a misnomer here") and loses its capabilities.
-pub fn clear_authentication_state(state: &mut McpState, server_name: &str) {
-    exclude_server_after_clearing_auth(state, server_name, |server| {
-        // `{ ...c, type: 'failed' }` keeps an error only a failed `c` had.
-        let error = match server {
-            McpServerConnection::Failed(failed) => failed.error.clone(),
-            _ => None,
-        };
-        McpServerConnection::failed(server.name(), server.config().clone(), error)
-    });
 }
 
 /// Maps to CC `MCPRemoteServerMenu.tsx#handleAuthenticate` result copy.
@@ -204,6 +193,11 @@ pub fn remote_authentication_result_message(
     }
 }
 
+/// Test-only authorization URL for [`authenticate_remote_mcp_server_once`].
+#[cfg(test)]
+pub(crate) static TEST_OAUTH_AUTHORIZATION_URL: std::sync::Mutex<Option<String>> =
+    std::sync::Mutex::new(None);
+
 /// Maps to CC `MCPRemoteServerMenu.tsx#handleAuthenticate`'s OAuth half
 /// (`:361-380`): preserve step-up OAuth state for re-auth, then run the MCP
 /// OAuth service flow. The reconnect after it is the menu's, through the
@@ -217,6 +211,20 @@ pub async fn authenticate_remote_mcp_server_once(
     on_waiting_for_callback: Option<super::auth::McpWaitingForCallbackCallback>,
     abort_signal: Option<super::auth::McpOAuthAbortSignal>,
 ) -> anyhow::Result<()> {
+    // The OAuth side-effect gate stops every real flow before it publishes an
+    // authorization URL; tests stand in a flow that publishes one and waits.
+    #[cfg(test)]
+    let test_url = TEST_OAUTH_AUTHORIZATION_URL
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    #[cfg(test)]
+    if let Some(url) = test_url {
+        if let Some(on_authorization_url) = &on_authorization_url {
+            on_authorization_url(url);
+        }
+        return futures::future::pending().await;
+    }
     if was_authenticated {
         super::auth::revoke_server_tokens(server_name, config, true).await?;
     }
@@ -233,16 +241,6 @@ pub async fn authenticate_remote_mcp_server_once(
     )
     .await?;
     Ok(())
-}
-
-/// Maps to: CC `MCPRemoteServerMenu.tsx:166-190`
-/// `handleClaudeAIClearAuthComplete`'s `setAppState`, after the cache is
-/// cleared: the claude.ai proxy client becomes needs-auth and loses its
-/// capabilities.
-pub fn claude_ai_clear_authentication_state(state: &mut McpState, server_name: &str) {
-    exclude_server_after_clearing_auth(state, server_name, |server| {
-        McpServerConnection::needs_auth(server.name(), server.config().clone())
-    });
 }
 
 /// Maps to: CC `client.client.onclose` branch ordering: disabled servers stop,
@@ -1227,13 +1225,8 @@ async fn initialize_discovered_servers_as_pending(
     let loaded = if dependencies.startup.strict || dependencies.startup.bare {
         super::config::McpConfigs::default()
     } else {
-        super::config::get_claude_code_mcp_configs(
-            &global,
-            &project,
-            &dependencies.startup.dynamic,
-            futures::future::ready(Default::default()),
-        )
-        .await?
+        super::config::get_claude_code_mcp_configs(&global, &project, &dependencies.startup.dynamic)
+            .await?
     };
     let _turn = crate::state::store::enter_store_turn_segment();
     let mut configs = loaded.servers;
@@ -1256,118 +1249,38 @@ async fn load_and_connect_mcp_configs(
         .push((dependencies.session_id.clone(), dependencies.auth_version));
     let (global, project) = mcp_discovery_config_context();
     let strict = dependencies.startup.strict || dependencies.startup.bare;
-    // User-authorized L2 (2026-09-15): retain the source two-phase flow with an
-    // empty remote result; claudeai.rs stays implemented but is not wired here.
-    // In particular, do not clear its cache or consult Claude.ai login state.
-    // Preserve only the shared MCP auth-failure cache invalidation previously
-    // delegated by claudeai.ts#clearClaudeAIMcpConfigsCache, under its same guard.
-    // This does not read Claude.ai credentials or invoke the retained module.
+    // Maps to: CC `clearClaudeAIMcpConfigsCache`'s shared MCP auth-failure
+    // cache invalidation, under its same non-strict guard.
     if !strict {
         super::client::clear_mcp_auth_cache();
     }
-    // Original wiring retained for future re-enablement:
-    // let claudeai_promise = if strict {
-    //     super::config::start_mcp_config_promise(futures::future::ready(Default::default()))
-    // } else {
-    //     super::claudeai::clear_claude_ai_mcp_configs_cache();
-    //     super::config::start_mcp_config_promise(
-    //         super::claudeai::fetch_claude_ai_mcp_configs_if_eligible(),
-    //     )
-    // };
-    let claudeai_promise =
-        super::config::start_mcp_config_promise(futures::future::ready(Default::default()));
     let loaded = if strict {
         super::config::McpConfigs::default()
     } else {
-        super::config::get_claude_code_mcp_configs(
-            &global,
-            &project,
-            &dependencies.startup.dynamic,
-            claudeai_promise.clone(),
-        )
-        .await?
+        super::config::get_claude_code_mcp_configs(&global, &project, &dependencies.startup.dynamic)
+            .await?
     };
     let runtime = crate::utils::process_runtime::runtime_handle_for_detached_work()
         .expect("MCP process runtime");
     let mut configs = loaded.servers;
     configs.extend(dependencies.startup.dynamic.clone());
-    {
-        let _turn = crate::state::store::enter_store_turn_segment();
-        if cancelled.load(Ordering::SeqCst) {
-            return Ok(());
-        }
-        add_errors_to_app_state(&dependencies.store, loaded.errors);
-        let enabled = crate::utils::process_env::ecmascript_object_entries(&configs)
-            .into_iter()
-            .filter(|(name, _)| !is_mcp_server_disabled(name))
-            .map(|(name, config)| (name.to_owned(), config.clone()))
-            .collect();
-        let local_pending = pending.clone();
-        runtime.spawn(async move {
-            get_mcp_tools_commands_and_resources(
-                |discovery| local_pending.on_connection_attempt(discovery),
-                &enabled,
-            )
-            .await;
-        });
-        if strict {
-            return Ok(());
-        }
-    }
-    let allowed =
-        super::config::filter_mcp_servers_by_policy_readonly(claudeai_promise.await).allowed;
     let _turn = crate::state::store::enter_store_turn_segment();
     if cancelled.load(Ordering::SeqCst) {
         return Ok(());
     }
-    let remote =
-        super::config::dedup_claude_ai_mcp_servers_readonly(&allowed, &configs, &project).servers;
-    if !remote.is_empty() {
-        // Source phase 2 only appends new clients; it must not perform the
-        // phase 1 stale-plugin reconciliation against this remote subset.
-        dependencies.store.set_state(|previous| {
-            let clients: Vec<_> = crate::utils::process_env::ecmascript_object_entries(&remote)
-                .into_iter()
-                .filter(|(name, _)| {
-                    !previous
-                        .mcp
-                        .clients
-                        .iter()
-                        .any(|client| client.name() == *name)
-                })
-                .map(|(name, config)| {
-                    if is_mcp_server_disabled(name) {
-                        McpConnectionDiscovery::disabled(name, config).server
-                    } else {
-                        McpConnectionDiscovery::pending(name, config).server
-                    }
-                })
-                .collect();
-            if clients.is_empty() {
-                return crate::state::store::UpdateDecision::Same(());
-            }
-            let mut next = (**previous).clone();
-            std::sync::Arc::make_mut(&mut next.mcp)
-                .clients
-                .extend(clients);
-            crate::state::store::UpdateDecision::Replace {
-                next: std::sync::Arc::new(next),
-                result: (),
-            }
-        });
-        let enabled = crate::utils::process_env::ecmascript_object_entries(&remote)
-            .into_iter()
-            .filter(|(name, _)| !is_mcp_server_disabled(name))
-            .map(|(name, config)| (name.to_owned(), config.clone()))
-            .collect();
-        runtime.spawn(async move {
-            get_mcp_tools_commands_and_resources(
-                |discovery| pending.on_connection_attempt(discovery),
-                &enabled,
-            )
-            .await;
-        });
-    }
+    add_errors_to_app_state(&dependencies.store, loaded.errors);
+    let enabled = crate::utils::process_env::ecmascript_object_entries(&configs)
+        .into_iter()
+        .filter(|(name, _)| !is_mcp_server_disabled(name))
+        .map(|(name, config)| (name.to_owned(), config.clone()))
+        .collect();
+    runtime.spawn(async move {
+        get_mcp_tools_commands_and_resources(
+            |discovery| pending.on_connection_attempt(discovery),
+            &enabled,
+        )
+        .await;
+    });
     Ok(())
 }
 
@@ -2289,27 +2202,6 @@ mod tests {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
-            plugin_source: None,
-        }
-    }
-
-    fn claude_ai_proxy_config(id: Option<&str>) -> ScopedMcpServerConfig {
-        ScopedMcpServerConfig {
-            name: None,
-            scope: ConfigScope::ClaudeAi,
-            transport: Transport::ClaudeAiProxy,
-            command: None,
-            args: Vec::new(),
-            env: std::collections::BTreeMap::new(),
-            url: Some("https://mcp-proxy.anthropic.com/v1/mcp/mcpsrv_1".to_string()),
-            headers: std::collections::BTreeMap::new(),
-            headers_helper: None,
-            oauth: None,
-            ide_running_in_windows: None,
-            ide_name: None,
-            auth_token: None,
-            id: id.map(ToOwned::to_owned),
             plugin_source: None,
         }
     }
@@ -2725,12 +2617,12 @@ mod tests {
         assert_eq!(state.resources["docs"][0].uri, "docs://two");
     }
 
-    /// CC `MCPRemoteServerMenu.tsx:166-190` and `:443-469` write
-    /// `AppState.mcp` directly: the existing client changes type (never
-    /// appended), and `exclude*ByServer` drop its tools, commands and resources
-    /// key — unlike the flush, which keeps the key.
+    /// CC `MCPRemoteServerMenu.tsx:443-469` writes `AppState.mcp` directly:
+    /// the existing client changes type (never appended), and
+    /// `exclude*ByServer` drop its tools, commands and resources key — unlike
+    /// the flush, which keeps the key.
     #[test]
-    fn clear_auth_states_match_official_menu_set_app_state() {
+    fn clear_auth_state_matches_official_menu_set_app_state() {
         let mut state = docs_state();
         apply_mcp_server_update(
             &mut state,
@@ -2752,15 +2644,7 @@ mod tests {
         assert!(!state.resources.contains_key("docs"));
         assert!(state.resources.contains_key("other"));
 
-        claude_ai_clear_authentication_state(&mut state, "other");
-        assert_eq!(
-            state.clients[1].connection_type(),
-            McpServerConnectionType::NeedsAuth
-        );
-        assert!(state.tools.is_empty());
-        assert!(state.resources.is_empty());
-
-        claude_ai_clear_authentication_state(&mut state, "absent");
+        clear_authentication_state(&mut state, "absent");
         assert_eq!(state.clients.len(), 2, "`clients.map` never appends");
     }
 

@@ -1428,8 +1428,8 @@ fn build_mcp_server_statuses(
         .map(|server| {
             let connected = server.as_connected();
 
-            // CC `:1628-1651` — three shapes, and anything else (ws/sdk) leaves
-            // `config` undefined.
+            // CC `:1628-1651` — sse/http and stdio shapes (@nyan: no
+            // claudeai-proxy), and anything else (ws/sdk) leaves `config` undefined.
             let config = server.config();
             let config_status = match config.transport {
                 Transport::Sse | Transport::Http => Some(serde_json::json!({
@@ -1437,11 +1437,6 @@ fn build_mcp_server_statuses(
                     "url": config.url,
                     "headers": config.headers,
                     "oauth": config.oauth,
-                })),
-                Transport::ClaudeAiProxy => Some(serde_json::json!({
-                    "type": Transport::ClaudeAiProxy.as_str(),
-                    "url": config.url,
-                    "id": config.id,
                 })),
                 Transport::Stdio => Some(serde_json::json!({
                     "type": Transport::Stdio.as_str(),
@@ -2425,7 +2420,6 @@ mod mcp_server_status_tests {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: Some("proxy-1".to_string()),
             plugin_source: None,
         }
     }
@@ -2662,10 +2656,10 @@ mod mcp_server_status_tests {
         );
     }
 
-    /// Maps to: CC `:1628-1651` — three config shapes, and anything else
-    /// leaves `config` undefined.
+    /// Maps to: CC `:1628-1651` — the sse/http and stdio config shapes, and
+    /// anything else leaves `config` undefined.
     #[test]
-    fn config_projection_matches_the_official_three_shapes() {
+    fn config_projection_matches_the_official_shapes() {
         let http = statuses(vec![server(
             "a",
             McpServerConnectionType::Connected,
@@ -2674,14 +2668,6 @@ mod mcp_server_status_tests {
         assert_eq!(http[0]["config"]["type"], "http");
         assert_eq!(http[0]["config"]["url"], "https://example.test/mcp");
         assert!(http[0]["config"].get("command").is_none());
-
-        let proxy = statuses(vec![server(
-            "b",
-            McpServerConnectionType::Connected,
-            Transport::ClaudeAiProxy,
-        )]);
-        assert_eq!(proxy[0]["config"]["type"], "claudeai-proxy");
-        assert_eq!(proxy[0]["config"]["id"], "proxy-1");
 
         let stdio = statuses(vec![server(
             "c",

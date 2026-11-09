@@ -205,9 +205,6 @@ pub struct McpServerConfig {
     /// Maps to: CC internal IDE MCP `authToken`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_token: Option<String>,
-    /// Maps to: CC claude.ai proxy MCP connector `id`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
 }
 
 // ════════════════════════════════════════════════════════════
@@ -503,7 +500,6 @@ pub struct GlobalConfig {
     /// Unknown fields and explicit nulls must survive config caching/saving.
     #[serde(default, deserialize_with = "deserialize_present_mcp_servers")]
     pub mcp_servers: Option<serde_json::Value>,
-    pub claude_ai_mcp_ever_connected: Option<Vec<String>>,
 
     pub projects: HashMap<String, ProjectConfig>,
 
@@ -694,7 +690,6 @@ impl Default for GlobalConfig {
             desktop_upsell_seen_count: None,
             desktop_upsell_dismissed: None,
             mcp_servers: None,
-            claude_ai_mcp_ever_connected: None,
             projects: HashMap::new(),
             user_id: None,
             tips_history: None,

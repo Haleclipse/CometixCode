@@ -12,7 +12,6 @@ pub enum ConfigScope {
     User,
     Project,
     Dynamic,
-    ClaudeAi,
 }
 
 impl ConfigScope {
@@ -22,13 +21,12 @@ impl ConfigScope {
             Self::User => "user",
             Self::Project => "project",
             Self::Dynamic => "dynamic",
-            Self::ClaudeAi => "claudeai",
         }
     }
 }
 
-/// Maps to: CC `Transport` plus the `claudeai-proxy` config discriminator used
-/// by `MCPSettings.tsx`.
+/// Maps to: CC `Transport`. @nyan: no `claudeai-proxy` discriminator (no
+/// claude.ai MCP connectors).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transport {
     Stdio,
@@ -38,7 +36,6 @@ pub enum Transport {
     Ws,
     WsIde,
     Sdk,
-    ClaudeAiProxy,
 }
 
 impl Transport {
@@ -51,7 +48,6 @@ impl Transport {
             Self::Ws => "ws",
             Self::WsIde => "ws-ide",
             Self::Sdk => "sdk",
-            Self::ClaudeAiProxy => "claudeai-proxy",
         }
     }
 }
@@ -66,7 +62,6 @@ pub fn transport_from_config(config: &crate::utils::config::McpServerConfig) -> 
         Some("ws") => Transport::Ws,
         Some("ws-ide") => Transport::WsIde,
         Some("sdk") => Transport::Sdk,
-        Some("claudeai-proxy") => Transport::ClaudeAiProxy,
         // Older configs inferred remote streamable HTTP from URL presence.
         None if config.url.is_some() => Transport::Http,
         None => Transport::Stdio,
@@ -92,7 +87,6 @@ pub struct ScopedMcpServerConfig {
     /// Maps to: CC `McpSSEIDEServerConfigSchema` / `McpWebSocketIDEServerConfigSchema`.
     pub ide_running_in_windows: Option<bool>,
     pub auth_token: Option<String>,
-    pub id: Option<String>,
     /// Maps to: CC `ScopedMcpServerConfig.pluginSource`.
     pub plugin_source: Option<String>,
 }
@@ -118,7 +112,6 @@ impl ScopedMcpServerConfig {
             ide_name: config.ide_name.clone(),
             ide_running_in_windows: config.ide_running_in_windows,
             auth_token: config.auth_token.clone(),
-            id: config.id.clone(),
             plugin_source: None,
         }
     }
@@ -350,7 +343,6 @@ impl ScopedMcpServerConfig {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         }
     }
@@ -479,19 +471,8 @@ pub fn mcp_sdk_server_config_schema() -> &'static Schema {
     })
 }
 
-/// Maps to: CC `services/mcp/types.ts:116-122#McpClaudeAIProxyServerConfigSchema`.
-pub fn mcp_claude_ai_proxy_server_config_schema() -> &'static Schema {
-    static S: OnceLock<Schema> = OnceLock::new();
-    S.get_or_init(|| {
-        zod::object(vec![
-            ("type", zod::literal(serde_json::json!("claudeai-proxy"))),
-            ("url", zod::string()),
-            ("id", zod::string()),
-        ])
-    })
-}
-
 /// Maps to: CC `services/mcp/types.ts:124-135#McpServerConfigSchema`.
+/// @nyan: no `McpClaudeAIProxyServerConfigSchema` branch.
 pub fn mcp_server_config_schema() -> &'static Schema {
     static S: OnceLock<Schema> = OnceLock::new();
     S.get_or_init(|| {
@@ -503,7 +484,6 @@ pub fn mcp_server_config_schema() -> &'static Schema {
             mcp_http_server_config_schema().clone(),
             mcp_web_socket_server_config_schema().clone(),
             mcp_sdk_server_config_schema().clone(),
-            mcp_claude_ai_proxy_server_config_schema().clone(),
         ])
     })
 }
@@ -527,7 +507,6 @@ mod tests {
     fn mcp_type_strings_match_official_discriminators() {
         assert_eq!(ConfigScope::Project.as_str(), "project");
         assert_eq!(Transport::Stdio.as_str(), "stdio");
-        assert_eq!(Transport::ClaudeAiProxy.as_str(), "claudeai-proxy");
         assert_eq!(McpServerConnectionType::NeedsAuth.as_str(), "needs-auth");
     }
 
@@ -576,7 +555,8 @@ mod tests {
         // services/mcp/types.ts:29-136. Check parsed values AND complete ordered
         // Zod issue trees: defaults, transforms, unknown keys, paths and copy.
         // Oracle script: research/proof/plugin-schemas-0914/oracle.ts.
-        let cases: serde_json::Value = serde_json::from_str(r###"[{"schema":"McpServerConfigSchema","input":{},"issues":[{"code":"invalid_union","errors":[[{"expected":"string","code":"invalid_type","path":["command"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["http"],"path":["type"],"message":"Invalid input: expected \"http\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["claudeai-proxy"],"path":["type"],"message":"Invalid input: expected \"claudeai-proxy\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["id"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"command":"echo"},"data":{"command":"echo","args":[]}},{"schema":"McpServerConfigSchema","input":{"command":""},"issues":[{"code":"invalid_union","errors":[[{"origin":"string","code":"too_small","minimum":1,"inclusive":true,"path":["command"],"message":"Command cannot be empty"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["http"],"path":["type"],"message":"Invalid input: expected \"http\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["claudeai-proxy"],"path":["type"],"message":"Invalid input: expected \"claudeai-proxy\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["id"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"command":"echo","extra":1},"data":{"command":"echo","args":[]}},{"schema":"McpServerConfigSchema","input":{"type":"sse","url":""},"data":{"type":"sse","url":""}},{"schema":"McpServerConfigSchema","input":{"type":"sse-ide","url":"u","ideName":"i"},"data":{"type":"sse-ide","url":"u","ideName":"i"}},{"schema":"McpServerConfigSchema","input":{"type":"ws-ide","url":"u","ideName":"i","authToken":"a"},"data":{"type":"ws-ide","url":"u","ideName":"i","authToken":"a"}},{"schema":"McpServerConfigSchema","input":{"type":"http","url":"u","oauth":{"authServerMetadataUrl":"http://a"}},"issues":[{"code":"invalid_union","errors":[[{"code":"invalid_value","values":["stdio"],"path":["type"],"message":"Invalid input: expected \"stdio\""},{"expected":"string","code":"invalid_type","path":["command"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["claudeai-proxy"],"path":["type"],"message":"Invalid input: expected \"claudeai-proxy\""},{"expected":"string","code":"invalid_type","path":["id"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"type":"http","url":"u","oauth":{"authServerMetadataUrl":"invalid","callbackPort":0}},"issues":[{"code":"invalid_union","errors":[[{"code":"invalid_value","values":["stdio"],"path":["type"],"message":"Invalid input: expected \"stdio\""},{"expected":"string","code":"invalid_type","path":["command"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"origin":"number","code":"too_small","minimum":0,"inclusive":false,"path":["oauth","callbackPort"],"message":"Too small: expected number to be >0"},{"code":"invalid_format","format":"url","path":["oauth","authServerMetadataUrl"],"message":"Invalid URL"},{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"origin":"number","code":"too_small","minimum":0,"inclusive":false,"path":["oauth","callbackPort"],"message":"Too small: expected number to be >0"},{"code":"invalid_format","format":"url","path":["oauth","authServerMetadataUrl"],"message":"Invalid URL"},{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["claudeai-proxy"],"path":["type"],"message":"Invalid input: expected \"claudeai-proxy\""},{"expected":"string","code":"invalid_type","path":["id"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"type":"ws","url":"u"},"data":{"type":"ws","url":"u"}},{"schema":"McpServerConfigSchema","input":{"type":"sdk","name":"n"},"data":{"type":"sdk","name":"n"}},{"schema":"McpServerConfigSchema","input":{"type":"claudeai-proxy","url":"u","id":"i"},"data":{"type":"claudeai-proxy","url":"u","id":"i"}}]"###).unwrap();
+        // @nyan: the `claudeai-proxy` union branch and its case are removed.
+        let cases: serde_json::Value = serde_json::from_str(r###"[{"schema":"McpServerConfigSchema","input":{},"issues":[{"code":"invalid_union","errors":[[{"expected":"string","code":"invalid_type","path":["command"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["http"],"path":["type"],"message":"Invalid input: expected \"http\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"command":"echo"},"data":{"command":"echo","args":[]}},{"schema":"McpServerConfigSchema","input":{"command":""},"issues":[{"code":"invalid_union","errors":[[{"origin":"string","code":"too_small","minimum":1,"inclusive":true,"path":["command"],"message":"Command cannot be empty"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["http"],"path":["type"],"message":"Invalid input: expected \"http\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""},{"expected":"string","code":"invalid_type","path":["url"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"command":"echo","extra":1},"data":{"command":"echo","args":[]}},{"schema":"McpServerConfigSchema","input":{"type":"sse","url":""},"data":{"type":"sse","url":""}},{"schema":"McpServerConfigSchema","input":{"type":"sse-ide","url":"u","ideName":"i"},"data":{"type":"sse-ide","url":"u","ideName":"i"}},{"schema":"McpServerConfigSchema","input":{"type":"ws-ide","url":"u","ideName":"i","authToken":"a"},"data":{"type":"ws-ide","url":"u","ideName":"i","authToken":"a"}},{"schema":"McpServerConfigSchema","input":{"type":"http","url":"u","oauth":{"authServerMetadataUrl":"http://a"}},"issues":[{"code":"invalid_union","errors":[[{"code":"invalid_value","values":["stdio"],"path":["type"],"message":"Invalid input: expected \"stdio\""},{"expected":"string","code":"invalid_type","path":["command"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"type":"http","url":"u","oauth":{"authServerMetadataUrl":"invalid","callbackPort":0}},"issues":[{"code":"invalid_union","errors":[[{"code":"invalid_value","values":["stdio"],"path":["type"],"message":"Invalid input: expected \"stdio\""},{"expected":"string","code":"invalid_type","path":["command"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["sse"],"path":["type"],"message":"Invalid input: expected \"sse\""},{"origin":"number","code":"too_small","minimum":0,"inclusive":false,"path":["oauth","callbackPort"],"message":"Too small: expected number to be >0"},{"code":"invalid_format","format":"url","path":["oauth","authServerMetadataUrl"],"message":"Invalid URL"},{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["sse-ide"],"path":["type"],"message":"Invalid input: expected \"sse-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"code":"invalid_value","values":["ws-ide"],"path":["type"],"message":"Invalid input: expected \"ws-ide\""},{"expected":"string","code":"invalid_type","path":["ideName"],"message":"Invalid input: expected string, received undefined"}],[{"origin":"number","code":"too_small","minimum":0,"inclusive":false,"path":["oauth","callbackPort"],"message":"Too small: expected number to be >0"},{"code":"invalid_format","format":"url","path":["oauth","authServerMetadataUrl"],"message":"Invalid URL"},{"origin":"string","code":"invalid_format","format":"starts_with","prefix":"https://","path":["oauth","authServerMetadataUrl"],"message":"authServerMetadataUrl must use https://"}],[{"code":"invalid_value","values":["ws"],"path":["type"],"message":"Invalid input: expected \"ws\""}],[{"code":"invalid_value","values":["sdk"],"path":["type"],"message":"Invalid input: expected \"sdk\""},{"expected":"string","code":"invalid_type","path":["name"],"message":"Invalid input: expected string, received undefined"}]],"path":[],"message":"Invalid input"}]},{"schema":"McpServerConfigSchema","input":{"type":"ws","url":"u"},"data":{"type":"ws","url":"u"}},{"schema":"McpServerConfigSchema","input":{"type":"sdk","name":"n"},"data":{"type":"sdk","name":"n"}}]"###).unwrap();
         for case in cases.as_array().unwrap() {
             let schema = match case["schema"].as_str().unwrap() {
                 "McpServerConfigSchema" => mcp_server_config_schema(),
@@ -627,12 +607,6 @@ mod tests {
                 scoped.ide_running_in_windows,
                 validated["ideRunningInWindows"].as_bool()
             );
-            if scoped.transport == Transport::Sdk {
-                assert!(
-                    scoped.id.is_none(),
-                    "SDK name is not claude.ai connector id"
-                );
-            }
             assert_eq!(
                 crate::services::mcp::utils::hash_mcp_config(&scoped),
                 case["hash"].as_str().unwrap()

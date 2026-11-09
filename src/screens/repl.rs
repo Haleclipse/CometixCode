@@ -10119,7 +10119,6 @@ mod tests {
         std::fs::create_dir_all(&config).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
         let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
-        let _remote = EnvVarGuard::set("ENABLE_CLAUDEAI_MCP_SERVERS", "0");
         let _cwd = OriginalCwdGuard::set(directory.path());
         crate::utils::settings::settings_cache::reset_settings_cache();
         crate::utils::plugins::plugin_loader::clear_plugin_cache(None);

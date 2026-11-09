@@ -114,17 +114,6 @@ impl McpAuthTool {
     pub async fn call(&self, context: &crate::tool::ToolUseContext) -> McpAuthOutput {
         use crate::services::mcp::types::Transport;
 
-        if self.config.transport == Transport::ClaudeAiProxy {
-            return McpAuthOutput {
-                status: McpAuthStatus::Unsupported,
-                message: format!(
-                    "This is a claude.ai MCP connector. Ask the user to run /mcp and select \"{}\" to authenticate.",
-                    self.server_name
-                ),
-                auth_url: None,
-            };
-        }
-
         if self.config.transport != Transport::Sse && self.config.transport != Transport::Http {
             return McpAuthOutput {
                 status: McpAuthStatus::Unsupported,
@@ -330,7 +319,6 @@ mod tests {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         };
         let tool = create_mcp_auth_tool("linear", &config);

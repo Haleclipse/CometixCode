@@ -88,7 +88,6 @@ pub fn agent_server_oauth_config(server: &AgentMcpServerInfo) -> Option<ScopedMc
         ide_running_in_windows: None,
         ide_name: None,
         auth_token: None,
-        id: None,
         plugin_source: None,
     })
 }

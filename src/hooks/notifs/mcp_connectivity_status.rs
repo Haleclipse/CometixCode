@@ -2,16 +2,14 @@
 //!
 //! Nyan keeps this as a pure producer seam. It consumes an already-known MCP
 //! connection snapshot and emits main-screen runtime notifications; it never
-//! starts MCP clients, performs auth, contacts claude.ai, or writes settings.
+//! starts MCP clients, performs auth, or writes settings.
 
 use crate::context::notifications::{
     Notification, NotificationColor, NotificationPriority, NotificationSegment,
 };
 
 pub const MCP_FAILED_KEY: &str = "mcp-failed";
-pub const MCP_CLAUDEAI_FAILED_KEY: &str = "mcp-claudeai-failed";
 pub const MCP_NEEDS_AUTH_KEY: &str = "mcp-needs-auth";
-pub const MCP_CLAUDEAI_NEEDS_AUTH_KEY: &str = "mcp-claudeai-needs-auth";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum McpConnectionStatus {
@@ -25,7 +23,6 @@ pub enum McpConfigType {
     Local,
     SseIde,
     WsIde,
-    ClaudeAiProxy,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,9 +30,6 @@ pub struct McpConnectivityClient {
     pub name: String,
     pub status: McpConnectionStatus,
     pub config_type: McpConfigType,
-    /// Official `hasClaudeAiMcpEverConnected(name)` gate for claude.ai proxy
-    /// failures/auth prompts. Local servers do not use this flag.
-    pub claude_ai_ever_connected: bool,
 }
 
 impl McpConnectivityClient {
@@ -48,13 +42,7 @@ impl McpConnectivityClient {
             name: name.into(),
             status,
             config_type,
-            claude_ai_ever_connected: false,
         }
-    }
-
-    pub fn with_claude_ai_ever_connected(mut self, connected: bool) -> Self {
-        self.claude_ai_ever_connected = connected;
-        self
     }
 }
 
@@ -72,32 +60,13 @@ pub fn mcp_connectivity_notifications(
             client.status == McpConnectionStatus::Failed
                 && !matches!(
                     client.config_type,
-                    McpConfigType::SseIde | McpConfigType::WsIde | McpConfigType::ClaudeAiProxy
+                    McpConfigType::SseIde | McpConfigType::WsIde
                 )
-        })
-        .count();
-    let failed_claude_ai = clients
-        .iter()
-        .filter(|client| {
-            client.status == McpConnectionStatus::Failed
-                && client.config_type == McpConfigType::ClaudeAiProxy
-                && client.claude_ai_ever_connected
         })
         .count();
     let needs_auth_local = clients
         .iter()
-        .filter(|client| {
-            client.status == McpConnectionStatus::NeedsAuth
-                && client.config_type != McpConfigType::ClaudeAiProxy
-        })
-        .count();
-    let needs_auth_claude_ai = clients
-        .iter()
-        .filter(|client| {
-            client.status == McpConnectionStatus::NeedsAuth
-                && client.config_type == McpConfigType::ClaudeAiProxy
-                && client.claude_ai_ever_connected
-        })
+        .filter(|client| client.status == McpConnectionStatus::NeedsAuth)
         .count();
 
     let mut notifications = Vec::new();
@@ -113,18 +82,6 @@ pub fn mcp_connectivity_notifications(
             NotificationColor::Error,
         ));
     }
-    if failed_claude_ai > 0 {
-        let noun = if failed_claude_ai == 1 {
-            "connector"
-        } else {
-            "connectors"
-        };
-        notifications.push(mcp_segment_notification(
-            MCP_CLAUDEAI_FAILED_KEY,
-            format!("{failed_claude_ai} claude.ai {noun} unavailable"),
-            NotificationColor::Error,
-        ));
-    }
     if needs_auth_local > 0 {
         let auth_copy = if needs_auth_local == 1 {
             "server needs auth"
@@ -134,18 +91,6 @@ pub fn mcp_connectivity_notifications(
         notifications.push(mcp_segment_notification(
             MCP_NEEDS_AUTH_KEY,
             format!("{needs_auth_local} MCP {auth_copy}"),
-            NotificationColor::Warning,
-        ));
-    }
-    if needs_auth_claude_ai > 0 {
-        let auth_copy = if needs_auth_claude_ai == 1 {
-            "connector needs auth"
-        } else {
-            "connectors need auth"
-        };
-        notifications.push(mcp_segment_notification(
-            MCP_CLAUDEAI_NEEDS_AUTH_KEY,
-            format!("{needs_auth_claude_ai} claude.ai {auth_copy}"),
             NotificationColor::Warning,
         ));
     }
@@ -209,38 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn mcp_connectivity_notifications_gate_claudeai_failures_on_prior_connection() {
-        let notifications = mcp_connectivity_notifications(
-            &[
-                McpConnectivityClient::new(
-                    "claude-old",
-                    McpConnectionStatus::Failed,
-                    McpConfigType::ClaudeAiProxy,
-                )
-                .with_claude_ai_ever_connected(true),
-                McpConnectivityClient::new(
-                    "claude-new",
-                    McpConnectionStatus::Failed,
-                    McpConfigType::ClaudeAiProxy,
-                ),
-            ],
-            false,
-        );
-
-        assert_eq!(notifications.len(), 1);
-        assert_eq!(notifications[0].key, MCP_CLAUDEAI_FAILED_KEY);
-        assert_eq!(
-            notifications[0].text,
-            "1 claude.ai connector unavailable · /mcp"
-        );
-        assert_eq!(
-            notifications[0].segments[0].color,
-            Some(NotificationColor::Error)
-        );
-    }
-
-    #[test]
-    fn mcp_connectivity_notifications_match_official_auth_copy_and_order() {
+    fn mcp_connectivity_notifications_match_official_auth_copy() {
         let notifications = mcp_connectivity_notifications(
             &[
                 McpConnectivityClient::new(
@@ -253,30 +167,15 @@ mod tests {
                     McpConnectionStatus::NeedsAuth,
                     McpConfigType::WsIde,
                 ),
-                McpConnectivityClient::new(
-                    "claude-auth",
-                    McpConnectionStatus::NeedsAuth,
-                    McpConfigType::ClaudeAiProxy,
-                )
-                .with_claude_ai_ever_connected(true),
             ],
             false,
         );
 
-        assert_eq!(notifications.len(), 2);
+        assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].key, MCP_NEEDS_AUTH_KEY);
         assert_eq!(notifications[0].text, "2 MCP servers need auth · /mcp");
         assert_eq!(
             notifications[0].segments[0].color,
-            Some(NotificationColor::Warning)
-        );
-        assert_eq!(notifications[1].key, MCP_CLAUDEAI_NEEDS_AUTH_KEY);
-        assert_eq!(
-            notifications[1].text,
-            "1 claude.ai connector needs auth · /mcp"
-        );
-        assert_eq!(
-            notifications[1].segments[0].color,
             Some(NotificationColor::Warning)
         );
     }

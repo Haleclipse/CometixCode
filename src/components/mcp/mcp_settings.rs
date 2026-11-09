@@ -84,7 +84,7 @@ fn remote_server_authentication_state_for_settings(
     tools_count: usize,
 ) -> Option<bool> {
     // Maps to: CC `components/mcp/MCPSettings.tsx#prepareServers`
-    // `isAuthenticated` derivation for SSE/HTTP/claudeai-proxy clients.
+    // `isAuthenticated` derivation for SSE/HTTP clients.
     match config.transport {
         Transport::Sse | Transport::Http => {
             let has_oauth_tokens =
@@ -99,7 +99,6 @@ fn remote_server_authentication_state_for_settings(
                 client_type == McpServerConnectionType::Connected && tools_count > 0;
             Some(has_oauth_tokens || has_session_auth || has_tools_and_connected)
         }
-        Transport::ClaudeAiProxy => Some(false),
         _ => None,
     }
 }
@@ -161,10 +160,10 @@ fn server_infos_from_capability_arrays(
             let prompts_count =
                 crate::services::mcp::utils::filter_mcp_prompts_by_server(runtime_commands, &name)
                     .len();
-            // `MCPSettings.tsx:89-116`: claudeai-proxy, sse and http keep
-            // their transport; every other server is shown as stdio.
+            // `MCPSettings.tsx:89-116`: sse and http keep their transport;
+            // every other server is shown as stdio.
             let transport = match config.transport {
-                Transport::ClaudeAiProxy | Transport::Sse | Transport::Http => config.transport,
+                Transport::Sse | Transport::Http => config.transport,
                 _ => Transport::Stdio,
             };
             ServerInfo {
@@ -266,11 +265,7 @@ pub fn MCPSettings(props: &MCPSettingsProps, mut hooks: Hooks) -> impl Into<AnyE
             // Keep the selected identity in view state, but source capability
             // counts/tool rows from the live flat MCP arrays every render.
             let server = latest_server_for_view_state(&servers, server);
-            let default_tab = if server.transport == Transport::ClaudeAiProxy {
-                "claude.ai".to_string()
-            } else {
-                "nyan".to_string()
-            };
+            let default_tab = "nyan".to_string();
             if server.transport == Transport::Stdio {
                 let mut cancel_state = view_state;
                 let mut tools_state = view_state;
@@ -449,7 +444,6 @@ mod tests {
             ide_running_in_windows: None,
             ide_name: None,
             auth_token: None,
-            id: None,
             plugin_source: None,
         };
         let server = McpServerConnection::connected_for_test("docs", config);
@@ -558,7 +552,7 @@ mod tests {
         assert_eq!(infos[2].scope, ConfigScope::User);
     }
 
-    /// CC `MCPSettings.tsx:89-116` keeps claudeai-proxy, sse and http and
+    /// CC `MCPSettings.tsx:89-116` keeps sse and http and
     /// shows every other server as stdio; a failed record's error reaches
     /// its row.
     #[test]
@@ -596,38 +590,6 @@ mod tests {
     }
 
     #[test]
-    fn mcp_settings_needs_auth_projection_matches_official_without_precomputed_url() {
-        let config = ScopedMcpServerConfig {
-            name: None,
-            scope: ConfigScope::Dynamic,
-            transport: Transport::ClaudeAiProxy,
-            command: None,
-            args: Vec::new(),
-            env: std::collections::BTreeMap::new(),
-            url: None,
-            headers: std::collections::BTreeMap::new(),
-            headers_helper: None,
-            oauth: None,
-            ide_running_in_windows: None,
-            ide_name: None,
-            auth_token: None,
-            id: Some("mcprs_abc".to_string()),
-            plugin_source: None,
-        };
-        let state = crate::state::app_state_store::McpState {
-            clients: vec![McpServerConnection::needs_auth("claudeai", config)],
-            ..Default::default()
-        };
-        let infos = server_infos_from_mcp_state(&state);
-        match &infos[0].client {
-            super::super::types::MCPClientState::NeedsAuth { auth_url } => {
-                assert!(auth_url.is_none());
-            }
-            other => panic!("expected needs-auth state, got {other:?}"),
-        }
-    }
-
-    #[test]
     fn mcp_settings_projects_live_runtime_tools_prompts_and_resources_into_server_info() {
         let mut server = McpServerConnection::connected_for_test(
             "github",
@@ -645,7 +607,6 @@ mod tests {
                 oauth: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             },
         );
@@ -772,7 +733,6 @@ mod tests {
                     ide_running_in_windows: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 },
                 reconnect_attempt: None,
@@ -815,7 +775,6 @@ mod tests {
                     oauth: None,
                     ide_name: None,
                     auth_token: None,
-                    id: None,
                     plugin_source: None,
                 },
                 reconnect_attempt: Some(2),
@@ -855,7 +814,6 @@ mod tests {
                 oauth: None,
                 ide_name: None,
                 auth_token: None,
-                id: None,
                 plugin_source: None,
             },
         )];
