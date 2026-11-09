@@ -92,6 +92,22 @@ pub fn format_zod_error(error: &zod::ZodError, file_path: &str) -> Vec<Validatio
         .collect()
 }
 
+/// The quoted keys a `partialRecord` accepts, read from the enum arm of an
+/// `invalid_key` issue's nested union; empty when the issue has another shape.
+fn invalid_key_options(issue: &Issue) -> String {
+    issue
+        .issues
+        .iter()
+        .flat_map(|union| union.errors.iter().flatten())
+        .filter(|nested| nested.code == IssueCode::InvalidValue)
+        .filter_map(|nested| nested.values.as_ref())
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(|key| format!("\"{key}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn format_zod_issue(issue: &Issue, file_path: &str) -> ValidationError {
     let path = issue
         .path
@@ -183,6 +199,18 @@ fn format_zod_issue(issue: &Issue, file_path: &str) -> ValidationError {
                 "Unrecognized {}: {keys}",
                 plural(issue.keys.len(), "field", None)
             );
+        }
+        IssueCode::InvalidKey => {
+            // The record key is the last path segment; the nested enum issue
+            // carries the keys the record accepts.
+            let valid = invalid_key_options(issue);
+            if let Some(PathSegment::Key(key)) = issue.path.last()
+                && !valid.is_empty()
+            {
+                message = format!("Unknown key {key:?}. Expected one of: {valid}");
+                expected = Some(valid);
+                invalid_value = Some(key.clone());
+            }
         }
         IssueCode::TooSmall => {
             if let Some(minimum) = issue.minimum {
@@ -438,6 +466,24 @@ mod tests {
                 .as_deref()
                 .is_some_and(|s| s.starts_with("Must be 0 or greater. Set a positive number"))
         );
+    }
+
+    #[test]
+    fn an_unknown_utility_role_names_the_key_and_lists_the_valid_roles() {
+        let error = zod::safe_parse(
+            settings_schema(),
+            &json!({"nyan": {"selection": {"utility": {"memory": "@light"}}}}),
+        )
+        .expect_err("memory is not a utility role");
+        let formatted = format_zod_error(&error, "settings");
+        assert_eq!(formatted.len(), 1, "{formatted:?}");
+        assert_eq!(formatted[0].path, "nyan.selection.utility.memory");
+        assert_eq!(formatted[0].invalid_value.as_deref(), Some("memory"));
+        let message = &formatted[0].message;
+        assert!(message.starts_with("Unknown key \"memory\"."), "{message}");
+        for role in crate::utils::settings::nyan::utility_role_names() {
+            assert!(message.contains(&format!("\"{role}\"")), "{message}");
+        }
     }
 
     #[test]

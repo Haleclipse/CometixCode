@@ -998,6 +998,59 @@ pub fn decision_point_names() -> Vec<&'static str> {
     BUILTIN_DECISION_POINTS.iter().map(|p| p.name).collect()
 }
 
+/// A background model task routed by `selection.utility.<role>`.
+pub struct UtilityRole {
+    pub name: &'static str,
+    /// The `ref[:effort]` spec used when `selection.utility` has no entry.
+    pub default_spec: &'static str,
+}
+
+/// Every utility role, with its default. The table is the source of truth for
+/// both the settings schema's key set and `default_utility_spec`, so a role
+/// with a caller must be listed here and a listed role must have a caller.
+///
+/// Not roles: memory extraction and consolidation (cache-sharing forks on the
+/// session model, memory.md M2) and prompt suggestion generation (forks the
+/// main model to reuse its prompt cache, decision-provider decision 7).
+pub const UTILITY_ROLES: &[UtilityRole] = &[
+    UtilityRole {
+        name: "compaction",
+        default_spec: "@main",
+    },
+    UtilityRole {
+        name: "classifier",
+        default_spec: "@main",
+    },
+    UtilityRole {
+        name: "permission_explainer",
+        default_spec: "@light",
+    },
+    UtilityRole {
+        name: "title",
+        default_spec: "@light",
+    },
+    UtilityRole {
+        name: "summary",
+        default_spec: "@light",
+    },
+    UtilityRole {
+        name: "webfetch",
+        default_spec: "@light",
+    },
+    UtilityRole {
+        name: "agent_creation",
+        default_spec: "@light",
+    },
+    UtilityRole {
+        name: "side_query",
+        default_spec: "@light",
+    },
+];
+
+pub fn utility_role_names() -> Vec<&'static str> {
+    UTILITY_ROLES.iter().map(|role| role.name).collect()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedDecisionPoint {
     pub name: String,
@@ -1682,7 +1735,10 @@ pub fn nyan_settings_schema() -> crate::utils::zod::Schema {
         ("mainFallbacks", zod::array(zod::string().min(1)).optional()),
         ("subagent", zod::string().min(1).optional()),
         ("subagents", zod::record(zod::string().min(1)).optional()),
-        ("utility", zod::record(zod::string().min(1)).optional()),
+        (
+            "utility",
+            zod::partial_record(utility_role_names(), zod::string().min(1)).optional(),
+        ),
         ("decision", decision_selection.optional()),
     ]);
 
@@ -2550,6 +2606,25 @@ mod tests {
         );
         assert_eq!(parsed["selection"]["light"], "main");
         assert_eq!(parsed["selection"]["utility"]["title"], "main:high");
+    }
+
+    #[test]
+    fn schema_accepts_every_utility_role_and_rejects_other_names() {
+        for role in utility_role_names() {
+            let value = json!({"selection": {"utility": {role: "@light"}}});
+            assert!(
+                crate::utils::zod::safe_parse(&nyan_settings_schema(), &value).is_ok(),
+                "should accept utility role {role}"
+            );
+        }
+        // `memory` was a role once; extraction now forks the session model.
+        for bad in ["memory", "commit_message", "Title", "permission-explainer"] {
+            let value = json!({"selection": {"utility": {bad: "@light"}}});
+            assert!(
+                crate::utils::zod::safe_parse(&nyan_settings_schema(), &value).is_err(),
+                "should reject utility role {bad}"
+            );
+        }
     }
 
     #[test]

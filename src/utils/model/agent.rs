@@ -18,7 +18,7 @@ use crate::utils::effort::Effort;
 use crate::utils::model::profile::{
     ModelChoice, UnknownModelRef, model_profile, resolve_model_ref, resolve_profile,
 };
-use crate::utils::settings::nyan::NyanSettings;
+use crate::utils::settings::nyan::{NyanSettings, UTILITY_ROLES};
 
 /// What a request made from a session inherits: the session's current model,
 /// effort and profile. `profile` is `None` while the session runs on the
@@ -61,20 +61,13 @@ pub fn default_subagent_spec(agent_type: &str) -> &'static str {
     }
 }
 
-/// Default utility spec string by role name.
+/// Default utility spec string by role name, from [`UTILITY_ROLES`]. A role
+/// outside the table is not configurable and runs on `@light`.
 pub fn default_utility_spec(role: &str) -> &'static str {
-    let lower = role.trim().to_ascii_lowercase();
-    let norm = lower.replace('-', "_");
-    match norm.as_str() {
-        "compaction" | "classifier" | "permission_classifier" | "permissions" => "@main",
-        // Permission explanations are auxiliary text; unlike the classifier and
-        // the auto-mode path they stay on the light profile.
-        "permission_explainer" => "@light",
-        // @nyan: prompt suggestion generation is not a utility role. It forks
-        // the main model to reuse its prompt cache (decision 7); no
-        // `prompt_suggestions` entry should route it to @light.
-        _ => "@light",
-    }
+    UTILITY_ROLES
+        .iter()
+        .find(|entry| entry.name == role)
+        .map_or("@light", |entry| entry.default_spec)
 }
 
 /// Resolves one `ref[:effort]` spec into the wire model ID, the effort of the
@@ -232,20 +225,11 @@ pub fn resolve_utility_model_and_effort(
     parent: &ParentSelection,
     nyan: Option<&NyanSettings>,
 ) -> ResolvedAgentModel {
-    let selection = nyan.and_then(|n| n.selection.as_ref());
-
-    // Try finding the role in selection.utility with loose name matching
-    let configured_spec = selection.and_then(|s| s.utility.as_ref()).and_then(|map| {
-        let normalized = role.trim().to_ascii_lowercase().replace('-', "_");
-        map.iter().find_map(|(k, v)| {
-            let k_norm = k.trim().to_ascii_lowercase().replace('-', "_");
-            if k_norm == normalized {
-                Some(v.as_str())
-            } else {
-                None
-            }
-        })
-    });
+    let configured_spec = nyan
+        .and_then(|n| n.selection.as_ref())
+        .and_then(|s| s.utility.as_ref())
+        .and_then(|map| map.get(role))
+        .map(String::as_str);
 
     let spec = configured_spec.unwrap_or_else(|| default_utility_spec(role));
     // Settings validation reports an unknown `selection.utility` ref; the
@@ -410,16 +394,12 @@ mod tests {
     fn utility_defaults_by_role() {
         assert_eq!(default_utility_spec("compaction"), "@main");
         assert_eq!(default_utility_spec("classifier"), "@main");
-        assert_eq!(default_utility_spec("permission_classifier"), "@main");
         assert_eq!(default_utility_spec("title"), "@light");
         assert_eq!(default_utility_spec("summary"), "@light");
-        assert_eq!(default_utility_spec("commit_message"), "@light");
         assert_eq!(default_utility_spec("webfetch"), "@light");
-        assert_eq!(default_utility_spec("bash_prefix"), "@light");
+        assert_eq!(default_utility_spec("agent_creation"), "@light");
         assert_eq!(default_utility_spec("side_query"), "@light");
         assert_eq!(default_utility_spec("permission_explainer"), "@light");
-        // Hyphenated spellings normalize to the same role.
-        assert_eq!(default_utility_spec("permission-explainer"), "@light");
     }
 
     const PARENT: &str = "claude-sonnet-4-6";
@@ -686,17 +666,16 @@ mod tests {
     }
 
     #[test]
-    fn utility_role_names_match_loosely() {
+    fn utility_role_names_match_exactly() {
         let mut nyan = test_nyan_settings();
         nyan.selection.as_mut().unwrap().utility = Some(BTreeMap::from([(
-            "Commit-Message".to_string(),
+            "webfetch".to_string(),
             "deep-profile".to_string(),
         )]));
-        for role in ["commit_message", "commit-message", " COMMIT_MESSAGE "] {
-            let r = resolve_utility_model_and_effort(role, &parent(None), Some(&nyan));
-            assert_eq!(r.model, "claude-opus-4-6", "{role:?}");
-        }
-        let other = resolve_utility_model_and_effort("title", &parent(None), Some(&nyan));
+        let webfetch = resolve_utility_model_and_effort("webfetch", &parent(None), Some(&nyan));
+        assert_eq!(webfetch.model, "claude-opus-4-6");
+        // Another spelling is a different, unconfigured role.
+        let other = resolve_utility_model_and_effort("Web-Fetch", &parent(None), Some(&nyan));
         assert_eq!(other.model, "claude-haiku-4-5");
     }
 
