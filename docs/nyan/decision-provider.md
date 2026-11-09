@@ -300,15 +300,17 @@ pub trait DecisionBackend: Send + Sync {
 
 - 每次决策写一行 `$NYAN_CONFIG_DIR/decision/decisions.jsonl`（所有点共用同一文件，记录自带 `point`）：时间、模型、延迟、答案与置信度、确定性答案、是否一致、事后信号；
   `state` 只记 hash 与长度。保留 30 天。
-- **事后信号**：
-  - `retrieval.answers` / `web.answers`：模型最后实际 Read / WebFetch 了哪些候选（被标"回答查询"的是否被用了）；
-  - `retrieval.sufficient`：追加一轮后新出现的结果是否被使用；
-  - `web.page_answers`：提示"可能不含答案"后，模型是否抓了下一个候选并引用了它；
-  - `web.fetch_fallback`：回退后正文是否显著长于直抓；
-  - `memory.extract_now` / `extract_skip`：提取是否真的产生了记忆；
-  - `memory.type` / `duplicate`：用户在 `/memory` 里对候选的处理（接受 / 改类型 / 删除）；
-  - `compaction.keep`：被保留到最后清的结果，之后是否被模型引用（例如同一文件再次 Read）。
-- **`/decision [point]` 命令**：读统一 jsonl，输出每个点的样本数、answered / fallback、一致与不一致计数、p50 / p95 延迟；可传点名校验单点。不做自动放权。
+- **事后信号**（事后探针进程内保存 30 分钟，`/clear` 清空）：
+  - 决策保留候选时立即追加一行 `{"event":"probe","probeId","point","kind","candidateCount"}`；
+  - 之后 `Read` 命中文件候选、`WebFetch` 命中 URL 候选（含重定向后的 final URL）时追加一行
+    `{"event":"posthoc","probeId","point","kind","identity"}`，同一候选只记一次。文件路径按 canonicalize
+    比较，URL 忽略大小写、fragment 与末尾斜杠；
+  - 已接入：`retrieval.answers`（被标"回答查询"且实际展示的候选）、`retrieval.sufficient`（追加一轮后新出现且展示的结果）、
+    `web.answers`（最终可见且被标记的候选）、`web.page_answers`（提示里建议的下一个候选）；
+  - 尚未接入：`web.fetch_fallback`（正文长度对比，不是"之后是否使用"）、`memory.*`（候选身份在 `/memory` 交互里）、
+    `compaction.keep`（工具结果与文件路径的映射未定义）。
+- **`/decision [point]` 命令**：读统一 jsonl，输出每个点的样本数、answered / fallback、一致与不一致计数、p50 / p95 延迟，
+  以及 `probes` / `used`（保留候选的决策数与其中至少一个候选后来被使用的决策数）；可传点名校验单点。不做自动放权。
 
 ## 八、配置
 

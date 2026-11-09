@@ -335,6 +335,8 @@ pub async fn search_with(
     // it is the only stage that removes candidates.
     merged.retain(|hit| domain_allowed(&hit.url, allowed_domains, blocked_domains));
     let hits = cap_domains(merged, search_settings.domain_cap() as usize, max_results);
+    // §7: only the final, visible hits can be used by a later WebFetch.
+    crate::services::web::decision::register_answer_probe(&hits);
     remember_candidates(hits.iter().map(|hit| hit.url.clone()).collect());
     Ok(SearchOutcome {
         hits,

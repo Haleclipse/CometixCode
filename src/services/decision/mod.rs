@@ -29,6 +29,7 @@
 pub mod backends;
 pub mod egress;
 pub mod log;
+pub mod probe;
 
 use std::collections::BTreeMap;
 use std::future::Future;

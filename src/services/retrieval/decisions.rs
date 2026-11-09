@@ -17,13 +17,14 @@
 //! deterministic branches always execute; the safe set therefore never
 //! contains a "skip a branch" answer.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 
 use crate::services::decision::{
     Answer, DecisionOutcome, DecisionPoint, DecisionProvider, DeterministicAnswer, Question,
-    SafeAnswer, SafeSet,
+    SafeAnswer, SafeSet, probe,
 };
 use crate::tool::AbortController;
 
@@ -370,6 +371,41 @@ pub async fn decide_prune_shadow(
     record(decisions, DecisionPoint::RetrievalPrune, &outcome);
 }
 
+/// @nyan: register post-hoc probes (decision-provider §7) for the candidates
+/// the model actually sees. Only the first `shown` candidates are rendered, so
+/// only those can be used later; unmarked/extra candidates are ignored here.
+pub fn register_retained_probes(
+    root: &Path,
+    candidates: &[Candidate],
+    shown: usize,
+    extra_round_keys: &BTreeSet<(String, usize, usize)>,
+) {
+    probe::register_files(
+        DecisionPoint::RetrievalAnswers,
+        retained_paths(root, candidates, shown, |candidate| candidate.answers_query),
+    );
+    probe::register_files(
+        DecisionPoint::RetrievalSufficient,
+        retained_paths(root, candidates, shown, |candidate| {
+            extra_round_keys.contains(&candidate.key())
+        }),
+    );
+}
+
+fn retained_paths(
+    root: &Path,
+    candidates: &[Candidate],
+    shown: usize,
+    keep: impl Fn(&Candidate) -> bool,
+) -> Vec<PathBuf> {
+    candidates
+        .iter()
+        .take(shown)
+        .filter(|candidate| keep(candidate))
+        .map(|candidate| root.join(&candidate.path))
+        .collect()
+}
+
 fn record(decisions: &mut Vec<DecisionRecord>, point: DecisionPoint, outcome: &DecisionOutcome) {
     let (result, fallback) = match outcome {
         DecisionOutcome::Answered { .. } => ("answered", None),
@@ -637,6 +673,28 @@ mod tests {
                 &mut decisions,
             )
             .await
+        );
+    }
+
+    #[test]
+    fn retained_probes_cover_only_marked_candidates_that_were_shown() {
+        let root = Path::new("/worktree");
+        let mut candidates = (0..3).map(candidate).collect::<Vec<_>>();
+        candidates[0].answers_query = true;
+        candidates[2].answers_query = true;
+        // The third candidate is marked but outside the rendered window.
+        assert_eq!(
+            retained_paths(root, &candidates, 2, |candidate| candidate.answers_query),
+            vec![PathBuf::from("/worktree/src/0.rs")]
+        );
+
+        let extra = [candidates[1].key(), candidates[2].key()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            retained_paths(root, &candidates, 2, |candidate| extra
+                .contains(&candidate.key())),
+            vec![PathBuf::from("/worktree/src/1.rs")]
         );
     }
 

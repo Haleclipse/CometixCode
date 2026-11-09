@@ -482,6 +482,7 @@ pub async fn search_with_provider(
         &mut decisions,
     )
     .await;
+    let mut extra_round_keys = std::collections::BTreeSet::new();
     if sufficient && !abort.is_aborted() {
         let extra_candidates = extra_round(
             &root,
@@ -493,6 +494,18 @@ pub async fn search_with_provider(
         )
         .await;
         if !extra_candidates.is_empty() {
+            // Only candidates the original page did not already have count as
+            // "new results of the extra round" for the post-hoc probe.
+            let existing = outcome
+                .candidates
+                .iter()
+                .map(Candidate::key)
+                .collect::<std::collections::BTreeSet<_>>();
+            extra_round_keys = extra_candidates
+                .iter()
+                .map(Candidate::key)
+                .filter(|key| !existing.contains(key))
+                .collect();
             let mut merged = outcome.candidates.clone();
             merged.extend(extra_candidates);
             let mut seen = std::collections::BTreeSet::new();
@@ -502,6 +515,14 @@ pub async fn search_with_provider(
             outcome.extra_round = true;
         }
     }
+    // §7: record what the model was shown so a later Read can be attributed
+    // to the decisions that retained it.
+    decisions::register_retained_probes(
+        &root,
+        &outcome.candidates,
+        request.bounded_max_results(),
+        &extra_round_keys,
+    );
     outcome.decisions = decisions;
     outcome.elapsed_ms = started.elapsed().as_millis() as u64;
     outcome

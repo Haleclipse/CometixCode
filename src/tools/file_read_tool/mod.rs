@@ -2099,6 +2099,9 @@ impl FileReadTool {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .clone();
                 let listener_path = resolved_file_path.display().to_string();
+                // §7 post-hoc probe: a successful Read is the usage evidence
+                // for a retained retrieval candidate. Must never fail the read.
+                crate::services::decision::probe::observe_file_read(&listener_path);
                 for listener in listeners {
                     listener(&listener_path, &output.content).map_err(FileReadCallFailure::new)?;
                 }

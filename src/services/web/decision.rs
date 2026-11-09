@@ -19,7 +19,7 @@ use super::providers::QueryKind;
 use super::search::SearchHit;
 use crate::services::decision::{
     Answer, DecisionOutcome, DecisionPoint, DecisionProvider, NOUL_THRESHOLD, Question, SafeAnswer,
-    SafeSet,
+    SafeSet, probe,
 };
 use crate::tool::AbortController;
 
@@ -290,6 +290,26 @@ impl<'a> WebDecisions<'a> {
     }
 }
 
+/// @nyan: §7 post-hoc probe for `web.answers`. Only the hits the model was
+/// actually shown and that the decision marked "likely answers" are retained;
+/// a later WebFetch of one of their URLs records the usage.
+pub fn register_answer_probe(hits: &[SearchHit]) {
+    probe::register_urls(DecisionPoint::WebAnswers, marked_urls(hits));
+}
+
+fn marked_urls(hits: &[SearchHit]) -> Vec<String> {
+    hits.iter()
+        .filter(|hit| hit.likely_answers)
+        .map(|hit| hit.url.clone())
+        .collect()
+}
+
+/// @nyan: §7 post-hoc probe for `web.page_answers`. The hint names exactly one
+/// next candidate; probing it shows whether the model followed the hint.
+pub fn register_next_candidate_probe(url: &str) {
+    probe::register_urls(DecisionPoint::WebPageAnswers, [url.to_string()]);
+}
+
 fn prefix(text: &str, chars: usize) -> String {
     text.chars().take(chars).collect()
 }
@@ -478,6 +498,16 @@ mod tests {
         let seen = backend.requests();
         assert_eq!(seen.len(), 1);
         assert_eq!(seen[0].point, DecisionPoint::WebPrune);
+    }
+
+    #[test]
+    fn only_marked_hits_are_retained_for_post_hoc_use() {
+        let mut hits = (0..3).map(hit).collect::<Vec<_>>();
+        hits[1].likely_answers = true;
+        assert_eq!(
+            marked_urls(&hits),
+            vec!["https://example.com/1".to_string()]
+        );
     }
 
     #[tokio::test]

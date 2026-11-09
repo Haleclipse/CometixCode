@@ -266,6 +266,11 @@ async fn run_nyan_web_fetch_with(
         .chars()
         .take(web.max_return_chars() as usize)
         .collect::<String>();
+    // §7 post-hoc probe: a successful fetch is the usage evidence for any
+    // retained `web.answers` / `web.page_answers` candidate. Match both the
+    // requested URL and the post-redirect final URL.
+    crate::services::decision::probe::observe_url(url);
+    crate::services::decision::probe::observe_url(&snapshot.metadata.final_url);
     let fetched_at = snapshot.metadata.fetched_at.to_rfc3339();
     let source = &snapshot.metadata.final_url;
     let total = snapshot.text.chars().count();
@@ -306,6 +311,10 @@ async fn run_nyan_web_fetch_with(
             crate::services::web::decision::WebDecisions::new(&provider, &context.abort_controller);
         if decisions.page_lacks_answer(prompt, &selected.text).await {
             let next = crate::services::web::search::next_candidate(source);
+            if let Some(next) = next.as_deref() {
+                // §7: the hint names one candidate; probe whether it is used.
+                crate::services::web::decision::register_next_candidate_probe(next);
+            }
             hint.push_str(&format!(
                 "\n[page may not answer the query — consider fetching: {}]",
                 next.unwrap_or_else(|| "another search result".to_string())

@@ -77,6 +77,9 @@ pub fn clear_session_caches(preserved_agent_ids: &HashSet<String>) {
     crate::services::web::snapshot::clear_index();
     crate::services::web::search::clear_candidates();
     crate::services::decision::reset_session_budget();
+    // @nyan: post-hoc probes belong to the conversation; a new one must not
+    // attribute old reads/fetches to old decisions.
+    crate::services::decision::probe::clear();
 }
 
 #[cfg(test)]
