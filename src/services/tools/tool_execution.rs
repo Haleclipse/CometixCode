@@ -11259,7 +11259,6 @@ rl.on('line', line => {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _api_key = EnvVarGuard::unset("ANTHROPIC_API_KEY");
         let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
-        let _oauth_token = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let path = std::env::temp_dir().join(format!(
             "nyan-read-listener-token-{}.txt",
             uuid::Uuid::new_v4()

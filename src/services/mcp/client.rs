@@ -5793,7 +5793,6 @@ rl.on('line', line => {
         };
         ChannelRuntimeGateContext {
             channels_enabled: true,
-            has_claude_ai_oauth: true,
             session_channels: channels,
             allowlist: EffectiveChannelAllowlist {
                 entries: Vec::new(),

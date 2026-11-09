@@ -209,7 +209,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let sentinel = serde_json::json!({"claudeAiOauth": {"accessToken": "stale"}});
+        let sentinel = serde_json::json!({"sentinel": "stale"});
         super::super::mac_os_keychain_helpers::KEYCHAIN_CACHE_STATE
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -251,7 +251,7 @@ mod tests {
         };
         let storage = MacOsKeychainStorage;
         let update_error = storage
-            .update(&serde_json::json!({"claudeAiOauth": {"accessToken": "new"}}))
+            .update(&serde_json::json!({"sentinel": "new"}))
             .expect_err("keychain update must be default-closed");
         assert!(
             update_error

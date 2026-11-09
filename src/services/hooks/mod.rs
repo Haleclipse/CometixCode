@@ -1253,7 +1253,7 @@ mod tests {
     /// `NYAN_TEST_PROJECT_DIR` pins as the original cwd.
     ///
     /// If this test fails, rerun `just _prep`; it recreates the canonical trust
-    /// JSON and tracked mock credentials. Do NOT respond by adding
+    /// JSON. Do NOT respond by adding
     /// `SessionTrustGuard` to whatever else went red: a per-test opt-in that
     /// silently makes hooks run is the same trap in the other direction. The
     /// guard belongs only in tests that deliberately relocate the config root

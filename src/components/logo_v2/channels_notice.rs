@@ -26,7 +26,6 @@ pub struct ChannelsNoticeSnapshot {
     pub channels: Vec<ChannelEntry>,
     pub has_dev_channels: bool,
     pub disabled: bool,
-    pub no_auth: bool,
     pub unmatched: Vec<UnmatchedChannelEntry>,
 }
 
@@ -136,10 +135,10 @@ fn configured_mcp_server_names_readonly(
 /// Maps to: CC `components/LogoV2/ChannelsNotice.tsx` mount-time snapshot.
 ///
 /// A `get_env` parameter was removed here: the body never read it, and the
-/// subscription facts it appears to gate (formerly `get_subscription_type`,
-/// `get_allowed_channels`) come from process state exactly as at the source.
-/// Leaving it in place made callers — and their tests — look like they could
-/// steer the result.
+/// session facts it appears to gate (`get_allowed_channels`) come from process
+/// state exactly as at the source. Leaving it in place made callers — and their
+/// tests — look like they could steer the result.
+/// @nyan: CC's `noAuth` branch is gone; channels need no claude.ai account.
 pub fn channels_notice_snapshot_from_readonly_sources(
     global_config: &crate::utils::config::GlobalConfig,
     project_config: &crate::utils::config::ProjectConfig,
@@ -149,8 +148,8 @@ pub fn channels_notice_snapshot_from_readonly_sources(
         return ChannelsNoticeSnapshot::default();
     }
 
-    // @nyan: no claude.ai subscription or managed settings, so channels are
-    // never org-managed and the allowlist is always the ledger.
+    // @nyan: no managed settings, so channels are never org-managed and the
+    // allowlist is always the ledger.
     let allowlist = EffectiveChannelAllowlist {
         entries: get_channel_allowlist(),
     };
@@ -174,7 +173,6 @@ pub fn channels_notice_snapshot_from_readonly_sources(
         channels,
         has_dev_channels: crate::bootstrap::state::get_has_dev_channels(),
         disabled: !is_channels_enabled(),
-        no_auth: true,
     }
 }
 
@@ -197,16 +195,12 @@ pub fn ChannelsNotice(props: &ChannelsNoticeProps, hooks: Hooks) -> impl Into<An
 
     let title = if snapshot.disabled {
         format!("{flag} ignored ({list})")
-    } else if snapshot.no_auth {
-        format!("{flag} ignored ({list})")
     } else {
         format!("Listening for channel messages from: {list}")
     };
 
     let dim_lines: Vec<String> = if snapshot.disabled {
         vec!["Channels are not currently available".to_string()]
-    } else if snapshot.no_auth {
-        vec!["Channels require claude.ai authentication, which nyan does not support".to_string()]
     } else {
         vec![format!(
             "Experimental · inbound messages will be pushed into this session, this carries prompt injection risks. Restart nyan without {flag} to disable."
@@ -328,7 +322,6 @@ mod tests {
             snapshot.disabled,
             "source-controlled tengu_harbor default is off"
         );
-        assert!(snapshot.no_auth);
         assert!(
             snapshot
                 .unmatched

@@ -454,8 +454,8 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 现在的环境钉住和 `_prep` 内联在 justfile 里（`_prep` 92-102、`iso` 75、`unhost` 86、`test` 122-124）。CI 如果复制
 一份，两边必然漂移。Phase 0 把它们搬进：
 
-- `scripts/ci/prepare-test-home.py`：重建 `target/test-home`，复制 `credentials.mock.json`，写带
-  `hasTrustDialogAccepted` 的 `state.json`。
+- `scripts/ci/prepare-test-home.py`：重建 `target/test-home`，写带 `hasTrustDialogAccepted` 的
+  `state.json`。
 - `scripts/ci/test.sh`：调用上面的脚本、导出钉住变量、拼 nextest 命令；`--archive`/`--partition` 可选。
 - justfile 的 `_prep`、`test`、`t`、`test-one`、`test-ant` 改成调用同一个脚本，行为不变。
 
@@ -470,7 +470,6 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 | cwd | `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=` | 否则 `reset_cwd_if_outside_project` 永远报项目根 |
 | 项目设置 | `NYAN_TEST_PROJECT_DIR=tests/fixtures/isolated-project` | 补掉 `projectSettings` 读本仓库 `.nyan/settings.json` 的洞 |
 | 宿主模型/网关 | `env -u` 掉 19 个 `ANTHROPIC_*` / `CLAUDE_*` 变量 | 空字符串会被当成模型名（justfile:86） |
-| 身份 | `tests/fixtures/credentials.mock.json` | 合成 token，固定登录态 |
 | 终端尺寸 | `TERM=xterm-256color`、`COLUMNS=80`、`LINES=24` | **CI 新增**：hosted runner 没有 TTY 也没有 `TERM`，crossterm 的 `window_size()` 失败后退到 `tput`，`tput` 因缺 `TERM` 再失败，`terminal::size()` 变成 `(0,0)`——Pane 分隔线、logo、spinner 计时、picker 描述宽度全部塌成 0。钉成开发机实测值 |
 | CI 标志 | 进测试进程前 `unset CI` | 产品代码本身会读 `CI`（`auth.rs:1016` 跳过 API key 审批，`env.rs:87` 记录 `is_ci`）；hosted runner 全程 `CI=true`，会让 auth/state 断言走另一条分支。nextest profile 在 unset 前已决定 |
 | locale/TZ | `LANG=C.UTF-8`、`TZ=UTC` | **CI 新增**，让排序和时间断言确定；首跑若出现 locale 敏感失败，修测试（显式 locale）而不是改 CI 变量 |

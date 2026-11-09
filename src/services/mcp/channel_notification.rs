@@ -54,7 +54,6 @@ pub struct ChannelPermissionNotification {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChannelRuntimeGateContext {
     pub channels_enabled: bool,
-    pub has_claude_ai_oauth: bool,
     pub session_channels: Vec<ChannelEntry>,
     pub allowlist: EffectiveChannelAllowlist,
 }
@@ -64,7 +63,6 @@ pub struct ChannelRuntimeGateContext {
 pub enum ChannelGateSkipKind {
     Capability,
     Disabled,
-    Auth,
     Session,
     Marketplace,
     Allowlist,
@@ -154,13 +152,11 @@ pub fn parse_channel_permission_notification_params(
 /// `useManageMCPConnections.ts`.
 /// A `get_env` parameter was removed: the body never read it. A `global_config`
 /// parameter was removed likewise once the channel ledger moved to the switch
-/// table. Channels require a claude.ai OAuth login, which does not exist, so the
-/// subscription is always absent and `has_claude_ai_oauth` is always false.
+/// table.
 /// @nyan: no managed settings, so no org `channelsEnabled`/`allowedChannelPlugins`.
 pub fn channel_gate_context_from_readonly_runtime() -> ChannelRuntimeGateContext {
     ChannelRuntimeGateContext {
         channels_enabled: crate::services::mcp::channel_allowlist::is_channels_enabled(),
-        has_claude_ai_oauth: false,
         session_channels: crate::bootstrap::state::get_allowed_channels(),
         allowlist: EffectiveChannelAllowlist {
             entries: crate::services::mcp::channel_allowlist::get_channel_allowlist(),
@@ -216,11 +212,12 @@ pub fn find_channel_entry<'a>(
 }
 
 /// Pure counterpart of CC `gateChannelServer(...)`.
+/// @nyan: no claude.ai auth step; a provider-neutral agent has no account to
+/// require, so the feature gate, session list and allowlist decide alone.
 pub fn gate_channel_server_from_context(
     server_name: &str,
     has_channel_capability: bool,
     channels_enabled: bool,
-    has_claude_ai_oauth: bool,
     session_channels: &[ChannelEntry],
     plugin_source: Option<&str>,
     allowlist: &EffectiveChannelAllowlist,
@@ -236,13 +233,6 @@ pub fn gate_channel_server_from_context(
         return ChannelGateResult::Skip {
             kind: ChannelGateSkipKind::Disabled,
             reason: "channels feature is not currently available".to_string(),
-        };
-    }
-
-    if !has_claude_ai_oauth {
-        return ChannelGateResult::Skip {
-            kind: ChannelGateSkipKind::Auth,
-            reason: "channels requires claude.ai authentication (run /login)".to_string(),
         };
     }
 
@@ -321,7 +311,7 @@ mod tests {
     use crate::utils::message_queue_manager::{
         TEST_QUEUE_LOCK, clear_command_queue, get_command_queue,
     };
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     struct AllowedChannelsGuard(Vec<ChannelEntry>);
 
@@ -370,7 +360,6 @@ mod tests {
                 "plugin:slack:bot",
                 true,
                 true,
-                true,
                 &channels,
                 Some("slack@anthropic"),
                 &ledger,
@@ -382,7 +371,6 @@ mod tests {
                 "plugin:slack:bot",
                 true,
                 true,
-                true,
                 &channels,
                 Some("slack@anthropic@ignored"),
                 &ledger,
@@ -392,7 +380,6 @@ mod tests {
 
         let marketplace_skip = gate_channel_server_from_context(
             "plugin:slack:bot",
-            true,
             true,
             true,
             &channels,
@@ -411,7 +398,6 @@ mod tests {
             "planner",
             true,
             true,
-            true,
             &[ChannelEntry::server("planner", false)],
             None,
             &ledger,
@@ -426,7 +412,6 @@ mod tests {
         assert_eq!(
             gate_channel_server_from_context(
                 "planner",
-                true,
                 true,
                 true,
                 &[ChannelEntry::server("planner", true)],
@@ -482,20 +467,15 @@ mod tests {
     }
 
     #[test]
-    fn channel_gate_context_reads_cached_ledger_and_session_channels_without_oauth() {
+    fn channel_gate_context_reads_cached_ledger_and_session_channels() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _channels_guard =
             AllowedChannelsGuard::set(vec![ChannelEntry::server("planner", true)]);
-        // An ambient OAuth token must not make channels available: there is no
-        // claude.ai login.
-        let _oauth_guard = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-channel-gate");
-
         let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
         let context = channel_gate_context_from_readonly_runtime();
         crate::utils::config::set_test_global_config(None);
         assert!(!context.channels_enabled);
-        assert!(!context.has_claude_ai_oauth);
         assert_eq!(
             context.session_channels,
             vec![ChannelEntry::server("planner", true)]

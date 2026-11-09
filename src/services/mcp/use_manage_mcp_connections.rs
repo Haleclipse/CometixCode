@@ -439,7 +439,6 @@ pub(crate) fn install_channel_handlers(
         &connected.name,
         declares(CHANNEL_EXPERIMENTAL_CAPABILITY),
         context.channels_enabled,
-        context.has_claude_ai_oauth,
         &context.session_channels,
         connected.config.plugin_source.as_deref(),
         &context.allowlist,
