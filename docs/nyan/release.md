@@ -62,6 +62,8 @@ nyan-vX.Y.Z-windows-x86_64.zip
 
 不维护独立的 `CHANGELOG.md`。正式 tag 创建 Release 时使用 GitHub CLI 的 `--generate-notes`，由 GitHub 根据上一个 Release、commit 和 PR 生成变更说明。预发布也使用同一来源；需要人工补充的 breaking change、迁移说明和已知限制写入 GitHub Release body。
 
+每个 Release 的 body 开头固定附带 `.github/release-notes.md`（`--notes-file`，GitHub 把它放在自动生成的说明之前）：声明 Windows 构建未签名、未在 Windows 上测试，且不支持 macOS。publish job 为此只稀疏检出该文件；`gh` 通过 `GH_REPO` 获知仓库，不依赖工作树。
+
 ## 安装脚本
 
 - Linux：`install.sh [版本或 tag]`，默认安装到 `~/.local/bin`；通过 `NYAN_INSTALL_DIR` 指定目录。未传版本时解析 GitHub latest stable Release。

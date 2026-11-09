@@ -245,6 +245,13 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Check out release notes
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        with:
+          sparse-checkout: .github/release-notes.md
+          sparse-checkout-cone-mode: false
+          fetch-depth: 1
+          persist-credentials: false
       - name: Download assembled assets
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -254,8 +261,10 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.version.outputs.tag }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          NOTES_FILE: ${{ github.workspace }}/.github/release-notes.md
         working-directory: release-assets
         run: |
           set -euo pipefail
@@ -269,7 +278,7 @@ jobs:
             fi
             gh release upload "$TAG" "${assets[@]}"
           elif [ "$PRERELEASE" = true ]; then
-            gh release create "$TAG" "${assets[@]}" --title "$TAG" --generate-notes --prerelease
+            gh release create "$TAG" "${assets[@]}" --title "$TAG" --notes-file "$NOTES_FILE" --generate-notes --prerelease
           else
-            gh release create "$TAG" "${assets[@]}" --title "$TAG" --generate-notes
+            gh release create "$TAG" "${assets[@]}" --title "$TAG" --notes-file "$NOTES_FILE" --generate-notes
           fi
