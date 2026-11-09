@@ -696,6 +696,13 @@ impl LocalIndex {
                     }
                     content.truncate(limit);
                 }
+                // A zero-content file (e.g. a 1-byte `__init__.py`) still has
+                // a chunk record, but the embedding service rejects the whole
+                // batch with 400 "The decoder prompt cannot be empty".
+                // Dropping it here keeps points, texts and refs aligned.
+                if content.trim().is_empty() {
+                    continue;
+                }
                 contents.push((chunk.clone(), content));
             }
         }
@@ -1345,6 +1352,28 @@ mod tests {
                 .len()
                 <= MAX_CHUNK_BYTES
         }));
+    }
+
+    #[test]
+    fn blank_chunks_are_not_handed_to_the_embedding_batch() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let (config, project) = temp_project("blank-chunks");
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
+        // A 1-byte Python package marker, exactly like the real pending files.
+        std::fs::write(project.join("empty.py"), "\n").unwrap();
+        std::fs::write(project.join("lib.rs"), "fn hello() {}\n").unwrap();
+        let index = open(&project);
+        let empty = index.file("empty.py").expect("indexed");
+        assert_eq!(empty.chunks.len(), 1, "the chunker still records it");
+        let (_, texts) = index.file_chunks("empty.py").expect("readable");
+        assert!(
+            texts.is_empty(),
+            "blank chunk must not be embedded: {texts:?}"
+        );
+        let (_, texts) = index.file_chunks("lib.rs").expect("readable");
+        assert_eq!(texts.len(), 1);
+        assert!(!texts[0].1.trim().is_empty());
+        let _ = std::fs::remove_dir_all(project.parent().unwrap());
     }
 
     #[test]

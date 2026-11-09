@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use super::system_one::{NativeSystemOneTransport, SystemOneClient};
 use crate::services::service_health::{self, ServiceKind};
-use crate::utils::settings::nyan::EmrankSettings;
+use crate::utils::settings::nyan::{DecisionModel, EmrankSettings};
 
 /// Build the EMRank client from settings.
 ///
@@ -32,6 +32,9 @@ pub fn from_settings(settings: &EmrankSettings) -> anyhow::Result<Arc<SystemOneC
         client,
         service_health::shared(ServiceKind::Emrank),
         Arc::new(NativeSystemOneTransport),
+        // The probe must use a model this account can actually call; a
+        // hardcoded placeholder id 404s and used to be recorded as "down".
+        settings.model_id(DecisionModel::Fast),
     ))
 }
 

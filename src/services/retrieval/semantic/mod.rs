@@ -1086,13 +1086,32 @@ impl EmbeddingClient {
             }
         };
         if !response.status().is_success() {
-            self.health
-                .record_failure(if response.status().as_u16() == 429 {
-                    FailureKind::RateLimited
-                } else {
-                    FailureKind::Unreachable
-                });
-            return Err(format!("embedding HTTP {}", response.status()));
+            let status = response.status();
+            // The request body is source text and is never logged. Only the
+            // response error, plus counts and lengths, goes to the log.
+            let body = response.text().await.unwrap_or_default();
+            let summary = embedding_error_summary(&body);
+            crate::utils::debug::log_for_debugging(&format!(
+                "retrieval semantic embedding: HTTP {status} model={} inputs={} blank={} max_bytes={} body_len={}{}",
+                self.model,
+                inputs.len(),
+                inputs.iter().filter(|text| text.trim().is_empty()).count(),
+                inputs.iter().map(String::len).max().unwrap_or(0),
+                body.len(),
+                summary
+                    .as_deref()
+                    .map(|summary| format!(" error={summary}"))
+                    .unwrap_or_default(),
+            ));
+            self.health.record_failure(if status.as_u16() == 429 {
+                FailureKind::RateLimited
+            } else {
+                FailureKind::Unreachable
+            });
+            return Err(match summary {
+                Some(summary) => format!("embedding HTTP {status}: {summary}"),
+                None => format!("embedding HTTP {status} (body {} bytes)", body.len()),
+            });
         }
         let body: Value = response.json().await.map_err(|error| {
             self.health.record_failure(FailureKind::InvalidResponse);
@@ -1199,21 +1218,33 @@ impl QdrantClient {
     /// pooled socket otherwise fails a whole sync pass as "error sending
     /// request" (live 2026-10-30 through EasyTier). The timeout is per call:
     /// the query path keeps the short budget while sync batches pass their own.
+    ///
+    /// A timeout is retried too. Read-only evidence 2026-11-09: a
+    /// `GET /collections/<name>` stalled for the whole 15 s budget, then the
+    /// immediate retry answered in 0.5 s (twice). The service stalls
+    /// transiently; treating that as a 3-failure circuit break stops an
+    /// otherwise healthy sync. The retry is safe because every operation is
+    /// idempotent (points carry deterministic ids and upserts use
+    /// `wait=false`).
     async fn send_with_retry(
         &self,
         timeout: Duration,
         build: impl Fn() -> reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, String> {
-        match tokio::time::timeout(timeout, build().send()).await {
-            Ok(Ok(response)) => Ok(response),
-            Ok(Err(error)) if !error.is_timeout() => {
-                match tokio::time::timeout(timeout, build().send()).await {
-                    Ok(result) => result.map_err(|error| error.to_string()),
-                    Err(_) => Err("Qdrant request timed out".to_string()),
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            match tokio::time::timeout(timeout, build().send()).await {
+                Ok(Ok(response)) => return Ok(response),
+                Ok(Err(error)) if attempts < 2 => continue,
+                Ok(Err(error)) => return Err(error.to_string()),
+                Err(_) if attempts < 2 => continue,
+                Err(_) => {
+                    return Err(format!(
+                        "Qdrant request timed out after {attempts} attempts ({timeout:?} each)"
+                    ));
                 }
             }
-            Ok(Err(error)) => Err(error.to_string()),
-            Err(_) => Err("Qdrant request timed out".to_string()),
         }
     }
 
@@ -1383,6 +1414,42 @@ fn read_key(path: Option<&str>) -> anyhow::Result<Option<String>> {
     }
     let value = std::fs::read_to_string(path)?.trim().to_string();
     Ok((!value.is_empty()).then_some(value))
+}
+
+/// A short, log-safe summary of an embedding service error. Only the service's
+/// own error fields are kept; the response is never the embedded text.
+fn embedding_error_summary(body: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(body).ok()?;
+    let error = value.get("error").unwrap_or(&value);
+    let mut parts = Vec::new();
+    for key in ["code", "type", "message"] {
+        let Some(value) = error.get(key) else {
+            continue;
+        };
+        let text = match value {
+            Value::String(text) => text.clone(),
+            Value::Number(number) => number.to_string(),
+            _ => continue,
+        };
+        let text = text.trim();
+        if !text.is_empty() {
+            parts.push(format!("{key}={text}"));
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let mut summary = parts.join(" ");
+    // `String::truncate` panics off a char boundary; the service can answer
+    // with non-ASCII text, so cut at the last boundary at or below 200 bytes.
+    if summary.len() > 200 {
+        let mut end = 200;
+        while !summary.is_char_boundary(end) {
+            end -= 1;
+        }
+        summary.truncate(end);
+    }
+    Some(summary)
 }
 
 pub fn worktree_id(root: &Path) -> String {
@@ -1785,6 +1852,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sync_skips_blank_chunks_instead_of_sending_an_empty_input() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let (config, project) = temp_worktree("sync-blank");
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
+        // Real pending queues contain these: a 1-byte package marker and a
+        // normal source file. The service 400s the whole batch on the empty
+        // input ("The decoder prompt cannot be empty").
+        std::fs::write(project.join("src/empty.py"), "\n").unwrap();
+        std::fs::write(project.join("src/a.rs"), "fn needle() {}\n").unwrap();
+        let index = open_index(&project);
+        assert_eq!(index.file("src/empty.py").unwrap().chunks.len(), 1);
+        let services = MockServices::start(
+            4,
+            "jina-code-embeddings-1.5b",
+            json!({"id": "1", "score": 0.5, "payload": {}}),
+        )
+        .await;
+        services.reset_health();
+        let client = SemanticClient::from_settings(
+            &services.settings(),
+            &project,
+            &crate::utils::settings::nyan::RetrievalBudgetSettings::default(),
+        )
+        .unwrap();
+        client.queue_changed(&index).unwrap();
+        client.ensure_initial_pending(&index).unwrap();
+        let report = client
+            .sync_pending(
+                &index,
+                &crate::utils::settings::nyan::RetrievalSyncSettings::default(),
+            )
+            .await;
+        assert_eq!(report.status, BranchStatus::Ok, "{report:?}");
+        assert_eq!(report.synced_chunks, 1, "only the non-blank chunk syncs");
+        assert_eq!(SemanticClient::pending_count(&index), 0);
+        let requests = services.requests();
+        let embeddings = requests
+            .iter()
+            .filter(|(line, _)| line.starts_with("POST /v1/embeddings"))
+            .collect::<Vec<_>>();
+        assert_eq!(embeddings.len(), 1, "{requests:?}");
+        let body: Value = serde_json::from_str(&embeddings[0].1).unwrap();
+        let inputs = body["input"].as_array().unwrap();
+        assert_eq!(inputs.len(), 1, "{body}");
+        assert!(
+            inputs
+                .iter()
+                .all(|input| input.as_str().is_some_and(|text| !text.trim().is_empty())),
+            "blank input reached the embedding batch: {body}"
+        );
+        let _ = std::fs::remove_dir_all(project.parent().unwrap());
+    }
+
+    #[tokio::test]
     async fn prune_deletes_only_this_machines_replaced_collections() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let (config, project) = temp_worktree("prune");
@@ -1843,6 +1964,38 @@ mod tests {
                 .all(|part| part.chars().all(|character| character.is_ascii_hexdigit()))
         );
         assert_eq!(id.len(), 12 + 1 + 16);
+    }
+
+    #[test]
+    fn embedding_error_summary_keeps_the_server_reason() {
+        let summary = embedding_error_summary(
+            r#"{"error":{"message":"The decoder prompt cannot be empty","type":"BadRequestError","code":400}}"#,
+        )
+        .expect("summary");
+        assert!(
+            summary.contains("decoder prompt cannot be empty"),
+            "{summary}"
+        );
+        assert!(summary.contains("code=400"), "{summary}");
+        assert!(summary.contains("type=BadRequestError"), "{summary}");
+        assert!(embedding_error_summary("<html>oops</html>").is_none());
+    }
+
+    #[test]
+    fn embedding_error_summary_truncates_on_a_char_boundary() {
+        // `type=E` puts byte 200 inside a Chinese character; the old
+        // `String::truncate(200)` panicked (release builds abort).
+        let body = json!({
+            "error": {
+                "code": 400,
+                "type": "E",
+                "message": "模型不存在或未启用".repeat(30),
+            }
+        })
+        .to_string();
+        let summary = embedding_error_summary(&body).expect("summary");
+        assert!(summary.len() <= 200, "{} bytes", summary.len());
+        assert!(summary.starts_with("code=400 type=E message=模型"));
     }
 
     #[test]

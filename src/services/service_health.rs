@@ -80,6 +80,9 @@ pub enum FailureKind {
     Auth,
     /// HTTP 402 / quota exhausted.
     Budget,
+    /// The service rejected the configured model id (unknown / not enabled).
+    /// The endpoint is healthy; the configuration is not.
+    ModelNotFound,
     /// Malformed or out-of-range response.
     InvalidResponse,
 }
@@ -92,6 +95,7 @@ impl FailureKind {
             FailureKind::RateLimited => "rate_limited",
             FailureKind::Auth => "auth_failed",
             FailureKind::Budget => "budget_exhausted",
+            FailureKind::ModelNotFound => "model_not_found",
             FailureKind::InvalidResponse => "invalid_response",
         }
     }

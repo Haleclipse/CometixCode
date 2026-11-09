@@ -299,6 +299,9 @@ pub enum FallbackReason {
     Shadow,
     /// Connection failure / 401 / 403 / the backend could not be built.
     BackendDown,
+    /// The service rejected the configured model id. The endpoint is up; the
+    /// model alias or the account's entitlement is wrong.
+    ModelNotFound,
     Timeout,
     RateLimited,
     BudgetExhausted,
@@ -316,6 +319,7 @@ impl FallbackReason {
             FallbackReason::Disabled => "disabled",
             FallbackReason::Shadow => "shadow",
             FallbackReason::BackendDown => "backend_down",
+            FallbackReason::ModelNotFound => "model_not_found",
             FallbackReason::Timeout => "timeout",
             FallbackReason::RateLimited => "rate_limited",
             FallbackReason::BudgetExhausted => "budget_exhausted",

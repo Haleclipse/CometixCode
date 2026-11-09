@@ -380,6 +380,9 @@ fn record(decisions: &mut Vec<DecisionRecord>, point: DecisionPoint, outcome: &D
         outcome: result.to_string(),
         fallback: fallback.map(str::to_string),
     });
+    // The in-memory record feeds replay; the JSONL is what `/decision` reads.
+    // Retrieval used to do only the former, so its points were invisible.
+    crate::services::decision::log::log_outcome(point, outcome);
 }
 
 /// Convenience for tests and evaluators replaying a recorded outcome.

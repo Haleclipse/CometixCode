@@ -111,7 +111,7 @@ impl<'a> WebDecisions<'a> {
         let request =
             self.provider
                 .decide(point, state, questions, &deterministic, &safe, self.abort);
-        match tokio::time::timeout(limit, request).await {
+        let outcome = match tokio::time::timeout(limit, request).await {
             Ok(outcome) => outcome,
             Err(_) => {
                 crate::utils::debug::log_for_debugging(&format!(
@@ -126,7 +126,11 @@ impl<'a> WebDecisions<'a> {
                     ),
                 }
             }
-        }
+        };
+        // Every Web point shares this choke point, so logging here covers
+        // query_kind, answers, prune (shadow), page_answers and fetch_fallback.
+        crate::services::decision::log::log_outcome(point, &outcome);
+        outcome
     }
 
     /// `web.query_kind`: only adds provider parameters. Every provider is still

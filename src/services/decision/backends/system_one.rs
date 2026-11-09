@@ -114,6 +114,11 @@ pub struct SystemOneClient {
     client: reqwest::Client,
     health: Arc<service_health::ServiceHealth>,
     transport: Arc<dyn SystemOneTransport>,
+    /// Model used by the health probe. The service rejects a model id the
+    /// account has not enabled; the old hardcoded `nyan-probe` produced a 404
+    /// that looked like a dead backend. Callers pass the configured `fast`
+    /// alias, which is the model real decisions use.
+    probe_model: String,
     prewarmed: AtomicBool,
 }
 
@@ -134,6 +139,7 @@ impl SystemOneClient {
         client: reqwest::Client,
         health: Arc<service_health::ServiceHealth>,
         transport: Arc<dyn SystemOneTransport>,
+        probe_model: impl Into<String>,
     ) -> Arc<Self> {
         let backend = Arc::new(Self {
             base_url: base_url.into(),
@@ -143,6 +149,7 @@ impl SystemOneClient {
             client,
             health,
             transport,
+            probe_model: probe_model.into(),
             prewarmed: AtomicBool::new(false),
         });
         backend.install_probe();
@@ -191,9 +198,9 @@ impl SystemOneClient {
             "ping".to_string(),
             json!({"type": "noul", "instructions": "Is this a ping?"}),
         );
-        let body = self
-            .transport
-            .encode("nyan-probe", &Value::String("ping".into()), &questions);
+        let body =
+            self.transport
+                .encode(&self.probe_model, &Value::String("ping".into()), &questions);
         self.post(&body, timeout).await.map(|_| ()).map_err(|_| ())
     }
 
@@ -230,12 +237,21 @@ impl SystemOneClient {
         };
 
         if !status.is_success() {
-            let (reason, failure) = match status.as_u16() {
-                429 => (FallbackReason::RateLimited, FailureKind::RateLimited),
-                402 => (FallbackReason::BudgetExhausted, FailureKind::Budget),
-                401 | 403 => (FallbackReason::BackendDown, FailureKind::Auth),
-                _ => (FallbackReason::BackendDown, FailureKind::Unreachable),
-            };
+            let (reason, failure) = classify_failure(status.as_u16(), &bytes);
+            // Keep the service's own reason visible: a model id the account
+            // has not enabled is a configuration error, not an unreachable
+            // backend, and the old mapping hid the difference.
+            let detail = error_summary(&bytes);
+            crate::utils::debug::log_for_debugging(&format!(
+                "DecisionProvider: HTTP {} ({}) for model {:?}{}",
+                status.as_u16(),
+                reason.as_str(),
+                body_model(body),
+                detail
+                    .as_deref()
+                    .map(|detail| format!(": {detail}"))
+                    .unwrap_or_default(),
+            ));
             return Err(PostError {
                 reason,
                 failure,
@@ -256,6 +272,87 @@ fn body_model(body: &Value) -> &str {
     body.get("model")
         .and_then(Value::as_str)
         .unwrap_or_default()
+}
+
+/// Map an HTTP failure to a fallback reason and a health failure kind.
+///
+/// A 404 that names an unknown/disabled model is `ModelNotFound`, not
+/// `BackendDown`: the endpoint is healthy, the configuration is not. A 400 is
+/// a malformed request and therefore `InvalidResponse`. Everything else keeps
+/// the documented 429 / 402 / 401-403 mapping.
+fn classify_failure(status: u16, body: &[u8]) -> (FallbackReason, FailureKind) {
+    match status {
+        429 => (FallbackReason::RateLimited, FailureKind::RateLimited),
+        402 => (FallbackReason::BudgetExhausted, FailureKind::Budget),
+        401 | 403 => (FallbackReason::BackendDown, FailureKind::Auth),
+        // Some deployments answer 400 for an unknown model, some 404.
+        400 | 404 | 422 if mentions_model_not_found(body) => {
+            (FallbackReason::ModelNotFound, FailureKind::ModelNotFound)
+        }
+        400 | 422 => (
+            FallbackReason::InvalidResponse,
+            FailureKind::InvalidResponse,
+        ),
+        _ => (FallbackReason::BackendDown, FailureKind::Unreachable),
+    }
+}
+
+/// Whether the service's error payload says the model does not exist or is
+/// not enabled. The provider uses both an English code and a Chinese message.
+fn mentions_model_not_found(body: &[u8]) -> bool {
+    let Ok(value) = serde_json::from_slice::<Value>(body) else {
+        return false;
+    };
+    let error = value.get("error").unwrap_or(&value);
+    ["code", "type", "message"]
+        .iter()
+        .filter_map(|key| error.get(*key))
+        .filter_map(Value::as_str)
+        .any(|text| {
+            let lower = text.to_ascii_lowercase();
+            lower.contains("model_not_found")
+                || lower.contains("model not found")
+                || lower.contains("not enabled")
+                || text.contains("模型不存在")
+                || text.contains("未启用")
+        })
+}
+
+/// A short, log-safe summary of the service's error payload. The decision
+/// request body is never logged; this only reads the response.
+fn error_summary(body: &[u8]) -> Option<String> {
+    let value: Value = serde_json::from_slice(body).ok()?;
+    let error = value.get("error").unwrap_or(&value);
+    let mut parts = Vec::new();
+    for key in ["code", "type", "message"] {
+        let Some(value) = error.get(key) else {
+            continue;
+        };
+        let text = match value {
+            Value::String(text) => text.clone(),
+            Value::Number(number) => number.to_string(),
+            _ => continue,
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        parts.push(format!("{key}={text}"));
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    let mut summary = parts.join(" ");
+    // `String::truncate` panics off a char boundary; the service's messages
+    // are Chinese, so cut at the last boundary at or below 200 bytes.
+    if summary.len() > 200 {
+        let mut end = 200;
+        while !summary.is_char_boundary(end) {
+            end -= 1;
+        }
+        summary.truncate(end);
+    }
+    Some(summary)
 }
 
 struct Posted {
@@ -681,6 +778,10 @@ mod tests {
             200 => {
                 r#"{"model":"typesafe/jev-1.14.0","answers":{"answers":{"type":"noul","noul":0.91}},"usage":{"input_tokens":210,"output_tokens":3}}"#
             }
+            // Matches the account's real 404 for `typesafe/jev-1.14.0`.
+            404 => {
+                r#"{"error":{"message":"模型不存在或未启用","type":"model_not_found","code":"model_not_found"}}"#
+            }
             _ => "{}",
         }
     }
@@ -697,6 +798,7 @@ mod tests {
                 Duration::from_millis(2_000),
             )),
             Arc::new(NativeSystemOneTransport),
+            "typesafe/jev-1.14.0",
         )
     }
 
@@ -979,6 +1081,58 @@ mod tests {
     }
 
     #[test]
+    fn the_health_probe_uses_the_configured_model() {
+        runtime().block_on(async {
+            let mock = mock(vec![(200, "OK")]).await;
+            let backend = client(&mock.url);
+            backend.ping(Duration::from_secs(1)).await.unwrap();
+            let raw = mock.handle.await.unwrap();
+            assert!(
+                raw[0].contains("\"model\":\"typesafe/jev-1.14.0\""),
+                "probe must use the configured model: {}",
+                raw[0]
+            );
+            assert!(!raw[0].contains("nyan-probe"), "{}", raw[0]);
+        });
+    }
+
+    #[test]
+    fn an_unknown_model_is_model_not_found_not_backend_down() {
+        runtime().block_on(async {
+            let mock = mock(vec![(404, "Not Found")]).await;
+            let backend = client(&mock.url);
+            let outcome = run(&backend, &request()).await;
+            assert_eq!(
+                outcome.fallback_reason(),
+                Some(FallbackReason::ModelNotFound)
+            );
+            assert_eq!(
+                backend.health.last_failure(),
+                Some(FailureKind::ModelNotFound),
+                "the last failure must name the real cause"
+            );
+            mock.handle.await.unwrap();
+        });
+    }
+
+    #[test]
+    fn a_long_multibyte_error_is_summarized_without_panicking() {
+        // This shape puts byte 200 inside a Chinese character: the old
+        // `String::truncate(200)` panicked here (release builds abort).
+        let body = json!({
+            "error": {
+                "code": "400",
+                "type": "E",
+                "message": "模型不存在或未启用".repeat(30),
+            }
+        });
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let summary = error_summary(&bytes).expect("summary");
+        assert!(summary.len() <= 200, "{} bytes", summary.len());
+        assert!(summary.starts_with("code=400 type=E message=模型"));
+    }
+
+    #[test]
     fn a_down_service_is_skipped_without_reaching_the_network() {
         runtime().block_on(async {
             crate::utils::tls_provider::install_crypto_provider();
@@ -992,6 +1146,7 @@ mod tests {
                     Duration::from_millis(50),
                 )),
                 Arc::new(NativeSystemOneTransport),
+                "typesafe/jev-1.14.0",
             );
             backend.health.record_failure(FailureKind::Unreachable);
             let started = Instant::now();
