@@ -1,9 +1,7 @@
 //! Maps to: CC `components/LogoV2/Feed.tsx`.
 //!
 //! This module keeps the official `FeedLine` / `FeedConfig` / `Feed` boundary
-//! separate from the main logo component. Custom React content is represented
-//! as terminal-ready text rows until the corresponding upstream custom feed
-//! components are ported.
+//! separate from the main logo component.
 
 use iocraft::prelude::*;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -30,32 +28,12 @@ impl FeedLine {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum FeedCustomLineTone {
-    #[default]
-    Normal,
-    Claude,
-    Dim,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct FeedCustomContent {
-    pub lines: Vec<FeedLine>,
-    pub width: usize,
-    /// Maps the arbitrary React `customContent.content` styling that official
-    /// feed configs use for guest passes and overage-credit rows.
-    pub line_tones: Vec<FeedCustomLineTone>,
-    /// Maps to the guest-passes `<Box marginY={1}>` wrapper.
-    pub margin_y_first_line: bool,
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FeedConfig {
     pub title: String,
     pub lines: Vec<FeedLine>,
     pub footer: Option<String>,
     pub empty_message: Option<String>,
-    pub custom_content: Option<FeedCustomContent>,
 }
 
 #[derive(Default, Props)]
@@ -67,9 +45,7 @@ pub struct FeedProps {
 pub fn calculate_feed_width(config: &FeedConfig) -> usize {
     let mut max_width = display_width(&config.title);
 
-    if let Some(custom) = &config.custom_content {
-        max_width = max_width.max(custom.width);
-    } else if config.lines.is_empty() {
+    if config.lines.is_empty() {
         if let Some(empty_message) = &config.empty_message {
             max_width = max_width.max(display_width(empty_message));
         }
@@ -116,21 +92,7 @@ pub fn Feed(props: &FeedProps, hooks: Hooks) -> impl Into<AnyElement<'static>> {
     element! {
         View(flex_direction: FlexDirection::Column, width: actual_width as u32) {
             Text(content: props.config.title.clone(), weight: Weight::Bold, color: theme.claude, wrap: TextWrap::NoWrap)
-            #(if let Some(custom) = props.config.custom_content.clone() {
-                let line_tones = custom.line_tones.clone();
-                let margin_y_first_line = custom.margin_y_first_line;
-                Some(element! {
-                    View(flex_direction: FlexDirection::Column) {
-                        #(custom.lines.into_iter().enumerate().map(|(index, line)| {
-                            let tone = line_tones.get(index).copied().unwrap_or_default();
-                            render_custom_feed_line(line, actual_width, tone, margin_y_first_line && index == 0, *theme)
-                        }))
-                        #(props.config.footer.as_ref().map(|footer| element! {
-                            Text(content: truncate_to_width(footer, actual_width), color: theme.inactive, italic: true, wrap: TextWrap::NoWrap)
-                        }))
-                    }
-                }.into_any())
-            } else if props.config.lines.is_empty() {
+            #(if props.config.lines.is_empty() {
                 props.config.empty_message.as_ref().map(|empty_message| element! {
                     Text(content: truncate_to_width(empty_message, actual_width), color: theme.inactive, wrap: TextWrap::NoWrap)
                 }.into_any())
@@ -146,28 +108,6 @@ pub fn Feed(props: &FeedProps, hooks: Hooks) -> impl Into<AnyElement<'static>> {
             })
         }
     }
-}
-
-fn render_custom_feed_line(
-    line: FeedLine,
-    actual_width: usize,
-    tone: FeedCustomLineTone,
-    margin_y: bool,
-    theme: crate::utils::theme::Theme,
-) -> AnyElement<'static> {
-    let color = match tone {
-        FeedCustomLineTone::Normal => None,
-        FeedCustomLineTone::Claude => Some(theme.claude),
-        FeedCustomLineTone::Dim => Some(theme.inactive),
-    };
-    let content = truncate_to_width(&line.text, actual_width);
-
-    element! {
-        View(margin_y: if margin_y { 1u32 } else { 0u32 }) {
-            Text(content: content, color: color, wrap: TextWrap::NoWrap)
-        }
-    }
-    .into_any()
 }
 
 fn render_feed_line(
@@ -261,7 +201,6 @@ mod tests {
             ],
             footer: Some("/resume for more".to_string()),
             empty_message: Some("No recent activity".to_string()),
-            custom_content: None,
         };
 
         assert_eq!(calculate_feed_width(&config), 35);
@@ -277,7 +216,6 @@ mod tests {
             ],
             footer: Some("/resume for more".to_string()),
             empty_message: Some("No recent activity".to_string()),
-            custom_content: None,
         };
 
         let text = render_feed(config, 35);

@@ -1,13 +1,10 @@
 //! Maps to: CC `components/LogoV2/CondensedLogo.tsx`.
 //!
-//! Official hooks read AppState/model/settings and increment upsell impression
-//! counters in effects. nyan keeps this as a render boundary with pure input
-//! props; callers own state reads, config writes, and analytics.
+//! Official hooks read AppState/model/settings. nyan keeps this as a render
+//! boundary with pure input props; callers own state reads.
 
 use super::animated_clawd::AnimatedClawd;
 use super::clawd::Clawd;
-use super::guest_passes_upsell::GuestPassesUpsell;
-use super::overage_credit_upsell::OverageCreditUpsell;
 use crate::components::logo_v2::logo_v2::{
     LOGO_DISPLAY_NAME, LogoDisplayData, format_cwd_line, format_model_and_billing,
     truncate_to_width,
@@ -19,10 +16,6 @@ use iocraft::prelude::*;
 pub struct CondensedLogoProps {
     pub columns: usize,
     pub data: LogoDisplayData,
-    pub show_guest_passes_upsell: bool,
-    pub guest_passes_reward_text: Option<String>,
-    pub show_overage_credit_upsell: bool,
-    pub overage_credit_amount: Option<String>,
 }
 
 #[component]
@@ -73,22 +66,6 @@ pub fn CondensedLogo(props: &CondensedLogoProps) -> impl Into<AnyElement<'static
                         }.into_any()
                     })
                     Text(content: cwd_line, dim: true, wrap: TextWrap::NoWrap)
-                    #(if props.show_guest_passes_upsell {
-                        Some(element! { GuestPassesUpsell(reward_text: props.guest_passes_reward_text.clone()) }.into_any())
-                    } else {
-                        None
-                    })
-                    #(if !props.show_guest_passes_upsell && props.show_overage_credit_upsell {
-                        Some(element! {
-                            OverageCreditUpsell(
-                                amount: props.overage_credit_amount.clone(),
-                                max_width: Some(text_width),
-                                two_line: true,
-                            )
-                        }.into_any())
-                    } else {
-                        None
-                    })
                 }
             }
         }
@@ -100,17 +77,10 @@ mod tests {
     use super::*;
     use crate::utils::theme;
 
-    fn render_condensed(data: LogoDisplayData, guest: bool, overage: bool) -> String {
+    fn render_condensed(data: LogoDisplayData) -> String {
         element! {
             ContextProvider(value: Context::owned(*theme::current())) {
-                CondensedLogo(
-                    columns: 80usize,
-                    data: data,
-                    show_guest_passes_upsell: guest,
-                    guest_passes_reward_text: Some("$5".to_string()),
-                    show_overage_credit_upsell: overage,
-                    overage_credit_amount: Some("$10".to_string()),
-                )
+                CondensedLogo(columns: 80usize, data: data)
             }
         }
         .render(Some(100))
@@ -119,7 +89,7 @@ mod tests {
 
     #[test]
     fn condensed_logo_renders_official_identity_rows_and_cwd() {
-        let text = render_condensed(LogoDisplayData::fixture(), false, false);
+        let text = render_condensed(LogoDisplayData::fixture());
         assert!(text.contains(LOGO_DISPLAY_NAME), "canvas=\n{text}");
         assert!(text.contains("v1.2.3"), "canvas=\n{text}");
         assert!(
@@ -127,19 +97,5 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(text.contains("/code/claude"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn condensed_logo_prefers_guest_passes_over_overage_credit_like_official() {
-        let guest = render_condensed(LogoDisplayData::fixture(), true, true);
-        assert!(guest.contains("Share nyan and earn $5"), "canvas=\n{guest}");
-        assert!(!guest.contains("$10 in extra usage"), "canvas=\n{guest}");
-
-        let overage = render_condensed(LogoDisplayData::fixture(), false, true);
-        assert!(overage.contains("$10 in extra usage"), "canvas=\n{overage}");
-        assert!(
-            overage.contains("On us. Works on third-party apps"),
-            "canvas=\n{overage}"
-        );
     }
 }

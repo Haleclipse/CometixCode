@@ -19,14 +19,6 @@ pub mod dump_prompts;
 /// Maps to: CC services/api/errorUtils.ts
 pub mod error_utils;
 
-/// Overage credit grant cached API helpers.
-/// Maps to: CC services/api/overageCreditGrant.ts
-pub mod overage_credit_grant;
-
-/// Guest passes referral cached API helpers.
-/// Maps to: CC services/api/referral.ts
-pub mod referral;
-
 /// API error constants, classification, and user-facing message generation.
 /// Maps to: CC services/api/errors.ts
 pub mod errors;

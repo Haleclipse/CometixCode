@@ -587,13 +587,6 @@ fn upgrade_enabled() -> bool {
     true
 }
 
-fn passes_hidden() -> bool {
-    let config = crate::utils::config::load_global_config();
-    let now_ms = chrono::Utc::now().timestamp_millis();
-    let cached = crate::services::api::referral::check_cached_passes_eligibility(&config, now_ms);
-    !cached.eligible || !cached.has_cache
-}
-
 fn ultrareview_enabled() -> bool {
     false
 }
@@ -843,10 +836,6 @@ fn commands() -> Vec<Command> {
             .executable(execution::call_sandbox),
     ];
 
-    result.push(
-        Command::local_ui("passes", "Share a free week of nyan with friends")
-            .hidden_when(passes_hidden),
-    );
     result.push(
         Command::local_ui(tasks::NAME, tasks::DESCRIPTION)
             .aliases(tasks::ALIASES)
@@ -1435,16 +1424,17 @@ mod tests {
         let _demo = EnvVarGuard::unset("IS_DEMO");
 
         let catalog = commands();
-        // 71 direct descriptors + internal /version, plus @nyan `/retrieval`
+        // 70 direct descriptors + internal /version, plus @nyan `/retrieval`
         // and `/decision`. `/login` and `/logout` are gone: Anthropic is
-        // API-key only; `/fast` is gone with Fast mode.
+        // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
+        // with claude.ai guest passes.
         let base_len = if crate::utils::build_profile::build_audience().is_internal() {
-            73
-        } else {
             72
+        } else {
+            71
         };
         assert_eq!(catalog.len(), base_len);
-        for removed in ["login", "logout"] {
+        for removed in ["login", "logout", "passes"] {
             assert!(
                 catalog.iter().all(|command| command.name != removed),
                 "/{removed} must not be declared"
@@ -1522,7 +1512,6 @@ mod tests {
             "hooks",
             "export",
             "sandbox",
-            "passes",
             "tasks",
         ] {
             assert!(declared_names.contains(expected), "missing /{expected}");

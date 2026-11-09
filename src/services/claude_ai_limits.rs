@@ -344,35 +344,12 @@ fn should_process_rate_limits() -> bool {
     crate::services::rate_limit_mocking::should_process_rate_limits(false)
 }
 
-fn cache_extra_usage_disabled_reason(headers: &HashMap<String, String>) {
-    // CC `claudeAiLimits.ts:443-444` coalesces the missing header to `null`, so
-    // an observed response never leaves the cache in the "no cache yet" state.
-    let reason = crate::utils::config::CachedExtraUsageDisabledReason::from_header(header(
-        headers,
-        "anthropic-ratelimit-unified-overage-disabled-reason",
-    ));
-    let current = crate::utils::config::load_global_config().cached_extra_usage_disabled_reason;
-    if current != reason
-        && let Err(error) = crate::utils::config::save_global_config(|config| {
-            config.cached_extra_usage_disabled_reason = reason;
-        })
-    {
-        crate::utils::debug::log_for_debugging(&format!(
-            "Failed to cache extra usage disabled reason: {error}"
-        ));
-    }
-}
-
 /// Maps to CC `extractQuotaStatusFromHeaders`.
 pub fn extract_quota_status_from_headers(headers: &HashMap<String, String>) {
     let headers = crate::services::rate_limit_mocking::process_rate_limit_headers(headers);
-    let should_process = should_process_rate_limits();
-    if should_process {
-        cache_extra_usage_disabled_reason(&headers);
-    }
     extract_quota_status_from_headers_with(
         &headers,
-        should_process,
+        should_process_rate_limits(),
         chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
     );
 }
@@ -403,14 +380,10 @@ pub fn extract_quota_status_from_error(
 ) {
     let processed_headers =
         headers.map(crate::services::rate_limit_mocking::process_rate_limit_headers);
-    let should_process = should_process_rate_limits();
-    if should_process && let Some(headers) = processed_headers.as_ref() {
-        cache_extra_usage_disabled_reason(headers);
-    }
     extract_quota_status_from_error_with(
         status,
         processed_headers.as_ref(),
-        should_process,
+        should_process_rate_limits(),
         chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
     );
 }
@@ -827,31 +800,6 @@ mod tests {
         // check_quota_status must skip and not attempt to connect to port 9
         check_quota_status().await;
         crate::utils::settings::settings_cache::reset_settings_cache();
-    }
-
-    #[test]
-    fn overage_disabled_reason_uses_official_persisted_config_key() {
-        use crate::utils::config::CachedExtraUsageDisabledReason;
-
-        let config = crate::utils::config::GlobalConfig {
-            cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason::Disabled(
-                "out_of_credits".to_string(),
-            ),
-            ..Default::default()
-        };
-        let value = serde_json::to_value(config).unwrap();
-        assert_eq!(value["cachedExtraUsageDisabledReason"], "out_of_credits");
-
-        // CC `claudeAiLimits.ts:443-444` writes `header ?? null`, so a response
-        // without the header caches the "enabled" state, not "no cache yet".
-        assert_eq!(
-            CachedExtraUsageDisabledReason::from_header(None),
-            CachedExtraUsageDisabledReason::Enabled
-        );
-        assert_eq!(
-            CachedExtraUsageDisabledReason::from_header(Some("org_level_disabled")),
-            CachedExtraUsageDisabledReason::Disabled("org_level_disabled".to_string())
-        );
     }
 
     #[test]

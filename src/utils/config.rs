@@ -336,77 +336,6 @@ pub struct ClaudeCodeHintsConfig {
     pub disabled: Option<bool>,
 }
 
-/// Maps to: CC `utils/config.ts:549-551`
-/// `cachedExtraUsageDisabledReason?: string | null`.
-///
-/// All three JavaScript states are load-bearing at
-/// `utils/model/check1mAccess.ts:14-20`: an absent key is "no API response has
-/// been observed yet" (conservative — treated as not enabled), an explicit
-/// `null` is "a response arrived carrying no disabled-reason header", and a
-/// string is the header value. `Option<String>` collapses the first two.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum CachedExtraUsageDisabledReason {
-    /// JavaScript `undefined` — the key is absent from the state file.
-    #[default]
-    Uncached,
-    /// JavaScript `null` — extra usage carries no disabled reason.
-    Enabled,
-    /// The `anthropic-ratelimit-unified-overage-disabled-reason` header value.
-    Disabled(String),
-}
-
-impl CachedExtraUsageDisabledReason {
-    /// The header value, or `None` for either of the two non-string states.
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            Self::Disabled(reason) => Some(reason),
-            Self::Uncached | Self::Enabled => None,
-        }
-    }
-
-    /// Maps to: CC `services/claudeAiLimits.ts:443-444` — a processed response
-    /// records `header ?? null`, so a missing header is `Enabled`, never
-    /// `Uncached`.
-    pub fn from_header(reason: Option<&str>) -> Self {
-        match reason {
-            Some(reason) => Self::Disabled(reason.to_string()),
-            None => Self::Enabled,
-        }
-    }
-}
-
-impl Serialize for CachedExtraUsageDisabledReason {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // `Uncached` and `Enabled` both render as JSON null here; the disk
-        // pipeline separates them by presence, not by value — see
-        // [`global_config_disk_value`].
-        match self {
-            Self::Disabled(reason) => serializer.serialize_str(reason),
-            Self::Uncached | Self::Enabled => serializer.serialize_none(),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for CachedExtraUsageDisabledReason {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Only reached when the key is present: the container's
-        // `#[serde(default)]` resolves an absent key to `Uncached`.
-        match serde_json::Value::deserialize(deserializer)? {
-            serde_json::Value::Null => Ok(Self::Enabled),
-            serde_json::Value::String(reason) => Ok(Self::Disabled(reason)),
-            other => Err(serde::de::Error::custom(format!(
-                "expected string or null for cachedExtraUsageDisabledReason, got {other}"
-            ))),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
@@ -423,9 +352,6 @@ pub struct GlobalConfig {
     pub first_start_time: Option<String>,
 
     pub api_key_helper: Option<String>,
-    /// Maps to CC `utils/config.ts:549-551`
-    /// `GlobalConfig.cachedExtraUsageDisabledReason`.
-    pub cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason,
     pub custom_api_keys: Option<HashMap<String, serde_json::Value>>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.customApiKeyResponses`.
     pub custom_api_key_responses: Option<CustomApiKeyResponses>,
@@ -529,20 +455,6 @@ pub struct GlobalConfig {
 
     /// Maps to CC `utils/config.ts` `GlobalConfig.lastShownEmergencyTip`.
     pub last_shown_emergency_tip: Option<String>,
-    pub s1m_access_cache: Option<serde_json::Value>,
-    pub s1m_non_subscriber_access_cache: Option<serde_json::Value>,
-    pub passes_eligibility_cache: Option<serde_json::Value>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.passesUpsellSeenCount`.
-    pub passes_upsell_seen_count: Option<u32>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.hasVisitedPasses`.
-    pub has_visited_passes: Option<bool>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.passesLastSeenRemaining`.
-    pub passes_last_seen_remaining: Option<u32>,
-    pub overage_credit_grant_cache: Option<serde_json::Value>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.overageCreditUpsellSeenCount`.
-    pub overage_credit_upsell_seen_count: Option<u32>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.hasVisitedExtraUsage`.
-    pub has_visited_extra_usage: Option<bool>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.opus1mMergeNoticeSeenCount`.
     pub opus_1m_merge_notice_seen_count: Option<u32>,
 
@@ -646,7 +558,6 @@ impl Default for GlobalConfig {
             cached_changelog: None,
             first_start_time: None,
             api_key_helper: None,
-            cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason::Uncached,
             custom_api_keys: None,
             custom_api_key_responses: None,
             has_completed_onboarding: None,
@@ -709,15 +620,6 @@ impl Default for GlobalConfig {
             memory_usage_count: None,
             prompt_queue_use_count: None,
             last_shown_emergency_tip: None,
-            s1m_access_cache: None,
-            s1m_non_subscriber_access_cache: None,
-            passes_eligibility_cache: None,
-            passes_upsell_seen_count: None,
-            has_visited_passes: None,
-            passes_last_seen_remaining: None,
-            overage_credit_grant_cache: None,
-            overage_credit_upsell_seen_count: None,
-            has_visited_extra_usage: None,
             opus_1m_merge_notice_seen_count: None,
             iterm2_setup_in_progress: None,
             iterm2_backup_path: None,
@@ -812,11 +714,7 @@ fn remove_null_object_fields_recursively(value: &mut serde_json::Value) {
 
 /// Keys whose JSON `null` is a distinct persisted state rather than "unset",
 /// so neither the disk merge nor the save filter may collapse it into absence.
-const NULL_BEARING_GLOBAL_CONFIG_KEYS: &[&str] = &[
-    "teammateDefaultModel",
-    "cachedExtraUsageDisabledReason",
-    "mcpServers",
-];
+const NULL_BEARING_GLOBAL_CONFIG_KEYS: &[&str] = &["teammateDefaultModel", "mcpServers"];
 
 fn merge_disk_config_with_official_defaults(
     mut disk_value: serde_json::Value,
@@ -932,15 +830,6 @@ fn global_config_disk_value(config: &GlobalConfig) -> anyhow::Result<serde_json:
         // persisted state. Missing = hardcoded default; null = follow leader.
         if config.teammate_default_model == Some(None) {
             config_object.insert("teammateDefaultModel".to_string(), serde_json::Value::Null);
-        }
-
-        // Likewise for `cachedExtraUsageDisabledReason`: missing = no cache
-        // yet; null = a response carried no disabled reason.
-        if config.cached_extra_usage_disabled_reason == CachedExtraUsageDisabledReason::Enabled {
-            config_object.insert(
-                "cachedExtraUsageDisabledReason".to_string(),
-                serde_json::Value::Null,
-            );
         }
     }
 
@@ -1856,64 +1745,6 @@ mod tests {
         );
     }
 
-    /// Maps to: CC `utils/config.ts:549-551` — `string | null | undefined`,
-    /// with the `null`/`undefined` split consumed at
-    /// `utils/model/check1mAccess.ts:14-20`. JSON renders `undefined` as an
-    /// absent key and `null` as a present one, so the disk round-trip has to
-    /// preserve presence, not just value.
-    #[test]
-    fn global_config_round_trips_official_extra_usage_reason_tristate() {
-        let missing: GlobalConfig =
-            serde_json::from_str(r#"{}"#).expect("global config should deserialize");
-        assert_eq!(
-            missing.cached_extra_usage_disabled_reason,
-            CachedExtraUsageDisabledReason::Uncached
-        );
-
-        let enabled: GlobalConfig =
-            serde_json::from_str(r#"{"cachedExtraUsageDisabledReason": null}"#)
-                .expect("global config should deserialize");
-        assert_eq!(
-            enabled.cached_extra_usage_disabled_reason,
-            CachedExtraUsageDisabledReason::Enabled
-        );
-
-        let disabled: GlobalConfig =
-            serde_json::from_str(r#"{"cachedExtraUsageDisabledReason": "out_of_credits"}"#)
-                .expect("global config should deserialize");
-        assert_eq!(
-            disabled.cached_extra_usage_disabled_reason,
-            CachedExtraUsageDisabledReason::Disabled("out_of_credits".to_string())
-        );
-
-        // The save filter strips nulls, so `Enabled` survives only because it
-        // is re-inserted; `Uncached` must stay absent.
-        let uncached_disk = global_config_disk_value(&GlobalConfig {
-            cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason::Uncached,
-            ..Default::default()
-        })
-        .expect("disk value");
-        assert!(
-            uncached_disk
-                .get("cachedExtraUsageDisabledReason")
-                .is_none()
-        );
-
-        for state in [
-            CachedExtraUsageDisabledReason::Enabled,
-            CachedExtraUsageDisabledReason::Disabled("out_of_credits".to_string()),
-        ] {
-            let disk = global_config_disk_value(&GlobalConfig {
-                cached_extra_usage_disabled_reason: state.clone(),
-                ..Default::default()
-            })
-            .expect("disk value");
-            let reloaded =
-                merge_disk_config_with_official_defaults(disk).expect("disk value should reload");
-            assert_eq!(reloaded.cached_extra_usage_disabled_reason, state);
-        }
-    }
-
     #[test]
     fn global_config_deserializes_official_tips_history_map_readonly() {
         let config: GlobalConfig = serde_json::from_str(
@@ -2147,6 +1978,53 @@ mod tests {
             reread.other_global_fields.get("oauthAccount"),
             Some(&legacy)
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// The claude.ai account/cloud caches (guest passes, overage credit, 1M
+    /// access, extra-usage disabled reason) are no longer modeled. A state
+    /// file written by an older build still loads, and saving an unrelated
+    /// setting leaves those keys on disk untouched.
+    #[test]
+    fn legacy_account_cache_keys_survive_load_and_save() {
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let root = unique_temp_dir("legacy-account-cache-keys");
+        fs::create_dir_all(&root).unwrap();
+        let _config_dir = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
+        let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        clear_global_config_cache_for_testing();
+
+        let legacy = serde_json::json!({
+            "cachedExtraUsageDisabledReason": null,
+            "s1mAccessCache": {"org-1": {"hasAccess": true, "timestamp": 1}},
+            "s1mNonSubscriberAccessCache": {"org-1": {"hasAccess": false, "timestamp": 1}},
+            "passesEligibilityCache": {"org-1": {"eligible": true, "timestamp": 1}},
+            "passesUpsellSeenCount": 2,
+            "hasVisitedPasses": true,
+            "passesLastSeenRemaining": 3,
+            "overageCreditGrantCache": {"org-1": {"info": {"available": true}, "timestamp": 1}},
+            "overageCreditUpsellSeenCount": 1,
+            "hasVisitedExtraUsage": false
+        });
+        let file = crate::utils::env::get_global_state_file();
+        let mut disk = legacy.clone();
+        disk["hasCompletedOnboarding"] = serde_json::json!(true);
+        fs::write(&file, disk.to_string()).unwrap();
+
+        let loaded = load_global_config();
+        assert_eq!(loaded.has_completed_onboarding, Some(true));
+        assert_eq!(
+            loaded.other_global_fields.get("passesEligibilityCache"),
+            Some(&legacy["passesEligibilityCache"])
+        );
+
+        save_global_config(|config| config.theme = Some("light".to_string())).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(saved["theme"], "light");
+        for (key, value) in legacy.as_object().unwrap() {
+            assert_eq!(saved.get(key), Some(value), "{key} must survive a save");
+        }
         let _ = fs::remove_dir_all(root);
     }
 

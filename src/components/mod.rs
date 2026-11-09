@@ -87,7 +87,6 @@ pub mod notebook_edit_tool_use_rejected_message;
 pub mod offscreen_freeze;
 pub mod onboarding;
 pub mod output_style_picker;
-pub mod passes;
 pub mod permissions;
 pub mod pr_badge;
 pub mod press_enter_to_continue;

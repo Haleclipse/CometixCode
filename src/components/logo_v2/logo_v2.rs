@@ -13,14 +13,10 @@ use crate::components::logo_v2::condensed_logo::CondensedLogo;
 use crate::components::logo_v2::emergency_tip::{EmergencyTip, TipOfFeed};
 use crate::components::logo_v2::feed_column::FeedColumn;
 use crate::components::logo_v2::feed_configs::{
-    ProjectOnboardingStep, RecentActivityEntry, create_guest_passes_feed,
-    create_project_onboarding_feed, create_recent_activity_feed, create_whats_new_feed,
+    ProjectOnboardingStep, RecentActivityEntry, create_project_onboarding_feed,
+    create_recent_activity_feed, create_whats_new_feed,
 };
-use crate::components::logo_v2::guest_passes_upsell::should_show_guest_passes_upsell;
 use crate::components::logo_v2::opus_1m_merge_notice::Opus1mMergeNotice;
-use crate::components::logo_v2::overage_credit_upsell::{
-    create_overage_credit_feed, should_show_overage_credit_upsell,
-};
 use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::constants::product;
 use crate::project_onboarding_state;
@@ -83,10 +79,6 @@ pub(crate) struct LogoDisplayData {
     pub(crate) recent_activity: Vec<RecentActivityEntry>,
     pub(crate) has_release_notes: bool,
     pub(crate) release_notes: Vec<String>,
-    pub(crate) show_guest_passes_upsell: bool,
-    pub(crate) guest_passes_reward_text: Option<String>,
-    pub(crate) show_overage_credit_upsell: bool,
-    pub(crate) overage_credit_amount: Option<String>,
     pub(crate) emergency_tip: TipOfFeed,
     pub(crate) last_shown_emergency_tip: Option<String>,
     pub(crate) opus_1m_merge_enabled: bool,
@@ -176,33 +168,6 @@ impl LogoDisplayData {
             global_config.num_startups,
             stable_entropy(&session_id),
         );
-        // Maps to CC `components/LogoV2/GuestPassesUpsell.tsx`
-        // `useShowGuestPassesUpsell()`. nyan consumes existing cache/config
-        // snapshots only: no eligibility fetch, refresh-reset write,
-        // impression increment, or analytics event is emitted.
-        let now_ms = current_time_millis();
-        let (guest_passes_snapshot, guest_passes_reward_text) =
-            crate::services::api::referral::guest_passes_snapshot_from_readonly_config(
-                &global_config,
-                now_ms,
-            );
-        let show_guest_passes_upsell = should_show_guest_passes_upsell(&guest_passes_snapshot);
-        // Maps to CC `components/LogoV2/OverageCreditUpsell.tsx`
-        // `useShowOverageCreditUpsell()`. Cache refresh and impression writes
-        // remain deferred; this reads only fresh cached grant data.
-        let overage_grant_info =
-            crate::services::api::overage_credit_grant::ui_grant_info_from_cached_readonly(
-                &global_config,
-                now_ms,
-            );
-        let overage_credit_amount = overage_grant_info
-            .as_ref()
-            .and_then(|info| info.amount.clone());
-        let show_overage_credit_upsell = should_show_overage_credit_upsell(
-            overage_grant_info.as_ref(),
-            global_config.has_visited_extra_usage.unwrap_or(false),
-            global_config.overage_credit_upsell_seen_count.unwrap_or(0),
-        );
         // Maps to CC `components/LogoV2/EmergencyTip.tsx` `getTipOfFeed()`.
         // The `tengu-top-of-feed-tip` payload comes from the source-controlled
         // switch table; no GrowthBook service, exposure logging, refresh, or
@@ -245,10 +210,6 @@ impl LogoDisplayData {
             recent_activity,
             has_release_notes: release_status.has_release_notes,
             release_notes,
-            show_guest_passes_upsell,
-            guest_passes_reward_text,
-            show_overage_credit_upsell,
-            overage_credit_amount,
             emergency_tip,
             last_shown_emergency_tip: global_config.last_shown_emergency_tip.clone(),
             opus_1m_merge_enabled,
@@ -278,10 +239,6 @@ impl LogoDisplayData {
             recent_activity: Vec::new(),
             has_release_notes: false,
             release_notes: Vec::new(),
-            show_guest_passes_upsell: false,
-            guest_passes_reward_text: None,
-            show_overage_credit_upsell: false,
-            overage_credit_amount: None,
             emergency_tip: TipOfFeed::default(),
             last_shown_emergency_tip: None,
             opus_1m_merge_enabled: false,
@@ -332,14 +289,7 @@ fn official_logo_variant(
 ) -> AnyElement<'static> {
     let logo = match mode {
         LogoLayoutMode::Condensed => element! {
-            CondensedLogo(
-                columns: columns,
-                data: data.clone(),
-                show_guest_passes_upsell: data.show_guest_passes_upsell,
-                guest_passes_reward_text: data.guest_passes_reward_text.clone(),
-                show_overage_credit_upsell: data.show_overage_credit_upsell,
-                overage_credit_amount: data.overage_credit_amount.clone(),
-            )
+            CondensedLogo(columns: columns, data: data.clone())
         }
         .into_any(),
         LogoLayoutMode::Compact => element! {
@@ -512,16 +462,6 @@ fn HorizontalLogo(props: &LogoShapeProps, hooks: Hooks) -> impl Into<AnyElement<
             create_project_onboarding_feed(&props.data.project_onboarding_steps),
             create_recent_activity_feed(&props.data.recent_activity),
         ]
-    } else if props.data.show_guest_passes_upsell {
-        vec![
-            create_recent_activity_feed(&props.data.recent_activity),
-            create_guest_passes_feed(props.data.guest_passes_reward_text.as_deref()),
-        ]
-    } else if props.data.show_overage_credit_upsell {
-        vec![
-            create_recent_activity_feed(&props.data.recent_activity),
-            create_overage_credit_feed(props.data.overage_credit_amount.as_deref()),
-        ]
     } else {
         vec![
             create_recent_activity_feed(&props.data.recent_activity),
@@ -626,13 +566,6 @@ fn stable_entropy(value: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     hasher.finish()
-}
-
-fn current_time_millis() -> i64 {
-    match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-        Ok(duration) => duration.as_millis().min(i64::MAX as u128) as i64,
-        Err(error) => -(error.duration().as_millis().min(i64::MAX as u128) as i64),
-    }
 }
 
 fn calculate_layout_dimensions(
@@ -980,27 +913,6 @@ mod tests {
         );
         assert!(text.contains("Recent activity"), "canvas=\n{text}");
         assert!(!text.contains("What's new"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn horizontal_logo_prefers_upsell_feeds_between_onboarding_and_whats_new() {
-        let mut guest = LogoDisplayData::fixture();
-        guest.show_guest_passes_upsell = true;
-        guest.guest_passes_reward_text = Some("$5".to_string());
-        let text = render_variant_with_data(LogoLayoutMode::Horizontal, 100, guest);
-        assert!(text.contains("3 guest passes"), "canvas=\n{text}");
-        assert!(text.contains("Share nyan and earn $5"), "canvas=\n{text}");
-        assert!(!text.contains("What's new"), "canvas=\n{text}");
-
-        let mut overage = LogoDisplayData::fixture();
-        overage.show_overage_credit_upsell = true;
-        overage.overage_credit_amount = Some("$10".to_string());
-        let text = render_variant_with_data(LogoLayoutMode::Horizontal, 100, overage);
-        assert!(text.contains("$10 in extra usage"), "canvas=\n{text}");
-        assert!(
-            text.contains("On us. Works on third-party apps"),
-            "canvas=\n{text}"
-        );
     }
 
     #[test]

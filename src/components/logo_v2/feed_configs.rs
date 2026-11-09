@@ -1,11 +1,11 @@
 //! Maps to: CC `components/LogoV2/feedConfigs.tsx`.
 //!
 //! These pure helpers mirror the official feed-shaping functions. Runtime
-//! producers such as release-note fetch, referral credit lookup, and project
-//! onboarding state persistence remain outside this module, matching the CC
-//! separation between `feedConfigs.tsx` and `LogoV2.tsx`.
+//! producers such as release-note fetch and project onboarding state
+//! persistence remain outside this module, matching the CC separation between
+//! `feedConfigs.tsx` and `LogoV2.tsx`.
 
-use super::feed::{FeedConfig, FeedCustomContent, FeedCustomLineTone, FeedLine};
+use super::feed::{FeedConfig, FeedLine};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RecentActivityEntry {
@@ -44,7 +44,6 @@ pub fn create_recent_activity_feed(activities: &[RecentActivityEntry]) -> FeedCo
         footer: (!lines.is_empty()).then(|| "/resume for more".to_string()),
         empty_message: Some("No recent activity".to_string()),
         lines,
-        custom_content: None,
     }
 }
 
@@ -59,7 +58,6 @@ pub fn create_whats_new_feed(release_notes: &[String]) -> FeedConfig {
         footer: (!lines.is_empty()).then(|| "/release-notes for more".to_string()),
         empty_message: Some("Check the nyan changelog for updates".to_string()),
         lines,
-        custom_content: None,
     }
 }
 
@@ -94,26 +92,6 @@ pub fn create_project_onboarding_feed(steps: &[ProjectOnboardingStep]) -> FeedCo
         lines,
         footer: None,
         empty_message: None,
-        custom_content: None,
-    }
-}
-
-pub fn create_guest_passes_feed(reward_text: Option<&str>) -> FeedConfig {
-    let subtitle = reward_text
-        .map(|reward| format!("Share nyan and earn {reward} of extra usage"))
-        .unwrap_or_else(|| "Share nyan with friends".to_string());
-
-    FeedConfig {
-        title: "3 guest passes".to_string(),
-        lines: Vec::new(),
-        footer: Some("/passes".to_string()),
-        empty_message: None,
-        custom_content: Some(FeedCustomContent {
-            lines: vec![FeedLine::text("[✻] [✻] [✻]"), FeedLine::text(subtitle)],
-            width: 48,
-            line_tones: vec![FeedCustomLineTone::Claude, FeedCustomLineTone::Dim],
-            margin_y_first_line: true,
-        }),
     }
 }
 
@@ -190,22 +168,5 @@ mod tests {
         assert_eq!(feed.lines[0].text, "Pending");
         assert_eq!(feed.lines[1].text, "✔ Completed");
         assert!(!feed.lines.iter().any(|line| line.text == "Disabled"));
-    }
-
-    #[test]
-    fn guest_passes_feed_preserves_official_custom_content_shape() {
-        let feed = create_guest_passes_feed(Some("$5"));
-        assert_eq!(feed.title, "3 guest passes");
-        assert_eq!(feed.footer.as_deref(), Some("/passes"));
-        let custom = feed.custom_content.expect("custom content");
-        assert_eq!(custom.width, 48);
-        assert_eq!(custom.lines[0].text, "[✻] [✻] [✻]");
-        assert_eq!(custom.line_tones[0], FeedCustomLineTone::Claude);
-        assert_eq!(custom.line_tones[1], FeedCustomLineTone::Dim);
-        assert!(custom.margin_y_first_line);
-        assert_eq!(
-            custom.lines[1].text,
-            "Share nyan and earn $5 of extra usage"
-        );
     }
 }

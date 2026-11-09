@@ -11,8 +11,6 @@ pub mod emergency_tip;
 pub mod feed;
 pub mod feed_column;
 pub mod feed_configs;
-pub mod guest_passes_upsell;
 pub mod logo_v2;
 pub mod opus_1m_merge_notice;
-pub mod overage_credit_upsell;
 pub mod welcome_v2;
