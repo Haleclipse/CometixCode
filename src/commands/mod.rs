@@ -533,10 +533,6 @@ fn is_console_user() -> bool {
     crate::utils::model::providers::is_first_party_anthropic_base_url()
 }
 
-fn chrome_enabled() -> bool {
-    is_interactive()
-}
-
 fn desktop_supported() -> bool {
     cfg!(all(target_os = "macos", target_arch = "aarch64"))
         || cfg!(all(target_os = "windows", target_arch = "x86_64"))
@@ -601,9 +597,6 @@ fn commands() -> Vec<Command> {
             .argument_hint("<question>")
             .immediate()
             .executable(btw::call),
-        Command::local_ui("chrome", "Claude in Chrome (Beta) settings")
-            .availability(&[ClaudeAi])
-            .enabled_when(chrome_enabled),
         Command::local("clear", "Clear conversation history and free up context")
             .aliases(&["reset", "new"])
             .executable(execution::call_clear),
@@ -1385,16 +1378,16 @@ mod tests {
         let _demo = EnvVarGuard::unset("IS_DEMO");
 
         let catalog = commands();
-        // 65 direct descriptors + internal /version, plus @nyan `/retrieval`
+        // 64 direct descriptors + internal /version, plus @nyan `/retrieval`
         // and `/decision`. `/login` and `/logout` are gone: Anthropic is
         // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
         // with claude.ai guest passes; `/upgrade`, `/extra-usage`,
         // `/rate-limit-options` and `/usage` are gone with the claude.ai
-        // subscription quota.
+        // subscription quota; `/chrome` is gone with Claude in Chrome.
         let base_len = if crate::utils::build_profile::build_audience().is_internal() {
-            67
-        } else {
             66
+        } else {
+            65
         };
         assert_eq!(catalog.len(), base_len);
         for removed in [
@@ -1405,6 +1398,7 @@ mod tests {
             "extra-usage",
             "rate-limit-options",
             "usage",
+            "chrome",
         ] {
             assert!(
                 catalog.iter().all(|command| command.name != removed),
@@ -1422,7 +1416,6 @@ mod tests {
             "agents",
             "branch",
             "btw",
-            "chrome",
             "clear",
             "color",
             "compact",

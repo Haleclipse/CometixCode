@@ -341,7 +341,6 @@ mod tests {
         );
         let snapshot = crate::interactive_helpers::SetupScreensSnapshot {
             show_onboarding: false,
-            show_claude_in_chrome_onboarding: false,
             ..crate::interactive_helpers::SetupScreensSnapshot::default()
         };
         let keybinding_runtime =

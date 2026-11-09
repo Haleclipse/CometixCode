@@ -1465,36 +1465,19 @@ pub(crate) fn get_agent_listing_delta_attachment(
 
 /// Maps to: CC `utils/attachments.ts:1559-1586`
 /// `getMcpInstructionsDeltaAttachment(mcpClients, tools, model, messages)`.
+///
+/// @nyan: only server-authored instructions are announced. CC's `tools` /
+/// `model` arguments fed the client-authored Claude in Chrome ToolSearch
+/// hint, which nyan does not ship.
 pub(crate) fn get_mcp_instructions_delta_attachment(
     mcp_clients: &[crate::services::mcp::types::McpServerConnection],
-    tools: &[crate::types::tools::Tool],
-    model: &str,
     messages: &[Message],
 ) -> Option<AttachmentMessage> {
-    use crate::utils::mcp_instructions_delta::ClientSideInstruction;
-
     if !crate::utils::mcp_instructions_delta::is_mcp_instructions_delta_enabled() {
         return None;
     }
-    // CC `:1567-1580`: the chrome ToolSearch hint is client-authored and
-    // ToolSearch-conditional, passed into the diff as a synthesized entry.
-    let mut client_side = Vec::<ClientSideInstruction>::new();
-    if crate::tools::tool_search_tool::prompt::is_tool_search_enabled_optimistic()
-        && crate::tools::tool_search_tool::prompt::model_supports_tool_reference(model)
-        && crate::tools::tool_search_tool::prompt::is_tool_search_tool_available(tools)
-    {
-        client_side.push(ClientSideInstruction {
-            server_name: crate::utils::claude_in_chrome::common::CLAUDE_IN_CHROME_MCP_SERVER_NAME
-                .to_string(),
-            block: crate::utils::claude_in_chrome::prompt::CHROME_TOOL_SEARCH_INSTRUCTIONS
-                .to_string(),
-        });
-    }
-    let delta = crate::utils::mcp_instructions_delta::get_mcp_instructions_delta(
-        mcp_clients,
-        messages,
-        &client_side,
-    )?;
+    let delta =
+        crate::utils::mcp_instructions_delta::get_mcp_instructions_delta(mcp_clients, messages)?;
     Some(AttachmentMessage::new(serde_json::json!({
         "type": "mcp_instructions_delta",
         "addedNames": delta.added_names,
@@ -1881,12 +1864,9 @@ pub async fn get_attachments(
     if let Some(attachment) = get_agent_listing_delta_attachment(tool_use_context, messages) {
         attachments.push(attachment_continuation(attachment));
     }
-    if let Some(attachment) = get_mcp_instructions_delta_attachment(
-        &tool_use_context.mcp_state.clients,
-        &tool_use_context.tools,
-        &model,
-        messages,
-    ) {
+    if let Some(attachment) =
+        get_mcp_instructions_delta_attachment(&tool_use_context.mcp_state.clients, messages)
+    {
         attachments.push(attachment_continuation(attachment));
     }
     attachments.extend(changed_files);
@@ -4245,8 +4225,7 @@ mod tests {
         ];
 
         let attachment =
-            get_mcp_instructions_delta_attachment(&clients, &[], "claude-sonnet-4-6", &[])
-                .expect("instruction delta");
+            get_mcp_instructions_delta_attachment(&clients, &[]).expect("instruction delta");
         assert_eq!(attachment.attachment_type(), "mcp_instructions_delta");
         assert_eq!(
             attachment.attachment.to_wire()["addedBlocks"][0].as_str(),
@@ -4255,14 +4234,13 @@ mod tests {
 
         // The gate is off: no attachment.
         let _gate = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "false");
-        assert!(
-            get_mcp_instructions_delta_attachment(&clients, &[], "claude-sonnet-4-6", &[])
-                .is_none()
-        );
+        assert!(get_mcp_instructions_delta_attachment(&clients, &[]).is_none());
     }
 
+    /// No server name gets a client-authored block appended: with ToolSearch
+    /// on, the former Claude in Chrome name announces only its own text.
     #[test]
-    fn mcp_instruction_delta_appends_chrome_tool_search_instructions() {
+    fn mcp_instruction_delta_announces_only_server_authored_instructions() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _gate = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "true");
         let _tool_search = EnvVarGuard::set("ENABLE_TOOL_SEARCH", "true");
@@ -4272,22 +4250,9 @@ mod tests {
                 "Server guidance.",
             ),
         ];
-        let tools = [crate::tools::tool_search_tool::tool_search_tool_schema()];
 
         let attachment =
-            get_mcp_instructions_delta_attachment(&clients, &tools, "claude-sonnet-4-6", &[])
-                .expect("chrome delta");
-        let wire = attachment.attachment.to_wire();
-        let block = wire["addedBlocks"][0].as_str().expect("instruction block");
-        assert!(block.starts_with("## claude-in-chrome\nServer guidance."));
-        assert!(block.contains("Before using any chrome browser tools"));
-        assert!(block.contains("select:mcp__claude-in-chrome__tabs_context_mcp"));
-
-        // ToolSearch off: no client-side block, only the server's own.
-        let _tool_search = EnvVarGuard::set("ENABLE_TOOL_SEARCH", "false");
-        let attachment =
-            get_mcp_instructions_delta_attachment(&clients, &tools, "claude-sonnet-4-6", &[])
-                .expect("server delta");
+            get_mcp_instructions_delta_attachment(&clients, &[]).expect("server delta");
         assert_eq!(
             attachment.attachment.to_wire()["addedBlocks"],
             serde_json::json!(["## claude-in-chrome\nServer guidance."])

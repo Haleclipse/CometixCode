@@ -102,8 +102,6 @@ pub const GLOBAL_CONFIG_KEYS: &[&str] = &[
     "inputNeededNotifEnabled",
     "agentPushNotifEnabled",
     "respectGitignore",
-    "claudeInChromeDefaultEnabled",
-    "hasCompletedClaudeInChromeOnboarding",
     "lspRecommendationDisabled",
     "lspRecommendationNeverPlugins",
     "lspRecommendationIgnoredCount",
@@ -360,10 +358,6 @@ pub struct GlobalConfig {
     pub has_seen_undercover_auto_notice: Option<bool>,
     pub has_seen_ultraplan_terms: Option<bool>,
     pub has_reset_auto_mode_opt_in_for_default_offer: Option<bool>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.hasCompletedClaudeInChromeOnboarding`.
-    pub has_completed_claude_in_chrome_onboarding: Option<bool>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.claudeInChromeDefaultEnabled`.
-    pub claude_in_chrome_default_enabled: Option<bool>,
 
     pub theme: Option<String>,
     pub editor_mode: Option<String>,
@@ -565,8 +559,6 @@ impl Default for GlobalConfig {
             has_seen_undercover_auto_notice: None,
             has_seen_ultraplan_terms: None,
             has_reset_auto_mode_opt_in_for_default_offer: None,
-            has_completed_claude_in_chrome_onboarding: None,
-            claude_in_chrome_default_enabled: None,
             theme: None,
             editor_mode: None,
             verbose: None,
@@ -1800,9 +1792,7 @@ mod tests {
             r#"{
                 "remoteDialogSeen": true,
                 "desktopUpsellSeenCount": 2,
-                "desktopUpsellDismissed": true,
-                "hasCompletedClaudeInChromeOnboarding": true,
-                "claudeInChromeDefaultEnabled": false
+                "desktopUpsellDismissed": true
             }"#,
         )
         .expect("global config should deserialize startup dialog tracking fields");
@@ -1810,8 +1800,6 @@ mod tests {
         assert_eq!(config.remote_dialog_seen, Some(true));
         assert_eq!(config.desktop_upsell_seen_count, Some(2));
         assert_eq!(config.desktop_upsell_dismissed, Some(true));
-        assert_eq!(config.has_completed_claude_in_chrome_onboarding, Some(true));
-        assert_eq!(config.claude_in_chrome_default_enabled, Some(false));
     }
 
     #[test]

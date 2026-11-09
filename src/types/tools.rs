@@ -271,9 +271,8 @@ impl Tool {
     /// `` `${client.name} - ${annotations.title || tool.name} (MCP)` ``.
     /// `None` for a tool that is not from an MCP server.
     ///
-    /// PARTIAL: CC replaces this for a stdio Claude in Chrome server's tools
-    /// (`client.ts:1977-1982`, `claudeInChrome/toolRendering.tsx:292`); that
-    /// override is not ported.
+    /// @nyan: CC's Claude in Chrome override (`client.ts:1977-1982`) is not
+    /// shipped; every MCP server's tools use this generic name.
     pub fn mcp_user_facing_name(&self) -> Option<String> {
         let info = self.mcp_info.as_ref()?;
         Some(crate::services::mcp::client::mcp_tool_user_facing_name(

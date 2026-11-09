@@ -16,7 +16,6 @@ pub mod bridge_dialog;
 pub mod bypass_permissions_mode_dialog;
 pub mod cache_break_confirm_dialog;
 pub mod claude_code_hint;
-pub mod claude_in_chrome_onboarding;
 pub mod claude_md_external_includes_dialog;
 pub mod clickable_image_ref;
 pub mod compact_summary;

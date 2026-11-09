@@ -1,6 +1,7 @@
 //! Maps to: CC utils/theme.ts — complete 6-variant color system.
-//! Port of CC's Theme type color keys (65; @nyan: the two Fast mode keys and the
-//! two claude.ai usage-bar keys are gone).
+//! Port of CC's Theme type color keys (64; @nyan: the two Fast mode keys, the
+//! two claude.ai usage-bar keys and the Claude in Chrome `chromeYellow` key are
+//! gone).
 //! Every field, every variant, every RGB value matches the CC source.
 //! Source: rebuild/src/utils/theme.ts lines 4-89 (type), 115-596 (6 themes).
 
@@ -50,7 +51,6 @@ pub struct Theme {
     pub agent_pink: Color,
     pub agent_cyan: Color,
     pub professional_blue: Color,
-    pub chrome_yellow: Color,
     pub clawd_body: Color,
     pub clawd_bg: Color,
     pub user_message_bg: Color,
@@ -121,7 +121,6 @@ pub enum ThemeColorKey {
     AgentPink,
     AgentCyan,
     ProfessionalBlue,
-    ChromeYellow,
     ClawdBody,
     ClawdBg,
     UserMessageBg,
@@ -149,7 +148,7 @@ pub enum ThemeColorKey {
 }
 
 impl ThemeColorKey {
-    pub const ALL: [Self; 65] = [
+    pub const ALL: [Self; 64] = [
         Self::AutoAccept,
         Self::BashBorder,
         Self::Claude,
@@ -190,7 +189,6 @@ impl ThemeColorKey {
         Self::AgentPink,
         Self::AgentCyan,
         Self::ProfessionalBlue,
-        Self::ChromeYellow,
         Self::ClawdBody,
         Self::ClawdBg,
         Self::UserMessageBg,
@@ -259,7 +257,6 @@ impl ThemeColorKey {
             Self::AgentPink => "pink_FOR_SUBAGENTS_ONLY",
             Self::AgentCyan => "cyan_FOR_SUBAGENTS_ONLY",
             Self::ProfessionalBlue => "professionalBlue",
-            Self::ChromeYellow => "chromeYellow",
             Self::ClawdBody => "clawd_body",
             Self::ClawdBg => "clawd_background",
             Self::UserMessageBg => "userMessageBackground",
@@ -331,7 +328,6 @@ impl Theme {
             ThemeColorKey::AgentPink => self.agent_pink,
             ThemeColorKey::AgentCyan => self.agent_cyan,
             ThemeColorKey::ProfessionalBlue => self.professional_blue,
-            ThemeColorKey::ChromeYellow => self.chrome_yellow,
             ThemeColorKey::ClawdBody => self.clawd_body,
             ThemeColorKey::ClawdBg => self.clawd_bg,
             ThemeColorKey::UserMessageBg => self.user_message_bg,
@@ -359,7 +355,7 @@ impl Theme {
         }
     }
 
-    pub fn palette(self) -> [Color; 65] {
+    pub fn palette(self) -> [Color; 64] {
         ThemeColorKey::ALL.map(|key| self.color(key))
     }
 }
@@ -419,7 +415,6 @@ pub static DARK: Theme = Theme {
     agent_pink: rgb!(219, 39, 119),
     agent_cyan: rgb!(8, 145, 178),
     professional_blue: rgb!(106, 155, 204),
-    chrome_yellow: rgb!(251, 188, 4),
     clawd_body: rgb!(215, 119, 87),
     clawd_bg: rgb!(0, 0, 0),
     user_message_bg: rgb!(55, 55, 55),
@@ -490,7 +485,6 @@ pub static LIGHT: Theme = Theme {
     agent_pink: rgb!(219, 39, 119),
     agent_cyan: rgb!(8, 145, 178),
     professional_blue: rgb!(106, 155, 204),
-    chrome_yellow: rgb!(251, 188, 4),
     clawd_body: rgb!(215, 119, 87),
     clawd_bg: rgb!(0, 0, 0),
     user_message_bg: rgb!(240, 240, 240),
@@ -561,7 +555,6 @@ pub static DARK_ANSI: Theme = Theme {
     agent_pink: Color::Magenta,
     agent_cyan: Color::Cyan,
     professional_blue: rgb!(106, 155, 204),
-    chrome_yellow: Color::Yellow,
     clawd_body: Color::Red,
     clawd_bg: Color::Black,
     user_message_bg: Color::DarkGrey,
@@ -632,7 +625,6 @@ pub static LIGHT_ANSI: Theme = Theme {
     agent_pink: Color::Magenta,
     agent_cyan: Color::DarkCyan,
     professional_blue: Color::Blue,
-    chrome_yellow: Color::DarkYellow,
     clawd_body: Color::Red,
     clawd_bg: Color::Black,
     user_message_bg: Color::Grey,
@@ -703,7 +695,6 @@ pub static DARK_DALTONIZED: Theme = Theme {
     agent_pink: rgb!(255, 153, 204),
     agent_cyan: rgb!(102, 204, 204),
     professional_blue: rgb!(106, 155, 204),
-    chrome_yellow: rgb!(251, 188, 4),
     clawd_body: rgb!(215, 119, 87),
     clawd_bg: rgb!(0, 0, 0),
     user_message_bg: rgb!(55, 55, 55),
@@ -774,7 +765,6 @@ pub static LIGHT_DALTONIZED: Theme = Theme {
     agent_pink: rgb!(255, 102, 178),
     agent_cyan: rgb!(0, 178, 178),
     professional_blue: rgb!(106, 155, 204),
-    chrome_yellow: rgb!(251, 188, 4),
     clawd_body: rgb!(215, 119, 87),
     clawd_bg: rgb!(0, 0, 0),
     user_message_bg: rgb!(220, 220, 220),
@@ -999,7 +989,7 @@ mod tests {
 
     #[test]
     fn theme_color_keys_cover_the_full_official_palette() {
-        assert_eq!(ThemeColorKey::ALL.len(), 65);
+        assert_eq!(ThemeColorKey::ALL.len(), 64);
         assert_eq!(ThemeColorKey::ClawdBody.official_key(), "clawd_body");
         assert_eq!(
             ThemeColorKey::MemoryBg.official_key(),

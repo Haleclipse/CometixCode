@@ -115,9 +115,6 @@ pub struct CliConfig {
     pub teammate_mode: Option<String>,
     pub agent_type: Option<String>,
 
-    // --- Chrome ---
-    pub chrome: Option<bool>,
-
     // --- Worktree / tmux / remote / bg / daemon / subcommands ---
     pub subcommand: Option<String>,
     pub worktree: bool,
@@ -176,7 +173,6 @@ impl CliConfig {
             ("mcp", ImplStatus::Live),
             ("settings/dirs/agents/plugins", ImplStatus::Live),
             ("teammate/swarm", ImplStatus::Live),
-            ("chrome", ImplStatus::Live),
             (
                 "worktree/tmux/remote/bg/daemon/subcommands",
                 if self.subcommand.is_some()
@@ -301,7 +297,6 @@ Live:
       --agents <json>        Inline agents JSON
       --agent <name>         Main-thread agent type (--agent / settings.agent)
       --plugin-dir <path>    Inline plugin directory (repeatable)
-      --chrome / --no-chrome Claude in Chrome onboarding
   -p, --print                Headless/print path
       --output-format / --input-format / --json-schema / --stream-json
       --include-partial-messages / --replay-user-messages

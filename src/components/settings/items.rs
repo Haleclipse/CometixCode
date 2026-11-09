@@ -426,13 +426,6 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
             search_text: "auto install ide extension",
             visible: false,
         },
-        SettingItem {
-            id: "claudeInChromeDefaultEnabled",
-            label: "Claude in Chrome enabled by default",
-            value: SettingValue::Bool(true),
-            search_text: "chrome browser extension default",
-            visible: true,
-        },
         // condition: isAgentSwarmsEnabled()
         SettingItem {
             id: "teammateMode",

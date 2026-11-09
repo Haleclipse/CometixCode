@@ -26,7 +26,6 @@ pub mod cache_paths;
 pub mod classifier_approvals;
 pub mod classifier_approvals_hook;
 pub mod claude_code_hints;
-pub mod claude_in_chrome;
 pub mod claudemd;
 pub mod cleanup_registry;
 pub mod cli_args;

@@ -154,8 +154,6 @@ pub fn parse_cli_config(argv: &[String]) -> CliConfig {
             "--mcp-debug" => config.mcp_debug = true,
             "--strict-mcp-config" => config.strict_mcp_config = true,
             "--cowork" | "--cowork=true" => config.cowork = true,
-            "--chrome" => config.chrome = Some(true),
-            "--no-chrome" => config.chrome = Some(false),
             "--worktree" => config.worktree = true,
             "--tmux" => config.tmux = true,
             "--remote" => config.remote = true,
@@ -399,9 +397,7 @@ pub fn parse_cli_config(argv: &[String]) -> CliConfig {
                 config.agent = strip_eq("--agent", other).or_else(|| take_value(&args, &mut index));
             }
             other
-                if other.starts_with("--claude-in-chrome-mcp")
-                    || other.starts_with("--chrome-native-host")
-                    || other.starts_with("--computer-use-mcp")
+                if other.starts_with("--computer-use-mcp")
                     || other.starts_with("--dump-system-prompt")
                     || other == "--update"
                     || other == "--upgrade" =>
@@ -671,5 +667,16 @@ mod tests {
     fn parse_unknown_flag() {
         let c = parse_cli_config(&argv(&["--not-a-real-flag"]));
         assert_eq!(c.unknown_flags, vec!["--not-a-real-flag".to_string()]);
+    }
+
+    /// Claude in Chrome is not shipped, so its flags are not accepted.
+    #[test]
+    fn parse_rejects_claude_in_chrome_flags() {
+        let c = parse_cli_config(&argv(&["--chrome", "--no-chrome", "--chrome-native-host"]));
+        assert_eq!(
+            c.unknown_flags,
+            vec!["--chrome", "--no-chrome", "--chrome-native-host"]
+        );
+        assert!(!c.unimplemented_reasons().is_empty());
     }
 }

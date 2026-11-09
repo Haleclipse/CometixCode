@@ -198,10 +198,8 @@ fn build_inherited_cli_flags_with_options(options: BuildInheritedCliFlagsOptions
         ));
     }
 
-    // CC `:252-257`.
-    if let Some(chrome) = options.chrome_flag_override {
-        flags.push(if chrome { "--chrome" } else { "--no-chrome" }.to_string());
-    }
+    // @nyan: CC `:252-257` forwards the Claude in Chrome `--chrome` override;
+    // nyan does not ship Claude in Chrome.
 
     flags.join(" ")
 }
@@ -209,7 +207,7 @@ fn build_inherited_cli_flags_with_options(options: BuildInheritedCliFlagsOptions
 /// Maps to: CC `spawnMultiAgent.ts:208-260#buildInheritedCliFlags`.
 ///
 /// Rust does not yet carry every official CLI override in `bootstrap/state.ts`
-/// (`getSessionBypassPermissionsMode`, `getChromeFlagOverride`); this keeps the
+/// (`getSessionBypassPermissionsMode`); this keeps the
 /// official boundary and threads the state nyan currently stores.
 fn build_inherited_cli_flags(
     plan_mode_required: bool,
@@ -1554,8 +1552,8 @@ mod tests {
             "--model opus"
         );
         assert_eq!(
-            apply_teammate_model_flag("--chrome".to_string(), ""),
-            "--chrome"
+            apply_teammate_model_flag("--permission-mode auto".to_string(), ""),
+            "--permission-mode auto"
         );
     }
 

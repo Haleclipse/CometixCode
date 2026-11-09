@@ -20,7 +20,6 @@ use crate::components::trust_dialog::{
 use crate::services::mcp::config::get_mcp_configs_by_scope_readonly;
 use crate::services::mcp::types::ConfigScope;
 use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides;
-use crate::utils::claude_in_chrome::setup::should_enable_claude_in_chrome_from_readonly_runtime;
 use crate::utils::claudemd::{ClaudeMdFile, discover_claude_md_files};
 use crate::utils::claudemd::{
     ExternalClaudeMdInclude, discover_claude_md_files_with_external_policy,
@@ -43,7 +42,6 @@ use crate::utils::status_notice_definitions::{MemoryFileInfo, StatusNoticeContex
 use std::path::Path;
 use std::sync::atomic::{AtomicI32, Ordering};
 
-use crate::components::claude_in_chrome_onboarding::ClaudeInChromeOnboarding;
 use crate::components::mcp_server_approval_dialog::{
     MCPServerApprovalChoice, MCPServerApprovalDialog,
 };
@@ -62,8 +60,6 @@ pub struct SetupScreensSnapshot {
     pub show_onboarding: bool,
     pub offer_terminal_setup: bool,
     pub terminal_name: Option<String>,
-    pub show_claude_in_chrome_onboarding: bool,
-    pub claude_in_chrome_extension_installed: bool,
 }
 
 pub fn project_config_for_cwd(global_config: &GlobalConfig, cwd: &Path) -> ProjectConfig {
@@ -78,7 +74,6 @@ pub fn project_config_for_cwd(global_config: &GlobalConfig, cwd: &Path) -> Proje
 pub fn setup_screens_snapshot_from_readonly_runtime(
     global_config: &GlobalConfig,
     get_env: &impl Fn(&str) -> Option<String>,
-    args: impl IntoIterator<Item = String>,
     terminal_name: Option<String>,
     platform: runtime_env::Platform,
 ) -> SetupScreensSnapshot {
@@ -95,16 +90,11 @@ pub fn setup_screens_snapshot_from_readonly_runtime(
         .filter(|value| !value.is_empty());
     let show_onboarding =
         configured_theme.is_none() || global_config.has_completed_onboarding != Some(true);
-    let enable_claude_in_chrome =
-        should_enable_claude_in_chrome_from_readonly_runtime(global_config, args, get_env);
 
     SetupScreensSnapshot {
         show_onboarding,
         offer_terminal_setup: should_offer_terminal_setup_for(terminal_name.as_deref(), platform),
         terminal_name,
-        show_claude_in_chrome_onboarding: enable_claude_in_chrome
-            && global_config.has_completed_claude_in_chrome_onboarding != Some(true),
-        claude_in_chrome_extension_installed: false,
     }
 }
 
@@ -164,7 +154,6 @@ pub fn default_setup_screens_snapshot() -> SetupScreensSnapshot {
     setup_screens_snapshot_from_readonly_runtime(
         &load_global_config(),
         &|key| crate::utils::process_env::var(key),
-        std::env::args(),
         detected.terminal.clone(),
         detected.platform,
     )
@@ -264,7 +253,7 @@ pub fn show_setup_screens(
 }
 
 /// Component implementation for [`show_setup_screens`].
-/// Gate order: onboarding → trust → mcpjson → ClaudeMd → chrome → complete.
+/// Gate order: onboarding → trust → mcpjson → ClaudeMd → complete.
 #[component]
 fn SetupScreensHost<'a>(
     props: &mut SetupScreensHostProps<'a>,
@@ -282,7 +271,6 @@ fn SetupScreensHost<'a>(
     // Gate visibility from props each render; dismissal is local state.
     // (Do not seed use_state from props — iocraft may first-mount with Default props.)
     let mut onboarding_dismissed = hooks.use_state(|| false);
-    let mut chrome_dismissed = hooks.use_state(|| false);
     let mut trust_dismissed = hooks.use_state(|| false);
     let mut claude_md_dismissed = hooks.use_state(|| false);
     let trust_risk_snapshot = hooks.use_const(build_trust_dialog_risk_snapshot);
@@ -311,8 +299,6 @@ fn SetupScreensHost<'a>(
     }
 
     let show_onboarding = setup_screens_snapshot.show_onboarding && !onboarding_dismissed.get();
-    let show_claude_in_chrome_onboarding =
-        setup_screens_snapshot.show_claude_in_chrome_onboarding && !chrome_dismissed.get();
     let show_trust_dialog = should_show_trust_dialog() && !trust_dismissed.get();
     let show_claude_md_external_includes =
         should_show_claude_md_external_includes_gate() && !claude_md_dismissed.get();
@@ -328,23 +314,16 @@ fn SetupScreensHost<'a>(
             show_trust_dialog,
             !pending_mcpjson_servers.is_empty(),
             show_claude_md_external_includes,
-            show_claude_in_chrome_onboarding,
         )
     };
 
     // Maps to: CC `interactiveHelpers.tsx:248-252`. The full settings env,
     // potentially dangerous variables included, applies once trust is settled.
     // That is after the trust dialog, the `.mcp.json` approvals and the
-    // AGENTS.md external-includes warning, and before the dialogs that follow,
-    // among them Claude in Chrome (:390-400). It applies whether or not the
-    // trust dialog showed, as CC's call does, but not in demo mode, which
-    // returns first.
-    if matches!(
-        setup_gate,
-        SetupScreenGate::ClaudeInChrome | SetupScreenGate::Ready
-    ) && !config_env_applied.get()
-        && !is_demo_mode()
-    {
+    // AGENTS.md external-includes warning, the last setup gates. It applies
+    // whether or not the trust dialog showed, as CC's call does, but not in
+    // demo mode, which returns first.
+    if setup_gate == SetupScreenGate::Ready && !config_env_applied.get() && !is_demo_mode() {
         config_env_applied.set(true);
         // Settings may have changed on disk during the dialogs. `Main`'s
         // completion re-reads them right after this, so reset the cache
@@ -493,18 +472,6 @@ fn SetupScreensHost<'a>(
             }
             .into_any()
         }
-        SetupScreenGate::ClaudeInChrome => {
-            let snapshot = setup_screens_snapshot.clone();
-            element! {
-                ClaudeInChromeOnboarding(
-                    is_extension_installed: snapshot.claude_in_chrome_extension_installed,
-                    on_done: move |_| {
-                        chrome_dismissed.set(true);
-                    },
-                )
-            }
-            .into_any()
-        }
         SetupScreenGate::Ready => {
             if !setup_screens_completed_logged.get() {
                 setup_screens_completed_logged.set(true);
@@ -545,7 +512,6 @@ mod setup_screens_snapshot_tests {
         let snapshot = setup_screens_snapshot_from_readonly_runtime(
             &config,
             &|_| None,
-            Vec::<String>::new(),
             Some("vscode".to_string()),
             runtime_env::Platform::MacOS,
         );
@@ -557,7 +523,6 @@ mod setup_screens_snapshot_tests {
         let completed = setup_screens_snapshot_from_readonly_runtime(
             &config,
             &|_| None,
-            Vec::<String>::new(),
             Some("kitty".to_string()),
             runtime_env::Platform::MacOS,
         );
@@ -567,74 +532,10 @@ mod setup_screens_snapshot_tests {
         let demo = setup_screens_snapshot_from_readonly_runtime(
             &GlobalConfig::default(),
             &|key| (key == "IS_DEMO").then(|| "1".to_string()),
-            Vec::<String>::new(),
             None,
             runtime_env::Platform::Linux,
         );
         assert!(!demo.show_onboarding);
-    }
-
-    #[test]
-    fn setup_screens_snapshot_matches_official_claude_in_chrome_gate() {
-        let mut config = GlobalConfig::default();
-        config.theme = Some("dark".to_string());
-        config.has_completed_onboarding = Some(true);
-
-        let by_flag = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|_| None,
-            vec!["nyan".to_string(), "--chrome".to_string()],
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert!(by_flag.show_claude_in_chrome_onboarding);
-
-        let by_no_flag = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|_| None,
-            vec!["nyan".to_string(), "--no-chrome".to_string()],
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert!(!by_no_flag.show_claude_in_chrome_onboarding);
-
-        let by_env = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|key| (key == "NYAN_ENABLE_CFC").then(|| "true".to_string()),
-            Vec::<String>::new(),
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert!(by_env.show_claude_in_chrome_onboarding);
-
-        config.claude_in_chrome_default_enabled = Some(true);
-        let env_falsy_wins = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|key| (key == "NYAN_ENABLE_CFC").then(|| "false".to_string()),
-            Vec::<String>::new(),
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert!(!env_falsy_wins.show_claude_in_chrome_onboarding);
-
-        let by_config = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|_| None,
-            Vec::<String>::new(),
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert!(by_config.show_claude_in_chrome_onboarding);
-
-        config.has_completed_claude_in_chrome_onboarding = Some(true);
-        let completed = setup_screens_snapshot_from_readonly_runtime(
-            &config,
-            &|_| None,
-            vec!["nyan".to_string(), "--chrome".to_string()],
-            None,
-            runtime_env::Platform::Linux,
-        );
-        assert!(!completed.show_claude_in_chrome_onboarding);
     }
 
     #[test]
@@ -774,7 +675,6 @@ pub enum SetupScreenGate {
     Trust,
     Mcpjson,
     ClaudeMdExternalIncludes,
-    ClaudeInChrome,
     Ready,
 }
 
@@ -920,7 +820,6 @@ pub fn resolve_setup_screen_gate(
     show_trust: bool,
     pending_mcpjson: bool,
     show_claude_md_external: bool,
-    show_chrome: bool,
 ) -> SetupScreenGate {
     if show_onboarding {
         SetupScreenGate::Onboarding
@@ -930,8 +829,6 @@ pub fn resolve_setup_screen_gate(
         SetupScreenGate::Mcpjson
     } else if show_claude_md_external {
         SetupScreenGate::ClaudeMdExternalIncludes
-    } else if show_chrome {
-        SetupScreenGate::ClaudeInChrome
     } else {
         SetupScreenGate::Ready
     }
@@ -945,27 +842,23 @@ mod tests {
     #[test]
     fn setup_screen_gate_order_matches_official_show_setup_screens() {
         assert_eq!(
-            resolve_setup_screen_gate(true, true, true, true, true),
+            resolve_setup_screen_gate(true, true, true, true),
             SetupScreenGate::Onboarding
         );
         assert_eq!(
-            resolve_setup_screen_gate(false, true, true, true, true),
+            resolve_setup_screen_gate(false, true, true, true),
             SetupScreenGate::Trust
         );
         assert_eq!(
-            resolve_setup_screen_gate(false, false, true, true, true),
+            resolve_setup_screen_gate(false, false, true, true),
             SetupScreenGate::Mcpjson
         );
         assert_eq!(
-            resolve_setup_screen_gate(false, false, false, true, true),
+            resolve_setup_screen_gate(false, false, false, true),
             SetupScreenGate::ClaudeMdExternalIncludes
         );
         assert_eq!(
-            resolve_setup_screen_gate(false, false, false, false, true),
-            SetupScreenGate::ClaudeInChrome
-        );
-        assert_eq!(
-            resolve_setup_screen_gate(false, false, false, false, false),
+            resolve_setup_screen_gate(false, false, false, false),
             SetupScreenGate::Ready
         );
     }

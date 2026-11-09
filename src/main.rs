@@ -502,16 +502,6 @@ pub fn resolve_mcp_startup_config(
         ));
     }
 
-    if parsed.servers.iter().any(|(name, config)| {
-        config.transport != crate::services::mcp::types::Transport::Sdk
-            && crate::services::mcp::normalization::normalize_name_for_mcp(name)
-                == "claude-in-chrome"
-    }) {
-        return Err(
-            "Error: Invalid MCP configuration: \"claude-in-chrome\" is a reserved MCP name."
-                .to_string(),
-        );
-    }
     // The gated Computer-Use reserved name remains tied to its unported
     // CHICAGO_MCP startup branch. @nyan: no enterprise `managed-mcp.json`, so
     // CC's enterprise conflicts with --strict-mcp-config / --mcp-config are gone.
@@ -2016,30 +2006,20 @@ mod tests {
     }
 
     #[test]
-    fn dynamic_mcp_startup_rejects_reserved_names_and_accepts_dynamic_servers() {
+    fn dynamic_mcp_startup_accepts_dynamic_and_sdk_servers() {
+        // No server name is reserved: the former Claude in Chrome name is an
+        // ordinary user server.
         let non_sdk_json = serde_json::json!({
-            "mcpServers": { "docs": { "command": "docs-server" } }
+            "mcpServers": {
+                "docs": { "command": "docs-server" },
+                "claude-in-chrome": { "command": "browser-server" }
+            }
         })
         .to_string();
         let sdk_json = serde_json::json!({
             "mcpServers": { "sdk": { "type": "sdk", "name": "host" } }
         })
         .to_string();
-
-        let reserved = crate::cli::CliConfig {
-            mcp_config: vec![
-                serde_json::json!({
-                    "mcpServers": { "claude-in-chrome": { "command": "fake" } }
-                })
-                .to_string(),
-            ],
-            ..crate::cli::CliConfig::default()
-        };
-        assert!(
-            resolve_mcp_startup_config(&reserved)
-                .unwrap_err()
-                .contains("reserved MCP name")
-        );
 
         let dynamic = crate::cli::CliConfig {
             mcp_config: vec![non_sdk_json],
@@ -2050,6 +2030,10 @@ mod tests {
         assert_eq!(
             resolved.dynamic["docs"].command.as_deref(),
             Some("docs-server")
+        );
+        assert_eq!(
+            resolved.dynamic["claude-in-chrome"].command.as_deref(),
+            Some("browser-server")
         );
 
         let sdk = crate::cli::CliConfig {
@@ -2171,8 +2155,6 @@ mod tests {
             show_onboarding: true,
             offer_terminal_setup: false,
             terminal_name: Some("kitty".to_string()),
-            show_claude_in_chrome_onboarding: false,
-            claude_in_chrome_extension_installed: false,
         };
         let make_store = || {
             AppStore::new(

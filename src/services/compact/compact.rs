@@ -594,8 +594,6 @@ async fn create_post_compact_attachments(
     attachments.extend(
         crate::utils::attachments::get_mcp_instructions_delta_attachment(
             &context.mcp_state.clients,
-            &context.tools,
-            &model,
             preserved_messages,
         ),
     );
