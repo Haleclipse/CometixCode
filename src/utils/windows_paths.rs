@@ -71,7 +71,7 @@ pub fn git_bash_discovery_source() -> &'static str {
     }
 }
 
-/// Normalize raw CLAUDE_CODE_GIT_BASH_PATH value, handling quotes, POSIX
+/// Normalize raw NYAN_GIT_BASH_PATH value, handling quotes, POSIX
 /// paths (`/c/...`, `//server/...`), Cygwin paths (`/cygdrive/...`), and UNC paths.
 pub fn normalize_git_bash_path_str(raw: &str) -> PathBuf {
     let trimmed = raw.trim().trim_matches(['"', '\'']);
@@ -83,13 +83,13 @@ pub fn normalize_git_bash_path_str(raw: &str) -> PathBuf {
 pub fn validate_git_bash_executable(path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Err(format!(
-            "CLAUDE_CODE_GIT_BASH_PATH file does not exist: \"{}\"",
+            "NYAN_GIT_BASH_PATH file does not exist: \"{}\"",
             path.display()
         ));
     }
     if path.is_dir() {
         return Err(format!(
-            "CLAUDE_CODE_GIT_BASH_PATH is a directory, not a file: \"{}\"",
+            "NYAN_GIT_BASH_PATH is a directory, not a file: \"{}\"",
             path.display()
         ));
     }
@@ -101,7 +101,7 @@ pub fn validate_git_bash_executable(path: &Path) -> Result<(), String> {
             .is_some_and(|ext| ext.eq_ignore_ascii_case("exe"));
         if !is_exe {
             return Err(format!(
-                "CLAUDE_CODE_GIT_BASH_PATH is not an executable file (.exe): \"{}\"",
+                "NYAN_GIT_BASH_PATH is not an executable file (.exe): \"{}\"",
                 path.display()
             ));
         }
@@ -112,7 +112,7 @@ pub fn validate_git_bash_executable(path: &Path) -> Result<(), String> {
         .unwrap_or("");
     if !file_stem.eq_ignore_ascii_case("bash") {
         return Err(format!(
-            "CLAUDE_CODE_GIT_BASH_PATH does not point to bash (expected bash.exe, got \"{}\")",
+            "NYAN_GIT_BASH_PATH does not point to bash (expected bash.exe, got \"{}\")",
             path.display()
         ));
     }
@@ -129,21 +129,21 @@ pub fn validate_git_bash_executable(path: &Path) -> Result<(), String> {
             Ok(output) => {
                 if !output.status.success() {
                     return Err(format!(
-                        "CLAUDE_CODE_GIT_BASH_PATH at \"{}\" exited with failure code when run with --version",
+                        "NYAN_GIT_BASH_PATH at \"{}\" exited with failure code when run with --version",
                         path.display()
                     ));
                 }
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 if !stdout.to_ascii_lowercase().contains("bash") {
                     return Err(format!(
-                        "CLAUDE_CODE_GIT_BASH_PATH at \"{}\" is not GNU bash",
+                        "NYAN_GIT_BASH_PATH at \"{}\" is not GNU bash",
                         path.display()
                     ));
                 }
             }
             Err(err) => {
                 return Err(format!(
-                    "CLAUDE_CODE_GIT_BASH_PATH at \"{}\" failed to execute: {err}",
+                    "NYAN_GIT_BASH_PATH at \"{}\" failed to execute: {err}",
                     path.display()
                 ));
             }
@@ -213,7 +213,7 @@ pub fn find_git_bash_path() -> Result<PathBuf, String> {
         }
     }
 
-    Err("nyan on Windows requires Git for Windows (Git Bash). Install it from https://git-scm.com/downloads/win, or set CLAUDE_CODE_GIT_BASH_PATH to your bash.exe path (e.g. C:\\Program Files\\Git\\bin\\bash.exe).".to_string())
+    Err("nyan on Windows requires Git for Windows (Git Bash). Install it from https://git-scm.com/downloads/win, or set NYAN_GIT_BASH_PATH to your bash.exe path (e.g. C:\\Program Files\\Git\\bin\\bash.exe).".to_string())
 }
 
 #[cfg(test)]
@@ -342,7 +342,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn windows_smoke_claude_code_git_bash_path_runtime_validation() {
+    fn windows_smoke_nyan_git_bash_path_runtime_validation() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let discovered = find_git_bash_path().unwrap_or_else(|error| {
             panic!("Git Bash is unavailable on the Windows runner: {error}")
@@ -353,8 +353,7 @@ mod tests {
             let _override =
                 EnvVarGuard::set("NYAN_GIT_BASH_PATH", discovered.display().to_string());
             assert_eq!(git_bash_discovery_source(), "NYAN_GIT_BASH_PATH");
-            let found =
-                find_git_bash_path().expect("valid CLAUDE_CODE_GIT_BASH_PATH should resolve");
+            let found = find_git_bash_path().expect("valid NYAN_GIT_BASH_PATH should resolve");
             assert_eq!(found, discovered);
         }
 
@@ -362,8 +361,7 @@ mod tests {
         {
             let posix = windows_path_to_posix_path(&discovered.display().to_string());
             let _override = EnvVarGuard::set("NYAN_GIT_BASH_PATH", posix);
-            let found =
-                find_git_bash_path().expect("POSIX CLAUDE_CODE_GIT_BASH_PATH should resolve");
+            let found = find_git_bash_path().expect("POSIX NYAN_GIT_BASH_PATH should resolve");
             assert_eq!(found, discovered);
         }
 
@@ -371,8 +369,8 @@ mod tests {
         {
             let forward = discovered.display().to_string().replace('\\', "/");
             let _override = EnvVarGuard::set("NYAN_GIT_BASH_PATH", forward);
-            let found = find_git_bash_path()
-                .expect("Forward-slash CLAUDE_CODE_GIT_BASH_PATH should resolve");
+            let found =
+                find_git_bash_path().expect("Forward-slash NYAN_GIT_BASH_PATH should resolve");
             assert_eq!(found, discovered);
         }
 

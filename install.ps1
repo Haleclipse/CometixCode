@@ -31,7 +31,7 @@ if ($tag -notmatch '^nyan-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$') 
     throw "Invalid nyan release tag: $tag"
 }
 
-$asset = "nyan-$tag-windows-x86_64.zip"
+$asset = "$tag-windows-x86_64.zip"
 $baseUrl = "https://github.com/$repo/releases/download/$tag"
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("nyan-install-" + [guid]::NewGuid())
 $archive = Join-Path $tempDir $asset
@@ -89,8 +89,8 @@ try {
         'C:\Program Files\Git\bin\bash.exe',
         'C:\Program Files (x86)\Git\bin\bash.exe'
     )
-    if ($env:CLAUDE_CODE_GIT_BASH_PATH) {
-        $gitBashCandidates += $env:CLAUDE_CODE_GIT_BASH_PATH
+    if ($env:NYAN_GIT_BASH_PATH) {
+        $gitBashCandidates += $env:NYAN_GIT_BASH_PATH
     }
     $gitCommand = Get-Command git.exe -All -ErrorAction SilentlyContinue
     if ($null -ne $gitCommand) {
@@ -105,7 +105,7 @@ try {
         Where-Object { Test-Path -LiteralPath $_ -PathType Leaf -ErrorAction SilentlyContinue } |
         Select-Object -First 1
     if (-not $gitBash) {
-        Write-Warning 'Git for Windows (Git Bash) was not detected. Install Git for Windows, or set CLAUDE_CODE_GIT_BASH_PATH to the full path of bash.exe before starting nyan.'
+        Write-Warning 'Git for Windows (Git Bash) was not detected. Install Git for Windows, or set NYAN_GIT_BASH_PATH to the full path of bash.exe before starting nyan.'
     }
 } finally {
     if (Test-Path $tempDir) {

@@ -24,9 +24,7 @@
   "runners": {
     "ubuntu": "ubuntu-24.04",
     "ubuntuArm": "ubuntu-24.04-arm",
-    "windows": "windows-2025",
-    "macosArm": "macos-15",
-    "macosIntel": "macos-15-intel"
+    "windows": "windows-2025"
   },
   "docsOnly": {
     "paths": [
@@ -60,9 +58,7 @@
     "platforms": [
       "linux-x64",
       "linux-arm64",
-      "windows-x64",
-      "darwin-arm64",
-      "darwin-x64"
+      "windows-x64"
     ]
   }
 }

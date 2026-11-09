@@ -67,6 +67,36 @@ The binary is `nyan`.
 
 ## Installation
 
+Supported release platforms:
+
+- Linux x86_64 (musl)
+- Linux aarch64 (musl)
+- Windows x86_64 (MSVC)
+
+macOS is not supported: no macOS artifacts are built or published.
+
+### Linux
+
+Install the latest release with `install.sh`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/blxzer77/nyan/master/install.sh | bash
+```
+
+Pass a version or tag as the first argument:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/blxzer77/nyan/master/install.sh | bash -s -- nyan-v0.2.0
+```
+
+The script installs to `~/.local/bin` by default (override with `NYAN_INSTALL_DIR`) and verifies the archive against the release's `SHA256SUMS` before installing.
+
+To install from source instead:
+
+```sh
+cargo install --git https://github.com/blxzer77/nyan.git --locked --bin nyan
+```
+
 ### Windows
 
 Windows releases require [Git for Windows](https://git-scm.com/downloads/win), because nyan's general shell execution uses Git Bash rather than native PowerShell. Install with `install.ps1`; it does not install Git for Windows and only prints a warning if Git Bash is not detected.
@@ -75,10 +105,10 @@ Windows releases require [Git for Windows](https://git-scm.com/downloads/win), b
 .\install.ps1
 ```
 
-If Git Bash is installed outside the usual locations, set `CLAUDE_CODE_GIT_BASH_PATH` to the full path of `bash.exe` before starting nyan, for example:
+If Git Bash is installed outside the usual locations, set `NYAN_GIT_BASH_PATH` to the full path of `bash.exe` before starting nyan, for example:
 
 ```powershell
-$env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
+$env:NYAN_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
 ```
 
 #### Verifying the download
@@ -117,6 +147,13 @@ cargo build --release --target x86_64-pc-windows-gnu
 A mingw-w64 toolchain has to be on `PATH`: four dependencies compile C or
 assembly (`onig_sys`, `ring`, `tree-sitter`, `tree-sitter-bash`). They link
 statically, so the resulting `.exe` needs no DLLs alongside it.
+
+## Configuration
+
+nyan reads provider and model profiles from `~/.nyan/settings.json`. Start from
+[docs/nyan/settings.example.json](docs/nyan/settings.example.json): it defines
+one Anthropic provider and model profile, selects it as `nyan.selection.main`,
+and reads the API key from `ANTHROPIC_API_KEY`.
 
 ## ripgrep
 

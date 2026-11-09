@@ -36,7 +36,7 @@
 | 位置 | 现状 | 建议方案 | 工作量 |
 |---|---|---|---|
 | `src/utils/shell/mod.rs:93-96`、`src/utils/windows_paths.rs:62-120` | **能编译但有部署前置条件**。Windows 默认直接寻找 Git Bash；优先固定安装路径，再调用 `where.exe git` 推导 `bash.exe`。Git Bash 不存在时主 shell 不可用。 | 发布说明和启动诊断明确要求 Git for Windows；缺失时给出安装/配置提示。 | S |
-| `src/utils/shell/mod.rs:98-136` | **能编译但行为受限**。`CLAUDE_CODE_SHELL` 的 bash/zsh override 在 Windows 早于该分支返回，因此 Windows 不走 Unix shell 选择逻辑。 | 保持“Git Bash 是 Bash provider”的契约，或明确支持 Windows 下的 `CLAUDE_CODE_GIT_BASH_PATH`；不要把任意 PowerShell 路径当作 Bash。 | S |
+| `src/utils/shell/mod.rs:98-136` | **能编译但行为受限**。`CLAUDE_CODE_SHELL` 的 bash/zsh override 在 Windows 早于该分支返回，因此 Windows 不走 Unix shell 选择逻辑。 | 保持“Git Bash 是 Bash provider”的契约，或明确支持 Windows 下的 `NYAN_GIT_BASH_PATH`；不要把任意 PowerShell 路径当作 Bash。 | S |
 | `src/utils/shell/bash_provider.rs:101-164`、`src/utils/bash/shell_snapshot.rs:100-217` | **正常（前提是 Git Bash）**。snapshot、`source`、`shopt`、`pwd -P` 和 POSIX 路径转换都是 Bash 语义；原生 `cmd.exe`/PowerShell 不能执行这些脚本。 | 把 Git Bash 写入 Windows 发行版运行时要求；不要求原生 PowerShell 兼容 Bash snapshot。 | S |
 | `src/utils/shell/powershell_detection.rs:28-43`、`:66-89` | **正常**。按 `pwsh.exe` → `powershell.exe` 探测，Windows 不检查 Unix execute bit。 | 保持；补 Windows runner 的真实探测/执行测试，而不是只做编译。 | S |
 | `src/tools/powershell_tool/mod.rs:292-345` | **正常（可选能力）**。PowerShell tool 会使用探测到的 `pwsh`/`powershell`，不存在时返回缺失提示。 | 在 Windows 冒烟中分别验证 PowerShell 5.1 和 PowerShell 7；没有时只禁用 PowerShell tool。 | M |
@@ -146,8 +146,8 @@ Job 会下载固定版本的 MSVC `ripgrep`，校验 SHA256，运行 `vendor/rip
 ### P0：发布前必须完成
 
 - [x] 发布包提供并验证 `vendor/ripgrep/x64-win32/rg.exe`；修复 Global Search 的直接 `rg` 调用，使其复用统一 resolver。（#26、#28）
-- [x] 发布说明和启动诊断明确要求 Git for Windows/Git Bash；验证 `CLAUDE_CODE_GIT_BASH_PATH`、盘符、UNC、worktree 和基本 Bash 命令。（#28、#29、#37）
-  - 已完成：README 要求 Git for Windows；启动诊断与 doctor 运行时校验 `CLAUDE_CODE_GIT_BASH_PATH`（存在性、可执行、是 bash，支持盘符与 UNC 路径，缺失或错误时给出清晰提示）；Windows runner 上的基本 Bash 命令 smoke；Git worktree 下基本 Bash 命令执行与路径转换 smoke；`CLAUDE_CODE_GIT_BASH_PATH` 运行时覆盖与错误提示验证。
+- [x] 发布说明和启动诊断明确要求 Git for Windows/Git Bash；验证 `NYAN_GIT_BASH_PATH`、盘符、UNC、worktree 和基本 Bash 命令。（#28、#29、#37）
+  - 已完成：README 要求 Git for Windows；启动诊断与 doctor 运行时校验 `NYAN_GIT_BASH_PATH`（存在性、可执行、是 bash，支持盘符与 UNC 路径，缺失或错误时给出清晰提示）；Windows runner 上的基本 Bash 命令 smoke；Git worktree 下基本 Bash 命令执行与路径转换 smoke；`NYAN_GIT_BASH_PATH` 运行时覆盖与错误提示验证。
 - [x] Windows `--version`、`--help`、一次无模型启动冒烟通过；release 构建实际产出并可执行，而不只是 `cargo check`。（#28）
 - [x] Windows sandbox 默认明确显示 unavailable；不能把普通 Bash 执行宣称为 sandboxed。涉及不可信代码时给出降级提示。（#27）
 - [x] 凭据方案至少做出明确选择：首发若暂时使用 plaintext，必须限制 config 目录 ACL、显示 warning，并在发布说明中明确风险；更好的最小方案是 Credential Manager/DPAPI。

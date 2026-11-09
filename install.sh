@@ -39,7 +39,7 @@ case "$requested_version" in
 esac
 
 version="${tag#nyan-v}"
-asset="nyan-$tag-linux-$asset_arch.tar.gz"
+asset="$tag-linux-$asset_arch.tar.gz"
 base_url="https://github.com/$repo/releases/download/$tag"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT

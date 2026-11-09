@@ -57,6 +57,36 @@ cargo run --release
 
 ## 安装
 
+支持的发布平台：
+
+- Linux x86_64（musl）
+- Linux aarch64（musl）
+- Windows x86_64（MSVC）
+
+不支持 macOS：不构建、也不发布 macOS 产物。
+
+### Linux
+
+使用 `install.sh` 安装最新版本：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/blxzer77/nyan/master/install.sh | bash
+```
+
+可在第一个参数传入版本或 tag：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/blxzer77/nyan/master/install.sh | bash -s -- nyan-v0.2.0
+```
+
+脚本默认安装到 `~/.local/bin`（可用 `NYAN_INSTALL_DIR` 覆盖），安装前会用 Release 的 `SHA256SUMS` 校验归档。
+
+从源码安装：
+
+```sh
+cargo install --git https://github.com/blxzer77/nyan.git --locked --bin nyan
+```
+
 ### Windows
 
 Windows 版需要预先安装 [Git for Windows](https://git-scm.com/downloads/win)，因为 nyan 的通用 shell 执行使用 Git Bash，而不是原生 PowerShell。使用 `install.ps1` 安装时，脚本不会安装 Git for Windows；检测不到 Git Bash 只会打印警告。
@@ -65,10 +95,10 @@ Windows 版需要预先安装 [Git for Windows](https://git-scm.com/downloads/wi
 .\install.ps1
 ```
 
-如果 Git Bash 安装在常见位置之外，请在启动 nyan 前将 `CLAUDE_CODE_GIT_BASH_PATH` 设置为 `bash.exe` 的完整路径，例如：
+如果 Git Bash 安装在常见位置之外，请在启动 nyan 前将 `NYAN_GIT_BASH_PATH` 设置为 `bash.exe` 的完整路径，例如：
 
 ```powershell
-$env:CLAUDE_CODE_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
+$env:NYAN_GIT_BASH_PATH = 'C:\Program Files\Git\bin\bash.exe'
 ```
 
 #### 校验下载文件
@@ -105,6 +135,13 @@ Unblock-File -Path .\nyan.exe, .\vendor\ripgrep\x64-win32\rg.exe
 rustup target add x86_64-pc-windows-gnu
 cargo build --release --target x86_64-pc-windows-gnu
 ```
+
+## 配置
+
+nyan 从 `~/.nyan/settings.json` 读取 provider 与模型 profile。可从
+[docs/nyan/settings.example.json](docs/nyan/settings.example.json) 开始：它定义一个
+Anthropic provider 与模型 profile，将其设为 `nyan.selection.main`，并从
+`ANTHROPIC_API_KEY` 环境变量读取 API key。
 
 ## ripgrep
 

@@ -66,7 +66,7 @@ nyan-vX.Y.Z-windows-x86_64.zip
 
 - Linux：`install.sh [版本或 tag]`，默认安装到 `~/.local/bin`；通过 `NYAN_INSTALL_DIR` 指定目录。未传版本时解析 GitHub latest stable Release。
 - Windows：`install.ps1 [-Version 版本或 tag] [-InstallDir 目录]`，默认安装到 `$HOME\.local\bin`。脚本不自动改 PATH，会打印把该目录加入用户 PATH 的 PowerShell 命令。
-- Windows 运行时需要预先安装 [Git for Windows](https://git-scm.com/downloads/win) 提供的 Git Bash；Git Bash 不随 nyan 发布包提供。若不在自动发现的安装位置，可将 `CLAUDE_CODE_GIT_BASH_PATH` 设置为 `bash.exe` 的完整路径，例如 `C:\Program Files\Git\bin\bash.exe`。`install.ps1` 检测不到 Git Bash 时只打印警告，不会自动安装或因此失败。
+- Windows 运行时需要预先安装 [Git for Windows](https://git-scm.com/downloads/win) 提供的 Git Bash；Git Bash 不随 nyan 发布包提供。若不在自动发现的安装位置，可将 `NYAN_GIT_BASH_PATH` 设置为 `bash.exe` 的完整路径，例如 `C:\Program Files\Git\bin\bash.exe`。`install.ps1` 检测不到 Git Bash 时只打印警告，不会自动安装或因此失败。
 - 两个脚本都只支持当前平台的 x86_64/aarch64（Windows 仅 x86_64），都会下载 `SHA256SUMS`、校验对应资产，再解包并安装。
 
 ## 失败与回滚

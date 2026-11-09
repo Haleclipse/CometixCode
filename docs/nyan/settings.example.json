@@ -1,0 +1,34 @@
+{
+  "nyan": {
+    "providers": {
+      "anthropic": {
+        "kind": "anthropic",
+        "protocol": "anthropicMessages",
+        "baseUrl": "https://api.anthropic.com",
+        "credential": {
+          "env": "ANTHROPIC_API_KEY"
+        }
+      }
+    },
+    "models": {
+      "main": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
+        "displayName": "Sonnet",
+        "capabilities": {
+          "contextWindow": 200000,
+          "maxOutputTokens": 128000,
+          "tools": "native",
+          "thinking": "adaptive",
+          "images": "input",
+          "structuredOutput": true,
+          "streaming": true,
+          "promptCache": "native"
+        }
+      }
+    },
+    "selection": {
+      "main": "main"
+    }
+  }
+}

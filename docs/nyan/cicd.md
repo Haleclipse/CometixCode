@@ -117,8 +117,8 @@ mutation/fuzz/coverage、merge queue、缓存清理工作流、代码签名/nota
 | `ci.yml` | `pull_request`、`push: master`、`merge_group`、dispatch | policy、build、static、tests×4、supply-chain、windows-check、Merge gate | 是 |
 | `pr-describe.yml` | `pull_request`、dispatch | PR-Agent `/describe` 生成结构化变更摘要（sticky comment） | 否（建议性） |
 | `ocr-review.yml` | `schedule`（18:30 UTC）、dispatch | 批量 AI 代码深度审查（OCR），对 master 提交进行阶段性巡检并开 Issue | 否（建议性） |
-| `nightly.yml` | `schedule`（02:17 UTC）、dispatch | 全量 + internal feature + doctest、Windows/macOS check、fmt 漂移报告、全量安全扫描 | 否（失败要修） |
-| `release.yml` | tag `nyan-v*.*.*`、dispatch（仅 dry run） | 前置校验、按平台构建、vendored ripgrep、冒烟、attest、GitHub Release | —— |
+| `nightly.yml` | `schedule`（02:17 UTC）、dispatch | 全量 + internal feature + doctest、Windows check、fmt 漂移报告、全量安全扫描 | 否（失败要修） |
+| `release.yml` | tag `nyan-v*.*.*`、dispatch（仅 dry run） | 前置校验、按平台构建、vendored ripgrep、冒烟、SHA256SUMS、GitHub Release | —— |
 
 ### 3.2 runner 放置
 
@@ -126,8 +126,7 @@ mutation/fuzz/coverage、merge queue、缓存清理工作流、代码签名/nota
 |---|---|---|
 | PR / push 全部门禁作业 | `ubuntu-24.04` | public repo 免费且不限量；4 vCPU / 16 GB / 14 GB SSD |
 | Linux arm64 发布构建 | `ubuntu-24.04-arm` | 原生构建，不交叉 |
-| Windows 冒烟 | `windows-2025` | 只跑 `--version`；构建在 Linux 上交叉（8.2） |
-| macOS 发布构建 | `macos-15`（arm64）、`macos-15-intel`（x64） | 原生；release 才用，避开 macOS 5 并发上限 |
+| Windows 发布构建与冒烟 | `windows-2025` | 原生 MSVC 构建并跑 `--version`、bundled `rg.exe --version`（8.2） |
 | AI 审查与摘要（PR-Agent / OCR） | `[self-hosted, Linux, X64, repo-nyan]` | 需要连通内网模型网关/OCR 调度器；严格限制 fork PR 不执行 |
 
 固定具体 label 而不是 `-latest`：`ubuntu-latest` 将在 2026 年 11 月切到 26.04（runner-images 公告），工具链和
@@ -549,7 +548,6 @@ SHA pinning 的取舍（单人项目的成本收益）：
 | internal | `nextest archive --features anthropic_internal` + 全量 | justfile 测得 29 个只在 feature 下的测试 |
 | doctest | `cargo test --doc` | 当前 17 ignored、0 passed，成本 4 分钟，只放夜间 |
 | windows | `cargo check --target x86_64-pc-windows-gnu` 或 `windows-latest` 原生 check | 不在 PR 关键路径 |
-| macos | `cargo check` on `macos-15` | macOS 代码 10 个文件带 cfg；release 前至少跑过一次 |
 | fmt-drift | `cargo fmt --check` 的差异计数写进 job summary | 不阻塞，防止数字悄悄变大 |
 | security | gitleaks + cargo-deny + SBOM（`cargo cyclonedx` 或 syft） | 每日全量；PR 只跑 gitleaks/deny |
 | release-profile（可选，后续） | `cargo nextest run --cargo-profile release` 的单分片 | 捕捉只存在于 release 配置的问题 |
@@ -562,9 +560,8 @@ mutation（`cargo-mutants`）与 fuzz 不在首批：先在 Phase 0 把基线修
 ### 8.1 tag 与前置校验
 
 - tag 形式 `nyan-vX.Y.Z`，可带预发布后缀（`nyan-v0.2.1-rc.1` → `--prerelease`）。origin 当前没有 tag，不存在
-  与上游冲突的问题；沿用 legacy 的 `nyan-v` 前缀，与项目名一致。`Cargo.toml` 当前是 `0.2.0`，所以首次真实发布的
-  tag 至少要是 `nyan-v0.2.1`（或先 bump 到 0.3.0 再打 `nyan-v0.3.0`）；Phase 3 的预发布示例必须与当时的
-  `Cargo.toml` 一致，否则会被 §8.1 的第二条校验拒绝。
+  与上游冲突的问题；沿用 legacy 的 `nyan-v` 前缀，与项目名一致。`Cargo.toml` 当前是 `0.2.0`，所以首次正式发布
+  的 tag 是 `nyan-v0.2.0`；Phase 3 的预发布示例必须与当时的 `Cargo.toml` 一致，否则会被 §8.1 的第二条校验拒绝。
 - tag 的版本必须等于 `Cargo.toml` 的 `version`（`scripts/ci/check-version.mjs`，预发布后缀只比较 `X.Y.Z` 主干）。
 - **同一 commit 必须有一次成功的 master push 门禁**：用 `gh run list --workflow=ci.yml --commit <sha> --event push
   --branch master --status success` 查；查不到就失败，并提示“先等门禁跑完”。这比在 release 里重跑测试便宜，也
@@ -575,42 +572,44 @@ mutation（`cargo-mutants`）与 fuzz 不在首批：先在 Phase 0 把基线修
 
 | 产物 | runner | 方式 | 冒烟位置 |
 |---|---|---|---|
-| linux-x64 | `ubuntu-24.04` | 原生 `cargo build --release --locked --bin nyan` | 同 job |
-| linux-arm64 | `ubuntu-24.04-arm` | 原生 | 同 job |
-| windows-x64 | `ubuntu-24.04` | 交叉 `--target x86_64-pc-windows-gnu` + mingw-w64 | `windows-2025` 下载 zip 跑 `.exe` |
-| darwin-arm64 | `macos-15` | 原生 | 同 job |
-| darwin-x64 | `macos-15-intel` | 原生 | 同 job |
+| linux-x64 | `ubuntu-24.04` | `cargo zigbuild --release --locked --bin nyan --target x86_64-unknown-linux-musl` | 同 job |
+| linux-arm64 | `ubuntu-24.04-arm` | `cargo zigbuild --release --locked --bin nyan --target aarch64-unknown-linux-musl` | 同 job |
+| windows-x64 | `windows-2025` | 原生 `cargo build --release --locked --bin nyan --target x86_64-pc-windows-msvc` | 同 job |
 
-每个 job 构建一次，之后没有任何 job 重建。Windows 用 GNU 而不是 MSVC：README 已记录这条路径，且构建留在
-Linux 上更便宜；`windows-2025` 只负责证明产物能启动。首次 dry run 必须确认 MSVC/GNU ABI、`onig_sys`、`ring` 的
-行为；不行就改成 `windows-2025` 原生构建。
+每个 job 构建一次，之后没有任何 job 重建。Linux 使用 `cargo-zigbuild` + Zig 0.14.1；Windows 在原生 MSVC runner
+上构建。不发布 macOS 产物。
 
 ### 8.3 vendored ripgrep 与归档布局
 
 `src/utils/ripgrep.rs:78-118` 的解析顺序是：可执行文件旁的 `vendor/ripgrep/<arch>-<os>/rg` → 源码树 → PATH。
-发布包必须带第一项，否则用户没装 `rg` 时 Grep/GlobalSearch 不可用。目录名由同一段代码定义：
+当前发布包只在 Windows 归档中携带第一项；Linux 归档依赖宿主 `rg`，没有时 Grep/GlobalSearch 不可用。目录名由同一段代码定义：
 
 | 平台 | vendor 目录 | ripgrep release 资产 |
 |---|---|---|
 | linux-x64 | `x64-linux` | `x86_64-unknown-linux-musl`（静态） |
 | linux-arm64 | `arm64-linux` | `aarch64-unknown-linux-musl` |
 | windows-x64 | `x64-win32` | `x86_64-pc-windows-msvc`（改名 `rg.exe`） |
-| darwin-arm64 | `arm64-darwin` | `aarch64-apple-darwin` |
-| darwin-x64 | `x64-darwin` | `x86_64-apple-darwin` |
 
-ripgrep 版本固定在 policy（当前最新 15.2.0，实测该 release 有上述资产），下载 `.tar.gz` 与同名 `.sha256` 后校验。
-归档布局（解压后 `nyan` 与 `vendor/` 同级）：
+ripgrep 版本固定在 release workflow（当前 15.2.0），下载 `.zip` 后按固定 SHA256 校验。
+归档布局：
 
 ```
-nyan-v0.2.0-linux-x64/
+nyan-v0.2.0-linux-x86_64.tar.gz
   nyan
   LICENSE
-  vendor/ripgrep/x64-linux/rg
+
+nyan-v0.2.0-windows-x86_64.zip
+  nyan.exe
+  LICENSE
+  vendor/ripgrep/x64-win32/rg.exe
+  vendor/ripgrep/COPYING
+  vendor/ripgrep/LICENSE-MIT
+  vendor/ripgrep/UNLICENSE
 ```
 
-Windows 是 zip，Linux/macOS 是 tar.gz。LICENSE（AGPL-3.0）必须随包。
+Linux 是 tar.gz，Windows 是 zip。LICENSE（AGPL-3.0）必须随包。
 
-### 8.4 冒烟、attest、发布
+### 8.4 冒烟、校验与发布
 
 冒烟命令（每个平台）：
 
@@ -622,19 +621,15 @@ vendor/ripgrep/<dir>/rg --version                     # 结构化验证 vendor �
 
 `--version` 不需要模型；用临时 `NYAN_CONFIG_DIR` 避免写 runner 的 home。
 
-- `attest` job 汇总全部产物，生成 `SHA256SUMS`，用 `actions/attest` 对归档和 checksum 签名
-  （`permissions: {contents: read, id-token: write, attestations: write}`；`attest-build-provenance` 是它的包装，
-  新代码用 `actions/attest`）。
-- `publish` job（`environment: release`，只允许 tag）下载同一批产物，`gh release create --generate-notes`；
-  重跑时 `gh release upload --clobber`。
-- `workflow_dispatch` 是 dry run：构建 + 冒烟 + 上传 artifact，不 attest、不发布、不进入 environment。
+- `assemble` job 汇总三个归档，用 `sha256sum` 生成 `SHA256SUMS`，并断言恰好三行。
+- `publish` job 只在 tag push 时运行，创建 GitHub Release 并上传三个归档与 `SHA256SUMS`；Release 已有资产时直接
+  失败，不带 `--clobber`，避免替换用户已经校验过的字节。
+- `workflow_dispatch` 是 dry run：构建 + 冒烟 + 上传 artifact，不创建 Release。
 
 ### 8.5 已知限制（不伪装）
 
-- **没有代码签名**：macOS Gatekeeper 会对下载的二进制报“无法验证开发者”，Windows SmartScreen 会警告。当前没有
-  Apple Developer 账号；不做 notarization。发布说明里写清绕过方法（macOS 右键打开 / `xattr -d com.apple.quarantine`）。
-  源码里的 `codesignRipgrepIfNecessary` 只在运行时处理 vendor rg，不解决主程序签名。
-- macOS x64 用 Intel runner；如果 Apple 退役该镜像，退化到只在 arm64 上交叉编译 x64（届时实测）。
+- **没有代码签名**：Windows 版二进制未签名，SmartScreen 首次运行会警告。发布说明要求先用 `SHA256SUMS` 校验，
+  再按 SmartScreen 提示继续；不提供签名，也不发布 macOS 产物。
 
 ## 九、缓存、并发、时间预算
 
@@ -703,7 +698,7 @@ Done when：docs-only PR 只跑 policy+gate 并绿；普通 PR 的 gate 在 20 �
 
 ### Phase 2：Nightly
 
-全量、internal feature、doctest、Windows/macOS check、fmt 漂移、SBOM。Done when：手动 dispatch 一次全绿；
+全量、internal feature、doctest、Windows check、fmt 漂移、SBOM。Done when：手动 dispatch 一次全绿；
   故意注入的失败能让 workflow 变红，且不影响 PR。
 
 ### Phase 3：Release
@@ -792,9 +787,7 @@ Phase 0 要把“依赖时序”本身修掉（等待条件而不是 sleep/固�
   "runners": {
     "ubuntu": "ubuntu-24.04",
     "ubuntuArm": "ubuntu-24.04-arm",
-    "windows": "windows-2025",
-    "macosArm": "macos-15",
-    "macosIntel": "macos-15-intel"
+    "windows": "windows-2025"
   },
   "windows": {
     "paths": ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"],
@@ -804,7 +797,7 @@ Phase 0 要把“依赖时序”本身修掉（等待条件而不是 sleep/固�
   "release": {
     "tagPrefix": "nyan-v",
     "requireSameCommitGate": true,
-    "platforms": ["linux-x64", "linux-arm64", "windows-x64", "darwin-arm64", "darwin-x64"]
+    "platforms": ["linux-x64", "linux-arm64", "windows-x64"]
   }
 }
 ```

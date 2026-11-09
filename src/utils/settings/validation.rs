@@ -465,6 +465,48 @@ mod tests {
     }
 
     #[test]
+    fn documented_settings_example_validates_and_parses() {
+        let example = include_str!("../../../docs/nyan/settings.example.json");
+        assert!(
+            matches!(
+                validate_settings_file_content(example),
+                SettingsFileValidation::Valid
+            ),
+            "docs/nyan/settings.example.json must match the settings schema"
+        );
+
+        let (settings, errors) =
+            validate_settings(example, Some("docs/nyan/settings.example.json"))
+                .expect("documented settings example parses");
+        assert!(
+            errors.is_empty(),
+            "documented settings example produced validation warnings"
+        );
+        let nyan = settings
+            .and_then(|settings| settings.nyan)
+            .expect("example defines the nyan settings family");
+        assert!(
+            nyan.providers
+                .as_ref()
+                .is_some_and(|providers| providers.contains_key("anthropic")),
+            "example must define the anthropic provider"
+        );
+        assert!(
+            nyan.models
+                .as_ref()
+                .is_some_and(|models| models.contains_key("main")),
+            "example must define the main profile"
+        );
+        assert_eq!(
+            nyan.selection
+                .as_ref()
+                .and_then(|selection| selection.main.as_deref()),
+            Some("main"),
+            "example must select the main profile"
+        );
+    }
+
+    #[test]
     fn filter_invalid_permission_rules_skips_with_official_copy() {
         let mut data = json!({
             "permissions": {

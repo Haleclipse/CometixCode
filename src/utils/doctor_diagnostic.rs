@@ -251,7 +251,7 @@ pub fn get_doctor_diagnostic() -> DiagnosticInfo {
     if let Err(err) = crate::utils::windows_paths::find_git_bash_path() {
         warnings.push(DiagnosticWarning {
             issue: format!("Git Bash is not available: {err}"),
-            fix: "Install Git for Windows (https://git-scm.com/downloads/win) or set CLAUDE_CODE_GIT_BASH_PATH to your bash.exe path".to_string(),
+            fix: "Install Git for Windows (https://git-scm.com/downloads/win) or set NYAN_GIT_BASH_PATH to your bash.exe path".to_string(),
         });
     }
     let git_bash = git_bash_display();

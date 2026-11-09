@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn windows_git_bash_startup_notification_is_low_priority_and_platform_gated() {
-        let reason = "CLAUDE_CODE_GIT_BASH_PATH file does not exist: \"C:\\x\\bash.exe\"";
+        let reason = "NYAN_GIT_BASH_PATH file does not exist: \"C:\\x\\bash.exe\"";
         let notification = git_bash_startup_notification_for_platform("windows", Some(reason))
             .expect("unavailable Git Bash should produce a startup notification");
         assert_eq!(notification.key, "windows-git-bash-unavailable");
