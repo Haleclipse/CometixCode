@@ -18,11 +18,11 @@
 #   NYAN_CONFIG_DIR    redirects the settings root and the state.json inside
 #                      it (utils/env.rs `get_global_state_file`), so tests stop
 #                      asserting against the developer's own config.
-#   privacy vars       gate analytics, which decides whether growthbook
-#                      features are read at all (services/analytics/config.rs:6).
-#                      A dev shell exporting NYAN_DISABLE_NONESSENTIAL_TRAFFIC
-#                      turned those tests into no-ops that passed for the wrong
-#                      reason.
+#   NYAN_DISABLE_NONESSENTIAL_TRAFFIC / NODE_ENV
+#                      suppress error logging and the update check
+#                      (utils/privacy_level.rs) and switch test-only shortcuts
+#                      (`NODE_ENV=test`). A dev shell exporting either turned
+#                      tests into no-ops that passed for the wrong reason.
 #   NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR
 #                      short-circuits `reset_cwd_if_outside_project`
 #                      (bash_tool/utils.rs:184) to always report the project

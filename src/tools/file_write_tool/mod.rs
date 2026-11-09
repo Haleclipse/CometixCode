@@ -1409,20 +1409,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn remote_git_diff_gate_reads_switch_table_not_growthbook_cache() {
+    async fn remote_git_diff_gate_reads_switch_table() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _remote = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
         let _config_restore = TestGlobalConfigRestore;
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_quartz_lantern".to_string(),
-            serde_json::Value::Bool(true),
-        )]));
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            "tengu_quartz_lantern".to_string(),
-            serde_json::Value::Bool(true),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
         let root = std::env::temp_dir().join(format!(
             "nyan-write-remote-diff-{}",
@@ -1464,7 +1456,7 @@ mod tests {
         assert!(!remote_git_diff_enabled());
         assert!(
             output.git_diff.is_none(),
-            "cached/override GrowthBook delivery must not open the remote diff gate"
+            "the source-controlled switch keeps the remote diff gate closed"
         );
 
         // The attachment payload itself stays covered: the same file still

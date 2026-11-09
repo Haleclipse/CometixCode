@@ -736,7 +736,6 @@ fn replace_tool_result_contents(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn tool_result_message(id: &str, content: String) -> crate::types::message::Message {
         crate::types::message::Message::User(crate::types::message::UserMessage {
@@ -1089,24 +1088,7 @@ mod tests {
     }
 
     #[test]
-    fn content_replacement_gate_reads_switch_table_and_ignores_growthbook_delivery() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-content-replacement-gate-{}",
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::create_dir_all(&root).expect("create temp config dir");
-        std::fs::write(
-            root.join("state.json"),
-            r#"{"cachedGrowthBookFeatures":{"tengu_hawthorn_steeple":true},"growthBookOverrides":{"tengu_hawthorn_steeple":true}}"#,
-        )
-        .expect("write temp global config");
-
-        crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
-        crate::utils::process_env::set(
-            "CLAUDE_INTERNAL_FC_OVERRIDES",
-            r#"{"tengu_hawthorn_steeple":true}"#,
-        );
+    fn content_replacement_gate_reads_switch_table() {
         assert_eq!(
             is_content_replacement_enabled(),
             crate::utils::feature_flags::feature_enabled(
@@ -1114,15 +1096,10 @@ mod tests {
             )
         );
         assert!(is_content_replacement_enabled());
-
-        crate::utils::process_env::remove("NYAN_CONFIG_DIR");
-        crate::utils::process_env::remove("CLAUDE_INTERNAL_FC_OVERRIDES");
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
-    fn per_message_budget_limit_ignores_invalid_values_and_growthbook_delivery() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
+    fn per_message_budget_limit_ignores_invalid_values() {
         assert_eq!(
             per_message_budget_limit_from_feature_value(Some(&serde_json::json!(1234))),
             1234
@@ -1135,29 +1112,10 @@ mod tests {
             per_message_budget_limit_from_feature_value(Some(&serde_json::json!("large"))),
             MAX_TOOL_RESULTS_PER_MESSAGE_CHARS
         );
-
-        let root =
-            std::env::temp_dir().join(format!("nyan-tool-result-window-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&root).expect("create temp config dir");
-        std::fs::write(
-            root.join("state.json"),
-            r#"{"cachedGrowthBookFeatures":{"tengu_hawthorn_window":12345},"growthBookOverrides":{"tengu_hawthorn_window":12345}}"#,
-        )
-        .expect("write temp global config");
-
-        crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
-        crate::utils::process_env::set(
-            "CLAUDE_INTERNAL_FC_OVERRIDES",
-            r#"{"tengu_hawthorn_window":12345}"#,
-        );
         assert_eq!(
             get_per_message_budget_limit(),
             MAX_TOOL_RESULTS_PER_MESSAGE_CHARS
         );
-
-        crate::utils::process_env::remove("NYAN_CONFIG_DIR");
-        crate::utils::process_env::remove("CLAUDE_INTERNAL_FC_OVERRIDES");
-        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

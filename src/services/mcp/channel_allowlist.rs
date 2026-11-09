@@ -98,22 +98,9 @@ mod tests {
     }
 
     #[test]
-    fn get_channel_allowlist_ignores_growthbook_delivery() {
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_harbor_ledger".to_string(),
-            serde_json::json!([{ "marketplace": "anthropic", "plugin": "mailbox" }]),
-        )]));
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            "tengu_harbor_ledger".to_string(),
-            serde_json::json!([{ "marketplace": "anthropic", "plugin": "mailbox" }]),
-        )]));
-        crate::utils::config::set_test_global_config(Some(config));
-
+    fn get_channel_allowlist_ships_the_official_empty_ledger() {
         assert!(get_channel_allowlist().is_empty());
         assert!(!is_channel_allowlisted(Some("mailbox@anthropic")));
-
-        crate::utils::config::set_test_global_config(None);
     }
 
     #[test]

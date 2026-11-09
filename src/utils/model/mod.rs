@@ -1,5 +1,4 @@
 pub mod agent;
-pub mod ant_models;
 pub mod metadata;
 pub mod model;
 pub mod pricing;

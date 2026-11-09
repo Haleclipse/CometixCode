@@ -92,12 +92,23 @@ enum TwoStageMode {
     Thinking,
 }
 /// Maps to: CC `yoloClassifier.ts:1309-1327` `AutoModeConfig`.
+///
+/// @nyan: CC reads this from the GrowthBook `tengu_auto_mode_config` payload.
+/// Its fallback `{}` (every field unset) is the source-controlled value.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AutoModeConfig {
     two_stage_classifier: Option<Value>,
     force_external_permissions: Option<bool>,
     jsonl_transcript: Option<bool>,
+}
+
+fn auto_mode_config() -> AutoModeConfig {
+    #[cfg(test)]
+    if let Some(config) = tests::AUTO_MODE_CONFIG.with(|c| c.borrow().clone()) {
+        return config;
+    }
+    AutoModeConfig::default()
 }
 /// Maps to: CC `yoloClassifier.ts:221-229,728-736` inline dump-context object.
 struct ClassifierDumpContext {
@@ -115,12 +126,7 @@ fn is_using_external_permissions() -> bool {
     if !has_internal_capability(InternalCapability::Permissions) {
         return true;
     }
-    crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-        "tengu_auto_mode_config",
-        AutoModeConfig::default(),
-    )
-    .force_external_permissions
-        == Some(true)
+    auto_mode_config().force_external_permissions == Some(true)
 }
 /// Maps to: CC `yoloClassifier.ts:100-106` `getDefaultExternalAutoModeRules`.
 pub fn get_default_external_auto_mode_rules() -> AutoModeRules {
@@ -558,16 +564,10 @@ fn replace_output_format_with_xml(system: &str) -> String {
     ].join("\n"), 1)
 }
 /// Maps to: CC `yoloClassifier.ts:683-693` `getClassifierThinkingConfig`.
-fn get_classifier_thinking_config(model: &str) -> (Option<SideQueryThinking>, i64) {
-    if has_internal_capability(InternalCapability::Permissions)
-        && crate::utils::model::ant_models::resolve_ant_model(Some(model))
-            .is_some_and(|m| m.always_on_thinking == Some(true))
-    {
-        (None, 2048)
-    } else {
-        (Some(SideQueryThinking::Disabled), 0)
-    }
-}
+/// @nyan: CC keeps thinking on only for GrowthBook-delivered always-on-thinking
+/// ant models; with no such models, the classifier always disables thinking
+/// and adds no token padding.
+const CLASSIFIER_THINKING: Option<SideQueryThinking> = Some(SideQueryThinking::Disabled);
 /// L1 snapshot serialization of source SideQueryOptions. AbortSignal's enumerable
 /// object is {}, and omitted source properties stay omitted; no second cache.
 fn classifier_request_snapshot(opts: &SideQueryOptions) -> Value {
@@ -611,11 +611,6 @@ async fn classify_yolo_action_xml(
     dump_context: ClassifierDumpContext,
     mode: TwoStageMode,
 ) -> YoloClassifierResult {
-    let classifier_type = match mode {
-        TwoStageMode::Both => "xml_2stage",
-        TwoStageMode::Fast => "xml_fast",
-        TwoStageMode::Thinking => "xml_thinking",
-    };
     let xml_system = replace_output_format_with_xml(&system);
     let system_blocks = vec![classifier_text_block(&xml_system, true)];
     let mut stage1_usage: Option<ClassifierUsage> = None;
@@ -624,7 +619,6 @@ async fn classify_yolo_action_xml(
     let mut stage1_msg_id = None;
     let mut stage1_opts = None;
     let overall_start = std::time::Instant::now();
-    let (thinking, padding) = get_classifier_thinking_config(&model);
     let mut wrapped = vec![ContentBlockParam::Text(classifier_text_block(
         "<transcript>\n",
         false,
@@ -650,11 +644,11 @@ async fn classify_yolo_action_xml(
             });
             let opts = SideQueryOptions {
                 model: model.clone(),
-                max_tokens: Some((if mode == TwoStageMode::Fast { 256 } else { 64 }) + padding),
+                max_tokens: Some(if mode == TwoStageMode::Fast { 256 } else { 64 }),
                 system: Some(SideQuerySystem::Blocks(system_blocks.clone())),
                 skip_system_prompt_prefix: true,
                 temperature: Some(0.0),
-                thinking: thinking.clone(),
+                thinking: CLASSIFIER_THINKING,
                 messages,
                 max_retries: Some(crate::services::api::with_retry::get_default_max_retries()),
                 signal: signal.clone(),
@@ -674,25 +668,18 @@ async fn classify_yolo_action_xml(
             crate::bootstrap::state::set_last_classifier_requests(Some(vec![snapshot.clone()]));
             stage1_opts = Some(snapshot);
             if block == Some(false) || mode == TwoStageMode::Fast {
-                let (should_block, reason, outcome) = match block {
-                    Some(false) => (false, "Allowed by fast classifier".into(), "success"),
+                let (should_block, reason) = match block {
+                    Some(false) => (false, "Allowed by fast classifier".into()),
                     Some(true) => (
                         true,
                         parse_xml_reason(&text)
                             .unwrap_or_else(|| "Blocked by fast classifier".into()),
-                        "success",
                     ),
                     None => (
                         true,
                         "Classifier stage 1 unparseable - blocking for safety".into(),
-                        "parse_failure",
                     ),
                 };
-                log_auto_mode_outcome(
-                    outcome,
-                    &model,
-                    json!({"classifierType":classifier_type,"durationMs":stage1_duration_ms}),
-                );
                 return Ok(YoloClassifierResult {
                     should_block,
                     reason,
@@ -721,11 +708,11 @@ async fn classify_yolo_action_xml(
         });
         let opts = SideQueryOptions {
             model: model.clone(),
-            max_tokens: Some(4096 + padding),
+            max_tokens: Some(4096),
             system: Some(SideQuerySystem::Blocks(system_blocks.clone())),
             skip_system_prompt_prefix: true,
             temperature: Some(0.0),
-            thinking: thinking.clone(),
+            thinking: CLASSIFIER_THINKING,
             messages,
             max_retries: Some(crate::services::api::with_retry::get_default_max_retries()),
             signal: signal.clone(),
@@ -749,15 +736,6 @@ async fn classify_yolo_action_xml(
         let mut requests = stage1_opts.clone().into_iter().collect::<Vec<_>>();
         requests.push(snapshot);
         crate::bootstrap::state::set_last_classifier_requests(Some(requests));
-        log_auto_mode_outcome(
-            if block.is_some() {
-                "success"
-            } else {
-                "parse_failure"
-            },
-            &model,
-            json!({"classifierType":classifier_type,"durationMs":total_duration}),
-        );
         Ok(YoloClassifierResult {
             thinking: if block.is_some() {
                 parse_xml_thinking(&text)
@@ -791,11 +769,6 @@ async fn classify_yolo_action_xml(
         Ok(result) => result,
         Err(error) => {
             if signal.as_ref().is_some_and(|s| s.is_aborted()) {
-                log_auto_mode_outcome(
-                    "interrupted",
-                    &model,
-                    json!({"classifierType":classifier_type}),
-                );
                 return YoloClassifierResult {
                     should_block: true,
                     reason: "Classifier request aborted".into(),
@@ -809,15 +782,6 @@ async fn classify_yolo_action_xml(
             let too_long = detect_prompt_too_long(&error);
             let dump =
                 dump_error_prompts(&xml_system, &user, &format!("{error:#}"), &dump_context).await;
-            log_auto_mode_outcome(
-                if too_long.is_some() {
-                    "transcript_too_long"
-                } else {
-                    "error"
-                },
-                &model,
-                json!({"classifierType":classifier_type,"transcriptActualTokens":too_long.and_then(|v| v.0),"transcriptLimitTokens":too_long.and_then(|v| v.1)}),
-            );
             YoloClassifierResult {
                 should_block: true,
                 reason: if too_long.is_some() {
@@ -924,7 +888,6 @@ pub async fn classify_yolo_action(
         )
         .await;
     }
-    let (thinking, padding) = get_classifier_thinking_config(&model);
     let start = std::time::Instant::now();
     let timestamp = chrono::Utc::now().timestamp_millis();
     let mut request_messages = prefix;
@@ -934,13 +897,13 @@ pub async fn classify_yolo_action(
     });
     let opts = SideQueryOptions {
         model: model.clone(),
-        max_tokens: Some(4096 + padding),
+        max_tokens: Some(4096),
         system: Some(SideQuerySystem::Blocks(vec![classifier_text_block(
             &system, true,
         )])),
         skip_system_prompt_prefix: true,
         temperature: Some(0.0),
-        thinking,
+        thinking: CLASSIFIER_THINKING,
         messages: request_messages,
         tools: Some(vec![crate::utils::side_query::custom_tool(
             YOLO_CLASSIFIER_TOOL_NAME,
@@ -980,11 +943,6 @@ pub async fn classify_yolo_action(
                     result.should_block = true;
                     result.reason =
                         "Classifier returned no tool use block - blocking for safety".into();
-                    log_auto_mode_outcome(
-                        "parse_failure",
-                        &model,
-                        json!({"failureKind":"no_tool_use"}),
-                    );
                 }
                 Some(block) => match super::classifier_shared::parse_classifier_response::<
                     ClassifierToolInput,
@@ -993,21 +951,11 @@ pub async fn classify_yolo_action(
                     None => {
                         result.should_block = true;
                         result.reason = "Invalid classifier response - blocking for safety".into();
-                        log_auto_mode_outcome(
-                            "parse_failure",
-                            &model,
-                            json!({"failureKind":"invalid_schema"}),
-                        );
                     }
                     Some(parsed) => {
                         result.thinking = Some(parsed.thinking);
                         result.should_block = parsed.should_block;
                         result.reason = parsed.reason;
-                        log_auto_mode_outcome(
-                            "success",
-                            &model,
-                            json!({"durationMs":duration,"mainLoopTokens":dump_context.main_loop_tokens,"classifierInputTokens":usage.input_tokens+usage.cache_read_input_tokens+usage.cache_creation_input_tokens,"classifierTokensEst":dump_context.classifier_tokens_est}),
-                        );
                     }
                 },
             }
@@ -1015,7 +963,6 @@ pub async fn classify_yolo_action(
         }
         Err(error) => {
             if signal.as_ref().is_some_and(|s| s.is_aborted()) {
-                log_auto_mode_outcome("interrupted", &model, json!({}));
                 return YoloClassifierResult {
                     should_block: true,
                     reason: "Classifier request aborted".into(),
@@ -1027,15 +974,6 @@ pub async fn classify_yolo_action(
             let too_long = detect_prompt_too_long(&error);
             let dump =
                 dump_error_prompts(&system, &user, &format!("{error:#}"), &dump_context).await;
-            log_auto_mode_outcome(
-                if too_long.is_some() {
-                    "transcript_too_long"
-                } else {
-                    "error"
-                },
-                &model,
-                json!({"mainLoopTokens":dump_context.main_loop_tokens,"classifierTokensEst":dump_context.classifier_tokens_est,"transcriptActualTokens":too_long.and_then(|v| v.0),"transcriptLimitTokens":too_long.and_then(|v| v.1)}),
-            );
             YoloClassifierResult {
                 should_block: true,
                 reason: if too_long.is_some() {
@@ -1077,11 +1015,7 @@ fn resolve_two_stage_classifier() -> Option<Value> {
             return Some(Value::Bool(false));
         }
     }
-    crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-        "tengu_auto_mode_config",
-        AutoModeConfig::default(),
-    )
-    .two_stage_classifier
+    auto_mode_config().two_stage_classifier
 }
 /// Maps to: CC `yoloClassifier.ts:1374-1377` `isTwoStageClassifierEnabled`.
 fn is_two_stage_classifier_enabled() -> bool {
@@ -1103,12 +1037,7 @@ fn is_jsonl_transcript_enabled() -> bool {
             return false;
         }
     }
-    crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-        "tengu_auto_mode_config",
-        AutoModeConfig::default(),
-    )
-    .jsonl_transcript
-        == Some(true)
+    auto_mode_config().jsonl_transcript == Some(true)
 }
 /// Maps to: CC `yoloClassifier.ts:1402-1414` `POWERSHELL_DENY_GUIDANCE`.
 #[cfg(feature = "anthropic_internal")]
@@ -1120,12 +1049,6 @@ const POWERSHELL_DENY_GUIDANCE: &[&str] = &[
 ];
 #[cfg(not(feature = "anthropic_internal"))]
 const POWERSHELL_DENY_GUIDANCE: &[&str] = &[];
-/// Maps to: CC `yoloClassifier.ts:1425-1455` `logAutoModeOutcome`.
-fn log_auto_mode_outcome(outcome: &str, model: &str, mut extra: Value) {
-    extra["outcome"] = json!(outcome);
-    extra["classifierModel"] = json!(model);
-    crate::services::analytics::log_event("tengu_auto_mode_outcome", extra);
-}
 /// Maps to: CC `yoloClassifier.ts:1463-1471` `detectPromptTooLong`.
 fn detect_prompt_too_long(error: &anyhow::Error) -> Option<(Option<u64>, Option<u64>)> {
     // Keep SDK source messages when side_query contributes anyhow context.
@@ -1468,19 +1391,17 @@ mod tests {
         crate::utils::side_query::side_query(opts).await
     }
 
-    struct ConfigGuard(
-        Option<crate::utils::config::GlobalConfig>,
-        Option<String>,
-        Option<Vec<Value>>,
-        Vec<EnvVarGuard>,
-    );
+    thread_local! {
+        /// Test-only replacement for the source-controlled `AutoModeConfig`,
+        /// so the classifier's non-default arms stay covered.
+        pub(super) static AUTO_MODE_CONFIG: RefCell<Option<AutoModeConfig>> =
+            const { RefCell::new(None) };
+    }
+
+    struct ConfigGuard(Option<String>, Option<Vec<Value>>, Vec<EnvVarGuard>);
     impl ConfigGuard {
         fn new(config: Value) -> Self {
             let vars = [
-                "NODE_ENV",
-                "DISABLE_TELEMETRY",
-                "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
-                "CLAUDE_INTERNAL_FC_OVERRIDES",
                 "NYAN_TWO_STAGE_CLASSIFIER",
                 "NYAN_JSONL_TRANSCRIPT",
                 "NYAN_DUMP_AUTO_MODE",
@@ -1488,33 +1409,24 @@ mod tests {
             .into_iter()
             .map(EnvVarGuard::unset)
             .collect();
-            crate::services::analytics::growthbook::reset_growth_book();
-            let mut global = crate::utils::config::GlobalConfig::default();
-            global.cached_growth_book_features =
-                Some(HashMap::from([("tengu_auto_mode_config".into(), config)]));
+            Self::set_config(config);
             Self(
-                crate::utils::config::replace_test_global_config(Some(global)),
                 crate::bootstrap::state::get_cached_claude_md_content(),
                 crate::bootstrap::state::get_last_classifier_requests(),
                 vars,
             )
         }
         fn set_config(config: Value) {
-            let mut global = crate::utils::config::load_global_config();
-            global
-                .cached_growth_book_features
-                .get_or_insert_with(HashMap::new)
-                .insert("tengu_auto_mode_config".into(), config);
-            crate::utils::config::set_test_global_config(Some(global));
+            let config = serde_json::from_value(config).expect("valid AutoModeConfig");
+            AUTO_MODE_CONFIG.with(|c| *c.borrow_mut() = Some(config));
         }
     }
     impl Drop for ConfigGuard {
         fn drop(&mut self) {
-            crate::utils::config::set_test_global_config(self.0.take());
-            crate::bootstrap::state::set_cached_claude_md_content(self.1.take());
-            crate::bootstrap::state::set_last_classifier_requests(self.2.take());
-            self.3.clear();
-            crate::services::analytics::growthbook::reset_growth_book();
+            AUTO_MODE_CONFIG.with(|c| c.borrow_mut().take());
+            crate::bootstrap::state::set_cached_claude_md_content(self.0.take());
+            crate::bootstrap::state::set_last_classifier_requests(self.1.take());
+            self.2.clear();
         }
     }
     fn api_response(text: &str, id: &str) -> ApiMessage {
@@ -1892,7 +1804,7 @@ mod tests {
     }
 
     #[test]
-    fn internal_template_and_always_on_thinking_match_official() {
+    fn internal_template_and_two_stage_env_match_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = ConfigGuard::new(json!({}));
         let internal = has_internal_capability(InternalCapability::Permissions);
@@ -1909,13 +1821,6 @@ mod tests {
                 .contains("Anthropic Internal")
         );
         assert!(!build_default_external_system_prompt().contains("_to_replace>"));
-        let mut global = crate::utils::config::load_global_config();
-        global.cached_growth_book_features.as_mut().unwrap().insert("tengu_ant_model_override".into(), json!({"antModels":[{"alias":"always","model":"always-model","label":"Always", "alwaysOnThinking":true}]}));
-        crate::utils::config::set_test_global_config(Some(global));
-        let (thinking, padding) = get_classifier_thinking_config("ALWAYS-MODEL-2026");
-        assert_eq!(thinking.is_none(), internal);
-        assert_eq!(padding, if internal { 2048 } else { 0 });
-        assert_eq!(get_classifier_thinking_config("normal-model").1, 0);
         ConfigGuard::set_config(json!({"twoStageClassifier":true}));
         let _env = EnvVarGuard::set("NYAN_TWO_STAGE_CLASSIFIER", "false");
         assert_eq!(is_two_stage_classifier_enabled(), !internal);

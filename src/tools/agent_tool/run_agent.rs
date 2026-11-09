@@ -583,19 +583,9 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
         .unwrap_or_else(crate::context::get_system_context);
     let should_omit_claude_md = input.agent_definition.omit_claude_md
         && input.r#override.user_context.is_none()
-        // CC's generic cached read is a cast, not validation. Its result is
-        // used by && / a ternary, so retain JavaScript truthiness even when
-        // an override/cache contains null, 0, an empty string, or an object.
-        && match crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-            "tengu_slim_subagent_claudemd",
-            serde_json::Value::Bool(true),
-        ) {
-            serde_json::Value::Null => false,
-            serde_json::Value::Bool(value) => value,
-            serde_json::Value::Number(value) => value.as_f64() != Some(0.0),
-            serde_json::Value::String(value) => !value.is_empty(),
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => true,
-        };
+        && crate::utils::feature_flags::feature_enabled(
+            crate::utils::feature_flags::FeatureFlag::SlimSubagentAgentsMd,
+        );
     if should_omit_claude_md {
         resolved_user_context.remove("claudeMd");
     }

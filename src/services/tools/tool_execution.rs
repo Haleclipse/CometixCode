@@ -4685,7 +4685,6 @@ mod tests {
         ));
         std::fs::create_dir_all(&config).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", config.to_string_lossy().as_ref());
-        let _overrides = EnvVarGuard::unset("CLAUDE_INTERNAL_FC_OVERRIDES");
         let content = "p".repeat(60_000);
         // The raw `toolUseResult` rides the row (trait projection), and
         // the display records only the emit-gate decision.
@@ -4730,7 +4729,6 @@ mod tests {
         ));
         std::fs::create_dir_all(&config).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", config.to_string_lossy().as_ref());
-        let _overrides = EnvVarGuard::unset("CLAUDE_INTERNAL_FC_OVERRIDES");
         let content = "g".repeat(25_000);
         // The raw `toolUseResult` rides the row (trait projection), and
         // the display records only the emit-gate decision.

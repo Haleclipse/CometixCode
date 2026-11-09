@@ -7359,7 +7359,6 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("NYAN_DISABLE_EXPERIMENTAL_BETAS");
         crate::services::provider::anthropic::betas::clear_betas_caches();
-        crate::services::analytics::growthbook::reset_growth_book();
         // CC `betas.ts:270-277`: SDK / print-mode sessions keep thinking
         // summaries (no redact-thinking beta), which is what lets
         // `clear_thinking_20251015` lead the context_management edits below.
@@ -7475,21 +7474,14 @@ mod tests {
             "NODE_ENV",
             "NYAN_DISABLE_EXPERIMENTAL_BETAS",
             "DISABLE_INTERLEAVED_THINKING",
-            "DISABLE_TELEMETRY",
             "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
             "NYAN_EXTRA_BODY",
         ];
         for key in env_keys {
             crate::utils::process_env::remove(key);
         }
-        crate::services::analytics::growthbook::reset_growth_book();
         crate::services::provider::anthropic::betas::clear_betas_caches();
-        let mut gate_off = crate::utils::config::GlobalConfig::default();
-        gate_off.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(false),
-        )]));
-        crate::utils::config::set_test_global_config(Some(gate_off));
+        crate::utils::config::set_test_global_config(Some(Default::default()));
 
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -7632,19 +7624,12 @@ mod tests {
         for key in [
             "NODE_ENV",
             "NYAN_DISABLE_EXPERIMENTAL_BETAS",
-            "DISABLE_TELEMETRY",
             "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
         }
-        crate::services::analytics::growthbook::reset_growth_book();
         crate::services::provider::anthropic::betas::clear_betas_caches();
-        let mut gate_on = crate::utils::config::GlobalConfig::default();
-        gate_on.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(true),
-        )]));
-        crate::utils::config::set_test_global_config(Some(gate_on));
+        crate::utils::config::set_test_global_config(Some(Default::default()));
 
         let messages = vec![Message::User(UserMessage {
             uuid: uuid::Uuid::new_v4().to_string(),
@@ -7666,9 +7651,9 @@ mod tests {
         let no_tools =
             build_sdk_request_options_plan(&messages, &ThinkingConfig::Disabled, &[], &options)
                 .unwrap();
-        // The injected `tengu_tool_pear` cache is inert: the gate resolves from
-        // the source-controlled switch table, so nothing but an explicit
-        // output_format adds the header.
+        // The `tengu_tool_pear` gate resolves from the source-controlled
+        // switch table, so nothing but an explicit output_format adds the
+        // header.
         assert!(!crate::utils::feature_flags::feature_enabled(
             crate::utils::feature_flags::FeatureFlag::StrictToolSchemas,
         ));
@@ -7716,12 +7701,7 @@ mod tests {
         );
 
         crate::services::provider::anthropic::betas::clear_betas_caches();
-        let mut gate_off = crate::utils::config::GlobalConfig::default();
-        gate_off.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(false),
-        )]));
-        crate::utils::config::set_test_global_config(Some(gate_off));
+        crate::utils::config::set_test_global_config(Some(Default::default()));
         let mut explicit_options = options.clone();
         explicit_options.output_format = Some(serde_json::json!({
             "type":"json_schema",

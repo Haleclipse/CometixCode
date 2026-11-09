@@ -4,7 +4,6 @@
 //! between `query` and REPL-owned state; retained components only consume their
 //! typed snapshots/events.
 
-pub mod analytics;
 pub mod api;
 /// @nyan: idle memory consolidation (memory 4.4 / auto-dream).
 pub mod auto_dream;

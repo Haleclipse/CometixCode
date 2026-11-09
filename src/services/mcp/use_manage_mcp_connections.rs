@@ -1311,7 +1311,6 @@ async fn load_and_connect_mcp_configs(
             .await;
         });
         if strict {
-            log_discovered_mcp_server_counts(&configs, &Default::default());
             return Ok(());
         }
     }
@@ -1323,7 +1322,6 @@ async fn load_and_connect_mcp_configs(
     }
     let remote =
         super::config::dedup_claude_ai_mcp_servers_readonly(&allowed, &configs, &project).servers;
-    let claudeai_configs = remote.clone();
     if !remote.is_empty() {
         // Source phase 2 only appends new clients; it must not perform the
         // phase 1 stale-plugin reconciliation against this remote subset.
@@ -1370,52 +1368,7 @@ async fn load_and_connect_mcp_configs(
             .await;
         });
     }
-    log_discovered_mcp_server_counts(&configs, &claudeai_configs);
     Ok(())
-}
-
-// Native extraction of source loadAndConnectMcpConfigs' final synchronous
-// logEvent block, shared by the strict no-await and awaited phase-2 paths.
-fn log_discovered_mcp_server_counts(
-    configs: &indexmap::IndexMap<String, ScopedMcpServerConfig>,
-    claudeai_configs: &indexmap::IndexMap<String, ScopedMcpServerConfig>,
-) {
-    let mut all_configs = configs.clone();
-    all_configs.extend(claudeai_configs.clone());
-    let mut counts =
-        serde_json::json!({"enterprise":0,"global":0,"project":0,"user":0,"plugin":0,"claudeai":0});
-    let ant = crate::utils::process_env::var("USER_TYPE").as_deref() == Some("ant");
-    let mut stdio_commands = Vec::new();
-    for (name, config) in crate::utils::process_env::ecmascript_object_entries(&all_configs) {
-        use super::types::ConfigScope;
-        let scope = match config.scope {
-            ConfigScope::User => "global",
-            ConfigScope::Project => "project",
-            ConfigScope::Local => "user",
-            ConfigScope::Dynamic => "plugin",
-            ConfigScope::ClaudeAi => "claudeai",
-        };
-        counts[scope] = serde_json::json!(counts[scope].as_u64().unwrap() + 1);
-        if ant
-            && !is_mcp_server_disabled(name)
-            && config.transport == Transport::Stdio
-            && let Some(command) = &config.command
-        {
-            stdio_commands.push(
-                command
-                    .trim_end_matches('/')
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned(),
-            );
-        }
-    }
-    if !stdio_commands.is_empty() {
-        stdio_commands.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
-        counts["stdio_commands"] = serde_json::json!(stdio_commands.join(","));
-    }
-    crate::services::analytics::log_event("tengu_mcp_servers", counts);
 }
 
 #[derive(Default)]

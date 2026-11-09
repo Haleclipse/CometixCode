@@ -490,11 +490,7 @@ mod tests {
         // claude.ai login.
         let _oauth_guard = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-channel-gate");
 
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_harbor_ledger".to_string(),
-            serde_json::json!([{ "marketplace": "anthropic", "plugin": "mailbox" }]),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
         let context = channel_gate_context_from_readonly_runtime();
         crate::utils::config::set_test_global_config(None);

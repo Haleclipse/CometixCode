@@ -69,8 +69,6 @@ pub fn AddMarketplace(
                 let added=crate::utils::plugins::marketplace_manager::add_marketplace_source(&parsed,Some(&progress)).await?;
                 crate::utils::plugins::marketplace_manager::save_marketplace_to_settings(&added.name,&serde_json::json!({"source":added.resolved_source}),crate::utils::settings::SettingSource::User)?;
                 crate::utils::plugins::cache_utils::clear_all_caches();
-                let source=if parsed["source"]=="github"{parsed["repo"].clone()}else{parsed["source"].clone()};
-                crate::services::analytics::log_event("tengu_marketplace_added",serde_json::json!({"source_type":source}));
                 on_add_complete(());Ok(added.name)
             }.await;
             match result{

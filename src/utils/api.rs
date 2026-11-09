@@ -603,11 +603,7 @@ mod tests {
         };
 
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(true),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
         let schema = tool_to_api_schema(&tool, schema_options(Some("claude-sonnet-4-6"), false))
             .expect("schema projection should succeed");
@@ -754,20 +750,15 @@ mod tests {
             "NODE_ENV",
             "NYAN_DISABLE_EXPERIMENTAL_BETAS",
             "NYAN_ENABLE_FINE_GRAINED_TOOL_STREAMING",
-            "DISABLE_TELEMETRY",
             "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
         }
         crate::utils::tool_schema_cache::clear_tool_schema_cache();
-        // The cached gate stays on for the whole chronology to prove it never
+        // The strict-tools switch is off for the whole chronology, so it never
         // reaches `strict`; the session-stable base is exercised through the
         // fine-grained-streaming env lever instead.
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(true),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
         crate::utils::process_env::set("NYAN_ENABLE_FINE_GRAINED_TOOL_STREAMING", "1");
 
@@ -839,7 +830,6 @@ mod tests {
             "NODE_ENV",
             "NYAN_DISABLE_EXPERIMENTAL_BETAS",
             "NYAN_ENABLE_FINE_GRAINED_TOOL_STREAMING",
-            "DISABLE_TELEMETRY",
             "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
@@ -853,11 +843,7 @@ mod tests {
         };
         // The experimental-betas switch is the shared stimulus for both caches
         // now that the strict-tools gate is a source-controlled constant.
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(true),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
         crate::utils::process_env::set("NYAN_ENABLE_FINE_GRAINED_TOOL_STREAMING", "1");
 
@@ -936,16 +922,11 @@ mod tests {
             "NODE_ENV",
             "NYAN_DISABLE_EXPERIMENTAL_BETAS",
             "NYAN_ENABLE_FINE_GRAINED_TOOL_STREAMING",
-            "DISABLE_TELEMETRY",
             "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
         }
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(true),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
         crate::utils::process_env::set("NYAN_ENABLE_FINE_GRAINED_TOOL_STREAMING", "1");
         let tool = Tool {

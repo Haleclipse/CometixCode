@@ -532,20 +532,9 @@ mod tests {
     }
 
     #[test]
-    fn prompt_suggestion_cohort_ignores_growthbook_delivery() {
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_chomp_inflection".to_string(),
-            serde_json::json!(true),
-        )]));
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            "tengu_chomp_inflection".to_string(),
-            serde_json::json!(true),
-        )]));
-        crate::utils::config::set_test_global_config(Some(config));
-
-        // The injected cache is inert; only CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION
-        // still opts in.
+    fn prompt_suggestion_cohort_follows_the_source_controlled_switch() {
+        // The cohort switch is off; only the explicit environment opt-in
+        // enables suggestions.
         assert_eq!(
             should_enable_prompt_suggestion_with_snapshots(None, false, false, None),
             crate::utils::feature_flags::feature_enabled(
@@ -561,8 +550,6 @@ mod tests {
             false,
             Some("1")
         ));
-
-        crate::utils::config::set_test_global_config(None);
     }
 
     #[test]

@@ -318,8 +318,8 @@ pub fn BrowseMarketplace(
             for plugin in plugins {
                 let name=plugin.entry["name"].as_str().unwrap_or("").to_string();
                 #[cfg(test)] let fixture_result=batch_test_imports.as_ref().map(|f|f.install(&plugin,PluginScope::User));
-                #[cfg(test)] let outcome=if let Some(result)=fixture_result{result}else{install_plugin_from_marketplace(InstallPluginParams{plugin_id:plugin.plugin_id,entry:plugin.entry,marketplace_name:plugin.marketplace_name,scope:Some(PluginScope::User),trigger:None}).await};
-                #[cfg(not(test))] let outcome=install_plugin_from_marketplace(InstallPluginParams{plugin_id:plugin.plugin_id,entry:plugin.entry,marketplace_name:plugin.marketplace_name,scope:Some(PluginScope::User),trigger:None}).await;
+                #[cfg(test)] let outcome=if let Some(result)=fixture_result{result}else{install_plugin_from_marketplace(InstallPluginParams{plugin_id:plugin.plugin_id,entry:plugin.entry,marketplace_name:plugin.marketplace_name,scope:Some(PluginScope::User)}).await};
+                #[cfg(not(test))] let outcome=install_plugin_from_marketplace(InstallPluginParams{plugin_id:plugin.plugin_id,entry:plugin.entry,marketplace_name:plugin.marketplace_name,scope:Some(PluginScope::User)}).await;
                 match outcome {
                     InstallPluginResult::Success{..}=>success_count+=1,
                     InstallPluginResult::Failure{error}=>failed.push(PluginFailureDetail{name,reason:Some(error),error:None}),
@@ -364,7 +364,6 @@ pub fn BrowseMarketplace(
                             entry: plugin.entry,
                             marketplace_name: plugin.marketplace_name,
                             scope: Some(scope),
-                            trigger: None,
                         })
                         .await
                     };
@@ -374,7 +373,6 @@ pub fn BrowseMarketplace(
                         entry: plugin.entry,
                         marketplace_name: plugin.marketplace_name,
                         scope: Some(scope),
-                        trigger: None,
                     })
                     .await;
                     match outcome {

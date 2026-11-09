@@ -51,7 +51,6 @@ python3 "$root/scripts/ci/prepare-test-home.py" --root "$root" >/dev/null
 
 export NYAN_CONFIG_DIR="$root/target/test-home"
 export NYAN_DISABLE_NONESSENTIAL_TRAFFIC=
-export DISABLE_TELEMETRY=
 export NODE_ENV=
 export NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR=
 export NYAN_TEST_PROJECT_DIR="$root/tests/fixtures/isolated-project"

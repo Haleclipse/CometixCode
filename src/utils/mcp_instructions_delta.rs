@@ -52,13 +52,10 @@ pub fn get_mcp_instructions_delta(
     client_side_instructions: &[ClientSideInstruction],
 ) -> Option<McpInstructionsDelta> {
     let mut announced = BTreeSet::new();
-    let mut attachment_count = 0usize;
-    let mut mid_count = 0usize;
     for message in messages {
         let Message::Attachment(attachment) = message else {
             continue;
         };
-        attachment_count += 1;
         let crate::types::message::Attachment::McpInstructionsDelta {
             added_names,
             removed_names,
@@ -67,7 +64,6 @@ pub fn get_mcp_instructions_delta(
         else {
             continue;
         };
-        mid_count += 1;
         for name in added_names {
             announced.insert(name.clone());
         }
@@ -107,7 +103,6 @@ pub fn get_mcp_instructions_delta(
         .into_iter()
         .filter(|(name, _)| !announced.contains(*name))
         .collect::<Vec<_>>();
-    let prior_announced_count = announced.len();
     let mut removed_names = announced
         .into_iter()
         .filter(|name| !connected_names.contains(name.as_str()))
@@ -115,19 +110,6 @@ pub fn get_mcp_instructions_delta(
     if added.is_empty() && removed_names.is_empty() {
         return None;
     }
-
-    crate::services::analytics::log_event(
-        "tengu_mcp_instructions_pool_change",
-        serde_json::json!({
-            "addedCount": added.len(),
-            "removedCount": removed_names.len(),
-            "priorAnnouncedCount": prior_announced_count,
-            "clientSideCount": client_side_instructions.len(),
-            "messagesLength": messages.len(),
-            "attachmentCount": attachment_count,
-            "midCount": mid_count,
-        }),
-    );
 
     added.sort_by(|(a, _), (b, _)| crate::tools::grep_tool::javascript_locale_compare(a, b));
     // `Array.prototype.sort()` with no comparator: UTF-16 code unit order.
@@ -237,45 +219,5 @@ mod tests {
         let delta = get_mcp_instructions_delta(&clients, &history, &[]).unwrap();
         assert_eq!(delta.added_names, vec!["docs"]);
         assert!(delta.removed_names.is_empty());
-    }
-
-    /// CC `:114-122` logs the pool change with the scan's counts.
-    #[test]
-    fn instruction_delta_logs_the_pool_change() {
-        let clients = [McpServerConnection::connected_with_instructions_for_test(
-            "docs",
-            "Read first.",
-        )];
-        let messages = [
-            Message::User(crate::utils::messages::create_user_message(
-                "hi".to_string(),
-            )),
-            announced(&["gone", "kept"], &[]),
-            Message::Attachment(crate::types::message::AttachmentMessage::new(
-                serde_json::json!({ "type": "critical_system_reminder", "content": "x" }),
-            )),
-        ];
-        let client_side = [ClientSideInstruction {
-            server_name: "elsewhere".to_string(),
-            block: "Not connected.".to_string(),
-        }];
-        get_mcp_instructions_delta(&clients, &messages, &client_side).unwrap();
-
-        let (_, metadata) = crate::services::analytics::queued_events_for_test()
-            .into_iter()
-            .rfind(|(name, _)| name == "tengu_mcp_instructions_pool_change")
-            .expect("the pool change is logged");
-        assert_eq!(
-            metadata,
-            serde_json::json!({
-                "addedCount": 1,
-                "removedCount": 2,
-                "priorAnnouncedCount": 2,
-                "clientSideCount": 1,
-                "messagesLength": 3,
-                "attachmentCount": 2,
-                "midCount": 1,
-            })
-        );
     }
 }

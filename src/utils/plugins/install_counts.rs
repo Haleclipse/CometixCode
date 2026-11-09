@@ -4,12 +4,7 @@
 //! timestamps can therefore cause a cache miss here. Reqwest native transport
 //! diagnostics/proxy/TLS behavior are not a complete Axios transport port.
 
-use super::{
-    fetch_telemetry::{
-        PluginFetchOutcome, PluginFetchSource, classify_fetch_error, log_plugin_fetch,
-    },
-    plugin_directories::get_plugins_directory,
-};
+use super::plugin_directories::get_plugins_directory;
 use crate::utils::{
     debug::log_for_debugging,
     json::JsoncValue,
@@ -228,74 +223,46 @@ async fn fetch_install_counts_from_git_hub() -> anyhow::Result<Vec<JsoncValue>> 
     log_for_debugging(&format!(
         "Fetching install counts from {INSTALL_COUNTS_URL}"
     ));
-    let started = std::time::Instant::now();
-    let result: anyhow::Result<Vec<JsoncValue>> = async {
-        // CC `axios.get` (`installCounts.ts:191-193`), through the global
-        // interceptor; `create_axios_instance` resolves the same transport.
-        let client = crate::utils::proxy::create_axios_instance()?
-            .timeout(std::time::Duration::from_millis(10000))
-            .build()?;
-        let url = INSTALL_COUNTS_URL.to_owned();
-        #[cfg(test)]
-        let url = tests::HTTP_OVERRIDE.lock().unwrap().clone().unwrap_or(url);
-        let response = client.get(url).send().await.map_err(|error| {
-            if error.is_timeout() {
-                anyhow::anyhow!("timeout of 10000ms exceeded")
-            } else {
-                anyhow::Error::new(error)
-            }
-        })?;
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "Request failed with status code {}",
-                response.status().as_u16()
-            );
+    // CC `axios.get` (`installCounts.ts:191-193`), through the global
+    // interceptor; `create_axios_instance` resolves the same transport.
+    let client = crate::utils::proxy::create_axios_instance()?
+        .timeout(std::time::Duration::from_millis(10000))
+        .build()?;
+    let url = INSTALL_COUNTS_URL.to_owned();
+    #[cfg(test)]
+    let url = tests::HTTP_OVERRIDE.lock().unwrap().clone().unwrap_or(url);
+    let response = client.get(url).send().await.map_err(|error| {
+        if error.is_timeout() {
+            anyhow::anyhow!("timeout of 10000ms exceeded")
+        } else {
+            anyhow::Error::new(error)
         }
-        // Axios's utf8 Buffer response decoding strips exactly one BOM.
-        // Read bytes to avoid a transport text decoder stripping another one.
-        let bytes = response.bytes().await?;
-        let text = String::from_utf8_lossy(&bytes);
-        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-        // Axios's default transform keeps invalid JSON as text; the source
-        // then throws its own response-schema error, not JSON.parse's error.
-        let response = json_parse(text).unwrap_or_else(|_| JsoncValue::from_json(text.into()));
-        response
-            .get_property("plugins")
-            .and_then(JsoncValue::as_array)
-            .map(<[JsoncValue]>::to_vec)
-            .ok_or_else(|| anyhow::anyhow!("Invalid response format from install counts API"))
+    })?;
+    if !response.status().is_success() {
+        anyhow::bail!(
+            "Request failed with status code {}",
+            response.status().as_u16()
+        );
     }
-    .await;
-    match &result {
-        Ok(_) => log_plugin_fetch(
-            PluginFetchSource::InstallCounts,
-            Some(INSTALL_COUNTS_URL),
-            PluginFetchOutcome::Success,
-            started.elapsed().as_secs_f64() * 1000.0,
-            None,
-        ),
-        Err(error) => log_plugin_fetch(
-            PluginFetchSource::InstallCounts,
-            Some(INSTALL_COUNTS_URL),
-            PluginFetchOutcome::Failure,
-            started.elapsed().as_secs_f64() * 1000.0,
-            Some(classify_fetch_error(error)),
-        ),
-    }
-    result
+    // Axios's utf8 Buffer response decoding strips exactly one BOM.
+    // Read bytes to avoid a transport text decoder stripping another one.
+    let bytes = response.bytes().await?;
+    let text = String::from_utf8_lossy(&bytes);
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    // Axios's default transform keeps invalid JSON as text; the source
+    // then throws its own response-schema error, not JSON.parse's error.
+    let response = json_parse(text).unwrap_or_else(|_| JsoncValue::from_json(text.into()));
+    response
+        .get_property("plugins")
+        .and_then(JsoncValue::as_array)
+        .map(<[JsoncValue]>::to_vec)
+        .ok_or_else(|| anyhow::anyhow!("Invalid response format from install counts API"))
 }
 
 /// Maps to: CC `utils/plugins/installCounts.ts:225-260#getInstallCounts`.
 pub async fn get_install_counts() -> Option<InstallCounts> {
     if let Some(cache) = load_install_counts_cache().await {
         log_for_debugging("Using cached install counts");
-        log_plugin_fetch(
-            PluginFetchSource::InstallCounts,
-            Some(INSTALL_COUNTS_URL),
-            PluginFetchOutcome::CacheHit,
-            0.0,
-            None,
-        );
         let mut map = InstallCounts::default();
         for entry in cache.counts {
             map.set(

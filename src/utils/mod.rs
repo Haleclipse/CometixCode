@@ -244,6 +244,4 @@ pub mod static_render;
 
 pub mod dxt;
 
-pub mod telemetry;
-
 pub mod system_directories;

@@ -26,17 +26,11 @@ pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>, enabled: bool) {
                 .expect("plugin mount requires process runtime")
                 .spawn(async move {
                     let mut metrics = initial_plugin_load(store, notifications).await;
-                    let names = metrics.as_object_mut().unwrap().remove("ant_enabled_names");
                     metrics["has_custom_plugin_cache_dir"] = json!(
                         crate::utils::process_env::var("NYAN_PLUGIN_CACHE_DIR")
                             .truthy()
                             .is_some()
                     );
-                    let mut event = metrics.clone();
-                    if let Some(names) = names.filter(|v| !v.is_null()) {
-                        event["enabled_names"] = names;
-                    }
-                    crate::services::analytics::log_event("tengu_plugins_loaded", event);
                     // diagLogs has no Rust output sink; preserve base fields in the existing debug sink.
                     crate::utils::debug::log_for_debugging(&format!(
                         "tengu_plugins_loaded: {metrics}"
@@ -196,19 +190,7 @@ async fn initial_plugin_load(store: AppStore, mut notifications: NotificationsWr
                 .flatten()
                 .map(|m| m["hooks"].as_array().map_or(0, |h| h.len()))
                 .sum();
-            let mut metrics = json!({"enabled_count":loaded.enabled.len(),"disabled_count":loaded.disabled.len(),"inline_count":loaded.enabled.iter().filter(|p|p.source.ends_with("@inline")).count(),"marketplace_count":loaded.enabled.iter().filter(|p|!p.source.ends_with("@inline")).count(),"error_count":error_count,"skill_count":commands.len(),"agent_count":agents.len(),"hook_count":hook_count,"mcp_count":mcp_count,"lsp_count":lsp_count});
-            if crate::utils::process_env::var("USER_TYPE").as_deref() == Some("ant")
-                && !loaded.enabled.is_empty()
-            {
-                let mut names = loaded
-                    .enabled
-                    .iter()
-                    .map(|p| p.name.clone())
-                    .collect::<Vec<_>>();
-                names.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
-                metrics["ant_enabled_names"] = json!(names.join(","));
-            }
-            Ok(metrics)
+            Ok(json!({"enabled_count":loaded.enabled.len(),"disabled_count":loaded.disabled.len(),"inline_count":loaded.enabled.iter().filter(|p|p.source.ends_with("@inline")).count(),"marketplace_count":loaded.enabled.iter().filter(|p|!p.source.ends_with("@inline")).count(),"error_count":error_count,"skill_count":commands.len(),"agent_count":agents.len(),"hook_count":hook_count,"mcp_count":mcp_count,"lsp_count":lsp_count}))
     }.await;
     match result {
         Ok(metrics) => metrics,

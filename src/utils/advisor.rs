@@ -2,29 +2,13 @@
 //!
 //! Maps to CC `utils/advisor.ts`.  The server-side advisor transport already
 //! lives at the API/message owners; this file owns only the shared feature
-//! configuration, model gates, and initial settings projection used by the
+//! gate, model gates, and initial settings projection used by the
 //! `/advisor` command and query builder.
 
-use serde::Deserialize;
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct AdvisorConfig {
-    enabled: Option<bool>,
-    can_user_configure: Option<bool>,
-    base_model: Option<String>,
-    advisor_model: Option<String>,
-}
-
-/// Maps to CC `getAdvisorConfig()` (`utils/advisor.ts:53-58`).
-fn get_advisor_config() -> AdvisorConfig {
-    crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-        "tengu_sage_compass",
-        AdvisorConfig::default(),
-    )
-}
-
-/// Maps to CC `isAdvisorEnabled()` (`utils/advisor.ts:60-69`).
+/// Maps to CC `isAdvisorEnabled()` (`utils/advisor.ts:60-69`). @nyan: the
+/// `tengu_sage_compass` config is the source-controlled
+/// [`FeatureFlag::Advisor`](crate::utils::feature_flags::FeatureFlag::Advisor)
+/// switch.
 pub fn is_advisor_enabled() -> bool {
     if crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_DISABLE_ADVISOR_TOOL").as_deref(),
@@ -34,22 +18,14 @@ pub fn is_advisor_enabled() -> bool {
     if !crate::services::provider::anthropic::betas::should_include_first_party_only_betas() {
         return false;
     }
-    get_advisor_config().enabled.unwrap_or(false)
+    crate::utils::feature_flags::feature_enabled(crate::utils::feature_flags::FeatureFlag::Advisor)
 }
 
-/// Maps to CC `canUserConfigureAdvisor()` (`utils/advisor.ts:71-73`).
+/// Maps to CC `canUserConfigureAdvisor()` (`utils/advisor.ts:71-73`). @nyan:
+/// there are no server-assigned experiment advisor models, so an enabled
+/// advisor is always user-configured.
 pub fn can_user_configure_advisor() -> bool {
-    is_advisor_enabled() && get_advisor_config().can_user_configure.unwrap_or(false)
-}
-
-/// Maps to CC `getExperimentAdvisorModels()` (`utils/advisor.ts:75-85`).
-pub fn get_experiment_advisor_models() -> Option<(String, String)> {
-    let config = get_advisor_config();
-    (is_advisor_enabled()
-        && !can_user_configure_advisor()
-        && config.base_model.is_some()
-        && config.advisor_model.is_some())
-    .then(|| (config.base_model.unwrap(), config.advisor_model.unwrap()))
+    is_advisor_enabled()
 }
 
 /// Maps to CC `modelSupportsAdvisor()` (`utils/advisor.ts:88-96`).
@@ -85,6 +61,18 @@ mod tests {
         assert!(!model_supports_advisor("claude-opus-4-5"));
         let _ant = EnvVarGuard::set("USER_TYPE", "ant");
         assert!(is_valid_advisor_model("custom-enterprise-model"));
+    }
+
+    #[test]
+    fn advisor_gate_follows_the_source_controlled_switch() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _disabled = EnvVarGuard::unset("NYAN_DISABLE_ADVISOR_TOOL");
+        assert!(!crate::utils::feature_flags::feature_enabled(
+            crate::utils::feature_flags::FeatureFlag::Advisor
+        ));
+        assert!(!is_advisor_enabled());
+        assert!(!can_user_configure_advisor());
+        assert_eq!(get_initial_advisor_setting(), None);
     }
 
     #[test]

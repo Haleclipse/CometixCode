@@ -339,18 +339,14 @@ mod tests {
     }
 
     #[test]
-    fn public_auto_mode_gate_ignores_cached_config_and_matches_family_rules() {
+    fn public_auto_mode_gate_matches_family_rules() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_auto_mode_config".to_string(),
-            serde_json::json!({"allowModels": ["internal-cached-model"]}),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));
 
         assert!(model_supports_auto_mode("claude-sonnet-4-6"));
-        // The cached allowModels entry is inert: eligibility now comes from the
-        // ported family rules alone.
+        // There is no allowModels payload: eligibility comes from the ported
+        // family rules alone.
         if cfg!(feature = "anthropic_internal") {
             assert!(model_supports_auto_mode("internal-cached-model"));
         } else {
@@ -391,23 +387,17 @@ mod tests {
         for key in [
             "NODE_ENV",
             "NYAN_DISABLE_EXPERIMENTAL_BETAS",
-            "DISABLE_TELEMETRY",
             "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
         ] {
             crate::utils::process_env::remove(key);
         }
         clear_betas_caches();
-        let mut cached_gate_on = crate::utils::config::GlobalConfig::default();
-        cached_gate_on.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_tool_pear".to_string(),
-            serde_json::json!(true),
-        )]));
-        crate::utils::config::set_test_global_config(Some(cached_gate_on));
+        crate::utils::config::set_test_global_config(Some(Default::default()));
 
         let raw = "claude-sonnet-4-6";
         let first = get_all_model_betas(raw);
-        // The strict-tools gate is source-controlled and off, so a cached
-        // GrowthBook entry cannot add the structured-outputs header.
+        // The strict-tools gate is source-controlled and off, so nothing adds
+        // the structured-outputs header.
         assert!(
             !first
                 .iter()

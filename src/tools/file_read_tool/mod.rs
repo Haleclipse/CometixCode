@@ -4887,33 +4887,10 @@ PY\n\
     }
 
     #[tokio::test]
-    async fn cached_read_dedup_killswitch_config_cannot_disable_dedup() {
+    async fn read_dedup_killswitch_switch_keeps_dedup_on() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        struct ConfigRestore(Option<crate::utils::config::GlobalConfig>);
-        impl Drop for ConfigRestore {
-            fn drop(&mut self) {
-                crate::utils::config::replace_test_global_config(self.0.take());
-            }
-        }
-        // Clear every analytics-disable condition so the injected disk cache
-        // would be reachable if the killswitch were still read from config;
-        // dedup must stay on because the switch table owns the answer.
-        let _env_restore = [
-            "NODE_ENV",
-            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC",
-            "DISABLE_TELEMETRY",
-        ]
-        .into_iter()
-        .map(EnvVarGuard::unset)
-        .collect::<Vec<_>>();
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_read_dedup_killswitch".to_string(),
-            serde_json::Value::Bool(true),
-        )]));
-        let _restore = ConfigRestore(crate::utils::config::replace_test_global_config(Some(
-            config,
-        )));
+        // The killswitch is the source-controlled switch, which is off, so
+        // unchanged same-range Reads deduplicate.
         let dir = std::env::temp_dir().join(format!(
             "nyan-read-dedup-killswitch-{}",
             uuid::Uuid::new_v4().simple()

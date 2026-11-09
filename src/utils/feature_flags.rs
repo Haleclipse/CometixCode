@@ -1,10 +1,11 @@
-//! Hardcoded feature-switch collection for CC GrowthBook-controlled gates.
+//! Hardcoded feature-switch collection for CC GrowthBook/Statsig-controlled
+//! gates and build features.
 //!
 //! Maps to CC GrowthBook feature reads such as
 //! `getFeatureValue_CACHED_MAY_BE_STALE(...)` and
-//! `getFeatureValue_CACHED_WITH_REFRESH(...)`, but intentionally does not
-//! implement cloud delivery, cache parsing, refresh windows, or config override
-//! ingestion. Nyan keeps a single source-controlled switch table instead.
+//! `checkStatsigFeatureGate_CACHED_MAY_BE_STALE(...)`. @nyan: there is no
+//! GrowthBook or Statsig client, cache, or override layer; this
+//! source-controlled table is the only place these gates are decided.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FeatureFlag {
@@ -141,6 +142,21 @@ pub enum FeatureFlag {
     /// Maps to CC GrowthBook `tengu_disable_keepalive_on_econnreset`
     /// (`services/api/withRetry.ts:220-223`, fallback false).
     DisableKeepaliveOnEconnreset,
+    /// Maps to CC GrowthBook kill switch `tengu_slim_subagent_claudemd`
+    /// (`tools/AgentTool/runAgent.ts`, fallback true).
+    SlimSubagentAgentsMd,
+    /// Maps to CC Statsig gate `tengu_chair_sermon`
+    /// (`utils/messages.ts#mergeUserContentBlocks`, fallback false).
+    UniversalToolResultMerge,
+    /// Maps to CC Statsig security gate `tengu_disable_bypass_permissions_mode`
+    /// (`utils/permissions/permissionSetup.ts`, fallback false).
+    DisableBypassPermissionsMode,
+    /// Maps to CC GrowthBook `tengu_plugin_official_mkt_git_fallback`
+    /// (`utils/plugins/marketplaceManager.ts`, fallback true).
+    OfficialMarketplaceGitFallback,
+    /// Maps to CC GrowthBook config `tengu_sage_compass`
+    /// (`utils/advisor.ts#getAdvisorConfig`, fallback `{}`).
+    Advisor,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -531,13 +547,85 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         enabled: false,
         note: "CC's own fallback is false (withRetry.ts:220-223 getFeatureValue_CACHED_MAY_BE_STALE(..., false)): a stale ECONNRESET/EPIPE connection does not call disableKeepAlive unless this switch is flipped.",
     },
+    FeatureSwitch {
+        flag: FeatureFlag::SlimSubagentAgentsMd,
+        cc_growthbook_name: "tengu_slim_subagent_claudemd",
+        enabled: true,
+        note: "Official fallback true: agents whose definition sets omitClaudeMd drop the AGENTS.md user context unless the caller overrides it.",
+    },
+    FeatureSwitch {
+        flag: FeatureFlag::UniversalToolResultMerge,
+        cc_growthbook_name: "tengu_chair_sermon",
+        enabled: false,
+        note: "Official fallback false: only text-only follow-ups fold into a preceding tool_result; attachments stay separate user messages.",
+    },
+    FeatureSwitch {
+        flag: FeatureFlag::DisableBypassPermissionsMode,
+        cc_growthbook_name: "tengu_disable_bypass_permissions_mode",
+        enabled: false,
+        note: "Official fallback false: bypass-permissions mode is only disabled by the permissions.disableBypassPermissionsMode setting.",
+    },
+    FeatureSwitch {
+        flag: FeatureFlag::OfficialMarketplaceGitFallback,
+        cc_growthbook_name: "tengu_plugin_official_mkt_git_fallback",
+        enabled: true,
+        note: "Official fallback true: when the official marketplace GCS mirror fails, refresh falls back to git.",
+    },
+    FeatureSwitch {
+        flag: FeatureFlag::Advisor,
+        cc_growthbook_name: "tengu_sage_compass",
+        enabled: false,
+        note: "Official fallback is an empty config, so the advisor tool and /advisor stay disabled; enabling this switch also lets the user configure the advisor model.",
+    },
 ];
 
 pub fn feature_enabled(flag: FeatureFlag) -> bool {
+    #[cfg(test)]
+    if let Some(enabled) = test_override(flag) {
+        return enabled;
+    }
     FEATURE_SWITCHES
         .iter()
         .find(|switch| switch.flag == flag)
         .is_some_and(|switch| switch.enabled)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_OVERRIDES: std::cell::RefCell<std::collections::HashMap<FeatureFlag, bool>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+#[cfg(test)]
+fn test_override(flag: FeatureFlag) -> Option<bool> {
+    TEST_OVERRIDES.with(|overrides| overrides.borrow().get(&flag).copied())
+}
+
+/// Test-only: flips `flag` on the current thread until the guard drops, so a
+/// test can exercise the non-default arm of a source-controlled switch.
+#[cfg(test)]
+pub(crate) fn override_for_test(flag: FeatureFlag, enabled: bool) -> FeatureOverrideGuard {
+    let previous = TEST_OVERRIDES.with(|overrides| overrides.borrow_mut().insert(flag, enabled));
+    FeatureOverrideGuard { flag, previous }
+}
+
+#[cfg(test)]
+pub(crate) struct FeatureOverrideGuard {
+    flag: FeatureFlag,
+    previous: Option<bool>,
+}
+
+#[cfg(test)]
+impl Drop for FeatureOverrideGuard {
+    fn drop(&mut self) {
+        TEST_OVERRIDES.with(|overrides| {
+            let mut overrides = overrides.borrow_mut();
+            match self.previous {
+                Some(enabled) => overrides.insert(self.flag, enabled),
+                None => overrides.remove(&self.flag),
+            };
+        });
+    }
 }
 
 pub fn feature_switch_by_growthbook_name(name: &str) -> Option<&'static FeatureSwitch> {

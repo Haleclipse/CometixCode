@@ -179,21 +179,8 @@ mod tests {
     }
 
     #[test]
-    fn emergency_tip_ignores_growthbook_delivery() {
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            EMERGENCY_TIP_CONFIG_NAME.to_string(),
-            serde_json::json!({"tip": "Important update", "color": "error"}),
-        )]));
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            EMERGENCY_TIP_CONFIG_NAME.to_string(),
-            serde_json::json!({"tip": "Important update", "color": "error"}),
-        )]));
-        crate::utils::config::set_test_global_config(Some(config));
-
+    fn emergency_tip_is_the_official_empty_default() {
         assert_eq!(get_tip_of_feed(), TipOfFeed::default());
-
-        crate::utils::config::set_test_global_config(None);
     }
 
     #[test]

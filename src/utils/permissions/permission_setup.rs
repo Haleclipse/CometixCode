@@ -389,15 +389,23 @@ fn format_permission_source(source: PermissionRuleSource) -> String {
 
 /// Maps to CC `permissionSetup.ts#isBypassPermissionsModeDisabled()`.
 ///
-/// Reads the cached security gate and source-merged settings, as startup does.
+/// Reads the source-controlled security switch and source-merged settings, as
+/// startup does.
 pub fn is_bypass_permissions_mode_disabled() -> bool {
-    crate::services::analytics::growthbook::check_statsig_feature_gate_cached_may_be_stale(
-        "tengu_disable_bypass_permissions_mode",
-    ) || crate::utils::settings::get_initial_settings()
-        .permissions
-        .and_then(|p| p.disable_bypass_permissions_mode)
-        .as_deref()
-        == Some("disable")
+    is_bypass_permissions_mode_disabled_by_policy()
+        || crate::utils::settings::get_initial_settings()
+            .permissions
+            .and_then(|p| p.disable_bypass_permissions_mode)
+            .as_deref()
+            == Some("disable")
+}
+
+/// Maps to CC Statsig security gate `tengu_disable_bypass_permissions_mode`,
+/// read from the source-controlled switch table.
+fn is_bypass_permissions_mode_disabled_by_policy() -> bool {
+    crate::utils::feature_flags::feature_enabled(
+        crate::utils::feature_flags::FeatureFlag::DisableBypassPermissionsMode,
+    )
 }
 
 /// Maps to CC `permissionSetup.ts#createDisabledBypassPermissionsContext(...)`.
@@ -439,26 +447,22 @@ pub fn initial_permission_mode_from_cli(
     dangerously_skip_permissions: bool,
 ) -> (PermissionMode, Option<String>) {
     let settings = crate::utils::settings::get_initial_settings();
-    let policy_disabled =
-        crate::services::analytics::growthbook::check_statsig_feature_gate_cached_may_be_stale(
-            "tengu_disable_bypass_permissions_mode",
-        );
+    let policy_disabled = is_bypass_permissions_mode_disabled_by_policy();
     let settings_disabled = settings
         .permissions
         .as_ref()
         .and_then(|p| p.disable_bypass_permissions_mode.as_deref())
         == Some("disable");
-    let broken = is_transcript_classifier_feature_enabled()
-        && get_auto_mode_enabled_state_if_cached() == Some(AutoModeEnabledState::Disabled);
+    // @nyan: CC also drops `auto` here when a GrowthBook cache from an
+    // earlier session marks auto mode disabled. Nyan has no such cache (CC's
+    // cold-cache case), so `auto` is kept and the post-startup
+    // `verify_auto_mode_gate_access` check decides.
     let mut modes = Vec::new();
     if dangerously_skip_permissions {
         modes.push(PermissionMode::BypassPermissions);
     }
     if let Some(cli) = permission_mode_cli.filter(|v| !v.is_empty()) {
-        let mode = permission_mode_from_string(cli);
-        if !(is_transcript_classifier_feature_enabled() && mode == PermissionMode::Auto && broken) {
-            modes.push(mode);
-        }
+        modes.push(permission_mode_from_string(cli));
     }
     if let Some(mode) = settings
         .permissions
@@ -473,18 +477,8 @@ pub fn initial_permission_mode_from_cli(
             crate::utils::debug::log_for_debugging(&format!(
                 "settings defaultMode \"{mode}\" is not supported in CLAUDE_CODE_REMOTE — only acceptEdits and plan are allowed"
             ));
-            crate::services::analytics::log_event(
-                "tengu_ccr_unsupported_default_mode_ignored",
-                serde_json::json!({"mode": mode}),
-            );
         } else {
-            let mode = permission_mode_from_string(mode);
-            if !(is_transcript_classifier_feature_enabled()
-                && mode == PermissionMode::Auto
-                && broken)
-            {
-                modes.push(mode);
-            }
+            modes.push(permission_mode_from_string(mode));
         }
     }
     let mut notification = None;
@@ -613,42 +607,24 @@ pub enum AutoModeEnabledState {
     OptIn,
 }
 
-fn parse_auto_mode_enabled_state(value: Option<&serde_json::Value>) -> AutoModeEnabledState {
-    match value.and_then(serde_json::Value::as_str) {
-        Some("enabled") => AutoModeEnabledState::Enabled,
-        Some("opt-in") => AutoModeEnabledState::OptIn,
-        _ => AutoModeEnabledState::Disabled,
-    }
-}
-
 /// Maps to: CC `permissionSetup.ts:1328-1333#getAutoModeEnabledState`.
+///
+/// @nyan: CC reads `enabled` from the GrowthBook `tengu_auto_mode_config`
+/// payload, whose fallback `{}` resolves to `Disabled`. That fallback is the
+/// source-controlled value here, so the startup gate check trips the auto-mode
+/// circuit breaker.
 pub fn get_auto_mode_enabled_state() -> AutoModeEnabledState {
-    let config = crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-        "tengu_auto_mode_config",
-        serde_json::json!({}),
-    );
-    parse_auto_mode_enabled_state(config.get("enabled"))
+    #[cfg(test)]
+    if let Some(state) = AUTO_MODE_ENABLED_STATE_FOR_TEST.get() {
+        return state;
+    }
+    AutoModeEnabledState::Disabled
 }
 
-/// Maps to: CC `permissionSetup.ts:1335-1352#getAutoModeEnabledStateIfCached`.
-pub fn get_auto_mode_enabled_state_if_cached() -> Option<AutoModeEnabledState> {
-    // L1 presence carrier for the source Symbol sentinel: a present JSON null
-    // MUST remain distinct from the absent/default cache value.
-    #[derive(Clone)]
-    struct CachedConfig(Option<serde_json::Value>);
-    impl<'de> serde::Deserialize<'de> for CachedConfig {
-        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-            <serde_json::Value as serde::Deserialize>::deserialize(deserializer)
-                .map(|value| Self(Some(value)))
-        }
-    }
-    let config = crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-        "tengu_auto_mode_config",
-        CachedConfig(None),
-    );
-    config
-        .0
-        .map(|value| parse_auto_mode_enabled_state(value.get("enabled")))
+#[cfg(test)]
+thread_local! {
+    static AUTO_MODE_ENABLED_STATE_FOR_TEST: std::cell::Cell<Option<AutoModeEnabledState>> =
+        const { std::cell::Cell::new(None) };
 }
 
 /// Maps to: CC `permissionSetup.ts:1036-1045#AutoModeGateCheckResult`.
@@ -664,41 +640,23 @@ pub struct AutoModeGateCheckResult {
 pub async fn verify_auto_mode_gate_access(
     current_context: &ToolPermissionContext,
 ) -> AutoModeGateCheckResult {
-    let config = crate::services::analytics::growthbook::get_dynamic_config_blocks_on_init(
-        "tengu_auto_mode_config",
-        serde_json::json!({}),
-    )
-    .await;
-    let enabled = parse_auto_mode_enabled_state(config.get("enabled"));
+    let enabled = get_auto_mode_enabled_state();
     let disabled_by_settings = is_auto_mode_disabled_by_settings();
     super::auto_mode_state::set_auto_mode_circuit_broken(
         enabled == AutoModeEnabledState::Disabled || disabled_by_settings,
     );
     let main_model = crate::utils::model::model::get_main_loop_model();
-    let disable_fast = config
-        .get("disableFastMode")
-        .is_some_and(|value| match value {
-            serde_json::Value::Null => false,
-            serde_json::Value::Bool(value) => *value,
-            serde_json::Value::Number(value) => value.as_f64() != Some(0.0),
-            serde_json::Value::String(value) => !value.is_empty(),
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => true,
-        })
-        // @nyan: no Fast mode; only the internal `-fast` model id trips it.
-        && crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Permissions,
-        )
-        && main_model.to_lowercase().contains("-fast");
+    // @nyan: CC's `disableFastMode` breaker comes from the same payload; its
+    // fallback leaves it off.
     let model_supported =
-        crate::services::provider::anthropic::betas::model_supports_auto_mode(&main_model)
-            && !disable_fast;
+        crate::services::provider::anthropic::betas::model_supports_auto_mode(&main_model);
     let can_enter =
         enabled != AutoModeEnabledState::Disabled && !disabled_by_settings && model_supported;
     let carousel_available = can_enter
         && (enabled == AutoModeEnabledState::Enabled || has_auto_mode_opt_in_any_source());
     let auto_flag_cli = super::auto_mode_state::get_auto_mode_flag_cli();
     crate::utils::debug::log_for_debugging(&format!(
-        "[auto-mode] verifyAutoModeGateAccess: enabledState={enabled:?} disabledBySettings={disabled_by_settings} model={main_model} modelSupported={model_supported} disableFastModeBreakerFires={disable_fast} carouselAvailable={carousel_available} canEnterAuto={can_enter}"
+        "[auto-mode] verifyAutoModeGateAccess: enabledState={enabled:?} disabledBySettings={disabled_by_settings} model={main_model} modelSupported={model_supported} carouselAvailable={carousel_available} canEnterAuto={can_enter}"
     ));
     let set_available = |ctx: &Arc<ToolPermissionContext>, available| {
         if ctx.is_auto_mode_available == Some(available) {
@@ -761,11 +719,8 @@ pub async fn verify_auto_mode_gate_access(
 }
 
 /// Maps to: CC `permissionSetup.ts:1266-1268#shouldDisableBypassPermissions`.
-pub async fn should_disable_bypass_permissions() -> bool {
-    crate::services::analytics::growthbook::check_security_restriction_gate(
-        "tengu_disable_bypass_permissions_mode",
-    )
-    .await
+pub fn should_disable_bypass_permissions() -> bool {
+    is_bypass_permissions_mode_disabled_by_policy()
 }
 
 /// Maps to CC `shouldPlanUseAutoMode()`.
@@ -1868,7 +1823,7 @@ mod directory_tests {
 mod gate_tests {
     use super::*;
     use crate::utils::settings::{settings_cache, validation::SettingsWithErrors};
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     fn settings(value: serde_json::Value) {
         settings_cache::set_session_settings_cache(SettingsWithErrors {
@@ -1878,88 +1833,57 @@ mod gate_tests {
     }
 
     #[test]
-    fn auto_mode_cached_state_matches_official_cold_cache_vs_fetched_null() {
-        // permissionSetup.ts:1315-1352: only the absent Symbol allows deferral.
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _telemetry = EnvVarGuard::unset("DISABLE_TELEMETRY");
-        let _traffic = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        let _node = EnvVarGuard::unset("NODE_ENV");
-        crate::services::analytics::growthbook::reset_growth_book();
-        for (value, expected) in [
-            (None, None),
-            (
-                Some(serde_json::Value::Null),
-                Some(AutoModeEnabledState::Disabled),
-            ),
-            (
-                Some(serde_json::json!({})),
-                Some(AutoModeEnabledState::Disabled),
-            ),
-            (
-                Some(serde_json::json!({"enabled":"enabled"})),
-                Some(AutoModeEnabledState::Enabled),
-            ),
-            (
-                Some(serde_json::json!({"enabled":"opt-in"})),
-                Some(AutoModeEnabledState::OptIn),
-            ),
-            (
-                Some(serde_json::json!({"enabled":true})),
-                Some(AutoModeEnabledState::Disabled),
-            ),
-        ] {
-            let mut config = crate::utils::config::GlobalConfig::default();
-            config.cached_growth_book_features =
-                value.map(|v| HashMap::from([("tengu_auto_mode_config".into(), v)]));
-            crate::utils::config::set_test_global_config(Some(config));
-            assert_eq!(get_auto_mode_enabled_state_if_cached(), expected);
-        }
-        crate::utils::config::set_test_global_config(None);
+    fn auto_mode_enabled_state_is_the_official_empty_config_fallback() {
+        // permissionSetup.ts:1328-1333: `{}` has no `enabled`, so Disabled.
+        assert_eq!(
+            get_auto_mode_enabled_state(),
+            AutoModeEnabledState::Disabled
+        );
     }
 
     #[test]
     fn initial_mode_matches_official_policy_priority_and_nested_auto_setting() {
         // permissionSetup.ts:699-811,1270-1280.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _telemetry = EnvVarGuard::unset("DISABLE_TELEMETRY");
-        let _traffic = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        let _node = EnvVarGuard::unset("NODE_ENV");
-        crate::services::analytics::growthbook::reset_growth_book();
         settings(
             serde_json::json!({"permissions":{"defaultMode":"plan","disableAutoMode":"disable"}}),
         );
         assert!(is_auto_mode_disabled_by_settings());
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(HashMap::from([
-            (
-                "tengu_disable_bypass_permissions_mode".into(),
-                serde_json::json!(true),
-            ),
-            (
-                "tengu_auto_mode_config".into(),
-                serde_json::json!({"enabled":"disabled"}),
-            ),
-        ]));
-        crate::utils::config::set_test_global_config(Some(config));
+        {
+            let _policy = crate::utils::feature_flags::override_for_test(
+                crate::utils::feature_flags::FeatureFlag::DisableBypassPermissionsMode,
+                true,
+            );
+            assert_eq!(
+                initial_permission_mode_from_cli(None, true),
+                (
+                    PermissionMode::Plan,
+                    Some("Bypass permissions mode was disabled by your organization policy".into())
+                )
+            );
+        }
+        // Source-controlled default: bypass stays available.
         assert_eq!(
-            initial_permission_mode_from_cli(Some("auto"), true),
-            (
-                PermissionMode::Plan,
-                Some("Bypass permissions mode was disabled by your organization policy".into())
-            )
+            initial_permission_mode_from_cli(None, true),
+            (PermissionMode::BypassPermissions, None)
         );
+        // No cached auto-mode config exists, so an explicit `auto` is kept for
+        // the post-startup gate check (CC's cold-cache case).
+        if is_transcript_classifier_feature_enabled() {
+            assert_eq!(
+                initial_permission_mode_from_cli(Some("auto"), false),
+                (PermissionMode::Auto, None)
+            );
+        }
+        super::super::auto_mode_state::reset_for_testing();
         settings(serde_json::json!({"disableAutoMode":"true"}));
         assert!(!is_auto_mode_disabled_by_settings());
-        crate::utils::config::set_test_global_config(None);
     }
 
     #[tokio::test]
     async fn auto_gate_matches_official_fresh_context_kickout_and_identity() {
         // permissionSetup.ts:1183-1261: notification uses old intent; mutations use fresh ctx.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _overrides = EnvVarGuard::unset("CLAUDE_INTERNAL_FC_OVERRIDES");
-        crate::services::analytics::growthbook::reset_growth_book();
-        crate::utils::config::set_test_global_config(Some(Default::default()));
         settings(serde_json::json!({"permissions":{"disableAutoMode":"disable"}}));
         super::super::auto_mode_state::reset_for_testing();
         let old = ToolPermissionContext::default();
@@ -2002,7 +1926,6 @@ mod gate_tests {
         assert_eq!(next.mode, PermissionMode::Plan);
         assert_eq!(next.pre_plan_mode, Some(PermissionMode::Default));
         super::super::auto_mode_state::reset_for_testing();
-        crate::utils::config::set_test_global_config(None);
     }
 
     #[cfg(feature = "anthropic_internal")]
@@ -2010,11 +1933,7 @@ mod gate_tests {
     async fn auto_gate_matches_official_opt_in_carousel() {
         // permissionSetup.ts:1091-1141: opt-in allows explicit entry, but not carousel without consent.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let _overrides = EnvVarGuard::set(
-            "CLAUDE_INTERNAL_FC_OVERRIDES",
-            r#"{"tengu_auto_mode_config":{"enabled":"opt-in","disableFastMode":true}}"#,
-        );
-        crate::services::analytics::growthbook::reset_growth_book();
+        AUTO_MODE_ENABLED_STATE_FOR_TEST.set(Some(AutoModeEnabledState::OptIn));
         settings(serde_json::json!({}));
         super::super::auto_mode_state::reset_for_testing();
         crate::utils::settings::settings_cache::install_test_settings(
@@ -2043,7 +1962,7 @@ mod gate_tests {
             Some(true)
         );
         crate::utils::settings::settings_cache::reset_settings_cache();
-        crate::services::analytics::growthbook::reset_growth_book();
+        AUTO_MODE_ENABLED_STATE_FOR_TEST.set(None);
         super::super::auto_mode_state::reset_for_testing();
     }
 }

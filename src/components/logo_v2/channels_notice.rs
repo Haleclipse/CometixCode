@@ -288,20 +288,11 @@ mod tests {
     }
 
     #[test]
-    fn channels_notice_cached_ledger_matches_official_empty_payload() {
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_harbor_ledger".to_string(),
-            serde_json::json!([{"plugin": "mailbox", "marketplace": "anthropic"}]),
-        )]));
-        crate::utils::config::set_test_global_config(Some(config));
-        let ledger = get_channel_allowlist();
-        assert_eq!(
-            ledger.len(),
-            0,
-            "the cached GrowthBook ledger is inert; the switch table ships the official empty payload"
+    fn channels_notice_ledger_matches_official_empty_payload() {
+        assert!(
+            get_channel_allowlist().is_empty(),
+            "the switch table ships the official empty payload"
         );
-        crate::utils::config::set_test_global_config(None);
     }
 
     #[test]

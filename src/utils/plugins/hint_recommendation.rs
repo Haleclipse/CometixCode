@@ -79,14 +79,6 @@ pub async fn resolve_plugin_hint(
     let parsed = crate::utils::plugins::plugin_identifier::parse_plugin_identifier(plugin_id);
     let plugin_data =
         crate::utils::plugins::marketplace_manager::get_plugin_by_id_cache_only(plugin_id).await;
-    crate::services::analytics::log_event(
-        "tengu_plugin_hint_detected",
-        serde_json::json!({
-            "_PROTO_plugin_name": parsed.name,
-            "_PROTO_marketplace_name": parsed.marketplace.as_deref().unwrap_or(""),
-            "result": if plugin_data.is_some() { "passed" } else { "not_in_cache" },
-        }),
-    );
     let Some(plugin_data) = plugin_data else {
         crate::utils::debug::log_for_debugging(&format!(
             "[hintRecommendation] {plugin_id} not found in marketplace cache"
@@ -155,18 +147,7 @@ mod tests {
     use crate::utils::test_env::EnvVarGuard;
 
     #[test]
-    fn feature_gate_reads_switch_table_and_ignores_growthbook_delivery() {
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_lapis_finch".to_string(),
-            serde_json::json!(true),
-        )]));
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            "tengu_lapis_finch".to_string(),
-            serde_json::json!(true),
-        )]));
-        crate::utils::config::set_test_global_config(Some(config));
-
+    fn feature_gate_reads_switch_table() {
         assert_eq!(
             feature_enabled(),
             crate::utils::feature_flags::feature_enabled(
@@ -174,8 +155,6 @@ mod tests {
             )
         );
         assert!(!feature_enabled());
-
-        crate::utils::config::set_test_global_config(None);
     }
 
     #[test]
@@ -240,11 +219,6 @@ mod tests {
             source_command: "tool".into(),
         };
         assert!(resolve_plugin_hint(&missing).await.is_none());
-        let events = crate::services::analytics::queued_events_for_test();
-        assert!(events.iter().any(|(name, metadata)| name == "tengu_plugin_hint_detected"
-            && metadata == &json!({"_PROTO_plugin_name":"p","_PROTO_marketplace_name":"custom","result":"passed"})));
-        assert!(events.iter().any(|(name, metadata)| name == "tengu_plugin_hint_detected"
-            && metadata == &json!({"_PROTO_plugin_name":"missing","_PROTO_marketplace_name":"unregistered","result":"not_in_cache"})));
         assert_eq!(
             std::fs::read_to_string(root.join("known_marketplaces.json")).unwrap(),
             config

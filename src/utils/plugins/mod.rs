@@ -2,7 +2,6 @@
 //!
 //! Maps to: CC `utils/plugins/`.
 
-pub mod fetch_telemetry;
 pub mod git_availability;
 pub mod hint_recommendation;
 pub mod install_counts;

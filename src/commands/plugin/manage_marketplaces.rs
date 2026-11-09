@@ -97,54 +97,159 @@ pub fn ManageMarketplaces(
         process_error.set(None);
         success_message.set(None);
         progress_message.set(None);
-        crate::utils::process_runtime::runtime_handle_for_detached_work().expect("marketplace runtime").spawn(async move {
-            let result:anyhow::Result<()>=async {
-                let settings=get_settings_for_source(SettingSource::User);
-                let mut updated_count=0;let mut removed_count=0;
-                let mut refreshed_marketplaces=std::collections::HashSet::new();
-                for state in states_to_process {
-                    if state.pending_remove {
-                        if !state.installed_plugins.is_empty() {
-                            let mut enabled=settings.as_ref().and_then(|s|s.enabled_plugins.as_ref()).and_then(|v|v.as_object()).cloned().unwrap_or_default();
-                            for plugin in &state.installed_plugins {enabled.insert(create_plugin_id(&plugin.name,&state.name),serde_json::Value::Bool(false));}
-                            let _=update_settings_for_source(SettingSource::User,&serde_json::Map::from_iter([("enabledPlugins".into(),serde_json::Value::Object(enabled))]));
+        crate::utils::process_runtime::runtime_handle_for_detached_work()
+            .expect("marketplace runtime")
+            .spawn(async move {
+                let result: anyhow::Result<()> = async {
+                    let settings = get_settings_for_source(SettingSource::User);
+                    let mut updated_count = 0;
+                    let mut removed_count = 0;
+                    let mut refreshed_marketplaces = std::collections::HashSet::new();
+                    for state in states_to_process {
+                        if state.pending_remove {
+                            if !state.installed_plugins.is_empty() {
+                                let mut enabled = settings
+                                    .as_ref()
+                                    .and_then(|s| s.enabled_plugins.as_ref())
+                                    .and_then(|v| v.as_object())
+                                    .cloned()
+                                    .unwrap_or_default();
+                                for plugin in &state.installed_plugins {
+                                    enabled.insert(
+                                        create_plugin_id(&plugin.name, &state.name),
+                                        serde_json::Value::Bool(false),
+                                    );
+                                }
+                                let _ = update_settings_for_source(
+                                    SettingSource::User,
+                                    &serde_json::Map::from_iter([(
+                                        "enabledPlugins".into(),
+                                        serde_json::Value::Object(enabled),
+                                    )]),
+                                );
+                            }
+                            remove_marketplace_source(&state.name).await?;
+                            removed_count += 1;
+                            continue;
                         }
-                        remove_marketplace_source(&state.name).await?;removed_count+=1;
-                        crate::services::analytics::log_event("tengu_marketplace_removed",serde_json::json!({"marketplace_name":state.name,"plugins_uninstalled":state.installed_plugins.len()}));
-                        continue;
+                        if state.pending_update {
+                            let progress = move |message: &str| {
+                                let mut state = progress_message;
+                                state.set(Some(message.into()));
+                                Ok(())
+                            };
+                            refresh_marketplace(&state.name, Some(&progress), false).await?;
+                            updated_count += 1;
+                            refreshed_marketplaces.insert(state.name.to_lowercase());
+                        }
                     }
-                    if state.pending_update {
-                        let progress=move|message:&str|{let mut state=progress_message;state.set(Some(message.into()));Ok(())};
-                        refresh_marketplace(&state.name,Some(&progress),false).await?;updated_count+=1;
-                        refreshed_marketplaces.insert(state.name.to_lowercase());
-                        crate::services::analytics::log_event("tengu_marketplace_updated",serde_json::json!({"marketplace_name":state.name}));
+                    let updated_plugin_count = if refreshed_marketplaces.is_empty() {
+                        0
+                    } else {
+                        crate::utils::plugins::plugin_autoupdate::update_plugins_for_marketplaces(
+                            &refreshed_marketplaces,
+                        )
+                        .await
+                        .len()
+                    };
+                    crate::utils::plugins::cache_utils::clear_all_caches();
+                    on_manage_complete(());
+                    let config = load_known_marketplaces_config().await?;
+                    let loaded = load_all_plugins().await?;
+                    let all_plugins = loaded
+                        .enabled
+                        .into_iter()
+                        .chain(loaded.disabled)
+                        .collect::<Vec<_>>();
+                    let loaded = load_marketplaces_with_graceful_degradation(&config).await;
+                    let mut new_states = Vec::new();
+                    for market in loaded.marketplaces {
+                        let installed_plugins = all_plugins
+                            .iter()
+                            .filter(|p| p.source.ends_with(&format!("@{}", market.name)))
+                            .cloned()
+                            .collect();
+                        new_states.push(MarketplaceState {
+                            name: market.name.clone(),
+                            source: get_marketplace_source_display(&market.config["source"]),
+                            last_updated: market.config["lastUpdated"].as_str().map(str::to_owned),
+                            plugin_count: market
+                                .data
+                                .as_ref()
+                                .and_then(|d| d["plugins"].as_array())
+                                .map(Vec::len),
+                            installed_plugins,
+                            pending_update: false,
+                            pending_remove: false,
+                            auto_update: is_marketplace_auto_update(&market.name, &market.config),
+                        });
                     }
+                    // CC `ManageMarketplaces.tsx:320-325` verbatim: first-match pinning is not antisymmetric, so the sort goes through the non-validating JS-sort primitive (utils/js_sort.rs; mirror PR #7).
+                    crate::utils::js_sort::sort_by(&mut new_states, |a, b| {
+                        if a.name == "claude-plugin-directory" {
+                            std::cmp::Ordering::Less
+                        } else if b.name == "claude-plugin-directory" {
+                            std::cmp::Ordering::Greater
+                        } else {
+                            crate::tools::grep_tool::javascript_locale_compare(&a.name, &b.name)
+                        }
+                    });
+                    marketplace_states.set(new_states.clone());
+                    if was_in_details_view
+                        && let Some(selected) = selected
+                        && let Some(updated) = new_states.iter().find(|s| s.name == selected.name)
+                    {
+                        selected_marketplace.set(Some(updated.clone()));
+                    }
+                    let mut actions = Vec::new();
+                    if updated_count > 0 {
+                        let plugin_part = if updated_plugin_count > 0 {
+                            format!(
+                                " ({updated_plugin_count} {} bumped)",
+                                plural(updated_plugin_count, "plugin", None)
+                            )
+                        } else {
+                            String::new()
+                        };
+                        actions.push(format!(
+                            "Updated {updated_count} {}{plugin_part}",
+                            plural(updated_count, "marketplace", None)
+                        ));
+                    }
+                    if removed_count > 0 {
+                        actions.push(format!(
+                            "Removed {removed_count} {}",
+                            plural(removed_count, "marketplace", None)
+                        ));
+                    }
+                    if !actions.is_empty() {
+                        let message = format!("✔ {}", actions.join(", "));
+                        if was_in_details_view {
+                            success_message.set(Some(message));
+                        } else {
+                            set_result(Some(message));
+                            crate::utils::process_runtime::runtime_handle_for_detached_work()
+                                .expect("marketplace timer runtime")
+                                .spawn(async move {
+                                    tokio::time::sleep(std::time::Duration::from_millis(2000))
+                                        .await;
+                                    set_view_state(ViewState::Menu);
+                                });
+                        }
+                    } else if !was_in_details_view {
+                        set_view_state(ViewState::Menu);
+                    }
+                    Ok(())
                 }
-                let updated_plugin_count=if refreshed_marketplaces.is_empty(){0}else{crate::utils::plugins::plugin_autoupdate::update_plugins_for_marketplaces(&refreshed_marketplaces).await.len()};
-                crate::utils::plugins::cache_utils::clear_all_caches();on_manage_complete(());
-                let config=load_known_marketplaces_config().await?;
-                let loaded=load_all_plugins().await?;
-                let all_plugins=loaded.enabled.into_iter().chain(loaded.disabled).collect::<Vec<_>>();
-                let loaded=load_marketplaces_with_graceful_degradation(&config).await;
-                let mut new_states=Vec::new();
-                for market in loaded.marketplaces {
-                    let installed_plugins=all_plugins.iter().filter(|p|p.source.ends_with(&format!("@{}",market.name))).cloned().collect();
-                    new_states.push(MarketplaceState{name:market.name.clone(),source:get_marketplace_source_display(&market.config["source"]),last_updated:market.config["lastUpdated"].as_str().map(str::to_owned),plugin_count:market.data.as_ref().and_then(|d|d["plugins"].as_array()).map(Vec::len),installed_plugins,pending_update:false,pending_remove:false,auto_update:is_marketplace_auto_update(&market.name,&market.config)});
+                .await;
+                if let Err(error) = result {
+                    let message = error.to_string();
+                    process_error.set(Some(message.clone()));
+                    set_error(Some(message));
                 }
-                // CC `ManageMarketplaces.tsx:320-325` verbatim: first-match pinning is not antisymmetric, so the sort goes through the non-validating JS-sort primitive (utils/js_sort.rs; mirror PR #7).
-                crate::utils::js_sort::sort_by(&mut new_states,|a,b|{if a.name=="claude-plugin-directory"{std::cmp::Ordering::Less}else if b.name=="claude-plugin-directory"{std::cmp::Ordering::Greater}else{crate::tools::grep_tool::javascript_locale_compare(&a.name,&b.name)}});
-                marketplace_states.set(new_states.clone());
-                if was_in_details_view&& let Some(selected)=selected&& let Some(updated)=new_states.iter().find(|s|s.name==selected.name){selected_marketplace.set(Some(updated.clone()));}
-                let mut actions=Vec::new();
-                if updated_count>0 {let plugin_part=if updated_plugin_count>0{format!(" ({updated_plugin_count} {} bumped)",plural(updated_plugin_count,"plugin",None))}else{String::new()};actions.push(format!("Updated {updated_count} {}{plugin_part}",plural(updated_count,"marketplace",None)));}
-                if removed_count>0 {actions.push(format!("Removed {removed_count} {}",plural(removed_count,"marketplace",None)));}
-                if !actions.is_empty(){let message=format!("✔ {}",actions.join(", "));if was_in_details_view{success_message.set(Some(message));}else{set_result(Some(message));crate::utils::process_runtime::runtime_handle_for_detached_work().expect("marketplace timer runtime").spawn(async move{tokio::time::sleep(std::time::Duration::from_millis(2000)).await;set_view_state(ViewState::Menu);});}}
-                else if !was_in_details_view {set_view_state(ViewState::Menu);}
-                Ok(())
-            }.await;
-            if let Err(error)=result {let message=error.to_string();process_error.set(Some(message.clone()));set_error(Some(message));}
-            is_processing.set(false);progress_message.set(None);
-        });
+                is_processing.set(false);
+                progress_message.set(None);
+            });
     });
     let auto_apply = apply_changes.clone();
     let set_error = props.set_error.clone();

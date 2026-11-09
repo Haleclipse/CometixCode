@@ -621,8 +621,6 @@ pub async fn git_clone(
     reference: Option<&str>,
     sha: Option<&str>,
 ) -> anyhow::Result<()> {
-    use super::fetch_telemetry::*;
-    let started = std::time::Instant::now();
     let git = crate::utils::git::git_exe().to_string_lossy().into_owned();
     let mut args = vec![
         "clone".into(),
@@ -638,78 +636,44 @@ pub async fn git_clone(
         args.push("--no-checkout".into());
     }
     args.extend([url.into(), target.display().to_string()]);
-    let result = async {
-        let cloned = plugin_exec(
+    let cloned = plugin_exec(
+        &git,
+        &args,
+        Some(
+            &std::env::current_dir()
+                .unwrap_or_else(|_| crate::bootstrap::state::get_original_cwd()),
+        ),
+    )
+    .await;
+    if cloned.code != 0 {
+        anyhow::bail!("Failed to clone repository: {}", cloned.stderr);
+    }
+    if let Some(sha) = sha.filter(|s| !s.is_empty()) {
+        let fetched = plugin_exec(
             &git,
-            &args,
-            Some(
-                &std::env::current_dir()
-                    .unwrap_or_else(|_| crate::bootstrap::state::get_original_cwd()),
-            ),
+            &[
+                "fetch".into(),
+                "--depth".into(),
+                "1".into(),
+                "origin".into(),
+                sha.into(),
+            ],
+            Some(target),
         )
         .await;
-        if cloned.code != 0 {
-            return Err((
-                format!("Failed to clone repository: {}", cloned.stderr),
-                cloned.stderr,
-            ));
-        }
-        if let Some(sha) = sha.filter(|s| !s.is_empty()) {
-            let fetched = plugin_exec(
-                &git,
-                &[
-                    "fetch".into(),
-                    "--depth".into(),
-                    "1".into(),
-                    "origin".into(),
-                    sha.into(),
-                ],
-                Some(target),
-            )
-            .await;
-            if fetched.code != 0 {
-                let full =
-                    plugin_exec(&git, &["fetch".into(), "--unshallow".into()], Some(target)).await;
-                if full.code != 0 {
-                    return Err((
-                        format!("Failed to fetch commit {sha}: {}", full.stderr),
-                        full.stderr,
-                    ));
-                }
-            }
-            let checkout = plugin_exec(&git, &["checkout".into(), sha.into()], Some(target)).await;
-            if checkout.code != 0 {
-                return Err((
-                    format!("Failed to checkout commit {sha}: {}", checkout.stderr),
-                    checkout.stderr,
-                ));
+        if fetched.code != 0 {
+            let full =
+                plugin_exec(&git, &["fetch".into(), "--unshallow".into()], Some(target)).await;
+            if full.code != 0 {
+                anyhow::bail!("Failed to fetch commit {sha}: {}", full.stderr);
             }
         }
-        Ok(())
-    }
-    .await;
-    match result {
-        Ok(()) => {
-            log_plugin_fetch(
-                PluginFetchSource::PluginClone,
-                Some(url),
-                PluginFetchOutcome::Success,
-                started.elapsed().as_secs_f64() * 1000.,
-                None,
-            );
-            Ok(())
-        }
-        Err((message, stderr)) => {
-            log_plugin_fetch(
-                PluginFetchSource::PluginClone,
-                Some(url),
-                PluginFetchOutcome::Failure,
-                started.elapsed().as_secs_f64() * 1000.,
-                Some(classify_fetch_error(&stderr)),
-            );
-            Err(anyhow::anyhow!(message))
+        let checkout = plugin_exec(&git, &["checkout".into(), sha.into()], Some(target)).await;
+        if checkout.code != 0 {
+            anyhow::bail!("Failed to checkout commit {sha}: {}", checkout.stderr);
         }
     }
+    Ok(())
 }
 /// Maps to: CC pluginLoader.ts:645-656#installFromGit.
 async fn install_from_git(

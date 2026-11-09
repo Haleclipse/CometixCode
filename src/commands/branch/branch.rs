@@ -40,15 +40,6 @@ pub fn call(args: &str) -> Result<PreparedBranch, String> {
         Some(&fork.fork_path),
     )
     .map_err(|error| error.to_string())?;
-    // Maps to: CC branch.ts:254-257. Creation is recorded after title
-    // persistence and before context.resume, even if that later resume fails.
-    crate::services::analytics::log_event(
-        "tengu_conversation_forked",
-        json!({
-            "message_count": fork.serialized_messages.len(),
-            "has_custom_title": fork.title.is_some(),
-        }),
-    );
     let title_info = fork
         .title
         .as_ref()
@@ -651,16 +642,13 @@ mod tests {
     }
 
     #[test]
-    fn call_records_creation_event_matches_official_count_title_and_failure_boundary() {
-        // CC branch.ts:254-257, executed in Bun with traceable dependencies:
-        // create -> save title -> event -> resume -> done. Creation errors
-        // emit no event; resume errors do not undo the prior creation event.
-        // This native call prepares resume without switching the session.
+    fn call_persists_the_fork_title_and_reports_empty_conversations() {
+        // CC branch.ts: create -> save title -> resume. This native call
+        // prepares resume without switching the session.
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let fixture = BranchFixture::new();
         let original_id = get_session_id();
-        let before = crate::services::analytics::queued_events_for_test().len();
         fixture.write_current(&[
             json!({"type":"user","uuid":"u","sessionId":original_id,
                 "message":{"role":"user","content":"first prompt"}}),
@@ -671,23 +659,16 @@ mod tests {
             json!({"type":"progress","uuid":"progress","sessionId":original_id}),
             json!({"type":"custom-title","sessionId":original_id,"customTitle":"old"}),
         ]);
-        for (args, has_custom_title) in [(" chosen ", true), (" \t\u{feff}", false)] {
+        for args in [" chosen ", " \t\u{feff}"] {
             let prepared = call(args).unwrap();
-            assert_eq!(get_session_id(), original_id, "event precedes resume");
+            assert_eq!(
+                get_session_id(),
+                original_id,
+                "call does not switch the session"
+            );
             assert_eq!(prepared.target.entries.len(), 3);
             let rows = parse_jsonl(&fs::read(prepared.target.metadata.full_path.unwrap()).unwrap());
             assert_eq!(rows.last().unwrap()["type"], "custom-title");
-            assert_eq!(
-                crate::services::analytics::queued_events_for_test()
-                    .last()
-                    .unwrap(),
-                &(
-                    "tengu_conversation_forked".to_string(),
-                    json!({
-                        "message_count": 3, "has_custom_title": has_custom_title,
-                    })
-                )
-            );
         }
         fixture.write_current(&[json!({"type":"custom-title","customTitle":"only metadata"})]);
         assert_eq!(
@@ -698,14 +679,6 @@ mod tests {
         assert_eq!(
             call("chosen").err().as_deref(),
             Some("No conversation to branch")
-        );
-        let events = crate::services::analytics::queued_events_for_test();
-        assert_eq!(
-            serde_json::to_value(&events[before..]).unwrap(),
-            json!([
-                ["tengu_conversation_forked", {"message_count":3,"has_custom_title":true}],
-                ["tengu_conversation_forked", {"message_count":3,"has_custom_title":false}],
-            ])
         );
     }
 }

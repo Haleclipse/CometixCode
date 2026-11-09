@@ -4682,7 +4682,7 @@ mod tests {
 
     #[cfg(feature = "anthropic_internal")]
     #[test]
-    fn collapse_read_search_team_memory_tracking_ignores_growthbook_delivery() {
+    fn collapse_read_search_team_memory_tracking_follows_switch_table() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "nyan-collapse-team-memory-{}",
@@ -4691,15 +4691,7 @@ mod tests {
         let root_text = root.display().to_string();
         let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root_text);
         let _enabled = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_herring_clock".to_string(),
-            serde_json::json!(true),
-        )]));
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            "tengu_herring_clock".to_string(),
-            serde_json::json!(true),
-        )]));
+        let config = crate::utils::config::GlobalConfig::default();
         let _config = TestGlobalConfigGuard(crate::utils::config::replace_test_global_config(
             Some(config),
         ));
@@ -4738,9 +4730,9 @@ mod tests {
 
         let collapsed = collapse_read_search_groups(input);
 
-        // The path shape is still a team-memory path; only the cohort gate,
-        // which no longer reads the injected GrowthBook cache, keeps the
-        // team-memory counters at zero.
+        // The path shape is still a team-memory path; only the
+        // source-controlled cohort switch keeps the team-memory counters at
+        // zero.
         assert!(crate::memdir::team_mem_paths::is_team_mem_path(
             std::path::Path::new(&team_file)
         ));

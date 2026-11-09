@@ -466,7 +466,7 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 | 轴 | 变量 | 原因 |
 |---|---|---|
 | 设置根 | `NYAN_CONFIG_DIR=target/test-home` | 同时重定向 settings 与其中的 `state.json` |
-| 隐私/分析 | `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=`、`DISABLE_TELEMETRY=`、`NODE_ENV=` | 置空，避免宿主开关改变 growthbook 读取 |
+| 隐私/测试开关 | `NYAN_DISABLE_NONESSENTIAL_TRAFFIC=`、`NODE_ENV=` | 置空，避免宿主开关关掉错误日志/更新检查或切到 `NODE_ENV=test` 捷径 |
 | cwd | `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=` | 否则 `reset_cwd_if_outside_project` 永远报项目根 |
 | 项目设置 | `NYAN_TEST_PROJECT_DIR=tests/fixtures/isolated-project` | 补掉 `projectSettings` 读本仓库 `.nyan/settings.json` 的洞 |
 | 宿主模型/网关 | `env -u` 掉 19 个 `ANTHROPIC_*` / `CLAUDE_*` 变量 | 空字符串会被当成模型名（justfile:86） |
@@ -741,7 +741,7 @@ sccache 实验、release-profile 测试、小范围 mutation、coverage、merge 
 ```sh
 just _prep
 env NYAN_CONFIG_DIR="$PWD/target/test-home" \
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC= DISABLE_TELEMETRY= NODE_ENV= \
+    NYAN_DISABLE_NONESSENTIAL_TRAFFIC= NODE_ENV= \
     CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR= \
     NYAN_TEST_PROJECT_DIR="$PWD/tests/fixtures/isolated-project" \
     env -u ANTHROPIC_MODEL -u ANTHROPIC_SMALL_FAST_MODEL … -u ANTHROPIC_API_KEY \

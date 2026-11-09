@@ -951,9 +951,6 @@ pub(crate) async fn cache_marketplace_from_git(
     on_progress: Option<&MarketplaceProgressCallback<'_>>,
     disable_credential_helper: bool,
 ) -> anyhow::Result<()> {
-    use super::fetch_telemetry::{
-        PluginFetchOutcome, PluginFetchSource, classify_fetch_error, log_plugin_fetch,
-    };
     use crate::utils::debug::{DebugLogLevel, log_for_debugging, log_for_debugging_with_level};
     let fs = crate::utils::fs_operations::get_fs_implementation();
     let timeout_sec = ryu_js::Buffer::new()
@@ -965,7 +962,6 @@ pub(crate) async fn cache_marketplace_from_git(
     );
     let reconcile_result = reconcile_sparse_checkout(cache_path, sparse_paths).await;
     if reconcile_result.code == 0 {
-        let pull_started = std::time::Instant::now();
         let pull_result = git_pull(
             cache_path,
             git_ref,
@@ -975,17 +971,6 @@ pub(crate) async fn cache_marketplace_from_git(
             }),
         )
         .await;
-        log_plugin_fetch(
-            PluginFetchSource::MarketplacePull,
-            Some(git_url),
-            if pull_result.code == 0 {
-                PluginFetchOutcome::Success
-            } else {
-                PluginFetchOutcome::Failure
-            },
-            pull_started.elapsed().as_secs_f64() * 1000.0,
-            (pull_result.code != 0).then(|| classify_fetch_error(&pull_result.stderr)),
-        );
         if pull_result.code == 0 {
             return Ok(());
         }
@@ -1042,19 +1027,7 @@ pub(crate) async fn cache_marketplace_from_git(
             redact_url_credentials(git_url)
         ),
     );
-    let clone_started = std::time::Instant::now();
     let result = git_clone(git_url, cache_path, git_ref, sparse_paths).await;
-    log_plugin_fetch(
-        PluginFetchSource::MarketplaceClone,
-        Some(git_url),
-        if result.code == 0 {
-            PluginFetchOutcome::Success
-        } else {
-            PluginFetchOutcome::Failure
-        },
-        clone_started.elapsed().as_secs_f64() * 1000.0,
-        (result.code != 0).then(|| classify_fetch_error(&result.stderr)),
-    );
     if result.code != 0 {
         let _ = fs
             .rm(
@@ -1372,9 +1345,6 @@ fn cache_marketplace_from_url(
     custom_headers: Option<&serde_json::Map<String, serde_json::Value>>,
     on_progress: Option<&MarketplaceProgressCallback<'_>>,
 ) -> impl std::future::Future<Output = anyhow::Result<()>> {
-    use super::fetch_telemetry::{
-        PluginFetchOutcome, PluginFetchSource, classify_fetch_error, log_plugin_fetch,
-    };
     let fs = crate::utils::fs_operations::get_fs_implementation();
     async move {
         let redacted = redact_url_credentials(url);
@@ -1391,8 +1361,7 @@ fn cache_marketplace_from_url(
                 crate::utils::slow_operations::json_stringify(&redact_headers(headers), 0)
             ));
         }
-        let started = std::time::Instant::now();
-        let fetched:anyhow::Result<serde_json::Value>=async {
+        let data:serde_json::Value=async {
         // CC `axios.get` (`marketplaceManager.ts:1282-1285`), through the
         // global interceptor.
         let client=crate::utils::proxy::create_axios_instance()?.timeout(std::time::Duration::from_secs(10)).build()?;
@@ -1403,32 +1372,12 @@ fn cache_marketplace_from_url(
         let request=client.get(url).headers(headers);
         let response=request.send().await.map_err(|error|{let message=if error.is_connect(){format!("Could not connect to {redacted}. Please check your internet connection and verify the URL is correct.\n\nTechnical details: {error}")}else{format!("Failed to download marketplace from {redacted}: {error}")};anyhow::anyhow!(message)})?;
         let status=response.status();if !status.is_success(){anyhow::bail!("HTTP {} error while downloading marketplace from {redacted}. The marketplace file may not exist at this URL.\n\nTechnical details: Request failed with status code {}",status.as_u16(),status.as_u16());}
-        let text=response.text().await?;Ok(crate::utils::slow_operations::json_parse(&text).map(|v|v.to_json()).unwrap_or(serde_json::Value::String(text)))
-    }.await;
-        let data = match fetched {
-            Ok(v) => v,
-            Err(error) => {
-                log_plugin_fetch(
-                    PluginFetchSource::MarketplaceUrl,
-                    Some(url),
-                    PluginFetchOutcome::Failure,
-                    started.elapsed().as_secs_f64() * 1000.0,
-                    Some(classify_fetch_error(&error)),
-                );
-                return Err(error);
-            }
-        };
+        let text=response.text().await?;anyhow::Ok(crate::utils::slow_operations::json_parse(&text).map(|v|v.to_json()).unwrap_or(serde_json::Value::String(text)))
+    }.await?;
         safe_call_progress(on_progress, "Validating marketplace data");
         let parsed =
             crate::utils::zod::safe_parse(super::schemas::plugin_marketplace_schema(), &data)
                 .map_err(|error| {
-                    log_plugin_fetch(
-                        PluginFetchSource::MarketplaceUrl,
-                        Some(url),
-                        PluginFetchOutcome::Failure,
-                        started.elapsed().as_secs_f64() * 1000.0,
-                        Some("invalid_schema"),
-                    );
                     let issues = error
                         .issues
                         .iter()
@@ -1454,13 +1403,6 @@ fn cache_marketplace_from_url(
                         data,
                     )
                 })?;
-        log_plugin_fetch(
-            PluginFetchSource::MarketplaceUrl,
-            Some(url),
-            PluginFetchOutcome::Success,
-            started.elapsed().as_secs_f64() * 1000.0,
-            None,
-        );
         safe_call_progress(on_progress, "Saving marketplace to cache");
         fs.mkdir(&marketplace_path!(cache_path, ".."), None).await?;
         crate::utils::slow_operations::write_file_sync_deprecated(
@@ -1879,9 +1821,8 @@ pub async fn refresh_all_marketplaces() -> anyhow::Result<()> {
                     .into();
                 continue;
             }
-            if !crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale(
-                "tengu_plugin_official_mkt_git_fallback",
-                true,
+            if !crate::utils::feature_flags::feature_enabled(
+                crate::utils::feature_flags::FeatureFlag::OfficialMarketplaceGitFallback,
             ) {
                 crate::utils::debug::log_for_debugging(
                     "Skipping official marketplace bulk refresh: GCS failed, git fallback disabled",
@@ -1934,7 +1875,7 @@ pub async fn refresh_marketplace(
         if !super::schemas::is_local_marketplace_source(source){let cache=marketplace_resolve!(get_marketplaces_cache_dir());let resolved=marketplace_resolve!(path);if !resolved.starts_with(&cache){anyhow::bail!("Marketplace '{name}' has a corrupted installLocation ({location}) — expected a path inside {}. This can happen after cross-platform path writes or manual edits to known_marketplaces.json. Run: claude plugin marketplace remove \"{name}\" and re-add it.",cache.display());}}
         if name==super::official_marketplace::OFFICIAL_MARKETPLACE_NAME {
             if super::official_marketplace_gcs::fetch_official_marketplace_from_gcs(path,&get_marketplaces_cache_dir()).await.is_some(){config.get_mut(name).unwrap()["lastUpdated"]=chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true).into();save_known_marketplaces_config(config.clone()).await?;return Ok(());}
-            if !crate::services::analytics::growthbook::get_feature_value_cached_may_be_stale("tengu_plugin_official_mkt_git_fallback",true){anyhow::bail!("Official marketplace GCS fetch failed and git fallback is disabled");}crate::utils::debug::log_for_debugging_with_level("Official marketplace GCS failed; falling back to git",crate::utils::debug::DebugLogLevel::Warn);
+            if !crate::utils::feature_flags::feature_enabled(crate::utils::feature_flags::FeatureFlag::OfficialMarketplaceGitFallback){anyhow::bail!("Official marketplace GCS fetch failed and git fallback is disabled");}crate::utils::debug::log_for_debugging_with_level("Official marketplace GCS failed; falling back to git",crate::utils::debug::DebugLogLevel::Warn);
         }
         match source["source"].as_str().unwrap_or(""){
             "github"|"git"=>{

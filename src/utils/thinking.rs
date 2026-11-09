@@ -163,17 +163,12 @@ fn claude_family_version(id: &str) -> Option<(u32, u32)> {
 ///
 /// 1. @nyan: the profile's declared `capabilities.thinking` wins; `none` is
 ///    the only value without thinking.
-/// 2. Internal builds: any configured ant model supports thinking
-///    (`process.env.USER_TYPE === 'ant' && resolveAntModel(...)`; the L1
-///    build-profile gate lives inside `resolve_ant_model`).
-/// 3. Every model that is not `claude-3-` (including Haiku 4.5 and custom
-///    gateway model names).
+/// 2. Every model that is not `claude-3-` (including Haiku 4.5 and custom
+///    gateway model names). CC's GrowthBook-delivered ant-model override list
+///    does not exist here.
 pub fn model_supports_thinking(model: &str, profile: Option<&str>) -> bool {
     if let Some(declared) = profile_thinking(model, profile) {
         return declared != "none";
-    }
-    if crate::utils::model::ant_models::resolve_ant_model(Some(&model.to_lowercase())).is_some() {
-        return true;
     }
     // IMPORTANT (CC): Do not change thinking support without notifying the
     // model launch DRI and research. This can greatly affect model quality and

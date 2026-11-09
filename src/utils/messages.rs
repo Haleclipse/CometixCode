@@ -1083,7 +1083,6 @@ pub(crate) trait TranscriptMessageCarrier: Sized {
     type AssistantBlock: AssistantTextBlock;
     type User: UserMessageCarrier + Clone;
     fn assistant_content(&self) -> Option<&[Self::AssistantBlock]>;
-    fn uuid_value(&self) -> Option<Value>;
     fn user_mut(&mut self) -> Option<&mut Self::User>;
     fn into_user(self) -> Result<Self::User, Self>;
     fn from_user(user: Self::User) -> Self;
@@ -1097,9 +1096,6 @@ impl TranscriptMessageCarrier for Message {
             Self::Assistant(assistant) => Some(&assistant.content),
             _ => None,
         }
-    }
-    fn uuid_value(&self) -> Option<Value> {
-        Some(Value::String(self.uuid().to_owned()))
     }
     fn user_mut(&mut self) -> Option<&mut UserMessage> {
         match self {
@@ -1128,9 +1124,6 @@ impl TranscriptMessageCarrier for Value {
         self.pointer("/message/content")
             .and_then(Value::as_array)
             .map(Vec::as_slice)
-    }
-    fn uuid_value(&self) -> Option<Value> {
-        self.get("uuid").cloned()
     }
     fn user_mut(&mut self) -> Option<&mut Value> {
         if self.get("type").and_then(Value::as_str) == Some("user") {
@@ -1186,10 +1179,6 @@ pub(crate) fn filter_whitespace_only_assistant_messages<M: TranscriptMessageCarr
             };
             if has_only_whitespace_text_content(content) {
                 has_changes = true;
-                crate::services::analytics::log_event(
-                    "tengu_filtered_whitespace_only_assistant",
-                    serde_json::json!({"messageUUID": message.uuid_value()}),
-                );
                 false
             } else {
                 true
@@ -2026,6 +2015,14 @@ pub(crate) fn merge_user_messages_and_tool_results(
     a
 }
 
+/// Maps to CC Statsig gate `tengu_chair_sermon`, read from the source-controlled
+/// switch table.
+fn universal_tool_result_merge() -> bool {
+    crate::utils::feature_flags::feature_enabled(
+        crate::utils::feature_flags::FeatureFlag::UniversalToolResultMerge,
+    )
+}
+
 /// Maps to CC `utils/messages.ts:2600-2647#mergeUserContentBlocks`.
 pub(crate) fn merge_user_content_blocks(
     mut a: Vec<UserContent>,
@@ -2035,11 +2032,7 @@ pub(crate) fn merge_user_content_blocks(
         a.extend(b);
         return a;
     };
-    let universal =
-        crate::services::analytics::growthbook::check_statsig_feature_gate_cached_may_be_stale(
-            "tengu_chair_sermon",
-        );
-    if !universal {
+    if !universal_tool_result_merge() {
         if last.content_blocks.is_empty() && b.iter().all(ContentBlock::is_text) {
             if let Some(merged) = smoosh_into_tool_result(last.clone(), b) {
                 *a.last_mut().unwrap() = UserContent::ToolResult(merged);
@@ -2198,10 +2191,7 @@ pub fn normalize_messages_for_api_with_model(
 ) -> Vec<crate::types::message::Message> {
     use crate::types::message::Message;
 
-    let chair_sermon =
-        crate::services::analytics::growthbook::check_statsig_feature_gate_cached_may_be_stale(
-            "tengu_chair_sermon",
-        );
+    let chair_sermon = universal_tool_result_merge();
     let mut result: Vec<Message> = Vec::new();
     for message in reorder_attachments_for_api(messages) {
         // Existing HookResult transport carries CC hook attachments. Route
@@ -4896,17 +4886,13 @@ mod message_merge_tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let previous = crate::utils::config::replace_test_global_config(Some(Default::default()));
-        crate::services::analytics::growthbook::reset_growth_book();
+        assert!(!universal_tool_result_merge(), "source default is off");
         for enabled in [false, true] {
-            let config = crate::utils::config::GlobalConfig {
-                cached_growth_book_features: Some(std::collections::HashMap::from([(
-                    "tengu_chair_sermon".into(),
-                    json!(enabled),
-                )])),
-                ..Default::default()
-            };
-            crate::utils::config::set_test_global_config(Some(config));
-            assert_eq!(crate::services::analytics::growthbook::check_statsig_feature_gate_cached_may_be_stale("tengu_chair_sermon"),enabled);
+            let _gate = crate::utils::feature_flags::override_for_test(
+                crate::utils::feature_flags::FeatureFlag::UniversalToolResultMerge,
+                enabled,
+            );
+            assert_eq!(universal_tool_result_merge(), enabled);
             // CC :2600-2649 string + text is folded under BOTH gate states.
             let a = vec![UserContent::ToolResult(result(" \u{feff}done \n"))];
             let b = vec![UserContent::MetaText(
@@ -5214,15 +5200,10 @@ mod api_normalization_tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let prev = crate::utils::config::replace_test_global_config(Some(Default::default()));
         for gate in [false, true] {
-            crate::utils::config::set_test_global_config(Some(
-                crate::utils::config::GlobalConfig {
-                    cached_growth_book_features: Some(std::collections::HashMap::from([(
-                        "tengu_chair_sermon".into(),
-                        json!(gate),
-                    )])),
-                    ..Default::default()
-                },
-            ));
+            let _gate = crate::utils::feature_flags::override_for_test(
+                crate::utils::feature_flags::FeatureFlag::UniversalToolResultMerge,
+                gate,
+            );
             let file = AttachmentMessage::new(
                 json!({"type":"file","filename":"a.rs","content":{"type":"text","file":{"filePath":"a.rs","content":"hello","numLines":1,"startLine":1,"totalLines":1}},"truncated":false}),
             );
@@ -6331,74 +6312,58 @@ mod whitespace_filter_tests {
     #[test]
     fn whitespace_raw_and_typed_match_official_bun_filter_oracle() {
         let cases: Value = serde_json::from_str(r#"[
-{"name":"cp-9","input":[{"type":"assistant","uuid":"cp-9","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-9","role":"assistant","content":[{"type":"text","text":"\t"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-9"}]]},
-{"name":"cp-10","input":[{"type":"assistant","uuid":"cp-10","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-10","role":"assistant","content":[{"type":"text","text":"\n"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-10"}]]},
-{"name":"cp-11","input":[{"type":"assistant","uuid":"cp-11","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-11","role":"assistant","content":[{"type":"text","text":"\u000b"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-11"}]]},
-{"name":"cp-12","input":[{"type":"assistant","uuid":"cp-12","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-12","role":"assistant","content":[{"type":"text","text":"\f"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-12"}]]},
-{"name":"cp-13","input":[{"type":"assistant","uuid":"cp-13","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-13","role":"assistant","content":[{"type":"text","text":"\r"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-13"}]]},
-{"name":"cp-32","input":[{"type":"assistant","uuid":"cp-32","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-32","role":"assistant","content":[{"type":"text","text":" "}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-32"}]]},
-{"name":"cp-160","input":[{"type":"assistant","uuid":"cp-160","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-160","role":"assistant","content":[{"type":"text","text":"\u00a0"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-160"}]]},
-{"name":"cp-5760","input":[{"type":"assistant","uuid":"cp-5760","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-5760","role":"assistant","content":[{"type":"text","text":"\u1680"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-5760"}]]},
-{"name":"cp-8192","input":[{"type":"assistant","uuid":"cp-8192","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8192","role":"assistant","content":[{"type":"text","text":"\u2000"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8192"}]]},
-{"name":"cp-8193","input":[{"type":"assistant","uuid":"cp-8193","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8193","role":"assistant","content":[{"type":"text","text":"\u2001"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8193"}]]},
-{"name":"cp-8194","input":[{"type":"assistant","uuid":"cp-8194","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8194","role":"assistant","content":[{"type":"text","text":"\u2002"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8194"}]]},
-{"name":"cp-8195","input":[{"type":"assistant","uuid":"cp-8195","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8195","role":"assistant","content":[{"type":"text","text":"\u2003"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8195"}]]},
-{"name":"cp-8196","input":[{"type":"assistant","uuid":"cp-8196","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8196","role":"assistant","content":[{"type":"text","text":"\u2004"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8196"}]]},
-{"name":"cp-8197","input":[{"type":"assistant","uuid":"cp-8197","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8197","role":"assistant","content":[{"type":"text","text":"\u2005"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8197"}]]},
-{"name":"cp-8198","input":[{"type":"assistant","uuid":"cp-8198","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8198","role":"assistant","content":[{"type":"text","text":"\u2006"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8198"}]]},
-{"name":"cp-8199","input":[{"type":"assistant","uuid":"cp-8199","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8199","role":"assistant","content":[{"type":"text","text":"\u2007"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8199"}]]},
-{"name":"cp-8200","input":[{"type":"assistant","uuid":"cp-8200","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8200","role":"assistant","content":[{"type":"text","text":"\u2008"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8200"}]]},
-{"name":"cp-8201","input":[{"type":"assistant","uuid":"cp-8201","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8201","role":"assistant","content":[{"type":"text","text":"\u2009"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8201"}]]},
-{"name":"cp-8202","input":[{"type":"assistant","uuid":"cp-8202","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8202","role":"assistant","content":[{"type":"text","text":"\u200a"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8202"}]]},
-{"name":"cp-8232","input":[{"type":"assistant","uuid":"cp-8232","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8232","role":"assistant","content":[{"type":"text","text":"\u2028"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8232"}]]},
-{"name":"cp-8233","input":[{"type":"assistant","uuid":"cp-8233","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8233","role":"assistant","content":[{"type":"text","text":"\u2029"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8233"}]]},
-{"name":"cp-8239","input":[{"type":"assistant","uuid":"cp-8239","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8239","role":"assistant","content":[{"type":"text","text":"\u202f"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8239"}]]},
-{"name":"cp-8287","input":[{"type":"assistant","uuid":"cp-8287","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8287","role":"assistant","content":[{"type":"text","text":"\u205f"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-8287"}]]},
-{"name":"cp-12288","input":[{"type":"assistant","uuid":"cp-12288","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-12288","role":"assistant","content":[{"type":"text","text":"\u3000"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-12288"}]]},
-{"name":"cp-65279","input":[{"type":"assistant","uuid":"cp-65279","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-65279","role":"assistant","content":[{"type":"text","text":"\ufeff"}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"cp-65279"}]]},
-{"name":"cp-133","input":[{"type":"assistant","uuid":"cp-133","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-133","role":"assistant","content":[{"type":"text","text":"\u0085"}]}}],"output":[{"type":"assistant","uuid":"cp-133","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-133","role":"assistant","content":[{"type":"text","text":"\u0085"}]}}],"typed":true,"events":[]},
-{"name":"cp-8203","input":[{"type":"assistant","uuid":"cp-8203","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8203","role":"assistant","content":[{"type":"text","text":"\u200b"}]}}],"output":[{"type":"assistant","uuid":"cp-8203","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8203","role":"assistant","content":[{"type":"text","text":"\u200b"}]}}],"typed":true,"events":[]},
-{"name":"cp-6158","input":[{"type":"assistant","uuid":"cp-6158","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-6158","role":"assistant","content":[{"type":"text","text":"\u180e"}]}}],"output":[{"type":"assistant","uuid":"cp-6158","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-6158","role":"assistant","content":[{"type":"text","text":"\u180e"}]}}],"typed":true,"events":[]},
-{"name":"empty-text","input":[{"type":"assistant","uuid":"empty-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_empty-text","role":"assistant","content":[{"type":"text","text":""}]}}],"output":[],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"empty-text"}]]},
-{"name":"empty-array","input":[{"type":"assistant","uuid":"empty-array","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_empty-array","role":"assistant","content":[]}}],"output":[{"type":"assistant","uuid":"empty-array","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_empty-array","role":"assistant","content":[]}}],"typed":true,"events":[]},
-{"name":"missing-text","input":[{"type":"assistant","uuid":"missing-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_missing-text","role":"assistant","content":[{"type":"text"}]}}],"output":[],"typed":false,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"missing-text"}]]},
-{"name":"string-content","input":[{"type":"assistant","uuid":"string-content","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_string-content","role":"assistant","content":"   "}}],"output":[{"type":"assistant","uuid":"string-content","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_string-content","role":"assistant","content":"   "}}],"typed":false,"events":[]},
-{"name":"mixed-text","input":[{"type":"assistant","uuid":"mixed-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-text","role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":"real"}]}}],"output":[{"type":"assistant","uuid":"mixed-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-text","role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":"real"}]}}],"typed":true,"events":[]},
-{"name":"mixed-thinking","input":[{"type":"assistant","uuid":"mixed-thinking","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-thinking","role":"assistant","content":[{"type":"text","text":" "},{"type":"thinking","thinking":"thought","signature":"sig"}]}}],"output":[{"type":"assistant","uuid":"mixed-thinking","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-thinking","role":"assistant","content":[{"type":"text","text":" "},{"type":"thinking","thinking":"thought","signature":"sig"}]}}],"typed":true,"events":[]},
-{"name":"unchanged-users","input":[{"type":"user","uuid":"no-merge-a","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"left"}},{"type":"user","uuid":"no-merge-b","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"right"}}],"output":[{"type":"user","uuid":"no-merge-a","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"left"}},{"type":"user","uuid":"no-merge-b","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"right"}}],"typed":true,"events":[]},
-{"name":"merge-text","input":[{"type":"user","uuid":"merge-left","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"left"}},{"type":"assistant","uuid":"remove-between","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-between","role":"assistant","content":[{"type":"text","text":"\ufeff"}]}},{"type":"user","uuid":"merge-right","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"right"}}],"output":[{"type":"user","uuid":"merge-left","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"left\n"},{"type":"text","text":"right"}]}}],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"remove-between"}]]},
-{"name":"merge-meta-tools","input":[{"type":"user","uuid":"meta-left","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"left"}]},"isMeta":true,"customEnvelope":"keep"},{"type":"assistant","uuid":"remove-meta","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-meta","role":"assistant","content":[{"type":"text","text":" "}]}},{"type":"user","uuid":"real-right","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"right"},{"type":"tool_result","tool_use_id":"toolu_1","content":"done","is_error":true}]}}],"output":[{"type":"user","uuid":"real-right","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done","is_error":true},{"type":"text","text":"left\n"},{"type":"text","text":"right"}]},"isMeta":true,"customEnvelope":"keep"}],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"remove-meta"}]]},
-{"name":"multiple-removals","input":[{"type":"assistant","uuid":"remove-first","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-first","role":"assistant","content":[{"type":"text","text":" "}]}},{"type":"user","uuid":"middle","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"middle"}},{"type":"assistant","uuid":"remove-last","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-last","role":"assistant","content":[{"type":"text","text":"\n"}]}}],"output":[{"type":"user","uuid":"middle","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"middle"}}],"typed":true,"events":[["tengu_filtered_whitespace_only_assistant",{"messageUUID":"remove-first"}],["tengu_filtered_whitespace_only_assistant",{"messageUUID":"remove-last"}]]}
+{"name":"cp-9","input":[{"type":"assistant","uuid":"cp-9","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-9","role":"assistant","content":[{"type":"text","text":"\t"}]}}],"output":[],"typed":true},
+{"name":"cp-10","input":[{"type":"assistant","uuid":"cp-10","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-10","role":"assistant","content":[{"type":"text","text":"\n"}]}}],"output":[],"typed":true},
+{"name":"cp-11","input":[{"type":"assistant","uuid":"cp-11","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-11","role":"assistant","content":[{"type":"text","text":"\u000b"}]}}],"output":[],"typed":true},
+{"name":"cp-12","input":[{"type":"assistant","uuid":"cp-12","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-12","role":"assistant","content":[{"type":"text","text":"\f"}]}}],"output":[],"typed":true},
+{"name":"cp-13","input":[{"type":"assistant","uuid":"cp-13","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-13","role":"assistant","content":[{"type":"text","text":"\r"}]}}],"output":[],"typed":true},
+{"name":"cp-32","input":[{"type":"assistant","uuid":"cp-32","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-32","role":"assistant","content":[{"type":"text","text":" "}]}}],"output":[],"typed":true},
+{"name":"cp-160","input":[{"type":"assistant","uuid":"cp-160","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-160","role":"assistant","content":[{"type":"text","text":"\u00a0"}]}}],"output":[],"typed":true},
+{"name":"cp-5760","input":[{"type":"assistant","uuid":"cp-5760","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-5760","role":"assistant","content":[{"type":"text","text":"\u1680"}]}}],"output":[],"typed":true},
+{"name":"cp-8192","input":[{"type":"assistant","uuid":"cp-8192","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8192","role":"assistant","content":[{"type":"text","text":"\u2000"}]}}],"output":[],"typed":true},
+{"name":"cp-8193","input":[{"type":"assistant","uuid":"cp-8193","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8193","role":"assistant","content":[{"type":"text","text":"\u2001"}]}}],"output":[],"typed":true},
+{"name":"cp-8194","input":[{"type":"assistant","uuid":"cp-8194","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8194","role":"assistant","content":[{"type":"text","text":"\u2002"}]}}],"output":[],"typed":true},
+{"name":"cp-8195","input":[{"type":"assistant","uuid":"cp-8195","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8195","role":"assistant","content":[{"type":"text","text":"\u2003"}]}}],"output":[],"typed":true},
+{"name":"cp-8196","input":[{"type":"assistant","uuid":"cp-8196","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8196","role":"assistant","content":[{"type":"text","text":"\u2004"}]}}],"output":[],"typed":true},
+{"name":"cp-8197","input":[{"type":"assistant","uuid":"cp-8197","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8197","role":"assistant","content":[{"type":"text","text":"\u2005"}]}}],"output":[],"typed":true},
+{"name":"cp-8198","input":[{"type":"assistant","uuid":"cp-8198","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8198","role":"assistant","content":[{"type":"text","text":"\u2006"}]}}],"output":[],"typed":true},
+{"name":"cp-8199","input":[{"type":"assistant","uuid":"cp-8199","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8199","role":"assistant","content":[{"type":"text","text":"\u2007"}]}}],"output":[],"typed":true},
+{"name":"cp-8200","input":[{"type":"assistant","uuid":"cp-8200","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8200","role":"assistant","content":[{"type":"text","text":"\u2008"}]}}],"output":[],"typed":true},
+{"name":"cp-8201","input":[{"type":"assistant","uuid":"cp-8201","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8201","role":"assistant","content":[{"type":"text","text":"\u2009"}]}}],"output":[],"typed":true},
+{"name":"cp-8202","input":[{"type":"assistant","uuid":"cp-8202","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8202","role":"assistant","content":[{"type":"text","text":"\u200a"}]}}],"output":[],"typed":true},
+{"name":"cp-8232","input":[{"type":"assistant","uuid":"cp-8232","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8232","role":"assistant","content":[{"type":"text","text":"\u2028"}]}}],"output":[],"typed":true},
+{"name":"cp-8233","input":[{"type":"assistant","uuid":"cp-8233","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8233","role":"assistant","content":[{"type":"text","text":"\u2029"}]}}],"output":[],"typed":true},
+{"name":"cp-8239","input":[{"type":"assistant","uuid":"cp-8239","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8239","role":"assistant","content":[{"type":"text","text":"\u202f"}]}}],"output":[],"typed":true},
+{"name":"cp-8287","input":[{"type":"assistant","uuid":"cp-8287","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8287","role":"assistant","content":[{"type":"text","text":"\u205f"}]}}],"output":[],"typed":true},
+{"name":"cp-12288","input":[{"type":"assistant","uuid":"cp-12288","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-12288","role":"assistant","content":[{"type":"text","text":"\u3000"}]}}],"output":[],"typed":true},
+{"name":"cp-65279","input":[{"type":"assistant","uuid":"cp-65279","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-65279","role":"assistant","content":[{"type":"text","text":"\ufeff"}]}}],"output":[],"typed":true},
+{"name":"cp-133","input":[{"type":"assistant","uuid":"cp-133","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-133","role":"assistant","content":[{"type":"text","text":"\u0085"}]}}],"output":[{"type":"assistant","uuid":"cp-133","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-133","role":"assistant","content":[{"type":"text","text":"\u0085"}]}}],"typed":true},
+{"name":"cp-8203","input":[{"type":"assistant","uuid":"cp-8203","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8203","role":"assistant","content":[{"type":"text","text":"\u200b"}]}}],"output":[{"type":"assistant","uuid":"cp-8203","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-8203","role":"assistant","content":[{"type":"text","text":"\u200b"}]}}],"typed":true},
+{"name":"cp-6158","input":[{"type":"assistant","uuid":"cp-6158","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-6158","role":"assistant","content":[{"type":"text","text":"\u180e"}]}}],"output":[{"type":"assistant","uuid":"cp-6158","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_cp-6158","role":"assistant","content":[{"type":"text","text":"\u180e"}]}}],"typed":true},
+{"name":"empty-text","input":[{"type":"assistant","uuid":"empty-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_empty-text","role":"assistant","content":[{"type":"text","text":""}]}}],"output":[],"typed":true},
+{"name":"empty-array","input":[{"type":"assistant","uuid":"empty-array","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_empty-array","role":"assistant","content":[]}}],"output":[{"type":"assistant","uuid":"empty-array","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_empty-array","role":"assistant","content":[]}}],"typed":true},
+{"name":"missing-text","input":[{"type":"assistant","uuid":"missing-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_missing-text","role":"assistant","content":[{"type":"text"}]}}],"output":[],"typed":false},
+{"name":"string-content","input":[{"type":"assistant","uuid":"string-content","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_string-content","role":"assistant","content":"   "}}],"output":[{"type":"assistant","uuid":"string-content","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_string-content","role":"assistant","content":"   "}}],"typed":false},
+{"name":"mixed-text","input":[{"type":"assistant","uuid":"mixed-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-text","role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":"real"}]}}],"output":[{"type":"assistant","uuid":"mixed-text","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-text","role":"assistant","content":[{"type":"text","text":" "},{"type":"text","text":"real"}]}}],"typed":true},
+{"name":"mixed-thinking","input":[{"type":"assistant","uuid":"mixed-thinking","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-thinking","role":"assistant","content":[{"type":"text","text":" "},{"type":"thinking","thinking":"thought","signature":"sig"}]}}],"output":[{"type":"assistant","uuid":"mixed-thinking","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_mixed-thinking","role":"assistant","content":[{"type":"text","text":" "},{"type":"thinking","thinking":"thought","signature":"sig"}]}}],"typed":true},
+{"name":"unchanged-users","input":[{"type":"user","uuid":"no-merge-a","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"left"}},{"type":"user","uuid":"no-merge-b","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"right"}}],"output":[{"type":"user","uuid":"no-merge-a","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"left"}},{"type":"user","uuid":"no-merge-b","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"right"}}],"typed":true},
+{"name":"merge-text","input":[{"type":"user","uuid":"merge-left","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"left"}},{"type":"assistant","uuid":"remove-between","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-between","role":"assistant","content":[{"type":"text","text":"\ufeff"}]}},{"type":"user","uuid":"merge-right","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"right"}}],"output":[{"type":"user","uuid":"merge-left","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"left\n"},{"type":"text","text":"right"}]}}],"typed":true},
+{"name":"merge-meta-tools","input":[{"type":"user","uuid":"meta-left","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"left"}]},"isMeta":true,"customEnvelope":"keep"},{"type":"assistant","uuid":"remove-meta","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-meta","role":"assistant","content":[{"type":"text","text":" "}]}},{"type":"user","uuid":"real-right","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"text","text":"right"},{"type":"tool_result","tool_use_id":"toolu_1","content":"done","is_error":true}]}}],"output":[{"type":"user","uuid":"real-right","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"done","is_error":true},{"type":"text","text":"left\n"},{"type":"text","text":"right"}]},"isMeta":true,"customEnvelope":"keep"}],"typed":true},
+{"name":"multiple-removals","input":[{"type":"assistant","uuid":"remove-first","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-first","role":"assistant","content":[{"type":"text","text":" "}]}},{"type":"user","uuid":"middle","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"middle"}},{"type":"assistant","uuid":"remove-last","timestamp":"2026-09-13T00:00:00.000Z","message":{"id":"msg_remove-last","role":"assistant","content":[{"type":"text","text":"\n"}]}}],"output":[{"type":"user","uuid":"middle","timestamp":"2026-09-13T00:00:00.000Z","message":{"role":"user","content":"middle"}}],"typed":true}
 ]"#).unwrap();
         let mut mismatches = Vec::new();
         for case in cases.as_array().unwrap() {
             let input = case["input"].as_array().unwrap().clone();
             let expected = case["output"].as_array().unwrap().clone();
-            let before_events = crate::services::analytics::queued_events_for_test().len();
             let raw =
                 crate::utils::messages::filter_whitespace_only_assistant_messages(input.clone());
-            let events = crate::services::analytics::queued_events_for_test();
-            assert_eq!(
-                serde_json::to_value(&events[before_events..]).unwrap(),
-                case["events"],
-                "raw events: {}",
-                case["name"]
-            );
             if raw != expected {
                 mismatches.push(format!("{} raw: {raw:?} != {expected:?}", case["name"]));
             }
             if case["typed"] == true {
                 let typed = crate::utils::conversation::into_typed_messages(input);
                 let expected = crate::utils::conversation::into_typed_messages(expected);
-                let before_events = crate::services::analytics::queued_events_for_test().len();
                 let actual = filter_whitespace_only_assistant_messages(typed);
-                let events = crate::services::analytics::queued_events_for_test();
-                assert_eq!(
-                    serde_json::to_value(&events[before_events..]).unwrap(),
-                    case["events"],
-                    "typed events: {}",
-                    case["name"]
-                );
                 if actual != expected {
                     mismatches.push(format!(
                         "{} typed: {actual:?} != {expected:?}",

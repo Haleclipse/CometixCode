@@ -9326,7 +9326,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                                     entry: plugin_data.entry,
                                     marketplace_name,
                                     scope: Some(crate::utils::plugins::schemas::PluginScope::User),
-                                    trigger: Some("hint".into()),
                                 })
                                 .await
                                 {
@@ -14553,18 +14552,14 @@ mod tests {
         let mut config = GlobalConfig::default();
         config.desktop_upsell_seen_count = Some(1);
         config.desktop_upsell_dismissed = Some(false);
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_desktop_upsell".to_string(),
-            serde_json::json!({"enable_startup_dialog": true}),
-        )]));
 
         let snapshot = ReplStartupDialogSnapshot::from_readonly_global_config(&config);
         let desktop = snapshot.desktop_upsell.expect("desktop snapshot");
 
         assert!(snapshot.remote_callout.is_none());
         // The seen-count/dismissed fields are ordinary user config and still
-        // come from the snapshot; the upsell gate itself is inert because the
-        // cached GrowthBook payload no longer feeds it.
+        // come from the snapshot; the upsell gate is the source-controlled
+        // switch, which is off.
         assert!(!desktop.config.enable_startup_dialog);
         assert_eq!(desktop.desktop_upsell_seen_count, 1);
         assert!(!desktop.desktop_upsell_dismissed);

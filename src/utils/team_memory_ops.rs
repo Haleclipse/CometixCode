@@ -39,16 +39,8 @@ mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
-    struct GlobalConfigGuard(Option<crate::utils::config::GlobalConfig>);
-
-    impl Drop for GlobalConfigGuard {
-        fn drop(&mut self) {
-            crate::utils::config::replace_test_global_config(self.0.take());
-        }
-    }
-
     #[test]
-    fn team_memory_predicates_ignore_growthbook_delivery() {
+    fn team_memory_predicates_follow_the_source_controlled_switch() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "nyan-team-memory-ops-{}",
@@ -59,23 +51,9 @@ mod tests {
             EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false"),
         ];
 
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.cached_growth_book_features = Some(std::collections::HashMap::from([(
-            "tengu_herring_clock".to_string(),
-            serde_json::json!(true),
-        )]));
-        config.growth_book_overrides = Some(std::collections::HashMap::from([(
-            "tengu_herring_clock".to_string(),
-            serde_json::json!(true),
-        )]));
-        let _config = GlobalConfigGuard(crate::utils::config::replace_test_global_config(Some(
-            config,
-        )));
-
         let team_file = root.join("team/MEMORY.md").display().to_string();
-        // Field extraction and path matching are unchanged; the cohort gate now
-        // comes from the source-controlled switch table, so the injected cache
-        // cannot turn team-memory collapse on.
+        // Path matching is independent of the cohort gate; the gate comes from
+        // the source-controlled switch table and keeps team-memory collapse off.
         assert!(crate::memdir::team_mem_paths::is_team_mem_path(
             std::path::Path::new(&team_file)
         ));

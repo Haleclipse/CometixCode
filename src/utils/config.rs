@@ -553,16 +553,8 @@ pub struct GlobalConfig {
     pub memory_usage_count: Option<u32>,
     pub prompt_queue_use_count: Option<u32>,
 
-    pub cached_statsig_gates: Option<HashMap<String, bool>>,
-    pub cached_dynamic_configs: Option<HashMap<String, serde_json::Value>>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.lastShownEmergencyTip`.
     pub last_shown_emergency_tip: Option<String>,
-    /// Maps to CC `GlobalConfig.cachedGrowthBookFeatures`, populated by
-    /// `services/analytics/growthbook.ts` remote-eval disk sync.
-    pub cached_growth_book_features: Option<HashMap<String, serde_json::Value>>,
-    /// Maps to CC `GlobalConfig.growthBookOverrides`, ant-only local overrides
-    /// read by `getFeatureValue_CACHED_MAY_BE_STALE(...)` after env overrides.
-    pub growth_book_overrides: Option<HashMap<String, serde_json::Value>>,
     pub s1m_access_cache: Option<serde_json::Value>,
     pub s1m_non_subscriber_access_cache: Option<serde_json::Value>,
     pub passes_eligibility_cache: Option<serde_json::Value>,
@@ -746,11 +738,7 @@ impl Default for GlobalConfig {
             show_spinner_tree: None,
             memory_usage_count: None,
             prompt_queue_use_count: None,
-            cached_statsig_gates: None,
-            cached_dynamic_configs: None,
             last_shown_emergency_tip: None,
-            cached_growth_book_features: None,
-            growth_book_overrides: None,
             s1m_access_cache: None,
             s1m_non_subscriber_access_cache: None,
             passes_eligibility_cache: None,
@@ -810,9 +798,6 @@ fn create_official_default_global_config() -> GlobalConfig {
     config.auto_install_ide_extension = Some(true);
     config.file_checkpointing_enabled = Some(true);
     config.terminal_progress_bar_enabled = Some(true);
-    config.cached_statsig_gates = Some(HashMap::new());
-    config.cached_dynamic_configs = Some(HashMap::new());
-    config.cached_growth_book_features = Some(HashMap::new());
     config.copy_full_response = Some(false);
 
     config
@@ -2033,46 +2018,16 @@ mod tests {
     }
 
     #[test]
-    fn global_config_deserializes_official_growthbook_cache_and_overrides() {
+    fn global_config_deserializes_notice_tracking_fields() {
         let config: GlobalConfig = serde_json::from_str(
             r#"{
-                "cachedGrowthBookFeatures": {
-                    "tengu_prompt_cache_1h_config": {"allowlist": ["repl_main_thread*"]}
-                },
-                "growthBookOverrides": {
-                    "tengu_prompt_cache_1h_config": {"allowlist": ["sdk"]}
-                },
                 "lastShownEmergencyTip": "old tip",
                 "voiceNoticeSeenCount": 2,
                 "opus1mMergeNoticeSeenCount": 5
             }"#,
         )
-        .expect("global config should deserialize GrowthBook cache fields");
+        .expect("global config should deserialize notice tracking fields");
 
-        assert_eq!(
-            config
-                .cached_growth_book_features
-                .as_ref()
-                .and_then(|features| {
-                    features
-                        .get("tengu_prompt_cache_1h_config")
-                        .and_then(|value| value.get("allowlist"))
-                        .and_then(|value| value.as_array())
-                        .map(|values| values.len())
-                }),
-            Some(1)
-        );
-        assert_eq!(
-            config.growth_book_overrides.as_ref().and_then(|features| {
-                features
-                    .get("tengu_prompt_cache_1h_config")
-                    .and_then(|value| value.get("allowlist"))
-                    .and_then(|value| value.as_array())
-                    .and_then(|values| values.first())
-                    .and_then(|value| value.as_str())
-            }),
-            Some("sdk")
-        );
         assert_eq!(config.last_shown_emergency_tip.as_deref(), Some("old tip"));
         assert_eq!(config.voice_notice_seen_count, Some(2));
         assert_eq!(config.opus_1m_merge_notice_seen_count, Some(5));

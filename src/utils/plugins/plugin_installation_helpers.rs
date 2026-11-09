@@ -399,7 +399,6 @@ pub struct InstallPluginParams {
     pub entry: Value,
     pub marketplace_name: String,
     pub scope: Option<super::schemas::PluginScope>,
-    pub trigger: Option<String>,
 }
 /// Maps to: CC pluginInstallationHelpers.ts:506-595#installPluginFromMarketplace.
 pub async fn install_plugin_from_marketplace(params: InstallPluginParams) -> InstallPluginResult {
@@ -420,21 +419,6 @@ pub async fn install_plugin_from_marketplace(params: InstallPluginParams) -> Ins
                 return Ok(InstallPluginResult::Failure { error });
             }
         };
-        let trigger = params.trigger.as_deref().unwrap_or("user");
-        let mut metadata = serde_json::json!({
-            "_PROTO_plugin_name":params.entry["name"],
-            "_PROTO_marketplace_name":params.marketplace_name,
-            "plugin_id":if super::plugin_identifier::is_official_marketplace_name(Some(&params.marketplace_name)) {params.plugin_id.as_str()} else {"third-party"},
-            "trigger":trigger,
-            "install_source":if trigger=="hint" {"ui-suggestion"} else {"ui-discover"}
-        });
-        if let Some(fields) = crate::utils::telemetry::plugin_telemetry::build_plugin_telemetry_fields(
-            params.entry["name"].as_str().unwrap_or_default(), Some(&params.marketplace_name),
-        ).as_object() { metadata.as_object_mut().unwrap().extend(fields.clone()); }
-        if let Some(version) = params.entry.get("version").filter(|v| v.as_str().is_some_and(|s| !s.is_empty())) {
-            metadata["version"] = version.clone();
-        }
-        crate::services::analytics::log_event("tengu_plugin_installed", metadata);
         Ok(InstallPluginResult::Success { message: format!("✓ Installed {}{dep_note}. Run /reload-plugins to activate.", params.entry["name"].as_str().unwrap_or_default()) })
     }.await;
     match result {
@@ -469,7 +453,6 @@ mod tests {
             entry: info.entry,
             marketplace_name: marketplace,
             scope: Some(super::super::schemas::PluginScope::User),
-            trigger: Some("hint".into()),
         })
         .await
         {

@@ -394,15 +394,10 @@ async fn download_mcpb(
     dest_path: &std::path::Path,
     on_progress: Option<&ProgressCallback>,
 ) -> anyhow::Result<Vec<u8>> {
-    use super::fetch_telemetry::{
-        PluginFetchOutcome, PluginFetchSource, classify_fetch_error, log_plugin_fetch,
-    };
     crate::utils::debug::log_for_debugging(&format!("Downloading MCPB from {url}"));
     if let Some(cb) = on_progress {
         cb(&format!("Downloading {url}..."))?;
     }
-    let start = std::time::Instant::now();
-    let mut fired = false;
     let result: anyhow::Result<Vec<u8>> = async {
         // CC `axios.get` (`mcpbHandler.ts:495-507`), through the global
         // interceptor.
@@ -422,14 +417,6 @@ async fn download_mcpb(
                 ))?;
             }
         }
-        log_plugin_fetch(
-            PluginFetchSource::Mcpb,
-            Some(url),
-            PluginFetchOutcome::Success,
-            start.elapsed().as_secs_f64() * 1000.0,
-            None,
-        );
-        fired = true;
         tokio::fs::write(dest_path, &data).await?;
         crate::utils::debug::log_for_debugging(&format!(
             "Downloaded {} bytes to {}",
@@ -442,24 +429,11 @@ async fn download_mcpb(
         Ok(data)
     }
     .await;
-    match result {
-        Ok(data) => Ok(data),
-        Err(error) => {
-            if !fired {
-                let kind = classify_fetch_error(&error.to_string());
-                log_plugin_fetch(
-                    PluginFetchSource::Mcpb,
-                    Some(url),
-                    PluginFetchOutcome::Failure,
-                    start.elapsed().as_secs_f64() * 1000.0,
-                    Some(kind),
-                );
-            }
-            let error = anyhow::anyhow!("Failed to download MCPB file from {url}: {error}");
-            crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
-            Err(error)
-        }
-    }
+    result.map_err(|error| {
+        let error = anyhow::anyhow!("Failed to download MCPB file from {url}: {error}");
+        crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
+        error
+    })
 }
 /// Maps to: CC mcpbHandler.ts#extractMcpbContents.
 async fn extract_mcpb_contents(
