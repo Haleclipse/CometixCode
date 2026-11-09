@@ -1768,6 +1768,11 @@ pub fn PromptInput<'a>(
                     Some(crate::hooks::use_typeahead::KeyDownEffect::AcceptPromptSuggestion) => {
                         let suggestion =
                             prompt_suggestion_for_keys.text.clone().unwrap_or_default();
+                        // @nyan: post-hoc acceptance probe for the generate gate
+                        // (decision-provider §7).
+                        crate::services::decision::probe::observe_suggestion_acceptance(
+                            &suggestion,
+                        );
                         // markAccepted()
                         if let Some(store) = app_store_for_suggestion_keys.as_ref() {
                             store.replace_with(|state| {
@@ -2145,6 +2150,11 @@ pub fn PromptInput<'a>(
             && prompt_suggestion_state.shown_at > 0
             && prompt_suggestion_state.text.is_some();
         let text = if accepted_suggestion {
+            // @nyan: submitters with an empty input accept the shown
+            // suggestion, which is the generate gate's post-hoc signal.
+            if let Some(suggestion) = prompt_suggestion_state.text.as_deref() {
+                crate::services::decision::probe::observe_suggestion_acceptance(suggestion);
+            }
             prompt_suggestion_state.text.clone().unwrap_or_default()
         } else {
             raw_text

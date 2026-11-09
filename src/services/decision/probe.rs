@@ -1,10 +1,11 @@
 //! @nyan: post-hoc usage probes (decision-provider §7).
 //!
 //! A decision can only record what it answered. Whether the retained result
-//! was actually used afterwards is observable only from later tool calls: the
-//! model reads a file candidate with `Read` or fetches a URL candidate with
-//! `WebFetch`. This module keeps the recent probes in memory and appends two
-//! extra record shapes to the same `decision/decisions.jsonl`:
+//! was actually used afterwards is observable from later events: the model
+//! reads a file candidate with `Read`, fetches a URL candidate with
+//! `WebFetch`, or the user accepts the shown prompt suggestion. This module
+//! keeps the recent probes in memory and appends two extra record shapes to
+//! the same `decision/decisions.jsonl`:
 //!
 //! - `{"event":"probe", "probeId", "point", "kind", "candidateCount"}` when a
 //!   decision retains candidates (immediately after the decision record);
@@ -17,8 +18,8 @@
 //! bounded across a long session. `/clear` forgets them (`clear`).
 //!
 //! Scope: only points whose retained result has a concrete identity (a file
-//! path or a URL) create probes. Memory and compaction points have no such
-//! identity yet and are not probed here.
+//! path, a URL, or the suggestion text the user saw) create probes. Memory and
+//! compaction points have no such identity yet and are not probed here.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -38,6 +39,7 @@ const MAX_PROBES: usize = 256;
 enum Kind {
     File,
     Url,
+    Suggestion,
 }
 
 impl Kind {
@@ -45,6 +47,7 @@ impl Kind {
         match self {
             Kind::File => "file",
             Kind::Url => "url",
+            Kind::Suggestion => "suggestion",
         }
     }
 }
@@ -130,6 +133,13 @@ where
     )
 }
 
+/// Register the suggestion a decision let through. Acceptance later marks it
+/// used, so `/decision` reports how often generated suggestions were taken.
+pub fn register_suggestion(point: DecisionPoint, text: &str) -> Option<String> {
+    let key = normalize_suggestion(text);
+    register(point, Kind::Suggestion, std::iter::once((key.clone(), key)))
+}
+
 fn register<I>(point: DecisionPoint, kind: Kind, candidates: I) -> Option<String>
 where
     I: IntoIterator<Item = (String, String)>,
@@ -186,6 +196,11 @@ pub fn observe_file_read(path: &str) {
 /// candidate is marked used.
 pub fn observe_url(url: &str) {
     observe(Kind::Url, normalize_url(url));
+}
+
+/// Report that the user accepted `text` as the shown prompt suggestion.
+pub fn observe_suggestion_acceptance(text: &str) {
+    observe(Kind::Suggestion, normalize_suggestion(text));
 }
 
 fn observe(kind: Kind, key: String) {
@@ -246,6 +261,13 @@ fn normalize_file(path: &Path) -> String {
         }
     });
     normalized.to_string_lossy().into_owned()
+}
+
+/// Suggestions are matched by their visible text. Whitespace is collapsed so
+/// a re-rendered row still matches the generated string, but case is kept:
+/// suggestion style is part of the identity the user accepted.
+fn normalize_suggestion(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn normalize_url(raw: &str) -> String {
@@ -334,6 +356,34 @@ mod tests {
         assert_eq!(posthoc[0]["probeId"], id);
         assert_eq!(posthoc[0]["point"], "retrieval.answers");
         assert_eq!(posthoc[0]["identity"], file.display().to_string());
+        clear();
+        let _ = std::fs::remove_dir_all(&config);
+    }
+
+    #[test]
+    fn suggestion_acceptance_matches_once_after_whitespace_normalization() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let (config, _env) = isolated_config("suggestion");
+        assert!(register_suggestion(DecisionPoint::PromptSuggestionGenerateGate, "  ").is_none());
+        let id = register_suggestion(
+            DecisionPoint::PromptSuggestionGenerateGate,
+            "run   the tests",
+        )
+        .expect("probe");
+        observe_suggestion_acceptance("run the tests");
+        observe_suggestion_acceptance("run the tests");
+
+        let probes = events("probe");
+        assert_eq!(probes.len(), 1);
+        assert_eq!(probes[0]["probeId"], id);
+        assert_eq!(probes[0]["point"], "prompt_suggestion.generate_gate");
+        assert_eq!(probes[0]["kind"], "suggestion");
+
+        let posthoc = events("posthoc");
+        assert_eq!(posthoc.len(), 1, "one row per accepted suggestion");
+        assert_eq!(posthoc[0]["point"], "prompt_suggestion.generate_gate");
+        assert_eq!(posthoc[0]["kind"], "suggestion");
+        assert_eq!(posthoc[0]["identity"], "run the tests");
         clear();
         let _ = std::fs::remove_dir_all(&config);
     }

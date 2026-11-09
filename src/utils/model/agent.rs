@@ -70,6 +70,9 @@ pub fn default_utility_spec(role: &str) -> &'static str {
         // Permission explanations are auxiliary text; unlike the classifier and
         // the auto-mode path they stay on the light profile.
         "permission_explainer" => "@light",
+        // @nyan: prompt suggestion generation is not a utility role. It forks
+        // the main model to reuse its prompt cache (decision 7); no
+        // `prompt_suggestions` entry should route it to @light.
         _ => "@light",
     }
 }
@@ -413,7 +416,6 @@ mod tests {
         assert_eq!(default_utility_spec("commit_message"), "@light");
         assert_eq!(default_utility_spec("webfetch"), "@light");
         assert_eq!(default_utility_spec("bash_prefix"), "@light");
-        assert_eq!(default_utility_spec("prompt_suggestions"), "@light");
         assert_eq!(default_utility_spec("side_query"), "@light");
         assert_eq!(default_utility_spec("permission_explainer"), "@light");
         // Hyphenated spellings normalize to the same role.

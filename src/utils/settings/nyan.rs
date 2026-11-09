@@ -992,14 +992,6 @@ pub const BUILTIN_DECISION_POINTS: &[BuiltinDecisionPoint] = &[
         max_prob: None,
         keep_at_least: None,
     },
-    BuiltinDecisionPoint {
-        name: "speculation.start",
-        mode: DecisionMode::Shadow,
-        model: DecisionModel::Fast,
-        min_confidence: 0.8,
-        max_prob: None,
-        keep_at_least: None,
-    },
 ];
 
 pub fn decision_point_names() -> Vec<&'static str> {

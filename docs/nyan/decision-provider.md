@@ -208,8 +208,8 @@ pub trait DecisionBackend: Send + Sync {
 | **Bash classifier** | `utils/permissions/bash_classifier.rs:67` 当前是 disabled stub | 未来替代 disabled classifier 的结构化判断，或给权限解释器提供风险标签 | 不能绕过硬 deny；先只做 advisory / ask 路径，不直接 allow |
 | **Permission explainer** | `utils/permissions/permission_explainer.rs` 用 side query 生成 explanation / reasoning / risk / riskLevel，超时 10 s 返回 None | **不接 Decision Provider**；side query 通过 `SideQueryOptions.utility_role` 走 utility 角色 `permission_explainer`（`selection.utility.permission_explainer`，默认 @light） | 解释文本由 utility 模型生成，硬安全边界不变 |
 | **权限规则与安全解析** | `permissions.rs` 规则匹配、`dangerous_patterns.rs`、`read_only_command_validation.rs`、路径 / UNC / exfil 检查 | 可把结果汇总为风险上下文，供上面的 DP 分类使用 | **不交给 DP 覆盖**：硬安全边界、路径越界、凭据外发、命令 flag 解析必须确定性 |
-| **Prompt suggestion 是否值得生成** | `prompt_suggestion/prompt_suggestion.rs:191` 生成用户下一句；文本由小模型生成 | 在生成前判断"下一步是否足够明确、是否值得花一次生成调用" | 只影响是否显示建议，不影响会话；可 active，默认先 shadow |
-| **Speculation 是否启动** | `prompt_suggestion/speculation.rs:264` 启动 fork，已有只读 / 写入 overlay / 权限边界 | 判断用户下一步是否明显、是否值得预计算；可判断候选路径是否可能很快撞权限边界 | overlay、只读 Bash、写权限边界继续由确定性代码执行；DP 不能让 speculation 绕过边界 |
+| **Prompt suggestion 是否值得生成** | `prompt_suggestion/prompt_suggestion.rs` 在功能开启时 fork 主模型生成下一句；文本仍由主模型生成 | **已接入** `prompt_suggestion.generate_gate`（切片 K，`services/prompt_suggestion/decision.rs`）：生成前用最近几轮对话判断"下一步是否明确到值得生成" | 功能默认关，开启后该点默认 shadow；`active` 只能在置信度达标时**跳过**生成，永不触发或改写生成；失败一律按确定性路径生成 |
+| **Speculation 是否启动** | `prompt_suggestion/speculation.rs` 启动 fork，已有只读 / 写入 overlay / 权限边界 | 不再接入 | `speculation.start` 已从注册表删除（定案 8）；overlay、只读 Bash、写权限边界继续由确定性代码执行 |
 | **Context suggestions 选择 / 排序** | `utils/context_suggestions.rs:29` 是 token 阈值、严重度和节省量的纯规则 | 多条建议同时出现时，按当前任务选最有用的一条或排序 | 低收益；规则先保留，DP 只做 UI 排序，不改变压缩和上下文（不接入：DP1 已删除该点） |
 | **Session title / rename** | `session_title.rs:93`、`commands/rename/generate_session_name.rs:16` 生成标题 / kebab-case 名称 | 不适合替代；可判断是否值得重新命名或标题是否需要更新 | 最终输出是文本，继续用生成模型 |
 | **Tool-use summary** | `services/tool_use_summary.rs:32` 生成移动端短标签 | 不适合替代；可以在输入很短时跳过生成 | 生成文本，不是分类；失败不影响主轮 |
@@ -318,7 +318,8 @@ pub trait DecisionBackend: Send + Sync {
     `{"event":"posthoc","probeId","point","kind","identity"}`，同一候选只记一次。文件路径按 canonicalize
     比较，URL 忽略大小写、fragment 与末尾斜杠；
   - 已接入：`retrieval.answers`（被标"回答查询"且实际展示的候选）、`retrieval.sufficient`（追加一轮后新出现且展示的结果）、
-    `web.answers`（最终可见且被标记的候选）、`web.page_answers`（提示里建议的下一个候选）；
+    `web.answers`（最终可见且被标记的候选）、`web.page_answers`（提示里建议的下一个候选）、
+    `prompt_suggestion.generate_gate`（每次生成的建议；用户首次接受时记 `posthoc`，`kind="suggestion"`）；
     `permissions.yolo_stage1` 只写决策行，不产生 probe（权限动作没有"保留候选"的身份）；
   - 尚未接入：`web.fetch_fallback`（正文长度对比，不是"之后是否使用"）、`memory.*`（候选身份在 `/memory` 交互里）、
     `compaction.keep`（工具结果与文件路径的映射未定义）。
@@ -394,7 +395,7 @@ pub trait DecisionBackend: Send + Sync {
 | H | 接入记忆：`extract_now`、`extract_skip`、`type`、`duplicate`、`consolidate` | 记忆切片 C / D | A、记忆 C |
 | I | 接入压缩：`compaction.keep`（掩码候选排序） | 压缩切片 A 的候选选择 | A、压缩 A |
 | J（已实现） | 接入权限：仅 `permissions.yolo_stage1`（先 shadow，active 只能升级，永不单独放行）；`permissions.explain_risk` 不接，风险解释走 utility 角色 `permission_explainer`（默认 @light）；硬规则和完整分类器 fail-closed 不变 | `utils/permissions/{decision,permissions,permission_explainer}.rs`、`utils/side_query.rs` | A、B、权限现状已读 |
-| K | 接入建议：`prompt_suggestion.generate_gate`（默认关；开启后先 shadow，active 只能跳过生成）。`speculation.start` 不接，`context_suggestions.rank` 删除 | `services/prompt_suggestion/` | A、B |
+| K（已实现） | 接入建议：`prompt_suggestion.generate_gate`（默认关；开启后先 shadow，active 只能跳过生成）。`speculation.start` 已从注册表删除，`context_suggestions.rank` 已删除；生成仍 fork 主模型复用缓存，不经过 utility 角色 | `services/prompt_suggestion/{decision,prompt_suggestion}.rs`、`services/decision/probe.rs` | A、B |
 
 A 进批次 1；B、E 并行；F、G、H、I 跟随四模块调用点；J、K 作为宿主运行时批次后续接入。`chat` / `local` 后端不实现。
 
@@ -413,7 +414,7 @@ A 进批次 1；B、E 并行；F、G、H、I 跟随四模块调用点；J、K �
 11. 请求带 `User-Agent: nyan/<版本>`；日志按响应 `model` 分段统计。
 12. 离线测试：后端 URL 可注入，`TcpListener::bind("127.0.0.1:0")` 起 mock，覆盖 answered / 批量 / 各回退原因。
 13. 权限场景：DP 的 safe / low-confidence / backend_down 都不能绕过硬 deny；DP 失败时进入现有 YOLO 或用户确认，不得变成 allow。
-14. `prompt_suggestion.generate_gate` / `speculation.start` 只影响是否预计算，不改变用户输入、文件 overlay、权限边界或主会话消息。
+14. `prompt_suggestion.generate_gate` 只影响是否生成建议，不改变用户输入、文件 overlay、权限边界、主会话消息或生成文本；active 只能跳过生成。
 15. 生成型调用（session title、tool-use summary、permission explanation、prompt suggestion 文本）仍由文本模型生成，Decision Provider 只可控制是否调用或提供结构化标签。
 16. 所有宿主运行时决策点都能独立设为 `off`，关闭后保持当前代码路径；`shadow` 不改变用户可见行为。
 

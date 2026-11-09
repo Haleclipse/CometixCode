@@ -6998,6 +6998,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             }
         };
         if let Some(active) = accepted_speculation {
+            // @nyan: typing the shown suggestion is also acceptance for the
+            // generate gate's post-hoc probe (decision-provider §7).
+            crate::services::decision::probe::observe_suggestion_acceptance(&text);
             // Speculation accept forces `submitsNow` (REPL.tsx:4506-4508 → :4525).
             clear_ide_selection_for_submit();
             classifier_approvals.set(ClassifierApprovalsState::default());

@@ -235,6 +235,13 @@ where
     if get_suggestion_suppress_reason(&app_state).is_some() {
         return Ok(None);
     }
+    // @nyan: `prompt_suggestion.generate_gate` (decision-provider 4.6, slice
+    // K). The suggestion feature is already enabled here and every
+    // deterministic suppress reason has been checked, so the gate can only
+    // turn this generation into a skip — never the reverse.
+    if super::decision::should_skip_generation(messages, &abort_controller).await {
+        return Ok(None);
+    }
 
     let prompt_id = get_prompt_variant();
     let generated =
@@ -458,6 +465,12 @@ pub async fn execute_prompt_suggestion(cache_safe_params: CacheSafeParams) {
             state.prompt_suggestion.accepted_at = 0;
             state.prompt_suggestion.generation_request_id = generated.generation_request_id;
         });
+        // @nyan: post-hoc signal for the generate gate (decision-provider §7):
+        // the first acceptance of a shown suggestion marks this probe used.
+        crate::services::decision::probe::register_suggestion(
+            crate::services::decision::DecisionPoint::PromptSuggestionGenerateGate,
+            &suggestion,
+        );
         if super::speculation::is_speculation_enabled() {
             let speculation_cache = cache_safe_params.clone();
             tokio::spawn(async move {

@@ -69,7 +69,6 @@ pub enum DecisionPoint {
     CompactionKeep,
     PermissionsYoloStage1,
     PromptSuggestionGenerateGate,
-    SpeculationStart,
 }
 
 impl DecisionPoint {
@@ -91,7 +90,6 @@ impl DecisionPoint {
         DecisionPoint::CompactionKeep,
         DecisionPoint::PermissionsYoloStage1,
         DecisionPoint::PromptSuggestionGenerateGate,
-        DecisionPoint::SpeculationStart,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -113,7 +111,6 @@ impl DecisionPoint {
             DecisionPoint::CompactionKeep => "compaction.keep",
             DecisionPoint::PermissionsYoloStage1 => "permissions.yolo_stage1",
             DecisionPoint::PromptSuggestionGenerateGate => "prompt_suggestion.generate_gate",
-            DecisionPoint::SpeculationStart => "speculation.start",
         }
     }
 
@@ -1222,6 +1219,8 @@ mod tests {
         for point in DecisionPoint::ALL {
             assert_eq!(DecisionPoint::from_str(point.as_str()), Some(*point));
         }
+        // Design decision 8: speculation is not wired and has no point.
+        assert_eq!(DecisionPoint::from_str("speculation.start"), None);
         assert_eq!(DecisionPoint::from_str("retrieval.nope"), None);
     }
 
