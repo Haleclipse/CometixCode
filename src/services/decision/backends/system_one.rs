@@ -297,6 +297,26 @@ fn classify_failure(status: u16, body: &[u8]) -> (FallbackReason, FailureKind) {
     }
 }
 
+/// Whether a failed decision is evidence about the *service's* health, rather
+/// than just about this one request.
+///
+/// decision-provider.md §5.2 names three signals: 429 → `rate_limited`,
+/// 402 → `budget_exhausted`, 401 → `backend_down`. Client and configuration
+/// errors — a malformed request (400/422), an unknown model id, a response
+/// that cannot be parsed — happen while the endpoint itself is healthy, so
+/// they fail only the decision that produced them and leave the shared gate
+/// open for other decision points.
+///
+/// Timeouts, connection failures and 5xx responses still close the gate: the
+/// document does not classify them, and closing the gate is what lets the
+/// decision path fail fast when the backend is genuinely unreachable.
+fn counts_as_health_failure(failure: FailureKind) -> bool {
+    !matches!(
+        failure,
+        FailureKind::InvalidResponse | FailureKind::ModelNotFound
+    )
+}
+
 /// Whether the service's error payload says the model does not exist or is
 /// not enabled. The provider uses both an English code and a Chinese message.
 fn mentions_model_not_found(body: &[u8]) -> bool {
@@ -614,7 +634,9 @@ impl DecisionBackend for SystemOneClient {
             let posted = match posted {
                 Ok(posted) => posted,
                 Err(error) => {
-                    self.health.record_failure(error.failure);
+                    if counts_as_health_failure(error.failure) {
+                        self.health.record_failure(error.failure);
+                    }
                     crate::utils::debug::log_for_debugging(&format!(
                         "DecisionProvider: {} {} -> {} after {} ms",
                         backend_name,
@@ -627,7 +649,15 @@ impl DecisionBackend for SystemOneClient {
             };
 
             let invalid = |request_id: Option<String>| {
-                self.health.record_failure(FailureKind::InvalidResponse);
+                // A malformed or unparseable response fails this decision only;
+                // it is not one of the documented health signals (§5.2).
+                crate::utils::debug::log_for_debugging(&format!(
+                    "DecisionProvider: {} {} -> {} after {} ms",
+                    backend_name,
+                    req.point.as_str(),
+                    FallbackReason::InvalidResponse.as_str(),
+                    latency.as_millis()
+                ));
                 DecisionOutcome::Fallback {
                     reason: FallbackReason::InvalidResponse,
                     receipt: receipt(
@@ -953,18 +983,35 @@ mod tests {
 
     #[test]
     fn http_429_402_and_401_map_to_the_documented_fallback_reasons() {
-        for (status, reason, expected) in [
-            (429u16, "Too Many Requests", FallbackReason::RateLimited),
-            (402, "Payment Required", FallbackReason::BudgetExhausted),
-            (401, "Unauthorized", FallbackReason::BackendDown),
+        for (status, reason, expected, kind) in [
+            (
+                429u16,
+                "Too Many Requests",
+                FallbackReason::RateLimited,
+                FailureKind::RateLimited,
+            ),
+            (
+                402,
+                "Payment Required",
+                FallbackReason::BudgetExhausted,
+                FailureKind::Budget,
+            ),
+            (
+                401,
+                "Unauthorized",
+                FallbackReason::BackendDown,
+                FailureKind::Auth,
+            ),
         ] {
             runtime().block_on(async {
                 let mock = mock(vec![(status, reason)]).await;
                 let backend = client(&mock.url);
                 let outcome = run(&backend, &request()).await;
                 assert_eq!(outcome.fallback_reason(), Some(expected), "status {status}");
+                assert_eq!(backend.health.last_failure(), Some(kind), "status {status}");
                 // The service is now Down; a second call must not reach the
                 // mock (which would panic on a missing accept).
+                assert!(backend.health.is_down(), "status {status}");
                 let second = run(&backend, &request()).await;
                 assert_eq!(second.fallback_reason(), Some(FallbackReason::BackendDown));
                 mock.handle.await.unwrap();
@@ -973,7 +1020,41 @@ mod tests {
     }
 
     #[test]
-    fn a_malformed_response_is_invalid_and_marks_the_service_down() {
+    fn http_400_is_a_request_error_and_does_not_close_the_health_gate() {
+        runtime().block_on(async {
+            // First request: the endpoint rejects the request with a 400.
+            // Second request: the endpoint is still reachable and answers.
+            let mock = mock(vec![(400, "Bad Request"), (200, "OK")]).await;
+            let backend = client(&mock.url);
+
+            let first = run(&backend, &request()).await;
+            assert_eq!(
+                first.fallback_reason(),
+                Some(FallbackReason::InvalidResponse)
+            );
+            assert!(
+                !backend.health.is_down(),
+                "a client request error must not close the shared gate"
+            );
+            assert_eq!(
+                backend.health.last_failure(),
+                None,
+                "the last failure must not name a request error as a health signal"
+            );
+
+            // Other decision points must still be able to use the service.
+            let second = run(&backend, &request()).await;
+            assert!(
+                second.answers().is_some(),
+                "second call should reach the endpoint: {:?}",
+                second.fallback_reason()
+            );
+            mock.handle.await.unwrap();
+        });
+    }
+
+    #[test]
+    fn a_malformed_response_is_invalid_without_closing_the_health_gate() {
         runtime().block_on(async {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
@@ -994,6 +1075,11 @@ mod tests {
                 outcome.fallback_reason(),
                 Some(FallbackReason::InvalidResponse)
             );
+            assert!(
+                !backend.health.is_down(),
+                "an unparseable response must not close the shared gate"
+            );
+            assert_eq!(backend.health.last_failure(), None);
             handle.await.unwrap();
         });
     }
@@ -1097,7 +1183,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_model_is_model_not_found_not_backend_down() {
+    fn an_unknown_model_is_model_not_found_not_a_health_failure() {
         runtime().block_on(async {
             let mock = mock(vec![(404, "Not Found")]).await;
             let backend = client(&mock.url);
@@ -1106,11 +1192,11 @@ mod tests {
                 outcome.fallback_reason(),
                 Some(FallbackReason::ModelNotFound)
             );
-            assert_eq!(
-                backend.health.last_failure(),
-                Some(FailureKind::ModelNotFound),
-                "the last failure must name the real cause"
-            );
+            // The endpoint is healthy; only the configuration is wrong, so
+            // the shared gate stays open for decision points using another
+            // model.
+            assert_eq!(backend.health.last_failure(), None);
+            assert!(!backend.health.is_down());
             mock.handle.await.unwrap();
         });
     }
