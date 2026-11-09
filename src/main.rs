@@ -1349,7 +1349,7 @@ pub fn compute_is_non_interactive(cli_args: &[String], stdout_is_tty: bool) -> b
 /// has no `utils/earlyInput.ts` (no `seedEarlyInput`/capture buffer exists to
 /// stop), so only the `setIsInteractive` line ports. `initializeEntrypoint`
 /// (`:1123`) is likewise unported — nothing in the port writes
-/// `CLAUDE_CODE_ENTRYPOINT`.
+/// `NYAN_ENTRYPOINT`.
 pub(crate) fn apply_is_interactive(cli_args: &[String], stdout_is_tty: bool) {
     let is_non_interactive = compute_is_non_interactive(cli_args, stdout_is_tty);
     let is_interactive = !is_non_interactive;
@@ -1417,7 +1417,7 @@ pub(crate) enum HeadlessSystemPromptSlot {
 ///
 /// ```text
 /// let tools = getTools(toolPermissionContext)                        // :2755
-/// if (feature('COORDINATOR_MODE') && isEnvTruthy(CLAUDE_CODE_COORDINATOR_MODE))
+/// if (feature('COORDINATOR_MODE') && isEnvTruthy(NYAN_COORDINATOR_MODE))
 ///   tools = applyCoordinatorToolFilter(tools)                        // :2757-2767
 /// if (isSyntheticOutputToolEnabled({ isNonInteractiveSession }) && options.jsonSchema)
 ///   tools = [...tools, createSyntheticOutputTool(jsonSchema).tool]   // :2771-2785
@@ -1765,7 +1765,7 @@ pub fn run(config: crate::cli::CliConfig) {
                         use std::io::Write as _;
                         let millis = |duration: std::time::Duration| duration.as_secs_f64() * 1e3;
                         // CC gates the expensive rss/cpu samples behind
-                        // CLAUDE_CODE_FRAME_TIMING_SAMPLE_EVERY; mirror it so
+                        // NYAN_FRAME_TIMING_SAMPLE_EVERY; mirror it so
                         // long captures can trade sample density for overhead.
                         let sample = utils::debug::frame_timing_sample_tick();
                         let mut line = serde_json::json!({

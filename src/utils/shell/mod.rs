@@ -310,7 +310,7 @@ pub fn exec(
     }
     // Env layering matches CC `Shell.ts:317-328` spread order exactly:
     // `{ ...subprocessEnv(), SHELL, GIT_EDITOR, NYAN, ...envOverrides,
-    // ...(ant ? { CLAUDE_CODE_SESSION_ID } : {}) }` — explicit entries are
+    // ...(ant ? { NYAN_SESSION_ID } : {}) }` — explicit entries are
     // applied after the scrubbed base so they survive the scrub.
     crate::utils::subprocess_env::apply_subprocess_env_std(&mut process);
     process

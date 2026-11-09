@@ -564,7 +564,7 @@ fn enhance_git_pull_error_messages(
             .format((get_plugin_git_timeout_ms() / 1000.0).round())
             .to_owned();
         Some(format!(
-            "Git pull timed out after {timeout_sec}s. Try increasing the timeout via CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS environment variable."
+            "Git pull timed out after {timeout_sec}s. Try increasing the timeout via NYAN_PLUGIN_GIT_TIMEOUT_MS environment variable."
         ))
     } else if result
         .stderr
@@ -813,7 +813,7 @@ pub(crate) async fn git_clone(
         .is_some_and(|e| e.contains("timed out"))
     {
         result.stderr = format!(
-            "Git clone timed out after {}s. The repository may be too large for the current timeout. Set CLAUDE_CODE_PLUGIN_GIT_TIMEOUT_MS to increase it (e.g., 300000 for 5 minutes).\n\nOriginal error: {}",
+            "Git clone timed out after {}s. The repository may be too large for the current timeout. Set NYAN_PLUGIN_GIT_TIMEOUT_MS to increase it (e.g., 300000 for 5 minutes).\n\nOriginal error: {}",
             ryu_js::Buffer::new().format((timeout_ms / 1000.0).round()),
             result.stderr
         );
@@ -1881,7 +1881,7 @@ pub async fn refresh_marketplace(
             "github"|"git"=>{
                 let sparse=source["sparsePaths"].as_array().map(|a|a.iter().map(|v|v.as_str().unwrap_or("").to_owned()).collect::<Vec<_>>());let git_ref=source["ref"].as_str();
                 if source["source"]=="github"{let repo=source["repo"].as_str().unwrap_or("");let ssh=format!("git@github.com:{repo}.git");let https=format!("https://github.com/{repo}.git");
-                    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref()){cache_marketplace_from_git(&https,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
+                    if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref()){cache_marketplace_from_git(&https,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
                     else{let configured=is_github_ssh_likely_configured().await;let(first,second)=if configured{(&ssh,&https)}else{(&https,&ssh)};if cache_marketplace_from_git(first,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await.is_err(){crate::utils::debug::log_for_debugging_with_level(&format!("Marketplace refresh failed with {} for {repo}, falling back to {}",if configured{"SSH"}else{"HTTPS"},if configured{"HTTPS"}else{"SSH"}),crate::utils::debug::DebugLogLevel::Info);cache_marketplace_from_git(second,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}}
                 }else{cache_marketplace_from_git(source["url"].as_str().unwrap_or(""),path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
                 if read_cached_marketplace(path).await.is_err(){let display=if source["source"]=="github"{source["repo"].as_str().unwrap_or("").to_owned()}else{redact_url_credentials(source["url"].as_str().unwrap_or(""))};let reason=if name=="claude-code-plugins"{"We've deprecated \"claude-code-plugins\" in favor of \"claude-plugins-official\"."}else{"This marketplace may have been deprecated or moved to a new location."};anyhow::bail!("The marketplace.json file is no longer present in this repository.\n\n{reason}\nSource: {display}\n\nYou can remove this marketplace with: claude plugin marketplace remove \"{name}\"");}
@@ -1996,7 +1996,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _cache = EnvVarGuard::set("NYAN_PLUGIN_CACHE_DIR", "");
-        let _cowork = EnvVarGuard::set("CLAUDE_CODE_USE_COWORK_PLUGINS", "0");
+        let _cowork = EnvVarGuard::set("NYAN_USE_COWORK_PLUGINS", "0");
         // Verbatim Bun oracle outputs for marketplaceManager.ts:264-299 and
         // schemas.ts:1593-1629. Native JSON syntax diagnostics are a recorded
         // shared-parser boundary; schema messages/error identity are compared only

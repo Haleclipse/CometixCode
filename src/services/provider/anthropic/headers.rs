@@ -28,13 +28,13 @@ pub fn anthropic_adapter_headers(env: &EnvSnapshot) -> HashMap<String, Option<St
         "X-Nyan-Session-Id".to_string(),
         Some(crate::bootstrap::state::get_session_id()),
     )]);
-    if let Some(container_id) = env.var("CLAUDE_CODE_CONTAINER_ID").truthy() {
+    if let Some(container_id) = env.var("NYAN_CONTAINER_ID").truthy() {
         headers.insert(
             "x-nyan-remote-container-id".to_string(),
             Some(container_id.to_string()),
         );
     }
-    if let Some(remote_session_id) = env.var("CLAUDE_CODE_REMOTE_SESSION_ID").truthy() {
+    if let Some(remote_session_id) = env.var("NYAN_REMOTE_SESSION_ID").truthy() {
         headers.insert(
             "x-nyan-remote-session-id".to_string(),
             Some(remote_session_id.to_string()),
@@ -115,8 +115,7 @@ mod tests {
         let _lock = crate::utils::test_env::TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _container =
-            crate::utils::test_env::EnvVarGuard::set("CLAUDE_CODE_CONTAINER_ID", "box");
+        let _container = crate::utils::test_env::EnvVarGuard::set("NYAN_CONTAINER_ID", "box");
         let _protection =
             crate::utils::test_env::EnvVarGuard::set("NYAN_ADDITIONAL_PROTECTION", "1");
         let env = crate::utils::process_env::snapshot();

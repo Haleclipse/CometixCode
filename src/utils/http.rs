@@ -40,8 +40,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _guard = [
             EnvVarGuard::set("NYAN_ENTRYPOINT", "sdk"),
-            EnvVarGuard::set("CLAUDE_AGENT_SDK_VERSION", "1.2.3"),
-            EnvVarGuard::set("CLAUDE_AGENT_SDK_CLIENT_APP", "my-app/1.0"),
+            EnvVarGuard::set("NYAN_SDK_CLIENT_APP", "my-app/1.0"),
         ];
         let expected = format!(
             "nyan/{} ({}; {})",

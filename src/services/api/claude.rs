@@ -392,7 +392,7 @@ pub struct ApiMetadata {
 /// Maps to: CC services/api/claude.ts:272-331
 ///
 /// Assemble the extra body parameters for the API request, based on the
-/// CLAUDE_CODE_EXTRA_BODY environment variable if present and on any beta
+/// NYAN_EXTRA_BODY environment variable if present and on any beta
 /// headers (primarily for Bedrock requests).
 pub fn get_extra_body_params(
     beta_headers: Option<&[String]>,
@@ -409,7 +409,7 @@ pub fn get_extra_body_params(
             _ => {
                 crate::utils::debug::log_for_debugging_with_level(
                     &format!(
-                        "CLAUDE_CODE_EXTRA_BODY env var must be a JSON object, but was given {extra_body_str}"
+                        "NYAN_EXTRA_BODY env var must be a JSON object, but was given {extra_body_str}"
                     ),
                     crate::utils::debug::DebugLogLevel::Error,
                 );
@@ -550,7 +550,7 @@ pub fn configure_task_budget_params(
 pub fn get_api_metadata() -> ApiMetadata {
     let mut extra = serde_json::Map::new();
 
-    // Parse CLAUDE_CODE_EXTRA_METADATA env var
+    // Parse NYAN_EXTRA_METADATA env var
     if let Some(extra_str) = crate::utils::process_env::var("NYAN_EXTRA_METADATA").truthy() {
         match crate::utils::json::safe_parse_json(Some(&extra_str), false).as_ref() {
             JsonValue::Object(obj) => {
@@ -559,7 +559,7 @@ pub fn get_api_metadata() -> ApiMetadata {
             _ => {
                 crate::utils::debug::log_for_debugging_with_level(
                     &format!(
-                        "CLAUDE_CODE_EXTRA_METADATA env var must be a JSON object, but was given {extra_str}"
+                        "NYAN_EXTRA_METADATA env var must be a JSON object, but was given {extra_str}"
                     ),
                     crate::utils::debug::DebugLogLevel::Error,
                 );
@@ -1565,7 +1565,7 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
         max_output.default
     };
 
-    // Env var override: CLAUDE_CODE_MAX_OUTPUT_TOKENS
+    // Env var override: NYAN_MAX_OUTPUT_TOKENS
     crate::utils::env_validation::validate_bounded_int_env_var(
         "NYAN_MAX_OUTPUT_TOKENS",
         crate::utils::process_env::var("NYAN_MAX_OUTPUT_TOKENS").as_deref(),
@@ -1592,7 +1592,7 @@ pub fn get_nonstreaming_fallback_timeout_ms() -> u64 {
         return ms;
     }
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+        crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
     ) {
         120_000
     } else {
@@ -3937,14 +3937,14 @@ fn streaming_attempt_options_from_retry_context(
     attempt_options
 }
 
-/// Maps to CC `CLAUDE_ENABLE_STREAM_WATCHDOG` gate around the idle timers.
+/// Maps to CC `NYAN_ENABLE_STREAM_WATCHDOG` gate around the idle timers.
 fn stream_watchdog_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_ENABLE_STREAM_WATCHDOG").as_deref(),
     )
 }
 
-/// Maps to CC `STREAM_IDLE_TIMEOUT_MS` (`CLAUDE_STREAM_IDLE_TIMEOUT_MS` or 90s).
+/// Maps to CC `STREAM_IDLE_TIMEOUT_MS` (`NYAN_STREAM_IDLE_TIMEOUT_MS` or 90s).
 fn stream_idle_timeout_ms() -> u64 {
     crate::utils::process_env::var("NYAN_STREAM_IDLE_TIMEOUT_MS")
         .and_then(|value| value.parse::<u64>().ok())
@@ -4380,7 +4380,7 @@ async fn drain_stream_events(
 
 fn max_output_tokens_system_api_error_message(max_output_tokens: u32) -> SystemApiErrorMessage {
     let content = format!(
-        "{}: Claude's response exceeded the {} output token maximum. To configure this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.",
+        "{}: Claude's response exceeded the {} output token maximum. To configure this behavior, set the NYAN_MAX_OUTPUT_TOKENS environment variable.",
         crate::services::api::errors::API_ERROR_MESSAGE_PREFIX,
         max_output_tokens,
     );
@@ -4685,7 +4685,7 @@ fn system_api_error_message_from_error(error: anyhow::Error) -> SystemApiErrorMe
 }
 
 fn is_non_streaming_fallback_disabled() -> bool {
-    // Maps to CC `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK`. GrowthBook gates
+    // Maps to CC `NYAN_DISABLE_NONSTREAMING_FALLBACK`. GrowthBook gates
     // are not available in Nyan's direct API adapter, so only the explicit
     // env kill switch is honored here.
     crate::utils::env_utils::is_env_truthy(
@@ -4993,7 +4993,7 @@ fn provider_error_to_retryable(
 }
 
 /// How long a freshly opened stream may stay silent before its first output.
-/// The stream watchdog (`CLAUDE_ENABLE_STREAM_WATCHDOG`) only starts once the
+/// The stream watchdog (`NYAN_ENABLE_STREAM_WATCHDOG`) only starts once the
 /// caller owns the stream, so before that this is the only bound.
 fn stream_open_idle_timeout() -> Option<std::time::Duration> {
     stream_watchdog_enabled().then(|| std::time::Duration::from_millis(stream_idle_timeout_ms()))
@@ -5179,7 +5179,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _project = PinnedProjectDir::at(&dir);
-        let _local = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
+        let _local = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "");
         let tools = vec![crate::tools::exit_plan_mode_tool::exit_plan_mode_tool_schema()];
         let plan_path = crate::utils::plans::get_plan_file_path(Some("agent-fixture"));
         std::fs::write(&plan_path, "").unwrap();
@@ -8905,7 +8905,7 @@ mod tests {
     fn nonstreaming_timeout_default() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("API_TIMEOUT_MS");
-        crate::utils::process_env::remove("CLAUDE_CODE_REMOTE");
+        crate::utils::process_env::remove("NYAN_REMOTE");
         assert_eq!(get_nonstreaming_fallback_timeout_ms(), 300_000);
     }
 
@@ -8913,9 +8913,9 @@ mod tests {
     fn nonstreaming_timeout_remote() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("API_TIMEOUT_MS");
-        crate::utils::process_env::set("CLAUDE_CODE_REMOTE", "1");
+        crate::utils::process_env::set("NYAN_REMOTE", "1");
         assert_eq!(get_nonstreaming_fallback_timeout_ms(), 120_000);
-        crate::utils::process_env::remove("CLAUDE_CODE_REMOTE");
+        crate::utils::process_env::remove("NYAN_REMOTE");
     }
 
     #[test]

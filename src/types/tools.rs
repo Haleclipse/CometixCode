@@ -98,7 +98,7 @@ pub enum ToolProgress {
 ///
 /// Server and tool names as received from the MCP server (unnormalized).
 /// Present on every MCP tool regardless of whether `Tool.name` carries the
-/// `mcp__server__` prefix or the unprefixed `CLAUDE_AGENT_SDK_MCP_NO_PREFIX`
+/// `mcp__server__` prefix or the unprefixed `NYAN_SDK_MCP_NO_PREFIX`
 /// display name.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpToolInfo {

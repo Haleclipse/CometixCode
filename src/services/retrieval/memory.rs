@@ -329,10 +329,7 @@ mod tests {
         .unwrap();
         std::fs::write(memory.join("unrelated.md"), "bananas and oranges\n").unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _override = EnvVarGuard::set(
-            "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-            memory.to_str().unwrap(),
-        );
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", memory.to_str().unwrap());
         let _cwd = EnvVarGuard::set("PWD", root.to_str().unwrap());
         let hits =
             search_memory_directory("prompt cache compaction", 5, &MemorySettings::default());

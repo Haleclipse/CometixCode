@@ -467,7 +467,7 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 |---|---|---|
 | 设置根 | `NYAN_CONFIG_DIR=target/test-home` | 同时重定向 settings 与其中的 `state.json` |
 | 隐私/测试开关 | `NYAN_DISABLE_NONESSENTIAL_TRAFFIC=`、`NODE_ENV=` | 置空，避免宿主开关关掉错误日志/更新检查或切到 `NODE_ENV=test` 捷径 |
-| cwd | `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR=` | 否则 `reset_cwd_if_outside_project` 永远报项目根 |
+| cwd | `NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR=` | 否则 `reset_cwd_if_outside_project` 永远报项目根 |
 | 项目设置 | `NYAN_TEST_PROJECT_DIR=tests/fixtures/isolated-project` | 补掉 `projectSettings` 读本仓库 `.nyan/settings.json` 的洞 |
 | 宿主模型/网关 | `env -u` 掉 19 个 `ANTHROPIC_*` / `CLAUDE_*` 变量 | 空字符串会被当成模型名（justfile:86） |
 | 终端尺寸 | `TERM=xterm-256color`、`COLUMNS=80`、`LINES=24` | **CI 新增**：hosted runner 没有 TTY 也没有 `TERM`，crossterm 的 `window_size()` 失败后退到 `tput`，`tput` 因缺 `TERM` 再失败，`terminal::size()` 变成 `(0,0)`——Pane 分隔线、logo、spinner 计时、picker 描述宽度全部塌成 0。钉成开发机实测值 |
@@ -741,7 +741,7 @@ sccache 实验、release-profile 测试、小范围 mutation、coverage、merge 
 just _prep
 env NYAN_CONFIG_DIR="$PWD/target/test-home" \
     NYAN_DISABLE_NONESSENTIAL_TRAFFIC= NODE_ENV= \
-    CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR= \
+    NYAN_BASH_MAINTAIN_PROJECT_WORKING_DIR= \
     NYAN_TEST_PROJECT_DIR="$PWD/tests/fixtures/isolated-project" \
     env -u ANTHROPIC_MODEL -u ANTHROPIC_SMALL_FAST_MODEL … -u ANTHROPIC_API_KEY \
     cargo nextest run --lib --no-fail-fast

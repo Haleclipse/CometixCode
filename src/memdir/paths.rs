@@ -26,8 +26,8 @@ pub fn is_auto_memory_enabled() -> bool {
     if is_env_truthy(crate::utils::process_env::var("NYAN_SIMPLE").as_deref()) {
         return false;
     }
-    if is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
-        && crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
+    if is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref())
+        && crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR")
             .truthy()
             .is_none()
     {
@@ -40,7 +40,7 @@ pub fn is_auto_memory_enabled() -> bool {
 
 /// Maps to CC `memdir/paths.ts:85-90` `getMemoryBaseDir()`.
 pub fn get_memory_base_dir() -> PathBuf {
-    crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR")
+    crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR")
         .truthy()
         .map(PathBuf::from)
         .unwrap_or_else(crate::utils::env_utils::get_config_home_dir)
@@ -49,7 +49,7 @@ pub fn get_memory_base_dir() -> PathBuf {
 /// Maps to CC `memdir/paths.ts:161-166` `getAutoMemPathOverride()`.
 fn get_auto_mem_path_override() -> Option<PathBuf> {
     validate_memory_path(
-        crate::utils::process_env::var("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE").as_deref(),
+        crate::utils::process_env::var("NYAN_MEMORY_PATH_OVERRIDE").as_deref(),
         false,
     )
 }
@@ -267,11 +267,11 @@ mod tests {
     }
 
     const AUTO_MEMORY_ENV_KEYS: [&str; 6] = [
-        "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+        "NYAN_MEMORY_PATH_OVERRIDE",
         "NYAN_DISABLE_AUTO_MEMORY",
         "NYAN_SIMPLE",
-        "CLAUDE_CODE_REMOTE",
-        "CLAUDE_CODE_REMOTE_MEMORY_DIR",
+        "NYAN_REMOTE",
+        "NYAN_REMOTE_MEMORY_DIR",
         "NYAN_CONFIG_DIR",
     ];
 
@@ -327,7 +327,7 @@ mod tests {
             assert!(!is_auto_memory_enabled());
         }
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
+            let _env = EnvVarGuard::set("NYAN_REMOTE", "1");
             assert!(!is_auto_memory_enabled());
         }
     }
@@ -346,14 +346,14 @@ mod tests {
         );
         assert_eq!(get_auto_mem_path(), PathBuf::from(HOME).join("memory-dir"));
 
-        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", "/mnt/memory");
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", "/mnt/memory");
         assert_eq!(get_auto_mem_path(), PathBuf::from("/mnt/memory"));
     }
 
     #[test]
     fn programmatic_memory_override_is_not_trimmed_into_a_valid_path() {
         let _inputs = pin_auto_memory_inputs();
-        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", " /mnt/memory ");
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", " /mnt/memory ");
         assert_eq!(get_auto_mem_path(), default_auto_mem_path());
     }
 
@@ -400,7 +400,7 @@ mod tests {
             ("relative/memory", false),
             ("/", false),
         ] {
-            let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", value);
+            let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", value);
             assert_eq!(has_auto_mem_path_override(), valid, "{value}");
         }
     }
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn auto_mem_entrypoint_and_daily_log_paths_match_official_shape() {
         let _guard = isolated_auto_memory_env();
-        crate::utils::process_env::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", "/tmp/nyan-memory");
+        crate::utils::process_env::set("NYAN_MEMORY_PATH_OVERRIDE", "/tmp/nyan-memory");
         let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 3).unwrap();
 
         assert_eq!(
@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn is_auto_mem_path_matches_normalized_descendants_only() {
         let _guard = isolated_auto_memory_env();
-        crate::utils::process_env::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", "/tmp/nyan-memory");
+        crate::utils::process_env::set("NYAN_MEMORY_PATH_OVERRIDE", "/tmp/nyan-memory");
 
         assert!(is_auto_mem_path(Path::new("/tmp/nyan-memory/topic.md")));
         assert!(is_auto_mem_path(Path::new(

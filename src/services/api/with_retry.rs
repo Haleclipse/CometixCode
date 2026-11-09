@@ -444,7 +444,7 @@ fn should_retry(error: &ApiError) -> bool {
 
     // CCR mode: auth errors are transient blips
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+        crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
     ) && (error.status == Some(401) || error.status == Some(403))
     {
         return true;
@@ -608,7 +608,7 @@ fn get_retry_after(error: &RetryableError) -> Option<String> {
 /// The default maximum number of retries.
 ///
 /// @nyan: decisions 19 and 23. CC defaults to 10; nyan's unified controller
-/// defaults to 2 (`CLAUDE_CODE_MAX_RETRIES` may lower it) and the global cap
+/// defaults to 2 (`NYAN_MAX_RETRIES` may lower it) and the global cap
 /// of 2 bounds whatever is asked, so the environment cannot raise it.
 ///
 /// Maps to: CC `services/api/withRetry.ts:789-794`

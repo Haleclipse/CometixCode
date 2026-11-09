@@ -106,7 +106,7 @@ pub fn is_fullscreen_env_enabled() -> bool {
         if !*logged {
             *logged = true;
             eprintln!(
-                "fullscreen disabled: tmux -CC (iTerm2 integration mode) detected · set CLAUDE_CODE_NO_FLICKER=1 to override"
+                "fullscreen disabled: tmux -CC (iTerm2 integration mode) detected · set NYAN_NO_FLICKER=1 to override"
             );
         }
     }

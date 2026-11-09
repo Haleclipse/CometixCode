@@ -616,7 +616,8 @@ fn send_message_output_for_context(
             let Some(team) = team_name.as_deref() else {
                 return SendMessageOutput {
                     success: false,
-                    message: "Not in a team context. Create a team with Teammate spawnTeam first, or set CLAUDE_CODE_TEAM_NAME.".to_string(),
+                    message: "Not in a team context. Create a team with Teammate spawnTeam first."
+                        .to_string(),
                     recipients: Vec::new(),
                     request_id: None,
                     target: None,

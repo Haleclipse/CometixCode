@@ -471,11 +471,11 @@ pub fn initial_permission_mode_from_cli(
         .filter(|v| !v.is_empty())
     {
         let remote = crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+            crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
         );
         if remote && !["acceptEdits", "plan", "default"].contains(&mode) {
             crate::utils::debug::log_for_debugging(&format!(
-                "settings defaultMode \"{mode}\" is not supported in CLAUDE_CODE_REMOTE — only acceptEdits and plan are allowed"
+                "settings defaultMode \"{mode}\" is not supported in NYAN_REMOTE — only acceptEdits and plan are allowed"
             ));
         } else {
             modes.push(permission_mode_from_string(mode));

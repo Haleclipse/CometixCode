@@ -509,7 +509,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         std::fs::create_dir_all(&session_root).unwrap();
         let env = vec![
-            EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root),
+            EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root),
             EnvVarGuard::unset("NYAN_DISABLE_AUTO_MEMORY"),
             EnvVarGuard::unset("NYAN_SIMPLE"),
             EnvVarGuard::unset("NYAN_SKIP_PROMPT_HISTORY"),

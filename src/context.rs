@@ -208,7 +208,7 @@ fn build_system_context_with_cache_breaker(
 
     // Maps to CC `context.ts`: skip git status in Claude Code Remote and when
     // `utils/gitSettings.ts#shouldIncludeGitInstructions()` returns false.
-    if !crate::utils::env_utils::is_env_truthy(get_env("CLAUDE_CODE_REMOTE").as_deref())
+    if !crate::utils::env_utils::is_env_truthy(get_env("NYAN_REMOTE").as_deref())
         && should_include_git_instructions(&get_env, include_git_instructions_setting)
         && let Some(git_status) = get_git_status()
     {
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn get_system_context_skips_git_status_for_remote_or_disabled_git_instructions() {
-        for key in ["CLAUDE_CODE_REMOTE", "NYAN_DISABLE_GIT_INSTRUCTIONS"] {
+        for key in ["NYAN_REMOTE", "NYAN_DISABLE_GIT_INSTRUCTIONS"] {
             let context = build_system_context(
                 |requested| (requested == key).then(|| "1".to_string()),
                 None,

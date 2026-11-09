@@ -5,6 +5,10 @@
 //! state and transports: environment variable, legacy file descriptor, then the
 //! CCR well-known fallback file. Unlike CC `maybePersistTokenForSubprocesses`,
 //! Nyan does not write the token back to disk in this helper.
+//!
+//! @nyan: the token is always sent as a bearer. CC's claude.ai session-key
+//! form (`sk-ant-sid…` as a `sessionKey` cookie plus `X-Organization-Uuid`)
+//! is not ported.
 
 use crate::utils::auth_file_descriptor::{
     CCR_SESSION_INGRESS_TOKEN_PATH, read_token_from_well_known_file,
@@ -39,7 +43,7 @@ pub fn get_token_from_file_descriptor_with_env(
         return cached;
     }
 
-    let fallback_path = env_value(get_env, "CLAUDE_SESSION_INGRESS_TOKEN_FILE")
+    let fallback_path = env_value(get_env, "NYAN_SESSION_INGRESS_TOKEN_FILE")
         .unwrap_or_else(|| CCR_SESSION_INGRESS_TOKEN_PATH.to_string());
     let token = match env_value(get_env, "NYAN_WEBSOCKET_AUTH_FILE_DESCRIPTOR") {
         Some(fd_env) => fd_env
@@ -60,7 +64,7 @@ pub fn get_token_from_file_descriptor_with_env(
 pub fn get_session_ingress_auth_token_with_env(
     get_env: &impl Fn(&str) -> Option<String>,
 ) -> Option<String> {
-    env_value(get_env, "CLAUDE_CODE_SESSION_ACCESS_TOKEN")
+    env_value(get_env, "NYAN_SESSION_ACCESS_TOKEN")
         .or_else(|| get_token_from_file_descriptor_with_env(get_env))
 }
 
@@ -69,62 +73,16 @@ pub fn get_session_ingress_auth_token() -> Option<String> {
     get_session_ingress_auth_token_with_env(&|key| crate::utils::process_env::var(key))
 }
 
-/// Maps to: CC `sessionIngressAuth.ts#getSessionIngressAuthHeaders`.
-pub fn get_session_ingress_auth_headers_with_env(
-    get_env: &impl Fn(&str) -> Option<String>,
-) -> std::collections::BTreeMap<String, String> {
-    let Some(token) = get_session_ingress_auth_token_with_env(get_env) else {
-        return std::collections::BTreeMap::new();
-    };
-    if token.starts_with("sk-ant-sid") {
-        let mut headers = std::collections::BTreeMap::from([(
-            "Cookie".to_string(),
-            format!("sessionKey={token}"),
-        )]);
-        if let Some(org_uuid) = env_value(get_env, "CLAUDE_CODE_ORGANIZATION_UUID") {
-            headers.insert("X-Organization-Uuid".to_string(), org_uuid);
-        }
-        headers
-    } else {
-        std::collections::BTreeMap::from([("Authorization".to_string(), format!("Bearer {token}"))])
-    }
-}
-
-/// Maps to: CC `sessionIngressAuth.ts#getSessionIngressAuthHeaders`.
-pub fn get_session_ingress_auth_headers() -> std::collections::BTreeMap<String, String> {
-    get_session_ingress_auth_headers_with_env(&|key| crate::utils::process_env::var(key))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn session_ingress_auth_prefers_env_token_like_official() {
-        let headers = get_session_ingress_auth_headers_with_env(&|key| match key {
-            "CLAUDE_CODE_SESSION_ACCESS_TOKEN" => Some("jwt-token".to_string()),
+    fn session_ingress_auth_prefers_trimmed_env_token_like_official() {
+        let token = get_session_ingress_auth_token_with_env(&|key| match key {
+            "NYAN_SESSION_ACCESS_TOKEN" => Some("  jwt-token\n".to_string()),
             _ => None,
         });
-        assert_eq!(
-            headers.get("Authorization").map(String::as_str),
-            Some("Bearer jwt-token")
-        );
-    }
-
-    #[test]
-    fn session_ingress_auth_builds_cookie_headers_for_session_keys() {
-        let headers = get_session_ingress_auth_headers_with_env(&|key| match key {
-            "CLAUDE_CODE_SESSION_ACCESS_TOKEN" => Some("sk-ant-sid-test".to_string()),
-            "CLAUDE_CODE_ORGANIZATION_UUID" => Some("org-123".to_string()),
-            _ => None,
-        });
-        assert_eq!(
-            headers.get("Cookie").map(String::as_str),
-            Some("sessionKey=sk-ant-sid-test")
-        );
-        assert_eq!(
-            headers.get("X-Organization-Uuid").map(String::as_str),
-            Some("org-123")
-        );
+        assert_eq!(token.as_deref(), Some("jwt-token"));
     }
 }

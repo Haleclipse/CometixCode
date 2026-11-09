@@ -218,7 +218,7 @@ pub fn notify_session_state_changed(state: SessionState, details: Option<&Requir
     }
 
     // SEAM: CC `:127-133` mirrors the transition onto the SDK event stream
-    // behind `CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS`, via
+    // behind `NYAN_EMIT_SESSION_STATE_EVENTS`, via
     // `enqueueSdkEvent({type: 'system', subtype: 'session_state_changed', state})`.
     // `utils/sdkEventQueue.ts` has no Rust counterpart yet, so the gate is read
     // but the emit cannot be made. The env check is kept so the seam is visible
@@ -228,7 +228,7 @@ pub fn notify_session_state_changed(state: SessionState, details: Option<&Requir
     ) {
         tracing::debug!(
             state = state.as_str(),
-            "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS is set but utils/sdkEventQueue.ts is unported"
+            "NYAN_EMIT_SESSION_STATE_EVENTS is set but utils/sdkEventQueue.ts is unported"
         );
     }
 }

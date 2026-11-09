@@ -4925,7 +4925,7 @@ mod tests {
     fn startup_gate_environment(
         cli_args: &[&str],
     ) -> (
-        [EnvVarGuard; 4],
+        [EnvVarGuard; 3],
         EnvVarGuard,
         EnvVarGuard,
         crate::bootstrap::state::IsInteractiveGuard,

@@ -48,8 +48,8 @@ pub async fn get_mcp_headers_from_helper(
         command.args(["-c", helper]);
         command
     };
-    // CC headersHelper.ts:66-70: `{ ...process.env, CLAUDE_CODE_MCP_SERVER_NAME,
-    // CLAUDE_CODE_MCP_SERVER_URL: config.url }` — process.env, not
+    // CC headersHelper.ts:66-70: `{ ...process.env, NYAN_MCP_SERVER_NAME,
+    // NYAN_MCP_SERVER_URL: config.url }` — process.env, not
     // subprocessEnv(); an undefined url drops the inherited key.
     crate::utils::subprocess_env::apply_process_env(&mut command);
     command.env("NYAN_MCP_SERVER_NAME", server_name);

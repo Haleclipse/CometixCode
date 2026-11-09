@@ -437,7 +437,7 @@ pub fn load_memory_prompt() -> Option<String> {
         );
     }
     // CC memdir.ts:441-446 gates on the trimmed text but threads the raw value.
-    let extra_guidelines = crate::utils::process_env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES")
+    let extra_guidelines = crate::utils::process_env::var("NYAN_MEMORY_EXTRA_GUIDELINES")
         .filter(|value| !value.trim().is_empty())
         .map(|value| vec![value]);
     Some(
@@ -970,11 +970,11 @@ mod tests {
 
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _env = [
-            "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+            "NYAN_MEMORY_PATH_OVERRIDE",
             "NYAN_DISABLE_AUTO_MEMORY",
             "NYAN_SIMPLE",
-            "CLAUDE_CODE_REMOTE",
-            "CLAUDE_CODE_REMOTE_MEMORY_DIR",
+            "NYAN_REMOTE",
+            "NYAN_REMOTE_MEMORY_DIR",
         ]
         .map(EnvVarGuard::unset);
         // The lock guard resets the settings caches again on release.

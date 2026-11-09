@@ -66,7 +66,7 @@ pub fn is_coordinator_mode() -> bool {
 
 /// Maps to: CC `coordinatorMode.ts#matchSessionMode`.
 ///
-/// Flips `CLAUDE_CODE_COORDINATOR_MODE` so [`is_coordinator_mode`] matches the
+/// Flips `NYAN_COORDINATOR_MODE` so [`is_coordinator_mode`] matches the
 /// resumed session. Returns a user-facing warning when a switch occurred.
 pub fn match_session_mode(session_mode: Option<&str>) -> Option<String> {
     let session_mode = session_mode?;

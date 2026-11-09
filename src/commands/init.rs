@@ -207,7 +207,7 @@ When building the list, work through these checks and include only what applies:
 
 /// Maps to the repeated `feature('NEW_INIT') && (...)` gate in CC
 /// `commands/init.ts:229-250`. The build feature is source-controlled; the
-/// runtime cohort is the internal build or `CLAUDE_CODE_NEW_INIT` truthy.
+/// runtime cohort is the internal build or `NYAN_NEW_INIT` truthy.
 pub fn is_new_init_enabled_for_audience(
     audience: crate::utils::build_profile::BuildAudience,
     env_enabled: bool,

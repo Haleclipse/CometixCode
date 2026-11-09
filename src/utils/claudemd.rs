@@ -174,7 +174,7 @@ pub(crate) fn memory_files_cache_is_populated_for_test() -> bool {
 ///
 /// `include_default_discovery=false` is the Rust equivalent of CC bare mode's
 /// "skip what I didn't ask for" behavior. Explicit add-dir AGENTS.md loading
-/// remains controlled by `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD`.
+/// remains controlled by `NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD`.
 pub fn discover_claude_md_files_with_options(
     include_default_discovery: bool,
     additional_dirs: &[PathBuf],

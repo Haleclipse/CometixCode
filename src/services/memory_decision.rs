@@ -922,7 +922,7 @@ mod tests {
         std::fs::create_dir_all(&config_dir).unwrap();
         let env = vec![
             EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir),
-            EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &memory_dir),
+            EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &memory_dir),
         ];
         crate::memdir::paths::seed_settings(
             crate::utils::settings::types::SettingsJson {

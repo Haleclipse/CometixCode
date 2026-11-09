@@ -324,9 +324,7 @@ pub fn get_request_too_large_error_message() -> String {
 ///
 /// Maps to: CC services/api/errors.ts:217-219
 fn is_ccr_mode() -> bool {
-    crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
-    )
+    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref())
 }
 
 // ---------------------------------------------------------------------------

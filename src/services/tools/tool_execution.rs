@@ -6823,7 +6823,7 @@ mod tests {
     #[test]
     fn run_tool_use_nested_schema_validation_rejects_invalid_ask_user_question() {
         // `ToolUseContext::with_permission_context` resolves the live tool pool,
-        // which sibling tests narrow through `CLAUDE_CODE_SIMPLE`.
+        // which sibling tests narrow through `NYAN_SIMPLE`.
         let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

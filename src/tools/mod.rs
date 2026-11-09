@@ -639,7 +639,7 @@ mod tests {
 
     /// Reproduces the startup step CC performs in `maybeActivateBrief`.
     ///
-    /// `USER_MSG_OPT_IN` seeds itself from `CLAUDE_CODE_BRIEF` on its first read
+    /// `USER_MSG_OPT_IN` seeds itself from `NYAN_BRIEF` on its first read
     /// and never re-reads it (`bootstrap/state.rs:86-90`), so setting the
     /// variable inside a test body only takes effect when that test happens to
     /// be the process's first reader. The opt-in has to be driven directly.

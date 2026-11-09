@@ -233,8 +233,8 @@ mod tests {
 
     const ENV_KEYS: [&str; 4] = [
         "NYAN_CONFIG_DIR",
-        "CLAUDE_CODE_REMOTE_MEMORY_DIR",
-        "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+        "NYAN_REMOTE_MEMORY_DIR",
+        "NYAN_MEMORY_PATH_OVERRIDE",
         "NYAN_DISABLE_AUTO_MEMORY",
     ];
 
@@ -257,10 +257,7 @@ mod tests {
                 crate::utils::process_env::remove(key);
             }
             crate::utils::process_env::set("NYAN_CONFIG_DIR", root.join("config"));
-            crate::utils::process_env::set(
-                "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-                root.join("auto-memory"),
-            );
+            crate::utils::process_env::set("NYAN_MEMORY_PATH_OVERRIDE", root.join("auto-memory"));
             crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "false");
             let previous_cwd = crate::bootstrap::state::get_original_cwd();
             crate::bootstrap::state::set_original_cwd(root.join("project"));

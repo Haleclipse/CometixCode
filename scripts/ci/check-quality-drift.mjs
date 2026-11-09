@@ -5,8 +5,8 @@
 // 1. Prohibits introducing new `#[ignore]` attributes in code or tests.
 //    (Bypassing failing tests by ignoring them is forbidden; fix the defect instead.)
 // 2. Prohibits reading or writing new `CLAUDE_*` / `ANTHROPIC_*` environment
-//    variables. nyan's switches live in the `NYAN_*` namespace; the names
-//    below still belong to Anthropic-account features being removed.
+//    variables. nyan's switches live in the `NYAN_*` namespace; the only
+//    exceptions are the provider variables listed below.
 //
 // Usage (CI):   node scripts/ci/check-quality-drift.mjs
 // Usage (local): node scripts/ci/check-quality-drift.mjs --base master --head HEAD
@@ -48,7 +48,6 @@ function endpoints() {
 
 const zero = /^0+$/;
 
-// Anthropic/CC environment names still present while their features are removed.
 const LEGACY_ENV_ALLOW = new Set([
   // Provider variables tests still set to prove nyan ignores the ambient
   // Anthropic environment.
@@ -62,26 +61,6 @@ const LEGACY_ENV_ALLOW = new Set([
   "ANTHROPIC_MODEL",
   "ANTHROPIC_SMALL_FAST_MODEL",
   "ANTHROPIC_UNIX_SOCKET",
-  "CLAUDE_AGENT_SDK_CLIENT_APP",
-  "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS",
-  "CLAUDE_AGENT_SDK_MCP_NO_PREFIX",
-  "CLAUDE_AGENT_SDK_VERSION",
-  "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
-  "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
-  "CLAUDE_CODE_CONTAINER_ID",
-  "CLAUDE_CODE_ENVIRONMENT_KIND",
-  "CLAUDE_CODE_IS_COWORK",
-  "CLAUDE_CODE_ORGANIZATION_UUID",
-  "CLAUDE_CODE_REMOTE",
-  "CLAUDE_CODE_REMOTE_MEMORY_DIR",
-  "CLAUDE_CODE_REMOTE_SESSION_ID",
-  "CLAUDE_CODE_SESSION_ACCESS_TOKEN",
-  "CLAUDE_CODE_USE_COWORK_PLUGINS",
-  "CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES",
-  "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-  "CLAUDE_OVERRIDE_SENTINEL",
-  "CLAUDE_SESSION_INGRESS_TOKEN_FILE",
-  "CLAUDE_SIG",
 ]);
 
 const envAccess =

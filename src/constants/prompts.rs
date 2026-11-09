@@ -31,7 +31,7 @@ const TOKEN_BUDGET_SECTION: &str = "When the user specifies a token target (e.g.
 /// additionalWorkingDirectories?, mcpClients?)`.
 ///
 /// The official function returns the simple single-block prompt when
-/// `CLAUDE_CODE_SIMPLE` is truthy; otherwise it assembles the cacheable static
+/// `NYAN_SIMPLE` is truthy; otherwise it assembles the cacheable static
 /// sections plus registry-managed dynamic sections. This Rust port keeps the
 /// same ordering, including safe no-op seams for dynamic subsections whose
 /// owning services are not yet ported.
@@ -1103,10 +1103,7 @@ mod tests {
                 .as_nanos()
         ));
         crate::utils::process_env::remove("NYAN_SIMPLE");
-        crate::utils::process_env::set(
-            "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-            temp.display().to_string(),
-        );
+        crate::utils::process_env::set("NYAN_MEMORY_PATH_OVERRIDE", temp.display().to_string());
         crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let prompt = get_system_prompt_with_settings(
             &[],
@@ -1115,7 +1112,7 @@ mod tests {
             &[],
             &crate::utils::settings::types::SettingsJson::default(),
         );
-        crate::utils::process_env::remove("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE");
+        crate::utils::process_env::remove("NYAN_MEMORY_PATH_OVERRIDE");
         crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
 
         let boundary_idx = prompt
@@ -1219,16 +1216,15 @@ mod tests {
     /// test: the env overrides (a `cfg(test)`-only seam, `bootstrap/state.rs`)
     /// and `IS_INTERACTIVE` itself, which is what a real run computes
     /// (`main.tsx:1104-1120`). Reading only one of them would let an ambient
-    /// `CLAUDE_CODE_NON_INTERACTIVE` silently flip the "interactive" case into
+    /// `NYAN_NON_INTERACTIVE` silently flip the "interactive" case into
     /// a second copy of the headless one.
     fn pin_session_interactivity(
         non_interactive: bool,
     ) -> (
-        [EnvVarGuard; 3],
+        [EnvVarGuard; 2],
         crate::bootstrap::state::IsInteractiveGuard,
     ) {
         let env = [
-            EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION"),
         ];
@@ -1676,7 +1672,7 @@ mod tests {
 
             let prompt_a = {
                 let _override = EnvVarGuard::set(
-                    "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+                    "NYAN_MEMORY_PATH_OVERRIDE",
                     temp_a.path().display().to_string(),
                 );
                 get_system_prompt(&tools, "claude-sonnet-4-6", &[], &[])
@@ -1684,7 +1680,7 @@ mod tests {
 
             let prompt_b = {
                 let _override = EnvVarGuard::set(
-                    "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+                    "NYAN_MEMORY_PATH_OVERRIDE",
                     temp_b.path().display().to_string(),
                 );
                 get_system_prompt(&tools, "claude-sonnet-4-6", &[], &[])

@@ -49,7 +49,7 @@ pub fn get_cli_sysprompt_prefix(
 /// The GrowthBook read is the source-controlled
 /// `FeatureFlag::AttributionHeader` switch, not a live GrowthBook client.
 ///
-/// @nyan offset: default `CLAUDE_CODE_ATTRIBUTION_HEADER` to `0` when unset
+/// @nyan offset: default `NYAN_ATTRIBUTION_HEADER` to `0` when unset
 /// so the official gate skips assembling the header on production requests.
 fn is_attribution_header_enabled() -> bool {
     let value = crate::utils::process_env::var("NYAN_ATTRIBUTION_HEADER")
@@ -79,7 +79,7 @@ pub fn get_attribution_header(fingerprint: &str) -> String {
     }
     // Maps to: CC `const version = \`${MACRO.VERSION}.${fingerprint}\``
     let version = format!("{}.{}", crate::constants::product::VERSION, fingerprint);
-    // Maps to: CC `process.env.CLAUDE_CODE_ENTRYPOINT ?? 'unknown'`
+    // Maps to: CC `process.env.NYAN_ENTRYPOINT ?? 'unknown'`
     let entrypoint =
         crate::utils::process_env::var("NYAN_ENTRYPOINT").unwrap_or_else(|| "unknown".to_string());
     // cch=00000 placeholder is Bun-native attestation — omitted in Nyan.

@@ -53,7 +53,7 @@
 //! - [x] Runtime subagent transcript and agent metadata writes.
 //! - [x] Write queue and flush parity for the async `recordTranscript` path.
 //! - [x] `shouldSkipPersistence` gates for cleanupPeriodDays=0,
-//!       `--no-session-persistence`, and `CLAUDE_CODE_SKIP_PROMPT_HISTORY`.
+//!       `--no-session-persistence`, and `NYAN_SKIP_PROMPT_HISTORY`.
 //! - [x] Tracked `removeTranscriptMessage` tombstones with 64 KB tail splice,
 //!       bounded slow rewrite, and fire-and-forget/flush ordering.
 //! - [x] Canonical path and NFC normalization parity.
@@ -3753,7 +3753,7 @@ pub fn record_transcript(
 /// before it reaches `insertMessageChain`, and that filter is the privacy
 /// boundary: progress is never persisted, and non-`ant` builds withhold every
 /// attachment except `hook_additional_context` behind
-/// `CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT`. Typed callers must go through
+/// `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`. Typed callers must go through
 /// [`record_typed_sidechain_transcript`], which owns both halves; handing raw
 /// entries straight to this function skips the filter (that is exactly how the
 /// AgentTool sidechain writer came to persist SubagentStart hook output with no
@@ -3838,7 +3838,7 @@ pub fn record_typed_sidechain_transcript(
     //   those END with the SubagentStart `hook_additional_context` attachment
     //   when a hook produced context (:546-554). Attachments survive this
     //   filter on `ant` builds and are withheld on every other one (:4357-4366)
-    //   unless `CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT` is set.
+    //   unless `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT` is set.
     //
     // The attachments the query LOOP yields never arrive: `runAgent.ts:771-790`
     // yields them and `continue`s without recording, and `isRecordableMessage`
@@ -9192,7 +9192,7 @@ mod tests {
     /// Attachments are withheld from non-ant transcripts — the source's comment
     /// gives the reason: "they have sensitive info for training that we don't
     /// want exposed to the public". Hook output is the single exception, and
-    /// only behind `CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT`, because it is
+    /// only behind `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`, because it is
     /// user-configured content worth having on resume.
     ///
     /// `getUserType() !== 'ant'` is the build audience here, which is a
@@ -9244,7 +9244,7 @@ mod tests {
     /// `Message::HookResult` arm — which writes `"type":"attachment"` —
     /// takes the same withholding as the `Attachment` arm: an external
     /// build writes nothing, except `hook_additional_context` behind
-    /// `CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT`; an internal build
+    /// `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`; an internal build
     /// writes everything. Asserted against the CURRENT build audience;
     /// both sides run under `just test-all-audiences`.
     #[test]

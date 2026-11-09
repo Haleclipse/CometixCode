@@ -15,7 +15,7 @@
 //! `--debug=perf`, the argv flags `--debug-*-profile`, or the environment
 //! variable `NYAN_DEBUG_PROFILES` with the same list syntax.
 //! `NYAN_FRAME_TIMING_LOG` / `NYAN_FRAME_TIMING_SAMPLE_EVERY` are the
-//! twins of CC's `CLAUDE_CODE_FRAME_TIMING_LOG` / `_SAMPLE_EVERY` bench JSONL.
+//! twins of CC's `NYAN_FRAME_TIMING_LOG` / `_SAMPLE_EVERY` bench JSONL.
 
 use crate::utils::debug_filter::{DebugFilter, parse_debug_filter, should_show_debug_message};
 use std::io::Write;
@@ -332,7 +332,7 @@ pub fn frame_profile_enabled() -> bool {
     config().profiles.frame
 }
 
-/// Maps to: CC `interactiveHelpers.tsx:427` `CLAUDE_CODE_FRAME_TIMING_LOG` —
+/// Maps to: CC `interactiveHelpers.tsx:427` `NYAN_FRAME_TIMING_LOG` —
 /// bench-only per-frame JSONL for offline analysis. The Rust twin uses the
 /// same record shape so one analysis script can consume both sides.
 pub fn frame_timing_log_path() -> Option<std::path::PathBuf> {
@@ -341,7 +341,7 @@ pub fn frame_timing_log_path() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
 }
 
-/// Maps to: CC `main.tsx` `CLAUDE_CODE_FRAME_TIMING_SAMPLE_EVERY` — record the
+/// Maps to: CC `main.tsx` `NYAN_FRAME_TIMING_SAMPLE_EVERY` — record the
 /// heavyweight rss/cpu samples only every Nth frame (default 1: every frame).
 /// Returns true when this frame should carry the samples.
 pub fn frame_timing_sample_tick() -> bool {

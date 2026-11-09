@@ -72,7 +72,7 @@ fn scrub_enabled(env: &crate::utils::process_env::EnvSnapshot) -> bool {
 
 /// Maps to CC `subprocessEnv()` (`utils/subprocessEnv.ts:79-99`): the
 /// effective process env, plus the upstream-proxy overlay, minus the GHA
-/// secret scrub when `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is truthy.
+/// secret scrub when `NYAN_SUBPROCESS_ENV_SCRUB` is truthy.
 ///
 /// Per-command/per-server env overrides must be applied by the caller AFTER
 /// this function so explicit entries survive the scrub, matching

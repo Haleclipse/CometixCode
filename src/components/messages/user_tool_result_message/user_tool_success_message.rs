@@ -43,7 +43,7 @@ pub struct UserToolSuccessMessageProps {
 /// Partial seam: CC's compile-time `KAIROS_BRIEF` capability has no faithful
 /// local build-feature projection. The canonical `FeatureFlag::Kairos` branch
 /// is preserved; the unrelated `anthropic_internal` build and runtime
-/// `CLAUDE_CODE_BRIEF` opt-in are deliberately not substituted.
+/// `NYAN_BRIEF` opt-in are deliberately not substituted.
 #[component]
 pub fn UserToolSuccessMessage(
     props: &UserToolSuccessMessageProps,

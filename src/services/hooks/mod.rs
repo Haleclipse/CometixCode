@@ -213,7 +213,7 @@ fn hook_name(event: HookEvent, match_query: &str) -> String {
 }
 
 /// Maps to: CC `utils/hooks.ts:1982-1984` (`executeHooks`) and `:3016-3018`
-/// (`executeHooksOutsideREPL`) — `if (isEnvTruthy(process.env.CLAUDE_CODE_SIMPLE))
+/// (`executeHooksOutsideREPL`) — `if (isEnvTruthy(process.env.NYAN_SIMPLE))
 /// return`, the `--bare` arm. `main.tsx:1359` describes the flag as "Minimal
 /// mode: skip hooks, LSP, plugin sync, …", and `cli/dispatch.rs:9` is this
 /// port's `--bare` writer.
@@ -227,7 +227,7 @@ pub fn bare_mode_disables_hooks() -> bool {
 ///
 /// Maps to: CC `utils/hooks.ts:1978-1999` (`executeHooks`) and `:3016-3036`
 /// (`executeHooksOutsideREPL`). Two entry gates apply here:
-/// - `CLAUDE_CODE_SIMPLE` disables hook execution in bare mode;
+/// - `NYAN_SIMPLE` disables hook execution in bare mode;
 /// - `shouldSkipHookDueToTrust()` (`:1994`, `:3031`) — "SECURITY: ALL hooks
 ///   require workspace trust in interactive mode. This centralized check
 ///   prevents RCE vulnerabilities for all current and future hooks".
@@ -796,8 +796,8 @@ pub(crate) mod test_support {
     ///
     /// Reaching it takes all four of these, because the port's trust answer is
     /// an OR over four inputs:
-    /// - `set_is_interactive(true)` + the three `CLAUDE_CODE_NON_INTERACTIVE` /
-    ///   `NYAN_NON_INTERACTIVE*` overrides cleared, because CC returns
+    /// - `set_is_interactive(true)` + the two `NYAN_NON_INTERACTIVE*`
+    ///   overrides cleared, because CC returns
     ///   "do not skip" outright in non-interactive (SDK) mode (`:288-291`);
     /// - `set_session_trust_accepted(false)`, the memory-only home-dir accept;
     /// - the latched `TRUST_DIALOG_ACCEPTED_CACHE` reset;
@@ -827,14 +827,10 @@ pub(crate) mod test_support {
                 previous_cwd: crate::bootstrap::state::get_original_cwd(),
                 previous_interactive: crate::bootstrap::state::get_is_interactive(),
                 scratch: scratch.clone(),
-                _non_interactive_env: [
-                    "NYAN_NON_INTERACTIVE",
-                    "NYAN_NON_INTERACTIVE",
-                    "NYAN_NON_INTERACTIVE_SESSION",
-                ]
-                .into_iter()
-                .map(EnvVarGuard::unset)
-                .collect(),
+                _non_interactive_env: ["NYAN_NON_INTERACTIVE", "NYAN_NON_INTERACTIVE_SESSION"]
+                    .into_iter()
+                    .map(EnvVarGuard::unset)
+                    .collect(),
             };
             crate::bootstrap::state::set_is_interactive(true);
             crate::bootstrap::state::set_session_trust_accepted(false);

@@ -1861,10 +1861,8 @@ mod tests {
             }
         }
         let _cleanup = Cleanup(root.clone());
-        let _memory = EnvVarGuard::set(
-            "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
-            root.to_string_lossy().as_ref(),
-        );
+        let _memory =
+            EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", root.to_string_lossy().as_ref());
         let _enabled = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let config = CliConfig {
             system_prompt: Some("CUSTOM".into()),

@@ -48,7 +48,7 @@ pub struct RetryLimits {
 
 impl RetryLimits {
     /// `profile` is what the profile asks for, `env_default` the process-wide
-    /// `CLAUDE_CODE_MAX_RETRIES`. Both can lower the budget and the delay
+    /// `NYAN_MAX_RETRIES`. Both can lower the budget and the delay
     /// ceiling but never raise them past the global defaults.
     pub fn resolve(profile: Option<&RetrySettings>, env_default: Option<u32>) -> Self {
         let requested = profile

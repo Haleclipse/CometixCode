@@ -146,7 +146,7 @@ pub fn reset_task_list(task_list_id: &str) -> std::io::Result<()> {
 
 /// Maps to: CC `utils/tasks.ts:133-139` `isTodoV2Enabled()`.
 ///
-/// Force-enable tasks in non-interactive mode via `CLAUDE_CODE_ENABLE_TASKS`
+/// Force-enable tasks in non-interactive mode via `NYAN_ENABLE_TASKS`
 /// (SDK users who want Task tools over TodoWrite); otherwise Task tools are
 /// interactive-only, keyed off the bootstrap session flag
 /// (`getIsNonInteractiveSession()`), not an env var.

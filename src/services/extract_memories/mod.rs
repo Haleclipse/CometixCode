@@ -589,7 +589,7 @@ mod tests {
         let lock = TEST_ENV_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let root = std::env::temp_dir().join(format!("nyan-extract-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&root).unwrap();
-        let env = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root);
+        let env = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root);
         Fixture {
             root,
             _lock: lock,

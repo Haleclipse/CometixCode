@@ -488,11 +488,11 @@ fn is_included_mcp_tool(tool: &crate::types::tools::Tool) -> bool {
 
 /// Maps to: CC `fetchToolsForClient`'s `skipPrefix` (`client.ts:1761-1763`):
 /// an SDK server's tools keep their own names under
-/// `CLAUDE_AGENT_SDK_MCP_NO_PREFIX`.
+/// `NYAN_SDK_MCP_NO_PREFIX`.
 fn skips_mcp_tool_prefix(config: &ScopedMcpServerConfig) -> bool {
     config.transport == Transport::Sdk
         && crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_AGENT_SDK_MCP_NO_PREFIX").as_deref(),
+            crate::utils::process_env::var("NYAN_SDK_MCP_NO_PREFIX").as_deref(),
         )
 }
 
@@ -1875,23 +1875,6 @@ mod runtime {
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
     }
 
-    fn session_ingress_auth() -> (Option<String>, BTreeMap<String, String>) {
-        // Maps to: CC `utils/sessionIngressAuth.ts#getSessionIngressAuthToken`
-        // and `getSessionIngressAuthHeaders`.
-        let Some(token) = crate::utils::session_ingress_auth::get_session_ingress_auth_token()
-        else {
-            return (None, BTreeMap::new());
-        };
-        if token.starts_with("sk-ant-sid") {
-            (
-                None,
-                crate::utils::session_ingress_auth::get_session_ingress_auth_headers(),
-            )
-        } else {
-            (Some(token), BTreeMap::new())
-        }
-    }
-
     pub(super) fn streamable_http_auth_header(
         oauth_token: Option<String>,
         session_bearer: Option<String>,
@@ -1942,15 +1925,12 @@ mod runtime {
             .tokens()?
             .and_then(|tokens| tokens.access_token)
             .filter(|token| !token.is_empty());
-        let (session_bearer, session_headers) = session_ingress_auth();
+        let session_bearer = crate::utils::session_ingress_auth::get_session_ingress_auth_token();
         let has_static_authorization = headers
             .keys()
             .any(|key| key.eq_ignore_ascii_case("authorization"));
         let auth_header =
             streamable_http_auth_header(oauth_token, session_bearer, has_static_authorization);
-        if auth_header.is_none() && !has_static_authorization {
-            headers.extend(session_headers);
-        }
 
         // rmcp re-initializes an expired session in the transport by default.
         // The SDK transport CC uses throws instead, and the tool call clears
@@ -2047,8 +2027,7 @@ mod runtime {
             "User-Agent".to_string(),
             crate::utils::http::get_mcp_user_agent(),
         )]);
-        let (session_bearer, _) = session_ingress_auth();
-        if let Some(token) = session_bearer {
+        if let Some(token) = crate::utils::session_ingress_auth::get_session_ingress_auth_token() {
             headers.insert("Authorization".to_string(), format!("Bearer {token}"));
         }
         headers.extend(
@@ -5588,7 +5567,7 @@ rl.on('line', line => {
         };
 
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let key = "CLAUDE_AGENT_SDK_MCP_NO_PREFIX";
+        let key = "NYAN_SDK_MCP_NO_PREFIX";
         let _prefix = EnvVarGuard::unset(key);
 
         // Maps to: CC `client.ts:1774` — `mcpInfo` holds the unnormalized server

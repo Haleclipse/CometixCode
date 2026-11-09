@@ -882,7 +882,7 @@ impl crate::tool::ToolCall for FileEditTool {
             // newStringBytes, replaceAll}) — joins with analytics.
 
             let git_diff = if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+                crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
             ) && remote_git_diff_enabled()
             {
                 // CC: logEvent('tengu_tool_use_diff_computed', {isEditTool,
@@ -1767,7 +1767,7 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
-        let _remote = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
+        let _remote = EnvVarGuard::set("NYAN_REMOTE", "1");
         let config = crate::utils::config::GlobalConfig::default();
         let _config_restore = TestGlobalConfigRestore::set(config);
         let root = temp_root("remote-diff");

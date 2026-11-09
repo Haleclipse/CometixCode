@@ -205,7 +205,7 @@ pub fn model_supports_adaptive_thinking(model: &str, profile: Option<&str>) -> b
 /// Interactive REPL always seeds `ToolUseContext.thinking_config` from
 /// `ReplProps`; this is only for call sites that never received launch props.
 ///
-/// Does **not** read invented envs (`CLAUDE_CODE_THINKING` / `NYAN_THINKING`)
+/// Does **not** read the invented `NYAN_THINKING` env
 /// or `GlobalConfig.thinking_enabled` — those are not CC
 /// `shouldEnableThinkingByDefault` / main launch sources.
 pub fn production_thinking_config_from_env_and_settings(settings: &SettingsJson) -> ThinkingConfig {

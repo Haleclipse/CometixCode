@@ -70,7 +70,7 @@ use crate::cli::print::{ControlResponseInput, json_line};
 
 /// Applies one `update_environment_variables` stdin message to the process
 /// env carrier. Used by the bridge session runner for auth-token refresh
-/// (`CLAUDE_CODE_SESSION_ACCESS_TOKEN`), which must be readable by the REPL
+/// (`NYAN_SESSION_ACCESS_TOKEN`), which must be readable by the REPL
 /// process itself — `getSessionIngressAuthToken()` re-reads it per
 /// `refreshHeaders` — not just by child Bash commands.
 ///

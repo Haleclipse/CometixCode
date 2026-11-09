@@ -2251,7 +2251,7 @@ mod runtime {
         {
             if !crate::services::mcp::xaa_idp_login::is_xaa_enabled() {
                 anyhow::bail!(
-                    "XAA is not enabled (set CLAUDE_CODE_ENABLE_XAA=1). Remove 'oauth.xaa' from server '{server_name}' to use the standard consent flow."
+                    "XAA is not enabled (set NYAN_ENABLE_XAA=1). Remove 'oauth.xaa' from server '{server_name}' to use the standard consent flow."
                 );
             }
             if crate::services::mcp::xaa_idp_login::get_xaa_idp_settings().is_none() {

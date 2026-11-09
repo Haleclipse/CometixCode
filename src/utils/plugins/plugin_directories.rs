@@ -16,7 +16,7 @@ const COWORK_PLUGINS_DIR: &str = "cowork_plugins";
 fn get_plugins_directory_name() -> &'static str {
     if crate::bootstrap::state::get_use_cowork_plugins()
         || crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("CLAUDE_CODE_USE_COWORK_PLUGINS").as_deref(),
+            crate::utils::process_env::var("NYAN_USE_COWORK_PLUGINS").as_deref(),
         )
     {
         COWORK_PLUGINS_DIR
@@ -153,13 +153,13 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _restore = [
             EnvVarGuard::preserve("NYAN_PLUGIN_CACHE_DIR"),
-            EnvVarGuard::preserve("CLAUDE_CODE_USE_COWORK_PLUGINS"),
+            EnvVarGuard::preserve("NYAN_USE_COWORK_PLUGINS"),
             EnvVarGuard::preserve("NYAN_PLUGIN_SEED_DIR"),
         ];
         // `expandTilde` takes `homedir()`: pin it to a literal.
         let home = "/home/someone";
         let _home = EnvVarGuard::set(HOME_VAR, home);
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_COWORK_PLUGINS");
+        crate::utils::process_env::remove("NYAN_USE_COWORK_PLUGINS");
         crate::utils::process_env::remove("NYAN_PLUGIN_SEED_DIR");
         crate::utils::process_env::set("NYAN_PLUGIN_CACHE_DIR", "~/custom-plugins");
         assert_eq!(
@@ -174,7 +174,7 @@ mod tests {
         );
 
         crate::utils::process_env::remove("NYAN_PLUGIN_CACHE_DIR");
-        crate::utils::process_env::set("CLAUDE_CODE_USE_COWORK_PLUGINS", "1");
+        crate::utils::process_env::set("NYAN_USE_COWORK_PLUGINS", "1");
         assert!(get_plugins_directory().ends_with(COWORK_PLUGINS_DIR));
 
         let delimiter = if cfg!(windows) { ';' } else { ':' };
@@ -187,7 +187,7 @@ mod tests {
         assert_eq!(seeds[1], PathBuf::from("/tmp/seed-two"));
 
         crate::utils::process_env::remove("NYAN_PLUGIN_SEED_DIR");
-        crate::utils::process_env::remove("CLAUDE_CODE_USE_COWORK_PLUGINS");
+        crate::utils::process_env::remove("NYAN_USE_COWORK_PLUGINS");
     }
 
     #[test]

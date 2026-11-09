@@ -159,7 +159,7 @@ mod tests {
     fn memory_guard_rejects_public_build_heuristics_as_a_whole_file() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = std::env::temp_dir().join(format!("nyan-memory-guard-{}", uuid::Uuid::new_v4()));
-        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root);
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root);
         let path = root.join("candidate.md");
         let error = check_memory_content(&path, "safe\npassword: \"secret-value\"\n").unwrap_err();
         assert!(error.rule_ids.contains(&"sensitive-assignment".to_string()));

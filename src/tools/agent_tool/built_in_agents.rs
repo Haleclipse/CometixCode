@@ -29,7 +29,7 @@ pub fn are_explore_plan_agents_enabled() -> bool {
 pub fn get_built_in_agents() -> Vec<AgentDefinition> {
     // Maps to official SDK/non-interactive escape hatch.
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS").as_deref(),
+        crate::utils::process_env::var("NYAN_SDK_DISABLE_BUILTIN_AGENTS").as_deref(),
     ) && crate::bootstrap::state::get_is_non_interactive_session()
     {
         return Vec::new();
@@ -53,7 +53,7 @@ mod tests {
     /// Pins every input `getBuiltInAgents()` reads: the one variable, and the
     /// session's interactivity — `IS_INTERACTIVE` together with its
     /// `cfg(test)`-only env overrides (`bootstrap/state.rs`), so an ambient
-    /// `CLAUDE_CODE_NON_INTERACTIVE` cannot turn the interactive case headless.
+    /// `NYAN_NON_INTERACTIVE` cannot turn the interactive case headless.
     /// The caller holds `TEST_ENV_LOCK`.
     fn pin_inputs(
         disable_built_in_agents: Option<&str>,
@@ -64,11 +64,7 @@ mod tests {
             None => EnvVarGuard::unset(key),
         };
         let env = vec![
-            pin(
-                "CLAUDE_AGENT_SDK_DISABLE_BUILTIN_AGENTS",
-                disable_built_in_agents,
-            ),
-            EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
+            pin("NYAN_SDK_DISABLE_BUILTIN_AGENTS", disable_built_in_agents),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
             EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION"),
         ];

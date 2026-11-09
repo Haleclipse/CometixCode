@@ -718,7 +718,7 @@ impl ToolCall for FileWriteTool {
             // CC: FileWriteTool.ts:339-342 `logEvent('tengu_write_claudemd',
             // {})` on `${sep}CLAUDE.md` paths — joins with analytics.
 
-            let git_diff = if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref())
+            let git_diff = if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref())
                 && remote_git_diff_enabled()
             {
                 // CC: logEvent('tengu_tool_use_diff_computed', {isWriteTool,
@@ -1412,7 +1412,7 @@ mod tests {
     async fn remote_git_diff_gate_reads_switch_table() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let _remote = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
+        let _remote = EnvVarGuard::set("NYAN_REMOTE", "1");
         let _config_restore = TestGlobalConfigRestore;
         let config = crate::utils::config::GlobalConfig::default();
         crate::utils::config::set_test_global_config(Some(config));

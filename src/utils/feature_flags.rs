@@ -270,7 +270,7 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::NewInit,
         cc_growthbook_name: "NEW_INIT",
         enabled: true,
-        note: "Build feature is present; /init still requires the anthropic_internal build or CLAUDE_CODE_NEW_INIT at runtime.",
+        note: "Build feature is present; /init still requires the anthropic_internal build or NYAN_NEW_INIT at runtime.",
     },
     FeatureSwitch {
         flag: FeatureFlag::BreakCacheCommand,
@@ -300,7 +300,7 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::CoordinatorMode,
         cc_growthbook_name: "COORDINATOR_MODE",
         enabled: true,
-        note: "Build feature for coordinator system prompt / mode detection; runtime still requires CLAUDE_CODE_COORDINATOR_MODE.",
+        note: "Build feature for coordinator system prompt / mode detection; runtime still requires NYAN_COORDINATOR_MODE.",
     },
     FeatureSwitch {
         flag: FeatureFlag::Proactive,
@@ -338,7 +338,7 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::KairosBriefEntitlement,
         cc_growthbook_name: "tengu_kairos_brief",
         enabled: false,
-        note: "Official default false; CLAUDE_CODE_BRIEF and assistant mode grant entitlement without it.",
+        note: "Official default false; NYAN_BRIEF and assistant mode grant entitlement without it.",
     },
     FeatureSwitch {
         flag: FeatureFlag::TranscriptClassifier,
@@ -445,13 +445,13 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::FineGrainedToolStreaming,
         cc_growthbook_name: "tengu_fgts",
         enabled: false,
-        note: "Official default false; eager_input_streaming still opts in through CLAUDE_CODE_ENABLE_FINE_GRAINED_TOOL_STREAMING on first-party Anthropic base URLs.",
+        note: "Official default false; eager_input_streaming still opts in through NYAN_ENABLE_FINE_GRAINED_TOOL_STREAMING on first-party Anthropic base URLs.",
     },
     FeatureSwitch {
         flag: FeatureFlag::FileReadLimitsOverride,
         cc_growthbook_name: "tengu_amber_wren",
         enabled: false,
-        note: "Official default is an empty override map, so Read keeps MAX_OUTPUT_SIZE / DEFAULT_MAX_OUTPUT_TOKENS; CLAUDE_CODE_FILE_READ_MAX_OUTPUT_TOKENS still overrides the token cap.",
+        note: "Official default is an empty override map, so Read keeps MAX_OUTPUT_SIZE / DEFAULT_MAX_OUTPUT_TOKENS; NYAN_FILE_READ_MAX_OUTPUT_TOKENS still overrides the token cap.",
     },
     FeatureSwitch {
         flag: FeatureFlag::ToolResultContentReplacement,
@@ -471,19 +471,19 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::AttributionHeader,
         cc_growthbook_name: "tengu_attribution_header",
         enabled: true,
-        note: "Official fallback is true (constants/system.ts:56 getFeatureValue_CACHED_MAY_BE_STALE('tengu_attribution_header', true)). Production still stays off because CLAUDE_CODE_ATTRIBUTION_HEADER defaults to 0; flip this switch to kill the header even when the env is enabled.",
+        note: "Official fallback is true (constants/system.ts:56 getFeatureValue_CACHED_MAY_BE_STALE('tengu_attribution_header', true)). Production still stays off because NYAN_ATTRIBUTION_HEADER defaults to 0; flip this switch to kill the header even when the env is enabled.",
     },
     FeatureSwitch {
         flag: FeatureFlag::RemoteGitDiff,
         cc_growthbook_name: "tengu_quartz_lantern",
         enabled: false,
-        note: "Official default false; Write/Edit skip the single-file git diff attachment even when CLAUDE_CODE_REMOTE is truthy.",
+        note: "Official default false; Write/Edit skip the single-file git diff attachment even when NYAN_REMOTE is truthy.",
     },
     FeatureSwitch {
         flag: FeatureFlag::PromptSuggestion,
         cc_growthbook_name: "tengu_chomp_inflection",
         enabled: false,
-        note: "Official default false; CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION still opts in explicitly and the settings toggle stays hidden without it.",
+        note: "Official default false; NYAN_ENABLE_PROMPT_SUGGESTION still opts in explicitly and the settings toggle stays hidden without it.",
     },
     FeatureSwitch {
         flag: FeatureFlag::ChannelAllowlistLedger,

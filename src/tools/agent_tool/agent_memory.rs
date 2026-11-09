@@ -73,7 +73,7 @@ pub fn is_agent_memory_path(absolute_path: &Path, cwd: &Path) -> bool {
         return true;
     }
     if let Some(remote_memory_dir) =
-        crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR").truthy()
+        crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR").truthy()
     {
         let remote_projects = PathBuf::from(remote_memory_dir).join("projects");
         normalized.starts_with(&remote_projects)
@@ -129,7 +129,7 @@ pub fn load_agent_memory_prompt(agent_type: &str, scope: AgentMemoryScope, cwd: 
     let mut extra_guidelines = vec![scope_note.to_string()];
     // CC `agentMemory.ts:167-175`: `x && x.trim().length > 0 ? [x]` — tested
     // trimmed, passed as is (as `memdir.rs` does).
-    if let Some(extra) = crate::utils::process_env::var("CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES")
+    if let Some(extra) = crate::utils::process_env::var("NYAN_MEMORY_EXTRA_GUIDELINES")
         .filter(|value| !value.trim().is_empty())
     {
         extra_guidelines.push(extra);
@@ -144,7 +144,7 @@ pub fn load_agent_memory_prompt(agent_type: &str, scope: AgentMemoryScope, cwd: 
 
 fn get_local_agent_memory_dir(dir_name: &str, cwd: &Path) -> PathBuf {
     if let Some(remote_memory_dir) =
-        crate::utils::process_env::var("CLAUDE_CODE_REMOTE_MEMORY_DIR").truthy()
+        crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR").truthy()
     {
         // CC agentMemory.ts:35-36:
         // `sanitizePath(findCanonicalGitRoot(getProjectRoot()) ?? getProjectRoot())`
@@ -177,7 +177,7 @@ mod tests {
     #[test]
     fn agent_memory_paths_match_official_scopes_and_colon_sanitizing() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _remote_memory = EnvVarGuard::unset("CLAUDE_CODE_REMOTE_MEMORY_DIR");
+        let _remote_memory = EnvVarGuard::unset("NYAN_REMOTE_MEMORY_DIR");
         let root = std::env::temp_dir().join(format!(
             "nyan-agent-memory-{}",
             uuid::Uuid::new_v4().simple()
@@ -206,7 +206,7 @@ mod tests {
             cwd,
         ));
 
-        crate::utils::process_env::set("CLAUDE_CODE_REMOTE_MEMORY_DIR", root.join("remote"));
+        crate::utils::process_env::set("NYAN_REMOTE_MEMORY_DIR", root.join("remote"));
         let local = get_agent_memory_dir("plugin:reviewer", AgentMemoryScope::Local, cwd);
         assert!(
             local
@@ -214,7 +214,7 @@ mod tests {
                 .contains("agent-memory-local/plugin-reviewer")
         );
         assert!(local.to_string_lossy().contains("projects"));
-        crate::utils::process_env::remove("CLAUDE_CODE_REMOTE_MEMORY_DIR");
+        crate::utils::process_env::remove("NYAN_REMOTE_MEMORY_DIR");
         let _ = std::fs::remove_dir_all(root);
     }
 

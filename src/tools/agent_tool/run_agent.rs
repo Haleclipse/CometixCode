@@ -2907,7 +2907,7 @@ mod tests {
     /// non-`ant` builds never receives attachments — "they have sensitive info
     /// for training that we don't want exposed to the public". The single
     /// exception is `hook_additional_context`, and only behind
-    /// `CLAUDE_CODE_SAVE_HOOK_ADDITIONAL_CONTEXT`.
+    /// `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`.
     ///
     /// The regression this pins: `run_agent` pushes the SubagentStart
     /// `hook_additional_context` attachment into `prompt_messages`

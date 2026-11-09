@@ -581,7 +581,7 @@ mod tests {
         let temp = PlanFixtureDirectory::new();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
-        let _local = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "");
+        let _local = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "");
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -607,7 +607,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"");
         std::fs::remove_file(&path).unwrap();
         {
-            let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "byoc");
+            let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "byoc");
             let mut snapshot_messages = messages.clone();
             snapshot_messages.push(serde_json::json!({"type":"system","subtype":"file_snapshot","snapshotFiles":[{"key":"plan","path":"old/location","content":"snapshot wins"}]}));
             assert!(runtime.block_on(copy_plan_for_resume(&snapshot_messages, Some(&target))));
@@ -850,7 +850,7 @@ mod tests {
         let temp = PlanFixtureDirectory::new();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
-        let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "anthropic_cloud");
+        let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "anthropic_cloud");
         let old_id = crate::bootstrap::state::get_session_id();
         let old_dir = crate::bootstrap::state::get_session_project_dir();
         let id = uuid::Uuid::new_v4().to_string();

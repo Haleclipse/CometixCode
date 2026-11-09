@@ -85,10 +85,9 @@ pub fn is_fork_subagent_enabled() -> bool {
 /// [`fork_veto_environment`] is the inverse, for the branches CC still takes
 /// when a session cannot host a fork.
 #[cfg(test)]
-pub(crate) fn fork_gate_environment() -> [EnvVarGuard; 4] {
+pub(crate) fn fork_gate_environment() -> [EnvVarGuard; 3] {
     [
         EnvVarGuard::unset("NYAN_COORDINATOR_MODE"),
-        EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
         EnvVarGuard::unset("NYAN_NON_INTERACTIVE"),
         EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION"),
     ]

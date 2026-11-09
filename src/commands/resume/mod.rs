@@ -1269,7 +1269,7 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _project = PinnedProjectDir::at(&root);
-        let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "byoc");
+        let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "byoc");
         let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         struct Restore(String, Option<PathBuf>, PathBuf);
         impl Drop for Restore {

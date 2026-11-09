@@ -98,7 +98,7 @@ fn get_credential_from_fd(
 /// `getApiKeyFromFileDescriptor`.
 pub fn get_api_key_from_file_descriptor() -> Option<String> {
     get_credential_from_fd(
-        "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
+        "NYAN_API_KEY_FILE_DESCRIPTOR",
         CCR_API_KEY_PATH,
         "API key",
         crate::bootstrap::state::get_api_key_from_fd,

@@ -338,7 +338,7 @@ const AWAITING_AN_ORACLE_ENTRY: &[(&str, &[&str])] = &[];
 ///
 /// Three migrated constructors read the process environment when they are
 /// *called*, where CC reads it once at module load: a truthy
-/// `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` drops `run_in_background` from
+/// `NYAN_DISABLE_BACKGROUND_TASKS` drops `run_in_background` from
 /// `BashTool`, `PowerShellTool` and `AgentTool`, and `BASH_MAX_TIMEOUT_MS` /
 /// `BASH_DEFAULT_TIMEOUT_MS` rewrite the `timeout` description of the first
 /// two. `TEST_ENV_LOCK` alone only serialises against a test mutating them

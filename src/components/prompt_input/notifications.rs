@@ -159,8 +159,7 @@ pub fn direct_footer_row_count_from_app(
         memory_visible,
         sandbox_hint_visible,
     );
-    let is_remote_mode =
-        is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
+    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref());
     if auth_status_indicator(credential_status, is_remote_mode).is_some() {
         count += 1;
     }
@@ -256,8 +255,7 @@ pub fn Notifications(
         },
         std::sync::Arc::as_ptr(&props.messages) as usize,
     );
-    let is_remote_mode =
-        is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
+    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref());
     let theme = hooks.use_context::<Theme>();
     let store = hooks.try_use_context::<AppStore>().map(|s| s.clone());
 
@@ -441,8 +439,8 @@ mod tests {
     use std::path::PathBuf;
 
     const NOTIFICATIONS_RUNTIME_ENV_KEYS: &[&str] = &[
-        "CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR",
-        "CLAUDE_CODE_REMOTE",
+        "NYAN_API_KEY_FILE_DESCRIPTOR",
+        "NYAN_REMOTE",
         "NYAN_SIMPLE",
         "NYAN_CONFIG_DIR",
         "NODE_ENV",
@@ -486,7 +484,7 @@ mod tests {
 
             crate::utils::process_env::set("NYAN_CONFIG_DIR", &root);
             if remote {
-                crate::utils::process_env::set("CLAUDE_CODE_REMOTE", "1");
+                crate::utils::process_env::set("NYAN_REMOTE", "1");
             }
             std::env::set_current_dir(&workspace).expect("set notifications fixture cwd");
             crate::bootstrap::state::set_original_cwd(&workspace);

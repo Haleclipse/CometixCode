@@ -776,7 +776,7 @@ pub fn get_claude_temp_dir_name() -> String {
 /// directory without following a symlink and requires the user's own uid,
 /// fixing a mode other than 0700. A directory owned by someone else is
 /// accepted, with a warning, when running as root in a container
-/// (`CLAUDE_CODE_CONTAINER_ID`, trimmed as 2.1.285's environment reads are).
+/// (`NYAN_CONTAINER_ID`, trimmed as 2.1.285's environment reads are).
 #[cfg(unix)]
 pub(crate) fn verify_owned_temp_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt as _;
@@ -821,7 +821,7 @@ pub(crate) fn verify_owned_temp_dir(dir: &Path) -> std::io::Result<()> {
     let metadata = directory.metadata()?;
     if metadata.uid() != uid {
         if uid == 0
-            && crate::utils::process_env::var("CLAUDE_CODE_CONTAINER_ID")
+            && crate::utils::process_env::var("NYAN_CONTAINER_ID")
                 .map(|value| value.trim().to_owned())
                 .truthy()
                 .is_some()

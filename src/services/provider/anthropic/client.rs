@@ -98,7 +98,7 @@ pub async fn get_anthropic_client(
         source,
     } = opts;
     let env = process_env::snapshot();
-    let client_app = env.var("CLAUDE_AGENT_SDK_CLIENT_APP").truthy();
+    let client_app = env.var("NYAN_SDK_CLIENT_APP").truthy();
 
     let mut default_headers = crate::services::provider::anthropic::headers::common_headers();
     for (name, value) in

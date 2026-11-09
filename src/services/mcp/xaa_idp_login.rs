@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::Arc;
 
-const CLAUDE_CODE_ENABLE_XAA: &str = "NYAN_ENABLE_XAA";
+const NYAN_ENABLE_XAA: &str = "NYAN_ENABLE_XAA";
 const ID_TOKEN_EXPIRY_BUFFER_S: i64 = 60;
 const IDP_LOGIN_TIMEOUT_SECS: u64 = 5 * 60;
 const IDP_REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -65,7 +65,7 @@ pub struct OidcMetadata {
 /// Maps to: CC `services/mcp/xaaIdpLogin.ts#isXaaEnabled`.
 pub fn is_xaa_enabled() -> bool {
     crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var(CLAUDE_CODE_ENABLE_XAA).as_deref(),
+        crate::utils::process_env::var(NYAN_ENABLE_XAA).as_deref(),
     )
 }
 
@@ -978,10 +978,10 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _enabled = EnvVarGuard::set(CLAUDE_CODE_ENABLE_XAA, "yes");
+        let _enabled = EnvVarGuard::set(NYAN_ENABLE_XAA, "yes");
         assert!(is_xaa_enabled());
         drop(_enabled);
-        let _disabled = EnvVarGuard::set(CLAUDE_CODE_ENABLE_XAA, "0");
+        let _disabled = EnvVarGuard::set(NYAN_ENABLE_XAA, "0");
         assert!(!is_xaa_enabled());
     }
 }

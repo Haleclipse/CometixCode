@@ -15,7 +15,7 @@ fn apply_cli_bootstrap_env() {
     // files; the commands Claude runs inherit this.
     crate::utils::process_env::set("COREPACK_ENABLE_AUTO_PIN", "0");
     // `cli.tsx:7-16`: a larger heap for child Node processes in CCR containers.
-    if crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref() == Some("true") {
+    if crate::utils::process_env::var("NYAN_REMOTE").as_deref() == Some("true") {
         // Node reads the value lossily decoded, as `process.env` holds it.
         let existing = crate::utils::process_env::var_os("NODE_OPTIONS")
             .map(|value| value.to_string_lossy().into_owned());
@@ -160,7 +160,7 @@ mod tests {
     }
 
     /// `cli.tsx:5,9-16`: the corepack pin is always off; only a literal
-    /// `CLAUDE_CODE_REMOTE=true` grows the children's Node heap, appended to
+    /// `NYAN_REMOTE=true` grows the children's Node heap, appended to
     /// a non-empty `NODE_OPTIONS`.
     #[test]
     fn bootstrap_env_matches_official_corepack_and_remote_heap_writes() {
@@ -168,7 +168,7 @@ mod tests {
         let _guards = [
             EnvVarGuard::unset("COREPACK_ENABLE_AUTO_PIN"),
             EnvVarGuard::preserve("NoDefaultCurrentDirectoryInExePath"),
-            EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1"),
+            EnvVarGuard::set("NYAN_REMOTE", "1"),
             EnvVarGuard::set("NODE_OPTIONS", "--trace-warnings"),
         ];
         let var = crate::utils::process_env::var;
@@ -180,7 +180,7 @@ mod tests {
         );
         assert_eq!(var("NODE_OPTIONS").as_deref(), Some("--trace-warnings"));
 
-        crate::utils::process_env::set("CLAUDE_CODE_REMOTE", "true");
+        crate::utils::process_env::set("NYAN_REMOTE", "true");
         apply_cli_bootstrap_env();
         assert_eq!(
             var("NODE_OPTIONS").as_deref(),

@@ -147,13 +147,12 @@ static API_KEY_HELPER_STATE: LazyLock<Mutex<ApiKeyHelperState>> =
 
 /// Maps to: CC `utils/auth.ts:435-452` `calculateApiKeyHelperTTL`.
 pub fn calculate_api_key_helper_ttl() -> u64 {
-    if let Some(raw) = crate::utils::process_env::var("CLAUDE_CODE_API_KEY_HELPER_TTL_MS").truthy()
-    {
+    if let Some(raw) = crate::utils::process_env::var("NYAN_API_KEY_HELPER_TTL_MS").truthy() {
         if let Ok(parsed) = raw.parse::<u64>() {
             return parsed;
         }
         eprintln!(
-            "Found CLAUDE_CODE_API_KEY_HELPER_TTL_MS env var, but it was not a valid number. Got {raw}"
+            "Found NYAN_API_KEY_HELPER_TTL_MS env var, but it was not a valid number. Got {raw}"
         );
     }
     DEFAULT_API_KEY_HELPER_TTL_MS
@@ -541,7 +540,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _ttl = EnvVarGuard::set("CLAUDE_CODE_API_KEY_HELPER_TTL_MS", "300000");
+        let _ttl = EnvVarGuard::set("NYAN_API_KEY_HELPER_TTL_MS", "300000");
         let dir = unique_temp_dir("helper-cache");
         std::fs::create_dir_all(&dir).unwrap();
         let _config_home = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
@@ -642,7 +641,7 @@ mod tests {
         std::fs::write(&path, " sk-ant-fd-readonly\n").unwrap();
         let file = std::fs::File::open(&path).unwrap();
         let fd = file.as_raw_fd().to_string();
-        let _fd_guard = EnvVarGuard::set("CLAUDE_CODE_API_KEY_FILE_DESCRIPTOR", &fd);
+        let _fd_guard = EnvVarGuard::set("NYAN_API_KEY_FILE_DESCRIPTOR", &fd);
         crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
 
         let api_key = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions::default());

@@ -47,7 +47,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let _memory_env = [
-            EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root),
+            EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root),
             EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false"),
         ];
 

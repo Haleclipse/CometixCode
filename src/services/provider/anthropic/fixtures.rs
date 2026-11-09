@@ -634,7 +634,7 @@ async fn an_overloaded_529_retries_under_the_unified_budget_and_recovers() {
     ])
     .await;
     let _env = Env::new(&mock.base_url);
-    // Override the fixture's CLAUDE_CODE_MAX_RETRIES="0" pin so the default budget (2) is active.
+    // Override the fixture's NYAN_MAX_RETRIES="0" pin so the default budget (2) is active.
     let _retries = EnvVarGuard::unset("NYAN_MAX_RETRIES");
 
     let options = Options::new(

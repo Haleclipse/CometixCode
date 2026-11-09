@@ -2651,7 +2651,7 @@ fn path_has_sensitive_component(path: &std::path::Path) -> bool {
 /// `getToolNameForPermissionCheck(tool)`. The Rust seam only receives the
 /// requested `PermissionRuleValue`, so `mcp_info` rides alongside it and takes
 /// priority over the requested name — otherwise an unprefixed SDK MCP tool
-/// (`CLAUDE_AGENT_SDK_MCP_NO_PREFIX`) would share a rule-match name with the
+/// (`NYAN_SDK_MCP_NO_PREFIX`) would share a rule-match name with the
 /// builtin it shadows.
 fn tool_matches_rule(
     requested: &PermissionRuleValue,
@@ -6378,7 +6378,7 @@ mod tests {
 
     /// Maps to: CC `toolMatchesRule` resolving through
     /// `getToolNameForPermissionCheck`, which is what keeps an unprefixed SDK
-    /// MCP tool (`CLAUDE_AGENT_SDK_MCP_NO_PREFIX`) from answering to the rules
+    /// MCP tool (`NYAN_SDK_MCP_NO_PREFIX`) from answering to the rules
     /// written for the builtin whose name it borrows.
     #[test]
     fn unprefixed_mcp_tool_and_builtin_do_not_share_rule_match_names() {

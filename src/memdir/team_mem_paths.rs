@@ -296,7 +296,7 @@ mod tests {
             "nyan-team-mem-path-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root);
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root);
         let team = get_team_mem_path();
         assert_eq!(team, root.join("team"));
         assert!(is_team_mem_path(&team.join("MEMORY.md")));
@@ -311,7 +311,7 @@ mod tests {
             "nyan-team-mem-key-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root);
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root);
         for key in ["%2e%2e%2fsecret", "．．／secret", "..\\secret", "/secret"] {
             assert!(
                 validate_team_mem_key(key).await.is_err(),
@@ -338,7 +338,7 @@ mod tests {
             "nyan-team-mem-outside-{}",
             uuid::Uuid::new_v4().simple()
         ));
-        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root);
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root);
         std::fs::create_dir_all(root.join("team")).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
         symlink(&outside, root.join("team/escape")).unwrap();

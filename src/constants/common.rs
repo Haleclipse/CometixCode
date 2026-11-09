@@ -15,7 +15,7 @@ pub fn get_local_iso_date() -> String {
 
 /// Maps to: CC `constants/common.ts:28-33` `getLocalMonthYear()` —
 /// `toLocaleString('en-US', { month: 'long', year: 'numeric' })` with the
-/// same `CLAUDE_CODE_OVERRIDE_DATE` override; an unparseable override falls
+/// same `NYAN_OVERRIDE_DATE` override; an unparseable override falls
 /// back to now (CC would render "Invalid Date").
 pub fn get_local_month_year() -> String {
     if let Some(override_date) = crate::utils::process_env::var("NYAN_OVERRIDE_DATE").truthy()

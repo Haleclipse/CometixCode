@@ -31,7 +31,7 @@ static WARNED_ON_ALLOW_UNAUTHORIZED: AtomicBool = AtomicBool::new(false);
 ///
 /// Node emits a process warning the first time. CC's `warningHandler.ts`
 /// (`:62-111`) removes Node's printer, so users see nothing, and the warning
-/// reaches the debug log only when `CLAUDE_DEBUG` is truthy. That handler is
+/// reaches the debug log only when `NYAN_DEBUG` is truthy. That handler is
 /// not ported (MODULE_MAP: missing); its visible effect for this one warning
 /// is written here, and its `tengu_node_warning` event is not logged.
 pub fn get_allow_unauthorized() -> bool {

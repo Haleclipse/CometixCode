@@ -549,9 +549,7 @@ fn terminal_setup_hidden() -> bool {
 }
 
 fn session_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
-    )
+    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref())
 }
 
 fn feedback_enabled() -> bool {

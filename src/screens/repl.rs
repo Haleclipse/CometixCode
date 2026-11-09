@@ -5625,9 +5625,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         }
                         Ok(QueryEvent::Terminal(_)) | Err(_) => {
 
-                            // Maps to CC `QueryEngine.query()` eager/cowork
+                            // Maps to CC `QueryEngine.query()` eager-flush
                             // result boundary.
-                            if (crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_EAGER_FLUSH").as_deref()) || crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_IS_COWORK").as_deref()))
+                            if crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_EAGER_FLUSH").as_deref())
                                 && let Err(error) =
                                     crate::utils::session_storage::flush_session_storage().await
                                 {
@@ -18902,7 +18902,7 @@ mod tests {
         let _project = PinnedProjectDir::at(temp.path());
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
-        let _remote = EnvVarGuard::set("CLAUDE_CODE_ENVIRONMENT_KIND", "byoc");
+        let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "byoc");
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
         struct Restore(String, Option<PathBuf>);
         impl Drop for Restore {

@@ -6313,8 +6313,7 @@ mod tests {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _non_interactive = EnvVarGuard::unset("NYAN_NON_INTERACTIVE");
-        let _nyan_non_interactive = EnvVarGuard::unset("NYAN_NON_INTERACTIVE");
-        let _nyan_non_interactive_session = EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION");
+        let _non_interactive_session = EnvVarGuard::unset("NYAN_NON_INTERACTIVE_SESSION");
         let _checkpointing = EnvVarGuard::unset("NYAN_DISABLE_FILE_CHECKPOINTING");
         let _bootstrap = BootstrapRestore {
             interactive: crate::bootstrap::state::get_is_interactive(),
@@ -11927,7 +11926,7 @@ mod tests {
                     .ok();
                     tx.send(crate::services::api::claude::QueryModelStreamItem::SystemError(
                         crate::types::message::SystemApiErrorMessage {
-                            content: "API Error: Claude's response exceeded the 4096 output token maximum. To configure this behavior, set the CLAUDE_CODE_MAX_OUTPUT_TOKENS environment variable.".to_string(),
+                            content: "API Error: Claude's response exceeded the 4096 output token maximum. To configure this behavior, set the NYAN_MAX_OUTPUT_TOKENS environment variable.".to_string(),
                             api_error: "max_output_tokens".to_string(),
                             error: "max_output_tokens".to_string(),
                             error_details: None,
@@ -14023,7 +14022,7 @@ mod tests {
     #[test]
     fn query_actor_brief_tool_continuation_uses_official_model_ack_without_permission_prompt() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        // `USER_MSG_OPT_IN` seeds itself from `CLAUDE_CODE_BRIEF` on its first
+        // `USER_MSG_OPT_IN` seeds itself from `NYAN_BRIEF` on its first
         // read and never re-reads it (`bootstrap/state.rs:86-90`), so setting
         // the variable here only activated the tool while this test happened to
         // be the process's first reader. Drive the opt-in the way CC's

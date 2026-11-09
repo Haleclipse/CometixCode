@@ -3013,7 +3013,7 @@ mod tests {
     fn messages_tool_use_dot_does_not_dim_title_in_mock_rows() {
         // Guard against sibling env pollution (Review A F3):
         // fullscreen_collapse_surfaces_git_outcomes_without_double_counting_bash
-        // sets CLAUDE_CODE_NO_FLICKER=1 under TEST_ENV_LOCK; without holding
+        // sets NYAN_NO_FLICKER=1 under TEST_ENV_LOCK; without holding
         // the lock and forcing a falsy value here, the lone Bash fixture
         // (input: None) becomes collapsible via is_fullscreen_env_enabled()
         // and the "Bash" row assertion fails in parallel runs.
@@ -3470,7 +3470,7 @@ mod tests {
     fn compact_boundary_slice_hides_history_only_outside_verbose() {
         // The slice is also skipped in fullscreen (`Messages.tsx:579-584`
         // `verbose || isFullscreenEnvEnabled()`), and fullscreen defaults ON
-        // for ant builds (CLAUDE_CODE_NO_FLICKER's audience default). Pin the
+        // for ant builds (NYAN_NO_FLICKER's audience default). Pin the
         // env so BOTH audiences exercise the main-screen slice this test is
         // about; the fullscreen skip itself is fullscreen.rs's contract.
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
@@ -4689,7 +4689,7 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
         let root_text = root.display().to_string();
-        let _override = EnvVarGuard::set("CLAUDE_COWORK_MEMORY_PATH_OVERRIDE", &root_text);
+        let _override = EnvVarGuard::set("NYAN_MEMORY_PATH_OVERRIDE", &root_text);
         let _enabled = EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false");
         let config = crate::utils::config::GlobalConfig::default();
         let _config = TestGlobalConfigGuard(crate::utils::config::replace_test_global_config(

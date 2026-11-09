@@ -991,7 +991,7 @@ mod tests {
 
     /// Pins the loader's environment inputs: user agents come from
     /// `config_home`, the project walk stops at `home`, and a host's
-    /// `CLAUDE_CODE_SIMPLE` (CC `--bare` exports it) is cleared. The caller
+    /// `NYAN_SIMPLE` (CC `--bare` exports it) is cleared. The caller
     /// holds `TEST_ENV_LOCK`.
     fn pin_loader_env(home: &Path, config_home: &Path) -> [EnvVarGuard; 3] {
         [
@@ -1819,7 +1819,7 @@ mod tests {
         let lock = TEST_ENV_LOCK.lock().unwrap();
         SnapshotEnv {
             _loader: pin_loader_env(home, config_home),
-            _remote_memory: EnvVarGuard::unset("CLAUDE_CODE_REMOTE_MEMORY_DIR"),
+            _remote_memory: EnvVarGuard::unset("NYAN_REMOTE_MEMORY_DIR"),
             _auto_memory: EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false"),
             _lock: lock,
         }

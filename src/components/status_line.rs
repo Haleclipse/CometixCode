@@ -191,7 +191,7 @@ pub fn build_status_line_command_input(
     }
 
     if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
+        crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
     ) {
         input.remote = Some(StatusLineRemote {
             session_id: session_id.clone(),

@@ -806,11 +806,11 @@ mod tests {
     fn auto_memory_snapshot_matches_official_readonly_env_and_settings_gates() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = [
-            "CLAUDE_COWORK_MEMORY_PATH_OVERRIDE",
+            "NYAN_MEMORY_PATH_OVERRIDE",
             "NYAN_DISABLE_AUTO_MEMORY",
             "NYAN_SIMPLE",
-            "CLAUDE_CODE_REMOTE",
-            "CLAUDE_CODE_REMOTE_MEMORY_DIR",
+            "NYAN_REMOTE",
+            "NYAN_REMOTE_MEMORY_DIR",
         ]
         .map(EnvVarGuard::unset);
         let _home = EnvVarGuard::set(HOME_VAR, "/tmp");
@@ -853,7 +853,7 @@ mod tests {
             assert!(!auto_memory_snapshot().enabled);
         }
         {
-            let _env = EnvVarGuard::set("CLAUDE_CODE_REMOTE", "1");
+            let _env = EnvVarGuard::set("NYAN_REMOTE", "1");
             assert!(!auto_memory_snapshot().enabled);
         }
     }

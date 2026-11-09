@@ -577,7 +577,7 @@ fn extra_known_marketplaces_settings_key_check(
 ///
 /// Build-time gates, frozen at first access exactly as CC's memoized
 /// lazySchema freezes module-load state:
-/// - `CLAUDE_CODE_ENABLE_XAA` env → `xaaIdp`
+/// - `NYAN_ENABLE_XAA` env → `xaaIdp`
 /// - `USER_TYPE=ant` → `classifierPermissionsEnabled` and the
 ///   `autoMode.deny` back-compat alias
 /// - `feature('TRANSCRIPT_CLASSIFIER')` (on) → `skipAutoPermissionPrompt`,
@@ -637,7 +637,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ),
             ),
         ];
-        // Gated so the SDK generator (which runs without CLAUDE_CODE_ENABLE_XAA)
+        // Gated so the SDK generator (which runs without NYAN_ENABLE_XAA)
         // doesn't surface this; the outer .passthrough() keeps an existing key
         // alive across env-var-off sessions.
         if xaa {

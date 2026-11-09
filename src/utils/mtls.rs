@@ -9,7 +9,7 @@
 //! - An encrypted key cannot be used: rustls reads only plain PKCS#8, PKCS#1
 //!   and SEC1 keys, and Android's native-tls only plain PKCS#8. It is
 //!   logged, and no client certificate is sent;
-//!   `CLAUDE_CODE_CLIENT_KEY_PASSPHRASE` has no effect.
+//!   `NYAN_CLIENT_KEY_PASSPHRASE` has no effect.
 //! - A certificate without a key, or a key without a certificate, is logged
 //!   and not used. Node accepts either and may fail the handshake later.
 //!
@@ -107,7 +107,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
         match read_file(path) {
             Ok(cert) => {
                 config.cert = Some(cert);
-                log_for_debugging("mTLS: Loaded client certificate from CLAUDE_CODE_CLIENT_CERT");
+                log_for_debugging("mTLS: Loaded client certificate from NYAN_CLIENT_CERT");
             }
             Err(error) => log_for_debugging_with_level(
                 &format!("mTLS: Failed to load client certificate: {error}"),
@@ -120,7 +120,7 @@ fn load_mtls_config() -> Option<Arc<MTLSConfig>> {
         match read_file(path) {
             Ok(key) => {
                 config.key = Some(key);
-                log_for_debugging("mTLS: Loaded client key from CLAUDE_CODE_CLIENT_KEY");
+                log_for_debugging("mTLS: Loaded client key from NYAN_CLIENT_KEY");
             }
             Err(error) => log_for_debugging_with_level(
                 &format!("mTLS: Failed to load client key: {error}"),
@@ -161,7 +161,7 @@ fn build_identity(config: &MTLSConfig) -> Option<reqwest::Identity> {
     let (Some(cert), Some(key)) = (&config.cert, &config.key) else {
         if config.cert.is_some() || config.key.is_some() {
             log_for_debugging_with_level(
-                "mTLS: CLAUDE_CODE_CLIENT_CERT and CLAUDE_CODE_CLIENT_KEY must both be readable; no client certificate is sent",
+                "mTLS: NYAN_CLIENT_CERT and NYAN_CLIENT_KEY must both be readable; no client certificate is sent",
                 DebugLogLevel::Error,
             );
         }
