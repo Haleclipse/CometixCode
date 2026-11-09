@@ -2855,7 +2855,7 @@ mod tests {
         let text = render_text_with_events(events);
 
         assert!(
-            text.contains("Enter your preferred response and voice language:"),
+            text.contains("Enter your preferred response language:"),
             "Language submenu should render the official free-text prompt; canvas=\n{text}"
         );
         assert!(
@@ -2978,7 +2978,7 @@ mod tests {
         let text = render_text_with_events(events);
 
         assert!(
-            !text.contains("Enter your preferred response and voice language:"),
+            !text.contains("Enter your preferred response language:"),
             "confirm:no should close the picker; canvas=\n{text}"
         );
         assert!(

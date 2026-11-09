@@ -141,7 +141,6 @@ pub const KEYBINDING_ACTIONS: &[&str] = &[
     "settings:search",
     "settings:retry",
     "settings:close",
-    "voice:pushToTalk",
 ];
 
 /// Maps to: CC `KeybindingBlockSchema`'s inferred block type.

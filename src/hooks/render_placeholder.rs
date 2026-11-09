@@ -18,7 +18,6 @@ pub struct PlaceholderRenderOptions {
     pub show_cursor: bool,
     pub focus: bool,
     pub terminal_focus: bool,
-    pub hide_placeholder_text: bool,
 }
 
 fn dim(text: &str) -> String {
@@ -34,13 +33,7 @@ pub fn render_placeholder(options: PlaceholderRenderOptions) -> PlaceholderRende
     let mut rendered_placeholder = None;
 
     if let Some(placeholder) = options.placeholder.as_deref() {
-        let rendered = if options.hide_placeholder_text {
-            if options.show_cursor && options.focus && options.terminal_focus {
-                invert(" ")
-            } else {
-                String::new()
-            }
-        } else if options.show_cursor && options.focus && options.terminal_focus {
+        let rendered = if options.show_cursor && options.focus && options.terminal_focus {
             if let Some(first) = placeholder.chars().next() {
                 let first_len = first.len_utf8();
                 format!(
@@ -75,7 +68,6 @@ mod tests {
             show_cursor: true,
             focus: false,
             terminal_focus: true,
-            hide_placeholder_text: false,
         });
         assert_eq!(
             idle.rendered_placeholder,
@@ -89,7 +81,6 @@ mod tests {
             show_cursor: true,
             focus: true,
             terminal_focus: true,
-            hide_placeholder_text: false,
         });
         assert_eq!(
             focused.rendered_placeholder,
@@ -98,28 +89,13 @@ mod tests {
     }
 
     #[test]
-    fn render_placeholder_hides_text_for_voice_recording_branch() {
-        let hidden = render_placeholder(PlaceholderRenderOptions {
-            placeholder: Some("Ask Claude".to_string()),
-            value: String::new(),
-            show_cursor: true,
-            focus: true,
-            terminal_focus: true,
-            hide_placeholder_text: true,
-        });
-        assert_eq!(
-            hidden.rendered_placeholder,
-            Some("\x1b[7m \x1b[27m".to_string())
-        );
-        assert!(hidden.show_placeholder);
-
+    fn render_placeholder_is_not_shown_when_value_is_present() {
         let with_value = render_placeholder(PlaceholderRenderOptions {
             placeholder: Some("Ask Claude".to_string()),
             value: "hello".to_string(),
             show_cursor: true,
             focus: true,
             terminal_focus: true,
-            hide_placeholder_text: false,
         });
         assert!(!with_value.show_placeholder);
     }

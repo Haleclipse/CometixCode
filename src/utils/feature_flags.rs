@@ -18,8 +18,6 @@ pub enum FeatureFlag {
     /// Maps to CC GrowthBook `tengu_amber_stoat` (Explore/Plan built-in
     /// agents A/B gate; fallback true).
     BuiltinExplorePlanAgents,
-    /// Maps to CC GrowthBook voice-mode killswitch `tengu_amber_quartz_disabled`.
-    VoiceModeDisabledKillswitch,
     /// Maps to CC GrowthBook channels runtime gate `tengu_harbor`.
     ChannelsEnabled,
     /// Maps to CC GrowthBook channel permission-relay gate `tengu_harbor_permissions`.
@@ -195,12 +193,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_amber_stoat",
         enabled: true,
         note: "Explore/Plan built-in agents gate; CC fallback true ('3P default: true — Bedrock/Vertex keep agents enabled'), A/B treatment false is the exception. Build feature BUILTIN_EXPLORE_PLAN_AGENTS is ON in production (build.ts:44).",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::VoiceModeDisabledKillswitch,
-        cc_growthbook_name: "tengu_amber_quartz_disabled",
-        enabled: false,
-        note: "Voice-mode emergency-off GrowthBook flag; default false means voice UI is not killed when the build feature and auth allow it.",
     },
     FeatureSwitch {
         flag: FeatureFlag::ChannelsEnabled,
@@ -649,7 +641,6 @@ mod tests {
             "tengu_immediate_model_command",
             "tengu_keybinding_customization_release",
             "tengu_amber_flint",
-            "tengu_amber_quartz_disabled",
             "tengu_harbor",
             "tengu_harbor_permissions",
             "tengu_kairos_cron",
@@ -686,7 +677,6 @@ mod tests {
             .expect("agent swarms switch should exist");
         assert_eq!(switch.flag, FeatureFlag::AgentSwarmsExternalKillswitch);
         assert!(feature_enabled(FeatureFlag::AgentSwarmsExternalKillswitch));
-        assert!(!feature_enabled(FeatureFlag::VoiceModeDisabledKillswitch));
         assert!(!feature_enabled(FeatureFlag::ChannelsEnabled));
         assert!(!feature_enabled(FeatureFlag::ChannelPermissionRelay));
         assert!(!feature_enabled(FeatureFlag::ImmediateModelCommand));

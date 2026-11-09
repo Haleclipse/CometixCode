@@ -63,9 +63,9 @@ pub enum SyncableAppStateKey {
 /// one nameable return type and `async fn` futures are anonymous (`dyn AsyncFn`
 /// is not dyn-compatible). `{ valid: true }` / `{ valid: false, error }`
 /// collapse onto `Result<(), String>`; every invalid branch in
-/// `validateModel.ts` sets `error`. `voiceEnabled` / `remoteControlAtStartup`
-/// do not belong here — they are `call()` special cases in the source, not
-/// `validateOnWrite` entries.
+/// `validateModel.ts` sets `error`. `remoteControlAtStartup` does not belong
+/// here — it is a `call()` special case in the source, not a
+/// `validateOnWrite` entry.
 pub type ValidateOnWrite =
     for<'a> fn(&'a serde_json::Value) -> futures::future::BoxFuture<'a, Result<(), String>>;
 
@@ -234,7 +234,7 @@ pub fn supported_settings() -> Vec<SettingConfig> {
             "language",
             Settings,
             Str,
-            "Preferred language for Claude responses and voice dictation (e.g., \"japanese\", \"spanish\")",
+            "Preferred language for Claude responses (e.g., \"japanese\", \"spanish\")",
         ),
         SettingConfig::new(
             "teammateMode",
@@ -254,15 +254,6 @@ pub fn supported_settings() -> Vec<SettingConfig> {
             Settings,
             Boolean,
             "Enable AI-based classification for Bash(prompt:...) permission rules",
-        ));
-    }
-    // Maps to CC `supportedSettings.ts:144-152` `feature('VOICE_MODE')`.
-    if cfg!(feature = "voice_mode") {
-        settings.push(SettingConfig::new(
-            "voiceEnabled",
-            Settings,
-            Boolean,
-            "Enable voice dictation (hold-to-talk)",
         ));
     }
     // Maps to CC `supportedSettings.ts:153-163` `feature('BRIDGE_MODE')`.

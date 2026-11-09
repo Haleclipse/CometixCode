@@ -35,7 +35,6 @@ pub mod use_maybe_truncate_input;
 pub mod use_prompt_input_placeholder;
 pub mod use_swarm_banner;
 pub mod utils;
-pub mod voice_indicator;
 
 use crate::commands::Command;
 use crate::components::base_text_input::{BaseInputState, BaseTextInput};

@@ -547,8 +547,6 @@ pub struct GlobalConfig {
     pub overage_credit_upsell_seen_count: Option<u32>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.hasVisitedExtraUsage`.
     pub has_visited_extra_usage: Option<bool>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.voiceNoticeSeenCount`.
-    pub voice_notice_seen_count: Option<u32>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.opus1mMergeNoticeSeenCount`.
     pub opus_1m_merge_notice_seen_count: Option<u32>,
 
@@ -725,7 +723,6 @@ impl Default for GlobalConfig {
             overage_credit_grant_cache: None,
             overage_credit_upsell_seen_count: None,
             has_visited_extra_usage: None,
-            voice_notice_seen_count: None,
             opus_1m_merge_notice_seen_count: None,
             iterm2_setup_in_progress: None,
             iterm2_backup_path: None,
@@ -1996,14 +1993,12 @@ mod tests {
         let config: GlobalConfig = serde_json::from_str(
             r#"{
                 "lastShownEmergencyTip": "old tip",
-                "voiceNoticeSeenCount": 2,
                 "opus1mMergeNoticeSeenCount": 5
             }"#,
         )
         .expect("global config should deserialize notice tracking fields");
 
         assert_eq!(config.last_shown_emergency_tip.as_deref(), Some("old tip"));
-        assert_eq!(config.voice_notice_seen_count, Some(2));
         assert_eq!(config.opus_1m_merge_notice_seen_count, Some(5));
     }
 

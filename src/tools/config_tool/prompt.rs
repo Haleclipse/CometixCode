@@ -17,15 +17,6 @@ pub fn generate_prompt() -> String {
     let mut project_settings = Vec::new();
 
     for config in supported_settings() {
-        // Voice settings are registered at build time but gated by GrowthBook at
-        // runtime; hide them from the prompt when the kill-switch is on.
-        if cfg!(feature = "voice_mode")
-            && config.key == "voiceEnabled"
-            && !crate::voice::voice_mode_enabled::is_voice_growth_book_enabled()
-        {
-            continue;
-        }
-
         let mut line = format!("- {}", config.key);
         if let Some(options) = get_options_for_setting(config.key) {
             line.push_str(&format!(

@@ -491,7 +491,7 @@ mod tests {
                         }
                         stage = 1;
                     }
-                    1 if last.contains("Enter your preferred response and voice language:") => {
+                    1 if last.contains("Enter your preferred response language:") => {
                         let mut ctrl_c = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('c'));
                         ctrl_c.modifiers = KeyModifiers::CONTROL;
                         let mut typed = text_events("Korean");
@@ -541,7 +541,7 @@ mod tests {
                         }
                         stage = 1;
                     }
-                    1 if last.contains("Enter your preferred response and voice language:") => {
+                    1 if last.contains("Enter your preferred response language:") => {
                         let mut ctrl_d = KeyEvent::new(KeyEventKind::Press, KeyCode::Char('d'));
                         ctrl_d.modifiers = KeyModifiers::CONTROL;
                         for event in [

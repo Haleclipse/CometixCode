@@ -2,13 +2,10 @@
 //!
 //! Official `TextInput` is the wrapper that composes `useTextInput` with
 //! `BaseTextInput`, terminal-focus/accessibility cursor gating, clipboard-image
-//! hints, and optional voice-mode cursor rendering. Nyan ports that boundary
+//! hints. Nyan ports that boundary
 //! for the normal terminal text path. Current safe divergences:
 //! - `useClipboardImageHint(...)`: not executed here; Nyan has no clipboard
 //!   image polling permission in this component boundary yet.
-//! - `VOICE_MODE` waveform cursor: represented only by `hide_placeholder_text`
-//!   when `voice_recording` is true; animated RGB waveform cursor needs the
-//!   future voice runtime and a cursor-rendering extension.
 
 use crate::components::base_text_input::{BaseInputState, BaseTextInput};
 use crate::hooks::use_text_input::{HistoryDirection, UseTextInputOptions, use_text_input};
@@ -38,7 +35,6 @@ pub struct TextInputProps<'a> {
     pub placeholder: Option<String>,
     pub argument_hint: Option<String>,
     pub dim_color: bool,
-    pub voice_recording: bool,
     pub reduced_motion: bool,
     pub on_change: Handler<String>,
     pub on_submit: HandlerMut<'a, String>,
@@ -52,12 +48,6 @@ pub struct TextInputProps<'a> {
 /// Maps to: CC `TextInput.tsx` `canShowCursor` accessibility gate.
 pub fn text_input_can_show_cursor(terminal_focused: bool, accessibility_enabled: bool) -> bool {
     terminal_focused && !accessibility_enabled
-}
-
-/// Maps to: CC `TextInput.tsx` reduced-motion/voice branch deciding whether
-/// placeholder text is hidden while recording.
-pub fn text_input_hide_placeholder_text(voice_recording: bool) -> bool {
-    voice_recording
 }
 
 fn accessibility_enabled_from_env() -> bool {
@@ -133,7 +123,6 @@ pub fn TextInput<'a>(
                 cursor_offset: cursor_offset.get(),
                 argument_hint: props.argument_hint.clone(),
                 dim_color: props.dim_color,
-                hide_placeholder_text: text_input_hide_placeholder_text(props.voice_recording),
             )
         }
     }
@@ -151,12 +140,6 @@ mod tests {
         assert!(text_input_can_show_cursor(true, false));
         assert!(!text_input_can_show_cursor(false, false));
         assert!(!text_input_can_show_cursor(true, true));
-    }
-
-    #[test]
-    fn text_input_voice_recording_hides_placeholder_text() {
-        assert!(text_input_hide_placeholder_text(true));
-        assert!(!text_input_hide_placeholder_text(false));
     }
 
     #[component]

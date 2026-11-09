@@ -91,7 +91,7 @@ pub(crate) fn LanguagePicker<'a>(
 
     element! {
         View(flex_direction: FlexDirection::Column, gap: 1u32) {
-            Text(content: "Enter your preferred response and voice language:".to_string())
+            Text(content: "Enter your preferred response language:".to_string())
             View(flex_direction: FlexDirection::Row, gap: 1u32) {
                 Text(content: MAIN_SYMBOLS.pointer.to_string(), wrap: TextWrap::NoWrap)
                 TextInput(
@@ -148,7 +148,7 @@ mod tests {
     fn language_picker_renders_official_prompt_placeholder_and_hint() {
         let text = render_picker(None);
         assert!(
-            text.contains("Enter your preferred response and voice language:"),
+            text.contains("Enter your preferred response language:"),
             "canvas=\n{text}"
         );
         assert!(text.contains("❯"), "canvas=\n{text}");

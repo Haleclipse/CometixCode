@@ -15,5 +15,4 @@ pub mod guest_passes_upsell;
 pub mod logo_v2;
 pub mod opus_1m_merge_notice;
 pub mod overage_credit_upsell;
-pub mod voice_mode_notice;
 pub mod welcome_v2;

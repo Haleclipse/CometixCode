@@ -171,7 +171,6 @@ pub struct SettingsJson {
     pub agent: Option<String>,
     pub company_announcements: Option<Vec<String>>,
 
-    pub voice_enabled: Option<bool>,
     pub assistant: Option<bool>,
     pub assistant_name: Option<String>,
     pub default_view: Option<String>,
@@ -584,11 +583,10 @@ fn extra_known_marketplaces_settings_key_check(
 /// - `feature('TRANSCRIPT_CLASSIFIER')` (on) → `skipAutoPermissionPrompt`,
 ///   `useAutoModeDuringPlan`, `autoMode`
 /// - `feature('KAIROS') || feature('KAIROS_BRIEF')` (Brief on) → `defaultView`
-/// - `feature('LODESTONE')` / `feature('PROACTIVE')` / `feature('KAIROS')` /
-///   `feature('VOICE_MODE')` are absent or off here, so
-///   `disableDeepLinkRegistration`, the Sleep bounds, `voiceEnabled`,
-///   `assistant`, and `assistantName` do not enter the shape — same result as
-///   CC with those build features off.
+/// - `feature('LODESTONE')` / `feature('PROACTIVE')` / `feature('KAIROS')`
+///   are absent or off here, so `disableDeepLinkRegistration`, the Sleep
+///   bounds, `assistant`, and `assistantName` do not enter the shape — same
+///   result as CC with those build features off.
 ///
 /// `enabledPlugins`' `z.undefined()` union arm is unreachable from JSON input
 /// (no JSON value parses to undefined) and is not mirrored.
@@ -879,7 +877,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             (
                 "language",
                 zod::string().optional().describe(
-                    "Preferred language for Claude responses and voice dictation (e.g., \"japanese\", \"spanish\")",
+                    "Preferred language for Claude responses (e.g., \"japanese\", \"spanish\")",
                 ),
             ),
             (

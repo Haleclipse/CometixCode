@@ -48,7 +48,6 @@ pub struct BaseTextInputProps {
     pub cursor_offset: usize,
     pub argument_hint: Option<String>,
     pub dim_color: bool,
-    pub hide_placeholder_text: bool,
     pub highlights: Vec<TextHighlight>,
 }
 
@@ -125,7 +124,6 @@ pub fn BaseTextInput(
         show_cursor: props.show_cursor,
         focus: props.focus,
         terminal_focus: props.terminal_focus,
-        hide_placeholder_text: props.hide_placeholder_text,
     });
     let argument_hint =
         base_text_input_show_argument_hint(&props.value, props.argument_hint.as_deref());

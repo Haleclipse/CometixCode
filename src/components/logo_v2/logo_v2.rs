@@ -17,13 +17,10 @@ use crate::components::logo_v2::feed_configs::{
     create_project_onboarding_feed, create_recent_activity_feed, create_whats_new_feed,
 };
 use crate::components::logo_v2::guest_passes_upsell::should_show_guest_passes_upsell;
-use crate::components::logo_v2::opus_1m_merge_notice::{
-    Opus1mMergeNotice, should_show_opus_1m_merge_notice,
-};
+use crate::components::logo_v2::opus_1m_merge_notice::Opus1mMergeNotice;
 use crate::components::logo_v2::overage_credit_upsell::{
     create_overage_credit_feed, should_show_overage_credit_upsell,
 };
-use crate::components::logo_v2::voice_mode_notice::VoiceModeNotice;
 use crate::components::offscreen_freeze::OffscreenFreeze;
 use crate::constants::product;
 use crate::project_onboarding_state;
@@ -94,10 +91,6 @@ pub(crate) struct LogoDisplayData {
     pub(crate) last_shown_emergency_tip: Option<String>,
     pub(crate) opus_1m_merge_enabled: bool,
     pub(crate) opus_1m_merge_seen_count: u32,
-    pub(crate) voice_feature_enabled: bool,
-    pub(crate) voice_mode_enabled: bool,
-    pub(crate) settings_voice_enabled: bool,
-    pub(crate) voice_notice_seen_count: u32,
     pub(crate) company_announcement: Option<String>,
     pub(crate) show_sandbox_status: bool,
     pub(crate) tmux_session: Option<String>,
@@ -219,11 +212,6 @@ impl LogoDisplayData {
         // `shouldShowOpus1mMergeNotice()`: the notice component remains pure,
         // and the official seen-count increment remains deferred.
         let opus_1m_merge_enabled = crate::utils::model::model::is_opus_1m_merge_enabled();
-        // Maps to CC `voice/voiceModeEnabled.ts` `isVoiceModeEnabled()` and
-        // `components/LogoV2/VoiceModeNotice.tsx` cached mount predicate. Voice
-        // runtime/streaming and config writes are intentionally not invoked.
-        let voice_feature_enabled = cfg!(feature = "voice_mode");
-        let voice_mode_enabled = crate::voice::voice_mode_enabled::is_voice_mode_enabled();
         // Maps to CC `components/LogoV2/LogoV2.tsx:89` `showSandboxStatus =
         // SandboxManager.isSandboxingEnabled()`.
         let show_sandbox_status = crate::utils::sandbox::sandbox_adapter::is_sandboxing_enabled();
@@ -265,10 +253,6 @@ impl LogoDisplayData {
             last_shown_emergency_tip: global_config.last_shown_emergency_tip.clone(),
             opus_1m_merge_enabled,
             opus_1m_merge_seen_count: global_config.opus_1m_merge_notice_seen_count.unwrap_or(0),
-            voice_feature_enabled,
-            voice_mode_enabled,
-            settings_voice_enabled: settings.voice_enabled.unwrap_or(false),
-            voice_notice_seen_count: global_config.voice_notice_seen_count.unwrap_or(0),
             company_announcement,
             show_sandbox_status,
             tmux_session: crate::utils::process_env::var("NYAN_TMUX_SESSION").truthy(),
@@ -302,10 +286,6 @@ impl LogoDisplayData {
             last_shown_emergency_tip: None,
             opus_1m_merge_enabled: false,
             opus_1m_merge_seen_count: 0,
-            voice_feature_enabled: false,
-            voice_mode_enabled: false,
-            settings_voice_enabled: false,
-            voice_notice_seen_count: 0,
             company_announcement: None,
             show_sandbox_status: false,
             tmux_session: None,
@@ -392,8 +372,6 @@ fn LogoRuntimeNotices(
         props.mode,
         LogoLayoutMode::Condensed | LogoLayoutMode::Horizontal
     );
-    let opus_notice_should_show =
-        should_show_opus_1m_merge_notice(data.opus_1m_merge_enabled, data.opus_1m_merge_seen_count);
     let tmux_rows = show_extended_notices.then(|| ()).and_then(|_| {
         data.tmux_session.as_ref().map(|session| {
             let prefix = data
@@ -454,13 +432,6 @@ fn LogoRuntimeNotices(
 
     element! {
         View(flex_direction: FlexDirection::Column) {
-            VoiceModeNotice(
-                feature_enabled: data.voice_feature_enabled,
-                voice_mode_enabled: data.voice_mode_enabled,
-                settings_voice_enabled: data.settings_voice_enabled,
-                voice_notice_seen_count: data.voice_notice_seen_count,
-                opus_1m_merge_notice_should_show: opus_notice_should_show,
-            )
             Opus1mMergeNotice(
                 opus_1m_merge_enabled: data.opus_1m_merge_enabled,
                 seen_count: data.opus_1m_merge_seen_count,

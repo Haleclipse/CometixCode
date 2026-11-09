@@ -91,60 +91,6 @@ fn config_error(operation: Option<&str>, setting: Option<&str>, error: String) -
     }
 }
 
-/// Maps to: CC `tools/ConfigTool/ConfigTool.ts:239-250` — the only voice
-/// pre-flight whose inputs are ported. Both branches return a bare
-/// `{success, error}` at the source, without `operation`/`setting`.
-fn voice_enable_preflight_error() -> Option<String> {
-    if crate::voice::voice_mode_enabled::is_voice_mode_enabled() {
-        return None;
-    }
-    Some("Voice mode is not available.".to_string())
-}
-
-/// Copy for the four voice pre-flight checks CC runs after
-/// `isVoiceModeEnabled()` (`ConfigTool.ts:251-307`).
-///
-/// TODO(parity): every trigger sits behind an unported service —
-/// `checkRecordingAvailability` / `checkVoiceDependencies` /
-/// `requestMicrophonePermission` (`services/voice.ts`) and
-/// `isVoiceStreamAvailable` (`services/voiceStreamSTT.ts`). The strings are
-/// carried here so the copy stays reviewable against the source and does not
-/// drift while the audio stack is unported.
-#[allow(dead_code)]
-mod voice_preflight_copy {
-    /// Maps to: CC `ConfigTool.ts:267` — the fallback when
-    /// `checkRecordingAvailability()` reports no reason.
-    pub(super) const RECORDING_UNAVAILABLE_ERROR: &str =
-        "Voice mode is not available in this environment.";
-
-    /// Maps to: CC `ConfigTool.ts:276` — `isVoiceStreamAvailable()` false.
-    pub(super) const STREAM_UNAVAILABLE_ERROR: &str =
-        "Voice mode requires a Claude.ai account. Please run /login to sign in.";
-
-    /// Maps to: CC `ConfigTool.ts:286-287` — `checkVoiceDependencies()` false.
-    pub(super) fn dependencies_missing_error(install_command: Option<&str>) -> String {
-        format!(
-            "No audio recording tool found.{}",
-            install_command
-                .map(|install_command| format!(" Run: {install_command}"))
-                .unwrap_or_default()
-        )
-    }
-
-    /// Maps to: CC `ConfigTool.ts:291-306` — `requestMicrophonePermission()`
-    /// false, including the three-platform guidance split.
-    pub(super) fn permission_denied_error() -> String {
-        let guidance = if cfg!(target_os = "windows") {
-            "Settings \u{2192} Privacy \u{2192} Microphone"
-        } else if cfg!(target_os = "linux") {
-            "your system's audio settings"
-        } else {
-            "System Settings \u{2192} Privacy & Security \u{2192} Microphone"
-        };
-        format!("Microphone access is denied. To enable it, go to {guidance}, then try again.")
-    }
-}
-
 /// Get or set a supported Config setting.
 /// Maps to: CC `tools/ConfigTool/ConfigTool.ts:111-411` `call`.
 pub(crate) async fn config_output(
@@ -157,13 +103,7 @@ pub(crate) async fn config_output(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("");
 
-    // Voice settings are registered at build time but must also pass the
-    // runtime kill-switch; when it is off the setting is unknown so no
-    // voice-specific strings leak (CC :113-125).
-    let voice_gated_off = cfg!(feature = "voice_mode")
-        && setting == "voiceEnabled"
-        && !crate::voice::voice_mode_enabled::is_voice_growth_book_enabled();
-    let Some(config) = supported_settings::get_config(setting).filter(|_| !voice_gated_off) else {
+    let Some(config) = supported_settings::get_config(setting) else {
         return config_error(None, None, format!("Unknown setting: \"{setting}\""));
     };
     let path = supported_settings::get_path(setting);
@@ -267,27 +207,9 @@ pub(crate) async fn config_output(
         return config_error(Some("set"), Some(setting), error);
     }
 
-    // Pre-flight checks for voice mode (CC :231-308).
-    if cfg!(feature = "voice_mode")
-        && setting == "voiceEnabled"
-        && final_value == serde_json::Value::Bool(true)
-        && let Some(error) = voice_enable_preflight_error()
-    {
-        return config_error(None, None, error);
-    }
-
     let previous_value = read_config_setting_value(config.source, &path);
     if let Err(error) = write_config_setting_value(config.source, &path, &final_value) {
         return config_error(Some("set"), Some(setting), error);
-    }
-
-    // CC `:345-353` (5a) — voice needs `notifyChange` so `applySettingsChange`
-    // resyncs `AppState.settings` and the settings cache resets for the next
-    // `/voice` read.
-    if cfg!(feature = "voice_mode") && setting == "voiceEnabled" {
-        crate::utils::settings::change_detector::notify_change(
-            crate::utils::settings::SettingSource::User,
-        );
     }
 
     // CC `:355-362` (5b) and `:364-381`. Both projections sit AFTER the write,
@@ -1163,49 +1085,6 @@ mod tests {
         assert_ne!(
             tool.description(&serde_json::json!({})),
             super::prompt::generate_prompt()
-        );
-    }
-
-    /// Maps to: CC `ConfigTool.ts:239-306` — the voice pre-flight copy. Only
-    /// the first check has ported inputs; the rest are pinned as strings.
-    #[test]
-    fn voice_preflight_copy_matches_the_official_strings() {
-        use super::voice_preflight_copy;
-
-        // CC :246 / :276 share one string; :248 is the authenticated variant.
-        // Voice has no auth source, so the pre-flight is always "not available".
-        const REQUIRES_ACCOUNT: &str =
-            "Voice mode requires a Claude.ai account. Please run /login to sign in.";
-        assert_eq!(
-            super::voice_enable_preflight_error().as_deref(),
-            Some("Voice mode is not available.")
-        );
-        assert_eq!(
-            voice_preflight_copy::STREAM_UNAVAILABLE_ERROR,
-            REQUIRES_ACCOUNT
-        );
-        assert_eq!(
-            voice_preflight_copy::RECORDING_UNAVAILABLE_ERROR,
-            "Voice mode is not available in this environment."
-        );
-        assert_eq!(
-            voice_preflight_copy::dependencies_missing_error(None),
-            "No audio recording tool found."
-        );
-        assert_eq!(
-            voice_preflight_copy::dependencies_missing_error(Some("brew install sox")),
-            "No audio recording tool found. Run: brew install sox"
-        );
-        let guidance = if cfg!(target_os = "windows") {
-            "Settings \u{2192} Privacy \u{2192} Microphone"
-        } else if cfg!(target_os = "linux") {
-            "your system's audio settings"
-        } else {
-            "System Settings \u{2192} Privacy & Security \u{2192} Microphone"
-        };
-        assert_eq!(
-            voice_preflight_copy::permission_denied_error(),
-            format!("Microphone access is denied. To enable it, go to {guidance}, then try again.")
         );
     }
 

@@ -23,9 +23,6 @@ path = "src/bin/nyan.rs"
 # The default build is the external distribution; this feature compiles the
 # Anthropic-internal capability profile and cannot be enabled at runtime.
 anthropic_internal = []
-# Maps to CC build-time `feature('VOICE_MODE')` guard. Runtime voice streaming
-# remains unimplemented; this only enables UI/gate parity for read-only seams.
-voice_mode = []
 # Maps to CC build-time `feature('ULTRATHINK')` transcript highlighting.
 ultrathink = []
 

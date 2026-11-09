@@ -12,8 +12,8 @@
 //!
 //! Feature gates: CC's `KAIROS`, `TERMINAL_PANEL`, and `MESSAGE_ACTIONS`
 //! blocks remain external-only exclusions. QUICK_SEARCH is available in this
-//! tree and keeps its official cross-platform defaults. `VOICE_MODE` maps to
-//! the `voice_mode` cargo feature.
+//! tree and keeps its official cross-platform defaults. CC's `VOICE_MODE`
+//! block is removed.
 
 use super::parser::parse_bindings;
 use super::types::{ContextName, KeybindingBlock, ParsedBinding};
@@ -95,8 +95,6 @@ pub fn default_binding_blocks() -> Vec<KeybindingBlock> {
         ("ctrl+g", "chat:externalEditor"),
         ("ctrl+s", "chat:stash"),
         (image_paste_key, "chat:imagePaste"),
-        #[cfg(feature = "voice_mode")]
-        ("space", "voice:pushToTalk"),
     ];
     block(ContextName::Chat, &chat_entries, &mut bindings);
 

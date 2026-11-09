@@ -186,7 +186,7 @@ fn check_duplicate_keys_in_json_internal(content: &str) -> Vec<Warning> {
     warnings
 }
 
-/// Runs the same user-only structural, duplicate, command, voice, and reserved
+/// Runs the same user-only structural, duplicate, command, and reserved
 /// checks as CC after the object-wrapper shape has been accepted by the loader.
 pub fn validate_user_bindings(content: &str, blocks: &[Value]) -> Vec<KeybindingWarning> {
     let mut warnings = check_duplicate_keys_in_json_internal(content);
@@ -291,25 +291,6 @@ pub fn validate_user_bindings(content: &str, blocks: &[Value]) -> Vec<Keybinding
                             Some("Move this binding to a block with \"context\": \"Chat\"".to_string()),
                         ));
                     }
-                } else if action == "voice:pushToTalk"
-                    && let Some(stroke) = parse_chord(key).first()
-                    && !stroke.ctrl
-                    && !stroke.alt
-                    && !stroke.shift
-                    && !stroke.meta
-                    && !stroke.super_key
-                    && stroke.key.len() == 1
-                    && stroke.key.as_bytes()[0].is_ascii_lowercase()
-                {
-                    warnings.push(warning_with_action(
-                                "invalid_action",
-                                KeybindingWarningSeverity::Warning,
-                                format!("Binding \"{key}\" to voice:pushToTalk prints into the input during warmup; use space or a modifier combo like meta+k"),
-                                Some(key),
-                                valid_context,
-                                Some(action),
-                                None,
-                            ));
                 }
             }
 
