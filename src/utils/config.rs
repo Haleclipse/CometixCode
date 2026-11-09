@@ -451,7 +451,6 @@ pub struct GlobalConfig {
     /// Maps to CC `utils/config.ts:549-551`
     /// `GlobalConfig.cachedExtraUsageDisabledReason`.
     pub cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason,
-    pub primary_api_key: Option<String>,
     pub custom_api_keys: Option<HashMap<String, serde_json::Value>>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.customApiKeyResponses`.
     pub custom_api_key_responses: Option<CustomApiKeyResponses>,
@@ -685,7 +684,6 @@ impl Default for GlobalConfig {
             api_key_helper: None,
             oauth_account: None,
             cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason::Uncached,
-            primary_api_key: None,
             custom_api_keys: None,
             custom_api_key_responses: None,
             has_completed_onboarding: None,

@@ -255,9 +255,9 @@ mod tests {
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
     /// The state file is `state.json` inside the config home whatever else
-    /// exists there: CC's legacy `.config.json`, its `.claude.json`, and the
-    /// OAuth-config suffix are not consulted. (The memoization is
-    /// production-only; see [`get_global_state_file`].)
+    /// exists there: CC's legacy `.config.json` and `.claude.json` are not
+    /// consulted. (The memoization is production-only; see
+    /// [`get_global_state_file`].)
     #[test]
     fn global_state_file_is_state_json_in_the_config_home() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
@@ -268,10 +268,6 @@ mod tests {
         std::fs::write(config.join(".config.json"), "{}").unwrap();
         std::fs::write(config.join(".claude.json"), "{}").unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _oauth = EnvVarGuard::set(
-            "CLAUDE_CODE_CUSTOM_OAUTH_URL",
-            "https://claude.fedstart.com",
-        );
         assert_eq!(global_state_file(), config.join("state.json"));
 
         let _home = EnvVarGuard::set(crate::utils::test_env::HOME_VAR, &root);

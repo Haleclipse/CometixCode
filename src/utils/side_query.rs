@@ -738,9 +738,6 @@ mod tests {
                 EnvVarGuard::set("NO_PROXY", "*"),
                 EnvVarGuard::set("no_proxy", "*"),
             ];
-            for key in ["USE_STAGING_OAUTH"] {
-                env.push(EnvVarGuard::unset(key));
-            }
             crate::utils::settings::settings_cache::reset_settings_cache();
             crate::services::provider::anthropic::target::install_test_main_profile(
                 &format!("http://{address}"),

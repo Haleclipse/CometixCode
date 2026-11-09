@@ -222,58 +222,22 @@ mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
 
-    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
-        move |key| {
-            pairs
-                .iter()
-                .find_map(|(name, value)| (*name == key).then(|| (*value).to_string()))
-        }
-    }
-
     /// Maps to: CC `isOpus1mMergeEnabled()` (`utils/model/model.ts`). Every
     /// input is process state at the source, so the test drives process state.
     ///
-    /// CC also closes the gate for a Pro subscriber and fails closed for a
-    /// subscriber whose tokens carry no `subscriptionType`. There are no
-    /// claude.ai subscribers any more, so those cases are gone: the gate depends
-    /// only on the 1M opt-out, and stored or ambient claude.ai credentials
-    /// (here a Pro subscriber and a bare OAuth token) are ignored.
+    /// CC also closes the gate for a Pro subscriber. There are no claude.ai
+    /// subscribers any more, so the gate depends only on the 1M opt-out.
     #[test]
-    fn opus_1m_merge_gate_depends_only_on_opt_out_not_on_claude_ai_credentials() {
+    fn opus_1m_merge_gate_depends_only_on_opt_out() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         let _opt_out = EnvVarGuard::unset("NYAN_DISABLE_1M_CONTEXT");
 
-        let config_dir =
-            std::env::temp_dir().join(format!("nyan-opus1m-{}", uuid::Uuid::new_v4().simple()));
-        std::fs::create_dir_all(&config_dir).unwrap();
-        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_dir);
-
-        // First-party with no credentials at all: the merge is on.
-        assert!(is_opus_1m_merge_enabled());
-
-        // A stored Pro subscription and an ambient OAuth token are ignored.
-        std::fs::write(
-            config_dir.join(".credentials.json"),
-            serde_json::json!({ "claudeAiOauth": {
-                "accessToken": "sk-ant-oat01-test",
-                "refreshToken": "sk-ant-ort01-test",
-                "expiresAt": 99_999_999_999_999u64,
-                "scopes": ["user:inference"],
-                "subscriptionType": "pro",
-            }})
-            .to_string(),
-        )
-        .unwrap();
-        let _oauth_token = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token");
-        crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
         assert!(is_opus_1m_merge_enabled());
 
         // Explicit opt-out closes the gate.
         crate::utils::process_env::set("NYAN_DISABLE_1M_CONTEXT", "1");
         assert!(!is_opus_1m_merge_enabled());
         crate::utils::process_env::remove("NYAN_DISABLE_1M_CONTEXT");
-
-        let _ = std::fs::remove_dir_all(&config_dir);
     }
 
     /// Auxiliary requests follow the main profile and never read the removed

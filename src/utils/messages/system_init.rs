@@ -24,7 +24,6 @@ fn sdk_api_key_source() -> &'static str {
         crate::utils::auth::ApiKeySource::None => "none",
         crate::utils::auth::ApiKeySource::AnthropicApiKey => "ANTHROPIC_API_KEY",
         crate::utils::auth::ApiKeySource::ApiKeyHelper => "apiKeyHelper",
-        crate::utils::auth::ApiKeySource::LoginManagedKey => "/login managed key",
     }
 }
 

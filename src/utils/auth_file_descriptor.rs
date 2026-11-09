@@ -4,8 +4,6 @@
 
 use crate::utils::process_env::JsTruthy;
 
-/// Maps to: CC `utils/authFileDescriptor.ts:23` `CCR_OAUTH_TOKEN_PATH`.
-pub const CCR_OAUTH_TOKEN_PATH: &str = "/home/claude/.nyan/remote/.oauth_token";
 /// Maps to: CC `utils/authFileDescriptor.ts:24` `CCR_API_KEY_PATH`.
 pub const CCR_API_KEY_PATH: &str = "/home/claude/.nyan/remote/.api_key";
 /// Maps to: CC `utils/authFileDescriptor.ts:25` `CCR_SESSION_INGRESS_TOKEN_PATH`.
@@ -85,7 +83,7 @@ fn get_credential_from_fd(
             set_cached(Some(token.clone()));
             // CC: `maybePersistTokenForSubprocesses(wellKnownPath, token, label)`
             // — the source write is omitted at this call site because the
-            // user-authorized OAuth credential-side-effect capability is closed.
+            // user-authorized credential-side-effect capability is closed.
             Some(token)
         }
         Err(_) => {
@@ -94,18 +92,6 @@ fn get_credential_from_fd(
             token
         }
     }
-}
-
-/// Maps to: CC `utils/authFileDescriptor.ts:173-180`
-/// `getOAuthTokenFromFileDescriptor`.
-pub fn get_oauth_token_from_file_descriptor() -> Option<String> {
-    get_credential_from_fd(
-        "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
-        CCR_OAUTH_TOKEN_PATH,
-        "OAuth token",
-        crate::bootstrap::state::get_oauth_token_from_fd,
-        crate::bootstrap::state::set_oauth_token_from_fd,
-    )
 }
 
 /// Maps to: CC `utils/authFileDescriptor.ts:188-195`
@@ -125,39 +111,6 @@ mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
     use std::os::fd::AsRawFd;
-
-    #[test]
-    fn oauth_token_prefers_and_caches_the_file_descriptor_like_official() {
-        let _lock = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _fd = EnvVarGuard::preserve("CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR");
-        let path = std::env::temp_dir().join(format!(
-            "nyan-auth-fd-{}-{}",
-            std::process::id(),
-            uuid::Uuid::new_v4()
-        ));
-        std::fs::write(&path, " oauth-token\n").unwrap();
-        let file = std::fs::File::open(&path).unwrap();
-        crate::utils::process_env::set(
-            "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR",
-            file.as_raw_fd().to_string(),
-        );
-        crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
-
-        assert_eq!(
-            get_oauth_token_from_file_descriptor().as_deref(),
-            Some("oauth-token")
-        );
-        drop(file);
-        assert_eq!(
-            get_oauth_token_from_file_descriptor().as_deref(),
-            Some("oauth-token")
-        );
-
-        crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
-        let _ = std::fs::remove_file(path);
-    }
 
     #[test]
     fn empty_fd_is_cached_null_without_falling_back_like_official() {

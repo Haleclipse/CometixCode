@@ -168,12 +168,14 @@ async fn handle_claude_ai_auth(
     _config: &crate::services::mcp::types::ScopedMcpServerConfig,
     on_auth_started: impl FnOnce(String),
 ) -> anyhow::Result<()> {
-    let claude_ai_base_url = crate::constants::oauth::get_oauth_config()?.claude_ai_origin;
     // CC builds an organization-scoped `start-auth` deep link from
     // `getOauthAccountInfo()`. There is no claude.ai OAuth account, so the
     // organization is never known and the connectors settings page is the only
     // target.
-    let auth_url = format!("{claude_ai_base_url}/settings/connectors");
+    let auth_url = format!(
+        "{}/settings/connectors",
+        crate::constants::oauth::CLAUDE_AI_ORIGIN
+    );
 
     on_auth_started(auth_url.clone());
     // CC: logEvent('tengu_claudeai_mcp_auth_started', {}) — joins with analytics.
@@ -583,18 +585,13 @@ pub fn MCPRemoteServerMenu<'a>(
                             } else {
                                 // Maps to: CC `components/mcp/MCPRemoteServerMenu.tsx:242-256`
                                 // clear-auth first-Enter connectors URL/browser branch.
-                                match crate::constants::oauth::get_oauth_config() {
-                                    Ok(oauth_config) => {
-                                        let connectors_url = format!(
-                                            "{}/settings/connectors",
-                                            oauth_config.claude_ai_origin
-                                        );
-                                        claude_ai_clear_auth_url.set(Some(connectors_url.clone()));
-                                        claude_ai_clear_auth_browser_opened.set(true);
-                                        open_browser_action_for_events(connectors_url);
-                                    }
-                                    Err(error) => auth_error.set(Some(error.to_string())),
-                                }
+                                let connectors_url = format!(
+                                    "{}/settings/connectors",
+                                    crate::constants::oauth::CLAUDE_AI_ORIGIN
+                                );
+                                claude_ai_clear_auth_url.set(Some(connectors_url.clone()));
+                                claude_ai_clear_auth_browser_opened.set(true);
+                                open_browser_action_for_events(connectors_url);
                             }
                             event.stop_propagation();
                         }
@@ -1191,15 +1188,8 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _oauth_env = [
-            EnvVarGuard::unset("USE_LOCAL_OAUTH"),
-            EnvVarGuard::unset("USE_STAGING_OAUTH"),
-            EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL"),
-            EnvVarGuard::unset("NYAN_SIMPLE"),
-            EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "test-oauth-token"),
-        ];
-        // A stored claude.ai account (and an ambient token) must not produce the
-        // organization-scoped deep link: there is no claude.ai OAuth account.
+        // A stored claude.ai account must not produce the organization-scoped
+        // deep link: there is no claude.ai OAuth account.
         let mut account = crate::utils::config::AccountInfo::default();
         account.organization_uuid = Some("org_123".to_string());
         let _global_config = GlobalConfigRestore::install(crate::utils::config::GlobalConfig {
@@ -1310,7 +1300,6 @@ mod tests {
             return;
         }
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {
             ContextProvider(value: Context::owned(crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings())) {
@@ -1382,7 +1371,6 @@ mod tests {
         std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
         let _path = EnvVarGuard::set("PATH", &directory);
         let _directory = EnvVarGuard::set("CLIPBOARD_FIXTURE_DIR", &directory);
-        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
         let (sender, receiver) = async_channel::unbounded();
         let mut app = element! {
             ContextProvider(value: Context::owned(crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings())) {

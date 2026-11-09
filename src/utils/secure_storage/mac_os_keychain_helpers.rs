@@ -30,8 +30,7 @@ pub(crate) fn get_mac_os_keychain_storage_service_name(
             .collect::<String>();
         format!("-{hash}")
     };
-    let oauth_suffix = crate::constants::oauth::get_oauth_config()?.oauth_file_suffix;
-    Ok(format!("nyan{oauth_suffix}{service_suffix}{dir_hash}"))
+    Ok(format!("nyan{service_suffix}{dir_hash}"))
 }
 
 /// Maps to: CC `utils/secureStorage/macOsKeychainHelpers.ts:43-49`
@@ -153,9 +152,6 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _config = EnvVarGuard::unset("NYAN_CONFIG_DIR");
-        let _custom_oauth = EnvVarGuard::unset("CLAUDE_CODE_CUSTOM_OAUTH_URL");
-        let _local = EnvVarGuard::unset("USE_LOCAL_OAUTH");
-        let _staging = EnvVarGuard::unset("USE_STAGING_OAUTH");
         assert_eq!(
             get_mac_os_keychain_storage_service_name("").unwrap(),
             "nyan"

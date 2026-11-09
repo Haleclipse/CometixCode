@@ -431,18 +431,6 @@ fn is_529_error_retryable(error: &RetryableError) -> bool {
     }
 }
 
-/// Whether the error is a 403 "OAuth token has been revoked".
-///
-/// Maps to: CC `services/api/withRetry.ts:623-629`
-fn is_oauth_token_revoked_error(error: &RetryableError) -> bool {
-    match error.as_api() {
-        Some(api) => {
-            api.status == Some(403) && api.message.contains("OAuth token has been revoked")
-        }
-        None => false,
-    }
-}
-
 /// Whether the error is retryable (standard retry predicate).
 ///
 /// Maps to: CC `services/api/withRetry.ts:696-787`
@@ -809,16 +797,10 @@ where
         let needs_client_refresh = !client_initialized
             || last_error
                 .as_ref()
-                .map(|e| {
-                    e.status() == Some(401)
-                        || is_oauth_token_revoked_error(e)
-                        || is_stale_connection_error(e)
-                })
+                .map(|e| e.status() == Some(401) || is_stale_connection_error(e))
                 .unwrap_or(false);
 
         if mock_error.is_none() && needs_client_refresh {
-            // TODO: On 401/403 OAuth, call handleOAuth401Error once auth module is ported.
-            // See CC `utils/auth.ts:handleOAuth401Error`.
             match (get_client)().await {
                 Ok(()) => {
                     client_initialized = true;

@@ -71,7 +71,6 @@ pub enum ApiKeySource {
     None,
     AnthropicApiKey,
     ApiKeyHelper,
-    LoginManagedKey,
 }
 
 impl ApiKeySource {
@@ -80,7 +79,6 @@ impl ApiKeySource {
             Self::None => None,
             Self::AnthropicApiKey => Some("ANTHROPIC_API_KEY"),
             Self::ApiKeyHelper => Some("apiKeyHelper"),
-            Self::LoginManagedKey => Some("/login managed key"),
         }
     }
 }
@@ -376,75 +374,6 @@ pub fn prefetch_api_key_from_api_key_helper_if_safe(is_non_interactive_session: 
     });
 }
 
-/// Maps to CC `getApiKeyFromConfigOrMacOSKeychain()`.
-pub fn get_api_key_from_config_or_macos_keychain() -> Option<AnthropicApiKeyWithSource> {
-    if crate::utils::env_utils::is_bare_mode() {
-        return None;
-    }
-
-    // Maps to: CC `utils/auth.ts:1051-1083` macOS branch. This legacy API-key
-    // path remains in the auth owner; only service-name/cache helpers are
-    // delegated to their source-shaped secure-storage owners.
-    #[cfg(target_os = "macos")]
-    let primary_api_key = {
-        let username = crate::utils::secure_storage::mac_os_keychain_helpers::get_username();
-        crate::utils::secure_storage::mac_os_keychain_helpers::get_mac_os_keychain_storage_service_name("")
-            .ok()
-            .and_then(|service_name| {
-                if let Some(prefetched) = crate::utils::secure_storage::keychain_prefetch::get_legacy_api_key_prefetch_result() {
-                    return prefetched;
-                }
-                #[cfg(not(test))]
-                let value = {
-                    record_auth_io(AuthIoOperation::KeychainSubprocess);
-                    let mut security = std::process::Command::new("security");
-                    // CC passes `env: process.env` (execSyncWithDefaults_DEPRECATED); the carrier is its counterpart.
-                    crate::utils::subprocess_env::apply_process_env_std(&mut security);
-                    security
-                        .args([
-                            "find-generic-password",
-                            "-a",
-                            &username,
-                            "-w",
-                            "-s",
-                            &service_name,
-                        ])
-                        .output()
-                        .ok()
-                        .filter(|output| output.status.success())
-                        .and_then(|output| String::from_utf8(output.stdout).ok())
-                        .map(|value| value.trim().to_string())
-                        .filter(|value| !value.is_empty())
-                };
-                #[cfg(test)]
-                let value = {
-                    #[cfg(test)]
-                    record_auth_io(AuthIoOperation::KeychainSubprocess);
-                    None
-                };
-                value
-            })
-    };
-    #[cfg(not(target_os = "macos"))]
-    let primary_api_key: Option<String> = None;
-    if let Some(primary_api_key) = primary_api_key {
-        return Some(AnthropicApiKeyWithSource {
-            key: Some(primary_api_key),
-            source: ApiKeySource::LoginManagedKey,
-        });
-    }
-
-    crate::utils::config::load_global_config()
-        .primary_api_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
-        .map(|primary_api_key| AnthropicApiKeyWithSource {
-            key: Some(primary_api_key.to_string()),
-            source: ApiKeySource::LoginManagedKey,
-        })
-}
-
 /// Maps to: CC `utils/auth.ts:226-341` `getAnthropicApiKeyWithSource`.
 pub fn get_anthropic_api_key_with_source(
     opts: GetAnthropicApiKeyOptions,
@@ -472,10 +401,10 @@ pub fn get_anthropic_api_key_with_source(
             source: ApiKeySource::ApiKeyHelper,
         };
     }
-    get_api_key_from_config_or_macos_keychain().unwrap_or(AnthropicApiKeyWithSource {
+    AnthropicApiKeyWithSource {
         key: None,
         source: ApiKeySource::None,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -677,10 +606,6 @@ mod tests {
         )
         .unwrap();
 
-        let mut config = GlobalConfig::default();
-        config.primary_api_key = Some("managed".to_string());
-        crate::utils::config::set_test_global_config(Some(config.clone()));
-
         let helper = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions {
             skip_retrieving_key_from_api_key_helper: true,
         });
@@ -695,7 +620,6 @@ mod tests {
         assert_eq!(still_helper.source, ApiKeySource::ApiKeyHelper);
         assert_eq!(still_helper.key, None);
 
-        crate::utils::config::set_test_global_config(None);
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -740,9 +664,6 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
-        let mut config = GlobalConfig::default();
-        config.primary_api_key = Some("managed".to_string());
-        crate::utils::config::set_test_global_config(Some(config));
         let _api_key = EnvVarGuard::unset("ANTHROPIC_API_KEY");
 
         let no_key = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions::default());
@@ -754,6 +675,5 @@ mod tests {
         let env_key = get_anthropic_api_key_with_source(GetAnthropicApiKeyOptions::default());
         assert_eq!(env_key.source, ApiKeySource::None);
         assert_eq!(env_key.key, None);
-        crate::utils::config::set_test_global_config(None);
     }
 }

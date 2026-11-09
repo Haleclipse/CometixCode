@@ -402,7 +402,7 @@ credential reference 只引用来源，不把 secret 写入 settings：
 - `refresh.rs`：`fresh_credential` 在 provider 锁内重读后才刷新，等锁的调用方直接拿到先到者写入的新 token，不会重复消耗一次性 refresh token。不同 provider 互不阻塞。
 - `oauth/openai_codex.rs`（PKCE + 授权码）、`oauth/opencode.rs`（device flow）：各自持有 endpoint、client id、token 解析与 refresh；公共部分只有表单/JSON 提交和“错误里不引用响应体”的失败分类。token 请求不跟随重定向，OpenCode 的 server 只接受 https 或回环 http。
 - `resolve.rs`：`validate_reference` 按 provider `kind` 限定 `oauth` 可用的模块（`openai` ↔ `openai-codex`，`gateway` ↔ `opencode`），`anthropic` 配 `oauth` 一律拒绝；限定 `optionalEnv` 仅允许本地 kind（`vllm`、`ollama`），商业 kind 配 `optionalEnv` 一律拒绝。
-- 新存储不读取 `OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED`；该开关仍只保护继承下来的 Anthropic / MCP OAuth 出口；provider 凭据不经过这些出口。这些旧出口的删除范围见 PR 3 描述的“待决策”。
+- 新存储不读取 `OAUTH_CREDENTIAL_SIDE_EFFECTS_ENABLED`；该开关只保护保留的 MCP OAuth 与凭据存储出口（Anthropic 账户 OAuth 出口已删除）；provider 凭据不经过这些出口。
 - PR 3 不发真实模型请求、不开浏览器、不监听端口、不提供登录命令；登录步骤以函数形式暴露，由后续 provider adapter 阶段驱动。
 
 ## 五、模型选择协议与思考深度

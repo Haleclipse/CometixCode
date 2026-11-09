@@ -147,11 +147,9 @@ mod tests {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "ambient-oauth-token");
         let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-secret");
 
         let mut config = crate::utils::config::GlobalConfig::default();
-        config.primary_api_key = Some("sk-ant-secret".to_string());
         config.oauth_account = Some(crate::utils::config::AccountInfo {
             email_address: Some("user@example.com".to_string()),
             organization_name: Some("Example Org".to_string()),

@@ -437,7 +437,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn explicit_api_key_auth_remains_available_without_oauth_credentials() {
+    async fn explicit_api_key_auth_remains_available_without_ambient_credentials() {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -445,7 +445,6 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-api-key-oauth-gate-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let _auth_token = EnvVarGuard::unset("ANTHROPIC_AUTH_TOKEN");
         let handle = get_anthropic_client(GetAnthropicClientOptions {
             target: target_with_key("sk-ant-test", None),
@@ -477,7 +476,6 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-sdk-defaults-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "oauth-ambient");
         let _base_url = EnvVarGuard::set("ANTHROPIC_BASE_URL", "https://ambient.example");
         let _auth_token = EnvVarGuard::set("ANTHROPIC_AUTH_TOKEN", "tok-ambient");
         let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ambient");
@@ -546,7 +544,6 @@ mod tests {
             std::env::temp_dir().join(format!("nyan-sdk-base-url-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config_home);
-        let _oauth = EnvVarGuard::unset("CLAUDE_CODE_OAUTH_TOKEN");
         let _base_url = EnvVarGuard::unset("ANTHROPIC_BASE_URL");
 
         let handle = get_anthropic_client(GetAnthropicClientOptions {

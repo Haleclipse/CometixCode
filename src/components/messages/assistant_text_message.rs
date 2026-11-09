@@ -21,9 +21,7 @@ const PROMPT_TOO_LONG_ERROR_MESSAGE: &str = "Prompt is too long";
 const CREDIT_BALANCE_TOO_LOW_ERROR_MESSAGE: &str = "Credit balance is too low";
 const INVALID_API_KEY_ERROR_MESSAGE: &str = "Invalid API key · Check profile API key configuration";
 const INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL: &str = "Invalid API key · Fix external API key";
-const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH: &str = "Your ANTHROPIC_API_KEY belongs to a disabled organization · Unset the environment variable to use your subscription instead";
 const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY: &str = "Your ANTHROPIC_API_KEY belongs to a disabled organization · Update or unset the environment variable";
-const TOKEN_REVOKED_ERROR_MESSAGE: &str = "OAuth token revoked · Please run /login";
 const CUSTOM_OFF_SWITCH_MESSAGE: &str =
     "Opus is experiencing high load, please use /model to switch to Sonnet";
 const API_TIMEOUT_ERROR_MESSAGE: &str = "Request timed out";
@@ -183,9 +181,7 @@ fn assistant_text_special_response(
         ),
         INVALID_API_KEY_ERROR_MESSAGE
         | INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL
-        | ORG_DISABLED_ERROR_MESSAGE_ENV_KEY
-        | ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH
-        | TOKEN_REVOKED_ERROR_MESSAGE => Some(text.to_string()),
+        | ORG_DISABLED_ERROR_MESSAGE_ENV_KEY => Some(text.to_string()),
         API_TIMEOUT_ERROR_MESSAGE => Some(match crate::utils::process_env::var("API_TIMEOUT_MS").truthy() {
             Some(ms) => {
                 format!("{API_TIMEOUT_ERROR_MESSAGE} (API_TIMEOUT_MS={ms}ms, try increasing it)")

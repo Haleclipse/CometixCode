@@ -453,7 +453,7 @@ impl SecureStorageBackend for PlainTextStorage {
             Err(CredentialPersistenceError::Write(_)) => false,
             Err(CredentialPersistenceError::Acl(error)) => {
                 return Err(anyhow::anyhow!(
-                    "Could not secure Windows credential file {}: {error}. Credentials were not saved; set CLAUDE_CODE_OAUTH_TOKEN instead.",
+                    "Could not secure Windows credential file {}: {error}. Credentials were not saved.",
                     storage_path.display()
                 ));
             }

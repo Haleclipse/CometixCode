@@ -101,10 +101,6 @@ pub fn get_cached_claude_md_content() -> Option<String> {
 }
 static FLAG_SETTINGS_INLINE: LazyLock<RwLock<Option<serde_json::Value>>> =
     LazyLock::new(|| RwLock::new(None));
-/// Maps to: CC `bootstrap/state.ts:1158-1164` `STATE.oauthTokenFromFd`.
-/// Outer `None` is JavaScript `undefined`; inner `None` is cached `null`.
-static OAUTH_TOKEN_FROM_FD: LazyLock<RwLock<Option<Option<String>>>> =
-    LazyLock::new(|| RwLock::new(None));
 /// Maps to: CC `bootstrap/state.ts:1166-1172` `STATE.apiKeyFromFd`.
 static API_KEY_FROM_FD: LazyLock<RwLock<Option<Option<String>>>> =
     LazyLock::new(|| RwLock::new(None));
@@ -450,21 +446,6 @@ pub fn set_flag_settings_inline(settings: Option<serde_json::Value>) {
     crate::utils::settings::settings_cache::reset_settings_cache();
 }
 
-/// Maps to: CC `bootstrap/state.ts:1158-1160` `getOauthTokenFromFd`.
-pub fn get_oauth_token_from_fd() -> Option<Option<String>> {
-    OAUTH_TOKEN_FROM_FD
-        .read()
-        .expect("OAuth FD token lock poisoned")
-        .clone()
-}
-
-/// Maps to: CC `bootstrap/state.ts:1162-1164` `setOauthTokenFromFd`.
-pub fn set_oauth_token_from_fd(token: Option<String>) {
-    *OAUTH_TOKEN_FROM_FD
-        .write()
-        .expect("OAuth FD token lock poisoned") = Some(token);
-}
-
 /// Maps to: CC `bootstrap/state.ts:1166-1168` `getApiKeyFromFd`.
 pub fn get_api_key_from_fd() -> Option<Option<String>> {
     API_KEY_FROM_FD
@@ -482,9 +463,6 @@ pub fn set_api_key_from_fd(key: Option<String>) {
 /// auth-file-descriptor fields owned by this Rust state projection.
 #[cfg(test)]
 pub(crate) fn reset_auth_file_descriptor_caches_for_testing() {
-    *OAUTH_TOKEN_FROM_FD
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     *API_KEY_FROM_FD
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = None;

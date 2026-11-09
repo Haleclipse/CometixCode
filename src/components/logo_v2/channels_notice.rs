@@ -229,7 +229,7 @@ pub fn ChannelsNotice(props: &ChannelsNoticeProps, hooks: Hooks) -> impl Into<An
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::TEST_ENV_LOCK;
     use crate::utils::theme;
 
     fn render(snapshot: ChannelsNoticeSnapshot) -> String {
@@ -315,9 +315,6 @@ mod tests {
         }
 
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        // An ambient OAuth token must not count as authentication: channels
-        // need a claude.ai login, which nyan does not support.
-        let _oauth = EnvVarGuard::set("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-channels-notice");
 
         let _channels = BootstrapChannelsGuard;
         crate::bootstrap::state::set_allowed_channels(vec![

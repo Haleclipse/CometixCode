@@ -123,14 +123,8 @@ pub const INVALID_API_KEY_ERROR_MESSAGE: &str =
 pub const INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL: &str =
     "Invalid API key \u{00b7} Fix external API key";
 
-/// Maps to: CC services/api/errors.ts:158-159
-pub const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY_WITH_OAUTH: &str = "Your ANTHROPIC_API_KEY belongs to a disabled organization \u{00b7} Unset the environment variable to use your subscription instead";
-
 /// Maps to: CC services/api/errors.ts:160-161
 pub const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY: &str = "Your ANTHROPIC_API_KEY belongs to a disabled organization \u{00b7} Update or unset the environment variable";
-
-/// Maps to: CC services/api/errors.ts:162-163
-pub const TOKEN_REVOKED_ERROR_MESSAGE: &str = "OAuth token revoked \u{00b7} Please run /login";
 
 /// Maps to: CC services/api/errors.ts:164-165
 pub const CCR_AUTH_ERROR_MESSAGE: &str =
@@ -145,10 +139,6 @@ pub const CUSTOM_OFF_SWITCH_MESSAGE: &str =
 
 /// Maps to: CC services/api/errors.ts:169
 pub const API_TIMEOUT_ERROR_MESSAGE: &str = "Request timed out";
-
-/// Maps to: CC services/api/errors.ts:197-198
-pub const OAUTH_ORG_NOT_ALLOWED_ERROR_MESSAGE: &str =
-    "Your account does not have access to nyan. Please run /login.";
 
 /// Maps to: CC bootstrap/state.ts:getIsNonInteractiveSession.
 fn get_is_non_interactive_session() -> bool {
@@ -333,24 +323,6 @@ pub fn get_request_too_large_error_message() -> String {
     }
 }
 
-/// Maps to: CC services/api/errors.ts:200-204
-pub fn get_token_revoked_error_message() -> &'static str {
-    if get_is_non_interactive_session() {
-        "Your account does not have access to Claude. Please login again or contact your administrator."
-    } else {
-        TOKEN_REVOKED_ERROR_MESSAGE
-    }
-}
-
-/// Maps to: CC services/api/errors.ts:206-210
-pub fn get_oauth_org_not_allowed_error_message() -> &'static str {
-    if get_is_non_interactive_session() {
-        "Your organization does not have access to Claude. Please login again or contact your administrator."
-    } else {
-        OAUTH_ORG_NOT_ALLOWED_ERROR_MESSAGE
-    }
-}
-
 /// Check if we're in CCR (Claude Code Remote) mode.
 ///
 /// Maps to: CC services/api/errors.ts:217-219
@@ -417,8 +389,6 @@ pub enum ApiErrorClass {
     InvalidModel,
     CreditBalanceLow,
     InvalidApiKey,
-    TokenRevoked,
-    OauthOrgNotAllowed,
     AuthError,
     ServerError,
     ClientError,
@@ -447,8 +417,6 @@ impl ApiErrorClass {
             Self::InvalidModel => "invalid_model",
             Self::CreditBalanceLow => "credit_balance_low",
             Self::InvalidApiKey => "invalid_api_key",
-            Self::TokenRevoked => "token_revoked",
-            Self::OauthOrgNotAllowed => "oauth_org_not_allowed",
             Self::AuthError => "auth_error",
             Self::ServerError => "server_error",
             Self::ClientError => "client_error",
@@ -616,18 +584,6 @@ pub fn classify_api_error(error: &ApiErrorInfo) -> ApiErrorClass {
         // Invalid model (400)
         if status == 400 && msg_lower.contains("invalid model name") {
             return ApiErrorClass::InvalidModel;
-        }
-
-        // OAuth token revoked (403)
-        if status == 403 && msg.contains("OAuth token has been revoked") {
-            return ApiErrorClass::TokenRevoked;
-        }
-
-        // OAuth org not allowed (401/403)
-        if (status == 401 || status == 403)
-            && msg.contains("OAuth authentication is currently not allowed for this organization")
-        {
-            return ApiErrorClass::OauthOrgNotAllowed;
         }
 
         // Generic auth (401/403)
@@ -999,26 +955,6 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
         // external vs internal key sources.
         return create_assistant_api_error_message(
             INVALID_API_KEY_ERROR_MESSAGE,
-            Some(SdkAssistantMessageError::AuthenticationFailed),
-            None,
-        );
-    }
-
-    // --- OAuth token revoked (403) ---
-    if error.status() == Some(403) && msg.contains("OAuth token has been revoked") {
-        return create_assistant_api_error_message(
-            get_token_revoked_error_message(),
-            Some(SdkAssistantMessageError::AuthenticationFailed),
-            None,
-        );
-    }
-
-    // --- OAuth org not allowed (401/403) ---
-    if matches!(error.status(), Some(401) | Some(403))
-        && msg.contains("OAuth authentication is currently not allowed for this organization")
-    {
-        return create_assistant_api_error_message(
-            get_oauth_org_not_allowed_error_message(),
             Some(SdkAssistantMessageError::AuthenticationFailed),
             None,
         );

@@ -2157,7 +2157,7 @@ mod runtime {
             }
             Transport::ClaudeAiProxy => {
                 // Maps to: CC `services/mcp/client.ts:879-890` claude.ai-proxy
-                // branch, consuming canonical `getOauthConfig().MCP_PROXY_*`.
+                // branch, consuming the MCP proxy base URL and path.
                 let id = config
                     .id
                     .as_deref()
@@ -2165,11 +2165,10 @@ mod runtime {
                     .ok_or_else(|| {
                         anyhow::anyhow!("claude.ai MCP proxy server is missing connector id")
                     })?;
-                let oauth = crate::constants::oauth::get_oauth_config()?;
                 let proxy_url = format!(
                     "{}{}",
-                    oauth.mcp_proxy_url,
-                    oauth.mcp_proxy_path.replace("{server_id}", id)
+                    crate::constants::oauth::MCP_PROXY_URL,
+                    crate::constants::oauth::MCP_PROXY_PATH.replace("{server_id}", id)
                 );
                 serve_claude_ai_proxy_http(name, &proxy_url).await
             }
