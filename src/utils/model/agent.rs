@@ -67,6 +67,9 @@ pub fn default_utility_spec(role: &str) -> &'static str {
     let norm = lower.replace('-', "_");
     match norm.as_str() {
         "compaction" | "classifier" | "permission_classifier" | "permissions" => "@main",
+        // Permission explanations are auxiliary text; unlike the classifier and
+        // the auto-mode path they stay on the light profile.
+        "permission_explainer" => "@light",
         _ => "@light",
     }
 }
@@ -412,6 +415,9 @@ mod tests {
         assert_eq!(default_utility_spec("bash_prefix"), "@light");
         assert_eq!(default_utility_spec("prompt_suggestions"), "@light");
         assert_eq!(default_utility_spec("side_query"), "@light");
+        assert_eq!(default_utility_spec("permission_explainer"), "@light");
+        // Hyphenated spellings normalize to the same role.
+        assert_eq!(default_utility_spec("permission-explainer"), "@light");
     }
 
     const PARENT: &str = "claude-sonnet-4-6";

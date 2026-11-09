@@ -114,6 +114,12 @@ pub struct SideQueryOptions {
     /// reporting.sampling_calls.
     /// Maps to: CC `querySource: QuerySource` (required in TS).
     pub query_source: String,
+    /// @nyan: the `selection.utility.<role>` entry that decides the model and
+    /// profile when `model` is empty (or names the utility model). Defaults to
+    /// the generic `side_query` role. Unlike `query_source`, this selects
+    /// settings, so a caller with its own role names it here instead of
+    /// pinning a model id.
+    pub utility_role: Option<String>,
 }
 
 /// System prompt input: string or array of text blocks.
@@ -153,6 +159,7 @@ impl Default for SideQueryOptions {
             thinking: None,
             stop_sequences: None,
             query_source: "side_query".to_string(),
+            utility_role: None,
         }
     }
 }
@@ -209,7 +216,7 @@ fn text_block(text: impl Into<String>) -> TextBlockParam {
 pub async fn side_query(opts: SideQueryOptions) -> anyhow::Result<Message> {
     let settings = crate::utils::settings::get_initial_settings();
     let utility = crate::utils::model::agent::resolve_utility_model_and_effort(
-        "side_query",
+        opts.utility_role.as_deref().unwrap_or("side_query"),
         &crate::utils::model::agent::ParentSelection::configured(),
         settings.nyan.as_deref(),
     );

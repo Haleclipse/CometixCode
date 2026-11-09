@@ -428,7 +428,7 @@ CLI --model <ref>[:effort]
 - **skill 不选模型**（照 Pi）：skill / plugin command 的 `model:`、`effort:` frontmatter 被忽略；需要特定模型就用带 `model:` 的 agent。理由：inline skill 中途换 profile 会让跨模型缓存前缀失效（Opus 5.5、10 万前缀约 $0.80/次）。
 - **默认规则**：
   - 子 agent 类型：`general-purpose`、`plan` = `inherit`；`explore` = `@light`；`review` = `@heavy`。
-  - Utility 角色（`title`、`summary`、`commit_message`、`webfetch` 摘要、`bash_prefix` 提取、`prompt_suggestions`、`side_query`）= `@light`。记忆提取与合并不是 utility 角色：它们是 cache 共享分叉，始终用会话当前的模型（memory.md M2）。
+  - Utility 角色（`title`、`summary`、`commit_message`、`webfetch` 摘要、`bash_prefix` 提取、`prompt_suggestions`、`side_query`、`permission_explainer`）= `@light`。记忆提取与合并不是 utility 角色：它们是 cache 共享分叉，始终用会话当前的模型（memory.md M2）。
   - `compaction`、权限分类器（`classifier`）= `@main`。
 - **未知 profile 校验**：引用未知的 profile 名在启动时报错（`selection.*` 校验）；`--model` 不认识时启动报错；Agent 工具调用参数不认识时返回工具错误、不发请求；agent md 的 `model:` 不认识时该 agent 运行报错（加载时校验归 /agents PR）；`@tier`（`@light` / `@heavy` / `@main`）与 `inherit` 属于保留档位/关键字，永不报未知 profile 错误。`@tier` 在没有可指的 profile 时（未配置 `selection.main`）跟随父会话，与 `inherit` 相同。
 - **子 agent 模型解析链**：

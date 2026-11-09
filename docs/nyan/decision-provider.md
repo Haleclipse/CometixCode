@@ -204,9 +204,9 @@ pub trait DecisionBackend: Send + Sync {
 
 | 场景 | 当前代码 / 当前决策 | DP 适合做什么 | 安全边界与默认 |
 |---|---|---|---|
-| **Auto Mode / YOLO 权限分类** | `utils/permissions/yolo_classifier.rs:853`；当前是完整 side query，支持单阶段或 XML 两阶段（stage 1 快速判定、stage 2 thinking），输出 `should_block + reason`；解析失败默认阻断 | 作为 stage 1 的快速风险分类：`safe_readonly / safe_local_write / risky`，或判断是否需要进入昂贵的 stage 2；读取命令、上下文和工具输入 | `dangerous_patterns.rs`、`read_only_command_validation.rs`、权限规则仍是硬门；DP **不能单独放行**不确定命令；默认 shadow，确认无 false-safe 后再 active |
+| **Auto Mode / YOLO 权限分类** | `utils/permissions/yolo_classifier.rs:851`；完整 side query，支持单阶段或 XML 两阶段（stage 1 快速判定、stage 2 thinking），输出 `should_block + reason`；解析失败默认阻断 | **已接入** `permissions.yolo_stage1`（切片 J，`utils/permissions/decision.rs`）：与确定性分类器**并行**发起一次 noul 风险判断；只有分类器判定 allow 时，active 且高置信的 `risky` 才会把结果升级为询问；shadow 只记录 | `dangerous_patterns.rs`、`read_only_command_validation.rs`、权限规则仍是硬门；DP **永不单独放行**，也不能把 block 变 allow；默认 shadow |
 | **Bash classifier** | `utils/permissions/bash_classifier.rs:67` 当前是 disabled stub | 未来替代 disabled classifier 的结构化判断，或给权限解释器提供风险标签 | 不能绕过硬 deny；先只做 advisory / ask 路径，不直接 allow |
-| **Permission explainer** | `utils/permissions/permission_explainer.rs:222-300` 用 side query 生成 explanation / reasoning / risk / riskLevel，超时 10 s 返回 None | 不接 Decision Provider；改为 utility 角色 `permission_explainer`（默认 @light） | 解释文本由 utility 模型生成，硬安全边界不变 |
+| **Permission explainer** | `utils/permissions/permission_explainer.rs` 用 side query 生成 explanation / reasoning / risk / riskLevel，超时 10 s 返回 None | **不接 Decision Provider**；side query 通过 `SideQueryOptions.utility_role` 走 utility 角色 `permission_explainer`（`selection.utility.permission_explainer`，默认 @light） | 解释文本由 utility 模型生成，硬安全边界不变 |
 | **权限规则与安全解析** | `permissions.rs` 规则匹配、`dangerous_patterns.rs`、`read_only_command_validation.rs`、路径 / UNC / exfil 检查 | 可把结果汇总为风险上下文，供上面的 DP 分类使用 | **不交给 DP 覆盖**：硬安全边界、路径越界、凭据外发、命令 flag 解析必须确定性 |
 | **Prompt suggestion 是否值得生成** | `prompt_suggestion/prompt_suggestion.rs:191` 生成用户下一句；文本由小模型生成 | 在生成前判断"下一步是否足够明确、是否值得花一次生成调用" | 只影响是否显示建议，不影响会话；可 active，默认先 shadow |
 | **Speculation 是否启动** | `prompt_suggestion/speculation.rs:264` 启动 fork，已有只读 / 写入 overlay / 权限边界 | 判断用户下一步是否明显、是否值得预计算；可判断候选路径是否可能很快撞权限边界 | overlay、只读 Bash、写权限边界继续由确定性代码执行；DP 不能让 speculation 绕过边界 |
@@ -230,6 +230,18 @@ pub trait DecisionBackend: Send + Sync {
 2. **DP 快速分流**：对硬规则没有结论的命令分类；高风险或低置信度进入现有 YOLO / 用户确认，明显安全的只读命令才有资格
    缩短后续流程。DP 的"safe"只能减少解释 / 第二阶段成本，不能凭一条模型答案放行此前未被硬规则允许的命令。
 3. **完整分类器 / 用户确认**：保留现有 YOLO 的 reason、thinking 和 fail-closed 行为；DP 失败、429、超时一律走这条路径。
+
+**J 的实现**（`utils/permissions/decision.rs`）：`permissions.yolo_stage1` 与 `classify_yolo_action` 在同一个 bridge 里
+**并行**发起（关键路径 800 ms，shadow 不增加确定性路径延迟），问一个 noul 问题"是否应该先让用户确认"。确定性分类器
+仍是唯一权威：
+
+- 分类器 allow + DP `active` + 高置信 `risky` → 把结果改为 `Ask`，`decisionReason` 说明风险；
+- 分类器 allow + shadow / DP 回退 / 低置信 / `safe` → 保持确定性 allow；
+- 分类器 block / unavailable → 不受 DP 影响（DP 的答案只记录，绝不参与）；
+- 不设置 classifier approval、不写 denial 成功计数，因为动作并未被放行。
+
+两种模式都写统一 `decisions.jsonl`（`point: "permissions.yolo_stage1"`，shadow 记为 `outcome: "shadow"`）。该点没有
+"保留候选"的身份，因此不产生 probe。`permissions.explain_risk` 不接入。
 
 第一次权限探测（2026-10-27，小样本，不是质量结论）：`jev-1.14.0` 对 16 个手工命令的风险 choice 判定 15/16，破坏性 noul
 13/16，测试样本中没有把明显危险命令判成安全；`clef` 的风险 choice 15/16，并把写 `~/.bashrc` 判成安全。说明 DP 可以做
@@ -307,6 +319,7 @@ pub trait DecisionBackend: Send + Sync {
     比较，URL 忽略大小写、fragment 与末尾斜杠；
   - 已接入：`retrieval.answers`（被标"回答查询"且实际展示的候选）、`retrieval.sufficient`（追加一轮后新出现且展示的结果）、
     `web.answers`（最终可见且被标记的候选）、`web.page_answers`（提示里建议的下一个候选）；
+    `permissions.yolo_stage1` 只写决策行，不产生 probe（权限动作没有"保留候选"的身份）；
   - 尚未接入：`web.fetch_fallback`（正文长度对比，不是"之后是否使用"）、`memory.*`（候选身份在 `/memory` 交互里）、
     `compaction.keep`（工具结果与文件路径的映射未定义）。
 - **`/decision [point]` 命令**：读统一 jsonl，输出每个点的样本数、answered / fallback、一致与不一致计数、p50 / p95 延迟，
@@ -380,7 +393,7 @@ pub trait DecisionBackend: Send + Sync {
 | G | 接入外部搜索：`answers`、`page_answers`、`fetch_fallback`、`query_kind`（provider 参数）、`prune` | 外部搜索切片 E / H 与 WebFetch 返回 | A、外部搜索 E |
 | H | 接入记忆：`extract_now`、`extract_skip`、`type`、`duplicate`、`consolidate` | 记忆切片 C / D | A、记忆 C |
 | I | 接入压缩：`compaction.keep`（掩码候选排序） | 压缩切片 A 的候选选择 | A、压缩 A |
-| J | 接入权限：仅 `permissions.yolo_stage1`（先 shadow，active 只能升级，永不单独放行）；`permissions.explain_risk` 不接，风险解释走 utility 角色 `permission_explainer`（默认 @light）；硬规则和完整分类器 fail-closed 不变 | `utils/permissions/`、`services/decision` 适配层 | A、B、权限现状已读 |
+| J（已实现） | 接入权限：仅 `permissions.yolo_stage1`（先 shadow，active 只能升级，永不单独放行）；`permissions.explain_risk` 不接，风险解释走 utility 角色 `permission_explainer`（默认 @light）；硬规则和完整分类器 fail-closed 不变 | `utils/permissions/{decision,permissions,permission_explainer}.rs`、`utils/side_query.rs` | A、B、权限现状已读 |
 | K | 接入建议：`prompt_suggestion.generate_gate`（默认关；开启后先 shadow，active 只能跳过生成）。`speculation.start` 不接，`context_suggestions.rank` 删除 | `services/prompt_suggestion/` | A、B |
 
 A 进批次 1；B、E 并行；F、G、H、I 跟随四模块调用点；J、K 作为宿主运行时批次后续接入。`chat` / `local` 后端不实现。

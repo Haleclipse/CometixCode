@@ -9,6 +9,7 @@ pub mod bypass_permissions_killswitch;
 pub mod classifier_decision;
 pub mod classifier_shared;
 pub mod dangerous_patterns;
+pub mod decision;
 pub mod denial_tracking;
 pub mod filesystem;
 pub mod get_next_permission_mode;

@@ -80,6 +80,10 @@ pub const SYSTEM_PROMPT: &str = "Analyze shell commands and explain what they do
 
 pub const QUERY_SOURCE: &str = "permission_explainer";
 
+/// `selection.utility.permission_explainer`; defaults to `@light` through
+/// [`crate::utils::model::agent::default_utility_spec`].
+pub const PERMISSION_EXPLAINER_ROLE: &str = "permission_explainer";
+
 /// Soft cap for the explainer side_query so a hung network does not freeze the
 /// permission dialog. CC has no hard timeout; we treat timeout as null-on-error.
 pub const EXPLAINER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -232,10 +236,14 @@ pub async fn generate_permission_explanation(
 
     let user_prompt = build_permission_explanation_user_prompt(&params);
     let tool_schema = explain_command_tool_schema();
-    let model = crate::utils::model::model::get_main_loop_model();
 
+    // @nyan: the explainer is an auxiliary text task, so it follows the
+    // `permission_explainer` utility role (default `@light`) instead of the
+    // session's main-loop model. `side_query` resolves the role's model and
+    // profile; an empty `model` selects that utility selection.
     let side_opts = SideQueryOptions {
-        model,
+        model: String::new(),
+        utility_role: Some(PERMISSION_EXPLAINER_ROLE.to_string()),
         system: Some(SideQuerySystem::Text(SYSTEM_PROMPT.to_string())),
         messages: vec![user_text_message(user_prompt)],
         tools: Some(vec![custom_tool(

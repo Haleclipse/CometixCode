@@ -1054,7 +1054,7 @@ pub async fn classify_yolo_action(
     }
 }
 /// Classifier utility model resolves to @main by default (design §1).
-fn get_classifier_model() -> String {
+pub(crate) fn get_classifier_model() -> String {
     let settings = crate::utils::settings::get_initial_settings();
     crate::utils::model::agent::resolve_utility_model_and_effort(
         "classifier",

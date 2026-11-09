@@ -2022,8 +2022,6 @@ fn apply_auto_mode_classifier_to_ask(
     request: PermissionRequest,
     tool_use_context: Option<&crate::tool::ToolUseContext>,
 ) -> HasPermissionsToUseToolResult {
-    use crate::utils::permissions::yolo_classifier::classify_yolo_action_sync_with_signal;
-
     let mut params = params;
     let request = match auto_mode_pre_classifier_fast_path(&mut params, request, tool_use_context) {
         AutoModePreClassifier::Decided(result) => return result,
@@ -2045,17 +2043,14 @@ fn apply_auto_mode_classifier_to_ask(
         );
     }
     // Maps to: CC `classifyYoloAction(context.messages, action, ..., signal)`.
-    // Sync bridge kept for orchestration / thread workers until they await.
-    let decision = classify_yolo_action_sync_with_signal(
-        params.messages,
-        params.tool_name,
-        // RAW input, as in the async path: the per-tool projection belongs to
-        // `to_compact` and must run exactly once.
-        params.input,
-        classifier_tool_lookup(tool_use_context),
-        params.context,
-        params.abort_signal.clone(),
-    );
+    // The Decision Provider risk probe runs beside it inside the same bridge,
+    // so a shadow point does not add latency to the deterministic classifier.
+    let (decision, escalate) = classify_and_assess_sync(&params, tool_use_context);
+    // The probe runs beside the classifier, so its answer is only meaningful
+    // when the deterministic result was an allow.
+    if escalate && classifies_as_allow(&decision) {
+        return escalate_after_classifier_allow(request);
+    }
     resolve_auto_mode_classifier_decision(params, request, decision)
 }
 
@@ -2081,6 +2076,18 @@ async fn apply_auto_mode_classifier_to_ask_async(
     if let Some(forced) =
         crate::utils::permissions::yolo_classifier::forced_classifier_decision(params.tool_name)
     {
+        let cwd = tool_use_context.map(|context| context.effective_cwd());
+        let escalate = classifies_as_allow(&forced)
+            && crate::utils::permissions::decision::should_escalate(
+                params.tool_name,
+                params.input,
+                cwd.as_deref(),
+                params.abort_signal.clone(),
+            )
+            .await;
+        if escalate {
+            return escalate_after_classifier_allow(request);
+        }
         return resolve_auto_mode_classifier_decision(params, request, forced);
     }
 
@@ -2110,16 +2117,132 @@ async fn apply_auto_mode_classifier_to_ask_async(
         params.tool_name,
         params.input.clone(),
     );
-    let result = classify_yolo_action(
-        params.messages,
-        &action,
-        classifier_tool_lookup(tool_use_context),
-        params.context,
-        params.abort_signal.clone(),
-    )
-    .await;
+    let cwd = tool_use_context.map(|context| context.effective_cwd());
+    // Run the risk probe beside the classifier: in shadow it must not add
+    // latency, and in active it can only escalate an eventual allow.
+    let (result, escalate) = tokio::join!(
+        classify_yolo_action(
+            params.messages,
+            &action,
+            classifier_tool_lookup(tool_use_context),
+            params.context,
+            params.abort_signal.clone(),
+        ),
+        crate::utils::permissions::decision::should_escalate(
+            params.tool_name,
+            params.input,
+            cwd.as_deref(),
+            params.abort_signal.clone(),
+        )
+    );
     let decision = yolo_result_to_decision(result);
+    if escalate && classifies_as_allow(&decision) {
+        return escalate_after_classifier_allow(request);
+    }
     resolve_auto_mode_classifier_decision(params, request, decision)
+}
+
+fn classifies_as_allow(
+    decision: &crate::utils::permissions::yolo_classifier::YoloClassifierDecision,
+) -> bool {
+    matches!(
+        decision,
+        crate::utils::permissions::yolo_classifier::YoloClassifierDecision::Allow { .. }
+    )
+}
+
+/// Sync twin of the async `tokio::join!`: one bridge runs the classifier and
+/// the `permissions.yolo_stage1` risk probe side by side.
+fn classify_and_assess_sync(
+    params: &HasPermissionsToUseToolParams<'_>,
+    tool_use_context: Option<&crate::tool::ToolUseContext>,
+) -> (
+    crate::utils::permissions::yolo_classifier::YoloClassifierDecision,
+    bool,
+) {
+    use crate::utils::permissions::yolo_classifier::{
+        YoloClassifierDecision, classify_yolo_action, format_action_for_classifier,
+        get_classifier_model, yolo_result_to_decision,
+    };
+
+    #[cfg(test)]
+    if let Some(forced) =
+        crate::utils::permissions::yolo_classifier::forced_classifier_decision(params.tool_name)
+    {
+        let escalate = classifies_as_allow(&forced)
+            && assess_risk_blocking(
+                params.tool_name,
+                params.input,
+                tool_use_context,
+                params.abort_signal.clone(),
+            );
+        return (forced, escalate);
+    }
+
+    let messages = params.messages.to_vec();
+    let tool_name = params.tool_name.to_string();
+    let input = params.input.clone();
+    let tools = classifier_tool_lookup(tool_use_context).to_vec();
+    let context = params.context.clone();
+    let signal = params.abort_signal.clone();
+    let cwd = tool_use_context.map(|context| context.effective_cwd());
+
+    crate::utils::process_runtime::block_on_from_sync(async move {
+        let action = format_action_for_classifier(&tool_name, input.clone());
+        let (result, escalate) = tokio::join!(
+            classify_yolo_action(&messages, &action, &tools, &context, signal.clone()),
+            crate::utils::permissions::decision::should_escalate(
+                &tool_name,
+                &input,
+                cwd.as_deref(),
+                signal,
+            )
+        );
+        (yolo_result_to_decision(result), escalate)
+    })
+    .unwrap_or_else(|| {
+        (
+            YoloClassifierDecision::Unavailable {
+                reason: "Failed to create runtime for the auto-mode classifier".into(),
+                model: get_classifier_model(),
+                transcript_too_long: false,
+            },
+            false,
+        )
+    })
+}
+
+#[cfg(test)]
+fn assess_risk_blocking(
+    tool_name: &str,
+    input: &serde_json::Value,
+    tool_use_context: Option<&crate::tool::ToolUseContext>,
+    signal: Option<anthropic_sdk::AbortSignal>,
+) -> bool {
+    let tool_name = tool_name.to_string();
+    let input = input.clone();
+    let cwd = tool_use_context.map(|context| context.effective_cwd());
+    crate::utils::process_runtime::block_on_from_sync(async move {
+        crate::utils::permissions::decision::should_escalate(
+            &tool_name,
+            &input,
+            cwd.as_deref(),
+            signal,
+        )
+        .await
+    })
+    .unwrap_or(false)
+}
+
+/// The deterministic classifier allowed the action, but the Decision Provider
+/// judged it risky. Keep the ask and make the reason visible; do not record a
+/// classifier approval, because the action is not being allowed.
+fn escalate_after_classifier_allow(request: PermissionRequest) -> HasPermissionsToUseToolResult {
+    let mut request = request;
+    request.decision_reason = Some(PermissionDecisionReason::Other {
+        reason: "The action was judged risky — confirm before running it.".to_string(),
+    });
+    HasPermissionsToUseToolResult::Ask(request)
 }
 
 /// Shared post-classify branch (unavailable / allow / block + denial tracking).
@@ -3645,6 +3768,202 @@ mod tests {
             )
         );
 
+        crate::utils::process_env::remove("NYAN_AUTO_CLASSIFIER_FORCE");
+        crate::utils::process_env::remove("NYAN_TRANSCRIPT_CLASSIFIER");
+        crate::utils::permissions::auto_mode_state::reset_for_testing();
+    }
+
+    /// A scripted `permissions.yolo_stage1` provider that always answers
+    /// "risky" with confidence.
+    mod risk_probe_support {
+        use crate::services::decision::{
+            Answer, BackendFuture, DecisionBackend, DecisionOutcome, DecisionProvider,
+            DecisionRequest, DecisionUsage, Receipt,
+        };
+        use crate::utils::settings::nyan::{DecisionMode, DecisionPointConfig, DecisionSettings};
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        struct RiskyBackend;
+
+        impl DecisionBackend for RiskyBackend {
+            fn decide<'a>(
+                &'a self,
+                _req: &'a DecisionRequest,
+                _deadline: std::time::Duration,
+                _abort: &'a crate::tool::AbortController,
+            ) -> BackendFuture<'a> {
+                let mut answers = BTreeMap::new();
+                answers.insert("risk".to_string(), Answer::Noul { probability: 0.99 });
+                let outcome = DecisionOutcome::Answered {
+                    receipt: Receipt {
+                        backend: "mock".into(),
+                        model: "mock".into(),
+                        usage: Some(DecisionUsage {
+                            input_tokens: 1,
+                            output_tokens: 1,
+                        }),
+                        answers: answers.clone(),
+                        ..Default::default()
+                    },
+                    answers,
+                };
+                Box::pin(async move { outcome })
+            }
+
+            fn name(&self) -> &'static str {
+                "mock"
+            }
+        }
+
+        pub fn provider(mode: DecisionMode) -> Arc<DecisionProvider> {
+            let mut settings = DecisionSettings::default();
+            settings.enabled = Some(true);
+            settings.points = Some(
+                [(
+                    "permissions.yolo_stage1".to_string(),
+                    DecisionPointConfig {
+                        mode: Some(mode),
+                        model: None,
+                        min_confidence: Some(0.9),
+                        max_prob: None,
+                        keep_at_least: None,
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            );
+            let backend: Arc<dyn DecisionBackend> = Arc::new(RiskyBackend);
+            Arc::new(DecisionProvider::with_backend(settings, backend))
+        }
+    }
+
+    /// `permissions.yolo_stage1`: an active risky answer turns the classifier's
+    /// allow into an ask; shadow keeps the identical allow.
+    #[test]
+    fn auto_mode_risk_probe_escalates_only_when_active() {
+        use crate::utils::settings::nyan::DecisionMode;
+
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_env::set("NYAN_TRANSCRIPT_CLASSIFIER", "1");
+        crate::utils::process_env::set("NYAN_AUTO_CLASSIFIER_FORCE", "allow");
+        crate::utils::permissions::auto_mode_state::reset_for_testing();
+        crate::utils::permissions::auto_mode_state::set_auto_mode_active(true);
+
+        let input = serde_json::json!({"command": "npm publish --access public"});
+        let mut context = ToolPermissionContext {
+            mode: PermissionMode::Auto,
+            ..ToolPermissionContext::default()
+        };
+        context.always_ask_rules.insert(
+            PermissionRuleSource::Session,
+            vec![PermissionRuleValue::new("Bash", None)],
+        );
+
+        crate::utils::permissions::decision::test_override::set(risk_probe_support::provider(
+            DecisionMode::Active,
+        ));
+        let active = has_permissions_to_use_tool(HasPermissionsToUseToolParams {
+            tool_use_id: "toolu_risk_active",
+            tool_name: "Bash",
+            mcp_info: None,
+            input_summary: "npm publish --access public",
+            input: &input,
+            context: &context,
+            messages: &[],
+            app_store: None,
+            local_denial_tracking: None,
+            abort_signal: None,
+        });
+        match active {
+            HasPermissionsToUseToolResult::Ask(request) => assert!(
+                matches!(
+                    request.decision_reason,
+                    Some(PermissionDecisionReason::Other { .. })
+                ),
+                "the escalation must explain itself, got {:?}",
+                request.decision_reason
+            ),
+            other => panic!("active risky answer must ask, got {other:?}"),
+        }
+
+        crate::utils::permissions::decision::test_override::set(risk_probe_support::provider(
+            DecisionMode::Shadow,
+        ));
+        let shadow = has_permissions_to_use_tool(HasPermissionsToUseToolParams {
+            tool_use_id: "toolu_risk_shadow",
+            tool_name: "Bash",
+            mcp_info: None,
+            input_summary: "npm publish --access public",
+            input: &input,
+            context: &context,
+            messages: &[],
+            app_store: None,
+            local_denial_tracking: None,
+            abort_signal: None,
+        });
+        assert_eq!(
+            shadow,
+            expected_allow(
+                &input,
+                PermissionDecisionReason::Classifier {
+                    classifier: "auto-mode".into(),
+                    reason: "forced allow for Bash".into()
+                }
+            ),
+            "shadow must keep the deterministic allow"
+        );
+
+        crate::utils::permissions::decision::test_override::clear();
+        crate::utils::process_env::remove("NYAN_AUTO_CLASSIFIER_FORCE");
+        crate::utils::process_env::remove("NYAN_TRANSCRIPT_CLASSIFIER");
+        crate::utils::permissions::auto_mode_state::reset_for_testing();
+    }
+
+    /// The async twin of the classifier path must make the same escalation
+    /// decision as the sync bridge.
+    #[tokio::test]
+    async fn auto_mode_risk_probe_escalates_on_the_async_path_too() {
+        use crate::utils::settings::nyan::DecisionMode;
+
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        crate::utils::process_env::set("NYAN_TRANSCRIPT_CLASSIFIER", "1");
+        crate::utils::process_env::set("NYAN_AUTO_CLASSIFIER_FORCE", "allow");
+        crate::utils::permissions::auto_mode_state::reset_for_testing();
+        crate::utils::permissions::auto_mode_state::set_auto_mode_active(true);
+
+        let input = serde_json::json!({"command": "npm publish --access public"});
+        let mut context = ToolPermissionContext {
+            mode: PermissionMode::Auto,
+            ..ToolPermissionContext::default()
+        };
+        context.always_ask_rules.insert(
+            PermissionRuleSource::Session,
+            vec![PermissionRuleValue::new("Bash", None)],
+        );
+
+        crate::utils::permissions::decision::test_override::set(risk_probe_support::provider(
+            DecisionMode::Active,
+        ));
+        let result = has_permissions_to_use_tool_async(HasPermissionsToUseToolParams {
+            tool_use_id: "toolu_risk_async",
+            tool_name: "Bash",
+            mcp_info: None,
+            input_summary: "npm publish --access public",
+            input: &input,
+            context: &context,
+            messages: &[],
+            app_store: None,
+            local_denial_tracking: None,
+            abort_signal: None,
+        })
+        .await;
+        assert!(
+            matches!(result, HasPermissionsToUseToolResult::Ask(_)),
+            "active risky answer must ask on the async path, got {result:?}"
+        );
+
+        crate::utils::permissions::decision::test_override::clear();
         crate::utils::process_env::remove("NYAN_AUTO_CLASSIFIER_FORCE");
         crate::utils::process_env::remove("NYAN_TRANSCRIPT_CLASSIFIER");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
