@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn default_limits_match_official_positive_caps() {
         let limits = get_default_file_reading_limits();
-        // Cached GrowthBook or env may override either cap in the process.
+        // The env may override either cap in the process.
         assert!(limits.max_size_bytes > 0.0);
         assert!(limits.max_tokens > 0.0);
     }

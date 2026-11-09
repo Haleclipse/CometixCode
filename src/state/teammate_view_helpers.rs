@@ -6,10 +6,9 @@
 //! already uses (`evict_terminal_task(task_id, app_store)`) — `setAppState` and
 //! the store are the same write channel.
 //!
-//! SEAM (analytics unported): CC calls `logEvent('tengu_transcript_view_enter')`
-//! at `:45` and `logEvent('tengu_transcript_view_exit')` at `:94`. There is no
-//! `log_event` in this tree yet; the call sites are marked below so they can be
-//! filled in one pass when analytics lands.
+//! @nyan: CC calls `logEvent('tengu_transcript_view_enter')` at `:45` and
+//! `logEvent('tengu_transcript_view_exit')` at `:94`. nyan has no analytics, so
+//! those calls are intentionally absent.
 
 use crate::state::app_state_store::{TaskState, TaskStateOther, ViewSelectionMode};
 use crate::state::store::{AppStore, UpdateDecision};

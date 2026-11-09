@@ -198,10 +198,7 @@ pub fn create_repl_interactive_permission_sink(
 ///   registration by RAII on the same event. There is no per-row handle to
 ///   call, and adding one would duplicate the owner.
 /// - `:228` `ctx.logDecision({ decision: 'accept', source: 'config' })` —
-///   analytics. Standing ruling: `logEvent` bodies are bookkeeping only
-///   (`permission_logging.rs` records the event names without sending), and
-///   `PermissionDecisionLogArgs::AcceptConfig` is already the entry for this
-///   exact call. No decision rides on it.
+///   analytics, which nyan does not have. No decision rides on it.
 ///
 /// `ctx.toolUseContext` is the ASKER's context, and the entry carries it
 /// (`ToolUseConfirm.asking_tool_permission_context`, CC's `toolUseContext`

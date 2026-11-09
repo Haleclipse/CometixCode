@@ -46,7 +46,7 @@ pub enum InternalCapability {
     Permissions,
     Prompts,
     Speculation,
-    TelemetryPayloads,
+    InternalDiagnostics,
     Tools,
     Ui,
 }
@@ -102,7 +102,7 @@ mod tests {
             InternalCapability::Permissions,
             InternalCapability::Prompts,
             InternalCapability::Speculation,
-            InternalCapability::TelemetryPayloads,
+            InternalCapability::InternalDiagnostics,
             InternalCapability::Tools,
             InternalCapability::Ui,
         ] {

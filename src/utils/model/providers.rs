@@ -13,7 +13,8 @@ pub fn get_api_provider() -> ApiProvider {
     ApiProvider::FirstParty
 }
 
-pub fn get_api_provider_for_statsig() -> &'static str {
+/// Wire name of the API provider, as reported in the SDK `account` payload.
+pub fn get_api_provider_name() -> &'static str {
     "firstParty"
 }
 

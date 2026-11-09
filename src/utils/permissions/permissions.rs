@@ -1835,11 +1835,10 @@ enum AutoModePreClassifier {
 ///   `enabled: false`, whose own note promises that "enabling the transport
 ///   cannot silently skip" this gate.
 ///
-/// SEAM (analytics unported): CC emits `logEvent('tengu_auto_mode_decision', …)`
-/// at `:626-640` (acceptEdits fast-path) and `:666-677` (allowlist fast-path),
-/// both with `decision: 'allowed'`, `confidence: 'high'` and a `fastPath`
-/// discriminator. There is no `log_event` in this tree; the two call sites are
-/// marked below so they can be filled in one pass when analytics lands.
+/// @nyan: CC emits `logEvent('tengu_auto_mode_decision', …)` at `:626-640`
+/// (acceptEdits fast-path) and `:666-677` (allowlist fast-path), both with
+/// `decision: 'allowed'`, `confidence: 'high'` and a `fastPath` discriminator.
+/// nyan has no analytics, so those events are intentionally absent.
 fn auto_mode_pre_classifier_fast_path(
     params: &mut HasPermissionsToUseToolParams<'_>,
     request: PermissionRequest,
@@ -1948,8 +1947,8 @@ fn auto_mode_pre_classifier_fast_path(
                         "Skipping auto mode classifier for {}: would be allowed in acceptEdits mode",
                         params.tool_name
                     );
-                    // SEAM (analytics unported): CC `:626-640`
-                    // logEvent('tengu_auto_mode_decision', { fastPath: 'acceptEdits' }).
+                    // @nyan: CC `:626-640` logs `tengu_auto_mode_decision`
+                    // (`fastPath: 'acceptEdits'`) here; no analytics.
                     //
                     // CC `:641-648` returns
                     // `{behavior:'allow', updatedInput: acceptEditsResult.updatedInput ?? input,
@@ -1995,8 +1994,8 @@ fn auto_mode_pre_classifier_fast_path(
             "Skipping auto mode classifier for {}: tool is on the safe allowlist",
             params.tool_name
         );
-        // SEAM (analytics unported): CC `:666-677`
-        // logEvent('tengu_auto_mode_decision', { fastPath: 'allowlist' }).
+        // @nyan: CC `:666-677` logs `tengu_auto_mode_decision`
+        // (`fastPath: 'allowlist'`) here; no analytics.
         //
         // CC `:678-685` returns `{behavior:'allow', updatedInput: input,
         // decisionReason:{type:'mode', mode:'auto'}}`.

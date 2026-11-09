@@ -502,7 +502,7 @@ mod tests {
         );
         assert!(
             context.allowlist.entries.is_empty(),
-            "the cached GrowthBook ledger is inert; the switch table ships the official empty payload"
+            "the switch table ships the official empty ledger payload"
         );
     }
 

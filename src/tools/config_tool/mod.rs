@@ -313,10 +313,10 @@ pub(crate) async fn config_output(
         );
     }
 
-    // SEAM (analytics unported): CC emits
+    // @nyan: CC emits
     // `logEvent('tengu_config_tool_changed', {setting, value: String(finalValue)})`
     // at `:383-389`, between the AppState projections and the success return.
-    // There is no `log_event` in this tree; this is the attach point.
+    // nyan has no analytics, so the event is intentionally absent.
 
     Output {
         success: true,

@@ -89,7 +89,7 @@ pub fn log_for_debugging(message: &str) {
 /// native stack carrier; it must not be presented as a JavaScript stack.
 pub fn log_ant_error(context: &str, error_stack: Option<&str>) {
     if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::TelemetryPayloads,
+        crate::utils::build_profile::InternalCapability::InternalDiagnostics,
     ) {
         return;
     }
@@ -136,7 +136,7 @@ fn should_log_debug_message(message: &str) -> bool {
         return false;
     }
     if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::TelemetryPayloads,
+        crate::utils::build_profile::InternalCapability::InternalDiagnostics,
     ) && !is_debug_mode()
     {
         return false;

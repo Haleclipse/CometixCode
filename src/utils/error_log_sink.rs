@@ -112,7 +112,7 @@ fn get_log_writer(path: &Path) -> io::Result<JsonlWriter> {
 /// and its userType field come from the immutable build audience.
 fn append_to_log(path: &Path, message: &Value) -> io::Result<()> {
     if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::TelemetryPayloads,
+        crate::utils::build_profile::InternalCapability::InternalDiagnostics,
     ) {
         return Ok(());
     }
@@ -412,7 +412,7 @@ mod tests {
         log_error_impl(error).unwrap();
         _flush_log_writers_for_testing().unwrap();
         if !crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::TelemetryPayloads,
+            crate::utils::build_profile::InternalCapability::InternalDiagnostics,
         ) {
             assert!(!get_errors_path().unwrap().exists());
             return;

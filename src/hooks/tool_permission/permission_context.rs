@@ -6,31 +6,6 @@
 use crate::types::permissions::{PermissionRequest, PermissionUpdate, ToolUseConfirm};
 use std::sync::{Arc, Mutex};
 
-/// Maps to: CC `PermissionContext.ts#PermissionApprovalSource`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PermissionApprovalSource {
-    Hook { permanent: Option<bool> },
-    User { permanent: bool },
-    Classifier,
-}
-
-/// Maps to: CC `PermissionContext.ts#PermissionRejectionSource`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PermissionRejectionSource {
-    Hook,
-    UserAbort,
-    UserReject { has_feedback: bool },
-}
-
-/// Maps to: CC `permissionLogging.ts#PermissionDecisionArgs`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PermissionDecisionLogArgs {
-    Accept(PermissionApprovalSource),
-    AcceptConfig,
-    Reject(PermissionRejectionSource),
-    RejectConfig,
-}
-
 /// Patch payload for queue updates.
 /// Maps to: CC `PermissionQueueOps.update(toolUseID, patch)`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

@@ -1416,7 +1416,7 @@ fn build_mcp_server_statuses(
     // CC reaches them only inside `if (exp['claude/channel'] && ...)`
     // (`:1677-1680`), so a server that never declared the channel capability
     // must not cause them to be read at all. Both have process-level side
-    // effects here (config file load + cache, growthbook gate), so hoisting
+    // effects here (config file load + cache, channels gate), so hoisting
     // them would run work the source never runs.
     let kairos = crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::Kairos,
@@ -1657,7 +1657,7 @@ async fn initialize_control_response() -> Result<serde_json::Value, tokio::task:
             "available_output_styles": available_output_styles,
             "models": sdk_model_infos(),
             "account": {
-                "apiProvider": crate::utils::model::providers::get_api_provider_for_statsig()
+                "apiProvider": crate::utils::model::providers::get_api_provider_name()
             },
             "pid": std::process::id(),
         })

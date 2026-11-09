@@ -2098,6 +2098,47 @@ mod tests {
         );
     }
 
+    /// `cachedGrowthBookFeatures` is no longer modeled; a state file written by
+    /// an older build must still load, keep the key in the catch-all, and not
+    /// lose it when an unrelated setting is saved.
+    #[test]
+    fn legacy_cached_growthbook_features_key_survives_load_and_save() {
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let root = unique_temp_dir("legacy-growthbook-key");
+        fs::create_dir_all(&root).unwrap();
+        let _config_dir = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
+        let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        clear_global_config_cache_for_testing();
+
+        let legacy = serde_json::json!({"tengu_example_gate": true, "tengu_example_cap": 3});
+        let file = crate::utils::env::get_global_state_file();
+        fs::write(
+            &file,
+            serde_json::json!({"cachedGrowthBookFeatures": legacy}).to_string(),
+        )
+        .unwrap();
+
+        let loaded = load_global_config();
+        assert_eq!(
+            loaded.other_global_fields.get("cachedGrowthBookFeatures"),
+            Some(&legacy)
+        );
+
+        save_global_config(|config| config.theme = Some("light".to_string())).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(saved["theme"], "light");
+        assert_eq!(saved["cachedGrowthBookFeatures"], legacy);
+
+        clear_global_config_cache_for_testing();
+        let reread = load_global_config();
+        assert_eq!(
+            reread.other_global_fields.get("cachedGrowthBookFeatures"),
+            Some(&legacy)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn mcp_raw_snapshot_survives_disk_cache_save_and_live_replacement() {
         use crate::services::mcp::config::get_mcp_configs_by_scope_readonly;

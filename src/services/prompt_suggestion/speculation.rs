@@ -724,7 +724,7 @@ pub(crate) fn create_speculation_feedback_message(
     session_total_ms: u64,
 ) -> Option<Message> {
     if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::TelemetryPayloads,
+        crate::utils::build_profile::InternalCapability::InternalDiagnostics,
     ) || messages.is_empty()
         || time_saved_ms == 0
     {
@@ -1089,7 +1089,7 @@ mod tests {
             5_000,
         );
         if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::TelemetryPayloads,
+            crate::utils::build_profile::InternalCapability::InternalDiagnostics,
         ) {
             let Message::System(feedback) = feedback.expect("internal feedback") else {
                 panic!("feedback must be a system message");
