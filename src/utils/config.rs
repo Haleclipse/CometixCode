@@ -170,27 +170,6 @@ pub fn get_memory_path(memory_type: &str) -> PathBuf {
 #[serde(rename_all = "camelCase")]
 #[serde(default)]
 #[derive(Default)]
-pub struct AccountInfo {
-    pub account_uuid: Option<String>,
-    pub email_address: Option<String>,
-    pub organization_uuid: Option<String>,
-    pub organization_name: Option<String>,
-    pub organization_role: Option<String>,
-    pub workspace_role: Option<String>,
-    pub display_name: Option<String>,
-    pub has_extra_usage_enabled: Option<bool>,
-    pub billing_type: Option<String>,
-    pub account_created_at: Option<String>,
-    pub subscription_created_at: Option<String>,
-}
-
-// ════════════════════════════════════════════════════════════
-// ════════════════════════════════════════════════════════════
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[serde(default)]
-#[derive(Default)]
 pub struct McpServerConfig {
     /// Maps to: CC `McpServerConfig.type` transport discriminator.
     #[serde(rename = "type")]
@@ -447,7 +426,6 @@ pub struct GlobalConfig {
     pub first_start_time: Option<String>,
 
     pub api_key_helper: Option<String>,
-    pub oauth_account: Option<AccountInfo>,
     /// Maps to CC `utils/config.ts:549-551`
     /// `GlobalConfig.cachedExtraUsageDisabledReason`.
     pub cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason,
@@ -674,7 +652,6 @@ impl Default for GlobalConfig {
             cached_changelog: None,
             first_start_time: None,
             api_key_helper: None,
-            oauth_account: None,
             cached_extra_usage_disabled_reason: CachedExtraUsageDisabledReason::Uncached,
             custom_api_keys: None,
             custom_api_key_responses: None,
@@ -1368,11 +1345,8 @@ fn write_config_value(path: &Path, value: &serde_json::Value) -> anyhow::Result<
     Ok(())
 }
 
-fn would_lose_auth_state(cached: &GlobalConfig, fresh: &GlobalConfig) -> bool {
-    let lost_oauth = cached.oauth_account.is_some() && fresh.oauth_account.is_none();
-    let lost_onboarding = cached.has_completed_onboarding == Some(true)
-        && fresh.has_completed_onboarding != Some(true);
-    lost_oauth || lost_onboarding
+fn would_lose_onboarding_state(cached: &GlobalConfig, fresh: &GlobalConfig) -> bool {
+    cached.has_completed_onboarding == Some(true) && fresh.has_completed_onboarding != Some(true)
 }
 
 /// Maps to: CC `config.ts` `TEST_GLOBAL_CONFIG_FOR_TESTING` — test-only
@@ -1485,9 +1459,9 @@ pub fn save_global_config(updater: impl FnOnce(&mut GlobalConfig)) -> anyhow::Re
     let mut current_config = load_global_config_from_value(original_disk_value.clone())
         .unwrap_or_else(|_| create_official_default_global_config());
 
-    if would_lose_auth_state(&cached_config, &current_config) {
+    if would_lose_onboarding_state(&cached_config, &current_config) {
         tracing::warn!(
-            "Refusing to write {} because the re-read config lost auth/onboarding state",
+            "Refusing to write {} because the re-read config lost onboarding state",
             path.display()
         );
         return Ok(());
@@ -2134,6 +2108,53 @@ mod tests {
         let reread = load_global_config();
         assert_eq!(
             reread.other_global_fields.get("cachedGrowthBookFeatures"),
+            Some(&legacy)
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// `oauthAccount` (the claude.ai account) is no longer modeled; a state
+    /// file written by an older build must still load, keep the key in the
+    /// catch-all, and not lose it when an unrelated setting is saved.
+    #[test]
+    fn legacy_oauth_account_key_survives_load_and_save() {
+        let _env = TEST_ENV_LOCK.lock().unwrap();
+        let root = unique_temp_dir("legacy-oauth-account-key");
+        fs::create_dir_all(&root).unwrap();
+        let _config_dir = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
+        let _writes = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        clear_global_config_cache_for_testing();
+
+        let legacy = serde_json::json!({
+            "accountUuid": "acct-1",
+            "emailAddress": "user@example.com",
+            "organizationUuid": "org-1",
+            "displayName": "Ada"
+        });
+        let file = crate::utils::env::get_global_state_file();
+        fs::write(
+            &file,
+            serde_json::json!({"oauthAccount": legacy, "hasCompletedOnboarding": true}).to_string(),
+        )
+        .unwrap();
+
+        let loaded = load_global_config();
+        assert_eq!(
+            loaded.other_global_fields.get("oauthAccount"),
+            Some(&legacy)
+        );
+        assert_eq!(loaded.has_completed_onboarding, Some(true));
+
+        save_global_config(|config| config.theme = Some("light".to_string())).unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+        assert_eq!(saved["theme"], "light");
+        assert_eq!(saved["oauthAccount"], legacy);
+
+        clear_global_config_cache_for_testing();
+        let reread = load_global_config();
+        assert_eq!(
+            reread.other_global_fields.get("oauthAccount"),
             Some(&legacy)
         );
         let _ = fs::remove_dir_all(root);

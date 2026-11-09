@@ -31,7 +31,7 @@ pub struct OverageCreditGrantCacheEntry {
 /// Maps to: CC `services/api/overageCreditGrant.ts` `getCachedOverageCreditGrant`.
 ///
 /// Overage credit grants belong to a claude.ai OAuth account. There is no such
-/// account, so a leftover `oauthAccount` or cache entry is never read.
+/// account, so a leftover cache entry is never read.
 pub fn get_cached_overage_credit_grant_readonly(
     _config: &GlobalConfig,
     _now_ms: i64,
@@ -70,14 +70,10 @@ pub fn ui_grant_info_from_cached_readonly(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::config::{AccountInfo, GlobalConfig};
+    use crate::utils::config::GlobalConfig;
 
     fn config_with_cache(entry: serde_json::Value) -> GlobalConfig {
         GlobalConfig {
-            oauth_account: Some(AccountInfo {
-                organization_uuid: Some("org-1".to_string()),
-                ..Default::default()
-            }),
             overage_credit_grant_cache: Some(serde_json::json!({ "org-1": entry })),
             ..Default::default()
         }
@@ -115,8 +111,8 @@ mod tests {
 
     #[test]
     fn cached_overage_grant_is_never_read_without_a_claude_ai_account() {
-        // A populated cache for the org of a leftover `oauthAccount` is ignored:
-        // there is no claude.ai OAuth account, so no grant is ever surfaced.
+        // A populated cache left by an older build is ignored: there is no
+        // claude.ai OAuth account, so no grant is ever surfaced.
         let config = config_with_cache(serde_json::json!({
             "timestamp": 1_000,
             "info": {

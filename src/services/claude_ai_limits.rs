@@ -678,11 +678,7 @@ fn bind_app_store_with_context_provider(
 pub fn bind_app_store(store: crate::state::store::AppStore) -> ClaudeAiLimitsStoreSubscription {
     bind_app_store_with_context_provider(
         store,
-        Arc::new(|| {
-            crate::services::rate_limit_messages::RateLimitUiContext::from_global_config(
-                &crate::utils::config::load_global_config(),
-            )
-        }),
+        Arc::new(crate::services::rate_limit_messages::RateLimitUiContext::current),
     )
 }
 

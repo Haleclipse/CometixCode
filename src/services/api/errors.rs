@@ -725,7 +725,6 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
         // Maps to CC `errors.ts:463-537`: unified quota headers use the
         // centralized limits message formatter (including active internal
         // mocks) before the generic 429/entitlement path.
-        let config = crate::utils::config::load_global_config();
         if crate::services::rate_limit_mocking::should_process_rate_limits(false) {
             let has_unified_headers = error
                 .header("anthropic-ratelimit-unified-representative-claim")
@@ -737,10 +736,7 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
                 let limits = crate::services::claude_ai_limits::limits_from_error_headers(
                     error.headers().expect("HTTP 429 carries a header map"),
                 );
-                let context =
-                    crate::services::rate_limit_messages::RateLimitUiContext::from_global_config(
-                        &config,
-                    );
+                let context = crate::services::rate_limit_messages::RateLimitUiContext::current();
                 let content = crate::services::rate_limit_messages::get_rate_limit_error_message(
                     &limits, &context,
                 )

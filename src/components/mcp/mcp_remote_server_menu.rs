@@ -1188,14 +1188,14 @@ mod tests {
         let _env_lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        // A stored claude.ai account must not produce the organization-scoped
-        // deep link: there is no claude.ai OAuth account.
-        let mut account = crate::utils::config::AccountInfo::default();
-        account.organization_uuid = Some("org_123".to_string());
-        let _global_config = GlobalConfigRestore::install(crate::utils::config::GlobalConfig {
-            oauth_account: Some(account),
-            ..crate::utils::config::GlobalConfig::default()
-        });
+        // A leftover claude.ai account from an older build must not produce the
+        // organization-scoped deep link: there is no claude.ai OAuth account.
+        let _global_config = GlobalConfigRestore::install(
+            serde_json::from_value(serde_json::json!({
+                "oauthAccount": { "organizationUuid": "org_123" }
+            }))
+            .expect("legacy global config"),
+        );
 
         let mut config = server(
             McpServerConnectionType::NeedsAuth,

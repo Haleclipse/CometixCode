@@ -38,7 +38,6 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub(crate) const LOGO_DISPLAY_NAME: &str = "nyan";
 const LEFT_PANEL_MAX_WIDTH: usize = 50;
-const MAX_USERNAME_LENGTH: usize = 20;
 const BORDER_PADDING: usize = 4;
 const DIVIDER_WIDTH: usize = 1;
 const CONTENT_PADDING: usize = 2;
@@ -82,8 +81,6 @@ pub(crate) struct LogoDisplayData {
     pub(crate) billing_type: String,
     pub(crate) model_display_name: String,
     pub(crate) agent_name: Option<String>,
-    pub(crate) username: Option<String>,
-    pub(crate) organization_name: Option<String>,
     pub(crate) show_project_onboarding: bool,
     pub(crate) project_onboarding_steps: Vec<ProjectOnboardingStep>,
     pub(crate) recent_activity: Vec<RecentActivityEntry>,
@@ -137,7 +134,6 @@ impl LogoDisplayData {
             .and_then(|path| path.to_str().map(get_display_path))
             .unwrap_or_else(|| ".".to_string());
         let global_config = crate::utils::config::load_global_config();
-        let account = global_config.oauth_account.as_ref();
         let project_onboarding_steps = project_onboarding_state::get_steps();
         let project_config = crate::utils::config::get_current_project_config();
         let settings = crate::utils::settings::get_initial_settings();
@@ -254,10 +250,6 @@ impl LogoDisplayData {
                 .map(str::trim)
                 .filter(|value| !value.is_empty())
                 .map(str::to_string),
-            username: account.and_then(|account| account.display_name.clone()),
-            organization_name: (!is_demo)
-                .then(|| account.and_then(|account| account.organization_name.clone()))
-                .flatten(),
             show_project_onboarding,
             project_onboarding_steps: project_onboarding_state::feed_steps(
                 &project_onboarding_steps,
@@ -297,8 +289,6 @@ impl LogoDisplayData {
             billing_type: "API Usage Billing".to_string(),
             model_display_name: "Default (recommended)".to_string(),
             agent_name: None,
-            username: None,
-            organization_name: None,
             show_project_onboarding: false,
             project_onboarding_steps: Vec::new(),
             recent_activity: Vec::new(),
@@ -430,12 +420,8 @@ fn LogoRuntimeNotices(
         .then(|| data.company_announcement.clone())
         .flatten()
         .map(|announcement| {
-            let organization = data.organization_name.clone();
             element! {
                 View(padding_left: 2u32, flex_direction: FlexDirection::Column) {
-                    #(organization.map(|organization| element! {
-                        Text(content: format!("Message from {organization}:"), color: theme.inactive, wrap: TextWrap::NoWrap)
-                    }))
                     Text(content: announcement, wrap: TextWrap::NoWrap)
                 }
             }
@@ -498,11 +484,6 @@ fn CompactLogo(props: &LogoShapeProps, hooks: Hooks) -> impl Into<AnyElement<'st
     let theme = hooks.use_context::<crate::utils::theme::Theme>();
     let columns = props.columns.max(1);
     let layout_width = 4usize;
-    let mut welcome_message = format_welcome_message(props.data.username.as_deref());
-    if display_width(&welcome_message) > columns.saturating_sub(layout_width) {
-        welcome_message = format_welcome_message(None);
-    }
-
     let cwd_width = cwd_available_width(&props.data, columns.saturating_sub(layout_width));
     let truncated_cwd = truncate_path(&props.data.cwd, cwd_width.max(10));
     let cwd_line = if let Some(agent) = props.data.agent_name.as_deref() {
@@ -528,7 +509,7 @@ fn CompactLogo(props: &LogoShapeProps, hooks: Hooks) -> impl Into<AnyElement<'st
                 align_items: AlignItems::CENTER,
                 width: columns as u32,
             ) {
-                Text(content: welcome_message, bold: true, wrap: TextWrap::NoWrap)
+                Text(content: WELCOME_MESSAGE, bold: true, wrap: TextWrap::NoWrap)
                 View(margin_y: 1u32) {
                     Clawd
                 }
@@ -544,20 +525,12 @@ fn CompactLogo(props: &LogoShapeProps, hooks: Hooks) -> impl Into<AnyElement<'st
 fn HorizontalLogo(props: &LogoShapeProps, hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let theme = hooks.use_context::<crate::utils::theme::Theme>();
     let columns = props.columns.max(1);
-    let welcome_message = format_welcome_message(props.data.username.as_deref());
-    let model_line = if let Some(organization) = props.data.organization_name.as_deref() {
-        format!(
-            "{} · {} · {}",
-            props.data.model_display_name, props.data.billing_type, organization
-        )
-    } else {
-        format!(
-            "{} · {}",
-            props.data.model_display_name, props.data.billing_type
-        )
-    };
+    let model_line = format!(
+        "{} · {}",
+        props.data.model_display_name, props.data.billing_type
+    );
     let cwd_line = format_cwd_line(&props.data, LEFT_PANEL_MAX_WIDTH);
-    let optimal_left_width = calculate_optimal_left_width(&welcome_message, &cwd_line, &model_line);
+    let optimal_left_width = calculate_optimal_left_width(WELCOME_MESSAGE, &cwd_line, &model_line);
     let LayoutDimensions {
         left_width,
         right_width,
@@ -607,7 +580,7 @@ fn HorizontalLogo(props: &LogoShapeProps, hooks: Hooks) -> impl Into<AnyElement<
                         min_height: 9u32,
                     ) {
                         View(margin_top: 1u32) {
-                            Text(content: welcome_message, bold: true, wrap: TextWrap::NoWrap)
+                            Text(content: WELCOME_MESSAGE, bold: true, wrap: TextWrap::NoWrap)
                         }
                         Clawd
                         View(flex_direction: FlexDirection::Column, align_items: AlignItems::CENTER) {
@@ -733,12 +706,8 @@ fn calculate_optimal_left_width(welcome_message: &str, cwd_line: &str, model_lin
     (content_width + 4).min(LEFT_PANEL_MAX_WIDTH)
 }
 
-fn format_welcome_message(username: Option<&str>) -> String {
-    match username.filter(|name| !name.is_empty() && name.chars().count() <= MAX_USERNAME_LENGTH) {
-        Some(username) => format!("Welcome back {username}!"),
-        None => "Welcome back!".to_string(),
-    }
-}
+/// Maps to: CC `LogoV2` welcome line without a claude.ai display name.
+const WELCOME_MESSAGE: &str = "Welcome back!";
 
 /// Maps to: CC `getLogoDisplayData().billingType` for a non-subscriber.
 pub(crate) const API_USAGE_BILLING_LABEL: &str = "API Usage Billing";
@@ -1075,7 +1044,6 @@ mod tests {
         data.tmux_prefix = Some("C-a".to_string());
         data.tmux_prefix_conflicts = true;
         data.company_announcement = Some("Deploy freeze tonight".to_string());
-        data.organization_name = Some("Acme".to_string());
 
         let text = render_variant_with_data(LogoLayoutMode::Condensed, 120, data);
         assert!(
@@ -1088,7 +1056,7 @@ mod tests {
             text.contains("Detach: C-a C-a d (press prefix twice - Claude uses C-a)"),
             "canvas=\n{text}"
         );
-        assert!(text.contains("Message from Acme:"), "canvas=\n{text}");
+        assert!(!text.contains("Message from"), "canvas=\n{text}");
         assert!(text.contains("Deploy freeze tonight"), "canvas=\n{text}");
     }
 
@@ -1159,11 +1127,6 @@ mod tests {
         assert_eq!(
             calculate_optimal_left_width("Welcome back!", "/code/claude", "Default · API"),
             24
-        );
-        assert_eq!(format_welcome_message(Some("Ada")), "Welcome back Ada!");
-        assert_eq!(
-            format_welcome_message(Some("averyveryveryverylongusername")),
-            "Welcome back!"
         );
     }
 

@@ -545,8 +545,8 @@ pub fn configure_task_budget_params(
 /// Assembles metadata JSON for API request. Returns an ApiMetadata struct
 /// containing the user_id field (itself a JSON-encoded string of device_id,
 /// account_uuid, and session_id). `device_id` is `getOrCreateUserID()`
-/// (`utils/config.rs`) and `account_uuid` is `getOauthAccountInfo()?.accountUuid ?? ''`
-/// (`utils/auth.rs`), exactly the two sources CC reads.
+/// (`utils/config.rs`); CC's `account_uuid` is `getOauthAccountInfo()?.accountUuid ?? ''`,
+/// always `''` here because there is no claude.ai OAuth account.
 pub fn get_api_metadata() -> ApiMetadata {
     let mut extra = serde_json::Map::new();
 

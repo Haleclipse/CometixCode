@@ -149,16 +149,6 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _api_key = EnvVarGuard::set("ANTHROPIC_API_KEY", "sk-ant-secret");
 
-        let mut config = crate::utils::config::GlobalConfig::default();
-        config.oauth_account = Some(crate::utils::config::AccountInfo {
-            email_address: Some("user@example.com".to_string()),
-            organization_name: Some("Example Org".to_string()),
-            ..crate::utils::config::AccountInfo::default()
-        });
-        let previous = crate::utils::config::replace_test_global_config(Some(config));
-
         assert_eq!(build_account_properties(), Vec::<Property>::new());
-
-        crate::utils::config::replace_test_global_config(previous);
     }
 }

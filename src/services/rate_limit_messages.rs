@@ -25,37 +25,16 @@ pub struct RateLimitUiContext {
 
 impl RateLimitUiContext {
     /// Captured outside retained rendering by the interactive launch owner.
-    pub fn from_global_config(config: &crate::utils::config::GlobalConfig) -> Self {
-        // No claude.ai subscription exists, so there is no subscription type.
-        let subscription_type: Option<String> = None;
-        let account = config.oauth_account.as_ref();
-        let org_role = account.and_then(|account| account.organization_role.as_deref());
-        let has_billing_access = crate::services::mock_rate_limits::mock_billing_access_override()
-            .unwrap_or_else(|| match subscription_type.as_deref() {
-                Some("max" | "pro") => true,
-                Some("team" | "enterprise") => org_role.is_some_and(|role| {
-                    matches!(role, "admin" | "billing" | "owner" | "primary_owner")
-                }),
-                _ => false,
-            });
-        let billing_type = account.and_then(|account| account.billing_type.as_deref());
-        let overage_provisioning_allowed = subscription_type.is_some()
-            && matches!(
-                billing_type,
-                Some(
-                    "stripe_subscription"
-                        | "stripe_subscription_contracted"
-                        | "apple_subscription"
-                        | "google_play_subscription"
-                )
-            );
+    ///
+    /// There is no claude.ai account, so there is no subscription, extra usage,
+    /// or billing role; only an internal billing-access mock can set one.
+    pub fn current() -> Self {
         Self {
-            subscription_type,
-            has_extra_usage_enabled: account
-                .and_then(|account| account.has_extra_usage_enabled)
+            subscription_type: None,
+            has_extra_usage_enabled: false,
+            has_billing_access: crate::services::mock_rate_limits::mock_billing_access_override()
                 .unwrap_or(false),
-            has_billing_access,
-            overage_provisioning_allowed,
+            overage_provisioning_allowed: false,
             is_remote_mode: crate::utils::env_utils::is_env_truthy(
                 crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref(),
             ),
