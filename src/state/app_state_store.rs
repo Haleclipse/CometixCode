@@ -804,12 +804,10 @@ pub struct AppState {
     // PromptInput-scoped FooterLayoutWake (L1, PORTING.md;
     // components/prompt_input/footer_layout_wake.rs), replacing the deleted
     // `footer_layout_epoch` whole-tree wake. Height is recomputed live (no
-    // mirrored metrics bag); auth/overage are first-class fields; tokenUsage,
+    // mirrored metrics bag); auth is a first-class field; tokenUsage,
     // ideSelection, and the auto-updater values are component-local (CC
     // Notifications props), threaded to the height budget by their
     // REPL/PromptInput owners.
-    /// L1 retained-store projection of CC `useClaudeAiLimits()` hook state.
-    pub claude_ai_limits: Arc<crate::services::claude_ai_limits::ClaudeAiLimits>,
     /// Maps to: CC `AppStateStore.ts:445` `isUltraplanMode?: boolean` — the
     /// remote-harness side, set via the `set_permission_mode` control request
     /// and pushed to CCR `external_metadata.is_ultraplan_mode` by
@@ -899,7 +897,6 @@ impl Default for AppState {
             spinner_tip: None,
             todos: Arc::new(std::collections::BTreeMap::new()),
             tasks: Arc::new(std::collections::BTreeMap::new()),
-            claude_ai_limits: Arc::new(crate::services::claude_ai_limits::ClaudeAiLimits::default()),
             // CC `AppStateStore.ts:445` is optional with no default entry.
             is_ultraplan_mode: None,
         }

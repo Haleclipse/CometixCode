@@ -2468,7 +2468,6 @@ fn settings_tab_from_command(tab: LocalSettingsTab) -> SettingsTab {
     match tab {
         LocalSettingsTab::Status => SettingsTab::Status,
         LocalSettingsTab::Config => SettingsTab::Config,
-        LocalSettingsTab::Usage => SettingsTab::Usage,
     }
 }
 
@@ -2532,7 +2531,7 @@ fn local_command_ui_dismiss_result(panel: &LocalCommandPanel) -> Option<String> 
     match panel {
         // ValidatePlugin has no source Escape/dismiss callback.
         LocalCommandPanel::PluginSettings { .. } => None,
-        // Settings.tsx owns Status/Usage Esc, while Config.tsx owns Config
+        // Settings.tsx owns Status Esc, while Config.tsx owns Config
         // list-mode Esc after search cedes focus.
         LocalCommandPanel::Settings(SettingsTab::Config) => {
             Some("Config dialog dismissed".to_string())
@@ -16545,10 +16544,7 @@ mod tests {
             element!(ReplHarness).into_any(),
             vec![
                 script_step(&[], text_input_events("/status")),
-                script_step(
-                    &["Settings", "Status", "Config", "Usage"],
-                    vec![key(KeyCode::Esc)],
-                ),
+                script_step(&["Settings", "Status", "Config"], vec![key(KeyCode::Esc)]),
                 script_step(&["Status dialog dismissed"], Vec::new()),
             ],
         );

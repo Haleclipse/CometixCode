@@ -377,12 +377,6 @@ pub fn to_retryable(
 ) -> crate::services::api::with_retry::RetryableError {
     use crate::services::api::with_retry::{ApiError, ConnectionError, RetryableError};
 
-    if protocol == Protocol::AnthropicMessages {
-        crate::services::claude_ai_limits::extract_quota_status_from_error(
-            error.status,
-            Some(&error.headers.clone().into_iter().collect()),
-        );
-    }
     match error.kind {
         ProviderErrorKind::Aborted => RetryableError::Aborted,
         ProviderErrorKind::Transport => RetryableError::Connection(ConnectionError {

@@ -25,36 +25,6 @@ use crate::types::message::AssistantContent;
 use crate::types::message::Message;
 use std::io::Read;
 
-/// Callback lifetime carrier for CC `cli/print.ts:1129-1142` and
-/// `:2677/:4137`: register once for headless streaming, unregister on exit.
-/// The quota service retains its own equality deduplication.
-struct SdkRateLimitListener(u64);
-
-impl SdkRateLimitListener {
-    fn new(emit: crate::query_engine::QueryEngineOutputSink) -> Self {
-        Self(crate::services::claude_ai_limits::subscribe(
-            move |limits| {
-                if let Some(info) =
-                    crate::utils::messages::mappers::to_sdk_rate_limit_info(Some(&limits))
-                {
-                    emit(serde_json::json!({
-                        "type": "rate_limit_event",
-                        "rate_limit_info": info,
-                        "uuid": uuid::Uuid::new_v4().to_string(),
-                        "session_id": crate::bootstrap::state::get_session_id(),
-                    }));
-                }
-            },
-        ))
-    }
-}
-
-impl Drop for SdkRateLimitListener {
-    fn drop(&mut self) {
-        crate::services::claude_ai_limits::unsubscribe(self.0);
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 struct ControlInput {
     request_id: String,
@@ -205,10 +175,6 @@ pub fn run(config: &CliConfig) -> i32 {
     // (Secondary native-Rust precedent: grok-build registers its
     // process-lifetime handle from every agent entrypoint, idempotently.)
     crate::utils::process_runtime::set_process_runtime_handle(runtime.handle().clone());
-    // Both argv/stdin-text and SDK stdin sessions can emit stream-json.
-    // Other output formats have no event stream in this transport.
-    let _rate_limit_listener = (format == "stream-json")
-        .then(|| SdkRateLimitListener::new(std::sync::Arc::new(json_line)));
     if input_format == "stream-json" {
         if config.prompt.is_some() {
             return fail("--input-format=stream-json reads user messages from stdin");
@@ -3321,7 +3287,6 @@ mod tests {
 #[cfg(test)]
 mod sdk_mapper_tests {
     use super::*;
-    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn stream_compact_history_matches_official_sdk_mapper_injection() {
@@ -3362,39 +3327,6 @@ mod sdk_mapper_tests {
         assert_ne!(message.timestamp.to_rfc3339(), "2000-01-01T00:00:00+00:00");
     }
 
-    #[test]
-    fn sdk_rate_limit_listener_matches_official_status_recovery_dedup_and_cleanup() {
-        use crate::services::claude_ai_limits as limits;
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        limits::reset_for_test();
-        let values = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let captured = values.clone();
-        let listener = SdkRateLimitListener::new(std::sync::Arc::new(move |value| {
-            captured.lock().unwrap().push(value);
-        }));
-        limits::extract_quota_status_from_error_with(Some(429), None, true, 1.0);
-        limits::extract_quota_status_from_error_with(Some(429), None, true, 1.0);
-        limits::extract_quota_status_from_headers_with(
-            &std::collections::HashMap::new(),
-            false,
-            1.0,
-        );
-        let snapshot = values.lock().unwrap().clone();
-        assert_eq!(snapshot.len(), 2);
-        assert_eq!(snapshot[0]["type"], "rate_limit_event");
-        assert_eq!(snapshot[0]["rate_limit_info"]["status"], "rejected");
-        assert_eq!(snapshot[1]["rate_limit_info"]["status"], "allowed");
-        assert!(
-            snapshot[0]["rate_limit_info"]
-                .get("unifiedRateLimitFallbackAvailable")
-                .is_none()
-        );
-        assert_ne!(snapshot[0]["uuid"], snapshot[1]["uuid"]);
-        drop(listener);
-        limits::extract_quota_status_from_error_with(Some(429), None, true, 1.0);
-        assert_eq!(values.lock().unwrap().len(), 2);
-        limits::reset_for_test();
-    }
     #[test]
     fn sdk_initialize_cold_plugins_keeps_published_current_thread_executor_live() {
         const CHILD: &str = "NYAN_SDK_CURRENT_THREAD_PLUGIN_CHILD";

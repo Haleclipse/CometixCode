@@ -3872,9 +3872,6 @@ async fn open_sdk_message_stream_with_retry(
                         &limits,
                     )
                 })?;
-                crate::services::claude_ai_limits::extract_quota_status_from_headers(
-                    &opened.response_headers.clone().into_iter().collect(),
-                );
                 let stream = crate::services::provider::retry::commit_first_output(
                     opened.events,
                     &cancel,
@@ -4892,9 +4889,6 @@ async fn execute_non_streaming_request_with_initial_consecutive_529_errors(
                     .create_with_response_and_options(&params, Some(&request_options))
                     .await
                     .map_err(sdk_api_error_to_retryable)?;
-                crate::services::claude_ai_limits::extract_quota_status_from_headers(
-                    &response.response.headers,
-                );
                 serde_json::to_value(response.data).map_err(|error| {
                     crate::services::api::with_retry::RetryableError::Other(anyhow::anyhow!(
                         "serialize BetaMessage: {error}"
@@ -4953,13 +4947,6 @@ fn apply_retry_context_to_non_streaming_body(
 fn sdk_api_error_to_retryable(
     error: anthropic_sdk::ApiError,
 ) -> crate::services::api::with_retry::RetryableError {
-    let quota_status = error.status();
-    let quota_headers = error.headers().cloned();
-    crate::services::claude_ai_limits::extract_quota_status_from_error(
-        quota_status,
-        quota_headers.as_ref(),
-    );
-
     // Maps to CC `withRetry(...)` inspecting SDK `APIError` / connection / abort
     // classes. The local SDK models those classes as enum variants, so preserve
     // status, headers, and body for retry predicates such as 529 fallback and

@@ -1103,10 +1103,6 @@ fn Main(props: &MainProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
                         state.agent_definitions = agent_definitions;
                     });
 
-                    // Maps to CC main.tsx background startup prefetches: quota
-                    // traffic starts only after setup/trust and remains off the
-                    // retained frame.
-                    crate::services::claude_ai_limits::spawn_quota_status_preflight();
                     // CC `renderAndRun` → `startDeferredPrefetches()`
                     // (`interactiveHelpers.tsx:142`, `main.tsx:689`): after setup.
                     start_settings_change_detector();
@@ -1666,8 +1662,6 @@ pub fn run(config: crate::cli::CliConfig) {
     //     pre-mount: the Rust connection manager is process-scoped and has no
     //     remount cycle to clean up for. SEAM: a future remount would not
     //     re-seed.
-    //   * `claude_ai_limits::bind_app_store` — permanently exempt (approved
-    //     L1 `Compile-time distribution capability projection`).
     //   * keybinding warnings — no longer written here: REPL's
     //     `KeybindingSetup` mounts inside the provider and runs
     //     `useKeybindingWarnings` itself (KeybindingProviderSetup.tsx:68-121).
@@ -1704,11 +1698,6 @@ pub fn run(config: crate::cli::CliConfig) {
     initialize_lsp_if_trusted(workspace_trusted);
     seed_mcp_and_channel_permissions(&store, &mcp_startup);
     register_mcp_connection_handlers(&store);
-    // L1 equivalent of `useClaudeAiLimits()` + the warning notification hook:
-    // one launch-owned listener projects the service snapshot into AppState and
-    // is dropped after the retained tree unmounts.
-    let _claude_ai_limits_subscription =
-        crate::services::claude_ai_limits::bind_app_store(store.clone());
     // Maps to CC `initializeKeybindingWatcher()` (loadUserBindings.ts:353-404),
     // which CC starts from the first KeybindingSetup mount and keeps for the
     // process. The watcher and all reload I/O live outside the retained tree;

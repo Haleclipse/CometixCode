@@ -19,7 +19,6 @@ use uuid::Uuid;
 pub enum LocalSettingsTab {
     Status,
     Config,
-    Usage,
 }
 
 /// Rust name for official CC local-jsx slash command UI payloads.
@@ -802,12 +801,6 @@ define_local_ui_call!(
     call_status,
     LocalCommandUi::Settings {
         default_tab: LocalSettingsTab::Status
-    }
-);
-define_local_ui_call!(
-    call_usage,
-    LocalCommandUi::Settings {
-        default_tab: LocalSettingsTab::Usage
     }
 );
 define_local_ui_call!(call_help, LocalCommandUi::Help);
@@ -1871,22 +1864,6 @@ mod tests {
                     default_tab: LocalSettingsTab::Config,
                 },
                 invocation: SlashCommandInvocation::new("config", ""),
-            })
-        );
-    }
-
-    #[test]
-    fn process_slash_command_usage_opens_settings_usage_tab() {
-        let result = process_slash_command("/usage", Some("cmd-1".to_string()), get_commands());
-
-        assert!(!result.should_query);
-        assert_eq!(
-            result.local_action,
-            Some(SlashCommandAction::OpenLocalCommandUi {
-                command: LocalCommandUi::Settings {
-                    default_tab: LocalSettingsTab::Usage,
-                },
-                invocation: SlashCommandInvocation::new("usage", ""),
             })
         );
     }

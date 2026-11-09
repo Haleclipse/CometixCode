@@ -6,7 +6,6 @@
 //!           selectedTab={selectedTab} onTabChange={...}>
 //!       <Tab title="Status">...</Tab>
 //!       <Tab title="Config">...</Tab>
-//!       <Tab title="Usage">...</Tab>
 //!     </Tabs>
 //!   </Pane>
 //! Tab rendering (CC design-system/Tabs.tsx line 243-258):
@@ -17,19 +16,18 @@
 pub mod config;
 pub mod items;
 pub mod status;
-pub mod usage;
 
 use crate::components::design_system::pane::Pane;
 use crate::components::design_system::tabs::{TabItem, TabsHeader};
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
-/// Maps to: CC Settings.tsx tab enum
+/// Maps to: CC Settings.tsx tab enum. The claude.ai plan-usage tab is not
+/// ported: nyan has no subscription quota to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingsTab {
     Status,
     Config,
-    Usage,
 }
 
 impl SettingsTab {
@@ -37,36 +35,29 @@ impl SettingsTab {
         match self {
             Self::Status => "Status",
             Self::Config => "Config",
-            Self::Usage => "Usage",
         }
     }
 
     pub fn all() -> &'static [SettingsTab] {
-        &[Self::Status, Self::Config, Self::Usage]
+        &[Self::Status, Self::Config]
     }
 
     pub fn index(self) -> usize {
         match self {
             Self::Status => 0,
             Self::Config => 1,
-            Self::Usage => 2,
         }
     }
 
     pub fn next(self) -> Self {
         match self {
             Self::Status => Self::Config,
-            Self::Config => Self::Usage,
-            Self::Usage => Self::Status,
+            Self::Config => Self::Status,
         }
     }
 
     pub fn prev(self) -> Self {
-        match self {
-            Self::Status => Self::Usage,
-            Self::Config => Self::Status,
-            Self::Usage => Self::Config,
-        }
+        self.next()
     }
 }
 
@@ -75,7 +66,7 @@ pub struct SettingsProps<'a> {
     pub on_close: HandlerMut<'a, ()>,
     /// Official Config `onClose(result)` path for save-and-close summaries.
     pub on_result: HandlerMut<'a, String>,
-    /// Maps to official Settings `defaultTab` prop used by `/usage`.
+    /// Maps to official Settings `defaultTab` prop used by `/status`.
     pub default_tab: Option<SettingsTab>,
     /// Readonly session id for the Status tab. This may come from a restored
     /// transcript; no session file is created when it is absent.
@@ -252,7 +243,6 @@ pub fn Settings<'a>(
                             )
                         }.into_any()
                     },
-                    SettingsTab::Usage => element! { usage::Usage }.into_any(),
                 })
             }
 
@@ -660,7 +650,7 @@ mod tests {
             "official tabsHidden hides the Settings tab title while submenu is active; canvas=\n{text}"
         );
         assert!(
-            !text.contains("Status") && !text.contains("Config") && !text.contains("Usage"),
+            !text.contains("Status") && !text.contains("Config"),
             "official tabsHidden hides tab labels while submenu is active; canvas=\n{text}"
         );
         assert!(

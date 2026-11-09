@@ -1,7 +1,7 @@
 //! Maps to: CC `components/PromptInput/Notifications.tsx` +
 //! `context/notifications.tsx` for the main-screen-safe subset.
 //!
-//! Status rows match CC `NotificationContent`: inline overage/apiKeyHelper/auth/
+//! Status rows match CC `NotificationContent`: inline apiKeyHelper/auth/
 //! debug/verbose; mounts of root components (`IdeStatusIndicator`, `TokenWarning`,
 //! `UpdateNotifier`, `MemoryUsageIndicator`) and PromptInput-local
 //! `SandboxPromptFooterHint`. No parallel `*_footer.rs` adapter layer.
@@ -28,18 +28,6 @@ use std::time::Duration;
 pub const API_KEY_HELPER_SLOW_THRESHOLD_MS: u64 = 10_000;
 
 const DEFAULT_MODEL: &str = "claude-sonnet-4-5";
-
-/// Maps to: CC `Notifications.tsx` overage-mode footer row.
-pub fn overage_indicator(
-    is_in_overage_mode: bool,
-    is_team_or_enterprise: bool,
-) -> Option<PromptFooterIndicator> {
-    if is_in_overage_mode && !is_team_or_enterprise {
-        Some(PromptFooterIndicator::dim("Now using extra usage"))
-    } else {
-        None
-    }
-}
 
 /// Maps to: CC `Notifications.tsx` auth-error footer row.
 pub fn auth_status_indicator(
@@ -124,7 +112,7 @@ fn api_key_helper_slow_now(store: &AppStore) -> bool {
 /// Maps to: CC `components/PromptInput/Notifications.tsx:66-190` `Notifications`
 /// and `:199-359` `NotificationContent` row visibility.
 /// L1 (React/Ink → iocraft): projects the same visible branches into retained
-/// footer height without moving their auth, subscription, or environment policy.
+/// footer height without moving their auth or environment policy.
 /// `token_usage` is caller-derived from that caller's `messages` prop via
 /// [`token_usage_from_messages`] (CC Notifications.tsx:80-83 — not AppState).
 /// `update_available` is caller-threaded from the REPL owner.
@@ -171,12 +159,6 @@ pub fn direct_footer_row_count_from_app(
         memory_visible,
         sandbox_hint_visible,
     );
-    // There is no claude.ai subscription, so no team/enterprise suppression.
-    if state.claude_ai_limits.is_using_overage {
-        if overage_indicator(state.claude_ai_limits.is_using_overage, false).is_some() {
-            count += 1;
-        }
-    }
     let is_remote_mode =
         is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
     if auth_status_indicator(credential_status, is_remote_mode).is_some() {
@@ -200,25 +182,6 @@ pub fn token_usage_from_messages(messages: &[crate::types::message::Message]) ->
         crate::utils::messages::get_messages_after_compact_boundary(messages);
     crate::utils::tokens::token_count_from_last_api_response(&messages_for_token_count).max(0)
         as u64
-}
-
-/// P6: overage flag (CC `useClaudeAiLimits().isUsingOverage`).
-pub fn set_overage_mode(store: &AppStore, enabled: bool) {
-    store.replace_with(|state| {
-        let mut limits = (*state.claude_ai_limits).clone();
-        limits.is_using_overage = enabled;
-        state.claude_ai_limits = std::sync::Arc::new(limits);
-    });
-}
-
-/// P6: apply limits service snapshot to AppState overage flag.
-pub fn apply_claude_ai_limits(
-    store: &AppStore,
-    limits: &crate::services::claude_ai_limits::ClaudeAiLimits,
-) {
-    store.replace_with(|state| {
-        state.claude_ai_limits = std::sync::Arc::new(limits.clone());
-    });
 }
 
 fn notification_color(color: Option<NotificationColor>, theme: &Theme) -> Color {
@@ -283,9 +246,6 @@ pub fn Notifications(
         crate::components::ide_status_indicator::ide_client_connected(&state.mcp)
     });
     let credential_status = props.credential_status.clone();
-    let is_in_overage_mode = crate::state::app_state::use_app_state(&mut hooks, |state| {
-        state.claude_ai_limits.is_using_overage
-    });
     let debug = props.debug;
     // Maps to: CC Notifications.tsx:80-83 tokenUsage useMemo. Dependency is the
     // messages Arc identity, matching CC's `[messages]` reference-equality dep.
@@ -298,8 +258,6 @@ pub fn Notifications(
     );
     let is_remote_mode =
         is_env_truthy(crate::utils::process_env::var("CLAUDE_CODE_REMOTE").as_deref());
-    // There is no claude.ai subscription, so no team/enterprise suppression.
-    let is_team_or_enterprise = false;
     let theme = hooks.use_context::<Theme>();
     let store = hooks.try_use_context::<AppStore>().map(|s| s.clone());
 
@@ -364,10 +322,6 @@ pub fn Notifications(
         });
     }
 
-    if let Some(indicator) = overage_indicator(is_in_overage_mode, is_team_or_enterprise) {
-        head_rows.push(FooterRow::from_indicator(indicator));
-    }
-
     if let Some(indicator) = api_key_helper_slow_indicator(api_key_elapsed) {
         mid_rows.push(FooterRow::from_indicator(indicator));
     }
@@ -401,7 +355,7 @@ pub fn Notifications(
             padding_right: col_pr,
             overflow: Overflow::Hidden,
         ) {
-            // CC order: Ide → notif/overage → apiKeyHelper → auth/debug/verbose
+            // CC order: Ide → notif → apiKeyHelper → auth/debug/verbose
             // → TokenWarning → AutoUpdater → Memory → Sandbox.
             IdeStatusIndicator(
                 ide_status: ide_status,
@@ -507,7 +461,7 @@ mod tests {
     }
 
     impl NotificationsRuntimeFixture {
-        fn new(subscription_type: Option<&str>, remote: bool) -> Self {
+        fn new(remote: bool) -> Self {
             let lock = TEST_ENV_LOCK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -544,27 +498,9 @@ mod tests {
             crate::bootstrap::state::set_flag_settings_path(None);
             crate::bootstrap::state::set_flag_settings_inline(None);
             crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
-            crate::services::mock_rate_limits::reset_for_test();
             crate::utils::secure_storage::mac_os_keychain_helpers::clear_keychain_cache();
             std::fs::write(root.join("settings.json"), b"{}")
                 .expect("write notifications settings fixture");
-            if let Some(subscription_type) = subscription_type {
-                std::fs::write(
-                    root.join(".credentials.json"),
-                    serde_json::to_vec(&serde_json::json!({
-                        "claudeAiOauth": {
-                            "accessToken": "notifications-test-token",
-                            "refreshToken": "notifications-refresh-token",
-                            "expiresAt": 4_102_444_800_000u64,
-                            "scopes": ["user:inference"],
-                            "subscriptionType": subscription_type,
-                            "rateLimitTier": null
-                        }
-                    }))
-                    .expect("serialize notifications credentials fixture"),
-                )
-                .expect("write notifications credentials fixture");
-            }
 
             Self {
                 _lock: lock,
@@ -595,7 +531,6 @@ mod tests {
             let _ = std::env::set_current_dir(&self.previous_cwd);
             crate::bootstrap::state::set_original_cwd(&self.previous_original_cwd);
             drop(std::mem::take(&mut self.previous_env));
-            crate::services::mock_rate_limits::reset_for_test();
             crate::utils::secure_storage::mac_os_keychain_helpers::clear_keychain_cache();
             crate::bootstrap::state::reset_auth_file_descriptor_caches_for_testing();
             let _ = std::fs::remove_dir_all(&self.root);
@@ -716,14 +651,9 @@ mod tests {
 
     #[test]
     fn notifications_render_footer_indicator_rows_from_snapshot() {
-        let _runtime = NotificationsRuntimeFixture::new(None, false);
+        let _runtime = NotificationsRuntimeFixture::new(false);
         let mut initial = crate::state::app_state_store::AppState::default();
         initial.verbose = true;
-        initial.claude_ai_limits =
-            std::sync::Arc::new(crate::services::claude_ai_limits::ClaudeAiLimits {
-                is_using_overage: true,
-                ..Default::default()
-            });
         let store = crate::state::store::AppStore::new(initial, None);
         // CC: tokenUsage is derived from the messages prop, not AppState.
         let messages = std::sync::Arc::new(vec![assistant_message_with_usage(40, 2)]);
@@ -744,7 +674,6 @@ mod tests {
         }
         .render(Some(120))
         .to_string();
-        assert!(text.contains("Now using extra usage"), "canvas=\n{text}");
         assert!(text.contains("Debug mode"), "canvas=\n{text}");
         assert!(text.contains("42 tokens"), "canvas=\n{text}");
     }
@@ -763,7 +692,7 @@ mod tests {
 
     #[test]
     fn notifications_render_auth_error_row_from_repl_prop_matches_official() {
-        let _runtime = NotificationsRuntimeFixture::new(None, false);
+        let _runtime = NotificationsRuntimeFixture::new(false);
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
             None,
@@ -794,7 +723,7 @@ mod tests {
 
     #[test]
     fn notifications_remote_auth_copy_uses_canonical_process_env() {
-        let _runtime = NotificationsRuntimeFixture::new(None, true);
+        let _runtime = NotificationsRuntimeFixture::new(true);
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
             None,
@@ -818,41 +747,6 @@ mod tests {
         assert!(
             text.contains("Authentication error · Try again"),
             "canvas=\n{text}"
-        );
-    }
-
-    #[test]
-    fn notifications_overage_row_ignores_a_claude_ai_credentials_file() {
-        // A leftover `.credentials.json` naming a team subscription must not
-        // suppress the overage row: stored claude.ai credentials are ignored.
-        let _runtime = NotificationsRuntimeFixture::new(Some("team"), false);
-
-        let mut initial = crate::state::app_state_store::AppState::default();
-        initial.claude_ai_limits =
-            std::sync::Arc::new(crate::services::claude_ai_limits::ClaudeAiLimits {
-                is_using_overage: true,
-                ..Default::default()
-            });
-        let store = crate::state::store::AppStore::new(initial, None);
-        let text = element! {
-            ContextProvider(value: Context::owned(*crate::utils::theme::current())) {
-                crate::state::app_state::AppStateProvider(
-                    prebuilt_store: Some(store),
-                    children: crate::state::app_state::ProviderChildren::new(|| element! {
-                        Notifications(
-                            credential_status: CredentialStatus::Ready,
-                            suppressed: false,
-                            inline: true,
-                        )
-                    }.into_any()),
-                )
-            }
-        }
-        .render(Some(120))
-        .to_string();
-        assert!(
-            text.contains("Now using extra usage"),
-            "stored team credentials must not suppress the overage row; canvas=\n{text}"
         );
     }
 
@@ -978,15 +872,5 @@ mod tests {
             0,
             "post-compact, pre-new-response count must drop pre-boundary usage"
         );
-    }
-
-    #[test]
-    fn set_overage_mode_writes_app_state() {
-        let store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
-        );
-        set_overage_mode(&store, true);
-        assert!(store.get().claude_ai_limits.is_using_overage);
     }
 }

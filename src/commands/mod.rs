@@ -570,28 +570,11 @@ fn remote_env_enabled() -> bool {
     false
 }
 
-fn rate_limit_options_enabled() -> bool {
-    false
-}
-
 fn privacy_settings_enabled() -> bool {
     false
 }
 
-fn upgrade_enabled() -> bool {
-    if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_UPGRADE_COMMAND").as_deref(),
-    ) {
-        return false;
-    }
-    true
-}
-
 fn ultrareview_enabled() -> bool {
-    false
-}
-
-fn extra_usage_enabled() -> bool {
     false
 }
 
@@ -601,9 +584,9 @@ fn thinkback_enabled() -> bool {
 
 /// Maps to: CC `commands.ts` `COMMANDS()` direct/provider catalog.
 ///
-/// Order intentionally matches the source. Duplicate names (`context`,
-/// `extra-usage`) are alternate interactive/non-interactive implementations;
-/// `get_commands` filters the inactive one.
+/// Order intentionally matches the source. The duplicate `context` entries are
+/// alternate interactive/non-interactive implementations; `get_commands`
+/// filters the inactive one.
 fn commands() -> Vec<Command> {
     use crate::utils::process_user_input::process_slash_command as execution;
     use CommandAvailability::{ClaudeAi, Console};
@@ -781,27 +764,6 @@ fn commands() -> Vec<Command> {
         )
         .hidden_when(terminal_setup_hidden)
         .executable(execution::call_terminal_setup),
-        Command::local_ui("upgrade", "Upgrade to Max for higher rate limits and more Opus")
-            .availability(&[ClaudeAi])
-            .enabled_when(upgrade_enabled),
-        Command::local_ui(
-            "extra-usage",
-            "Configure extra usage to keep working when limits are hit",
-        )
-        .enabled_when(|| extra_usage_enabled() && is_interactive()),
-        Command::local(
-            "extra-usage",
-            "Configure extra usage to keep working when limits are hit",
-        )
-        .enabled_when(|| extra_usage_enabled() && is_non_interactive())
-        .hidden_when(is_interactive)
-        .supports_non_interactive(),
-        Command::local_ui("rate-limit-options", "Show options when rate limit is reached")
-            .enabled_when(rate_limit_options_enabled)
-            .hidden(),
-        Command::local_ui("usage", "Show plan usage limits")
-            .availability(&[ClaudeAi])
-            .executable(execution::call_usage),
         Command::prompt(
             "insights",
             "Generate a report analyzing your nyan sessions",
@@ -1224,7 +1186,6 @@ pub fn filter_commands_for_remote_mode(commands: Vec<Command>) -> Vec<Command> {
         "color",
         "vim",
         "cost",
-        "usage",
         "copy",
         "btw",
         "feedback",
@@ -1424,17 +1385,27 @@ mod tests {
         let _demo = EnvVarGuard::unset("IS_DEMO");
 
         let catalog = commands();
-        // 70 direct descriptors + internal /version, plus @nyan `/retrieval`
+        // 65 direct descriptors + internal /version, plus @nyan `/retrieval`
         // and `/decision`. `/login` and `/logout` are gone: Anthropic is
         // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
-        // with claude.ai guest passes.
+        // with claude.ai guest passes; `/upgrade`, `/extra-usage`,
+        // `/rate-limit-options` and `/usage` are gone with the claude.ai
+        // subscription quota.
         let base_len = if crate::utils::build_profile::build_audience().is_internal() {
-            72
+            67
         } else {
-            71
+            66
         };
         assert_eq!(catalog.len(), base_len);
-        for removed in ["login", "logout", "passes"] {
+        for removed in [
+            "login",
+            "logout",
+            "passes",
+            "upgrade",
+            "extra-usage",
+            "rate-limit-options",
+            "usage",
+        ] {
             assert!(
                 catalog.iter().all(|command| command.name != removed),
                 "/{removed} must not be declared"
@@ -1498,10 +1469,6 @@ mod tests {
             "rewind",
             "security-review",
             "terminal-setup",
-            "upgrade",
-            "extra-usage",
-            "rate-limit-options",
-            "usage",
             "insights",
             "vim",
             "think-back",

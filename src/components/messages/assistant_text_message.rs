@@ -4,7 +4,6 @@ use crate::components::ctrl_o_to_expand::ctrl_o_to_expand_hint;
 use crate::components::interrupted_by_user::InterruptedByUser;
 use crate::components::markdown::{Markdown, StreamingMarkdown};
 use crate::components::message_response::MessageResponse;
-use crate::components::messages::rate_limit_message::RateLimitMessage;
 use crate::utils::messages::{NO_RESPONSE_REQUESTED, is_empty_message_text};
 use crate::utils::process_env::JsTruthy;
 use crate::utils::theme::Theme;
@@ -49,13 +48,6 @@ pub fn AssistantTextMessage(
 
     if is_empty_message_text(text) || text == NO_RESPONSE_REQUESTED {
         return element! { View }.into_any();
-    }
-
-    if is_rate_limit_error_message(text) {
-        return element! {
-            RateLimitMessage(text: text.to_string(), hint: String::new(), add_margin: props.add_margin)
-        }
-        .into_any();
     }
 
     if text == ERROR_MESSAGE_USER_ABORT {
@@ -140,18 +132,6 @@ pub fn StreamingAssistantTextMessage(
 fn starts_with_api_error_prefix(text: &str) -> bool {
     text.starts_with(API_ERROR_MESSAGE_PREFIX)
         || text.starts_with("Check profile API key configuration · API Error")
-}
-
-fn is_rate_limit_error_message(text: &str) -> bool {
-    [
-        "You've hit your",
-        "You've used",
-        "You're now using extra usage",
-        "You're close to",
-        "You're out of extra usage",
-    ]
-    .into_iter()
-    .any(|prefix| text.starts_with(prefix))
 }
 
 fn truncate_api_error(text: &str) -> String {
@@ -244,11 +224,11 @@ mod tests {
     }
 
     #[test]
-    fn assistant_text_routes_rate_limit_messages_to_rate_limit_renderer() {
+    fn assistant_text_renders_generic_429_as_api_error() {
         let rendered =
-            render_assistant_text("You've hit your weekly limit · resets tomorrow", false);
+            render_assistant_text("API Error: Request rejected (429) · rate limited", false);
         assert!(rendered.contains("⎿"));
-        assert!(rendered.contains("You've hit your weekly limit"));
+        assert!(rendered.contains("Request rejected (429) · rate limited"));
         assert!(!rendered.contains(BLACK_CIRCLE));
     }
 

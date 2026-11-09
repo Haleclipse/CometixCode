@@ -8,7 +8,6 @@ pub mod ide_status_indicator;
 pub mod install_messages;
 pub mod mcp_connectivity_status;
 pub mod plugin_notifications;
-pub mod rate_limit_warning;
 pub mod settings_errors;
 pub mod startup;
 pub mod statusline;

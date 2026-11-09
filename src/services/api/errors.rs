@@ -88,9 +88,6 @@ pub enum ApiStopReason {
     Refusal,
 }
 
-/// Compatibility re-export; canonical ownership is `services/claude_ai_limits.rs`.
-pub use crate::services::claude_ai_limits::ClaudeAiLimits;
-
 /// Stub for CC `ConnectionErrorDetails` from `services/api/errorUtils.ts:31-35`.
 /// TODO(port): Replace once services/api/errorUtils.rs is ported.
 ///
@@ -722,49 +719,6 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
     if let Some(status) = error.status()
         && status == 429
     {
-        // Maps to CC `errors.ts:463-537`: unified quota headers use the
-        // centralized limits message formatter (including active internal
-        // mocks) before the generic 429/entitlement path.
-        if crate::services::rate_limit_mocking::should_process_rate_limits(false) {
-            let has_unified_headers = error
-                .header("anthropic-ratelimit-unified-representative-claim")
-                .is_some()
-                || error
-                    .header("anthropic-ratelimit-unified-overage-status")
-                    .is_some();
-            if has_unified_headers {
-                let limits = crate::services::claude_ai_limits::limits_from_error_headers(
-                    error.headers().expect("HTTP 429 carries a header map"),
-                );
-                let context = crate::services::rate_limit_messages::RateLimitUiContext::current();
-                let content = crate::services::rate_limit_messages::get_rate_limit_error_message(
-                    &limits, &context,
-                )
-                .unwrap_or_else(|| crate::utils::messages::NO_RESPONSE_REQUESTED.to_string());
-                return create_assistant_api_error_message(
-                    &content,
-                    Some(SdkAssistantMessageError::RateLimit),
-                    None,
-                );
-            }
-        }
-
-        // Check for "Extra usage is required for long context"
-        if msg.contains("Extra usage is required for long context") {
-            let hint = if get_is_non_interactive_session() {
-                "enable extra usage at claude.ai/settings/usage, or use --model to switch to standard context"
-            } else {
-                "run /extra-usage to enable, or /model to switch to standard context"
-            };
-            return create_assistant_api_error_message(
-                &format!(
-                    "{API_ERROR_MESSAGE_PREFIX}: Extra usage is required for 1M context \u{00b7} {hint}"
-                ),
-                Some(SdkAssistantMessageError::RateLimit),
-                None,
-            );
-        }
-
         // Strip SDK prefix "429 " and try to extract inner message
         let stripped = msg.strip_prefix("429 ").unwrap_or(msg);
         let inner_re = Regex::new(r#""message"\s*:\s*"([^"]*)""#).unwrap();
@@ -1061,8 +1015,6 @@ pub fn get_error_message_if_refusal(
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "anthropic_internal")]
-    use crate::utils::test_env::TEST_ENV_LOCK;
     use std::collections::HashMap;
 
     #[test]
@@ -1389,29 +1341,44 @@ mod tests {
         assert!(msg.content[0].text.contains("429"));
     }
 
-    #[cfg(feature = "anthropic_internal")]
     #[test]
-    fn unified_mock_429_uses_centralized_rate_limit_message() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        crate::services::mock_rate_limits::reset_for_test();
-        crate::services::mock_rate_limits::set_mock_rate_limit_scenario(
-            crate::services::mock_rate_limits::MockScenario::WeeklyLimitReached,
-        );
-        let headers = crate::services::mock_rate_limits::get_mock_headers().unwrap();
+    fn get_assistant_message_from_error_429_ignores_subscription_quota_headers() {
         let err = ApiErrorInfo::Http {
             status: 429,
-            message: "Rate limit exceeded".to_string(),
-            headers,
+            message: r#"429 {"type":"error","error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}"#.to_string(),
+            headers: HashMap::from([
+                (
+                    "anthropic-ratelimit-unified-representative-claim".to_string(),
+                    "seven_day".to_string(),
+                ),
+                ("retry-after".to_string(), "30".to_string()),
+            ]),
+            body: None,
+        };
+        let msg = get_assistant_message_from_error(&err, "claude-sonnet-4-6");
+        assert_eq!(
+            msg.content[0].text,
+            "API Error: Request rejected (429) · Number of request tokens has exceeded your per-minute rate limit"
+        );
+        assert_eq!(msg.error, Some(SdkAssistantMessageError::RateLimit));
+    }
+
+    #[test]
+    fn get_assistant_message_from_error_429_without_detail_points_at_capacity() {
+        let err = ApiErrorInfo::Http {
+            status: 429,
+            message: "429 ".to_string(),
+            headers: HashMap::new(),
             body: None,
         };
         let msg = get_assistant_message_from_error(&err, "claude-sonnet-4-6");
         assert!(
-            msg.content[0]
-                .text
-                .starts_with("You've hit your weekly limit · resets ")
+            msg.content[0].text.starts_with(
+                "API Error: Request rejected (429) · this may be a temporary capacity issue"
+            ),
+            "{}",
+            msg.content[0].text
         );
-        assert_eq!(msg.error, Some(SdkAssistantMessageError::RateLimit));
-        crate::services::mock_rate_limits::reset_for_test();
     }
 
     #[test]

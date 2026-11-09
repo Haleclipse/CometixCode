@@ -1,6 +1,6 @@
 //! Service-layer owners mirroring official `src/services/`.
 //!
-//! Live API, quota, compact, hook, MCP, prompt-suggestion, and tool services sit
+//! Live API, compact, hook, MCP, prompt-suggestion, and tool services sit
 //! between `query` and REPL-owned state; retained components only consume their
 //! typed snapshots/events.
 
@@ -8,7 +8,6 @@ pub mod api;
 /// @nyan: idle memory consolidation (memory 4.4 / auto-dream).
 pub mod auto_dream;
 pub mod cache_warmer;
-pub mod claude_ai_limits;
 pub mod compact;
 pub mod context_collapse;
 /// @nyan: quick classification backend for the four modules and host-runtime
@@ -23,13 +22,10 @@ pub mod mcp;
 pub mod mcp_server_approval;
 /// @nyan: shadow-mode Decision Provider seam for the memory points (C4).
 pub mod memory_decision;
-pub mod mock_rate_limits;
 pub mod policy_limits;
 pub mod prompt_suggestion;
 /// @nyan: provider-neutral request IR and adapters (provider redesign PR 4).
 pub mod provider;
-pub mod rate_limit_messages;
-pub mod rate_limit_mocking;
 /// @nyan: shared Qwen3-Reranker client (retrieval 4.9, slice G0).
 pub mod rerank;
 /// @nyan: deterministic-first code retrieval library and optional semantic branch.

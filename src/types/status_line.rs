@@ -22,8 +22,6 @@ pub struct StatusLineCommandInput {
     pub context_window: StatusLineContextWindow,
     pub exceeds_200k_tokens: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub rate_limits: Option<StatusLineRateLimits>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub vim: Option<StatusLineVim>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<StatusLineAgent>,
@@ -69,20 +67,6 @@ pub struct StatusLineContextWindow {
     pub current_usage: Option<TokenUsage>,
     pub used_percentage: Option<u8>,
     pub remaining_percentage: Option<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StatusLineRateLimits {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub five_hour: Option<StatusLineRateLimitWindow>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub seven_day: Option<StatusLineRateLimitWindow>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StatusLineRateLimitWindow {
-    pub used_percentage: f64,
-    pub resets_at: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

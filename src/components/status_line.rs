@@ -168,7 +168,6 @@ pub fn build_status_line_command_input(
             remaining_percentage,
         },
         exceeds_200k_tokens,
-        rate_limits: None,
         vim: None,
         agent: None,
         remote: None,

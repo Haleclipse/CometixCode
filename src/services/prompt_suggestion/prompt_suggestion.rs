@@ -119,12 +119,8 @@ pub fn abort_prompt_suggestion() {
     }
 }
 
-/// Pure snapshot form of CC `getSuggestionSuppressReason(...)`.
-pub fn get_suggestion_suppress_reason_with_limits(
-    app_state: &AppState,
-    audience: crate::utils::build_profile::BuildAudience,
-    limits: &crate::services::claude_ai_limits::ClaudeAiLimits,
-) -> Option<&'static str> {
+/// Maps to CC `getSuggestionSuppressReason(...)`.
+pub fn get_suggestion_suppress_reason(app_state: &AppState) -> Option<&'static str> {
     if !app_state.prompt_suggestion_enabled {
         return Some("disabled");
     }
@@ -137,23 +133,7 @@ pub fn get_suggestion_suppress_reason_with_limits(
     if app_state.tool_permission_context.mode == crate::types::permissions::PermissionMode::Plan {
         return Some("plan_mode");
     }
-    if !crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::Speculation,
-    ) && limits.status != crate::services::claude_ai_limits::QuotaStatus::Allowed
-    {
-        return Some("rate_limit");
-    }
     None
-}
-
-/// Maps to CC `getSuggestionSuppressReason(...)` using live service state.
-pub fn get_suggestion_suppress_reason(app_state: &AppState) -> Option<&'static str> {
-    get_suggestion_suppress_reason_with_limits(
-        app_state,
-        crate::utils::build_profile::build_audience(),
-        &crate::services::claude_ai_limits::current_limits(),
-    )
 }
 
 pub fn get_parent_cache_suppress_reason(
@@ -553,36 +533,14 @@ mod tests {
     }
 
     #[test]
-    fn external_current_limits_gate_matches_official_non_allowed_semantics() {
-        use crate::services::claude_ai_limits::{ClaudeAiLimits, QuotaStatus};
-        use crate::utils::build_profile::BuildAudience;
-
+    fn suppress_reason_tracks_session_state_only() {
         let mut state = AppState::default();
+        assert_eq!(get_suggestion_suppress_reason(&state), Some("disabled"));
         state.prompt_suggestion_enabled = true;
-        let mut limits = ClaudeAiLimits::default();
-        assert_eq!(
-            get_suggestion_suppress_reason_with_limits(&state, BuildAudience::External, &limits,),
-            None
-        );
-
-        limits.status = QuotaStatus::AllowedWarning;
-        assert_eq!(
-            get_suggestion_suppress_reason_with_limits(&state, BuildAudience::External, &limits,),
-            Some("rate_limit")
-        );
-        limits.status = QuotaStatus::Rejected;
-        assert_eq!(
-            get_suggestion_suppress_reason_with_limits(&state, BuildAudience::External, &limits,),
-            Some("rate_limit")
-        );
-        assert_eq!(
-            get_suggestion_suppress_reason_with_limits(
-                &state,
-                BuildAudience::AnthropicInternal,
-                &limits,
-            ),
-            None
-        );
+        assert_eq!(get_suggestion_suppress_reason(&state), None);
+        std::sync::Arc::make_mut(&mut state.tool_permission_context).mode =
+            crate::types::permissions::PermissionMode::Plan;
+        assert_eq!(get_suggestion_suppress_reason(&state), Some("plan_mode"));
     }
 
     #[test]
