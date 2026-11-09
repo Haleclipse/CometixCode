@@ -1643,7 +1643,10 @@ pub fn get_auto_updater_disabled_reason() -> Option<&'static str> {
         crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref(),
     ) || crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_DISABLE_AUTOUPDATER").as_deref(),
-    ) {
+    ) || crate::utils::privacy_level::get_essential_traffic_only_reason().is_some()
+    {
+        // CC `config.ts:1742` `getEssentialTrafficOnlyReason()`: the update
+        // check is non-essential traffic.
         return Some("environment");
     }
 
@@ -1785,6 +1788,19 @@ mod tests {
     fn legacy_local_memory_path_falls_back_to_user_memory() {
         assert_eq!(get_memory_path("Local"), get_memory_path("User"));
         assert_eq!(get_memory_path("local"), get_memory_path("user"));
+    }
+
+    /// CC `config.ts:1742`: essential-traffic-only mode disables the update
+    /// check like the explicit switches do.
+    #[test]
+    fn essential_traffic_only_disables_the_auto_updater() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _disable = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
+        let _nyan_disable = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
+        let _traffic = EnvVarGuard::set("NYAN_DISABLE_NONESSENTIAL_TRAFFIC", "1");
+        assert_eq!(get_auto_updater_disabled_reason(), Some("environment"));
     }
 
     /// CC `utils/managedEnv.ts#applyConfigEnvironmentVariables` feeds

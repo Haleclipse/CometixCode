@@ -5021,12 +5021,34 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         }
     });
     let mut prompt_modal_overlay_active = hooks.use_state(|| false);
-    // Maps to: CC REPL.tsx:1408-1409 `const [autoUpdaterResult,
-    // setAutoUpdaterResult] = useState<AutoUpdaterResult | null>(null)`.
-    // The REPL.tsx:1411-1421 addNotification fan-out runs inline in the
-    // `on_auto_updater_result` setter handler below.
-    let auto_updater_result =
-        hooks.use_state(|| Option::<crate::utils::auto_updater::AutoUpdaterResult>::None);
+    // REPL-owned newer release discovered by the notify-only background check.
+    let update_available =
+        hooks.use_state(|| Option::<crate::utils::auto_updater::UpdateAvailable>::None);
+    // Session-level check so the notice does not depend on the footer subtree
+    // being mounted. The checker caches its result for CHECK_INTERVAL, and the
+    // loop stops once an update is known. Nothing is downloaded here.
+    hooks.use_future({
+        let mut update_available = update_available;
+        async move {
+            if cfg!(test) {
+                return;
+            }
+            loop {
+                if update_available.read().is_none()
+                    && !crate::utils::config::is_auto_updater_disabled()
+                    && let Some(version) = crate::utils::auto_updater::check_for_update().await
+                {
+                    update_available.set(Some(crate::utils::auto_updater::UpdateAvailable {
+                        version,
+                    }));
+                }
+                if update_available.read().is_some() {
+                    return;
+                }
+                futures_timer::Delay::new(crate::utils::auto_updater::CHECK_INTERVAL).await;
+            }
+        }
+    });
     // Maps to: CC `useAppState(s => s.verbose)` — AppState is the sole authority
     // (Config preview and /verbose write the store; footer indicators overlay
     // the same value when rendering).
@@ -9920,50 +9942,17 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 Some(element! {
                     Fragment {
                     PromptInput(
-                        // SEAM (slice 3b review A3): this per-submit key remounts
-                        // PromptInput and the entire auto-updater subtree —
-                        // child check loops re-fire and child-local display
-                        // state resets on every submit, unlike CC's
-                        // session-persistent PromptInput. Invisible today only
-                        // because updater IO is short-circuited; lifting the
-                        // updater subtree out of this keyed region is a hard
-                        // prerequisite for real update-install IO.
+                        // SEAM (slice 3b review A3): this per-submit key
+                        // remounts PromptInput and its child-local display
+                        // state, unlike CC's session-persistent PromptInput.
+                        // Update discovery is REPL-owned (above), so the
+                        // remount no longer restarts an update check.
                         key: format!("prompt-{}", prompt_input_generation.get()),
                         debug: debug,
                         // Maps to: CC REPL.tsx:6816 `ideSelection={ideSelection}`.
                         ide_selection: ide_selection.read().clone(),
                         credential_status: credential_status.clone(),
-                        // Maps to: CC REPL.tsx:6830 `autoUpdaterResult={autoUpdaterResult}`.
-                        auto_updater_result: auto_updater_result.read().clone(),
-                        // Maps to: CC REPL.tsx:6829 `onAutoUpdaterResult={setAutoUpdaterResult}`
-                        // + REPL.tsx:1411-1421 `useEffect([autoUpdaterResult])` notifications
-                        // fan-out. CC's effect fires exactly once per committed result identity
-                        // (this setter is the only writer, always with a fresh value), so
-                        // running the fan-out after the commit here is the same observable
-                        // sequence without a retained-mode effect carrier.
-                        on_auto_updater_result: Handler::from({
-                            let app_store = app_store.clone();
-                            move |result: crate::utils::auto_updater::AutoUpdaterResult| {
-                                let mut auto_updater_result = auto_updater_result;
-                                auto_updater_result.set(Some(result.clone()));
-                                // CC REPL.tsx:1413-1420: one addNotification
-                                // ({key: 'auto-updater-notification', priority:
-                                // 'low'}) per entry. Dormant on both sides —
-                                // no CC 2.1.88 producer populates
-                                // `AutoUpdaterResult.notifications`.
-                                let mut notifications =
-                                    crate::context::notifications::NotificationsWriter::new(app_store.clone());
-                                for text in &result.notifications {
-                                    notifications.add_notification(
-                                        crate::context::notifications::Notification::text(
-                                            "auto-updater-notification",
-                                            text.clone(),
-                                            crate::context::notifications::NotificationPriority::Low,
-                                        ),
-                                    );
-                                }
-                            }
-                        }),
+                        update_available: update_available.read().clone(),
                         // Maps to: CC REPL → PromptInput.tsx:237 `messages`
                         // (model-visible history; memoized projection Arc).
                         messages: Arc::clone(&model_messages),

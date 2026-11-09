@@ -68,15 +68,8 @@ impl PromptFooterIndicator {
 pub struct FooterProps {
     /// Maps to: CC `PromptInputFooter.apiKeyStatus` → `Notifications`.
     pub credential_status: CredentialStatus,
-    /// Maps to: CC `PromptInputFooter.tsx:46` `autoUpdaterResult` (REPL-owned),
-    /// forwarded to `Notifications` (`:208`).
-    pub auto_updater_result: Option<crate::utils::auto_updater::AutoUpdaterResult>,
-    /// Maps to: CC `PromptInputFooter.tsx:47` `isAutoUpdating` (PromptInput-owned).
-    pub is_auto_updating: bool,
-    /// Maps to: CC `PromptInputFooter.tsx:49` `onAutoUpdaterResult`.
-    pub on_auto_updater_result: Handler<crate::utils::auto_updater::AutoUpdaterResult>,
-    /// Maps to: CC `PromptInputFooter.tsx:50` `onChangeIsUpdating`.
-    pub on_change_is_updating: Handler<bool>,
+    /// REPL-owned newer release, forwarded to `Notifications`.
+    pub update_available: Option<crate::utils::auto_updater::UpdateAvailable>,
     /// Maps to: CC `PromptInputFooter.tsx:63` `ideSelection` (REPL-owned),
     /// forwarded to `Notifications` (`:215`).
     pub ide_selection: Option<crate::hooks::use_ide_selection::IdeSelection>,
@@ -258,8 +251,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
     let notification_row_count = {
         let debug = props.debug;
         let credential_status = props.credential_status.clone();
-        let auto_updater_result = props.auto_updater_result.clone();
-        let is_auto_updating = props.is_auto_updating;
+        let update_available = props.update_available.clone();
         let ide_selection = props.ide_selection.clone();
         crate::state::app_state::use_app_state(&mut hooks, move |state| {
             notifications::direct_footer_row_count_from_app(
@@ -268,8 +260,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                 debug,
                 &credential_status,
                 token_usage,
-                auto_updater_result.as_ref(),
-                is_auto_updating,
+                update_available.as_ref(),
                 ide_selection.as_ref(),
             )
         })
@@ -364,10 +355,7 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                         Some(element! {
                                             notifications::Notifications(
                                                 credential_status: props.credential_status.clone(),
-                                                auto_updater_result: props.auto_updater_result.clone(),
-                                                is_auto_updating: props.is_auto_updating,
-                                                on_auto_updater_result: props.on_auto_updater_result.clone(),
-                                                on_change_is_updating: props.on_change_is_updating.clone(),
+                                                update_available: props.update_available.clone(),
                                                 debug: props.debug,
                                                 messages: props.messages.clone(),
                                                 ide_selection: props.ide_selection.clone(),

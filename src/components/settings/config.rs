@@ -7,19 +7,12 @@
 //!   - Scroll hints: "↑ N more above" / "↓ N more below"
 
 use super::items::{self, SettingItem, SettingValue};
-use crate::components::channel_downgrade_dialog::{ChannelDowngradeChoice, ChannelDowngradeDialog};
-use crate::components::custom_select::{
-    Select, SelectInputOptionMeta, SelectLayout, SelectOptionData, UseSelectInputOptions,
-    UseSelectStateProps, use_select_input, use_select_state,
-};
-use crate::components::design_system::dialog::Dialog;
 use crate::components::design_system::theme_provider::use_theme;
 use crate::components::language_picker::LanguagePicker;
 use crate::components::model_picker::{ModelPicker, ModelPickerResult};
 use crate::components::output_style_picker as output_style;
 use crate::components::output_style_picker::OutputStylePicker;
 use crate::components::theme_picker::ThemePicker;
-use crate::constants::product;
 use crate::context::notifications::use_notifications;
 use crate::context::notifications::{
     Notification, NotificationColor, NotificationPriority, NotificationsWriter,
@@ -50,8 +43,6 @@ enum SettingsSubmenu {
     Model,
     OutputStyle,
     Language,
-    EnableAutoUpdates,
-    ChannelDowngrade,
 }
 
 impl SettingsSubmenu {
@@ -61,7 +52,6 @@ impl SettingsSubmenu {
             Self::Model => "model",
             Self::OutputStyle => "outputStyle",
             Self::Language => "language",
-            Self::EnableAutoUpdates | Self::ChannelDowngrade => "autoUpdatesChannel",
         }
     }
 }
@@ -82,32 +72,8 @@ fn language_display_value(language: Option<&str>) -> String {
     language.unwrap_or("Default (English)").to_string()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AutoUpdatesAction {
-    Open(SettingsSubmenu),
-    SetLatest,
-}
-
-fn auto_updates_action_for_item(item: &SettingItem) -> Option<AutoUpdatesAction> {
-    if item.id != "autoUpdatesChannel" {
-        return None;
-    }
-    let value = item.display_value();
-    if value.eq_ignore_ascii_case("disabled") {
-        Some(AutoUpdatesAction::Open(SettingsSubmenu::EnableAutoUpdates))
-    } else if value.eq_ignore_ascii_case("latest") {
-        Some(AutoUpdatesAction::Open(SettingsSubmenu::ChannelDowngrade))
-    } else {
-        Some(AutoUpdatesAction::SetLatest)
-    }
-}
-
 fn submenu_for_item(item: &SettingItem) -> Option<SettingsSubmenu> {
-    match auto_updates_action_for_item(item) {
-        Some(AutoUpdatesAction::Open(menu)) => Some(menu),
-        Some(AutoUpdatesAction::SetLatest) => None,
-        None => submenu_for_setting(item.id),
-    }
+    submenu_for_setting(item.id)
 }
 
 fn apply_runtime_display_settings(items: &mut [SettingItem], prefers_reduced_motion: bool) {
@@ -285,108 +251,6 @@ fn preview_notification_setting_selection(mut context: NotificationsWriter, item
     }
 }
 
-/// Maps to: CC `Config.tsx:2041-2050`, the EnableAutoUpdates Select.
-fn enable_auto_updates_options() -> Vec<SelectOptionData> {
-    [
-        ("Enable with latest channel", "latest"),
-        ("Enable with stable channel", "stable"),
-    ]
-    .into_iter()
-    .map(|(label, value)| SelectOptionData {
-        label: label.to_string(),
-        value: value.to_string(),
-        ..SelectOptionData::default()
-    })
-    .collect()
-}
-
-#[derive(Default, Props)]
-struct EnableAutoUpdatesSelectProps<'a> {
-    /// CC `onChange(channel)` (:2051).
-    on_change: HandlerMut<'a, String>,
-}
-
-/// L1 (inline Select state carrier): CC writes this `<Select>` inline in
-/// Config (`Config.tsx:2040-2076`), and CC's Select is a stateful component
-/// that mounts and unmounts with the EnableAutoUpdates submenu. The port's
-/// Select only renders, so the state it would own lives here, mounted in its
-/// place; this component adds nothing else.
-#[component]
-fn EnableAutoUpdatesSelect<'a>(
-    props: &mut EnableAutoUpdatesSelectProps<'a>,
-    mut hooks: Hooks,
-) -> impl Into<AnyElement<'static>> {
-    let options = enable_auto_updates_options();
-    // No default value, no focus value and no cancel: the default five-row
-    // viewport, focus on the first option, Esc left to the Dialog.
-    let state = use_select_state(
-        &mut hooks,
-        UseSelectStateProps {
-            visible_option_count: Some(5),
-            values: options.iter().map(|option| option.value.clone()).collect(),
-            default_value: None,
-            focus_value: None,
-        },
-    );
-    let events = use_select_input(
-        &mut hooks,
-        state,
-        UseSelectInputOptions {
-            option_metas: options
-                .iter()
-                .map(|option| SelectInputOptionMeta {
-                    value: option.value.clone(),
-                    ..Default::default()
-                })
-                .collect(),
-            ..Default::default()
-        },
-    );
-    if let Some(channel) = events.take_accepted() {
-        (props.on_change)(channel);
-    }
-    let navigation = state.navigation.snapshot();
-    element! {
-        Select(
-            is_disabled: false,
-            hide_indexes: false,
-            visible_option_count: navigation.visible_option_count,
-            options: options,
-            focused_index: navigation.focused_index().unwrap_or(0),
-            visible_from_index: navigation.visible_from_index,
-            layout: SelectLayout::Compact,
-        )
-    }
-}
-
-fn auto_updates_disabled_env_var() -> Option<&'static str> {
-    if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_AUTOUPDATER").as_deref(),
-    ) {
-        Some("DISABLE_AUTOUPDATER")
-    } else if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("NYAN_DISABLE_AUTOUPDATER").as_deref(),
-    ) {
-        Some("NYAN_DISABLE_AUTOUPDATER")
-    } else {
-        // CC `config.ts:1742` `getEssentialTrafficOnlyReason()`: a plain
-        // truthiness test, not `isEnvTruthy`.
-        crate::utils::privacy_level::get_essential_traffic_only_reason()
-    }
-}
-
-fn auto_updates_disabled_reason_label() -> &'static str {
-    match auto_updates_disabled_env_var() {
-        Some(env_var) => match env_var {
-            "DISABLE_AUTOUPDATER" => "DISABLE_AUTOUPDATER set",
-            "NYAN_DISABLE_AUTOUPDATER" => "NYAN_DISABLE_AUTOUPDATER set",
-            "NYAN_DISABLE_NONESSENTIAL_TRAFFIC" => "NYAN_DISABLE_NONESSENTIAL_TRAFFIC set",
-            _ => "environment",
-        },
-        None => "config",
-    }
-}
-
 fn apply_settings_submenu_selection(
     items: &mut [SettingItem],
     menu: SettingsSubmenu,
@@ -396,17 +260,6 @@ fn apply_settings_submenu_selection(
         return false;
     };
     item.value = SettingValue::Display(value.to_string());
-    true
-}
-
-fn set_auto_updates_channel_latest(items: &mut [SettingItem], real_idx: usize) -> bool {
-    let Some(item) = items.get_mut(real_idx) else {
-        return false;
-    };
-    if item.id != "autoUpdatesChannel" {
-        return false;
-    }
-    item.value = SettingValue::Display("latest".to_string());
     true
 }
 
@@ -430,7 +283,6 @@ fn config_summary_label(item: &SettingItem) -> &'static str {
         "respectGitignore" => "respect .gitignore in file picker",
         "copyFullResponse" => "always copy full response",
         "copyOnSelect" => "copy on select",
-        "autoUpdatesChannel" => "auto-update channel",
         "theme" => "theme",
         "model" => "model",
         "notifChannel" => "notifications",
@@ -536,15 +388,6 @@ fn activate_focused_config_item(
         return;
     };
     let current_item = items.read()[real_idx].clone();
-    if matches!(
-        auto_updates_action_for_item(&current_item),
-        Some(AutoUpdatesAction::SetLatest)
-    ) {
-        let mut all = items.read().clone();
-        set_auto_updates_channel_latest(&mut all, real_idx);
-        items.set(all);
-        return;
-    }
     // CC :1604-1653: a submenu row opens its submenu and hides the tabs; the
     // submenu seeds its own state from the current value.
     if let Some(menu) = submenu_for_item(&current_item) {
@@ -1147,7 +990,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                 }
             }
             .into_any()
-        } else if active_submenu == SettingsSubmenu::Language {
+        } else {
             // Maps to: CC `Config.tsx`:1976-2014.
             let initial_language = current_language.read().clone();
             // CC :2003-2012 `<Text dimColor><Byline><KeyboardShortcutHint
@@ -1181,87 +1024,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                         )
                         Text(content: footer, color: theme.inactive)
                     }
-                }
-            }
-            .into_any()
-        } else if active_submenu == SettingsSubmenu::ChannelDowngrade {
-            // Maps to: CC `Config.tsx:2079-2116`. Either choice moves the row
-            // to stable. CC's `stay` also pins `minimumVersion` to the
-            // current version (:2100-2103) in the settings write; the port
-            // drops it with that write (the in-memory preview above), so the
-            // write, when ported, must carry it.
-            element! {
-                ChannelDowngradeDialog(
-                    current_version: product::VERSION.to_string(),
-                    on_choice: move |choice: ChannelDowngradeChoice| {
-                        submenu.set(None);
-                        tabs_hidden_request.set(Some(false));
-                        if choice == ChannelDowngradeChoice::Cancel {
-                            return;
-                        }
-                        let mut all = items.read().clone();
-                        apply_settings_submenu_selection(
-                            &mut all,
-                            SettingsSubmenu::ChannelDowngrade,
-                            "stable",
-                        );
-                        items.set(all);
-                    },
-                )
-            }
-            .into_any()
-        } else {
-            // Maps to: CC `Config.tsx:2015-2078` (EnableAutoUpdates). An
-            // environment variable leaves only its message (:2025-2038);
-            // otherwise the Select re-enables updates on the chosen channel.
-            // The port has no `development` reason here (see
-            // `auto_updates_disabled_env_var`).
-            let body = match auto_updates_disabled_env_var() {
-                Some(env_var) => vec![
-                    element! {
-                        Text(
-                            content: "Auto-updates are controlled by an environment variable and cannot be changed here.".to_string(),
-                            wrap: TextWrap::Wrap,
-                        )
-                    }
-                    .into_any(),
-                    element! {
-                        Text(
-                            content: format!("Unset {env_var} to re-enable auto-updates."),
-                            color: theme.inactive,
-                            wrap: TextWrap::Wrap,
-                        )
-                    }
-                    .into_any(),
-                ],
-                None => vec![
-                    element! {
-                        EnableAutoUpdatesSelect(on_change: move |channel: String| {
-                            submenu.set(None);
-                            tabs_hidden_request.set(Some(false));
-                            let mut all = items.read().clone();
-                            apply_settings_submenu_selection(
-                                &mut all,
-                                SettingsSubmenu::EnableAutoUpdates,
-                                &channel,
-                            );
-                            items.set(all);
-                        })
-                    }
-                    .into_any(),
-                ],
-            };
-            element! {
-                Dialog(
-                    title: "Enable Auto-Updates".to_string(),
-                    on_cancel: move |_| {
-                        submenu.set(None);
-                        tabs_hidden_request.set(Some(false));
-                    },
-                    hide_border: true,
-                    hide_input_guide: true,
-                ) {
-                    #(body)
                 }
             }
             .into_any()
@@ -1323,8 +1085,6 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                 let pointer = if is_sel { POINTER } else { " " };
                 let val_text = item_display_value(item);
                 let val_color = row_color;
-                let disabled_reason = (item.id == "autoUpdatesChannel" && val_text == "disabled")
-                    .then(|| format!("({})", auto_updates_disabled_reason_label()));
 
                 // Maps to: CC Config.tsx line 2153-2227
                 let label_col = LABEL_WIDTH as usize - 2; // minus pointer prefix
@@ -1334,12 +1094,7 @@ pub fn Config<'a>(props: &mut ConfigProps<'a>, mut hooks: Hooks) -> impl Into<An
                         View(width: LABEL_WIDTH) {
                             Text(content: padded, color: row_color)
                         }
-                        View(flex_direction: FlexDirection::Column) {
-                            Text(content: val_text, color: val_color)
-                            #(disabled_reason.map(|reason| element! {
-                                Text(content: reason, color: t.inactive)
-                            }))
-                        }
+                        Text(content: val_text, color: val_color)
                     }
                 }
             }))
@@ -1715,52 +1470,6 @@ mod tests {
         }
     }
 
-    #[derive(Default, Props)]
-    struct ConfigAutoUpdatesDisabledHarnessProps {
-        /// Adds a `KeyCountEcho` below Config.
-        echo: bool,
-    }
-
-    #[component]
-    fn ConfigAutoUpdatesDisabledHarness(
-        props: &ConfigAutoUpdatesDisabledHarnessProps,
-        mut hooks: Hooks,
-    ) -> impl Into<AnyElement<'static>> {
-        let current_theme = *theme::current();
-        let keybinding_runtime =
-            crate::keybindings::keybinding_provider_setup::use_keybinding_setup(
-                &mut hooks,
-                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings(),
-            );
-        let mut global_config = GlobalConfig::default();
-        global_config.auto_updates = Some(false);
-        crate::utils::config::set_test_global_config(Some(global_config));
-        let settings = SettingsJson::default();
-        let test_store = hooks.use_const(move || {
-            let mut initial = crate::state::app_state_store::AppState::default();
-            initial.settings = Arc::new(settings);
-            crate::state::store::AppStore::new(initial, None)
-        });
-        let echo = props.echo;
-
-        element! {
-            ContextProvider(value: Context::owned(keybinding_runtime)) {
-
-                ContextProvider(value: Context::owned(current_theme)) {
-                    crate::state::app_state::AppStateProvider(
-                        prebuilt_store: Some(test_store.clone()),
-                        children: crate::state::app_state::ProviderChildren::new(move || element! {
-                            View(flex_direction: FlexDirection::Column) {
-                                Config(max_visible: Some(12u32), header_focused: false)
-                                #(echo.then(|| element! { KeyCountEcho }))
-                            }
-                        }.into_any()),
-                    )
-                }
-            }
-        }
-    }
-
     fn canvas_lines(canvas: &Canvas) -> Vec<String> {
         (0..canvas.height())
             .map(|y| {
@@ -1876,29 +1585,6 @@ mod tests {
         })
     }
 
-    fn render_with_auto_updates_disabled_config(config: MockTerminalConfig) -> Vec<Canvas> {
-        futures::executor::block_on(async {
-            let mut app = element!(ConfigAutoUpdatesDisabledHarness);
-            let mut render_loop = Box::pin(app.mock_terminal_render_loop(config));
-            let mut canvases = Vec::new();
-            loop {
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(100)).await;
-                    None
-                })
-                .await;
-                let Some(canvas) = next else {
-                    break;
-                };
-                canvases.push(canvas);
-                if canvases.len() >= 20 {
-                    break;
-                }
-            }
-            canvases
-        })
-    }
-
     fn press(code: KeyCode) -> TerminalEvent {
         TerminalEvent::Key(KeyEvent::new(KeyEventKind::Press, code))
     }
@@ -1977,21 +1663,9 @@ mod tests {
         .join("\n")
     }
 
-    fn render_auto_updates_disabled_text_with_events(events: Vec<TerminalEvent>) -> String {
-        let canvases = render_with_auto_updates_disabled_config(
-            MockTerminalConfig::with_events(stream::iter(events)).with_size(100, 24),
-        );
-        canvas_lines(
-            canvases
-                .last()
-                .expect("mock render should produce a canvas"),
-        )
-        .join("\n")
-    }
-
     fn env_lock() -> &'static TestEnvLock {
-        // Share the crate-wide env test lock: settings/items tests mutate the
-        // same auto-update env variables and must serialize across modules.
+        // Share the crate-wide env test lock: these tests set process env
+        // variables that other modules' tests read.
         &TEST_ENV_LOCK
     }
 
@@ -2097,310 +1771,6 @@ mod tests {
             None,
             "official Config does not color true boolean values green when unselected"
         );
-    }
-
-    #[test]
-    fn config_auto_updates_disabled_row_uses_readonly_submenu() {
-        let _lock = env_lock().lock().expect("env tests should serialize");
-        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        let item = SettingItem {
-            id: "autoUpdatesChannel",
-            label: "Auto-update channel",
-            value: SettingValue::Display("disabled".to_string()),
-            search_text: "auto update channel version",
-            visible: true,
-        };
-
-        assert_eq!(
-            submenu_for_item(&item),
-            Some(SettingsSubmenu::EnableAutoUpdates)
-        );
-        let options = enable_auto_updates_options();
-        assert_eq!(
-            options
-                .iter()
-                .map(|option| option.label.as_str())
-                .collect::<Vec<_>>(),
-            vec!["Enable with latest channel", "Enable with stable channel"]
-        );
-        assert_eq!(
-            options
-                .iter()
-                .map(|option| option.value.as_str())
-                .collect::<Vec<_>>(),
-            vec!["latest", "stable"]
-        );
-        assert!(
-            options.iter().all(|option| option.description.is_none()),
-            "official EnableAutoUpdates Select options do not render extra descriptions"
-        );
-    }
-
-    #[test]
-    fn config_auto_updates_disabled_submenu_matches_official_dialog_shape() {
-        let _lock = env_lock().lock().expect("env tests should serialize");
-        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        let mut events = text_events("version");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        let text = render_auto_updates_disabled_text_with_events(events);
-
-        assert!(text.contains("Enable Auto-Updates"), "canvas=\n{text}");
-        assert!(
-            text.contains("Enable with latest channel"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("Enable with stable channel"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("Choose an auto-update channel preview"),
-            "official Dialog does not render extra Nyan guidance; canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("Preview enabling auto-updates"),
-            "official Select rows do not render preview descriptions; canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("Enter preview") && !text.contains("Esc cancel"),
-            "official Dialog hideInputGuide omits a separate footer; canvas=\n{text}"
-        );
-    }
-
-    /// Search "version", leave the search box and open the auto-update
-    /// channel row's submenu.
-    fn open_auto_updates_submenu() -> Vec<TerminalEvent> {
-        let mut open = text_events("version");
-        open.push(press(KeyCode::Enter));
-        open.push(press(KeyCode::Char(' ')));
-        open
-    }
-
-    /// `ConfigAutoUpdatesDisabledHarness` driven one key per frame; returns
-    /// the text of the frame the last key produced.
-    fn drive_auto_updates_disabled_keys_text(events: Vec<TerminalEvent>) -> String {
-        let canvases = drive_harness(
-            element!(ConfigAutoUpdatesDisabledHarness(echo: true)).into_any(),
-            events.into_iter().map(|event| vec![event]).collect(),
-        );
-        canvas_lines(canvases.last().unwrap()).join("\n")
-    }
-
-    #[test]
-    fn config_auto_updates_disabled_by_env_stays_message_only() {
-        // CC Config.tsx:2025-2038: an env reason shows its message, no Select.
-        let _lock = env_lock().lock().expect("env tests should serialize");
-        let _disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        let _env_guard = EnvVarGuard::set("DISABLE_AUTOUPDATER", "1");
-
-        let text = drive_auto_updates_disabled_keys_text(open_auto_updates_submenu());
-        assert!(text.contains("Enable Auto-Updates"), "canvas=\n{text}");
-        assert!(
-            text.contains(
-                "Auto-updates are controlled by an environment variable and cannot be changed here."
-            ),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("Unset DISABLE_AUTOUPDATER to re-enable auto-updates."),
-            "canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("Enable with latest channel"),
-            "canvas=\n{text}"
-        );
-    }
-
-    #[test]
-    fn config_enable_auto_updates_select_sets_the_channel_and_closes() {
-        // CC Config.tsx:2051-2075: the chosen channel becomes the row value.
-        let _lock = env_lock().lock().expect("env tests should serialize");
-        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        // F12 is a key nothing binds: its frame shows the settled choice.
-        let mut keys = open_auto_updates_submenu();
-        keys.push(press(KeyCode::Down));
-        keys.push(press(KeyCode::Enter));
-        keys.push(press(KeyCode::F(12)));
-
-        let text = drive_auto_updates_disabled_keys_text(keys);
-        let row = text
-            .lines()
-            .find(|line| line.contains("Auto-update channel"))
-            .unwrap_or_else(|| panic!("the list should be back; canvas=\n{text}"));
-        assert!(row.contains("stable"), "canvas=\n{text}");
-        assert!(!text.contains("Enable Auto-Updates"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn config_enable_auto_updates_escape_and_n_close_the_dialog() {
-        // CC Config.tsx:2016-2021 `<Dialog onCancel>`: confirm:no is Esc and
-        // n; the row keeps its value.
-        let _lock = env_lock().lock().expect("env tests should serialize");
-        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        // F12 is a key nothing binds: its frame shows the settled cancel.
-        for key in [KeyCode::Esc, KeyCode::Char('n')] {
-            let mut keys = open_auto_updates_submenu();
-            keys.push(press(key));
-            keys.push(press(KeyCode::F(12)));
-            let text = drive_auto_updates_disabled_keys_text(keys);
-            let row = text
-                .lines()
-                .find(|line| line.contains("Auto-update channel"))
-                .unwrap_or_else(|| panic!("{key:?}: the list should be back; canvas=\n{text}"));
-            assert!(row.contains("disabled"), "{key:?}: canvas=\n{text}");
-            assert!(
-                !text.contains("Enable Auto-Updates"),
-                "{key:?}: canvas=\n{text}"
-            );
-        }
-    }
-
-    #[test]
-    fn config_auto_updates_disabled_row_renders_official_reason_line() {
-        let _lock = env_lock().lock().expect("env tests should serialize");
-        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
-        let mut events = text_events("version");
-        events.push(press(KeyCode::Enter));
-        let text = render_auto_updates_disabled_text_with_events(events);
-
-        assert!(
-            text.contains("Auto-update channel") && text.contains("disabled"),
-            "disabled auto-update row should remain visible; canvas=\n{text}"
-        );
-        assert!(
-            text.contains("(config)"),
-            "official Config renders disabled reason on a dim second line; canvas=\n{text}"
-        );
-    }
-
-    #[test]
-    fn config_auto_updates_latest_opens_official_channel_downgrade_dialog() {
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
-        let _guards = latest_channel_env_guards();
-        let mut events = text_events("version");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        let text = render_text_with_events(events);
-
-        assert!(
-            text.contains("Switch to Stable Channel"),
-            "latest channel should open the official downgrade dialog; canvas=\n{text}"
-        );
-        assert!(
-            text.contains(&format!("currently running ({})", product::VERSION)),
-            "downgrade dialog should include the current version; canvas=\n{text}"
-        );
-        assert!(
-            text.contains("Allow possible downgrade to stable version"),
-            "downgrade dialog should include the official downgrade choice; canvas=\n{text}"
-        );
-        assert!(
-            text.contains(&format!(
-                "Stay on current version ({}) until stable catches up",
-                product::VERSION
-            )),
-            "downgrade dialog should include the official stay choice; canvas=\n{text}"
-        );
-        assert!(
-            !text.contains("Enter select · Esc cancel"),
-            "official ChannelDowngradeDialog hideInputGuide omits a separate footer; canvas=\n{text}"
-        );
-    }
-
-    /// Clears every variable that disables auto-updates
-    /// (`items::auto_updates_are_disabled`), so the row reads the default
-    /// `latest` channel whatever the host exports.
-    fn latest_channel_env_guards() -> [EnvVarGuard; 3] {
-        [
-            EnvVarGuard::unset("DISABLE_AUTOUPDATER"),
-            EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER"),
-            EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC"),
-        ]
-    }
-
-    /// Opens the latest channel's ChannelDowngrade dialog and sends `keys`,
-    /// one key per frame; returns the Auto-update channel row, or panics when
-    /// the list is not back.
-    fn channel_downgrade_row_after(keys: Vec<TerminalEvent>) -> String {
-        let mut events = text_events("version");
-        events.push(press(KeyCode::Enter));
-        events.push(press(KeyCode::Char(' ')));
-        events.extend(keys);
-        let text = drive_config_keys_text(events);
-        assert!(
-            !text.contains("Switch to Stable Channel"),
-            "canvas=\n{text}"
-        );
-        text.lines()
-            .find(|line| line.contains("Auto-update channel"))
-            .unwrap_or_else(|| panic!("the list should be back; canvas=\n{text}"))
-            .to_string()
-    }
-
-    #[test]
-    fn config_channel_downgrade_choice_moves_the_row_to_stable() {
-        // CC Config.tsx:2082-2109: `downgrade` or `stay` switch to stable.
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
-        let _guards = latest_channel_env_guards();
-        // F12 is a key nothing binds: its frame shows the settled choice.
-        for choice in [Vec::new(), vec![press(KeyCode::Down)]] {
-            let mut keys = choice;
-            keys.push(press(KeyCode::Enter));
-            keys.push(press(KeyCode::F(12)));
-            let row = channel_downgrade_row_after(keys);
-            assert!(row.contains("stable"), "{row}");
-        }
-    }
-
-    #[test]
-    fn config_channel_downgrade_escape_and_n_keep_the_channel() {
-        // CC ChannelDowngradeDialog.tsx:25-27 cancels through the Dialog's
-        // confirm:no (Esc and n); Config.tsx:2086-2089 then changes nothing.
-        // F12 is a key nothing binds: its frame shows the settled cancel.
-        let _guard = env_lock().lock().expect("env lock should not be poisoned");
-        let _guards = latest_channel_env_guards();
-        for key in [KeyCode::Esc, KeyCode::Char('n')] {
-            let row = channel_downgrade_row_after(vec![press(key), press(KeyCode::F(12))]);
-            assert!(row.contains("latest"), "{key:?}: {row}");
-        }
-    }
-
-    #[test]
-    fn config_auto_updates_stable_switches_to_latest_without_picker() {
-        let item = SettingItem {
-            id: "autoUpdatesChannel",
-            label: "Auto-update channel",
-            value: SettingValue::Display("stable".to_string()),
-            search_text: "auto update channel version",
-            visible: true,
-        };
-
-        assert_eq!(
-            auto_updates_action_for_item(&item),
-            Some(AutoUpdatesAction::SetLatest),
-            "official Config switches stable back to latest directly"
-        );
-        assert_eq!(
-            submenu_for_item(&item),
-            None,
-            "stable channel should not open the old generic auto-update picker"
-        );
-
-        let mut items = vec![item];
-        assert!(set_auto_updates_channel_latest(&mut items, 0));
-        assert_eq!(items[0].display_value(), "latest");
     }
 
     #[test]
@@ -2725,21 +2095,6 @@ mod tests {
             .find(|item| item.id == "theme")
             .expect("default settings include theme");
         assert_eq!(theme_item.display_value(), "Light mode");
-        let auto_update_item = items
-            .iter_mut()
-            .find(|item| item.id == "autoUpdatesChannel")
-            .expect("default settings include auto-update channel");
-        auto_update_item.value = SettingValue::Display("disabled".to_string());
-        assert!(apply_settings_submenu_selection(
-            &mut items,
-            SettingsSubmenu::EnableAutoUpdates,
-            "stable"
-        ));
-        let auto_update_item = items
-            .iter()
-            .find(|item| item.id == "autoUpdatesChannel")
-            .expect("default settings include auto-update channel");
-        assert_eq!(auto_update_item.display_value(), "stable");
         assert!(
             !crate::utils::session_storage::is_session_write_enabled(),
             "settings picker previews must not imply session writes"
@@ -2750,11 +2105,6 @@ mod tests {
     fn config_picker_preview_events_do_not_write_settings_or_session_files() {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _guard = env_lock().lock().expect("env lock should not be poisoned");
-        // Neutralize machine-level auto-update kill-switches so the
-        // auto-updates picker rows behave identically on every host.
-        let _disable_guard = EnvVarGuard::unset("DISABLE_AUTOUPDATER");
-        let _claude_disable_guard = EnvVarGuard::unset("NYAN_DISABLE_AUTOUPDATER");
-        let _traffic_guard = EnvVarGuard::unset("NYAN_DISABLE_NONESSENTIAL_TRAFFIC");
         let temp_root =
             std::env::temp_dir().join(format!("nyan-settings-readonly-{}", uuid::Uuid::new_v4()));
         let config_home = temp_root.join("config-home");

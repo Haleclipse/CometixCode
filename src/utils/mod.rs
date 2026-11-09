@@ -97,7 +97,6 @@ pub mod iocraft_color;
 pub mod js_sort;
 pub mod json;
 pub mod kill_ring;
-pub mod local_installer;
 pub mod log;
 pub mod logo_v2_utils;
 pub mod managed_env;

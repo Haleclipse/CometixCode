@@ -116,6 +116,11 @@ tree-sitter-md = "0.5.4"
 tantivy = { version = "0.27.0", default-features = false, features = ["mmap", "lz4-compression"] }
 sha2 = "0.11.0"
 md5 = "0.8.0"
+# GitHub Releases auto-update archives: tar.gz for Linux, zip for Windows.
+# Extraction is limited to regular files/directories in a temp directory and
+# paths are validated before unpacking.
+tar = "0.4.46"
+zip = { version = "9.5", default-features = false, features = ["deflate-flate2"] }
 base64 = "0.22.1"
 nucleo-matcher = "0.3.1"
 similar = "3.1.1"

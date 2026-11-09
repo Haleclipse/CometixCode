@@ -166,9 +166,6 @@ pub struct SettingsJson {
     // ── Remote ──
     pub remote: Option<RemoteSettings>,
 
-    pub auto_updates_channel: Option<String>,
-    pub minimum_version: Option<String>,
-
     pub plans_directory: Option<String>,
     pub show_clear_context_on_plan_accept: Option<bool>,
     pub agent: Option<String>,
@@ -1017,18 +1014,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 )])
                 .optional()
                 .describe("Remote session configuration"),
-            ),
-            (
-                "autoUpdatesChannel",
-                zod::enumeration(vec!["latest", "stable"])
-                    .optional()
-                    .describe("Release channel for auto-updates (latest or stable)"),
-            ),
-            (
-                "minimumVersion",
-                zod::string().optional().describe(
-                    "Minimum version to stay on - prevents downgrades when switching to stable channel",
-                ),
             ),
             (
                 "plansDirectory",

@@ -56,6 +56,10 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
         return Some(run_doctor_cli());
     }
 
+    if config.subcommand.as_deref() == Some("update") {
+        return Some(run_update_cli());
+    }
+
     // Maps to CC `cli/print.ts`: print/SDK mode owns the query lifetime and
     // structured stdout protocol instead of entering the retained TUI.
     if config.print {
@@ -64,6 +68,38 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
 
     // Interactive prompt-only without -p is Partial: allowed (typed later in REPL).
     None
+}
+
+/// `nyan update`: download and install the newest GitHub Release asset.
+fn run_update_cli() -> i32 {
+    // The trusted settings env carries the proxy and CA variables the
+    // download must honour, applied as `main::run` does before any request.
+    crate::utils::managed_env::apply_safe_config_environment_variables();
+    crate::utils::ca_certs_config::apply_extra_ca_certs_from_config();
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            eprintln!("Update failed: {error}");
+            return 1;
+        }
+    };
+    match runtime.block_on(crate::utils::auto_updater::run_update()) {
+        Ok(outcome) if outcome.is_success() => {
+            println!("{}", outcome.message());
+            0
+        }
+        Ok(outcome) => {
+            eprintln!("{}", outcome.message());
+            1
+        }
+        Err(error) => {
+            eprintln!("Update failed: {error}");
+            1
+        }
+    }
 }
 
 fn run_doctor_cli() -> i32 {
@@ -129,6 +165,13 @@ mod tests {
     fn dispatch_doctor_subcommand_exits_zero() {
         let c = parse_cli_config(&argv(&["doctor"]));
         assert_eq!(dispatch(&c), Some(0));
+    }
+
+    #[test]
+    fn update_subcommand_is_live_not_unimplemented() {
+        let c = parse_cli_config(&argv(&["update"]));
+        assert!(c.unimplemented_reasons().is_empty());
+        assert_eq!(c.subcommand.as_deref(), Some("update"));
     }
 
     #[test]

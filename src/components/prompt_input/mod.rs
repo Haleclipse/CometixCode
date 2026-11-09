@@ -440,12 +440,8 @@ pub struct PromptInputProps<'a> {
     /// Maps to: CC `PromptInputProps.apiKeyStatus`, owned by REPL's
     /// `use_credential_status` hook.
     pub credential_status: CredentialStatus,
-    /// Maps to: CC `PromptInput.tsx:239` `autoUpdaterResult` — REPL-owned
-    /// state (REPL.tsx:1408), prop-drilled to Footer → Notifications.
-    pub auto_updater_result: Option<crate::utils::auto_updater::AutoUpdaterResult>,
-    /// Maps to: CC `PromptInput.tsx:238` `onAutoUpdaterResult` — REPL
-    /// `setAutoUpdaterResult` (REPL.tsx:6829).
-    pub on_auto_updater_result: Handler<crate::utils::auto_updater::AutoUpdaterResult>,
+    /// REPL-owned newer release, prop-drilled to Footer → Notifications.
+    pub update_available: Option<crate::utils::auto_updater::UpdateAvailable>,
     /// Maps to: CC `PromptInput.tsx:229,317` `ideSelection` — REPL-owned state
     /// (REPL.tsx:1111), prop-drilled to Footer (`:3069`) → Notifications.
     pub ide_selection: Option<crate::hooks::use_ide_selection::IdeSelection>,
@@ -565,15 +561,6 @@ pub fn PromptInput<'a>(
     // the const value is only the provider-less fallback, not a frozen copy of
     // the first merged command array.
     let commands = props.commands.clone().unwrap_or(initial_commands_fallback);
-    // Maps to: CC PromptInput.tsx:367 `const [isAutoUpdating, setIsAutoUpdating]
-    // = useState(false)` — PromptInput-local; the setter travels down as
-    // `onChangeIsUpdating` (:3056) and the updater children's check loops
-    // drive it (AutoUpdater.tsx:112/:170, NativeAutoUpdater.tsx:99/:166).
-    let is_auto_updating = hooks.use_state(|| false);
-    let on_change_is_updating: Handler<bool> = Handler::from(move |value: bool| {
-        let mut is_auto_updating = is_auto_updating;
-        is_auto_updating.set(value);
-    });
     let app_store = hooks
         .try_use_context::<crate::state::store::AppStore>()
         .map(|store| store.clone());
@@ -2684,8 +2671,7 @@ pub fn PromptInput<'a>(
     let notification_row_count = {
         let debug = props.debug;
         let credential_status = props.credential_status.clone();
-        let auto_updater_result = props.auto_updater_result.clone();
-        let auto_updating = is_auto_updating.get();
+        let update_available = props.update_available.clone();
         let ide_selection = props.ide_selection.clone();
         use_app_state(&mut hooks, move |state| {
             notifications::direct_footer_row_count_from_app(
@@ -2694,8 +2680,7 @@ pub fn PromptInput<'a>(
                 debug,
                 &credential_status,
                 token_usage,
-                auto_updater_result.as_ref(),
-                auto_updating,
+                update_available.as_ref(),
                 ide_selection.as_ref(),
             )
         })
@@ -3057,15 +3042,9 @@ pub fn PromptInput<'a>(
                     // SandboxPromptFooterHint) can reach the wake — layout
                     // flips wake PromptInput, not the whole tree.
                     ContextProvider(value: Context::owned(footer_layout_wake.clone())) {
-                        // Maps to: CC PromptInput.tsx:3046-3056 — PromptInputFooter
-                        // receives autoUpdaterResult/isAutoUpdating plus the
-                        // onAutoUpdaterResult/onChangeIsUpdating callbacks.
                         prompt_input_footer::Footer(
                             credential_status: props.credential_status.clone(),
-                            auto_updater_result: props.auto_updater_result.clone(),
-                            is_auto_updating: is_auto_updating.get(),
-                            on_auto_updater_result: props.on_auto_updater_result.clone(),
-                            on_change_is_updating: on_change_is_updating.clone(),
+                            update_available: props.update_available.clone(),
                             debug: props.debug,
                             // Maps to: CC PromptInput.tsx:3069 `ideSelection={ideSelection}`.
                             ide_selection: props.ide_selection.clone(),

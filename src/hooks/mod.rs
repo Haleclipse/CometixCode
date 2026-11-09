@@ -39,6 +39,5 @@ pub mod use_swarm_permission_poller;
 pub mod use_text_input;
 pub mod use_turn_diffs;
 pub mod use_typeahead;
-pub mod use_update_notification;
 
 pub mod use_manage_plugins;

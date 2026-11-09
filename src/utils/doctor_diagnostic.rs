@@ -290,20 +290,25 @@ fn git_bash_display() -> Option<String> {
 }
 
 fn auto_updates_display() -> String {
-    if let Some(message) =
-        crate::utils::auto_updater::auto_update_message_for_platform(std::env::consts::OS)
-    {
-        return message.to_string();
+    if let Some(reason) = crate::utils::config::get_auto_updater_disabled_reason() {
+        return format!(
+            "disabled ({})",
+            crate::utils::config::format_auto_updater_disabled_reason(reason)
+        );
     }
 
-    crate::utils::config::get_auto_updater_disabled_reason()
-        .map(|reason| {
-            format!(
-                "disabled ({})",
-                crate::utils::config::format_auto_updater_disabled_reason(reason)
-            )
-        })
-        .unwrap_or_else(|| "enabled".to_string())
+    match crate::utils::auto_updater::current_update_support() {
+        crate::utils::auto_updater::UpdateSupport::ReleaseBinary => "enabled".to_string(),
+        crate::utils::auto_updater::UpdateSupport::DevelopmentBuild { .. } => {
+            "enabled (development build; no release replacement)".to_string()
+        }
+        crate::utils::auto_updater::UpdateSupport::SourceInstall { .. } => {
+            "enabled (source install; no release replacement)".to_string()
+        }
+        crate::utils::auto_updater::UpdateSupport::UnsupportedPlatform { platform } => {
+            format!("enabled (no release asset for {platform})")
+        }
+    }
 }
 
 /// Maps to CC `gatherDiagnosticInfo` ripgrepStatus shaping from

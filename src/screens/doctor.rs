@@ -86,15 +86,6 @@ fn env_validation_warnings() -> Vec<EnvValidationWarning> {
     .collect()
 }
 
-fn doctor_auto_update_channel() -> String {
-    crate::utils::settings::load_settings_from_disk()
-        .settings
-        .auto_updates_channel
-        .or_else(|| crate::utils::process_env::var("NYAN_AUTO_UPDATE_CHANNEL"))
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "latest".to_string())
-}
-
 /// Maps to CC `screens/Doctor.tsx` `VersionLockInfo`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct VersionLockInfo {
@@ -214,7 +205,6 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
     // CC `Doctor.tsx:157-168` `useMemo(..., [])`: validated once per mount, so
     // its debug logging does not repeat on every frame.
     let env_warnings = hooks.use_memo(env_validation_warnings, ());
-    let auto_update_channel = doctor_auto_update_channel();
     let search_status = doctor_search_status(&diagnostic);
     let profile_diagnoses = hooks.use_memo(
         || {
@@ -313,11 +303,10 @@ pub fn Doctor<'a>(props: &mut DoctorProps<'a>, mut hooks: Hooks) -> impl Into<An
 
             View(margin_top: 1u32, flex_direction: FlexDirection::Column) {
                 Text(content: "Updates".to_string(), weight: Weight::Bold)
-                Text(content: format!("└ Auto-updates: {}", if diagnostic.package_manager.is_some() { "Managed by package manager" } else { diagnostic.auto_updates.as_str() }))
+                Text(content: format!("└ Auto-updates: {}", diagnostic.auto_updates))
                 #(diagnostic.has_update_permissions.map(|has_permissions| element! {
                     Text(content: format!("└ Update permissions: {}", if has_permissions { "Yes" } else { "No (requires sudo)" }))
                 }))
-                Text(content: format!("└ Auto-update channel: {auto_update_channel}"))
                 Text(content: "└ Failed to fetch versions".to_string(), dim: true)
             }
 
@@ -620,7 +609,6 @@ mod tests {
         assert!(text.contains("└ Search:"), "canvas=\n{text}");
         assert!(text.contains("Updates"), "canvas=\n{text}");
         assert!(text.contains("└ Auto-updates:"), "canvas=\n{text}");
-        assert!(text.contains("└ Auto-update channel:"), "canvas=\n{text}");
         assert!(text.contains("Model Profiles"), "canvas=\n{text}");
         assert!(text.contains("Press Enter to continue…"), "canvas=\n{text}");
     }

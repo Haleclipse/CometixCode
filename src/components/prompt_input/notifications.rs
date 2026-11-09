@@ -3,29 +3,13 @@
 //!
 //! Status rows match CC `NotificationContent`: inline overage/apiKeyHelper/auth/
 //! debug/verbose; mounts of root components (`IdeStatusIndicator`, `TokenWarning`,
-//! `AutoUpdaterWrapper`, `MemoryUsageIndicator`) and PromptInput-local
+//! `UpdateNotifier`, `MemoryUsageIndicator`) and PromptInput-local
 //! `SandboxPromptFooterHint`. No parallel `*_footer.rs` adapter layer.
 
 use super::prompt_input_footer::PromptFooterIndicator;
-use crate::components::auto_updater_wrapper::{
-    AutoUpdaterWrapper, auto_update_hint_row_count_from_app,
-};
-use crate::utils::auto_updater::InstallStatus;
-
-/// Maps to: CC `PromptInput/Notifications.tsx:119-122` `shouldShowAutoUpdater`
-/// — defined by its consumer (this file), imported by the wrapper's height
-/// helper (O-2: owner direction mirrors CC).
-pub fn should_show_auto_updater(
-    ide_selection_visible: bool,
-    is_updating: bool,
-    result_status: Option<InstallStatus>,
-) -> bool {
-    !ide_selection_visible || is_updating || result_status != Some(InstallStatus::Success)
-}
-use crate::components::ide_status_indicator::{
-    IdeStatusIndicator, ide_hint_row_count, ide_status_indicator_text,
-};
+use crate::components::ide_status_indicator::{IdeStatusIndicator, ide_hint_row_count};
 use crate::components::token_warning::{TokenWarning, token_warning_hint_row_count};
+use crate::components::update_notifier::{UpdateNotifier, update_notifier_row_count};
 use crate::context::notifications::use_notifications;
 use crate::context::notifications::{NotificationColor, NotificationSegment};
 use crate::hooks::notifs::ide_status_indicator::IdeConnectionStatus;
@@ -143,8 +127,7 @@ fn api_key_helper_slow_now(store: &AppStore) -> bool {
 /// footer height without moving their auth, subscription, or environment policy.
 /// `token_usage` is caller-derived from that caller's `messages` prop via
 /// [`token_usage_from_messages`] (CC Notifications.tsx:80-83 — not AppState).
-/// `auto_updater_result`/`is_auto_updating` are caller-threaded from their
-/// REPL/PromptInput owners (CC Notifications.tsx:53-55 props — not AppState).
+/// `update_available` is caller-threaded from the REPL owner.
 /// `ide_selection` is the REPL-owned selection state, prop-drilled through
 /// PromptInput/Footer (CC Notifications.tsx:60,75 props — not AppState).
 pub fn direct_footer_row_count_from_app(
@@ -153,8 +136,7 @@ pub fn direct_footer_row_count_from_app(
     debug: bool,
     credential_status: &CredentialStatus,
     token_usage: u64,
-    auto_updater_result: Option<&crate::utils::auto_updater::AutoUpdaterResult>,
-    is_auto_updating: bool,
+    update_available: Option<&crate::utils::auto_updater::UpdateAvailable>,
     ide_selection: Option<&crate::hooks::use_ide_selection::IdeSelection>,
 ) -> usize {
     let sandbox_enabled =
@@ -207,12 +189,7 @@ pub fn direct_footer_row_count_from_app(
     let ide_status = ide_connected.then_some(IdeConnectionStatus::Connected);
     let ide_rows = ide_hint_row_count(ide_status, ide_selection);
     count += ide_rows;
-    count += auto_update_hint_row_count_from_app(
-        state,
-        auto_updater_result,
-        is_auto_updating,
-        ide_rows > 0,
-    );
+    count += update_notifier_row_count(update_available);
     count
 }
 
@@ -262,18 +239,8 @@ pub struct NotificationsProps {
     /// Maps to: CC `NotificationsProps.apiKeyStatus`, passed from REPL through
     /// PromptInput rather than read from AppState.
     pub credential_status: CredentialStatus,
-    /// Maps to: CC `NotificationsProps.autoUpdaterResult` (Notifications.tsx:53)
-    /// — REPL-owned state, prop-drilled through PromptInput/Footer.
-    pub auto_updater_result: Option<crate::utils::auto_updater::AutoUpdaterResult>,
-    /// Maps to: CC `NotificationsProps.isAutoUpdating` (Notifications.tsx:54)
-    /// — PromptInput-owned state.
-    pub is_auto_updating: bool,
-    /// Maps to: CC `NotificationsProps.onAutoUpdaterResult` (Notifications.tsx:58)
-    /// — REPL `setAutoUpdaterResult`, forwarded to `AutoUpdaterWrapper`.
-    pub on_auto_updater_result: Handler<crate::utils::auto_updater::AutoUpdaterResult>,
-    /// Maps to: CC `NotificationsProps.onChangeIsUpdating` (Notifications.tsx:59)
-    /// — PromptInput `setIsAutoUpdating`, forwarded to `AutoUpdaterWrapper`.
-    pub on_change_is_updating: Handler<bool>,
+    /// REPL-owned newer release, prop-drilled through PromptInput/Footer.
+    pub update_available: Option<crate::utils::auto_updater::UpdateAvailable>,
     /// Maps to: CC `NotificationsProps.debug`, forwarded from REPL launch props.
     pub debug: bool,
     /// Maps to: CC NotificationsProps.messages (Notifications.tsx:57,72).
@@ -421,21 +388,6 @@ pub fn Notifications(
     }
 
     let ide_status = ide_connected.then_some(IdeConnectionStatus::Connected);
-    let ide_visible = ide_status_indicator_text(ide_status, ide_selection.as_ref()).is_some();
-    // Maps to: CC Notifications.tsx:119-122 — gate from the prop-drilled
-    // REPL/PromptInput values (no AppState involvement).
-    let show_auto_updater = should_show_auto_updater(
-        ide_visible,
-        props.is_auto_updating,
-        props.auto_updater_result.as_ref().map(|r| r.status),
-    );
-    // Maps to: CC `showSuccessMessage={!isShowingCompactMessage}`.
-    let show_success = !crate::services::compact::auto_compact::calculate_token_warning_state(
-        token_usage as i64,
-        &main_loop_model,
-    )
-    .is_above_warning_threshold;
-
     let (col_pl, col_pr) = if props.inline {
         (0u32, 0u32)
     } else {
@@ -469,22 +421,10 @@ pub fn Notifications(
             } else {
                 None
             })
-            #(if show_auto_updater {
-                // Maps to: CC Notifications.tsx:343-349 — forward the CC
-                // callback/value props; showSuccessMessage={!isShowingCompactMessage}.
-                Some(element! {
-                    AutoUpdaterWrapper(
-                        is_updating: props.is_auto_updating,
-                        auto_updater_result: props.auto_updater_result.clone(),
-                        on_auto_updater_result: props.on_auto_updater_result.clone(),
-                        on_change_is_updating: props.on_change_is_updating.clone(),
-                        show_success_message: show_success,
-                        verbose: verbose,
-                    )
-                })
-            } else {
-                None
-            })
+            UpdateNotifier(
+                update_available: props.update_available.clone(),
+                verbose: verbose,
+            )
             crate::components::memory_usage_indicator::MemoryUsageIndicator
             super::sandbox_prompt_footer_hint::SandboxPromptFooterHint
         }
@@ -543,7 +483,6 @@ impl FooterRow {
 mod tests {
     use super::*;
     use crate::context::notifications::{Notification, NotificationPriority, NotificationsState};
-    use crate::utils::auto_updater::{AutoUpdaterResult, InstallStatus};
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
     use std::path::PathBuf;
 
@@ -988,69 +927,12 @@ mod tests {
     }
 
     #[test]
-    fn should_show_auto_updater_hides_success_when_ide_selection_visible() {
-        assert!(!should_show_auto_updater(
-            true,
-            false,
-            Some(InstallStatus::Success)
-        ));
-        assert!(should_show_auto_updater(
-            true,
-            true,
-            Some(InstallStatus::Success)
-        ));
-    }
-
-    /// Maps to: CC Notifications.tsx:119-122 gate + the child render bodies —
-    /// the height row is driven by the REPL-owned result / PromptInput-owned
-    /// isAutoUpdating values (plus AppState verbose), not stale AppState. A
-    /// success result renders an empty row as executed (committed-null
-    /// updateSemver), so it counts 0 unless verbose adds the versions row;
-    /// failure statuses and in-flight installs count 1.
-    #[test]
-    fn auto_update_height_counts_as_executed_rows_from_owner_threaded_values() {
-        let state = crate::state::app_state_store::AppState::default();
-        let success = AutoUpdaterResult {
-            version: Some("1.0.0".into()),
-            status: InstallStatus::Success,
-            notifications: Vec::new(),
+    fn update_notifier_height_tracks_the_owner_threaded_version() {
+        let available = crate::utils::auto_updater::UpdateAvailable {
+            version: "1.1.0".to_string(),
         };
-        let failure = AutoUpdaterResult {
-            version: Some("1.0.0".into()),
-            status: InstallStatus::InstallFailed,
-            notifications: Vec::new(),
-        };
-        assert_eq!(
-            auto_update_hint_row_count_from_app(&state, Some(&success), false, false),
-            0,
-            "success copy never commits (CC render-phase discard)"
-        );
-        assert_eq!(
-            auto_update_hint_row_count_from_app(&state, Some(&failure), false, false),
-            1
-        );
-        assert_eq!(
-            auto_update_hint_row_count_from_app(&state, None, true, false),
-            1
-        );
-        assert_eq!(
-            auto_update_hint_row_count_from_app(&state, None, false, false),
-            0
-        );
-
-        let mut verbose_state = crate::state::app_state_store::AppState::default();
-        verbose_state.verbose = true;
-        assert_eq!(
-            auto_update_hint_row_count_from_app(&verbose_state, Some(&success), false, false),
-            1,
-            "verbose renders the versions row whenever the child gate passes"
-        );
-        assert_eq!(
-            auto_update_hint_row_count_from_app(&verbose_state, Some(&success), false, true),
-            0,
-            "a visible ⧉ ide row suppresses the success auto-updater row \
-             (CC Notifications.tsx:119-122 shouldShowAutoUpdater)"
-        );
+        assert_eq!(update_notifier_row_count(Some(&available)), 1);
+        assert_eq!(update_notifier_row_count(None), 0);
     }
 
     fn assistant_message_with_usage(

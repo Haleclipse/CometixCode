@@ -319,10 +319,8 @@ mod tests {
                 // No messages in this fixture; zero usage matches an empty
                 // conversation (CC derives tokenUsage from messages).
                 0,
-                // No auto-updater result / install in flight in this fixture
-                // (owner-threaded values, CC Notifications.tsx:53-55 props).
+                // No update available in this fixture (owner-threaded value).
                 None,
-                false,
                 // No REPL ide selection in this fixture (owner-threaded value,
                 // CC Notifications.tsx:60,75 props).
                 None,

@@ -137,6 +137,38 @@ Unblock-File -Path .\nyan.exe, .\vendor\ripgrep\x64-win32\rg.exe
 
 Button labels depend on the Windows display language.
 
+### Updating
+
+Release builds installed from a GitHub Release (Linux x86_64/aarch64 and
+Windows x86_64) check `blxzer77/nyan` releases in the background and show a
+footer notice when a newer version exists. They never download or replace the
+binary on their own. To update:
+
+```sh
+nyan update
+```
+
+The command downloads the matching asset from the release, verifies it against
+that release's `SHA256SUMS`, and atomically replaces the running binary.
+Restart nyan afterwards.
+
+- `NYAN_REPO=owner/name` overrides the release repository.
+- `DISABLE_AUTOUPDATER=1`, `NYAN_DISABLE_AUTOUPDATER=1` or
+  `NYAN_DISABLE_NONESSENTIAL_TRAFFIC=1` disables the background check;
+  `nyan update` still runs when invoked explicitly.
+- Both use the configured proxy and CA settings (`HTTPS_PROXY`, `NO_PROXY`,
+  `NODE_EXTRA_CA_CERTS`, including the `env` block of user settings).
+
+Only stable releases are offered: drafts and prereleases are ignored, and
+there is no channel setting.
+
+If the install directory is not writable (for example a root-owned
+`/usr/local/bin`), `nyan update` changes nothing and asks you to re-run the
+install script: `install.sh` on Linux, `install.ps1` on Windows.
+
+Source builds (`cargo build`, `cargo install`) are not replaced by
+`nyan update`; it prints the rebuild instruction instead.
+
 ### Cross-compiling for Windows
 
 ```sh
