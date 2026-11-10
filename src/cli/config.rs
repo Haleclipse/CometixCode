@@ -261,6 +261,20 @@ impl CliConfig {
         reasons
     }
 
+    pub fn print_update_help() {
+        println!(
+            "\
+Usage: nyan update [options]
+
+Download and install the latest stable nyan release from GitHub Releases.
+Source and development builds must be updated from source.
+
+Options:
+  -h, --help                 Show this help
+"
+        );
+    }
+
     pub fn print_help() {
         println!(
             "\
@@ -302,10 +316,11 @@ Live:
       --include-partial-messages / --replay-user-messages
       --no-session-persistence  Disable transcript persistence in print mode
       Teammate flags         --agent-id/--agent-name/--team-name/...
+      update                 Download and install the latest stable release
 
 Unimplemented (parsed, then exit 1):
       --session-id / --fork-session
-      Subcommands: mcp, auth, plugin, doctor, update, …
+      Subcommands: mcp, auth, plugin, doctor, …
       --init / --init-only / --maintenance
       --worktree / --tmux / --remote / --bg / daemon
 "

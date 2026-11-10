@@ -35,7 +35,11 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
     }
 
     if config.show_help {
-        CliConfig::print_help();
+        if config.subcommand.as_deref() == Some("update") {
+            CliConfig::print_update_help();
+        } else {
+            CliConfig::print_help();
+        }
         return Some(0);
     }
 
@@ -172,6 +176,35 @@ mod tests {
         let c = parse_cli_config(&argv(&["update"]));
         assert!(c.unimplemented_reasons().is_empty());
         assert_eq!(c.subcommand.as_deref(), Some("update"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_update_help_exits_without_running_updater() {
+        // Entering run_update_cli would try to block_on a nested runtime and
+        // panic here, before any release request or installation can run.
+        for args in [
+            vec!["update", "--help"],
+            vec!["update", "-h"],
+            vec!["--help", "update"],
+            vec!["-h", "update"],
+            vec!["update", "--unknown", "--help"],
+        ] {
+            let config = parse_cli_config(&argv(&args));
+            assert_eq!(dispatch(&config), Some(0), "{args:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn dispatch_update_unsupported_arguments_do_not_run_updater() {
+        for args in [
+            vec!["update", "--check"],
+            vec!["update", "--unknown"],
+            vec!["update", "unexpected"],
+            vec!["update", "--", "--help"],
+        ] {
+            let config = parse_cli_config(&argv(&args));
+            assert_eq!(dispatch(&config), Some(1), "{args:?}");
+        }
     }
 
     #[test]

@@ -105,7 +105,17 @@ pub fn parse_cli_config(argv: &[String]) -> CliConfig {
             if matches!(*sub, "ps" | "logs" | "attach" | "kill") {
                 config.background = true;
             }
-            // Consume remaining as opaque for now.
+            if *sub == "update" {
+                let mut options = true;
+                for arg in &args[index + 1..] {
+                    match arg.as_str() {
+                        "--" if options => options = false,
+                        "-h" | "--help" if options => config.show_help = true,
+                        _ => config.unknown_flags.push(arg.clone()),
+                    }
+                }
+            }
+            // Other subcommands still consume remaining arguments as opaque.
             index = args.len();
             break;
         }
@@ -428,6 +438,44 @@ mod tests {
         std::iter::once("nyan".to_string())
             .chain(args.iter().map(|a| (*a).to_string()))
             .collect()
+    }
+
+    #[test]
+    fn parse_update_help_before_and_after_subcommand() {
+        for args in [
+            vec!["update", "--help"],
+            vec!["update", "-h"],
+            vec!["--help", "update"],
+            vec!["-h", "update"],
+        ] {
+            let config = parse_cli_config(&argv(&args));
+            assert_eq!(config.subcommand.as_deref(), Some("update"), "{args:?}");
+            assert!(config.show_help, "{args:?}");
+            assert!(config.unimplemented_reasons().is_empty(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn parse_update_rejects_unsupported_arguments() {
+        for arg in ["--check", "--unknown", "unexpected", "--help=bad"] {
+            let config = parse_cli_config(&argv(&["update", arg]));
+            assert!(!config.show_help);
+            assert_eq!(config.unknown_flags, vec![arg]);
+            assert_eq!(config.unimplemented_reasons(), vec![arg]);
+        }
+    }
+
+    #[test]
+    fn parse_update_respects_option_terminator() {
+        let config = parse_cli_config(&argv(&["update", "--"]));
+        assert!(!config.show_help);
+        assert!(config.unimplemented_reasons().is_empty());
+
+        for flag in ["--help", "-h"] {
+            let config = parse_cli_config(&argv(&["update", "--", flag]));
+            assert!(!config.show_help);
+            assert_eq!(config.unimplemented_reasons(), vec![flag]);
+        }
     }
 
     #[test]
