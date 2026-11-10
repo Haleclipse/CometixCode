@@ -21,7 +21,6 @@ pub mod mcp_connection_manager;
 pub mod mcp_string_utils;
 pub mod normalization;
 pub mod oauth_port;
-pub mod official_registry;
 pub mod sdk_control_transport;
 pub mod types;
 pub mod use_manage_mcp_connections;
