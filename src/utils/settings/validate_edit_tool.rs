@@ -126,14 +126,10 @@ mod tests {
         let message = validate_input_for_settings_file_edit(
             &settings_path(),
             r#"{"language": "zh"}"#,
-            r#"{"extraKnownMarketplaces": {"agent-skills": {"source": {"source": "settings", "name": "agent-skills", "plugins": []}}}}"#,
+            r#"{"extraKnownMarketplaces": {"builtin": {"source": {"source": "settings", "name": "builtin", "plugins": []}}}}"#,
             &cwd(),
         )
         .expect("reserved marketplace name must block");
-        assert!(
-            message.contains(
-                "Reserved official marketplace names cannot be used with settings sources"
-            )
-        );
+        assert!(message.contains("is reserved for built-in plugins"));
     }
 }

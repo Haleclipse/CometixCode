@@ -199,11 +199,9 @@ Recap what was set up — which files were written and the key points included i
 Then tell the user that you'll be introducing a few more suggestions for optimizing their codebase and nyan setup based on what you found. Present these as a single, well-formatted to-do list where every item is relevant to this repo. Put the most impactful items first.
 
 When building the list, work through these checks and include only what applies:
-- If frontend code was detected (React, Vue, Svelte, etc.): `/plugin install frontend-design@claude-plugins-official` gives the agent design principles and component patterns so it produces polished UI; `/plugin install playwright@claude-plugins-official` lets the agent launch a real browser, screenshot what it built, and fix visual bugs itself.
 - If you found gaps in Phase 6 (missing GitHub CLI, missing linting) and the user said no: list them here with a one-line reason why each helps.
 - If tests are missing or sparse: suggest setting up a test framework so the agent can verify its own changes.
-- To help you create skills and optimize existing skills using evals, nyan has an official skill-creator plugin you can install. Install it with `/plugin install skill-creator@claude-plugins-official`, then run `/skill-creator <skill-name>` to create new skills or refine any existing skill. (Always include this one.)
-- Browse official plugins with `/plugin` — these bundle skills, agents, hooks, and MCP servers that you may find helpful. You can also create your own custom plugins to share them with others. (Always include this one.)"##;
+- Browse plugins from the marketplaces you add with `/plugin` — these bundle skills, agents, hooks, and MCP servers that you may find helpful. You can also create your own custom plugins to share them with others. (Always include this one.)"##;
 
 /// Maps to the repeated `feature('NEW_INIT') && (...)` gate in CC
 /// `commands/init.ts:229-250`. The build feature is source-controlled; the
@@ -274,10 +272,10 @@ mod tests {
             sha256(OLD_INIT_PROMPT),
             "16b988f277f3110ed27b4a8f45a69628de6382870a0029d4148380a9ca059a7e"
         );
-        assert_eq!(NEW_INIT_PROMPT.len(), 14089);
+        assert_eq!(NEW_INIT_PROMPT.len(), 13443);
         assert_eq!(
             sha256(NEW_INIT_PROMPT),
-            "e1b6ca35a7808cd91052be4cc7083a77649266fa3c4a6118ee1c1645b01cc90f"
+            "11545fb94b664165fd97f7e713414131338b0d793e5d8a99d9eae2a0dac485fd"
         );
     }
 

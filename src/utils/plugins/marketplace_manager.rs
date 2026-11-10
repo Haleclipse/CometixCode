@@ -1104,32 +1104,13 @@ pub fn get_marketplaces_cache_dir() -> PathBuf {
 }
 
 /// Maps to: CC `utils/plugins/marketplaceManager.ts:138-152#DeclaredMarketplace`.
-/// Validated source object, with the code-only optional sourceIsFallback field.
 pub type DeclaredMarketplace = serde_json::Value;
 /// Maps to: CC `utils/plugins/marketplaceManager.ts:161-192#getDeclaredMarketplaces`.
+/// @nyan: CC implicitly declares Anthropic's official marketplace whenever an
+/// enabled plugin references it; nyan only declares what settings name.
 pub fn get_declared_marketplaces() -> serde_json::Map<String, serde_json::Value> {
-    use super::official_marketplace::{OFFICIAL_MARKETPLACE_NAME, OFFICIAL_MARKETPLACE_SOURCE};
     let settings = crate::utils::settings::get_initial_settings();
-    let mut enabled = super::add_dir_plugin_settings::get_add_dir_enabled_plugins();
-    if let Some(serde_json::Value::Object(entries)) = settings.enabled_plugins {
-        enabled.extend(entries);
-    }
-    let mut result = serde_json::Map::new();
-    for (id, value) in enabled {
-        if value.as_bool().unwrap_or(false)
-            && super::plugin_identifier::parse_plugin_identifier(&id)
-                .marketplace
-                .as_deref()
-                == Some(OFFICIAL_MARKETPLACE_NAME)
-        {
-            result.insert(
-                OFFICIAL_MARKETPLACE_NAME.into(),
-                serde_json::json!({"source":&*OFFICIAL_MARKETPLACE_SOURCE,"sourceIsFallback":true}),
-            );
-            break;
-        }
-    }
-    result.extend(super::add_dir_plugin_settings::get_add_dir_extra_marketplaces());
+    let mut result = super::add_dir_plugin_settings::get_add_dir_extra_marketplaces();
     if let Some(serde_json::Value::Object(entries)) = settings.extra_known_marketplaces {
         result.extend(entries);
     }
@@ -1557,9 +1538,6 @@ pub async fn add_marketplace_source(
     }
     let loaded = load_and_cache_marketplace(&source, on_progress).await?;
     let name = loaded.marketplace["name"].as_str().unwrap().to_owned();
-    if let Some(error) = super::schemas::validate_official_name_source(&name, &source) {
-        anyhow::bail!(error);
-    }
     let mut config = load_known_marketplaces_config().await?;
     if let Some(old) = config.get(&name) {
         let location = old["installLocation"].as_str().unwrap_or("");
@@ -1808,28 +1786,6 @@ pub async fn refresh_all_marketplaces() -> anyhow::Result<()> {
         if entry["source"]["source"] == "settings" {
             continue;
         }
-        if name == super::official_marketplace::OFFICIAL_MARKETPLACE_NAME {
-            if super::official_marketplace_gcs::fetch_official_marketplace_from_gcs(
-                Path::new(entry["installLocation"].as_str().unwrap_or("")),
-                &get_marketplaces_cache_dir(),
-            )
-            .await
-            .is_some()
-            {
-                entry["lastUpdated"] = chrono::Utc::now()
-                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-                    .into();
-                continue;
-            }
-            if !crate::utils::feature_flags::feature_enabled(
-                crate::utils::feature_flags::FeatureFlag::OfficialMarketplaceGitFallback,
-            ) {
-                crate::utils::debug::log_for_debugging(
-                    "Skipping official marketplace bulk refresh: GCS failed, git fallback disabled",
-                );
-                continue;
-            }
-        }
         match load_and_cache_marketplace(&entry["source"], None).await {
             Ok(loaded) => {
                 entry["lastUpdated"] = chrono::Utc::now()
@@ -1873,17 +1829,13 @@ pub async fn refresh_marketplace(
         let location=entry["installLocation"].as_str().unwrap_or("");let path=Path::new(location);let source=&entry["source"];
         if let Some(seed)=seed_dir_for(location){anyhow::bail!("Marketplace '{name}' is seed-managed ({}) and its content is controlled by the seed image. To update: ask your admin to update the seed.",seed.display());}
         if !super::schemas::is_local_marketplace_source(source){let cache=marketplace_resolve!(get_marketplaces_cache_dir());let resolved=marketplace_resolve!(path);if !resolved.starts_with(&cache){anyhow::bail!("Marketplace '{name}' has a corrupted installLocation ({location}) — expected a path inside {}. This can happen after cross-platform path writes or manual edits to known_marketplaces.json. Run: claude plugin marketplace remove \"{name}\" and re-add it.",cache.display());}}
-        if name==super::official_marketplace::OFFICIAL_MARKETPLACE_NAME {
-            if super::official_marketplace_gcs::fetch_official_marketplace_from_gcs(path,&get_marketplaces_cache_dir()).await.is_some(){config.get_mut(name).unwrap()["lastUpdated"]=chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true).into();save_known_marketplaces_config(config.clone()).await?;return Ok(());}
-            if !crate::utils::feature_flags::feature_enabled(crate::utils::feature_flags::FeatureFlag::OfficialMarketplaceGitFallback){anyhow::bail!("Official marketplace GCS fetch failed and git fallback is disabled");}crate::utils::debug::log_for_debugging_with_level("Official marketplace GCS failed; falling back to git",crate::utils::debug::DebugLogLevel::Warn);
-        }
         match source["source"].as_str().unwrap_or(""){
             "github"|"git"=>{
                 let sparse=source["sparsePaths"].as_array().map(|a|a.iter().map(|v|v.as_str().unwrap_or("").to_owned()).collect::<Vec<_>>());let git_ref=source["ref"].as_str();
                 if source["source"]=="github"{let repo=source["repo"].as_str().unwrap_or("");let ssh=format!("git@github.com:{repo}.git");let https=format!("https://github.com/{repo}.git");
                     let configured=is_github_ssh_likely_configured().await;let(first,second)=if configured{(&ssh,&https)}else{(&https,&ssh)};if cache_marketplace_from_git(first,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await.is_err(){crate::utils::debug::log_for_debugging_with_level(&format!("Marketplace refresh failed with {} for {repo}, falling back to {}",if configured{"SSH"}else{"HTTPS"},if configured{"HTTPS"}else{"SSH"}),crate::utils::debug::DebugLogLevel::Info);cache_marketplace_from_git(second,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
                 }else{cache_marketplace_from_git(source["url"].as_str().unwrap_or(""),path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
-                if read_cached_marketplace(path).await.is_err(){let display=if source["source"]=="github"{source["repo"].as_str().unwrap_or("").to_owned()}else{redact_url_credentials(source["url"].as_str().unwrap_or(""))};let reason=if name=="claude-code-plugins"{"We've deprecated \"claude-code-plugins\" in favor of \"claude-plugins-official\"."}else{"This marketplace may have been deprecated or moved to a new location."};anyhow::bail!("The marketplace.json file is no longer present in this repository.\n\n{reason}\nSource: {display}\n\nYou can remove this marketplace with: claude plugin marketplace remove \"{name}\"");}
+                if read_cached_marketplace(path).await.is_err(){let display=if source["source"]=="github"{source["repo"].as_str().unwrap_or("").to_owned()}else{redact_url_credentials(source["url"].as_str().unwrap_or(""))};anyhow::bail!("The marketplace.json file is no longer present in this repository.\n\nThis marketplace may have been deprecated or moved to a new location.\nSource: {display}\n\nYou can remove this marketplace with: claude plugin marketplace remove \"{name}\"");}
             }
             "url"=>cache_marketplace_from_url(source["url"].as_str().unwrap_or(""),path,source["headers"].as_object(),on_progress).await?,
             "file"|"directory"=>{safe_call_progress(on_progress,"Validating local marketplace");read_cached_marketplace(path).await?;},
@@ -1949,6 +1901,40 @@ mod tests {
         // Native I/O fixture seam only: provide the two byte strings read from
         // the same config pathname, as the official fs.readFile oracle does.
         pub(super) static CONFIG_READS: std::cell::RefCell<std::collections::VecDeque<Vec<u8>>>;
+    }
+
+    #[test]
+    fn enabled_plugins_do_not_implicitly_declare_an_official_marketplace() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "nyan-declared-marketplaces-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let _env = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
+        // A leftover Claude Code style entry naming the former Anthropic
+        // marketplace is an ordinary undeclared plugin, not a source.
+        std::fs::write(
+            root.join("settings.json"),
+            serde_json::json!({
+                "enabledPlugins": {"mail@claude-plugins-official": true},
+                "extraKnownMarketplaces": {
+                    "acme": {"source": {"source": "github", "repo": "acme/plugins"}}
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        let declared = get_declared_marketplaces();
+        crate::utils::settings::settings_cache::reset_settings_cache();
+        assert_eq!(
+            serde_json::Value::Object(declared),
+            serde_json::json!({
+                "acme": {"source": {"source": "github", "repo": "acme/plugins"}}
+            })
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[tokio::test]

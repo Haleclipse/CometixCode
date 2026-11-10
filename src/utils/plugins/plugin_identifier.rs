@@ -1,6 +1,6 @@
 //! Maps to: CC `utils/plugins/pluginIdentifier.ts`.
 
-use crate::utils::plugins::schemas::{ALLOWED_OFFICIAL_MARKETPLACE_NAMES, PluginScope};
+use crate::utils::plugins::schemas::PluginScope;
 use crate::utils::settings::constants::{EditableSettingSource, SettingSource};
 
 /// Maps to: CC `utils/plugins/pluginIdentifier.ts:14#ExtendedPluginScope`.
@@ -83,13 +83,6 @@ pub fn build_plugin_id(name: &str, marketplace: Option<&str>) -> String {
         .filter(|marketplace| !marketplace.is_empty())
         .map(|marketplace| format!("{name}@{marketplace}"))
         .unwrap_or_else(|| name.to_string())
-}
-
-/// Maps to: CC `utils/plugins/pluginIdentifier.ts:75-82#isOfficialMarketplaceName`.
-pub fn is_official_marketplace_name(marketplace: Option<&str>) -> bool {
-    marketplace.is_some_and(|marketplace| {
-        ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&marketplace.to_lowercase().as_str())
-    })
 }
 
 /// Maps to: CC `utils/plugins/pluginIdentifier.ts:89-96#SCOPE_TO_EDITABLE_SOURCE`.
@@ -180,10 +173,8 @@ mod tests {
     }
 
     #[test]
-    fn plugin_id_build_and_official_names_match_official_bun_oracle() {
-        // CC pluginIdentifier.ts:65-82: empty marketplace uses the bare name;
-        // official-name membership follows Unicode String.toLowerCase().
-        // Bun confirms Kelvin sign lowercases to ASCII k, long s does not.
+    fn plugin_id_build_matches_official_bun_oracle() {
+        // CC pluginIdentifier.ts:65-67: empty marketplace uses the bare name.
         for (marketplace, expected) in [
             (None, "p"),
             (Some(""), "p"),
@@ -191,25 +182,6 @@ mod tests {
             (Some(" "), "p@ "),
         ] {
             assert_eq!(build_plugin_id("p", marketplace), expected);
-        }
-        for (marketplace, expected) in [
-            (None, false),
-            (Some(""), false),
-            (Some("claude-plugins-official"), true),
-            (Some("CLAUDE-PLUGINS-OFFICIAL"), true),
-            (Some("Knowledge-work-plugins"), true),
-            (Some("AGENT-SKİLLS"), false),
-            (Some("agent-ſkills"), false),
-            (Some("claude-plugins-official "), false),
-        ] {
-            assert_eq!(
-                is_official_marketplace_name(marketplace),
-                expected,
-                "{marketplace:?}"
-            );
-        }
-        for name in ALLOWED_OFFICIAL_MARKETPLACE_NAMES {
-            assert!(is_official_marketplace_name(Some(name)));
         }
     }
 

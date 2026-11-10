@@ -136,9 +136,6 @@ pub enum FeatureFlag {
     /// Maps to CC Statsig security gate `tengu_disable_bypass_permissions_mode`
     /// (`utils/permissions/permissionSetup.ts`, fallback false).
     DisableBypassPermissionsMode,
-    /// Maps to CC GrowthBook `tengu_plugin_official_mkt_git_fallback`
-    /// (`utils/plugins/marketplaceManager.ts`, fallback true).
-    OfficialMarketplaceGitFallback,
     /// Maps to CC GrowthBook config `tengu_sage_compass`
     /// (`utils/advisor.ts#getAdvisorConfig`, fallback `{}`).
     Advisor,
@@ -509,12 +506,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_disable_bypass_permissions_mode",
         enabled: false,
         note: "Official fallback false: bypass-permissions mode is only disabled by the permissions.disableBypassPermissionsMode setting.",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::OfficialMarketplaceGitFallback,
-        cc_growthbook_name: "tengu_plugin_official_mkt_git_fallback",
-        enabled: true,
-        note: "Official fallback true: when the official marketplace GCS mirror fails, refresh falls back to git.",
     },
     FeatureSwitch {
         flag: FeatureFlag::Advisor,

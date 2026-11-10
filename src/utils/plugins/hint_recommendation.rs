@@ -48,11 +48,11 @@ pub fn maybe_record_plugin_hint(hint: crate::utils::claude_code_hints::ClaudeCod
         return;
     }
 
+    // @nyan: CC only accepts hints naming an Anthropic official marketplace.
+    // nyan has none; resolution is limited to marketplaces the user added.
     let parsed = crate::utils::plugins::plugin_identifier::parse_plugin_identifier(&hint.value);
     if parsed.name.is_empty()
-        || !crate::utils::plugins::plugin_identifier::is_official_marketplace_name(
-            parsed.marketplace.as_deref(),
-        )
+        || parsed.marketplace.as_deref().is_none_or(str::is_empty)
         || crate::utils::plugins::installed_plugins_manager::is_plugin_installed(&hint.value)
     {
         return;
@@ -71,7 +71,7 @@ pub fn maybe_record_plugin_hint(hint: crate::utils::claude_code_hints::ClaudeCod
 /// Maps to: CC `utils/plugins/hintRecommendation.ts:103-135#resolvePluginHint`.
 /// Partial: CC awaits getPluginById (cache, then source fetch). This path awaits
 /// the canonical cache-only lookup; a cache miss does not fetch a marketplace.
-/// The pre-store gate owns type/official/installed/policy checks, not resolution.
+/// The pre-store gate owns type/identifier/installed/policy checks, not resolution.
 pub async fn resolve_plugin_hint(
     hint: &crate::utils::claude_code_hints::ClaudeCodeHint,
 ) -> Option<PluginHintRecommendation> {
@@ -160,12 +160,9 @@ mod tests {
     #[test]
     fn shown_plugin_config_update_is_idempotent() {
         let mut config = crate::utils::config::GlobalConfig::default();
-        mark_hint_plugin_shown_in_config(&mut config, "mail@claude-plugins-official");
-        mark_hint_plugin_shown_in_config(&mut config, "mail@claude-plugins-official");
-        assert_eq!(
-            config.claude_code_hints.unwrap().plugin,
-            ["mail@claude-plugins-official"]
-        );
+        mark_hint_plugin_shown_in_config(&mut config, "mail@acme");
+        mark_hint_plugin_shown_in_config(&mut config, "mail@acme");
+        assert_eq!(config.claude_code_hints.unwrap().plugin, ["mail@acme"]);
     }
 
     #[tokio::test]

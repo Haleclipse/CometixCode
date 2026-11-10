@@ -142,57 +142,14 @@ pub fn plugin_scope_schema() -> &'static Schema {
     S.get_or_init(|| zod::enumeration(vec!["managed", "user", "project", "local"]))
 }
 
-/// Maps to: CC `utils/plugins/schemas.ts:19-28`.
-///
-/// Official marketplace names that are reserved for Anthropic/Claude official
-/// use. These names are allowed ONLY for official marketplaces and blocked for
-/// third parties. (CC keeps a `Set`; membership is checked on the lowercased
-/// name at every call site.)
-pub const ALLOWED_OFFICIAL_MARKETPLACE_NAMES: &[&str] = &[
-    "claude-code-marketplace",
-    "claude-code-plugins",
-    "claude-plugins-official",
-    "anthropic-marketplace",
-    "anthropic-plugins",
-    "agent-skills",
-    "life-sciences",
-    "knowledge-work-plugins",
-];
-
-/// Maps to: CC `utils/plugins/schemas.ts:71-72`.
-///
-/// Pattern to detect names that impersonate official Anthropic/Claude
-/// marketplaces ("official" combined with "anthropic"/"claude" in either
-/// order, or a leading "anthropic"/"claude" followed by an official-sounding
-/// term). Case-insensitive.
-pub static BLOCKED_OFFICIAL_NAME_PATTERN: LazyLock<regex::Regex> = LazyLock::new(|| {
-    regex::Regex::new(
-        r"(?i)(?:official[^a-z0-9]*(anthropic|claude)|(?:anthropic|claude)[^a-z0-9]*official|^(?:anthropic|claude)[^a-z0-9]*(marketplace|plugins|official))",
-    )
-    .expect("source marketplace-name regex compiles")
-});
-
 /// Maps to: CC `utils/plugins/schemas.ts:77` — non-ASCII characters that could
-/// be used for homograph attacks (e.g. Cyrillic 'а' instead of Latin 'a').
+/// be used for homograph attacks (e.g. Cyrillic 'а' instead of Latin 'a'),
+/// letting one marketplace pass itself off as another.
+/// @nyan: CC applies this only inside its Anthropic official-name check; nyan
+/// has no reserved official marketplaces and keeps it as a standalone rule.
 fn contains_non_ascii(name: &str) -> bool {
     // CC's /[^ -~]/ — anything outside printable ASCII.
     !name.chars().all(|c| (' '..='~').contains(&c))
-}
-
-/// Maps to: CC `utils/plugins/schemas.ts:87-101` `isBlockedOfficialName`.
-///
-/// Check if a marketplace name impersonates an official Anthropic/Claude
-/// marketplace: allowed-list names are never blocked; non-ASCII names are
-/// always blocked (homograph protection); otherwise the blocked pattern
-/// decides.
-pub fn is_blocked_official_name(name: &str) -> bool {
-    if ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&name.to_lowercase().as_str()) {
-        return false;
-    }
-    if contains_non_ascii(name) {
-        return true;
-    }
-    BLOCKED_OFFICIAL_NAME_PATTERN.is_match(name)
 }
 
 /// Maps to: CC `utils/plugins/schemas.ts:162` `RelativePath`.
@@ -228,8 +185,8 @@ fn marketplace_name_schema() -> &'static Schema {
                 "Marketplace name cannot contain path separators (/ or \\), \"..\" sequences, or be \".\"",
             )
             .refine(
-                |v| v.as_str().is_some_and(|name| !is_blocked_official_name(name)),
-                "Marketplace name impersonates an official Anthropic/Claude marketplace",
+                |v| v.as_str().is_some_and(|name| !contains_non_ascii(name)),
+                "Marketplace name can only contain printable ASCII characters",
             )
             .refine(
                 |v| v.as_str().is_some_and(|name| name.to_lowercase() != "inline"),
@@ -428,20 +385,9 @@ pub fn marketplace_source_schema() -> &'static Schema {
                     ("source", zod::literal(serde_json::json!("settings"))),
                     (
                         "name",
-                        marketplace_name_schema()
-                            .clone()
-                            .refine(
-                                |v| {
-                                    v.as_str().is_some_and(|name| {
-                                        !ALLOWED_OFFICIAL_MARKETPLACE_NAMES
-                                            .contains(&name.to_lowercase().as_str())
-                                    })
-                                },
-                                "Reserved official marketplace names cannot be used with settings sources. validateOfficialNameSource only accepts github/git sources from anthropics/* for these names; a settings source would be rejected after loadAndCacheMarketplace has already written to disk with cleanupNeeded=false.",
-                            )
-                            .describe(
-                                "Marketplace name. Must match the extraKnownMarketplaces key (enforced); the synthetic manifest is written under this name. Same validation as PluginMarketplaceSchema plus reserved-name rejection — validateOfficialNameSource runs after the disk write, too late to clean up.",
-                            ),
+                        marketplace_name_schema().clone().describe(
+                            "Marketplace name. Must match the extraKnownMarketplaces key (enforced); the synthetic manifest is written under this name. Same validation as PluginMarketplaceSchema.",
+                        ),
                     ),
                     (
                         "plugins",
@@ -1475,38 +1421,6 @@ pub fn known_marketplaces_file_schema() -> &'static Schema {
     S.get_or_init(|| zod::record_with_key(zod::string(), known_marketplace_schema().clone()))
 }
 
-/// Maps to: CC `utils/plugins/schemas.ts:107-107#OFFICIAL_GITHUB_ORG`.
-pub const OFFICIAL_GITHUB_ORG: &str = "anthropics";
-
-/// Maps to: CC `utils/plugins/schemas.ts:119-157#validateOfficialNameSource`.
-pub fn validate_official_name_source(name: &str, source: &serde_json::Value) -> Option<String> {
-    if !ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&name.to_lowercase().as_str()) {
-        return None;
-    }
-    if source["source"] == "github" {
-        if source["repo"]
-            .as_str()
-            .unwrap_or("")
-            .to_lowercase()
-            .starts_with(&format!("{OFFICIAL_GITHUB_ORG}/"))
-        {
-            return None;
-        }
-    } else if source["source"] == "git" && source["url"].as_str().is_some_and(|s| !s.is_empty()) {
-        let url = source["url"].as_str().unwrap().to_lowercase();
-        if url.contains("github.com/anthropics/") || url.contains("git@github.com:anthropics/") {
-            return None;
-        }
-    } else {
-        return Some(format!(
-            "The name '{name}' is reserved for official Anthropic marketplaces and can only be used with GitHub sources from the '{OFFICIAL_GITHUB_ORG}' organization."
-        ));
-    }
-    Some(format!(
-        "The name '{name}' is reserved for official Anthropic marketplaces. Only repositories from 'github.com/{OFFICIAL_GITHUB_ORG}/' can use this name."
-    ))
-}
-
 /// Maps to: CC `schemas.ts:1221-1223#isLocalPluginSource`.
 pub fn is_local_plugin_source(source: &serde_json::Value) -> bool {
     source
@@ -1519,19 +1433,14 @@ pub fn is_local_marketplace_source(source: &serde_json::Value) -> bool {
     source["source"] == "file" || source["source"] == "directory"
 }
 
-/// Maps to: CC `utils/plugins/schemas.ts:35-35#NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES`.
-const NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES: &[&str] = &["knowledge-work-plugins"];
-
 /// Maps to: CC `utils/plugins/schemas.ts:48-58#isMarketplaceAutoUpdate`.
-pub fn is_marketplace_auto_update(marketplace_name: &str, entry: &Value) -> bool {
-    let normalized_name = marketplace_name.to_lowercase();
+/// @nyan: CC defaults Anthropic's official marketplaces to auto-update; nyan
+/// has none, so every marketplace is opt-in via its explicit `autoUpdate`.
+pub fn is_marketplace_auto_update(entry: &Value) -> bool {
     entry
         .get("autoUpdate")
         .and_then(Value::as_bool)
-        .unwrap_or_else(|| {
-            ALLOWED_OFFICIAL_MARKETPLACE_NAMES.contains(&normalized_name.as_str())
-                && !NO_AUTO_UPDATE_OFFICIAL_MARKETPLACES.contains(&normalized_name.as_str())
-        })
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -1576,20 +1485,36 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn is_blocked_official_name_matches_official_semantics() {
-        // Allowed-list names are never blocked, case-insensitively.
-        assert!(!is_blocked_official_name("agent-skills"));
-        assert!(!is_blocked_official_name("Anthropic-Marketplace"));
-        // The blocked pattern: official+claude/anthropic in either order, or a
-        // leading claude/anthropic with an official-sounding suffix.
-        assert!(is_blocked_official_name("official-claude-plugins"));
-        assert!(is_blocked_official_name("claude-official"));
-        assert!(is_blocked_official_name("anthropic-marketplace-new"));
+    fn marketplace_names_reject_only_homographs_without_a_reserved_official_list() {
         // Homograph protection: non-ASCII is always blocked (Cyrillic а).
-        assert!(is_blocked_official_name("аnthropic"));
-        // Indirect variations are intentionally not blocked (CC's comment:
-        // avoid false positives on legitimate names).
-        assert!(!is_blocked_official_name("my-claude-marketplace"));
+        assert!(contains_non_ascii("аcme"));
+        assert!(contains_non_ascii("tab\tname"));
+        assert!(!contains_non_ascii("acme-plugins"));
+        // Formerly reserved Anthropic names and look-alikes are ordinary names.
+        for name in [
+            "claude-plugins-official",
+            "agent-skills",
+            "Anthropic-Marketplace",
+            "claude-official",
+            "official-claude-plugins",
+        ] {
+            assert!(
+                safe_parse(marketplace_name_schema(), &json!(name)).is_ok(),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn marketplace_auto_update_is_opt_in_for_every_name() {
+        for (entry, expected) in [
+            (json!({}), false),
+            (json!({"autoUpdate": false}), false),
+            (json!({"autoUpdate": true}), true),
+            (json!({"autoUpdate": "yes"}), false),
+        ] {
+            assert_eq!(is_marketplace_auto_update(&entry), expected, "{entry}");
+        }
     }
 
     #[test]
@@ -1613,8 +1538,8 @@ mod tests {
             "Marketplace name cannot contain path separators (/ or \\), \"..\" sequences, or be \".\"",
         );
         expect_message(
-            "claude-official",
-            "Marketplace name impersonates an official Anthropic/Claude marketplace",
+            "mаrket",
+            "Marketplace name can only contain printable ASCII characters",
         );
         expect_message(
             "Inline",
@@ -1674,15 +1599,26 @@ mod tests {
         });
         assert!(safe_parse(s, &ok).is_ok());
 
-        // Reserved official names are rejected by the settings-arm refine.
-        let reserved = json!({
+        // No name is reserved for an official marketplace; the shared name
+        // refines still apply to the settings arm.
+        let formerly_reserved = json!({
             "source": "settings",
             "name": "agent-skills",
             "plugins": [],
         });
-        let err = safe_parse(s, &reserved).expect_err("reserved name should fail");
-        assert!(err.issues.iter().any(|i| i.message
-            == "Reserved official marketplace names cannot be used with settings sources. validateOfficialNameSource only accepts github/git sources from anthropics/* for these names; a settings source would be rejected after loadAndCacheMarketplace has already written to disk with cleanupNeeded=false."));
+        assert!(safe_parse(s, &formerly_reserved).is_ok());
+        let builtin = json!({
+            "source": "settings",
+            "name": "builtin",
+            "plugins": [],
+        });
+        let err = safe_parse(s, &builtin).expect_err("builtin name should fail");
+        assert!(
+            err.issues
+                .iter()
+                .any(|i| i.message
+                    == "Marketplace name \"builtin\" is reserved for built-in plugins")
+        );
 
         // A relative-path plugin source parses as the string arm, then fails
         // the SettingsMarketplacePluginSchema object refine.

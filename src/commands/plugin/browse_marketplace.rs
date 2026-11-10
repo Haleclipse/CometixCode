@@ -20,7 +20,6 @@ use crate::keybindings::{
 use crate::types::plugin::LoadedPlugin;
 use crate::utils::plugins::{
     cache_utils::clear_all_caches,
-    install_counts::{InstallCountInput, InstallCounts, format_install_count, get_install_counts},
     installed_plugins_manager::{is_plugin_globally_installed, is_plugin_installed},
     marketplace_helpers::*,
     marketplace_manager::{get_marketplace, load_known_marketplaces_config},
@@ -88,7 +87,6 @@ pub fn BrowseMarketplace(
     let mut marketplaces = use_plugin_ui_state(&mut hooks, Vec::<MarketplaceInfo>::new);
     let mut available_plugins = use_plugin_ui_state(&mut hooks, Vec::<InstallablePlugin>::new);
     let mut loading = use_plugin_ui_state(&mut hooks, || true);
-    let mut install_counts = use_plugin_ui_state(&mut hooks, || None::<InstallCounts>);
     let mut selected_index = use_plugin_ui_state(&mut hooks, || 0usize);
     let mut selected_for_install = use_plugin_ui_state(&mut hooks, HashSet::<String>::new);
     let mut installing_plugins = use_plugin_ui_state(&mut hooks, HashSet::<String>::new);
@@ -161,8 +159,7 @@ pub fn BrowseMarketplace(
                     let installed_count=entries.iter().filter(|entry|is_plugin_installed(&create_plugin_id(entry["name"].as_str().unwrap_or(""),&marketplace.name))).count();
                     infos.push(MarketplaceInfo{name:marketplace.name.clone(),total_plugins:entries.len(),installed_count,source:get_marketplace_source_display(&marketplace.config["source"])});
                 }}
-                // First-match pinning is not antisymmetric (not a total order); kept verbatim per source, sorted through the non-validating JS-sort primitive (utils/js_sort.rs; mirror PR #7).
-                crate::utils::js_sort::sort_by(&mut infos,|a,b|{if a.name=="claude-plugin-directory"{std::cmp::Ordering::Less}else if b.name=="claude-plugin-directory"{std::cmp::Ordering::Greater}else{std::cmp::Ordering::Equal}});
+                // @nyan: CC pins Anthropic's official directory first; nyan keeps the configured order.
                 marketplaces.set(infos.clone());
                 if let Some(problem)=format_marketplace_loading_errors(&loaded.failures,loaded.marketplaces.iter().filter(|m|m.data.is_some()).count()){
                     match problem.r#type{MarketplaceLoadingErrorType::Warning=>warning.set(Some(format!("{}. Showing available marketplaces.",problem.message))),MarketplaceLoadingErrorType::Error=>anyhow::bail!(problem.message)}
@@ -217,8 +214,14 @@ pub fn BrowseMarketplace(
                 .spawn(async move {
                     loading.set(true);
                     let answer: anyhow::Result<()> = async {
-                        #[cfg(test)] let data=if let Some(f)=&selected_test_imports{std::sync::Arc::new(serde_json::json!({"plugins":f.plugins}))}else{get_marketplace(&name).await?};
-                        #[cfg(not(test))] let data = get_marketplace(&name).await?;
+                        #[cfg(test)]
+                        let data = if let Some(f) = &selected_test_imports {
+                            std::sync::Arc::new(serde_json::json!({"plugins":f.plugins}))
+                        } else {
+                            get_marketplace(&name).await?
+                        };
+                        #[cfg(not(test))]
+                        let data = get_marketplace(&name).await?;
                         if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
                             return Ok(());
                         }
@@ -233,36 +236,12 @@ pub fn BrowseMarketplace(
                                 plugin_id,
                             });
                         }
-                        #[cfg(test)] let counts=if selected_test_imports.is_some(){None}else{get_install_counts().await};
-                        #[cfg(not(test))] let counts = get_install_counts().await;
-                        if cancelled.load(std::sync::atomic::Ordering::SeqCst) {
-                            return Ok(());
-                        }
-                        let sort_failed=std::cell::Cell::new(false);
-                // NaN reaches `partial_cmp().unwrap_or(Equal)` when to_number
-                // fails mid-sort (the Cell mimics the source's try/catch), so
-                // the comparator is not a total order; sorted through the
-                // non-validating JS-sort primitive (utils/js_sort.rs; PR #7).
-                crate::utils::js_sort::sort_by(&mut plugins,|a,b| {
-                    let a_raw=counts.as_ref().and_then(|c|c.get(&a.plugin_id)).filter(|v|!v.is_null());
-                    let b_raw=counts.as_ref().and_then(|c|c.get(&b.plugin_id)).filter(|v|!v.is_null());
-                    let equal=match (a_raw,b_raw){
-                        (None,None)=>true,
-                        (None,Some(v))|(Some(v),None)=>v.kind==11&&v.number==Some(0.0),
-                        (Some(a),Some(b)) if a.kind==b.kind=>match a.kind{8|9=>true,10=>a.string_units==b.string_units,11=>a.number.zip(b.number).is_some_and(|(a,b)|a==b),_=>std::ptr::eq(a,b)},
-                        _=>false,
-                    };
-                    if !equal {
-                        let a_number=a_raw.map_or(0.0,|v|v.to_number().unwrap_or_else(|_|{sort_failed.set(true);f64::NAN}));
-                        let b_number=b_raw.map_or(0.0,|v|v.to_number().unwrap_or_else(|_|{sort_failed.set(true);f64::NAN}));
-                        (b_number-a_number).partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal)
-                    } else {crate::tools::grep_tool::javascript_locale_compare(a.entry["name"].as_str().unwrap_or(""),b.entry["name"].as_str().unwrap_or(""))}
-                });
-                if sort_failed.get(){
-                    crate::utils::debug::log_for_debugging("Failed to fetch install counts: Cannot convert object to primitive value");
-                    plugins.sort_by(|a,b|crate::tools::grep_tool::javascript_locale_compare(a.entry["name"].as_str().unwrap_or(""),b.entry["name"].as_str().unwrap_or("")));
-                }
-                        install_counts.set(counts);
+                        plugins.sort_by(|a, b| {
+                            crate::tools::grep_tool::javascript_locale_compare(
+                                a.entry["name"].as_str().unwrap_or(""),
+                                b.entry["name"].as_str().unwrap_or(""),
+                            )
+                        });
                         available_plugins.set(plugins);
                         selected_index.set(0);
                         selected_for_install.set(HashSet::new());
@@ -270,9 +249,10 @@ pub fn BrowseMarketplace(
                     }
                     .await;
                     if let Err(error) = answer
-                        && !cancelled.load(std::sync::atomic::Ordering::SeqCst) {
-                            set_error(Some(error.to_string()));
-                        }
+                        && !cancelled.load(std::sync::atomic::Ordering::SeqCst)
+                    {
+                        set_error(Some(error.to_string()));
+                    }
                     loading.set(false);
                 });
         },
@@ -738,7 +718,6 @@ pub fn BrowseMarketplace(
                     #(p.entry["category"].as_str().filter(|s|!s.is_empty()).map(|c|element!{Text(content:format!(" [{c}]"),dim:true)}))
                     #(p.entry["tags"].as_array().is_some_and(|tags|tags.iter().any(|v|v=="community-managed")).then(||element!{Text(content:" [Community Managed]",dim:true)}))
                     #(p.is_installed.then(||element!{Text(content:" (installed)",dim:true)}))
-                    #(install_counts.read().as_ref().filter(|_|selected_marketplace.read().as_deref()==Some(crate::utils::plugins::official_marketplace::OFFICIAL_MARKETPLACE_NAME)).map(|counts|element!{Text(content:format!(" · {} installs",format_install_count(counts.get(&p.plugin_id).filter(|v|!v.is_null()).map_or(InstallCountInput::Number(0.0),InstallCountInput::Value))),dim:true)}))
                 }
                 #(p.entry["description"].as_str().filter(|s|!s.is_empty()).map(|description|element!{View(margin_left:4u32){Text(content:crate::utils::truncate::truncate_to_width(description,60),dim:true) #(p.entry["version"].as_str().filter(|s|!s.is_empty()).map(|v|element!{Text(content:format!(" · v{v}"),dim:true)}))}}))
             }}

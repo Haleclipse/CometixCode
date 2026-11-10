@@ -753,18 +753,10 @@ pub fn ManagePlugins(
                                     groups.entry(marketplace).or_default().push(plugin);
                                 }
                                 let mut groups = groups.into_iter().collect::<Vec<_>>();
-                                // First-match pinning verbatim per source; not
-                                // antisymmetric, so it sorts through the
-                                // non-validating JS-sort primitive
-                                // (utils/js_sort.rs; mirror PR #7).
-                                crate::utils::js_sort::sort_by(&mut groups, |(a, _), (b, _)| {
-                                    if a == "claude-plugin-directory" {
-                                        std::cmp::Ordering::Less
-                                    } else if b == "claude-plugin-directory" {
-                                        std::cmp::Ordering::Greater
-                                    } else {
-                                        crate::tools::grep_tool::javascript_locale_compare(a, b)
-                                    }
+                                // @nyan: CC pins Anthropic's official directory
+                                // first; nyan sorts every marketplace by name.
+                                groups.sort_by(|(a, _), (b, _)| {
+                                    crate::tools::grep_tool::javascript_locale_compare(a, b)
                                 });
                                 let marketplaces = groups.iter().map(|(m, _)| m.clone()).collect();
                                 let mut plugins = Vec::new();

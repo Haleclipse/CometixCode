@@ -181,18 +181,13 @@ pub fn ManageMarketplaces(
                             installed_plugins,
                             pending_update: false,
                             pending_remove: false,
-                            auto_update: is_marketplace_auto_update(&market.name, &market.config),
+                            auto_update: is_marketplace_auto_update(&market.config),
                         });
                     }
-                    // CC `ManageMarketplaces.tsx:320-325` verbatim: first-match pinning is not antisymmetric, so the sort goes through the non-validating JS-sort primitive (utils/js_sort.rs; mirror PR #7).
-                    crate::utils::js_sort::sort_by(&mut new_states, |a, b| {
-                        if a.name == "claude-plugin-directory" {
-                            std::cmp::Ordering::Less
-                        } else if b.name == "claude-plugin-directory" {
-                            std::cmp::Ordering::Greater
-                        } else {
-                            crate::tools::grep_tool::javascript_locale_compare(&a.name, &b.name)
-                        }
+                    // CC `ManageMarketplaces.tsx:320-325`. @nyan: no official
+                    // directory is pinned first; marketplaces sort by name.
+                    new_states.sort_by(|a, b| {
+                        crate::tools::grep_tool::javascript_locale_compare(&a.name, &b.name)
                     });
                     marketplace_states.set(new_states.clone());
                     if was_in_details_view
@@ -276,10 +271,10 @@ pub fn ManageMarketplaces(
                 let mut states=Vec::new();
                 for market in loaded.marketplaces {
                     let installed_plugins=all_plugins.iter().filter(|p|p.source.ends_with(&format!("@{}",market.name))).cloned().collect();
-                    states.push(MarketplaceState{name:market.name.clone(),source:get_marketplace_source_display(&market.config["source"]),last_updated:market.config["lastUpdated"].as_str().map(str::to_owned),plugin_count:market.data.as_ref().and_then(|d|d["plugins"].as_array()).map(Vec::len),installed_plugins,pending_update:false,pending_remove:false,auto_update:is_marketplace_auto_update(&market.name,&market.config)});
+                    states.push(MarketplaceState{name:market.name.clone(),source:get_marketplace_source_display(&market.config["source"]),last_updated:market.config["lastUpdated"].as_str().map(str::to_owned),plugin_count:market.data.as_ref().and_then(|d|d["plugins"].as_array()).map(Vec::len),installed_plugins,pending_update:false,pending_remove:false,auto_update:is_marketplace_auto_update(&market.config)});
                 }
-                // CC `ManageMarketplaces.tsx:127-132` verbatim: same non-antisymmetric pinning as above, same JS-sort routing.
-                crate::utils::js_sort::sort_by(&mut states,|a,b|{if a.name=="claude-plugin-directory"{std::cmp::Ordering::Less}else if b.name=="claude-plugin-directory"{std::cmp::Ordering::Greater}else{crate::tools::grep_tool::javascript_locale_compare(&a.name,&b.name)}});
+                // CC `ManageMarketplaces.tsx:127-132`, without the official directory pin (as above).
+                states.sort_by(|a,b|crate::tools::grep_tool::javascript_locale_compare(&a.name,&b.name));
                 marketplace_states.set(states.clone());
                 if let Some(error)=format_marketplace_loading_errors(&loaded.failures,success_count){if error.r#type==MarketplaceLoadingErrorType::Warning{process_error.set(Some(error.message));}else{anyhow::bail!(error.message);}}
                 if let Some(target)=target.filter(|s|!s.is_empty())&& !*has_attempted_auto_action.read() && error.as_deref().is_none_or(str::is_empty){
@@ -665,9 +660,7 @@ pub fn ManageMarketplaces(
             element!{View(gap:1u32,margin_bottom:1u32){Text(content:format!("{} {}",if index+1==selected_index.get(){figures.pointer}else{" "},if state.pending_remove{figures.cross}else{figures.bullet}),color:if index+1==selected_index.get(){theme.suggestion}else{theme.text})
                 View(flex_direction:FlexDirection::Column,flex_grow:1.0f32){
                     View(gap:1u32){View{
-                        #((state.name=="claude-plugins-official").then(||element!{Text(content:"✻ ",color:theme.claude,weight:Weight::Bold,dim:state.pending_remove)}))
                         Text(content:state.name.clone(),weight:Weight::Bold,dim:state.pending_remove,strikethrough:state.pending_remove)
-                        #((state.name=="claude-plugins-official").then(||element!{Text(content:" ✻",color:theme.claude,weight:Weight::Bold,dim:state.pending_remove)}))
                     } #((!indicators.is_empty()).then(||element!{Text(content:format!("[{}]",indicators.join(", ")),color:theme.warning)}))}
                     Text(content:state.source.clone(),dim:true) Text(content:details,dim:true)
                 }
@@ -779,27 +772,6 @@ mod tests {
             .await
             .unwrap();
             assert!(frame.contains(expected));
-        }
-    }
-
-    #[test]
-    fn official_auto_update_defaults_and_explicit_override_match_source() {
-        for (name, entry, expected) in [
-            ("CLAUDE-PLUGINS-OFFICIAL", serde_json::json!({}), true),
-            ("knowledge-work-plugins", serde_json::json!({}), false),
-            ("third-party", serde_json::json!({}), false),
-            (
-                "claude-plugins-official",
-                serde_json::json!({"autoUpdate":false}),
-                false,
-            ),
-            (
-                "knowledge-work-plugins",
-                serde_json::json!({"autoUpdate":true}),
-                true,
-            ),
-        ] {
-            assert_eq!(is_marketplace_auto_update(name, &entry), expected);
         }
     }
 }

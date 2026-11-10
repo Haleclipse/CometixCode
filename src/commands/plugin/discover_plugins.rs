@@ -16,7 +16,6 @@ use crate::keybindings::{
 use crate::types::plugin::LoadedPlugin;
 use crate::utils::plugins::{
     cache_utils::clear_all_caches,
-    install_counts::{InstallCountInput, InstallCounts, format_install_count, get_install_counts},
     installed_plugins_manager::is_plugin_globally_installed,
     marketplace_helpers::*,
     marketplace_manager::load_known_marketplaces_config,
@@ -66,7 +65,6 @@ pub fn DiscoverPlugins(
     let mut selected_plugin = use_plugin_ui_state(&mut hooks, || None::<InstallablePlugin>);
     let mut available_plugins = use_plugin_ui_state(&mut hooks, Vec::<InstallablePlugin>::new);
     let mut loading = use_plugin_ui_state(&mut hooks, || true);
-    let mut install_counts = use_plugin_ui_state(&mut hooks, || None::<InstallCounts>);
     let mut is_search_mode = use_plugin_ui_state(&mut hooks, || false);
     let on_search_mode_change = props.on_search_mode_change.clone();
     let set_is_search_mode = Handler::from(move |active| {
@@ -138,33 +136,7 @@ pub fn DiscoverPlugins(
                     }
                 }
                 let mut uninstalled=all_plugins.iter().filter(|p|!p.is_installed).cloned().collect::<Vec<_>>();
-                #[cfg(test)] let counts=if load_test_imports.is_some(){None}else{get_install_counts().await};
-                #[cfg(not(test))] let counts=get_install_counts().await;
-                let sort_failed=std::cell::Cell::new(false);
-                // NaN reaches `partial_cmp().unwrap_or(Equal)` when to_number
-                // fails mid-sort (the Cell mimics the source's try/catch), so
-                // the comparator is not a total order; sorted through the
-                // non-validating JS-sort primitive (utils/js_sort.rs; PR #7).
-                crate::utils::js_sort::sort_by(&mut uninstalled,|a,b| {
-                    let a_raw=counts.as_ref().and_then(|c|c.get(&a.plugin_id)).filter(|v|!v.is_null());
-                    let b_raw=counts.as_ref().and_then(|c|c.get(&b.plugin_id)).filter(|v|!v.is_null());
-                    let equal=match (a_raw,b_raw){
-                        (None,None)=>true,
-                        (None,Some(v))|(Some(v),None)=>v.kind==11&&v.number==Some(0.0),
-                        (Some(a),Some(b)) if a.kind==b.kind=>match a.kind{8|9=>true,10=>a.string_units==b.string_units,11=>a.number.zip(b.number).is_some_and(|(a,b)|a==b),_=>std::ptr::eq(a,b)},
-                        _=>false,
-                    };
-                    if !equal {
-                        let a_number=a_raw.map_or(0.0,|v|v.to_number().unwrap_or_else(|_|{sort_failed.set(true);f64::NAN}));
-                        let b_number=b_raw.map_or(0.0,|v|v.to_number().unwrap_or_else(|_|{sort_failed.set(true);f64::NAN}));
-                        (b_number-a_number).partial_cmp(&0.0).unwrap_or(std::cmp::Ordering::Equal)
-                    } else {crate::tools::grep_tool::javascript_locale_compare(a.entry["name"].as_str().unwrap_or(""),b.entry["name"].as_str().unwrap_or(""))}
-                });
-                if sort_failed.get(){
-                    crate::utils::debug::log_for_debugging("Failed to fetch install counts: Cannot convert object to primitive value");
-                    uninstalled.sort_by(|a,b|crate::tools::grep_tool::javascript_locale_compare(a.entry["name"].as_str().unwrap_or(""),b.entry["name"].as_str().unwrap_or("")));
-                }
-                install_counts.set(counts);
+                uninstalled.sort_by(|a,b|crate::tools::grep_tool::javascript_locale_compare(a.entry["name"].as_str().unwrap_or(""),b.entry["name"].as_str().unwrap_or("")));
                 let empty=uninstalled.is_empty();
                 available_plugins.set(uninstalled);
                 if empty {
@@ -667,7 +639,6 @@ pub fn DiscoverPlugins(
             element!{View(key:format!("{}-{}",pagination.start_index,p.plugin_id),flex_direction:FlexDirection::Column,margin_bottom:if i+1==visible.len(){0u32}else{1u32}){
                 View{Text(content:format!("{} ",if selected{figures.pointer}else{" "}),color:if selected{Some(theme.suggestion)}else{None}) Text(content:format!("{marker} {}",p.entry["name"].as_str().unwrap_or(""))) Text(content:format!(" · {}",p.marketplace_name),dim:true)
                     #(p.entry["tags"].as_array().is_some_and(|tags|tags.iter().any(|v|v=="community-managed")).then(||element!{Text(content:" [Community Managed]",dim:true)}))
-                    #(install_counts.read().as_ref().filter(|_|p.marketplace_name==crate::utils::plugins::official_marketplace::OFFICIAL_MARKETPLACE_NAME).map(|counts|element!{Text(content:format!(" · {} installs",format_install_count(counts.get(&p.plugin_id).filter(|v|!v.is_null()).map_or(InstallCountInput::Number(0.0),InstallCountInput::Value))),dim:true)}))
                 }
                 #(p.entry["description"].as_str().filter(|s|!s.is_empty()).map(|description|element!{View(margin_left:4u32){Text(content:crate::utils::truncate::truncate_to_width(description,60),dim:true)}}))
             }}
