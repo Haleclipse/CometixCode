@@ -367,10 +367,9 @@ actionlint   # 固定版本二进制，见 tools.lock.json
 
 ### 4.5 `supply-chain`
 
-- `gitleaks`（固定版本二进制 + `.gitleaks.toml`）扫描 `git archive HEAD` 的快照，不扫历史。**实测基线就有 9 条命中**，
-  PR 从第一天起会红，Phase 0 必须先把它们写进 allowlist（按 rule + path；带行号的条目不随行号漂移）：
-  3 条 `private-key` 是测试用自签证书 `tests/fixtures/tls/{client,client-encrypted,other}.key`；2 条
-  `aws-access-token` 在 `src/components/feedback.rs:471,477` 的脱敏用例里（`AKIA…` 合成值）；3 条
+- `gitleaks`（固定版本二进制 + `.gitleaks.toml`）扫描 `git archive HEAD` 的快照，不扫历史。**初始实测基线有 9 条命中**，
+  其中 2 条合成 AWS 凭证命中随云端反馈模块删除；其余按 rule + path allow（带行号的条目不随行号漂移）：
+  3 条 `private-key` 是测试用自签证书 `tests/fixtures/tls/{client,client-encrypted,other}.key`；3 条
   `generic-api-key` 在 `src/utils/fs_operations/path/UPSTREAM.json:19` 的文件哈希、`src/utils/mcp_websocket_transport.rs:266`
   的 RFC 6455 示例 key `dGhlIHNhbXBsZSBub25jZQ==`、`src/services/decision/egress.rs:267` 的脱敏夹具；1 条 `jwt` 在
   `src/services/decision/egress.rs:214` 的脱敏夹具。合成值优先加 `gitleaks:allow` 行内注释，测试证书按路径 allow。

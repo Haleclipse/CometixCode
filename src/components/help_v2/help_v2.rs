@@ -348,6 +348,23 @@ mod tests {
     }
 
     #[test]
+    fn help_v2_commands_tab_omits_feedback_and_keeps_local_session_commands() {
+        let mut batches = keys(&[KeyCode::Tab, KeyCode::Down]);
+        batches.extend(
+            crate::commands::declared_commands_for_tests()
+                .iter()
+                .map(|_| vec![key(KeyCode::Down)]),
+        );
+        let (frames, _) = drive_frames(batches);
+        let text = frames.join("\n");
+        assert!(!text.contains("/feedback"), "canvas=\n{text}");
+        assert!(!text.contains("/bug"), "canvas=\n{text}");
+        for retained in ["/cost", "/stats", "/config", "/resume", "/export"] {
+            assert!(text.contains(retained), "missing {retained}");
+        }
+    }
+
+    #[test]
     fn help_v2_list_takes_focus_from_the_tab_row_and_moves_with_select_keys() {
         // ↓ from the tab row focuses the list (Tabs.tsx:163-172); the list
         // then moves with the Select bindings, j included.

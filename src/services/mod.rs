@@ -22,7 +22,6 @@ pub mod mcp;
 pub mod mcp_server_approval;
 /// @nyan: shadow-mode Decision Provider seam for the memory points (C4).
 pub mod memory_decision;
-pub mod policy_limits;
 pub mod prompt_suggestion;
 /// @nyan: provider-neutral request IR and adapters (provider redesign PR 4).
 pub mod provider;

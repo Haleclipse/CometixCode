@@ -44,10 +44,8 @@ pub const SAFE_ENV_VARS: &[&str] = &[
     "NYAN_IDE_SKIP_AUTO_INSTALL",
     "NYAN_MAX_OUTPUT_TOKENS",
     "DISABLE_AUTOUPDATER",
-    "DISABLE_BUG_COMMAND",
     "DISABLE_COST_WARNINGS",
     "DISABLE_ERROR_REPORTING",
-    "DISABLE_FEEDBACK_COMMAND",
     "ENABLE_TOOL_SEARCH",
     "MAX_MCP_OUTPUT_TOKENS",
     "MAX_THINKING_TOKENS",
@@ -173,6 +171,14 @@ pub fn apply_config_environment_variables() {
 mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+
+    #[test]
+    fn removed_feedback_environment_switches_are_not_allowlisted() {
+        for removed in ["DISABLE_BUG_COMMAND", "DISABLE_FEEDBACK_COMMAND"] {
+            assert!(!is_safe_managed_env_var(removed));
+        }
+        assert!(is_safe_managed_env_var("DISABLE_COST_WARNINGS"));
+    }
 
     /// CC `utils/managedEnv.ts#applyConfigEnvironmentVariables` applies each
     /// settings object with `Object.assign`, so own-key projection precedes

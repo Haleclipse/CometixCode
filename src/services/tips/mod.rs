@@ -8,4 +8,4 @@ pub mod types;
 pub use tip_scheduler::{
     get_tip_to_show_on_spinner, pick_new_spinner_tip, record_shown_tip, reset_tip_picked_this_turn,
 };
-pub use types::{Tip, TipContext};
+pub use types::Tip;

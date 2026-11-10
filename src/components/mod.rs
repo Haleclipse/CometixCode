@@ -35,8 +35,6 @@ pub mod exit_flow;
 pub mod export_dialog;
 pub mod fallback_tool_use_error_message;
 pub mod fallback_tool_use_rejected_message;
-pub mod feedback;
-pub mod feedback_survey;
 pub mod file_edit_tool_diff;
 pub mod file_edit_tool_updated_message;
 pub mod file_edit_tool_use_rejected_message;

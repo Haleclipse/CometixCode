@@ -58,7 +58,7 @@ pub fn UserToolErrorMessage(
         return element! {
             MessageResponse {
                 Text(
-                    content: "Denied by auto mode classifier · /feedback if incorrect".to_string(),
+                    content: "Denied by auto mode classifier".to_string(),
                     dim: true,
                     wrap: TextWrap::NoWrap,
                 )
@@ -247,6 +247,21 @@ mod tests {
         }
         .render(Some(80))
         .to_string()
+    }
+
+    #[test]
+    fn classifier_denial_does_not_advertise_removed_feedback_command() {
+        let canvas = render(
+            "Read",
+            &crate::utils::messages::build_yolo_rejection_message("not allowed"),
+            false,
+        );
+        assert!(
+            canvas.contains("Denied by auto mode classifier"),
+            "canvas=\n{canvas}"
+        );
+        assert!(!canvas.contains("/feedback"), "canvas=\n{canvas}");
+        assert!(!canvas.contains("/bug"), "canvas=\n{canvas}");
     }
 
     /// Maps to: CC `LSPTool/UI.tsx:160-176` — a non-verbose tagged failure

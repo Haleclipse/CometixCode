@@ -116,7 +116,6 @@ pub struct SettingsJson {
     pub always_thinking_enabled: Option<bool>,
     pub prompt_suggestion_enabled: Option<bool>,
     pub terminal_title_from_rename: Option<bool>,
-    pub feedback_survey_rate: Option<f64>,
     pub skip_web_fetch_preflight: Option<bool>,
 
     pub auto_mode_threshold: Option<String>,
@@ -870,12 +869,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             ),
             ("sandbox", sandbox_settings_schema().clone().optional()),
             (
-                "feedbackSurveyRate",
-                zod::number().min(0).max(1).optional().describe(
-                    "Probability (0–1) that the session quality survey appears when eligible. 0.05 is a reasonable starting point.",
-                ),
-            ),
-            (
                 "spinnerTipsEnabled",
                 zod::boolean()
                     .optional()
@@ -1362,6 +1355,24 @@ mod zod_schema_tests {
         let serialized = serde_json::to_value(SettingsJson::default()).unwrap();
         assert!(serialized.get("remote").is_none());
         assert!(serialized.get("disableDeepLinkRegistration").is_none());
+    }
+
+    #[test]
+    fn settings_schema_omits_feedback_survey_configuration() {
+        let projected = crate::utils::zod::to_json_schema(settings_schema());
+        assert!(projected["properties"].get("feedbackSurveyRate").is_none());
+        assert!(
+            crate::utils::zod::safe_parse(
+                &settings_schema().clone().strict(),
+                &serde_json::json!({"feedbackSurveyRate": 0.05}),
+            )
+            .is_err()
+        );
+        let serialized = serde_json::to_value(SettingsJson::default()).unwrap();
+        assert!(serialized.get("feedbackSurveyRate").is_none());
+        let state = serde_json::to_value(crate::utils::config::GlobalConfig::default()).unwrap();
+        assert!(state.get("feedbackSurveyState").is_none());
+        assert!(state.get("transcriptShareDismissed").is_none());
     }
 
     /// @nyan: `nyan` is a formal top-level key. The strict edit-time schema

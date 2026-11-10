@@ -501,14 +501,6 @@ fn terminal_setup_hidden() -> bool {
     )
 }
 
-fn feedback_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_FEEDBACK_COMMAND").as_deref(),
-    ) && !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_BUG_COMMAND").as_deref(),
-    )
-}
-
 fn privacy_settings_enabled() -> bool {
     false
 }
@@ -641,10 +633,6 @@ fn commands() -> Vec<Command> {
         Command::local("stickers", "Order nyan stickers"),
         Command::local_ui("theme", "Change the theme")
             .executable(execution::call_theme),
-        Command::local_ui("feedback", "Submit feedback about nyan")
-            .aliases(&["bug"])
-            .argument_hint("[report]")
-            .enabled_when(feedback_enabled),
         review::command(),
         Command::local_ui(
             "ultrareview",
@@ -1213,14 +1201,15 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
 
         let catalog = commands();
-        // 55 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
+        // 54 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
         // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
         // with claude.ai guest passes; `/upgrade`, `/extra-usage`,
         // `/rate-limit-options` and `/usage` are gone with the claude.ai
         // subscription quota; `/chrome` is gone with Claude in Chrome;
         // `/desktop`, `/mobile`, `/install-slack-app` and
-        // `/install-github-app` are gone with the official client apps.
-        assert_eq!(catalog.len(), 57);
+        // `/install-github-app` are gone with the official client apps;
+        // `/feedback` and `/bug` are gone with Anthropic feedback submission.
+        assert_eq!(catalog.len(), 56);
         for removed in [
             "login",
             "logout",
@@ -1236,6 +1225,8 @@ mod tests {
             "install-github-app",
             "remote-env",
             "session",
+            "feedback",
+            "bug",
         ] {
             assert!(
                 catalog.iter().all(|command| command.name != removed),
@@ -1285,7 +1276,6 @@ mod tests {
             "statusline",
             "stickers",
             "theme",
-            "feedback",
             "review",
             "ultrareview",
             "rewind",
@@ -1306,9 +1296,8 @@ mod tests {
             assert!(declared_names.contains(expected), "missing /{expected}");
         }
         assert!(catalog.iter().all(|command| command.name != "version"));
-        // The removed app commands' aliases must not resurface on another
-        // command either.
-        for alias in ["app", "ios", "android", "remote"] {
+        // Removed aliases must not resurface on another command either.
+        for alias in ["app", "ios", "android", "remote", "bug", "feedback"] {
             assert!(
                 catalog
                     .iter()

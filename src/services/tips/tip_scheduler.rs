@@ -2,8 +2,7 @@
 
 use super::tip_history::{get_sessions_since_last_shown, record_tip_shown};
 use super::tip_registry::get_relevant_tips;
-use super::types::{Tip, TipContext};
-use crate::utils::config::load_global_config;
+use super::types::Tip;
 use crate::utils::settings::get_initial_settings;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -31,15 +30,12 @@ pub fn select_tip_with_longest_time_since_shown(available_tips: &[Tip]) -> Optio
 }
 
 /// Maps to: CC `getTipToShowOnSpinner`.
-pub fn get_tip_to_show_on_spinner(context: Option<&TipContext>) -> Option<Tip> {
+pub fn get_tip_to_show_on_spinner() -> Option<Tip> {
     let settings = get_initial_settings();
     if settings.spinner_tips_enabled == Some(false) {
         return None;
     }
-    let owned = context.cloned().unwrap_or_else(|| TipContext {
-        num_startups: load_global_config().num_startups,
-    });
-    let tips = get_relevant_tips(&owned);
+    let tips = get_relevant_tips();
     select_tip_with_longest_time_since_shown(&tips).cloned()
 }
 
@@ -53,7 +49,7 @@ pub fn pick_new_spinner_tip(app_store: &crate::state::store::AppStore) {
     if TIP_PICKED_THIS_TURN.swap(true, Ordering::Relaxed) {
         return;
     }
-    match get_tip_to_show_on_spinner(None) {
+    match get_tip_to_show_on_spinner() {
         Some(tip) => {
             let content = tip.content.clone();
             record_shown_tip(&tip);

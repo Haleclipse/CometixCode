@@ -1,15 +1,13 @@
 //! Maps to: CC `services/tips/tipRegistry.ts` — spinner tip pool.
 //!
 //! Ports the always-safe static subset plus `spinnerTipsOverride` custom tips.
-//! Tips that need IDE detection / GrowthBook / referral caches stay gated off
-//! until those seams land (CC `isRelevant` returns false equivalent).
 
 use super::tip_history::get_sessions_since_last_shown;
-use super::types::{Tip, TipContext};
+use super::types::Tip;
 use crate::utils::settings::get_initial_settings;
 
-fn builtin_tips(ctx: &TipContext) -> Vec<Tip> {
-    let mut tips = vec![
+fn builtin_tips() -> Vec<Tip> {
+    vec![
         Tip {
             id: "memory-command".to_string(),
             content: "Use /memory to view and manage Claude memory".to_string(),
@@ -60,17 +58,7 @@ fn builtin_tips(ctx: &TipContext) -> Vec<Tip> {
             content: "Create project commands in .nyan/commands/".to_string(),
             cooldown_sessions: 15,
         },
-        Tip {
-            id: "feedback-command".to_string(),
-            content: "Use /feedback to help us improve!".to_string(),
-            cooldown_sessions: 15,
-        },
-    ];
-    // Maps to: CC feedback tip `numStartups > 5`.
-    if ctx.num_startups <= 5 {
-        tips.retain(|tip| tip.id != "feedback-command");
-    }
-    tips
+    ]
 }
 
 fn custom_tips() -> Vec<Tip> {
@@ -94,7 +82,7 @@ fn custom_tips() -> Vec<Tip> {
 }
 
 /// Maps to: CC `getRelevantTips`.
-pub fn get_relevant_tips(context: &TipContext) -> Vec<Tip> {
+pub fn get_relevant_tips() -> Vec<Tip> {
     let settings = get_initial_settings();
     let custom = custom_tips();
     let exclude_default = settings
@@ -109,9 +97,26 @@ pub fn get_relevant_tips(context: &TipContext) -> Vec<Tip> {
             .collect();
     }
 
-    builtin_tips(context)
+    builtin_tips()
         .into_iter()
         .chain(custom)
         .filter(|tip| get_sessions_since_last_shown(&tip.id) >= tip.cooldown_sessions)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builtin_tips_do_not_advertise_removed_feedback_commands() {
+        let tips = builtin_tips();
+        assert_eq!(tips.len(), 10);
+        for tip in &tips {
+            assert!(!tip.content.contains("/feedback"));
+            assert!(!tip.content.contains("/bug"));
+        }
+        assert!(tips.iter().any(|tip| tip.content.contains("/memory")));
+        assert!(tips.iter().any(|tip| tip.content.contains("/resume")));
+    }
 }

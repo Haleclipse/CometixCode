@@ -768,6 +768,26 @@ mod tests {
     }
 
     #[test]
+    fn removed_feedback_commands_are_not_resolved_or_suggested() {
+        let commands = commands();
+        for removed in ["feedback", "bug"] {
+            assert!(crate::commands::find_command(removed, &commands).is_none());
+        }
+        for input in ["/", "/feedback", "/bug", "/feed", "/bu"] {
+            let suggestions = generate_command_suggestions(input, &commands);
+            assert!(
+                suggestions.iter().all(|item| {
+                    item.command_text != "/feedback" && item.command_text != "/bug"
+                }),
+                "input={input}"
+            );
+        }
+        for retained in ["cost", "stats", "config", "resume", "export"] {
+            assert!(crate::commands::find_command(retained, &commands).is_some());
+        }
+    }
+
+    #[test]
     fn cached_command_index_preserves_uncached_suggestion_results() {
         let commands = commands();
         let index = CommandSuggestionIndex::new(&commands);
