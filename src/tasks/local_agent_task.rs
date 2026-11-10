@@ -570,17 +570,6 @@ pub fn unregister_agent_foreground(task_id: &str) -> bool {
 }
 
 /// Maps to CC `LocalAgentTask.tsx#updateAgentProgress`.
-fn abort_speculation_for_task_notification(task_id: &str) -> bool {
-    let store = LOCAL_AGENT_TASK_STORES
-        .lock()
-        .unwrap()
-        .get(task_id)
-        .cloned();
-    store.is_some_and(|store| {
-        crate::services::prompt_suggestion::speculation::abort_speculation_for_store(&store)
-    })
-}
-
 pub fn update_agent_progress(task_id: &str, progress: AgentProgress) {
     let Some(task) = LOCAL_AGENT_TASKS.lock().unwrap().get(task_id).cloned() else {
         return;
@@ -722,9 +711,8 @@ pub fn enqueue_agent_notification(params: EnqueueAgentNotificationParams<'_>) {
         )
     };
     // CC `:299-308` — the notified flip goes through updateTaskState (an
-    // AppState write) before abortSpeculation (`:317`).
+    // AppState write) before the notification is enqueued.
     mirror_task_to_app_state(params.task_id);
-    abort_speculation_for_task_notification(params.task_id);
     enqueue_agent_notification_xml(notification);
 }
 
@@ -758,10 +746,9 @@ pub fn local_agent_tasks_snapshot() -> Vec<LocalAgentTaskState> {
 /// model-facing notification.
 pub fn kill_all_running_agent_tasks() -> Vec<LocalAgentTaskState> {
     let running = running_local_agent_tasks();
-    let mut notification_store = None;
     for snapshot in &running {
         // Aggregate kill notification ordering matches CC task consumers:
-        // terminal transition -> notified CAS -> speculation abort -> enqueue.
+        // terminal transition -> notified CAS -> enqueue.
         if !kill_async_agent(&snapshot.task_id) {
             continue;
         }
@@ -787,18 +774,8 @@ pub fn kill_all_running_agent_tasks() -> Vec<LocalAgentTaskState> {
                 // Mirror the notified flip (kill_async_agent already mirrored
                 // the terminal transition itself).
                 mirror_task_to_app_state(&snapshot.task_id);
-                if notification_store.is_none() {
-                    notification_store = LOCAL_AGENT_TASK_STORES
-                        .lock()
-                        .unwrap()
-                        .get(&snapshot.task_id)
-                        .cloned();
-                }
             }
         }
-    }
-    if let Some(store) = notification_store {
-        crate::services::prompt_suggestion::speculation::abort_speculation_for_store(&store);
     }
     running
 }
@@ -1053,40 +1030,15 @@ mod tests {
     use crate::types::message::{AssistantMessage, StopReason, TokenUsage, ToolUseBlock};
     use crate::utils::test_env::TEST_ENV_LOCK;
 
-    fn store_with_active_speculation()
-    -> (crate::state::store::AppStore, crate::tool::AbortController) {
+    fn store_with_prompt_suggestion() -> crate::state::store::AppStore {
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
             None,
         );
-        let context = crate::tool::ToolUseContext::default().with_app_store(store.clone());
-        let cache = Arc::new(crate::utils::forked_agent::CacheSafeParams {
-            system_prompt: Vec::new(),
-            user_context: Default::default(),
-            system_context: Default::default(),
-            tool_use_context: context,
-            fork_context_messages: Arc::new(Vec::new()),
-        });
-        let abort = crate::tool::AbortController::default();
         store.replace_with(|state| {
             state.prompt_suggestion.text = Some("run the tests".to_string());
-            state.speculation = crate::state::app_state_store::SpeculationState::Active(
-                crate::state::app_state_store::ActiveSpeculationState {
-                    id: uuid::Uuid::new_v4().simple().to_string(),
-                    abort_controller: abort.clone(),
-                    start_time: 0,
-                    messages: Arc::new(Mutex::new(Vec::new())),
-                    written_paths: Arc::new(Mutex::new(std::collections::BTreeSet::new())),
-                    boundary: None,
-                    suggestion_length: 13,
-                    tool_use_count: 0,
-                    is_pipelined: false,
-                    cache_safe_params: cache,
-                    pipelined_suggestion: None,
-                },
-            );
         });
-        (store, abort)
+        store
     }
 
     #[test]
@@ -1238,7 +1190,7 @@ mod tests {
     }
 
     #[test]
-    fn first_agent_notification_aborts_speculation_but_preserves_suggestion() {
+    fn first_agent_notification_enqueues_once_and_preserves_suggestion() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _task_lock = TEST_LOCAL_AGENT_TASK_LOCK.lock().unwrap();
         let _queue_lock = crate::utils::message_queue_manager::TEST_QUEUE_LOCK
@@ -1247,7 +1199,7 @@ mod tests {
         clear_local_agent_tasks_for_test();
         crate::utils::message_queue_manager::clear_command_queue();
         crate::utils::task::disk_output::reset_task_output_dir_for_test();
-        let (store, speculation_abort) = store_with_active_speculation();
+        let store = store_with_prompt_suggestion();
         let task_id = format!("agent-{}", uuid::Uuid::new_v4());
         register_async_agent_with_store(
             RegisterAsyncAgentParams {
@@ -1275,10 +1227,6 @@ mod tests {
             usage: None,
             content_replacement_state: None,
         });
-        assert!(
-            !speculation_abort.is_aborted(),
-            "CC aborts speculation inside enqueueAgentNotification (`:317`), not in completeAgentTask"
-        );
         enqueue_agent_notification(EnqueueAgentNotificationParams {
             task_id: &task_id,
             status: "completed",
@@ -1288,14 +1236,8 @@ mod tests {
             worktree: None,
         });
 
-        assert!(speculation_abort.is_aborted());
-        let state = store.get();
-        assert!(matches!(
-            state.speculation,
-            crate::state::app_state_store::SpeculationState::Idle
-        ));
         assert_eq!(
-            state.prompt_suggestion.text.as_deref(),
+            store.get().prompt_suggestion.text.as_deref(),
             Some("run the tests")
         );
         assert_eq!(
@@ -1324,7 +1266,7 @@ mod tests {
         assert_eq!(
             crate::utils::message_queue_manager::get_command_queue_length(),
             1,
-            "duplicate terminal transition must not enqueue or abort again"
+            "duplicate terminal transition must not enqueue again"
         );
         let _ = crate::utils::task::disk_output::cleanup_task_output(&task_id);
         crate::utils::message_queue_manager::clear_command_queue();
@@ -1499,7 +1441,7 @@ mod tests {
             "Use for general tasks",
             AgentDefinitionSource::BuiltIn,
         );
-        let (store, speculation_abort) = store_with_active_speculation();
+        let store = store_with_prompt_suggestion();
         for (id, description) in [("agent-one", "inspect"), ("agent-two", "test")] {
             register_async_agent_with_store(
                 RegisterAsyncAgentParams {
@@ -1514,16 +1456,10 @@ mod tests {
         }
 
         let killed = kill_all_running_agent_tasks();
-        assert!(speculation_abort.is_aborted());
-        let app_state = store.get();
         assert_eq!(
-            app_state.prompt_suggestion.text.as_deref(),
+            store.get().prompt_suggestion.text.as_deref(),
             Some("run the tests")
         );
-        assert!(matches!(
-            app_state.speculation,
-            crate::state::app_state_store::SpeculationState::Idle
-        ));
         assert_eq!(killed.len(), 2);
         for id in ["agent-one", "agent-two"] {
             let task = get_local_agent_task(id).unwrap();

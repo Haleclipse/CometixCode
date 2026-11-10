@@ -1549,23 +1549,6 @@ impl QueryPumpBurstProfile {
     }
 }
 
-fn current_time_millis() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX)
-}
-
-#[derive(Clone, Debug, PartialEq)]
-struct SpeculationAcceptanceOutcome {
-    input: String,
-    clean_messages: Vec<Message>,
-    result: Option<crate::services::prompt_suggestion::speculation::SpeculationResult>,
-    active: crate::state::app_state_store::ActiveSpeculationState,
-}
-
 #[derive(Clone, Debug, PartialEq)]
 struct McpPromptSlashCommandSubmit {
     input: String,
@@ -1584,7 +1567,7 @@ struct McpPromptSlashCommandSubmit {
 /// (`HandlerMut<PromptSubmission>`), and `handlePromptSubmit` must await
 /// `processUserInput` — which runs the `UserPromptSubmit` hooks, and those can
 /// erase the submission or stop the turn. So the callback resolves its own
-/// early-return branches (bash mode, speculation accept, MCP prompt commands)
+/// early-return branches (bash mode, MCP prompt commands)
 /// and passes the rest here, the same shape the MCP prompt path already uses.
 #[derive(Clone)]
 struct PromptQuerySubmit {
@@ -4303,178 +4286,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             user_input_on_processing.set(None);
         }
     });
-    let speculation_acceptance_channel = hooks.use_const(|| {
-        std::sync::Arc::new(async_channel::unbounded::<SpeculationAcceptanceOutcome>())
-    });
-    let speculation_acceptance_tx = speculation_acceptance_channel.0.clone();
-    let speculation_acceptance_rx = speculation_acceptance_channel.1.clone();
-    hooks.use_future({
-        let app_store = app_store.clone();
-        let set_in_progress_tool_use_ids = set_in_progress_tool_use_ids.clone();
-        async move {
-            while let Ok(outcome) = speculation_acceptance_rx.recv().await {
-                let is_complete = matches!(
-                    outcome
-                        .result
-                        .as_ref()
-                        .and_then(|result| result.boundary.as_ref()),
-                    Some(crate::state::app_state_store::CompletionBoundary::Complete { .. })
-                );
-                let mut clean_messages = outcome.clean_messages;
-                if !is_complete {
-                    while matches!(clean_messages.last(), Some(Message::Assistant(_))) {
-                        clean_messages.pop();
-                    }
-                }
-                let user_message = Message::User(crate::types::message::UserMessage {
-                    uuid: uuid::Uuid::new_v4().to_string(),
-                    timestamp: chrono::Utc::now(),
-                    content: vec![crate::types::message::UserContent::Text(
-                        outcome.input.clone(),
-                    )],
-                    is_compact_summary: false,
-                    plan_content: None,
-                    image_paste_ids: None,
-                    is_visible_in_transcript_only: false,
-                    mcp_meta: None,
-                    source_tool_assistant_uuid: None,
-                    permission_mode: None,
-                    origin: None,
-                    summarize_metadata: None,
-                });
-                let injected_messages = clean_messages.clone();
-                let transcript_values =
-                    crate::utils::session_storage::typed_messages_as_transcript_values(
-                        &clean_messages,
-                    );
-                let cwd = outcome
-                    .active
-                    .cache_safe_params
-                    .tool_use_context
-                    .effective_cwd();
-                let extracted = crate::utils::query_helpers::extract_read_files_from_messages(
-                    &transcript_values,
-                    &cwd.to_string_lossy(),
-                    crate::utils::file_state_cache::READ_FILE_STATE_CACHE_SIZE,
-                );
-                if !extracted.is_empty() {
-                    let mut stores = resume_restore_stores.read().clone();
-                    let mut cache = crate::utils::file_state_cache::FileStateCache::from_entries(
-                        stores.read_file_state,
-                    );
-                    for entry in extracted {
-                        let path = std::path::PathBuf::from(&entry.path);
-                        cache.set(&path, entry);
-                    }
-                    stores.read_file_state = cache.entries_lru_to_mru();
-                    resume_restore_stores.set(stores);
-                }
-
-                // Speculation-injected completed turns append as plain
-                // `Message` entries — CC appends the accepted messages whole
-                // and decides visibility at render (its
-                // `prepareMessagesForInjection`, speculation.ts:203-272, is
-                // model-side API hygiene, not a render projection). The old
-                // dual-carrier ModelOnly+Row split existed only for the
-                // hydrating projection's row drops, which the render-list
-                // filter and the per-block components now own.
-                let mut entries = history_state.read().as_ref().clone();
-                entries.extend(injected_messages.iter().cloned().map(HistoryEntry::Message));
-                let entries = Arc::new(entries);
-                history_state.set(Arc::clone(&entries));
-                let history = history_model_messages(&entries);
-                let rendered = project_history_rows(&entries);
-                // B3 flip-audit: CC's single accept-time clear
-                // (speculation.ts:851-857) guards on text==null &&
-                // promptId==null → return prev. This outcome-side clear is
-                // the second half of Nyan's async split (the submit-side
-                // clear already ran), so with the guard it is silent at
-                // runtime and the notification count matches CC.
-                app_store.set_state(|prev| {
-                    if prev.prompt_suggestion.text.is_none()
-                        && prev.prompt_suggestion.prompt_id.is_none()
-                    {
-                        return crate::state::store::UpdateDecision::Same(());
-                    }
-                    let mut next = (**prev).clone();
-                    next.prompt_suggestion =
-                        crate::state::app_state_store::PromptSuggestionState::default();
-                    crate::state::store::UpdateDecision::Replace {
-                        next: Arc::new(next),
-                        result: (),
-                    }
-                });
-
-                if is_complete {
-                    if let Some(pipelined) = outcome.active.pipelined_suggestion.clone() {
-                        app_store.replace_with(|state| {
-                            state.prompt_suggestion =
-                                crate::state::app_state_store::PromptSuggestionState {
-                                    text: Some(pipelined.text.clone()),
-                                    prompt_id: Some(pipelined.prompt_id.clone()),
-                                    shown_at: current_time_millis(),
-                                    accepted_at: 0,
-                                    generation_request_id: pipelined.generation_request_id.clone(),
-                                };
-                        });
-                        let mut cache =
-                            Arc::unwrap_or_clone(outcome.active.cache_safe_params.clone());
-                        let mut augmented = cache.fork_context_messages.as_ref().clone();
-                        augmented.push(user_message);
-                        augmented.extend(clean_messages);
-                        cache.fork_context_messages = Arc::new(augmented);
-                        tokio::spawn(async move {
-                            let _ =
-                                crate::services::prompt_suggestion::speculation::start_speculation(
-                                    pipelined.text,
-                                    cache,
-                                    true,
-                                )
-                                .await;
-                        });
-                    }
-                } else {
-                    let cache = outcome.active.cache_safe_params;
-                    let mut tool_use_context = cache.tool_use_context.clone();
-                    tool_use_context.messages = history.clone();
-                    tool_use_context.app_store = crate::tool::AppStoreRef::new(app_store.clone());
-                    tool_use_context
-                        .read_file_state
-                        .replace(resume_restore_stores.read().read_file_state.clone());
-                    tool_use_context.loaded_nested_memory_paths =
-                        loaded_nested_memory_paths.read().clone();
-                    tool_use_context.resume_restore_stores = resume_restore_stores.read().clone();
-                    // The cached context may carry an earlier query's setter;
-                    // this turn writes the REPL's set like every other turn.
-                    tool_use_context.set_in_progress_tool_use_ids =
-                        set_in_progress_tool_use_ids.clone();
-                    let params = crate::query::QueryParams {
-                        turn_id: Uuid::new_v4().to_string(),
-                        // The accepted user turn is already in typed history;
-                        // CC calls `onQuery([])` for this continuation.
-                        input: String::new(),
-                        messages: rendered,
-                        model_messages: history,
-                        system_prompt: cache.system_prompt.clone(),
-                        user_context: cache.user_context.clone(),
-                        system_context: cache.system_context.clone(),
-                        query_source: crate::constants::query_source::QuerySource::Prompt,
-                        token_budget: None,
-                        task_budget: None,
-                        max_turns: None,
-                        tool_use_context,
-                    };
-                    // `onQuery([])` prepares the IDE integration too, from
-                    // the store's clients (`REPL.tsx:3566-3569`).
-                    prepare_ide_integration_for_query(&app_store.get().mcp.clients);
-                    stream_mode.set(SpinnerMode::Responding);
-                    response_length_ref.set(0);
-                    active_query.set(Some(spawn_query(params, production_deps())));
-                }
-                user_input_on_processing.set(None);
-            }
-        }
-    });
     // Maps to: CC REPL.tsx:1110-1113 `const [ideSelection, setIDESelection] =
     // useState<IDESelection | undefined>(undefined)` — REPL-local ownership.
     let mut ide_selection = hooks.use_state(|| Option::<IdeSelection>::None);
@@ -6860,7 +6671,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     let mut loaded_nested_memory_paths_for_submit = loaded_nested_memory_paths;
     let resume_processing_tx_for_submit = resume_processing_tx.clone();
     let context_processing_tx_for_submit = context_processing_tx.clone();
-    let speculation_acceptance_tx_for_submit = speculation_acceptance_tx.clone();
     let compact_processing_tx_for_submit = compact_processing_tx.clone();
     let mut active_compact_abort_for_submit = active_compact_abort;
     let plan_processing_tx_for_submit = plan_processing_tx.clone();
@@ -6990,91 +6800,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     .unwrap_or_default()
                     .to_string();
                 let _ = sender.send_blocking((command, result));
-            });
-            return;
-        }
-        let accepted_speculation = {
-            let snapshot = app_store_for_submit.get();
-            match &snapshot.speculation {
-                crate::state::app_state_store::SpeculationState::Active(active)
-                    if snapshot.prompt_suggestion.text.as_deref() == Some(text.as_str()) =>
-                {
-                    Some(active.clone())
-                }
-                _ => None,
-            }
-        };
-        if let Some(active) = accepted_speculation {
-            // @nyan: typing the shown suggestion is also acceptance for the
-            // generate gate's post-hoc probe (decision-provider §7).
-            crate::services::decision::probe::observe_suggestion_acceptance(&text);
-            // Speculation accept forces `submitsNow` (REPL.tsx:4506-4508 → :4525).
-            clear_ide_selection_for_submit();
-            classifier_approvals.set(ClassifierApprovalsState::default());
-            streaming_text_preview.set(None);
-            user_input_on_processing_for_submit.set(None);
-            // B3 flip-audit: CC speculation.ts:852-857 — `if (text === null
-            // && promptId === null) return prev` before the clearing spread.
-            app_store_for_submit.set_state(|prev| {
-                if prev.prompt_suggestion.text.is_none()
-                    && prev.prompt_suggestion.prompt_id.is_none()
-                {
-                    return crate::state::store::UpdateDecision::Same(());
-                }
-                let mut next = (**prev).clone();
-                next.prompt_suggestion =
-                    crate::state::app_state_store::PromptSuggestionState::default();
-                crate::state::store::UpdateDecision::Replace {
-                    next: Arc::new(next),
-                    result: (),
-                }
-            });
-            // C3c-4: one `Message` entry carries both the accepted user row
-            // and its model history (the dual write with two different uuids
-            // collapsed into CC's single-array push).
-            let user_message = Message::User(crate::types::message::UserMessage {
-                uuid: uuid::Uuid::new_v4().to_string(),
-                timestamp: chrono::Utc::now(),
-                content: vec![crate::types::message::UserContent::Text(text.clone())],
-                is_compact_summary: false,
-                plan_content: None,
-                image_paste_ids: None,
-                is_visible_in_transcript_only: false,
-                mcp_meta: None,
-                source_tool_assistant_uuid: None,
-                permission_mode: None,
-                origin: None,
-                summarize_metadata: None,
-            });
-            let mut entries = history_state.read().as_ref().clone();
-            entries.push(HistoryEntry::Message(user_message));
-            history_state.set(Arc::new(entries));
-            let clean_messages =
-                crate::services::prompt_suggestion::speculation::prepare_messages_for_injection(
-                    &active
-                        .messages
-                        .lock()
-                        .unwrap_or_else(|poisoned| poisoned.into_inner()),
-                );
-            let context = active.cache_safe_params.tool_use_context.clone();
-            let sender = speculation_acceptance_tx_for_submit.clone();
-            tokio::spawn(async move {
-                let result = Some(
-                    crate::services::prompt_suggestion::speculation::accept_active_speculation(
-                        &context,
-                        &active,
-                        clean_messages.len(),
-                    )
-                    .await,
-                );
-                let _ = sender
-                    .send(SpeculationAcceptanceOutcome {
-                        input: text,
-                        clean_messages,
-                        result,
-                        active,
-                    })
-                    .await;
             });
             return;
         }
@@ -13268,80 +12993,6 @@ mod tests {
     }
 
     #[component]
-    fn ReplCompletedSpeculationHarness(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
-        let current_theme = *theme::current();
-        let app_store = hooks.use_const(|| {
-            let mut initial = crate::state::app_state_store::AppState::default();
-            initial.prompt_suggestion_enabled = true;
-            initial.prompt_suggestion = crate::state::app_state_store::PromptSuggestionState {
-                text: Some("continue the work".to_string()),
-                prompt_id: Some("prompt-spec".to_string()),
-                shown_at: 1,
-                accepted_at: 0,
-                generation_request_id: None,
-            };
-            let store = crate::state::store::AppStore::new(initial, None);
-            let context = crate::tool::ToolUseContext::default().with_app_store(store.clone());
-            let cache = Arc::new(crate::utils::forked_agent::CacheSafeParams {
-                system_prompt: vec!["system".to_string()],
-                user_context: Default::default(),
-                system_context: Default::default(),
-                tool_use_context: context,
-                fork_context_messages: Arc::new(Vec::new()),
-            });
-            store.replace_with(|state| {
-                state.speculation = crate::state::app_state_store::SpeculationState::Active(
-                    crate::state::app_state_store::ActiveSpeculationState {
-                        id: uuid::Uuid::new_v4().simple().to_string(),
-                        abort_controller: crate::tool::AbortController::default(),
-                        start_time: current_time_millis().saturating_sub(100),
-                        messages: Arc::new(std::sync::Mutex::new(vec![Message::Assistant(
-                            crate::types::message::AssistantMessage {
-                                uuid: uuid::Uuid::new_v4().to_string(),
-                                timestamp: chrono::Utc::now(),
-                                content: vec![crate::types::message::AssistantContent::Text(
-                                    "already speculated reply".to_string(),
-                                )],
-                                model: None,
-                                stop_reason: Some(crate::types::message::StopReason::EndTurn),
-                                usage: None,
-                            },
-                        )])),
-                        written_paths: Arc::new(std::sync::Mutex::new(Default::default())),
-                        boundary: Some(
-                            crate::state::app_state_store::CompletionBoundary::Complete {
-                                completed_at: current_time_millis(),
-                                output_tokens: 5,
-                            },
-                        ),
-                        suggestion_length: 17,
-                        tool_use_count: 0,
-                        is_pipelined: false,
-                        cache_safe_params: cache,
-                        pipelined_suggestion: Some(
-                            crate::state::app_state_store::PipelinedSuggestion {
-                                text: "run the final checks".to_string(),
-                                prompt_id: "user_intent".to_string(),
-                                generation_request_id: Some("req_pipeline".to_string()),
-                            },
-                        ),
-                    },
-                );
-            });
-            store
-        });
-        element! {
-            ContextProvider(value: Context::owned(
-                    crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
-                )) {
-                ContextProvider(value: Context::owned(current_theme)) {
-                    IsolatedAuthRepl(app_store: Some(app_store.clone()))
-                }
-            }
-        }
-    }
-
-    #[component]
     fn ReplCommandKeybindingHarness() -> impl Into<AnyElement<'static>> {
         let current_theme = *theme::current();
         let mut bindings = crate::keybindings::default_bindings::default_bindings();
@@ -16416,69 +16067,6 @@ mod tests {
 
             assert_local_command_rows(&messages, expected_command, "", expected_output);
         }
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn repl_accepts_completed_speculation_without_starting_duplicate_query() {
-        // Mirror the process runtime published by the production entrypoint.
-        crate::utils::process_runtime::initialize_test_process_runtime();
-        let _lock = env_lock().lock().unwrap();
-        let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", &PathBuf::from("0"));
-        let events = timed_stream(vec![
-            (key(KeyCode::Enter), 30),
-            (TerminalEvent::Resize(100, 30), 100),
-        ]);
-        let mut app = element!(ReplCompletedSpeculationHarness);
-        let mut render_loop =
-            Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(events).with_size(100, 30),
-            ));
-        let mut frames = Vec::new();
-        loop {
-            let next = crate::utils::race(render_loop.next(), async {
-                tokio::time::sleep(Duration::from_millis(150)).await;
-                None
-            })
-            .await;
-            let Some(canvas) = next else {
-                break;
-            };
-            frames.push(canvas);
-            if frames.len() >= 24 {
-                break;
-            }
-        }
-        let rendered = frames
-            .iter()
-            .map(canvas_lines)
-            .map(|lines| lines.join("\n"))
-            .collect::<Vec<_>>();
-        assert!(
-            rendered
-                .iter()
-                .any(|text| text.contains("continue the work")),
-            "accepted user prompt should render immediately"
-        );
-        assert!(
-            rendered
-                .iter()
-                .any(|text| text.contains("already speculated reply")),
-            "completed speculative response should be injected"
-        );
-        assert!(
-            rendered
-                .iter()
-                .any(|text| text.contains("run the final checks")),
-            "completed speculation should promote the pipelined suggestion"
-        );
-        assert!(
-            rendered.iter().all(|text| !text.contains("Working…")),
-            "completed speculation must not start a duplicate ordinary query"
-        );
-        assert!(
-            frames.len() < 24,
-            "mock render loop must settle within its bound"
-        );
     }
 
     #[test]

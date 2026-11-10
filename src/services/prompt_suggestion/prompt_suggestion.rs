@@ -243,20 +243,6 @@ where
     }))
 }
 
-pub async fn generate_suggestion(
-    abort_controller: AbortController,
-    prompt_id: PromptVariant,
-    cache_safe_params: CacheSafeParams,
-) -> anyhow::Result<SuggestionGeneration> {
-    generate_suggestion_with_deps(
-        abort_controller,
-        prompt_id,
-        cache_safe_params,
-        crate::query::deps::production_deps(),
-    )
-    .await
-}
-
 pub(crate) async fn generate_suggestion_with_deps<D>(
     abort_controller: AbortController,
     _prompt_id: PromptVariant,
@@ -451,13 +437,6 @@ pub async fn execute_prompt_suggestion(cache_safe_params: CacheSafeParams) {
             crate::services::decision::DecisionPoint::PromptSuggestionGenerateGate,
             &suggestion,
         );
-        if super::speculation::is_speculation_enabled() {
-            let speculation_cache = cache_safe_params.clone();
-            tokio::spawn(async move {
-                let _ = super::speculation::start_speculation(suggestion, speculation_cache, false)
-                    .await;
-            });
-        }
     }
     let mut current = CURRENT_ABORT_CONTROLLER
         .lock()

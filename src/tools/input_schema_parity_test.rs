@@ -35,7 +35,6 @@ const MIGRATED: &[(&str, SchemaFn)] = &[
     ),
     ("BashTool", crate::tools::bash_tool::bash_tool_schema),
     ("BriefTool", crate::tools::brief_tool::brief_tool_schema),
-    ("ConfigTool", crate::tools::config_tool::config_tool_schema),
     (
         "EnterPlanModeTool",
         crate::tools::enter_plan_mode_tool::enter_plan_mode_tool_schema,
@@ -157,6 +156,12 @@ const MIGRATED: &[(&str, SchemaFn)] = &[
 
 /// Oracle entries with no constructor the net can call, and why.
 const OUTSIDE_THE_NET: &[(&str, &str)] = &[
+    (
+        "ConfigTool",
+        "CC's `Config` tool edits CC's own global config and settings files. \
+         Nyan removed it (it was never registered), so there is no \
+         constructor to compare.",
+    ),
     (
         "SyntheticOutputTool",
         "CC `createSyntheticOutputTool(jsonSchema)` returns the caller's schema \

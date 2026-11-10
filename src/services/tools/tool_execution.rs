@@ -926,8 +926,8 @@ fn run_tool_use_permission_gate_for_request_with_assistant(
             );
         }
     };
-    // CC CanUseToolFn may rewrite input (speculation overlay paths). The
-    // rewritten request must flow through hooks, permission UI, and tool.call.
+    // CC CanUseToolFn may rewrite input via `updatedInput`. The rewritten
+    // request must flow through hooks, permission UI, and tool.call.
     let mut effective_tool_use = parsed_tool_use;
     if let Some(updated_input) = callback_decision
         .as_ref()
@@ -9693,7 +9693,6 @@ static TOOL_CALL_REGISTRY: &[&dyn crate::tool::ToolCall] = &[
     &crate::tools::web_fetch_tool::WebFetchTool,
     &crate::tools::web_search_tool::WebSearchTool,
     &crate::tools::lsp_tool::LspTool,
-    &crate::tools::config_tool::ConfigTool,
     &crate::tools::todo_write_tool::TodoWriteTool,
     &crate::tools::ask_user_question_tool::AskUserQuestionTool,
     &crate::tools::brief_tool::BriefTool,
@@ -12458,60 +12457,6 @@ rl.on('line', line => {
         crate::utils::tasks::clear_leader_team_name();
         TASK_TOOL_STORE.lock().unwrap().clear();
         let _ = std::fs::remove_dir_all(config_root);
-    }
-
-    #[tokio::test]
-    async fn local_tool_executor_config_get_returns_official_model_result_without_writes() {
-        let request = mock_permission_request_with_input(
-            "perm-config".to_string(),
-            "toolu_config".to_string(),
-            "Config".to_string(),
-            "theme".to_string(),
-            serde_json::json!({"setting": "theme"}),
-            PermissionMode::Default,
-        );
-
-        let message = LocalToolExecutor
-            .result_after_permission(
-                &request,
-                PermissionPromptChoice::AllowOnce,
-                &crate::tool::ToolUseContext::default(),
-                None,
-                None,
-            )
-            .await
-            .expect("Config get should produce a tool_result");
-
-        match user_tool_result_block(&message) {
-            Some(block) => {
-                assert_eq!(block.tool_use_id.0, "toolu_config");
-                assert_eq!(block.derived_status(), ToolResultStatus::Success);
-                assert!(block.content.starts_with("theme = "));
-                let model_message = transcript_tool_result_to_model_message(
-                    &RenderableMessage::user_tool_result(
-                        "config-result",
-                        block.tool_use_id.0.clone(),
-                        block.content.clone(),
-                        block.is_error,
-                    ),
-                    "Config",
-                )
-                .expect("Config mapped content should be forwarded as model content");
-                assert!(matches!(
-                    model_message.content.first(),
-                    Some(UserContent::ToolResult(result)) if result.content == block.content
-                ));
-                // No display shape — the raw Output object rides the row.
-                let raw = block
-                    .tool_use_result
-                    .as_ref()
-                    .expect("raw output should ride the row");
-                assert_eq!(raw.get("success"), Some(&serde_json::json!(true)));
-                assert_eq!(raw.get("operation"), Some(&serde_json::json!("get")));
-                assert_eq!(raw.get("setting"), Some(&serde_json::json!("theme")));
-            }
-            None => panic!("unexpected Config result: {:?}", message.kind),
-        }
     }
 
     #[tokio::test]

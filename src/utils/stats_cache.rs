@@ -35,7 +35,6 @@ pub struct PersistedStatsCache {
     pub longest_session: Option<LongestSessionStats>,
     pub first_session_date: Option<String>,
     pub hour_counts: BTreeMap<u8, u64>,
-    pub total_speculation_time_saved_ms: u64,
     pub shot_distribution: Option<BTreeMap<u64, u64>>,
 }
 
@@ -279,9 +278,6 @@ pub(crate) fn merge_cache_with_new_stats(
         longest_session,
         first_session_date,
         hour_counts,
-        total_speculation_time_saved_ms: existing
-            .total_speculation_time_saved_ms
-            .saturating_add(incoming.total_speculation_time_saved_ms),
         shot_distribution: existing.shot_distribution,
     }
 }
@@ -371,7 +367,6 @@ pub(crate) fn cache_to_stats(
         model_usage: cache.model_usage,
         first_session_date: cache.first_session_date,
         last_session_date,
-        total_speculation_time_saved_ms: cache.total_speculation_time_saved_ms,
         shot_distribution: cache.shot_distribution,
         one_shot_rate: None,
     }
@@ -418,6 +413,37 @@ mod tests {
         let persisted: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(persisted["version"], 4);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stats_cache_ignores_legacy_speculation_total_without_changing_aggregates() {
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!("nyan-stats-cache-{}", uuid::Uuid::new_v4()));
+        let path = root.join("stats-cache.json");
+        std::fs::create_dir_all(&root).unwrap();
+        let expected = PersistedStatsCache {
+            total_sessions: 2,
+            total_messages: 5,
+            daily_activity: vec![DailyActivity {
+                date: "2026-07-18".to_string(),
+                message_count: 5,
+                session_count: 2,
+                tool_call_count: 3,
+            }],
+            ..PersistedStatsCache::empty()
+        };
+        let mut legacy = serde_json::to_value(&expected).unwrap();
+        legacy["totalSpeculationTimeSavedMs"] = serde_json::json!(250);
+        std::fs::write(&path, legacy.to_string()).unwrap();
+        let _path = set_test_stats_cache_path(&path);
+
+        let cache = load_stats_cache();
+        assert_eq!(cache, expected);
+        let stats = cache_to_stats(cache, None);
+        assert_eq!(stats.total_sessions, 2);
+        assert_eq!(stats.total_messages, 5);
+        assert_eq!(stats.daily_activity[0].tool_call_count, 3);
         let _ = std::fs::remove_dir_all(root);
     }
 

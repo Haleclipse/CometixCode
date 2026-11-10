@@ -23,7 +23,7 @@
 //! - `agent-name`, `agent-color`, `agent-setting`, `mode`, `worktree-state`
 //! - `pr-link`, `file-history-snapshot`, `attribution-snapshot`
 //! - `content-replacement`, `marble-origami-commit`, `marble-origami-snapshot`
-//! - `speculation-accept`, `queue-operation`
+//! - `queue-operation`
 //!
 //! ## Implemented parity
 //!
@@ -727,7 +727,6 @@ pub struct LoadedSession {
     pub agent_content_replacements: HashMap<String, Vec<serde_json::Value>>,
     pub context_collapse_commits: Vec<serde_json::Value>,
     pub context_collapse_snapshot: Option<serde_json::Value>,
-    pub speculation_accepts: Vec<serde_json::Value>,
     pub leaf_uuids: HashSet<String>,
 
     pub compact_boundaries: Vec<CompactBoundaryInfo>,
@@ -2986,10 +2985,6 @@ pub fn load_session_structured_from_path(path: &Path) -> LoadedSession {
                 session.context_collapse_snapshot = Some(entry.clone());
             }
 
-            "speculation-accept" => {
-                session.speculation_accepts.push(entry.clone());
-            }
-
             "attribution-snapshot" => {
                 insert_attribution_snapshot(&mut session.attribution_snapshots, entry);
             }
@@ -5117,23 +5112,6 @@ pub fn save_ai_generated_title(session_id: &str, ai_title: &str) -> anyhow::Resu
         session_id,
     );
     append_entry_to_file(&path, &entry)
-}
-
-/// Maps to CC speculation acceptance JSONL bookkeeping.
-pub fn record_speculation_accept(time_saved_ms: u64) -> anyhow::Result<()> {
-    let session_id = crate::bootstrap::state::get_session_id();
-    let path = active_session_file_path(
-        &crate::bootstrap::state::get_original_cwd().to_string_lossy(),
-        &session_id,
-    );
-    append_entry_to_file(
-        &path,
-        &serde_json::json!({
-            "type": "speculation-accept",
-            "timestamp": chrono::Utc::now().to_rfc3339(),
-            "timeSavedMs": time_saved_ms,
-        }),
-    )
 }
 
 pub fn save_tag(project_path: &str, session_id: &str, tag: &str) -> anyhow::Result<()> {
@@ -8844,6 +8822,49 @@ mod tests {
         assert_eq!(uuids(&raw_entries), vec![root.as_str(), live.as_str()]);
         assert!(!session.messages.contains_key(&dead));
         assert_eq!(uuids(&chain), vec![root.as_str(), live.as_str()]);
+    }
+
+    #[test]
+    fn load_session_structured_ignores_legacy_speculation_accept_entries() {
+        let path = std::env::temp_dir().join(format!(
+            "nyan-session-legacy-speculation-{}.jsonl",
+            Uuid::new_v4()
+        ));
+        let entries = [
+            json!({
+                "type": "user",
+                "uuid": "u1",
+                "parentUuid": null,
+                "timestamp": "2026-07-18T10:00:00Z",
+                "message": {"role": "user", "content": "hello"}
+            }),
+            json!({
+                "type": "speculation-accept",
+                "timestamp": "2026-07-18T10:01:00Z",
+                "timeSavedMs": 250
+            }),
+            json!({
+                "type": "assistant",
+                "uuid": "a1",
+                "parentUuid": "u1",
+                "timestamp": "2026-07-18T10:02:00Z",
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "done"}]}
+            }),
+        ];
+        let contents = entries
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(&path, format!("{contents}\n")).unwrap();
+
+        let session = load_session_structured_from_path(&path);
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(session.messages.len(), 2);
+        let chain = build_conversation_chain(&session, "a1");
+        assert_eq!(uuids(&chain), vec!["u1", "a1"]);
+        assert_eq!(chain, vec![entries[0].clone(), entries[2].clone()]);
     }
 
     #[test]

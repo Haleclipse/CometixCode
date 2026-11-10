@@ -1972,8 +1972,6 @@ pub enum ToolOutput {
     /// CC `tools/AskUserQuestionTool/AskUserQuestionTool.tsx` outputSchema
     /// (:128).
     AskUserQuestion(crate::tools::ask_user_question_tool::Output),
-    /// CC `tools/ConfigTool/ConfigTool.ts` outputSchema (:51).
-    Config(crate::tools::config_tool::Output),
     /// CC `tools/RemoteTriggerTool/RemoteTriggerTool.ts` outputSchema (:35).
     RemoteTrigger(crate::tools::remote_trigger_tool::Output),
     /// CC `tools/LSPTool/LSPTool.ts` outputSchema (:76).
@@ -2295,9 +2293,9 @@ pub trait ToolCall: Sync {
     /// - `StructuredOutput` instances carry a per-instance override
     ///   (`utils/hooks/hookHelpers.ts:60-63` spreads the base tool and
     ///   replaces `prompt()`), also stored in `Tool.description`.
-    /// Constant-return tools (the other ~38, e.g. `GlobTool.ts:143`,
-    /// `ConfigTool.ts:74`) ignore both parameters and forward to the same
-    /// source their schema constructor renders eagerly.
+    /// Constant-return tools (the other ~37, e.g. `GlobTool.ts:143`) ignore
+    /// both parameters and forward to the same source their schema
+    /// constructor renders eagerly.
     ///
     /// Async ruling: sync `fn` — see [`ToolPromptOptions`] for the tier
     /// evidence (every producer of every option value resolves synchronously
@@ -2469,7 +2467,6 @@ fn output_variant_name(output: &ToolOutput) -> &'static str {
         ToolOutput::PowerShell(_) => "PowerShell",
         ToolOutput::TodoWrite(_) => "TodoWrite",
         ToolOutput::AskUserQuestion(_) => "AskUserQuestion",
-        ToolOutput::Config(_) => "Config",
         ToolOutput::RemoteTrigger(_) => "RemoteTrigger",
         ToolOutput::Lsp(_) => "Lsp",
         ToolOutput::WebFetch(_) => "WebFetch",

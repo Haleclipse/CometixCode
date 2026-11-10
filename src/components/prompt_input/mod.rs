@@ -486,11 +486,10 @@ pub struct PromptInputProps<'a> {
 }
 
 /// Maps to: CC PromptInput.tsx:1148-1160 `onChange` — cancel pending prompt
-/// suggestion / speculation work and reset autocomplete for the new text.
+/// suggestion work and reset autocomplete for the new text.
 /// Called from the text input's change event for typed edits, and from the
 /// render-body `prev_input` diff for programmatic ones.
 fn on_input_text_changed(
-    app_store: Option<&crate::state::store::AppStore>,
     text: &str,
     mut prev_input: iocraft::hooks::State<String>,
     mut typeahead_selection_reset: iocraft::hooks::Ref<bool>,
@@ -498,19 +497,6 @@ fn on_input_text_changed(
     mut help_open: iocraft::hooks::State<bool>,
 ) {
     crate::services::prompt_suggestion::prompt_suggestion::abort_prompt_suggestion();
-    if let Some(active) = app_store.and_then(|store| {
-        let state = store.get();
-        match &state.speculation {
-            crate::state::app_state_store::SpeculationState::Active(active) => Some(active.clone()),
-            crate::state::app_state_store::SpeculationState::Idle => None,
-        }
-    }) {
-        active.abort_controller.abort();
-        let context = active.cache_safe_params.tool_use_context.clone();
-        tokio::spawn(async move {
-            crate::services::prompt_suggestion::speculation::abort_speculation(&context).await;
-        });
-    }
     prev_input.set(text.to_string());
     typeahead_selection_reset.set(true);
     autocomplete_dismissed_input.set(None);
@@ -1496,7 +1482,6 @@ pub fn PromptInput<'a>(
     // the text input.
     if prev_input.read().as_str() != input.read().as_str() {
         on_input_text_changed(
-            app_store.as_ref(),
             &input.read(),
             prev_input,
             typeahead_selection_reset,
@@ -1940,7 +1925,6 @@ pub fn PromptInput<'a>(
             // of it). The render-body emission near the end stays as the
             // fallback for programmatic edits; the parent ignores repeats.
             on_change: Handler::from({
-                let app_store = app_store.clone();
                 let on_input_change = props.on_input_change.clone();
                 let on_input_state_change = props.on_input_state_change.clone();
                 move |text: String| {
@@ -1948,7 +1932,6 @@ pub fn PromptInput<'a>(
                         return;
                     }
                     on_input_text_changed(
-                        app_store.as_ref(),
                         &text,
                         prev_input,
                         typeahead_selection_reset,
@@ -2150,16 +2133,8 @@ pub fn PromptInput<'a>(
                 && let Some(store) = app_store.as_ref()
             {
                 store.replace_with(|state| {
-                    if matches!(
-                        state.speculation,
-                        crate::state::app_state_store::SpeculationState::Active(_)
-                    ) && accepted_suggestion
-                    {
-                        state.prompt_suggestion.accepted_at = current_time_millis();
-                    } else {
-                        state.prompt_suggestion =
-                            crate::state::app_state_store::PromptSuggestionState::default();
-                    }
+                    state.prompt_suggestion =
+                        crate::state::app_state_store::PromptSuggestionState::default();
                 });
             }
             (props.on_submit)(PromptSubmission {
@@ -3749,84 +3724,10 @@ mod tests {
         });
 
         assert_eq!(submitted.lock().unwrap().as_slice(), ["run the tests"]);
-        assert!(store.get().prompt_suggestion.text.is_none());
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn normal_typing_aborts_active_speculation() {
-        let store = crate::state::store::AppStore::new(
-            crate::state::app_state_store::AppState::default(),
-            None,
+        assert_eq!(
+            store.get().prompt_suggestion,
+            crate::state::app_state_store::PromptSuggestionState::default()
         );
-        let context = crate::tool::ToolUseContext::default().with_app_store(store.clone());
-        let cache = Arc::new(crate::utils::forked_agent::CacheSafeParams {
-            system_prompt: Vec::new(),
-            user_context: Default::default(),
-            system_context: Default::default(),
-            tool_use_context: context,
-            fork_context_messages: Arc::new(Vec::new()),
-        });
-        let abort = crate::tool::AbortController::default();
-        store.replace_with(|state| {
-            state.speculation = crate::state::app_state_store::SpeculationState::Active(
-                crate::state::app_state_store::ActiveSpeculationState {
-                    id: uuid::Uuid::new_v4().simple().to_string(),
-                    abort_controller: abort.clone(),
-                    start_time: current_time_millis(),
-                    messages: Arc::new(std::sync::Mutex::new(Vec::new())),
-                    written_paths: Arc::new(std::sync::Mutex::new(Default::default())),
-                    boundary: None,
-                    suggestion_length: 4,
-                    tool_use_count: 0,
-                    is_pipelined: false,
-                    cache_safe_params: cache,
-                    pipelined_suggestion: None,
-                },
-            );
-        });
-        let mut app = element! {
-            ContextProvider(value: Context::owned(
-                crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
-            )) {
-                ContextProvider(value: Context::owned(*theme::current())) {
-                    crate::state::app_state::AppStateProvider(
-                        prebuilt_store: Some(store.clone()),
-                        children: crate::state::app_state::ProviderChildren::new(|| element! {
-                            PromptInput(on_submit: move |_| {}, on_exit: move |_| {})
-                        }.into_any()),
-                    )
-                }
-            }
-        };
-        let events = stream::unfold(
-            vec![(key(KeyCode::Char('x')), 30), (key(KeyCode::Right), 80)].into_iter(),
-            |mut events| async move {
-                let (event, delay) = events.next()?;
-                tokio::time::sleep(Duration::from_millis(delay)).await;
-                Some((event, events))
-            },
-        );
-        let mut render_loop =
-            Box::pin(app.mock_terminal_render_loop(
-                MockTerminalConfig::with_events(events).with_size(90, 24),
-            ));
-        for _ in 0..12 {
-            if crate::utils::race(render_loop.next(), async {
-                tokio::time::sleep(Duration::from_millis(120)).await;
-                None
-            })
-            .await
-            .is_none()
-            {
-                break;
-            }
-        }
-
-        assert!(abort.is_aborted());
-        assert!(matches!(
-            store.get().speculation,
-            crate::state::app_state_store::SpeculationState::Idle
-        ));
     }
 
     fn install_prompt_profiles() {

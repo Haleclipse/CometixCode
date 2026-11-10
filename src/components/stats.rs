@@ -1617,7 +1617,6 @@ mod tests {
                 },
             ],
             model_usage,
-            total_speculation_time_saved_ms: 0,
             shot_distribution: None,
             ..ClaudeCodeStats::default()
         }

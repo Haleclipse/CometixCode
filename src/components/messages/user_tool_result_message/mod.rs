@@ -22,12 +22,12 @@ use crate::components::file_edit_tool_updated_message::FileEditToolUpdatedMessag
 use crate::components::file_edit_tool_use_rejected_message::FileEditToolUseRejectedMessage;
 use crate::components::notebook_edit_tool_use_rejected_message::NotebookEditToolUseRejectedMessage;
 use crate::tools::{
-    ask_user_question_tool, bash_tool, code_search_tool, config_tool, enter_plan_mode_tool,
-    enter_worktree_tool, exit_plan_mode_tool, exit_worktree_tool, file_edit_tool, file_read_tool,
-    file_write_tool, glob_tool, grep_tool, list_mcp_resources_tool, lsp_tool, mcp_tool,
-    notebook_edit_tool, powershell_tool, read_mcp_resource_tool, remote_trigger_tool,
-    schedule_cron_tool, send_message_tool, skill_tool, synthetic_output_tool, task_output_tool,
-    task_stop_tool, web_fetch_tool, web_search_tool,
+    ask_user_question_tool, bash_tool, code_search_tool, enter_plan_mode_tool, enter_worktree_tool,
+    exit_plan_mode_tool, exit_worktree_tool, file_edit_tool, file_read_tool, file_write_tool,
+    glob_tool, grep_tool, list_mcp_resources_tool, lsp_tool, mcp_tool, notebook_edit_tool,
+    powershell_tool, read_mcp_resource_tool, remote_trigger_tool, schedule_cron_tool,
+    send_message_tool, skill_tool, synthetic_output_tool, task_output_tool, task_stop_tool,
+    web_fetch_tool, web_search_tool,
 };
 use crate::types::message::{ReadResultKind, ToolResultStatus};
 use crate::utils::truncate::truncate;
@@ -272,7 +272,6 @@ pub(crate) fn migrated_output_parses(tool_name: &str) -> Option<fn(&serde_json::
             |raw| crate::tools::synthetic_output_tool::ui::parse_output(raw).is_some()
         }
         "remotetrigger" => |raw| crate::tools::remote_trigger_tool::ui::parse_output(raw).is_some(),
-        "config" => |raw| crate::tools::config_tool::ui::parse_output(raw).is_some(),
         "lsp" => |raw| crate::tools::lsp_tool::ui::parse_output(raw).is_some(),
         "askuserquestion" => {
             |raw| crate::tools::ask_user_question_tool::ui::parse_output(raw).is_some()
@@ -786,14 +785,6 @@ fn render_tool_result_lines_by_tool_name(
         return Some(send_message_tool::ui::render_tool_result_message(
             tool_use_result,
         ));
-    }
-    if tool_name.eq_ignore_ascii_case("Config") {
-        // ConfigTool defines no renderToolUseErrorMessage, so the error leaf
-        // is FallbackToolUseErrorMessage directly.
-        if status == ToolResultStatus::Error {
-            return Some(fallback_tool_use_error_lines(content, options.verbose));
-        }
-        return Some(config_tool::ui::render_tool_result_message(tool_use_result));
     }
     if tool_name.eq_ignore_ascii_case("LSP") {
         // Maps to: CC `UserToolResultMessage.tsx` error leaf —
@@ -2848,75 +2839,6 @@ mod tests {
         // CC renders the line count dim inline.
         assert_eq!(lines[0].segments[1].text, "(3 lines)");
         assert!(lines[0].segments[1].dim);
-    }
-
-    #[test]
-    fn user_tool_result_renders_config_results_like_official_tool_ui() {
-        // The raw `toolUseResult` on the row drives the renderer.
-        let get_raw = serde_json::json!({
-            "success": true, "operation": "get", "setting": "theme", "value": "dark",
-        });
-        let get_lines = render_tool_result_lines_for_result(
-            "Config",
-            ToolResultStatus::Success,
-            "theme = \"dark\"",
-            Some(&get_raw),
-            None,
-            &[],
-            ToolRenderOptions::default(),
-        );
-        assert_eq!(get_lines[0].text, "theme = \"dark\"");
-        assert_eq!(get_lines[0].tone, ToolRenderTone::Normal);
-        assert!(get_lines[0].segments[0].bold);
-
-        let set_raw = serde_json::json!({
-            "success": true, "operation": "set", "setting": "theme",
-            "previousValue": "dark", "newValue": "light",
-        });
-        let set_lines = render_tool_result_lines_for_result(
-            "Config",
-            ToolResultStatus::Success,
-            "Set theme to \"light\"",
-            Some(&set_raw),
-            None,
-            &[],
-            ToolRenderOptions::default(),
-        );
-        assert_eq!(set_lines[0].text, "Set theme to \"light\"");
-        assert_eq!(set_lines[0].tone, ToolRenderTone::Normal);
-
-        // An is_error row routes to the error leaf — Config has no
-        // renderToolUseErrorMessage, so FallbackToolUseErrorMessage shows the
-        // wire content (`Error: {error}`, is_error: true, ConfigTool.ts:427-432).
-        let error_lines = render_tool_result_lines_for_result(
-            "Config",
-            ToolResultStatus::Error,
-            "Error: Invalid value",
-            None,
-            None,
-            &[],
-            ToolRenderOptions::default(),
-        );
-        assert_eq!(error_lines[0].tone, ToolRenderTone::Error);
-        assert!(error_lines[0].text.contains("Invalid value"));
-
-        // The renderer's own `Failed:` branch fires on a success:false raw
-        // (UI.tsx:20-26).
-        let failed_raw = serde_json::json!({
-            "success": false, "operation": "set", "setting": "theme",
-            "error": "Invalid value",
-        });
-        let failed_lines = render_tool_result_lines_for_result(
-            "Config",
-            ToolResultStatus::Success,
-            "",
-            Some(&failed_raw),
-            None,
-            &[],
-            ToolRenderOptions::default(),
-        );
-        assert_eq!(failed_lines[0].text, "Failed: Invalid value");
-        assert_eq!(failed_lines[0].tone, ToolRenderTone::Error);
     }
 
     #[test]

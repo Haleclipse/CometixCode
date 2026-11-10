@@ -9,7 +9,6 @@ pub mod ask_user_question_tool;
 pub mod bash_tool;
 pub mod brief_tool;
 pub mod code_search_tool;
-pub mod config_tool;
 pub mod enter_plan_mode_tool;
 pub mod enter_worktree_tool;
 pub mod exit_plan_mode_tool;
@@ -952,7 +951,6 @@ mod tests {
         tools.extend([
             crate::tools::powershell_tool::powershell_tool_schema(),
             crate::tools::lsp_tool::lsp_tool_schema(),
-            crate::tools::config_tool::config_tool_schema(),
             crate::tools::schedule_cron_tool::cron_create_tool_schema(),
             crate::tools::schedule_cron_tool::cron_delete_tool_schema(),
             crate::tools::schedule_cron_tool::cron_list_tool_schema(),

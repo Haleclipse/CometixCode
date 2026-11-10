@@ -48,7 +48,7 @@ citationPointer、状态字段、回收站、远端协调器、按美元算的�
    |---|---|---|
    | `Compact` | 摘要（压缩 C6） | 已有，`compact.rs:1044` |
    | `SideQuestion` | `/btw` | 已有，`side_question.rs:94` |
-   | `PromptSuggestion`、`Speculation` | CC 的建议 / 预测 | 枚举已有 |
+   | `PromptSuggestion` | CC 的建议 | 枚举已有 |
    | `ExtractMemories`、`AutoDream` | 记忆提取 / 合并（记忆 M2 / M5） | 枚举已有，nyan 实现 |
    | `CacheWarm`（新增） | 保活（压缩 C12） | nyan 新增 |
 
@@ -67,7 +67,7 @@ citationPointer、状态字段、回收站、远端协调器、按美元算的�
    [external-search-provider-health.md](external-search-provider-health.md)。
 
 10. **Decision Provider**（[decision-provider.md](decision-provider.md)）：四个模块以及宿主运行时里需要"快速判断"的场景都可接入
-    同一个分类后端（权限分流、建议 / speculation 门控、agent / plan / skill 路由、结果质量判断等）；统一接口、批量、超时、回退与评测接缝。
+    同一个分类后端（权限分流、建议门控、agent / plan / skill 路由、结果质量判断等）；统一接口、批量、超时、回退与评测接缝。
     硬安全规则和生成型文本不由它替代；不可用时一律回退到当前确定性 / 原模型路径。
 
 ## 二、开发与验证流程（每个切片）

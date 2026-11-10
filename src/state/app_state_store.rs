@@ -134,85 +134,6 @@ pub struct PromptSuggestionState {
     pub generation_request_id: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CompletionBoundary {
-    Complete {
-        completed_at: u64,
-        output_tokens: u64,
-    },
-    Bash {
-        command: String,
-        completed_at: u64,
-    },
-    Edit {
-        tool_name: String,
-        file_path: String,
-        completed_at: u64,
-    },
-    DeniedTool {
-        tool_name: String,
-        detail: String,
-        completed_at: u64,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PipelinedSuggestion {
-    pub text: String,
-    pub prompt_id: String,
-    pub generation_request_id: Option<String>,
-}
-
-#[derive(Clone)]
-pub struct ActiveSpeculationState {
-    pub id: String,
-    pub abort_controller: crate::tool::AbortController,
-    pub start_time: u64,
-    pub messages: Arc<std::sync::Mutex<Vec<crate::types::message::Message>>>,
-    pub written_paths: Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
-    pub boundary: Option<CompletionBoundary>,
-    pub suggestion_length: usize,
-    pub tool_use_count: usize,
-    pub is_pipelined: bool,
-    pub cache_safe_params: Arc<crate::utils::forked_agent::CacheSafeParams>,
-    pub pipelined_suggestion: Option<PipelinedSuggestion>,
-}
-
-impl std::fmt::Debug for ActiveSpeculationState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ActiveSpeculationState")
-            .field("id", &self.id)
-            .field("start_time", &self.start_time)
-            .field("boundary", &self.boundary)
-            .field("suggestion_length", &self.suggestion_length)
-            .field("tool_use_count", &self.tool_use_count)
-            .field("is_pipelined", &self.is_pipelined)
-            .field("pipelined_suggestion", &self.pipelined_suggestion)
-            .finish_non_exhaustive()
-    }
-}
-
-impl PartialEq for ActiveSpeculationState {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id
-            && self.start_time == other.start_time
-            && self.boundary == other.boundary
-            && self.suggestion_length == other.suggestion_length
-            && self.tool_use_count == other.tool_use_count
-            && self.is_pipelined == other.is_pipelined
-            && self.pipelined_suggestion == other.pipelined_suggestion
-    }
-}
-
-impl Eq for ActiveSpeculationState {}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub enum SpeculationState {
-    #[default]
-    Idle,
-    Active(ActiveSpeculationState),
-}
-
 // `TodoItem` / `TodoStatus` / `TodoList` are owned by `utils/todo/types.rs`,
 // mirroring CC where `AppStateStore.ts:2` imports `TodoList` from
 // `utils/todo/types.ts` rather than declaring it. Imported, not re-exported —
@@ -695,15 +616,6 @@ pub struct AppState {
     /// source-branch value guard, so value projection is equivalent to CC's
     /// reference projection (same rationale as `denial_tracking`).
     pub prompt_suggestion: PromptSuggestionState,
-    /// Maps to: CC `AppState.speculation` (AppStateStore.ts:392).
-    /// Value retention (no Arc): the heavy enum payloads are already Arc'd
-    /// internally (messages / written_paths / cache_safe_params), so an outer
-    /// Arc has no consumer benefit.
-    pub speculation: SpeculationState,
-    /// Maps to: CC `AppState.speculationSessionTimeSavedMs`
-    /// (AppStateStore.ts:393). Value retention: plain counter (same ruling as
-    /// `speculation`).
-    pub speculation_session_time_saved_ms: u64,
     /// Maps to: CC `AppState.footerSelection` — focused footer pill, or
     /// `None` when the prompt owns focus.
     pub footer_selection: Option<FooterItem>,
@@ -868,8 +780,6 @@ impl Default for AppState {
             is_brief_only: false,
             prompt_suggestion_enabled: false,
             prompt_suggestion: PromptSuggestionState::default(),
-            speculation: SpeculationState::Idle,
-            speculation_session_time_saved_ms: 0,
             footer_selection: None,
             // Maps to: CC AppStateStore.ts:487-499 replBridge* /
             // showRemoteCallout defaults (all false / undefined).

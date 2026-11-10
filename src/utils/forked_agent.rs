@@ -29,7 +29,6 @@ pub fn is_cache_sharing_fork(source: &QuerySource) -> bool {
         QuerySource::Compact
             | QuerySource::SideQuestion
             | QuerySource::PromptSuggestion
-            | QuerySource::Speculation
             | QuerySource::ExtractMemories
             | QuerySource::AutoDream
             | QuerySource::CacheWarm
@@ -45,7 +44,6 @@ pub fn is_cache_sharing_api_source(source: &str) -> bool {
         "compact"
             | "side_question"
             | "prompt_suggestion"
-            | "speculation"
             | "extract_memories"
             | "auto_dream"
             | "cache_warm"
@@ -771,7 +769,6 @@ mod tests {
             QuerySource::Compact,
             QuerySource::SideQuestion,
             QuerySource::PromptSuggestion,
-            QuerySource::Speculation,
             QuerySource::ExtractMemories,
             QuerySource::AutoDream,
             QuerySource::CacheWarm,
@@ -780,6 +777,7 @@ mod tests {
                 is_cache_sharing_fork(&source),
                 "{source:?} shares the cache"
             );
+            assert!(is_cache_sharing_api_source(source.as_api_source()));
         }
         for source in [
             QuerySource::Prompt,
@@ -798,6 +796,7 @@ mod tests {
                 !is_cache_sharing_fork(&source),
                 "{source:?} must not inherit the cache-sharing rules"
             );
+            assert!(!is_cache_sharing_api_source(source.as_api_source()));
         }
     }
 

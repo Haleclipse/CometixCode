@@ -62,11 +62,6 @@ pub enum FeatureFlag {
     /// `AskUserQuestionTool.tsx:232`, `EnterPlanModeTool.ts:61`,
     /// `ExitPlanModeV2Tool.ts:172`).
     KairosChannels,
-    /// Maps to CC `feature('KAIROS_PUSH_NOTIFICATION')` build feature; every CC
-    /// reader pairs it as `feature('KAIROS') || feature('KAIROS_PUSH_NOTIFICATION')`
-    /// (`tools/ConfigTool/supportedSettings.ts:164`, `tools.ts:46`,
-    /// `components/Settings/Config.tsx:766/:791`).
-    KairosPushNotification,
     /// Maps to CC `feature('KAIROS_BRIEF')` build feature; lets Brief ship
     /// independently of the rest of Kairos.
     KairosBrief,
@@ -319,14 +314,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "KAIROS_CHANNELS",
         enabled: false,
         note: "Build feature for the channels-only Kairos slice; CC always reads it OR-ed with KAIROS. Off until the channels runtime is ported.",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::KairosPushNotification,
-        cc_growthbook_name: "KAIROS_PUSH_NOTIFICATION",
-        // Build feature, not GrowthBook: `scripts/build.ts:111` lists
-        // `KAIROS_PUSH_NOTIFICATION: isDev`, i.e. OFF in production.
-        enabled: false,
-        note: "Build feature for the push-notification-only Kairos slice; CC always reads it OR-ed with KAIROS. The Config push-notification settings (supportedSettings.ts:164-185) honour the OR; the other two CC readers have no Rust counterpart yet (PushNotificationTool is unported, Settings/Config.tsx:766/:791 is not in components/settings/config.rs).",
     },
     FeatureSwitch {
         flag: FeatureFlag::KairosBrief,

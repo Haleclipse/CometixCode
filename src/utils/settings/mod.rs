@@ -124,8 +124,7 @@ pub fn update_settings_for_source(
 ///    plain object recurses (`baseMergeDeep`), every other pair is overwritten
 ///    by assignment (`assignMergeValue`). This is the rule that keeps
 ///    `permissions.allow/deny/ask/additionalDirectories` alive when a caller
-///    patches only `permissions.defaultMode` (CC `ConfigTool.ts:330-331`
-///    writes `buildNestedObject(path, value)`, a partial nested object).
+///    patches only `permissions.defaultMode` with a partial nested object.
 fn apply_settings_update(
     target: &mut serde_json::Map<String, serde_json::Value>,
     updates: &serde_json::Map<String, serde_json::Value>,
@@ -152,10 +151,8 @@ fn apply_settings_update(
                     }
                     // Object patch over an array: lodash keeps the array as the
                     // merge base and hangs the patch's string keys off it,
-                    // which `jsonStringify` then drops. `ConfigTool` only
-                    // accepts paths from its supported-settings table
-                    // (`supportedSettings.ts#getPath`) and none of them nests
-                    // under an array, so the array is left as-is.
+                    // which `jsonStringify` then drops, so the array is left
+                    // as-is.
                     _ => {}
                 }
             }
@@ -1144,11 +1141,10 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    /// Regression: CC `ConfigTool.ts:330-331` writes
-    /// `buildNestedObject(['permissions','defaultMode'], value)`, i.e. a
-    /// *partial* `permissions` object, and relies on `mergeWith`'s default deep
-    /// merge (settings.ts:492-493) to leave the rest of the block alone. A
-    /// shallow top-level insert deletes the user's permission rules instead.
+    /// Regression: a *partial* `permissions` patch relies on `mergeWith`'s
+    /// default deep merge (settings.ts:492-493) to leave the rest of the block
+    /// alone. A shallow top-level insert deletes the user's permission rules
+    /// instead.
     #[test]
     fn update_settings_for_source_matches_official_deep_merge_preserving_permission_rules() {
         let _lock = env_lock().lock().expect("env lock");
@@ -1172,7 +1168,7 @@ mod tests {
         )
         .expect("write user settings");
 
-        // Exactly the patch ConfigTool builds for `permissions.defaultMode`.
+        // A partial nested patch for `permissions.defaultMode`.
         update_settings_for_source(
             SettingSource::User,
             &serde_json::Map::from_iter([(

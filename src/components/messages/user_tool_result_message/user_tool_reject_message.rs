@@ -45,14 +45,6 @@ pub(crate) fn render_tool_use_rejected_lines(
         // CC `EnterPlanModeTool/UI.tsx:34-41` — ignores the input.
         return Some(crate::tools::enter_plan_mode_tool::ui::render_rejected_result_lines());
     }
-    if tool_name.eq_ignore_ascii_case("Config") {
-        // CC `ConfigTool/UI.tsx:46-48` — the constant warning-colored string,
-        // input ignored.
-        return Some(vec![ToolRenderLine::new(
-            crate::tools::config_tool::ui::render_rejected_message(),
-            ToolRenderTone::Warning,
-        )]);
-    }
     if tool_name.eq_ignore_ascii_case("StructuredOutput") {
         // CC `SyntheticOutputTool.ts:82-84` — the constant string, input
         // ignored.
@@ -89,7 +81,6 @@ fn migrated_input_schema(tool_name: &str) -> Option<&'static crate::utils::zod::
         "notebookedit" => Some(crate::tools::notebook_edit_tool::input_schema()),
         "askuserquestion" => Some(crate::tools::ask_user_question_tool::input_schema()),
         "enterplanmode" => Some(crate::tools::enter_plan_mode_tool::input_schema()),
-        "config" => Some(crate::tools::config_tool::input_schema()),
         "structuredoutput" => Some(crate::tools::synthetic_output_tool::input_schema()),
         "exitplanmode" => Some(crate::tools::exit_plan_mode_tool::input_schema()),
         // AgentTool (legacy alias Task) — its rejected renderer replays

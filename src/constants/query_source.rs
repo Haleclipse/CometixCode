@@ -76,7 +76,6 @@ pub enum QuerySource {
     AutoDream,
     ExtractMemories,
     PromptSuggestion,
-    Speculation,
     AgentSummary,
     /// Maps to CC `side_question` (`/btw` forked agent).
     SideQuestion,
@@ -172,7 +171,6 @@ impl QuerySource {
             QuerySource::AutoDream => "auto_dream",
             QuerySource::ExtractMemories => "extract_memories",
             QuerySource::PromptSuggestion => "prompt_suggestion",
-            QuerySource::Speculation => "speculation",
             QuerySource::AgentSummary => "agent_summary",
             QuerySource::SideQuestion => "side_question",
             // @nyan: nyan-only source; no CC string to mirror.
@@ -210,7 +208,6 @@ mod tests {
             QuerySource::PromptSuggestion.as_api_source(),
             "prompt_suggestion"
         );
-        assert_eq!(QuerySource::Speculation.as_api_source(), "speculation");
         assert_eq!(QuerySource::AgentSummary.as_api_source(), "agent_summary");
     }
 

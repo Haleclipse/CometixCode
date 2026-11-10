@@ -6084,24 +6084,6 @@ mod tests {
             HasPermissionsToUseToolResult::Allow { .. }
         ));
 
-        // Maps to: CC `ConfigTool.ts:98-107` — reads allow, writes ask.
-        assert!(matches!(
-            decide_tool(
-                "Config",
-                &serde_json::json!({ "setting": "theme" }),
-                &context
-            ),
-            HasPermissionsToUseToolResult::Allow { .. }
-        ));
-        assert!(matches!(
-            decide_tool(
-                "Config",
-                &serde_json::json!({ "setting": "theme", "value": "dark" }),
-                &context
-            ),
-            HasPermissionsToUseToolResult::Ask(_)
-        ));
-
         // Fail-closed side of the same change: a tool that returns `passthrough`
         // still prompts. Maps to CC `MCPTool.ts:56-61` / `WebSearchTool.ts:209`.
         for (tool_name, input) in [

@@ -50,9 +50,9 @@ pub type CanUseToolFn<'a> = &'a (
 /// carrier keeps a sync leg alongside the async one because parts of the Rust
 /// orchestration are still synchronous (the R3b debt noted in
 /// `services/tools/tool_execution.rs`) — only the decision type changed.
-/// Existing synchronous policies use [`Self::new`]; consumers such as
-/// speculation use [`Self::new_async`] so permission checks can perform
-/// copy-on-write and return `updatedInput` before execution.
+/// Existing synchronous policies use [`Self::new`]; consumers that must await
+/// inside the permission check use [`Self::new_async`] and may return
+/// `updatedInput` before execution.
 #[derive(Clone, Default)]
 pub struct CanUseToolCallback(Option<std::sync::Arc<CanUseToolCallbackKind>>);
 
@@ -667,10 +667,9 @@ fn forced_decision_to_can_use_tool_result(
         // Only this one `canUseTool`-role rebuild is `buildAllow`-shaped.
         //
         // Producer census (ast-grep `PermissionDecision::Allow { $$$F }` over
-        // `src/`, 5 hits): no production producer can reach this projection with
-        // any of the three set. `services/prompt_suggestion/speculation.rs:71`
-        // and `services/tools/tool_execution.rs:381` build them empty;
-        // `types/permissions.rs:992` (`TryFrom<PermissionResult>`) has no
+        // `src/`, 4 hits): no production producer can reach this projection with
+        // any of the three set. `services/tools/tool_execution.rs:381` builds
+        // them empty; `types/permissions.rs:992` (`TryFrom<PermissionResult>`) has no
         // production caller; the SDK normalizer
         // (`utils/permissions/permission_prompt_tool_result_schema.rs:249`) is
         // the only site that sets `tool_use_id`, and its single consumer
@@ -1161,7 +1160,7 @@ mod tests {
             updated_input: Some(serde_json::json!({"command": "echo rewritten"})),
             user_modified: Some(true),
             decision_reason: Some(PermissionDecisionReason::Other {
-                reason: "speculation_file_access".to_string(),
+                reason: "forced_allow".to_string(),
             }),
             tool_use_id: Some("toolu_forced".to_string()),
             accept_feedback: Some("looks safe".to_string()),
@@ -1201,7 +1200,7 @@ mod tests {
                 user_modified: Some(false),
                 // The one field `buildAllow` spreads for this caller.
                 decision_reason: Some(PermissionDecisionReason::Other {
-                    reason: "speculation_file_access".to_string(),
+                    reason: "forced_allow".to_string(),
                 }),
                 tool_use_id: None,
                 accept_feedback: None,
@@ -1337,38 +1336,6 @@ mod tests {
 
         assert!(matches!(result, CanUseToolResult::Allow { .. }));
         assert!(queue.is_empty());
-    }
-
-    #[test]
-    fn config_tool_get_allows_but_set_requests_permission() {
-        let mut queue = Vec::new();
-        let get_config = ToolUsePermissionRequest {
-            tool_use_id: "toolu_config_get".to_string(),
-            tool_name: "Config".to_string(),
-            input_summary: "theme".to_string(),
-            input: serde_json::json!({"setting": "theme"}),
-        };
-        let result = can_use_tool_or_queue_permission(
-            &get_config,
-            &ToolPermissionContext::default(),
-            &mut queue,
-        );
-        assert!(matches!(result, CanUseToolResult::Allow { .. }));
-        assert!(queue.is_empty());
-
-        let set_config = ToolUsePermissionRequest {
-            tool_use_id: "toolu_config_set".to_string(),
-            tool_name: "Config".to_string(),
-            input_summary: "theme = dark".to_string(),
-            input: serde_json::json!({"setting": "theme", "value": "dark"}),
-        };
-        let result = can_use_tool_or_queue_permission(
-            &set_config,
-            &ToolPermissionContext::default(),
-            &mut queue,
-        );
-        assert!(matches!(result, CanUseToolResult::Ask(_)));
-        assert_eq!(queue.len(), 1);
     }
 
     #[test]

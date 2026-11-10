@@ -87,7 +87,6 @@ pub struct ClaudeCodeStats {
     pub model_usage: BTreeMap<String, ModelUsageStats>,
     pub first_session_date: Option<String>,
     pub last_session_date: Option<String>,
-    pub total_speculation_time_saved_ms: u64,
     pub shot_distribution: Option<BTreeMap<u64, u64>>,
     pub one_shot_rate: Option<u64>,
 }
@@ -107,7 +106,6 @@ pub(crate) struct ProcessedStats {
     pub(crate) session_stats: Vec<LongestSessionStats>,
     pub(crate) hour_counts: BTreeMap<u8, u64>,
     pub(crate) total_messages: u64,
-    pub(crate) total_speculation_time_saved_ms: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -216,18 +214,6 @@ pub(crate) fn process_session_files(paths: &[PathBuf], options: ProcessOptions) 
                 continue;
             }
         };
-
-        for entry in &entries {
-            if entry.get("type").and_then(Value::as_str) == Some("speculation-accept") {
-                stats.total_speculation_time_saved_ms =
-                    stats.total_speculation_time_saved_ms.saturating_add(
-                        entry
-                            .get("timeSavedMs")
-                            .and_then(Value::as_u64)
-                            .unwrap_or(0),
-                    );
-            }
-        }
 
         let messages = entries
             .iter()
@@ -546,7 +532,6 @@ fn processed_stats_to_claude_code_stats(stats: ProcessedStats) -> ClaudeCodeStat
         model_usage: stats.model_usage,
         first_session_date,
         last_session_date,
-        total_speculation_time_saved_ms: stats.total_speculation_time_saved_ms,
         shot_distribution: None,
         one_shot_rate: None,
     }
@@ -664,7 +649,7 @@ mod tests {
             &[
                 serde_json::json!({"type":"user","timestamp":"2026-07-18T10:00:00Z","message":{"role":"user","content":"hello"}}),
                 serde_json::json!({"type":"assistant","timestamp":"2026-07-18T10:30:00Z","message":{"role":"assistant","model":"claude-sonnet-4-6","usage":{"input_tokens":10,"output_tokens":2,"cache_read_input_tokens":3},"content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}]}}),
-                serde_json::json!({"type":"speculation-accept","timeSavedMs":250}),
+                serde_json::json!({"type":"speculation-accept","timestamp":"2026-07-18T10:31:00Z","timeSavedMs":250}),
             ],
         );
         write_lines(
@@ -684,10 +669,6 @@ mod tests {
         assert_eq!(stats.model_usage["claude-sonnet-4-6"].input_tokens, 15);
         assert_eq!(stats.model_usage["claude-sonnet-4-6"].output_tokens, 3);
         assert_eq!(stats.daily_activity[0].tool_call_count, 2);
-        // CC accumulates speculation-accept entries before applying the
-        // session-date filter, so a cold historical + today pass observes the
-        // fixture entry in both passes.
-        assert_eq!(stats.total_speculation_time_saved_ms, 500);
 
         let _ = std::fs::remove_dir_all(root);
     }

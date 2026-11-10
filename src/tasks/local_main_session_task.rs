@@ -181,8 +181,7 @@ pub fn complete_main_session_task(task_id: &str, success: bool) {
 }
 
 /// Maps to: CC `LocalMainSessionTask.ts:224-263`
-/// `enqueueMainSessionNotification`. Unlike LocalAgentTask's
-/// `enqueueAgentNotification`, CC does NOT abort speculation here.
+/// `enqueueMainSessionNotification`.
 fn enqueue_main_session_notification(
     task_id: &str,
     description: &str,

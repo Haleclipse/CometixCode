@@ -92,7 +92,7 @@ boundary 之后的视图
   本轮的失效量，却能腾出更多空间、推迟下一次掩码（下一次掩码又会断一次 cache）。
 - **谁做决定**：主线程与普通子代理（Agent 工具派生的独立上下文）照常掩码，子代理的记录带自己的 `agentId`
   （`record_content_replacement` 已支持）。**cache 共享分叉**（README 第一节第 8 条名单：`Compact`、`SideQuestion`、
-  `PromptSuggestion`、`Speculation`、`ExtractMemories`、`AutoDream`、`CacheWarm`）**只重放已有替换、不新增决定**：
+  `PromptSuggestion`、`ExtractMemories`、`AutoDream`、`CacheWarm`）**只重放已有替换、不新增决定**：
   它们经 `run_forked_agent` → `spawn_query`（`utils/forked_agent.rs:557-580`）走完整 `query_loop`，并继承父线程的
   `content_replacement_state`（`forked_agent.rs:204`）；若在 `query.rs:932-1051` 的单消息预算 / microcompact 路径上
   自己做新决定，前缀就与主线程分叉、cache 失效。实现：该路径按 `is_cache_sharing_fork(query_source)`（README 第 8 条，

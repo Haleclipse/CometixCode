@@ -209,8 +209,8 @@ fn start_stall_watchdog(task_id: String) -> Arc<std::sync::atomic::AtomicBool> {
 }
 
 fn enqueue_shell_notification(task_id: &str, result: &ExecResult, store: &AppStore) {
-    // Official ordering: terminal state → first notified CAS → speculation
-    // abort → queue notification.
+    // Official ordering: terminal state → first notified CAS → queue
+    // notification.
     // P3 §3a: a missing task or one already notified returns `prev`
     // untouched in CC; Same carries the None snapshot (former out-param).
     let snapshot = store.set_state(|prev| {
@@ -237,7 +237,6 @@ fn enqueue_shell_notification(task_id: &str, result: &ExecResult, store: &AppSto
     let Some(task) = snapshot else {
         return;
     };
-    crate::services::prompt_suggestion::speculation::abort_speculation_for_store(store);
 
     let status = if task.status == "completed" {
         "completed"

@@ -1110,65 +1110,6 @@ mod tests {
     }
 
     #[test]
-    fn config_tool_use_and_result_match_official_ui_shape() {
-        let entries = vec![
-            json!({
-                "type": "assistant",
-                "message": {"content": [{"type": "tool_use", "id": "toolu_1", "name": "Config", "input": {"setting": "theme"}}]}
-            }),
-            json!({
-                "type": "user",
-                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "theme = \"dark\"", "is_error": false}]},
-                "toolUseResult": {"success": true, "operation": "get", "setting": "theme", "value": "dark"}
-            }),
-            json!({
-                "type": "assistant",
-                "message": {"content": [{"type": "tool_use", "id": "toolu_2", "name": "Config", "input": {"setting": "theme", "value": "light"}}]}
-            }),
-            json!({
-                "type": "user",
-                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_2", "content": "Set theme to \"light\"", "is_error": false}]},
-                "toolUseResult": {"success": true, "operation": "set", "setting": "theme", "previousValue": "dark", "newValue": "light"}
-            }),
-            json!({
-                "type": "assistant",
-                "message": {"content": [{"type": "tool_use", "id": "toolu_3", "name": "Config", "input": {}}]}
-            }),
-        ];
-
-        // The unresolved toolu_3 use is dropped by the deserialize-stage
-        // filter (CC conversationRecovery.ts:187-189), which runs before the
-        // parser in the real resume pipeline.
-        let messages = renderable_messages_from_entries(
-            &crate::utils::conversation::deserialize_messages(entries),
-        );
-        let tool_uses = messages.to_vec();
-        let tool_uses = recovered_tool_rows(&tool_uses);
-        assert_eq!(
-            tool_uses,
-            owned_pairs(&[
-                ("Config", "Getting theme"),
-                ("Config", "Setting theme to \"light\""),
-            ])
-        );
-
-        // No display shape — the raw `toolUseResult` rides each row and
-        // the by-tool-name renderer consumes it.
-        let results = messages
-            .iter()
-            .filter_map(tool_result_of)
-            .collect::<Vec<_>>();
-        assert_eq!(
-            rendered_tool_result_text(&messages, results[0]),
-            "theme = \"dark\""
-        );
-        assert_eq!(
-            rendered_tool_result_text(&messages, results[1]),
-            "Set theme to \"light\""
-        );
-    }
-
-    #[test]
     fn lsp_tool_use_and_result_match_official_ui_shape() {
         let entries = vec![
             json!({
@@ -1478,44 +1419,6 @@ mod tests {
             results[1].tool_use_result.as_ref(),
         );
         assert!(rendered[0].text.contains("mem://note"));
-    }
-
-    #[test]
-    fn config_tool_reject_and_error_paths_use_official_visible_copy() {
-        let entries = vec![
-            json!({
-                "type": "assistant",
-                "message": {"content": [{"type": "tool_use", "id": "toolu_1", "name": "Config", "input": {"setting": "theme", "value": "dark"}}]}
-            }),
-            json!({
-                "type": "user",
-                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": REJECT_MESSAGE}]}
-            }),
-            json!({
-                "type": "assistant",
-                "message": {"content": [{"type": "tool_use", "id": "toolu_2", "name": "Config", "input": {"setting": "theme", "value": "invalid"}}]}
-            }),
-            json!({
-                "type": "user",
-                "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_2", "content": "Error: Invalid value", "is_error": true}]},
-                "toolUseResult": {"success": false, "operation": "set", "setting": "theme", "error": "Invalid value"}
-            }),
-        ];
-
-        let results = renderable_messages_from_entries(&entries)
-            .into_iter()
-            .filter_map(into_tool_result)
-            .map(|result| (result.derived_status(), result.content))
-            .collect::<Vec<_>>();
-
-        assert_eq!(results[0].0, ToolResultStatus::Rejected);
-        // Reject rows keep the sentinel verbatim; the renderer derives
-        // the "Config change rejected" copy at render time.
-        assert_eq!(results[0].1, REJECT_MESSAGE);
-        // An error row carries no display shape; the error leaf renders
-        // from the wire content (`Error: {error}`, is_error: true).
-        assert_eq!(results[1].0, ToolResultStatus::Error);
-        assert_eq!(results[1].1, "Error: Invalid value");
     }
 
     #[test]

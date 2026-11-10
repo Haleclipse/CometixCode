@@ -59,7 +59,6 @@ pub fn is_deferred_tool(tool: &crate::types::tools::Tool) -> bool {
             | "LSP"
             | "ListMcpResourcesTool"
             | "ReadMcpResourceTool"
-            | "Config"
             | "WebFetch"
             | "WebSearch"
             | "SendMessage"

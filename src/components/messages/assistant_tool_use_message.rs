@@ -529,7 +529,6 @@ fn assistant_tool_use_input_schema(tool_name: &str) -> Option<&'static crate::ut
         "agent" | "task" => Some(crate::tools::agent_tool::input_schema()),
         "skill" => Some(crate::tools::skill_tool::input_schema()),
         "sendmessage" => Some(crate::tools::send_message_tool::input_schema()),
-        "config" => Some(crate::tools::config_tool::input_schema()),
         "structuredoutput" => Some(crate::tools::synthetic_output_tool::input_schema()),
         "taskoutput" | "agentoutputtool" | "bashoutputtool" => {
             Some(crate::tools::task_output_tool::input_schema())
@@ -698,39 +697,33 @@ pub(crate) fn assistant_tool_use_is_nonvisual(
         // `FileRead` is not an official CC 2.1.88 tool identity.
         "fileread" => true,
         _ => {
-            // These two are `renderToolUseMessage`-null conditions
-            // (`ConfigTool/UI.tsx:7-8` `if (!input.setting) return null`, and
-            // the same shape on readMcpResource's `server`/`uri`), which CC
-            // applies at `AssistantToolUseMessage.tsx:145-149` — one layer
-            // BELOW the `userFacingName === ''` check at `:141-143`. Neither
-            // tool has an empty facing name; `ConfigTool.ts:83` returns
-            // `'Config'`.
+            // readMcpResource's `server`/`uri` check is a
+            // `renderToolUseMessage`-null condition, which CC applies at
+            // `AssistantToolUseMessage.tsx:145-149` — one layer BELOW the
+            // `userFacingName === ''` check at `:141-143`. The tool does not
+            // have an empty facing name.
             //
             // A caller with no input to inspect is therefore asking the
             // `:141-143` question, and the answer must be `false`. Answering
-            // `true` hid EVERY Config and readMcpResource row, because
+            // `true` hid EVERY readMcpResource row, because
             // `assistant_tool_use_should_render` passes `None`.
             let Some(input) = input else {
                 return false;
             };
-            // Both CC guards are JS truthiness — `!input.setting`
-            // (`ConfigTool/UI.tsx:8`) and `!input.uri || !input.server`
+            // The CC guard is JS truthiness — `!input.uri || !input.server`
             // (`ReadMcpResourceTool/UI.tsx:15`) — so an EMPTY string is falsy
-            // and hides the row. `as_str().is_none()` alone kept `""` and
-            // rendered `Getting ` where CC renders nothing. A non-string value
-            // cannot reach here on the component path (both schemas declare
-            // `z.string()` and `assistant_tool_use_input_parses` rejects
-            // first); treating it as falsy is the safe answer for the callers
-            // that have no gate.
+            // and hides the row. A non-string value cannot reach here on the
+            // component path (the schema declares `z.string()` and
+            // `assistant_tool_use_input_parses` rejects first); treating it as
+            // falsy is the safe answer for the callers that have no gate.
             let missing = |key: &str| {
                 input
                     .get(key)
                     .and_then(|value| value.as_str())
                     .is_none_or(str::is_empty)
             };
-            (lower == "config" && missing("setting"))
-                || (matches!(lower.as_str(), "readmcpresourcetool" | "readmcpresource")
-                    && (missing("server") || missing("uri")))
+            matches!(lower.as_str(), "readmcpresourcetool" | "readmcpresource")
+                && (missing("server") || missing("uri"))
         }
     }
 }
@@ -936,7 +929,6 @@ pub(crate) fn render_tool_use_message(
         "structuredoutput" => {
             crate::tools::synthetic_output_tool::ui::render_tool_use_message(Some(input))
         }
-        "config" => crate::tools::config_tool::ui::config_tool_use_summary(input),
         // Same name set as the tag and facing-name arms (`TaskOutputTool.tsx:176`).
         "taskoutput" | "taskoutputtool" | "agentoutputtool" | "bashoutputtool" | "bashoutput"
         | "agentoutput" => crate::tools::task_output_tool::ui::task_output_tool_use_summary(input),
@@ -2056,6 +2048,8 @@ mod tests {
             return;
         }
         let _lock = TEST_ENV_LOCK.lock().unwrap();
+        // Keep verbose wrapping independent of the checkout path length.
+        let _project = crate::utils::test_env::PinnedProjectDir::at("/repo");
         let cwd = crate::bootstrap::state::get_original_cwd();
 
         let read_path = cwd.join("manual.pdf").display().to_string();
@@ -2634,11 +2628,6 @@ mod tests {
                     "message": { "type": "shutdown_request", "reason": "done" }
                 }),
             ),
-            ("Config", serde_json::json!({ "setting": "theme" })),
-            (
-                "Config",
-                serde_json::json!({ "setting": "theme", "value": "dark" }),
-            ),
             // `z.object({}).passthrough()` (`SyntheticOutputTool.ts:11`) — the
             // caller's JSON Schema governs execution, never this gate.
             (
@@ -2728,7 +2717,6 @@ mod tests {
             "task",
             "skill",
             "sendmessage",
-            "config",
             "structuredoutput",
             "taskoutput",
             "agentoutputtool",
@@ -4630,23 +4618,14 @@ mod tests {
         assert!(assistant_tool_use_should_render("Bash"));
 
         // `userFacingName` is the ONLY question this layer asks
-        // (`AssistantToolUseMessage.tsx:141-143`). `ConfigTool.ts:83` returns
-        // `'Config'` and readMcpResource likewise, so neither may be filtered
-        // here — their `!input.setting` / `!input.server` checks belong to
-        // `renderToolUseMessage` at `:145-149`. Passing `None` used to answer
-        // the wrong question and hide every such row.
-        assert!(assistant_tool_use_should_render("Config"));
+        // (`AssistantToolUseMessage.tsx:141-143`). readMcpResource has a
+        // non-empty facing name, so it may not be filtered here — its
+        // `!input.server` check belongs to `renderToolUseMessage` at
+        // `:145-149`. Passing `None` used to answer the wrong question and
+        // hide every such row.
         assert!(assistant_tool_use_should_render("ReadMcpResourceTool"));
 
         // The lower layer still rejects, and still only when it has the input.
-        assert!(assistant_tool_use_is_nonvisual(
-            "Config",
-            Some(&serde_json::json!({}))
-        ));
-        assert!(!assistant_tool_use_is_nonvisual(
-            "Config",
-            Some(&serde_json::json!({ "setting": "theme" }))
-        ));
         assert!(assistant_tool_use_is_nonvisual(
             "ReadMcpResourceTool",
             Some(&serde_json::json!({ "server": "memory" }))
@@ -4656,20 +4635,11 @@ mod tests {
             Some(&serde_json::json!({ "server": "memory", "uri": "mem://x" }))
         ));
 
-        // Both CC guards are truthiness, not presence: `!input.setting`
-        // (`ConfigTool/UI.tsx:8`) and `!input.uri || !input.server`
-        // (`ReadMcpResourceTool/UI.tsx:15`). An empty string is falsy there, so
-        // the row is hidden; a presence-only check rendered `Getting ` instead.
-        // Both inputs pass their `z.string()` schemas, so the render gate lets
-        // them through and this is the layer that has to answer.
-        assert!(assistant_tool_use_is_nonvisual(
-            "Config",
-            Some(&serde_json::json!({ "setting": "" }))
-        ));
-        assert!(assistant_tool_use_input_parses(
-            "Config",
-            Some(&serde_json::json!({ "setting": "" }))
-        ));
+        // The CC guard is truthiness, not presence: `!input.uri ||
+        // !input.server` (`ReadMcpResourceTool/UI.tsx:15`). An empty string is
+        // falsy there, so the row is hidden. The input passes its `z.string()`
+        // schema, so the render gate lets it through and this is the layer that
+        // has to answer.
         assert!(assistant_tool_use_is_nonvisual(
             "ReadMcpResourceTool",
             Some(&serde_json::json!({ "server": "memory", "uri": "" }))

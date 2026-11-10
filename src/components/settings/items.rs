@@ -148,14 +148,6 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
             search_text: "prompt suggestion inflection",
             visible: false,
         },
-        // condition: ant-only (never in external builds)
-        SettingItem {
-            id: "speculationEnabled",
-            label: "Speculative execution",
-            value: SettingValue::Bool(false),
-            search_text: "speculation speculative execution",
-            visible: false, // ant-only
-        },
         SettingItem {
             id: "fileCheckpointingEnabled",
             label: "Rewind code (checkpoints)",
