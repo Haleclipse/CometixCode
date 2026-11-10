@@ -14139,7 +14139,7 @@ mod tests {
                 .find(|text| text.contains("Usage: /plugin validate"))
                 .expect("actual raw default User completion");
             assert!(raw.contains("Usage: /plugin validate <path>\n\n"), "{raw}");
-            assert!(raw.contains("  claude plugin validate <path>"), "{raw}");
+            assert!(raw.contains("  nyan plugin validate <path>"), "{raw}");
             output
         });
         // Bun production and Rust focused output both omit the HTML token;

@@ -326,7 +326,7 @@ pub async fn uninstall_plugin_op(
         let message = if actual != scope && !installs.is_empty() {
             if actual == PluginScope::Project {
                 format!(
-                    "Plugin \"{plugin}\" is enabled at project scope (.nyan/settings.json, shared with your team). To disable just for you: claude plugin disable {plugin} --scope local"
+                    "Plugin \"{plugin}\" is enabled at project scope (.nyan/settings.json, shared with your team). To disable just for you: nyan plugin disable {plugin} --scope local"
                 )
             } else {
                 format!(

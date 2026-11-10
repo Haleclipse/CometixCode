@@ -31,7 +31,7 @@ async fn run_validation(
                 "When given a directory, automatically validates .claude-plugin/marketplace.json\n",
                 "or .claude-plugin/plugin.json (prefers marketplace if both exist).\n\n",
                 "Or from the command line:\n",
-                "  claude plugin validate <path>"
+                "  nyan plugin validate <path>"
             )
             .to_string(),
         ));
@@ -181,7 +181,7 @@ mod tests {
         assert_eq!(observed[0].0, 1);
         let output = observed[0].1.as_deref().unwrap();
         assert!(output.starts_with("Usage: /plugin validate <path>\n\n"));
-        assert!(output.ends_with("  claude plugin validate <path>"));
+        assert!(output.ends_with("  nyan plugin validate <path>"));
     }
 
     fn successful_result() -> crate::utils::plugins::validate_plugin::ValidationResult {

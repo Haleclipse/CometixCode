@@ -819,7 +819,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ]))
                 .optional()
                 .describe(
-                    "Enabled plugins using plugin-id@marketplace-id format. Example: { \"formatter@anthropic-tools\": true }. Also supports extended format with version constraints.",
+                    "Enabled plugins using plugin-id@marketplace-id format. Example: { \"formatter@example-tools\": true }. Also supports extended format with version constraints.",
                 ),
             ),
             (
@@ -999,7 +999,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ]))
                 .optional()
                 .describe(
-                    "Teams/Enterprise allowlist of channel plugins. When set, replaces the default Anthropic allowlist — admins decide which plugins may push inbound messages. Undefined falls back to the default. Requires channelsEnabled: true.",
+                    "Teams/Enterprise allowlist of channel plugins. When set, replaces the default allowlist — admins decide which plugins may push inbound messages. Undefined falls back to the default. Requires channelsEnabled: true.",
                 ),
             ),
         ]);

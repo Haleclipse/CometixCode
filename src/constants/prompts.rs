@@ -691,7 +691,9 @@ pub fn compute_simple_env_info_with_cwd(
     env_items.push(PromptItem::Text(format!(
         "The most recent Claude model family is Claude 4.5/4.6. Model IDs — Opus 4.6: '{CLAUDE_4_5_OR_4_6_OPUS_MODEL_ID}', Sonnet 4.6: '{CLAUDE_4_5_OR_4_6_SONNET_MODEL_ID}', Haiku 4.5: '{CLAUDE_4_5_HAIKU_MODEL_ID}'. When building AI applications, default to the latest and most capable Claude models."
     )));
-    env_items.push(PromptItem::Text("Claude Code is available as a CLI in the terminal, desktop app (Mac/Windows), web app (claude.ai/code), and IDE extensions (VS Code, JetBrains).".to_string()));
+    env_items.push(PromptItem::Text(
+        "nyan runs as a CLI in the terminal.".to_string(),
+    ));
 
     format!(
         "# Environment\nYou have been invoked in the following environment: \n{}",
@@ -938,6 +940,9 @@ mod tests {
         assert!(env_info.contains("Additional working directories:"));
         assert!(env_info.contains("/workspace/extra"));
         assert!(env_info.contains("Assistant knowledge cutoff is February 2025."));
+        assert!(env_info.contains("nyan runs as a CLI in the terminal."));
+        assert!(!env_info.contains("desktop app"));
+        assert!(!env_info.contains("claude.ai/code"));
     }
 
     #[test]

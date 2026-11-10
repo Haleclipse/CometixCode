@@ -1586,7 +1586,7 @@ pub async fn remove_marketplace_source(name: &str) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Marketplace '{name}' not found"))?;
     if let Some(seed) = seed_dir_for(entry["installLocation"].as_str().unwrap_or("")) {
         anyhow::bail!(
-            "Marketplace '{name}' is registered from the read-only seed directory ({}) and will be re-registered on next startup. To stop using its plugins: claude plugin disable <plugin>@{name}",
+            "Marketplace '{name}' is registered from the read-only seed directory ({}) and will be re-registered on next startup. To stop using its plugins: nyan plugin disable <plugin>@{name}",
             seed.display()
         );
     }
@@ -1828,14 +1828,14 @@ pub async fn refresh_marketplace(
     let refreshed:anyhow::Result<()>=async {
         let location=entry["installLocation"].as_str().unwrap_or("");let path=Path::new(location);let source=&entry["source"];
         if let Some(seed)=seed_dir_for(location){anyhow::bail!("Marketplace '{name}' is seed-managed ({}) and its content is controlled by the seed image. To update: ask your admin to update the seed.",seed.display());}
-        if !super::schemas::is_local_marketplace_source(source){let cache=marketplace_resolve!(get_marketplaces_cache_dir());let resolved=marketplace_resolve!(path);if !resolved.starts_with(&cache){anyhow::bail!("Marketplace '{name}' has a corrupted installLocation ({location}) — expected a path inside {}. This can happen after cross-platform path writes or manual edits to known_marketplaces.json. Run: claude plugin marketplace remove \"{name}\" and re-add it.",cache.display());}}
+        if !super::schemas::is_local_marketplace_source(source){let cache=marketplace_resolve!(get_marketplaces_cache_dir());let resolved=marketplace_resolve!(path);if !resolved.starts_with(&cache){anyhow::bail!("Marketplace '{name}' has a corrupted installLocation ({location}) — expected a path inside {}. This can happen after cross-platform path writes or manual edits to known_marketplaces.json. Run: nyan plugin marketplace remove \"{name}\" and re-add it.",cache.display());}}
         match source["source"].as_str().unwrap_or(""){
             "github"|"git"=>{
                 let sparse=source["sparsePaths"].as_array().map(|a|a.iter().map(|v|v.as_str().unwrap_or("").to_owned()).collect::<Vec<_>>());let git_ref=source["ref"].as_str();
                 if source["source"]=="github"{let repo=source["repo"].as_str().unwrap_or("");let ssh=format!("git@github.com:{repo}.git");let https=format!("https://github.com/{repo}.git");
                     let configured=is_github_ssh_likely_configured().await;let(first,second)=if configured{(&ssh,&https)}else{(&https,&ssh)};if cache_marketplace_from_git(first,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await.is_err(){crate::utils::debug::log_for_debugging_with_level(&format!("Marketplace refresh failed with {} for {repo}, falling back to {}",if configured{"SSH"}else{"HTTPS"},if configured{"HTTPS"}else{"SSH"}),crate::utils::debug::DebugLogLevel::Info);cache_marketplace_from_git(second,path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
                 }else{cache_marketplace_from_git(source["url"].as_str().unwrap_or(""),path,git_ref,sparse.as_deref(),on_progress,disable_credential_helper).await?;}
-                if read_cached_marketplace(path).await.is_err(){let display=if source["source"]=="github"{source["repo"].as_str().unwrap_or("").to_owned()}else{redact_url_credentials(source["url"].as_str().unwrap_or(""))};anyhow::bail!("The marketplace.json file is no longer present in this repository.\n\nThis marketplace may have been deprecated or moved to a new location.\nSource: {display}\n\nYou can remove this marketplace with: claude plugin marketplace remove \"{name}\"");}
+                if read_cached_marketplace(path).await.is_err(){let display=if source["source"]=="github"{source["repo"].as_str().unwrap_or("").to_owned()}else{redact_url_credentials(source["url"].as_str().unwrap_or(""))};anyhow::bail!("The marketplace.json file is no longer present in this repository.\n\nThis marketplace may have been deprecated or moved to a new location.\nSource: {display}\n\nYou can remove this marketplace with: nyan plugin marketplace remove \"{name}\"");}
             }
             "url"=>cache_marketplace_from_url(source["url"].as_str().unwrap_or(""),path,source["headers"].as_object(),on_progress).await?,
             "file"|"directory"=>{safe_call_progress(on_progress,"Validating local marketplace");read_cached_marketplace(path).await?;},

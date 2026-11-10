@@ -151,29 +151,29 @@ mod tests {
             assert_eq!(before, after, "seed {seed}: output is not a permutation");
         }
 
-        // First-match pinning (CC `ManageMarketplaces.tsx:128-132`) with the
-        // antisymmetry-breaking duplicate builtin names present.
+        // First-match pinning with antisymmetry-breaking duplicate pinned
+        // names present.
         let mut names: Vec<String> = (0..48)
             .map(|i| {
                 if i % 3 == 0 {
-                    "claude-plugin-directory".to_string()
+                    "pinned-market".to_string()
                 } else {
                     format!("market-{}", (i * 37) % 23)
                 }
             })
             .collect();
         sort_by(&mut names, |a, b| {
-            if a == "claude-plugin-directory" {
+            if a == "pinned-market" {
                 return Ordering::Less;
             }
-            if b == "claude-plugin-directory" {
+            if b == "pinned-market" {
                 return Ordering::Greater;
             }
             a.cmp(b)
         });
         assert_eq!(names.len(), 48);
 
-        // NaN through `partial_cmp().unwrap_or(Equal)` — the install-count shape.
+        // NaN through `partial_cmp().unwrap_or(Equal)`.
         let mut rng = XorShift32(7);
         let mut numbers: Vec<f64> = (0..64)
             .map(|_| {

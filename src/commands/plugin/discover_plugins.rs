@@ -1122,6 +1122,7 @@ pub(super) mod tests {
                     "from market",
                     "Version: 1.2.3",
                     "By: Example",
+                    "nyan does not control",
                     "Install for you (user scope)",
                     "Install for all collaborators on this repository (project scope)",
                     "Install for you, in this repo only (local scope)",
