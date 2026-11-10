@@ -409,10 +409,6 @@ pub struct GlobalConfig {
     pub todo_feature_enabled: Option<bool>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.remoteDialogSeen`.
     pub remote_dialog_seen: Option<bool>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.desktopUpsellSeenCount`.
-    pub desktop_upsell_seen_count: Option<u32>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.desktopUpsellDismissed`.
-    pub desktop_upsell_dismissed: Option<bool>,
 
     /// Keep the source JSON object until the MCP owner applies its schema.
     /// Unknown fields and explicit nulls must survive config caching/saving.
@@ -587,8 +583,6 @@ impl Default for GlobalConfig {
             auto_install_ide_extension: None,
             todo_feature_enabled: None,
             remote_dialog_seen: None,
-            desktop_upsell_seen_count: None,
-            desktop_upsell_dismissed: None,
             mcp_servers: None,
             projects: HashMap::new(),
             user_id: None,
@@ -1809,16 +1803,12 @@ mod tests {
     fn global_config_deserializes_official_startup_dialog_tracking_fields() {
         let config: GlobalConfig = serde_json::from_str(
             r#"{
-                "remoteDialogSeen": true,
-                "desktopUpsellSeenCount": 2,
-                "desktopUpsellDismissed": true
+                "remoteDialogSeen": true
             }"#,
         )
         .expect("global config should deserialize startup dialog tracking fields");
 
         assert_eq!(config.remote_dialog_seen, Some(true));
-        assert_eq!(config.desktop_upsell_seen_count, Some(2));
-        assert_eq!(config.desktop_upsell_dismissed, Some(true));
     }
 
     #[test]

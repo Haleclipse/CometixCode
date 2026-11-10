@@ -14,11 +14,6 @@ use crate::commands::resume::resume::ResumeCommand;
 use crate::commands::skills::skills::SkillsCommand;
 use crate::commands::{doctor, mcp, memory, model, permissions, resume, theme};
 use crate::components::bash_mode_progress::BashModeProgress;
-use crate::components::desktop_handoff::DesktopHandoffState;
-use crate::components::desktop_upsell::{
-    DesktopUpsellDone, DesktopUpsellStartup, DesktopUpsellStartupSnapshot,
-    get_desktop_upsell_config, should_show_desktop_upsell_startup,
-};
 use crate::components::diff::DiffDialogDone;
 use crate::components::exit_flow::{ExitFlow, ExitFlowDone};
 use crate::components::export_dialog::{ExportDialog, ExportDialogResult};
@@ -63,7 +58,6 @@ use crate::types::message::{
 };
 use crate::types::permissions::{PermissionPromptChoice, PermissionPromptResponse, ToolUseConfirm};
 use crate::utils::classifier_approvals::{ClassifierApprovalsState, ClassifierChecking};
-use crate::utils::config::GlobalConfig;
 use crate::utils::handle_prompt_submit::{HandlePromptSubmit, HandlePromptSubmitResult};
 use crate::utils::messages::{history_model_messages, project_history_rows};
 use crate::utils::permissions::permissions::{apply_prompt_choice, apply_prompt_response};
@@ -209,38 +203,22 @@ impl ReplProps {
     }
 }
 
-/// Maps to CC `screens/REPL.tsx` startup dialog state seeds:
-/// `showRemoteCallout` and `showDesktopUpsellStartup`.
+/// Maps to CC `screens/REPL.tsx` startup dialog state seed
+/// `showRemoteCallout`.
 ///
-/// Safety boundary: official REPL computes these by reading app state, global
-/// config, GrowthBook, OAuth tokens, and bridge entitlement. Nyan consumes an
-/// explicit snapshot context; the read-only producer below never writes config,
-/// initializes GrowthBook, opens network/bridge transports, or launches Desktop.
+/// Safety boundary: official REPL computes this by reading app state, global
+/// config, OAuth tokens, and bridge entitlement. Nyan consumes an explicit
+/// snapshot context. Production mounts the default (no Remote Callout): it
+/// remains an explicit seam until bridge/auth runtime state is ported, since
+/// guessing the official `feature('BRIDGE_MODE')`, OAuth-token, and
+/// bridge-entitlement chain would surface an action Nyan cannot yet safely
+/// execute.
+///
+/// @nyan: CC's `showDesktopUpsellStartup` seed is gone with the Claude
+/// Desktop handoff.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ReplStartupDialogSnapshot {
     pub remote_callout: Option<RemoteCalloutSnapshot>,
-    pub desktop_upsell: Option<DesktopUpsellStartupSnapshot>,
-    pub desktop_handoff_state: DesktopHandoffState,
-    pub desktop_handoff_error: Option<String>,
-    pub desktop_handoff_download_message: Option<String>,
-}
-
-fn node_platform_from_rust() -> String {
-    match std::env::consts::OS {
-        "macos" => "darwin",
-        "windows" => "win32",
-        other => other,
-    }
-    .to_string()
-}
-
-fn node_arch_from_rust() -> String {
-    match std::env::consts::ARCH {
-        "x86_64" => "x64",
-        "aarch64" => "arm64",
-        other => other,
-    }
-    .to_string()
 }
 
 /// Maps to: CC `screens/REPL.tsx` `const mainLoopModel = useMainLoopModel()`:
@@ -868,31 +846,6 @@ fn apply_repl_query_turn_context(
     query_content_replacement_state
 }
 
-impl ReplStartupDialogSnapshot {
-    /// Maps to CC `screens/REPL.tsx` startup dialog seed construction for
-    /// `shouldShowDesktopUpsellStartup()` using already-loaded config.
-    ///
-    /// Remote Callout remains an explicit seam until bridge/auth runtime state
-    /// is ported: guessing the official `feature('BRIDGE_MODE')`, OAuth-token,
-    /// and bridge-entitlement chain would surface an action Nyan cannot yet
-    /// safely execute.
-    pub fn from_readonly_global_config(global_config: &GlobalConfig) -> Self {
-        Self {
-            remote_callout: None,
-            desktop_upsell: Some(DesktopUpsellStartupSnapshot {
-                platform: node_platform_from_rust(),
-                arch: node_arch_from_rust(),
-                config: get_desktop_upsell_config(),
-                desktop_upsell_dismissed: global_config.desktop_upsell_dismissed.unwrap_or(false),
-                desktop_upsell_seen_count: global_config.desktop_upsell_seen_count.unwrap_or(0),
-            }),
-            desktop_handoff_state: DesktopHandoffState::Checking,
-            desktop_handoff_error: None,
-            desktop_handoff_download_message: None,
-        }
-    }
-}
-
 /// Maps to: CC `screens/REPL.tsx`:2664-2683, the return type of
 /// `getFocusedInputDialog()`: the one dialog that owns input focus, if any.
 ///
@@ -912,7 +865,6 @@ enum FocusedInputDialog {
     Elicitation,
     RemoteCallout,
     PluginHint,
-    DesktopUpsell,
 }
 
 impl FocusedInputDialog {
@@ -927,7 +879,6 @@ impl FocusedInputDialog {
             Self::Elicitation => "elicitation",
             Self::RemoteCallout => "remote-callout",
             Self::PluginHint => "plugin-hint",
-            Self::DesktopUpsell => "desktop-upsell",
         }
     }
 }
@@ -957,7 +908,6 @@ struct FocusedInputDialogInput {
     show_remote_callout: bool,
     /// `hintRecommendation`
     has_hint_recommendation: bool,
-    show_desktop_upsell_startup: bool,
 }
 
 /// Maps to: CC `screens/REPL.tsx`:2684-2760 `getFocusedInputDialog()`.
@@ -998,9 +948,6 @@ fn get_focused_input_dialog(input: &FocusedInputDialogInput) -> Option<FocusedIn
     }
     if allow && input.has_hint_recommendation {
         return Some(PluginHint);
-    }
-    if allow && input.show_desktop_upsell_startup {
-        return Some(DesktopUpsell);
     }
     None
 }
@@ -4244,10 +4191,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         .remote_callout
         .as_ref()
         .is_some_and(should_show_remote_callout);
-    let initial_show_desktop_upsell = startup_dialog_snapshot
-        .desktop_upsell
-        .as_ref()
-        .is_some_and(should_show_desktop_upsell_startup);
 
     let mut active_local_command_ui = hooks.use_state(|| Option::<ActiveLocalCommandUi>::None);
     let resume_processing_channel = hooks.use_const(|| {
@@ -4503,8 +4446,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     });
     let show_remote_callout =
         crate::state::app_state::use_app_state(&mut hooks, |state| state.show_remote_callout);
-    // Maps to CC `REPL.tsx` `showDesktopUpsellStartup` local state.
-    let mut show_desktop_upsell_startup = hooks.use_state(move || initial_show_desktop_upsell);
     // Maps to CC `REPL.tsx` `exitFlow` state. The safe Rust path renders
     // `ExitFlow` and lets the app loop exit, but never calls
     // `gracefulShutdown` or `process.exit` directly.
@@ -6863,7 +6804,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         && !message_selector_visible.get()
         && !exit_flow_active.get()
         && !show_remote_callout
-        && !show_desktop_upsell_startup.get()
         && hint_recommendation.read().is_none()
         && !prompt_modal_overlay_active.get();
     let pending_command = pending_keybinding_command.read().clone();
@@ -8594,7 +8534,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         has_elicitation: elicitation_queued,
         show_remote_callout,
         has_hint_recommendation: hint_recommendation_snapshot.is_some(),
-        show_desktop_upsell_startup: show_desktop_upsell_startup.get(),
     });
     focused_input_dialog_ref.set(focused_input_dialog);
     // The dialog slots exist only in CC's prompt-screen return; the transcript
@@ -9074,13 +9013,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             }
             hint_recommendation_for_response.set(None);
         };
-    let on_desktop_upsell_done = move |done: DesktopUpsellDone| {
-        // Official startup upsell ignores DesktopHandoff result payloads and
-        // just dismisses. Safe Nyan also avoids config writes and handoff
-        // side effects; the callback keeps would-* metadata internal.
-        let _done = done;
-        show_desktop_upsell_startup.set(false);
-    };
 
     // This is the REPL's only return: every screen state, every dialog and
     // every panel is a child of the one tree below, so a dialog appearing is a
@@ -9562,7 +9494,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             #(elicitation_dialog)
 
             // Maps to: CC REPL.tsx:6607-6653 `{focusedInputDialog ===
-            // 'remote-callout' / 'plugin-hint' / 'desktop-upsell' && ...}`.
+            // 'remote-callout' / 'plugin-hint' && ...}`; CC's
+            // 'desktop-upsell' slot is gone with the Claude Desktop handoff.
             #(match mounted_input_dialog {
                 Some(FocusedInputDialog::RemoteCallout) => Some(element! {
                     RemoteCallout(on_done: on_remote_callout_done)
@@ -9574,14 +9507,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         marketplace_name: recommendation.marketplace_name,
                         source_command: recommendation.source_command,
                         on_response: on_plugin_hint_response,
-                    )
-                }.into_any()),
-                Some(FocusedInputDialog::DesktopUpsell) => Some(element! {
-                    DesktopUpsellStartup(
-                        handoff_state: startup_dialog_snapshot.desktop_handoff_state,
-                        handoff_error: startup_dialog_snapshot.desktop_handoff_error.clone(),
-                        handoff_download_message: startup_dialog_snapshot.desktop_handoff_download_message.clone(),
-                        on_done: on_desktop_upsell_done,
                     )
                 }.into_any()),
                 _ => None,
@@ -14094,29 +14019,6 @@ mod tests {
         canvas_lines(last).join("\n")
     }
 
-    fn startup_dialog_snapshot(remote: bool, desktop: bool) -> ReplStartupDialogSnapshot {
-        ReplStartupDialogSnapshot {
-            remote_callout: remote.then_some(RemoteCalloutSnapshot {
-                remote_dialog_seen: false,
-                bridge_enabled: true,
-                has_claude_ai_access_token: true,
-            }),
-            desktop_upsell: desktop.then_some(DesktopUpsellStartupSnapshot {
-                platform: "darwin".to_string(),
-                arch: "arm64".to_string(),
-                config: crate::components::desktop_upsell::DesktopUpsellConfig {
-                    enable_shortcut_tip: false,
-                    enable_startup_dialog: true,
-                },
-                desktop_upsell_dismissed: false,
-                desktop_upsell_seen_count: 0,
-            }),
-            desktop_handoff_state: DesktopHandoffState::Checking,
-            desktop_handoff_error: None,
-            desktop_handoff_download_message: None,
-        }
-    }
-
     #[test]
     fn command_keybinding_executes_slash_command_without_clearing_prompt() {
         // Mirror the process runtime published by the production entrypoint.
@@ -14174,24 +14076,6 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(text.contains("/memory to edit"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn repl_startup_dialog_snapshot_reads_desktop_config_without_remote_autoguess() {
-        let mut config = GlobalConfig::default();
-        config.desktop_upsell_seen_count = Some(1);
-        config.desktop_upsell_dismissed = Some(false);
-
-        let snapshot = ReplStartupDialogSnapshot::from_readonly_global_config(&config);
-        let desktop = snapshot.desktop_upsell.expect("desktop snapshot");
-
-        assert!(snapshot.remote_callout.is_none());
-        // The seen-count/dismissed fields are ordinary user config and still
-        // come from the snapshot; the upsell gate is the source-controlled
-        // switch, which is off.
-        assert!(!desktop.config.enable_startup_dialog);
-        assert_eq!(desktop.desktop_upsell_seen_count, 1);
-        assert!(!desktop.desktop_upsell_dismissed);
     }
 
     #[test]
@@ -14875,9 +14759,15 @@ mod tests {
 
     #[test]
     #[ignore = "Remote Control/bridge startup is explicitly out of the current local-only scope"]
-    fn repl_startup_dialogs_follow_official_remote_before_desktop_priority() {
+    fn repl_startup_dialogs_render_official_remote_callout() {
         let text = last_repl_startup_dialog_text(
-            startup_dialog_snapshot(true, true),
+            ReplStartupDialogSnapshot {
+                remote_callout: Some(RemoteCalloutSnapshot {
+                    remote_dialog_seen: false,
+                    bridge_enabled: true,
+                    has_claude_ai_access_token: true,
+                }),
+            },
             stream::iter(Vec::<TerminalEvent>::new()),
             250,
             6,
@@ -14885,32 +14775,25 @@ mod tests {
 
         assert!(text.contains("Remote Control"), "canvas=\n{text}");
         assert!(text.contains("claude.ai/"), "canvas=\n{text}");
-        assert!(
-            !text.contains("Try nyan Desktop"),
-            "desktop upsell should wait behind remote callout:\n{text}"
-        );
     }
 
     #[test]
-    fn repl_startup_dialog_desktop_upsell_renders_without_remote_side_effects() {
+    fn repl_startup_without_remote_callout_mounts_no_startup_dialog() {
         // Mirror the process runtime published by the production entrypoint.
         crate::utils::process_runtime::initialize_test_process_runtime();
-        // Remote Control/bridge is intentionally absent. Keep local Desktop
-        // startup coverage independent instead of simulating a remote-dismiss
-        // transition that the production snapshot cannot currently create.
         let text = last_repl_startup_dialog_text(
-            startup_dialog_snapshot(false, true),
+            ReplStartupDialogSnapshot::default(),
             stream::iter(Vec::<TerminalEvent>::new()),
             250,
             6,
         );
 
-        assert!(text.contains("Try nyan Desktop"), "canvas=\n{text}");
-        assert!(text.contains("visual diffs"), "canvas=\n{text}");
         assert!(
-            !text.contains("would_mark_seen"),
-            "safe callback metadata should not leak into UI:\n{text}"
+            text.contains("❯"),
+            "PromptInput should own focus; canvas=\n{text}"
         );
+        assert!(!text.contains("Desktop"), "canvas=\n{text}");
+        assert!(!text.contains("Remote Control"), "canvas=\n{text}");
     }
 
     fn write_resume_fixture(
@@ -15336,7 +15219,6 @@ mod tests {
             has_elicitation: true,
             show_remote_callout: true,
             has_hint_recommendation: true,
-            show_desktop_upsell_startup: true,
         };
 
         // CC REPL.tsx:2684-2760 order: peel the winner off one at a time.
@@ -15352,7 +15234,6 @@ mod tests {
                 Elicitation => input.has_elicitation = false,
                 RemoteCallout => input.show_remote_callout = false,
                 PluginHint => input.has_hint_recommendation = false,
-                DesktopUpsell => input.show_desktop_upsell_startup = false,
             }
         }
         assert_eq!(
@@ -15365,7 +15246,6 @@ mod tests {
                 Elicitation,
                 RemoteCallout,
                 PluginHint,
-                DesktopUpsell,
             ]
         );
 

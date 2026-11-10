@@ -226,8 +226,7 @@ fn skill_rule_matches(rule_content: &str, command_name: &str) -> bool {
 /// block would not gate anyway, while `shell: powershell` — the ordinary Windows
 /// configuration — paid a confirmation on every invocation.
 fn skill_has_only_safe_properties(command: &crate::commands::Command) -> bool {
-    command.availability.is_empty()
-        && command.call.is_none()
+    command.call.is_none()
         && !command.supports_non_interactive
         && command.allowed_tools.is_empty()
         && command

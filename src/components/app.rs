@@ -20,7 +20,6 @@ use crate::main::build_startup_diagnostics_snapshot;
 use crate::screens::repl::ReplStartupDialogSnapshot;
 use crate::state::app_state::{AppStateProvider, ProviderChildren};
 use crate::state::store::AppStore;
-use crate::utils::config::load_global_config;
 use crate::utils::settings::SettingsWithErrors;
 use iocraft::prelude::*;
 use std::sync::Arc;
@@ -95,9 +94,7 @@ pub fn App(props: &AppProps, mut hooks: Hooks) -> impl Into<AnyElement<'static>>
         }
     });
 
-    let startup_dialog_snapshot = hooks.use_const(|| {
-        ReplStartupDialogSnapshot::from_readonly_global_config(&load_global_config())
-    });
+    let startup_dialog_snapshot = hooks.use_const(ReplStartupDialogSnapshot::default);
 
     // Maps to: CC `App.tsx:28-33` — the AppState provider wraps `children`.
     // FpsMetricsProvider (:26) / StatsProvider (:27) are diagnostics layers

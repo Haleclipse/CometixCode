@@ -121,8 +121,6 @@ pub enum FeatureFlag {
     TeamMemory,
     /// Maps to CC GrowthBook `tengu_lapis_finch` plugin hint-recommendation gate.
     PluginHintRecommendation,
-    /// Maps to CC GrowthBook dynamic config `tengu_desktop_upsell`.
-    DesktopUpsell,
     /// Maps to CC GrowthBook dynamic config `tengu-top-of-feed-tip`.
     EmergencyTip,
     /// Maps to CC GrowthBook `tengu_iron_gate_closed` auto-mode classifier fail-closed gate.
@@ -489,12 +487,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_lapis_finch",
         enabled: false,
         note: "Official default false; Bash/PowerShell plugin hints are stripped without ever reaching the startup recommendation dialog.",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::DesktopUpsell,
-        cc_growthbook_name: "tengu_desktop_upsell",
-        enabled: false,
-        note: "Official default disables both the shortcut tip and the startup dialog, so the desktop handoff upsell never renders.",
     },
     FeatureSwitch {
         flag: FeatureFlag::EmergencyTip,

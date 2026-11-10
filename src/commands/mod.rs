@@ -77,13 +77,6 @@ pub enum CommandSource {
     Mcp,
 }
 
-/// Maps to: CC `types/command.ts::CommandAvailability`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandAvailability {
-    ClaudeAi,
-    Console,
-}
-
 /// Metadata half of CC `types/command.ts::Command`.
 ///
 /// Execution remains owned by each corresponding Rust command module and the
@@ -165,7 +158,6 @@ pub struct Command {
     pub user_facing_name: Option<Cow<'static, str>>,
     pub kind: CommandKind,
     pub source: CommandSource,
-    pub availability: Vec<CommandAvailability>,
     pub is_enabled: Option<fn() -> bool>,
     /// Maps to CC prompt-command `getPromptForCommand`.
     pub get_prompt_for_command: Option<GetPromptForCommand>,
@@ -214,7 +206,6 @@ impl PartialEq for Command {
             && self.user_facing_name == other.user_facing_name
             && self.kind == other.kind
             && self.source == other.source
-            && self.availability == other.availability
             && self.is_enabled.is_some() == other.is_enabled.is_some()
             && self.get_prompt_for_command.is_some() == other.get_prompt_for_command.is_some()
             && self.call.is_some() == other.call.is_some()
@@ -254,7 +245,6 @@ impl Command {
             user_facing_name: None,
             kind,
             source: CommandSource::Builtin,
-            availability: Vec::new(),
             is_enabled: None,
             get_prompt_for_command: None,
             call: None,
@@ -302,11 +292,6 @@ impl Command {
 
     fn argument_hint_when(mut self, resolver: fn() -> String) -> Self {
         self.argument_hint_resolver = Some(resolver);
-        self
-    }
-
-    fn availability(mut self, availability: &'static [CommandAvailability]) -> Self {
-        self.availability = availability.to_vec();
         self
     }
 
@@ -403,7 +388,6 @@ impl Command {
             )),
             kind: CommandKind::Prompt,
             source: CommandSource::Mcp,
-            availability: Vec::new(),
             is_enabled: None,
             // MCP prompt retrieval is async: REPL's prompt action calls
             // `get_mcp_prompt_for_command` over `mcp_prompt` before generic
@@ -463,7 +447,6 @@ impl Command {
             user_facing_name: skill.display_name.clone().map(Cow::Owned),
             kind: CommandKind::Prompt,
             source,
-            availability: Vec::new(),
             is_enabled: None,
             get_prompt_for_command: Some(
                 crate::utils::process_user_input::process_slash_command::call_skill_prompt,
@@ -506,24 +489,6 @@ fn doctor_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("DISABLE_DOCTOR_COMMAND").as_deref(),
     )
-}
-
-fn install_github_app_enabled() -> bool {
-    !crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("DISABLE_INSTALL_GITHUB_APP_COMMAND").as_deref(),
-    )
-}
-
-/// There is no claude.ai subscriber: Anthropic is API-key only, so every
-/// first-party API user is a Console user and `ClaudeAi`-only commands are
-/// never available.
-fn is_console_user() -> bool {
-    crate::utils::model::providers::is_first_party_anthropic_base_url()
-}
-
-fn desktop_supported() -> bool {
-    cfg!(all(target_os = "macos", target_arch = "aarch64"))
-        || cfg!(all(target_os = "windows", target_arch = "x86_64"))
 }
 
 fn cost_hidden() -> bool {
@@ -571,7 +536,6 @@ fn thinkback_enabled() -> bool {
 /// filters the inactive one.
 fn commands() -> Vec<Command> {
     use crate::utils::process_user_input::process_slash_command as execution;
-    use CommandAvailability::{ClaudeAi, Console};
 
     let mut result = vec![
         Command::local_ui("add-dir", "Add a new working directory").argument_hint("<path>").executable(add_dir::dispatch),
@@ -600,11 +564,6 @@ fn commands() -> Vec<Command> {
             "Copy Claude's last response to clipboard (or /copy N for the Nth-latest)",
         )
         .executable(execution::call_copy),
-        Command::local_ui("desktop", "Continue the current session in Claude Desktop")
-            .aliases(&["app"])
-            .availability(&[ClaudeAi])
-            .enabled_when(desktop_supported)
-            .hidden_when(|| !desktop_supported()),
         Command::local_ui(context::NAME, context::INTERACTIVE_DESCRIPTION)
             .enabled_when(is_interactive)
             .executable(execution::call_context),
@@ -648,22 +607,12 @@ fn commands() -> Vec<Command> {
                 crate::keybindings::load_user_bindings::is_keybinding_customization_enabled,
             )
             .executable(keybindings::call),
-        Command::local_ui(
-            "install-github-app",
-            "Set up Claude GitHub Actions for a repository",
-        )
-        .availability(&[ClaudeAi, Console])
-        .enabled_when(install_github_app_enabled),
-        Command::local("install-slack-app", "Install the Claude Slack app")
-            .availability(&[ClaudeAi]),
         Command::local_ui("mcp", "Manage MCP servers")
             .argument_hint("[enable|disable [server-name]]")
             .immediate()
             .executable(execution::call_mcp),
         Command::local_ui("memory", "Edit Claude memory files")
             .executable(execution::call_memory),
-        Command::local_ui("mobile", "Show QR code to download the Claude mobile app")
-            .aliases(&["ios", "android"]),
         Command::local_ui("model", "Set the AI model for nyan")
             .description_when(model::description)
             .argument_hint("[model]")
@@ -830,22 +779,6 @@ pub fn command_description(command: &Command) -> Cow<'_, str> {
     }
 }
 
-/// Maps to: CC `commands.ts::meetsAvailabilityRequirement`.
-pub fn meets_availability_requirement(command: &Command) -> bool {
-    meets_availability_requirement_with(command, false, is_console_user())
-}
-
-fn meets_availability_requirement_with(command: &Command, claude_ai: bool, console: bool) -> bool {
-    command.availability.is_empty()
-        || command
-            .availability
-            .iter()
-            .any(|requirement| match requirement {
-                CommandAvailability::ClaudeAi => claude_ai,
-                CommandAvailability::Console => console,
-            })
-}
-
 /// Maps to CC's cwd-keyed memoization around `loadAllCommands(cwd)`.
 static LOAD_ALL_COMMANDS_CACHE: LazyLock<Mutex<HashMap<(PathBuf, u64), Arc<Vec<Command>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -938,11 +871,12 @@ pub fn clear_commands_cache() {
 
 /// Maps to: CC `commands.ts::getCommands(cwd)`.
 ///
-/// Availability and enablement are reevaluated for each launch snapshot, just
-/// as CC does after the memoized expensive source load.
+/// Enablement is reevaluated for each launch snapshot, just as CC does after
+/// the memoized expensive source load.
+///
+/// @nyan: CC's claude.ai/Console `availability` filter is gone; every builtin
+/// that declared one was an Anthropic account or app integration.
 pub fn get_commands(cwd: &Path) -> Vec<Command> {
-    let claude_ai = false;
-    let console = is_console_user();
     let resolve = |mut command: Command| {
         if let Some(resolver) = command.description_resolver.take() {
             command.description = Cow::Owned(resolver());
@@ -957,7 +891,6 @@ pub fn get_commands(cwd: &Path) -> Vec<Command> {
     };
     let base_commands = load_all_commands(cwd)
         .into_iter()
-        .filter(|command| meets_availability_requirement_with(command, claude_ai, console))
         .filter(is_command_enabled)
         .map(resolve)
         .collect::<Vec<_>>();
@@ -979,7 +912,6 @@ pub fn get_commands(cwd: &Path) -> Vec<Command> {
         .into_iter()
         .map(Command::from_skill)
         .filter(|command| !base_command_names.contains(command.name.as_ref()))
-        .filter(|command| meets_availability_requirement_with(command, claude_ai, console))
         .filter(is_command_enabled)
         .map(resolve)
         .collect::<Vec<_>>();
@@ -1151,7 +1083,6 @@ pub fn filter_commands_for_remote_mode(commands: Vec<Command>) -> Vec<Command> {
         "keybindings",
         "statusline",
         "stickers",
-        "mobile",
     ];
     commands
         .into_iter()
@@ -1336,12 +1267,14 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
 
         let catalog = commands();
-        // 61 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
+        // 57 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
         // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
         // with claude.ai guest passes; `/upgrade`, `/extra-usage`,
         // `/rate-limit-options` and `/usage` are gone with the claude.ai
-        // subscription quota; `/chrome` is gone with Claude in Chrome.
-        assert_eq!(catalog.len(), 63);
+        // subscription quota; `/chrome` is gone with Claude in Chrome;
+        // `/desktop`, `/mobile`, `/install-slack-app` and
+        // `/install-github-app` are gone with the official client apps.
+        assert_eq!(catalog.len(), 59);
         for removed in [
             "login",
             "logout",
@@ -1351,6 +1284,10 @@ mod tests {
             "rate-limit-options",
             "usage",
             "chrome",
+            "desktop",
+            "mobile",
+            "install-slack-app",
+            "install-github-app",
         ] {
             assert!(
                 catalog.iter().all(|command| command.name != removed),
@@ -1373,7 +1310,6 @@ mod tests {
             "compact",
             "config",
             "copy",
-            "desktop",
             "context",
             "cost",
             "diff",
@@ -1385,11 +1321,8 @@ mod tests {
             "ide",
             "init",
             "keybindings",
-            "install-github-app",
-            "install-slack-app",
             "mcp",
             "memory",
-            "mobile",
             "model",
             "output-style",
             "remote-env",
@@ -1427,6 +1360,16 @@ mod tests {
             assert!(declared_names.contains(expected), "missing /{expected}");
         }
         assert!(catalog.iter().all(|command| command.name != "version"));
+        // The removed app commands' aliases must not resurface on another
+        // command either.
+        for alias in ["app", "ios", "android"] {
+            assert!(
+                catalog
+                    .iter()
+                    .all(|command| command.aliases.iter().all(|declared| declared != alias)),
+                "/{alias} must not be an alias"
+            );
+        }
     }
 
     #[test]

@@ -13,12 +13,9 @@
 //! filter call. Later settings effects are linearized by the approved
 //! StoreTurn and consume the committed snapshot/prebuilt resources.
 
-use std::collections::HashSet;
-
 use indexmap::IndexMap;
-use std::sync::RwLock;
 
-use crate::utils::process_env::{self, EnvSnapshot, EnvUpdate};
+use crate::utils::process_env::{self, EnvUpdate};
 use crate::utils::settings::{
     SettingSource, get_initial_settings, get_settings_for_source, is_setting_source_enabled,
 };
@@ -84,59 +81,15 @@ pub fn is_safe_managed_env_var(key: &str) -> bool {
     SAFE_ENV_VARS.contains(&upper.as_str())
 }
 
-/// Maps to CC `managedEnv.ts:69` `ccdSpawnEnvKeys`.
-///
-/// Outer `Option`: not yet captured (CC `undefined`). Inner `Option`: captured
-/// but the entrypoint was not claude-desktop (CC `null`). `RwLock` instead of
-/// `OnceLock` only so tests can reset the latch; production captures once.
-static CCD_SPAWN_ENV_KEYS: RwLock<Option<Option<HashSet<String>>>> = RwLock::new(None);
-
-/// Maps to CC `managedEnv.ts:126-131` — capture the spawn-env key snapshot on
-/// the first `applySafeConfigEnvironmentVariables()` call, before any
-/// settings.env is applied.
-fn capture_ccd_spawn_env_keys(env: &EnvSnapshot) {
-    let mut slot = CCD_SPAWN_ENV_KEYS
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if slot.is_none() {
-        *slot = Some(
-            (env.var("NYAN_ENTRYPOINT") == Some("claude-desktop")).then(|| {
-                env.keys()
-                    .filter_map(|key| key.to_str().map(str::to_owned))
-                    .collect()
-            }),
-        );
-    }
-}
-
-fn ccd_spawn_env_keys() -> Option<HashSet<String>> {
-    CCD_SPAWN_ENV_KEYS
-        .read()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
-        .flatten()
-}
-
-#[cfg(test)]
-pub(crate) fn reset_ccd_spawn_env_keys_for_tests() {
-    *CCD_SPAWN_ENV_KEYS
-        .write()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-}
-
 /// Maps to CC `managedEnv.ts:85-91` `filterSettingsEnv` — the composed strip
 /// filters applied to every settings-sourced env object.
 ///
 /// @nyan: CC's SSH-tunnel and host-managed-provider filters are gone with the
-/// provider environment itself.
+/// provider environment itself, and its Claude Desktop spawn-env shield
+/// (`withoutCcdSpawnEnvKeys`) is gone with the Desktop integration.
 fn filter_settings_env(env: Option<&IndexMap<String, String>>) -> Vec<(String, String)> {
-    // CC `withoutCcdSpawnEnvKeys` (:71-80) is a no-op until applySafe captured
-    // the snapshot (`!ccdSpawnEnvKeys`); an un-latched read reproduces that.
-    let ccd_keys = ccd_spawn_env_keys();
-
     env.into_iter()
         .flat_map(|env| process_env::ecmascript_object_entries(env.iter()))
-        .filter(|(key, _)| !ccd_keys.as_ref().is_some_and(|keys| keys.contains(*key)))
         .map(|(key, value)| (key.to_owned(), value.clone()))
         .collect()
 }
@@ -169,9 +122,6 @@ pub fn apply_safe_config_environment_variables() {
     let merged = get_initial_settings();
 
     let mut update = process_env::begin_update();
-
-    // Capture CCD spawn-env keys before any settings.env is applied (:126-131).
-    capture_ccd_spawn_env_keys(&update.snapshot());
 
     // Global config (state.json) env, user-controlled (:133-136).
     apply_filtered(&mut update, global.env.as_ref());
@@ -231,7 +181,6 @@ mod tests {
     fn settings_application_matches_official_object_assign_then_normalize_order() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _numeric = EnvVarGuard::unset("1");
-        reset_ccd_spawn_env_keys_for_tests();
         let env = IndexMap::from([
             ("1\0tail".to_string(), "malformed".to_string()),
             ("1".to_string(), "exact".to_string()),
@@ -242,41 +191,5 @@ mod tests {
         update.commit();
 
         assert_eq!(process_env::var("1").as_deref(), Some("malformed"));
-    }
-
-    #[test]
-    fn ccd_spawn_keys_latch_once_and_shield_spawn_env() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        reset_ccd_spawn_env_keys_for_tests();
-        let _entry = EnvVarGuard::set("NYAN_ENTRYPOINT", "claude-desktop");
-        let _spawn_var = EnvVarGuard::set("OTEL_LOGS_EXPORTER", "otlp");
-
-        capture_ccd_spawn_env_keys(&process_env::snapshot());
-
-        let env: IndexMap<String, String> = [
-            ("OTEL_LOGS_EXPORTER", "console"),
-            ("BRAND_NEW_VAR", "applies"),
-        ]
-        .into_iter()
-        .map(|(key, value)| (key.to_string(), value.to_string()))
-        .collect();
-        let filtered = filter_settings_env(Some(&env));
-        // Keys present in the spawn env are shielded; later additions apply.
-        assert!(!filtered.iter().any(|(key, _)| key == "OTEL_LOGS_EXPORTER"));
-        assert!(filtered.iter().any(|(key, _)| key == "BRAND_NEW_VAR"));
-
-        reset_ccd_spawn_env_keys_for_tests();
-    }
-
-    #[test]
-    fn ccd_capture_is_null_outside_claude_desktop() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        reset_ccd_spawn_env_keys_for_tests();
-        let _entry = EnvVarGuard::set("NYAN_ENTRYPOINT", "cli");
-
-        capture_ccd_spawn_env_keys(&process_env::snapshot());
-        assert_eq!(ccd_spawn_env_keys(), None);
-
-        reset_ccd_spawn_env_keys_for_tests();
     }
 }
