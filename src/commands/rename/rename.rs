@@ -3,9 +3,8 @@
 //! Explicit names complete synchronously because Rust's session-storage
 //! metadata append boundary is synchronous. Empty args return a typed request
 //! for REPL to await `generateSessionName` without blocking the retained frame.
-//! Bridge title synchronization is intentionally omitted with the deferred
-//! Remote Control/bridge subsystem; local title, agent-name, and AppState
-//! updates remain atomic from the command's perspective.
+//! Local title, agent-name, and AppState updates remain atomic from the
+//! command's perspective.
 
 use crate::state::store::AppStore;
 use crate::tool::ToolUseContext;

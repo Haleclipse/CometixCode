@@ -163,9 +163,6 @@ pub struct SettingsJson {
     pub auto_memory_directory: Option<String>,
     pub auto_dream_enabled: Option<bool>,
 
-    // ── Remote ──
-    pub remote: Option<RemoteSettings>,
-
     pub plans_directory: Option<String>,
     pub show_clear_context_on_plan_accept: Option<bool>,
     pub agent: Option<String>,
@@ -179,8 +176,6 @@ pub struct SettingsJson {
 
     // ── XAA IdP (feature-gated) ──
     pub xaa_idp: Option<XaaIdpSettings>,
-
-    pub disable_deep_link_registration: Option<String>,
 
     /// @nyan: one formal family for every nyan module's settings (compaction,
     /// cache warming, memory, retrieval, web search, decision provider, tool
@@ -274,12 +269,6 @@ pub struct AutoModeSettings {
     #[serde(rename = "soft_deny")]
     pub soft_deny: Option<Vec<String>>,
     pub environment: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteSettings {
-    pub default_environment_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -580,10 +569,9 @@ fn extra_known_marketplaces_settings_key_check(
 /// - `feature('TRANSCRIPT_CLASSIFIER')` (on) → `skipAutoPermissionPrompt`,
 ///   `useAutoModeDuringPlan`, `autoMode`
 /// - `feature('KAIROS') || feature('KAIROS_BRIEF')` (Brief on) → `defaultView`
-/// - `feature('LODESTONE')` / `feature('PROACTIVE')` / `feature('KAIROS')`
-///   are absent or off here, so `disableDeepLinkRegistration`, the Sleep
-///   bounds, `assistant`, and `assistantName` do not enter the shape — same
-///   result as CC with those build features off.
+/// - `feature('PROACTIVE')` / `feature('KAIROS')` are absent or off here,
+///   so the Sleep bounds, `assistant`, and `assistantName` do not enter the
+///   shape — same result as CC with those build features off.
 ///
 /// `enabledPlugins`' `z.undefined()` union arm is unreachable from JSON input
 /// (no JSON value parses to undefined) and is not mirrored.
@@ -997,17 +985,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ),
             ),
             (
-                "remote",
-                zod::object(vec![(
-                    "defaultEnvironmentId",
-                    zod::string()
-                        .optional()
-                        .describe("Default environment ID to use for remote sessions"),
-                )])
-                .optional()
-                .describe("Remote session configuration"),
-            ),
-            (
                 "plansDirectory",
                 zod::string().optional().describe(
                     "Custom directory for plan files, relative to project root. If not set, defaults to ~/.nyan/plans/",
@@ -1370,6 +1347,28 @@ mod zod_schema_tests {
     /// would be rejected as an unknown field; a typo inside `nyan` is stripped
     /// like every other nested family, while a typo at the top level still
     /// fails.
+    #[test]
+    fn settings_schema_omits_cloud_remote_configuration_and_keeps_ssh() {
+        let projected = crate::utils::zod::to_json_schema(settings_schema());
+        assert!(projected["properties"].get("remote").is_none());
+        assert!(
+            projected["properties"]
+                .get("disableDeepLinkRegistration")
+                .is_none()
+        );
+        assert!(projected["properties"].get("sshConfigs").is_some());
+        let strict = settings_schema().clone().strict();
+        for removed in [
+            serde_json::json!({"remote": {"defaultEnvironmentId": "env_test"}}),
+            serde_json::json!({"disableDeepLinkRegistration": "enabled"}),
+        ] {
+            assert!(crate::utils::zod::safe_parse(&strict, &removed).is_err());
+        }
+        let serialized = serde_json::to_value(SettingsJson::default()).unwrap();
+        assert!(serialized.get("remote").is_none());
+        assert!(serialized.get("disableDeepLinkRegistration").is_none());
+    }
+
     #[test]
     fn strict_settings_schema_accepts_the_nyan_family() {
         let ok = serde_json::json!({

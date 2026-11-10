@@ -311,7 +311,6 @@ pub fn Notifications(
         };
         head_rows.push(FooterRow {
             segments,
-            inverse: false,
             default_color: current.color,
         });
     }
@@ -382,7 +381,6 @@ pub fn Notifications(
 fn footer_row_view(row: FooterRow, theme: &Theme) -> AnyElement<'static> {
     let FooterRow {
         segments,
-        inverse,
         default_color,
     } = row;
     element! {
@@ -400,7 +398,6 @@ fn footer_row_view(row: FooterRow, theme: &Theme) -> AnyElement<'static> {
                         content: segment.text.clone(),
                         color: segment_color,
                         dim: segment.dim,
-                        invert: inverse,
                         wrap: TextWrap::NoWrap,
                     )
                 }
@@ -412,7 +409,6 @@ fn footer_row_view(row: FooterRow, theme: &Theme) -> AnyElement<'static> {
 
 struct FooterRow {
     segments: Vec<NotificationSegment>,
-    inverse: bool,
     default_color: Option<NotificationColor>,
 }
 
@@ -420,7 +416,6 @@ impl FooterRow {
     fn from_indicator(indicator: PromptFooterIndicator) -> Self {
         Self {
             segments: indicator.segments,
-            inverse: indicator.inverse,
             default_color: None,
         }
     }

@@ -10,6 +10,5 @@ pub mod local_shell_task;
 pub mod local_workflow_task;
 pub mod monitor_mcp_task;
 pub mod pill_label;
-pub mod remote_agent_task;
 pub mod stop_task;
 pub mod types;

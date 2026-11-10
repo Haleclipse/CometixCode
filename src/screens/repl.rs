@@ -25,9 +25,6 @@ use crate::components::permissions::{
     PermissionRequest, SandboxPermissionRequest, WorkerPendingPermission,
 };
 use crate::components::prompt_input::{PromptInput, PromptSubmission};
-use crate::components::remote_callout::{
-    RemoteCallout, RemoteCalloutDone, RemoteCalloutSnapshot, should_show_remote_callout,
-};
 use crate::components::sandbox::SandboxSettings;
 use crate::components::settings::{Settings, SettingsTab};
 use crate::components::skills::skills_menu::SkillsMenuDone;
@@ -201,24 +198,6 @@ impl ReplProps {
         }
         .into_any()
     }
-}
-
-/// Maps to CC `screens/REPL.tsx` startup dialog state seed
-/// `showRemoteCallout`.
-///
-/// Safety boundary: official REPL computes this by reading app state, global
-/// config, OAuth tokens, and bridge entitlement. Nyan consumes an explicit
-/// snapshot context. Production mounts the default (no Remote Callout): it
-/// remains an explicit seam until bridge/auth runtime state is ported, since
-/// guessing the official `feature('BRIDGE_MODE')`, OAuth-token, and
-/// bridge-entitlement chain would surface an action Nyan cannot yet safely
-/// execute.
-///
-/// @nyan: CC's `showDesktopUpsellStartup` seed is gone with the Claude
-/// Desktop handoff.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct ReplStartupDialogSnapshot {
-    pub remote_callout: Option<RemoteCalloutSnapshot>,
 }
 
 /// Maps to: CC `screens/REPL.tsx` `const mainLoopModel = useMainLoopModel()`:
@@ -863,7 +842,6 @@ enum FocusedInputDialog {
     ToolPermission,
     WorkerSandboxPermission,
     Elicitation,
-    RemoteCallout,
     PluginHint,
 }
 
@@ -877,7 +855,6 @@ impl FocusedInputDialog {
             Self::ToolPermission => "tool-permission",
             Self::WorkerSandboxPermission => "worker-sandbox-permission",
             Self::Elicitation => "elicitation",
-            Self::RemoteCallout => "remote-callout",
             Self::PluginHint => "plugin-hint",
         }
     }
@@ -905,7 +882,6 @@ struct FocusedInputDialogInput {
     has_worker_sandbox_permission: bool,
     /// `elicitation.queue[0]`
     has_elicitation: bool,
-    show_remote_callout: bool,
     /// `hintRecommendation`
     has_hint_recommendation: bool,
 }
@@ -942,9 +918,6 @@ fn get_focused_input_dialog(input: &FocusedInputDialogInput) -> Option<FocusedIn
     }
     if allow && input.has_elicitation {
         return Some(Elicitation);
-    }
-    if allow && input.show_remote_callout {
-        return Some(RemoteCallout);
     }
     if allow && input.has_hint_recommendation {
         return Some(PluginHint);
@@ -2738,9 +2711,7 @@ struct LocalSandboxPermissionAsk {
 /// is used only by the worker branch (CC :2967-2973 sets
 /// `pendingSandboxRequest` via `setAppState`); local asks travel to the REPL
 /// over `local_ask_tx` (CC: the callback closes over
-/// `setSandboxPermissionRequestQueue`). Bridge fan-out (CC :2999-3052,
-/// `BRIDGE_MODE`) is not ported; the entry keeps the multi-resolver shape so
-/// it can land without reshaping the queue.
+/// `setSandboxPermissionRequestQueue`).
 fn create_repl_sandbox_ask_callback(
     app_store: crate::state::store::AppStore,
     local_ask_tx: async_channel::Sender<LocalSandboxPermissionAsk>,
@@ -2795,8 +2766,7 @@ async fn repl_sandbox_ask_flow(
 /// (CC :6302-6330) runs before resolution, then ALL pending asks for the same
 /// host resolve with the user's answer and are removed while other hosts stay
 /// queued (CC :6332-6343 — parallel same-domain requests). No current request
-/// is a no-op (CC `if (!currentRequest) return`). Bridge sibling cleanups (CC
-/// :6345-6354) are not ported (`BRIDGE_MODE` absent).
+/// is a no-op (CC `if (!currentRequest) return`).
 fn handle_local_sandbox_permission_response(
     queue: &mut Vec<LocalSandboxPermissionAsk>,
     response: crate::components::permissions::sandbox_permission_request::SandboxPermissionResponse,
@@ -4172,10 +4142,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             scheduler
         }))
     });
-    let startup_dialog_snapshot = hooks
-        .try_use_context::<ReplStartupDialogSnapshot>()
-        .map(|context| (*context).clone())
-        .unwrap_or_default();
     let status_notice_context = hooks
         .try_use_context::<StatusNoticeContext>()
         .map(|context| (*context).clone())
@@ -4187,10 +4153,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         crate::state::app_state::use_app_state(&mut hooks, |state| {
             state.channel_permission_callbacks.clone()
         });
-    let initial_show_remote_callout = startup_dialog_snapshot
-        .remote_callout
-        .as_ref()
-        .is_some_and(should_show_remote_callout);
 
     let mut active_local_command_ui = hooks.use_state(|| Option::<ActiveLocalCommandUi>::None);
     let resume_processing_channel = hooks.use_const(|| {
@@ -4420,32 +4382,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             user_input_on_processing.set(None);
         }
     });
-    // Seed AppState.showRemoteCallout once from the startup snapshot (CC
-    // main/bridge sets the field; REPL only reads/dismisses via AppState).
-    hooks.use_const({
-        let app_store = app_store.clone();
-        move || {
-            if initial_show_remote_callout {
-                // B3 flip-audit: CC's only set-true point guards
-                // `if (prev.showRemoteCallout) return prev` (bridge.tsx:88).
-                // The seed's initial value is always false, so this is a
-                // zero-cost semantic alignment (guard never fires today).
-                app_store.set_state(|prev| {
-                    if prev.show_remote_callout {
-                        return crate::state::store::UpdateDecision::Same(());
-                    }
-                    let mut next = (**prev).clone();
-                    next.show_remote_callout = true;
-                    crate::state::store::UpdateDecision::Replace {
-                        next: Arc::new(next),
-                        result: (),
-                    }
-                });
-            }
-        }
-    });
-    let show_remote_callout =
-        crate::state::app_state::use_app_state(&mut hooks, |state| state.show_remote_callout);
     // Maps to CC `REPL.tsx` `exitFlow` state. The safe Rust path renders
     // `ExitFlow` and lets the app loop exit, but never calls
     // `gracefulShutdown` or `process.exit` directly.
@@ -6803,7 +6739,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         && classifier_approvals.read().checking().is_none()
         && !message_selector_visible.get()
         && !exit_flow_active.get()
-        && !show_remote_callout
         && hint_recommendation.read().is_none()
         && !prompt_modal_overlay_active.get();
     let pending_command = pending_keybinding_command.read().clone();
@@ -8532,7 +8467,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
         has_tool_use_confirm: current_permission.is_some(),
         has_worker_sandbox_permission: current_sandbox_permission.is_some(),
         has_elicitation: elicitation_queued,
-        show_remote_callout,
         has_hint_recommendation: hint_recommendation_snapshot.is_some(),
     });
     focused_input_dialog_ref.set(focused_input_dialog);
@@ -8912,27 +8846,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     };
     let on_exit_flow_cancel = move |_: ()| {
         exit_flow_active.set(false);
-    };
-    let app_store_for_remote_done = app_store.clone();
-    let on_remote_callout_done = move |done: RemoteCalloutDone| {
-        // Official REPL enables bridge app-state when selection is `enable`.
-        // Safe Nyan only dismisses this startup dialog; bridge runtime work
-        // belongs to the dedicated Remote Control/bridge slice.
-        let _selection = done.selection;
-        let _would_mark_seen = done.would_mark_seen;
-        // B3 flip-audit: CC REPL.tsx:6610-6614 — `if (!prev.showRemoteCallout)
-        // return prev` before the dismissing spread.
-        app_store_for_remote_done.set_state(|prev| {
-            if !prev.show_remote_callout {
-                return crate::state::store::UpdateDecision::Same(());
-            }
-            let mut next = (**prev).clone();
-            next.show_remote_callout = false;
-            crate::state::store::UpdateDecision::Replace {
-                next: Arc::new(next),
-                result: (),
-            }
-        });
     };
     let mut plugin_hint_notifications =
         crate::context::notifications::NotificationsWriter::new(app_store.clone());
@@ -9493,13 +9406,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             #(worker_sandbox_permission_dialog)
             #(elicitation_dialog)
 
-            // Maps to: CC REPL.tsx:6607-6653 `{focusedInputDialog ===
-            // 'remote-callout' / 'plugin-hint' && ...}`; CC's
-            // 'desktop-upsell' slot is gone with the Claude Desktop handoff.
+            // Maps to: CC REPL.tsx:6628-6653 focused plugin-hint dialog.
             #(match mounted_input_dialog {
-                Some(FocusedInputDialog::RemoteCallout) => Some(element! {
-                    RemoteCallout(on_done: on_remote_callout_done)
-                }.into_any()),
                 Some(FocusedInputDialog::PluginHint) => hint_recommendation_snapshot.clone().map(|recommendation| element! {
                     crate::components::claude_code_hint::PluginHintMenu(
                         plugin_name: recommendation.plugin_name,
@@ -13405,25 +13313,6 @@ mod tests {
     }
 
     #[derive(Default, Props)]
-    struct ReplStartupDialogHarnessProps {
-        snapshot: ReplStartupDialogSnapshot,
-    }
-
-    #[component]
-    fn ReplStartupDialogHarness(
-        props: &ReplStartupDialogHarnessProps,
-    ) -> impl Into<AnyElement<'static>> {
-        let current_theme = *theme::current();
-        element! {
-            ContextProvider(value: Context::owned(current_theme)) {
-                ContextProvider(value: Context::owned(props.snapshot.clone())) {
-                    IsolatedAuthRepl
-                }
-            }
-        }
-    }
-
-    #[derive(Default, Props)]
     struct ReplStatusNoticeHarnessProps {
         context: StatusNoticeContext,
     }
@@ -13858,38 +13747,6 @@ mod tests {
         })
     }
 
-    fn collect_repl_startup_dialog_canvases<S>(
-        snapshot: ReplStartupDialogSnapshot,
-        events: S,
-        timeout_ms: u64,
-        max_frames: usize,
-    ) -> Vec<Canvas>
-    where
-        S: Stream<Item = TerminalEvent> + Send + 'static,
-    {
-        futures::executor::block_on(async {
-            let mut app = element!(ReplStartupDialogHarness(snapshot: snapshot));
-            let mut render_loop =
-                Box::pin(app.mock_terminal_render_loop(MockTerminalConfig::with_events(events)));
-            let mut canvases = Vec::new();
-            loop {
-                let next = crate::utils::race(render_loop.next(), async {
-                    futures_timer::Delay::new(Duration::from_millis(timeout_ms)).await;
-                    None
-                })
-                .await;
-                let Some(canvas) = next else {
-                    break;
-                };
-                canvases.push(canvas);
-                if canvases.len() >= max_frames {
-                    break;
-                }
-            }
-            canvases
-        })
-    }
-
     fn collect_repl_status_notice_canvases<S>(
         context: StatusNoticeContext,
         events: S,
@@ -13984,23 +13841,6 @@ mod tests {
             }
             last_text
         })
-    }
-
-    fn last_repl_startup_dialog_text<S>(
-        snapshot: ReplStartupDialogSnapshot,
-        events: S,
-        timeout_ms: u64,
-        max_frames: usize,
-    ) -> String
-    where
-        S: Stream<Item = TerminalEvent> + Send + 'static,
-    {
-        let canvases =
-            collect_repl_startup_dialog_canvases(snapshot, events, timeout_ms, max_frames);
-        let last = canvases
-            .last()
-            .expect("mock render should produce a canvas");
-        canvas_lines(last).join("\n")
     }
 
     fn last_repl_status_notice_text<S>(
@@ -14758,35 +14598,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Remote Control/bridge startup is explicitly out of the current local-only scope"]
-    fn repl_startup_dialogs_render_official_remote_callout() {
-        let text = last_repl_startup_dialog_text(
-            ReplStartupDialogSnapshot {
-                remote_callout: Some(RemoteCalloutSnapshot {
-                    remote_dialog_seen: false,
-                    bridge_enabled: true,
-                    has_claude_ai_access_token: true,
-                }),
-            },
-            stream::iter(Vec::<TerminalEvent>::new()),
-            250,
-            6,
-        );
-
-        assert!(text.contains("Remote Control"), "canvas=\n{text}");
-        assert!(text.contains("claude.ai/"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn repl_startup_without_remote_callout_mounts_no_startup_dialog() {
-        // Mirror the process runtime published by the production entrypoint.
+    fn repl_startup_keeps_prompt_focus_without_cloud_dialogs() {
         crate::utils::process_runtime::initialize_test_process_runtime();
-        let text = last_repl_startup_dialog_text(
-            ReplStartupDialogSnapshot::default(),
-            stream::iter(Vec::<TerminalEvent>::new()),
-            250,
-            6,
-        );
+        let text = last_repl_text(stream::iter(Vec::<TerminalEvent>::new()), 250, 6);
 
         assert!(
             text.contains("❯"),
@@ -15217,7 +15031,6 @@ mod tests {
             has_tool_use_confirm: true,
             has_worker_sandbox_permission: true,
             has_elicitation: true,
-            show_remote_callout: true,
             has_hint_recommendation: true,
         };
 
@@ -15232,7 +15045,6 @@ mod tests {
                 ToolPermission => input.has_tool_use_confirm = false,
                 WorkerSandboxPermission => input.has_worker_sandbox_permission = false,
                 Elicitation => input.has_elicitation = false,
-                RemoteCallout => input.show_remote_callout = false,
                 PluginHint => input.has_hint_recommendation = false,
             }
         }
@@ -15244,7 +15056,6 @@ mod tests {
                 ToolPermission,
                 WorkerSandboxPermission,
                 Elicitation,
-                RemoteCallout,
                 PluginHint,
             ]
         );

@@ -501,20 +501,12 @@ fn terminal_setup_hidden() -> bool {
     )
 }
 
-fn session_enabled() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref())
-}
-
 fn feedback_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("DISABLE_FEEDBACK_COMMAND").as_deref(),
     ) && !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("DISABLE_BUG_COMMAND").as_deref(),
     )
-}
-
-fn remote_env_enabled() -> bool {
-    false
 }
 
 fn privacy_settings_enabled() -> bool {
@@ -621,12 +613,6 @@ fn commands() -> Vec<Command> {
             )
             .executable(execution::call_model),
         output_style::command(),
-        Command::local_ui(
-            "remote-env",
-            "Configure the default remote environment for teleport sessions",
-        )
-        .enabled_when(remote_env_enabled)
-        .hidden_when(|| !remote_env_enabled()),
         plugin::command(),
         Command::prompt("pr-comments", "Get comments from a GitHub pull request")
             .prompt_metadata("fetching PR comments", 0),
@@ -642,10 +628,6 @@ fn commands() -> Vec<Command> {
             .aliases(&["continue"])
             .argument_hint("[conversation id or search term]")
             .executable(execution::call_resume),
-        Command::local_ui("session", "Show remote session URL and QR code")
-            .aliases(&["remote"])
-            .enabled_when(session_enabled)
-            .hidden_when(|| !session_enabled()),
         Command::local_ui("skills", "List available skills")
             .executable(execution::call_skills),
         Command::local_ui(stats::NAME, stats::DESCRIPTION).executable(stats::call),
@@ -1065,42 +1047,6 @@ pub fn filter_commands<'a>(commands: &'a [Command], query: &str) -> Vec<&'a Comm
         .collect()
 }
 
-/// Maps to: CC `commands.ts::REMOTE_SAFE_COMMANDS`.
-pub fn filter_commands_for_remote_mode(commands: Vec<Command>) -> Vec<Command> {
-    const REMOTE_SAFE_NAMES: &[&str] = &[
-        "session",
-        "exit",
-        "clear",
-        "help",
-        "theme",
-        "color",
-        "vim",
-        "cost",
-        "copy",
-        "btw",
-        "feedback",
-        "plan",
-        "keybindings",
-        "statusline",
-        "stickers",
-    ];
-    commands
-        .into_iter()
-        .filter(|command| REMOTE_SAFE_NAMES.contains(&command.name.as_ref()))
-        .collect()
-}
-
-/// Maps to: CC `commands.ts::isBridgeSafeCommand`.
-pub fn is_bridge_safe_command(command: &Command) -> bool {
-    const BRIDGE_SAFE_LOCAL_NAMES: &[&str] =
-        &["compact", "clear", "cost", "summary", "release-notes"];
-    match command.kind {
-        CommandKind::LocalUi => false,
-        CommandKind::Prompt => true,
-        CommandKind::Local => BRIDGE_SAFE_LOCAL_NAMES.contains(&command.name.as_ref()),
-    }
-}
-
 /// Maps to: CC `commands.ts::formatDescriptionWithSource`.
 /// Workflow metadata remains unrepresented; plugin provenance uses pluginInfo.
 pub fn format_description_with_source(command: &Command) -> String {
@@ -1267,14 +1213,14 @@ mod tests {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
 
         let catalog = commands();
-        // 57 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
+        // 55 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
         // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
         // with claude.ai guest passes; `/upgrade`, `/extra-usage`,
         // `/rate-limit-options` and `/usage` are gone with the claude.ai
         // subscription quota; `/chrome` is gone with Claude in Chrome;
         // `/desktop`, `/mobile`, `/install-slack-app` and
         // `/install-github-app` are gone with the official client apps.
-        assert_eq!(catalog.len(), 59);
+        assert_eq!(catalog.len(), 57);
         for removed in [
             "login",
             "logout",
@@ -1288,6 +1234,8 @@ mod tests {
             "mobile",
             "install-slack-app",
             "install-github-app",
+            "remote-env",
+            "session",
         ] {
             assert!(
                 catalog.iter().all(|command| command.name != removed),
@@ -1325,14 +1273,12 @@ mod tests {
             "memory",
             "model",
             "output-style",
-            "remote-env",
             "plugin",
             "pr-comments",
             "release-notes",
             "reload-plugins",
             "rename",
             "resume",
-            "session",
             "skills",
             "stats",
             "status",
@@ -1362,7 +1308,7 @@ mod tests {
         assert!(catalog.iter().all(|command| command.name != "version"));
         // The removed app commands' aliases must not resurface on another
         // command either.
-        for alias in ["app", "ios", "android"] {
+        for alias in ["app", "ios", "android", "remote"] {
             assert!(
                 catalog
                     .iter()
@@ -1637,6 +1583,38 @@ mod tests {
     }
 
     #[test]
+    fn cloud_session_commands_are_unknown_even_with_the_legacy_remote_switch() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _remote = crate::utils::test_env::EnvVarGuard::set("NYAN_REMOTE", "1");
+        let catalog = commands();
+        for name in [
+            "session",
+            "remote",
+            "remote-env",
+            "teleport",
+            "remote-control",
+            "bridge",
+        ] {
+            assert!(!built_in_command_names().contains(name));
+            let input = format!("/{name}");
+            let result =
+                crate::utils::process_user_input::process_slash_command::process_slash_command(
+                    &input, None, &catalog,
+                );
+            assert!(!result.should_query, "{input}");
+            assert!(
+                result.messages.iter().any(|message| matches!(
+                    &message.kind,
+                    crate::types::message::RenderableMessageKind::System(
+                        crate::types::message::SystemMessage::Informational { content, .. },
+                    ) if content == &format!("Unknown command: {input}")
+                )),
+                "{input}"
+            );
+        }
+    }
+
+    #[test]
     fn command_metadata_uses_current_official_aliases() {
         let catalog = commands();
         assert_eq!(find_command("checkpoint", &catalog).unwrap().name, "rewind");
@@ -1717,23 +1695,6 @@ mod tests {
         let branch = find_command("branch", &catalog).expect("/branch is declared");
         assert!(branch.aliases.is_empty());
         assert!(find_command("fork", &catalog).is_none());
-    }
-
-    #[test]
-    fn remote_and_bridge_safety_sets_match_official_membership() {
-        let catalog = commands();
-        let remote = filter_commands_for_remote_mode(catalog.clone());
-        assert!(remote.iter().any(|command| command.name == "copy"));
-        assert!(!remote.iter().any(|command| command.name == "model"));
-        assert!(is_bridge_safe_command(
-            find_command("compact", &catalog).unwrap()
-        ));
-        assert!(!is_bridge_safe_command(
-            find_command("config", &catalog).unwrap()
-        ));
-        assert!(is_bridge_safe_command(
-            find_command("review", &catalog).unwrap()
-        ));
     }
 
     /// CC commands.ts:563-583: source qualifications are independent of the

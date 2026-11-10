@@ -335,16 +335,6 @@ mod tests {
         assert_eq!(sandbox_hint_recent_count(), 2);
         // 0→1 visibility flip changes the height budget…
         assert_eq!(row_count_for(&store), 1);
-        assert_eq!(
-            crate::components::prompt_input::prompt_input_footer::bridge_status_indicator_count_from_app(
-                &store.get(),
-                // Even with both live gates passing, the pill needs a
-                // repl_bridge_enabled producer (absent in production).
-                true,
-                || true,
-            ),
-            0
-        );
         // …and the 1→0 flip drops it back.
         set_sandbox_hint_recent_for_test(0);
         assert_eq!(row_count_for(&store), 0);

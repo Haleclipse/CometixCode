@@ -31,7 +31,7 @@
 //! obtained from a hook (`NotificationsWriter` ≙ CC `useNotifications()`
 //! closures, `McpWriter` ≙ CC `updateServer`). statusline/elicitation/
 //! notifications/mcp/config/
-//! footer_selection/repl_bridge_* (flat, CC names)/view_selection_mode/
+//! footer_selection/view_selection_mode/
 //! selected_ip_agent_index/coordinator_task_index/
 //! viewing_agent_task_id/show_teammate_message_preview/team_context/agent/
 //! agent_definitions/
@@ -45,10 +45,6 @@
 //! never wake the AppStore — no FooterIndicators bag);
 //! prefersReducedMotion is read from
 //! `AppState.settings` directly (no DisplaySettings bag);
-//! bridge pill derives from the flat `AppState.repl_bridge_*` fields +
-//! `footer_selection` plus the live-computed BRIDGE_MODE/isBridgeEnabled
-//! gates (`showRemoteCallout` is the top-level `AppState.show_remote_callout`,
-//! CC AppStateStore.ts:157);
 //! teammate tree selection/focus mirrors CC `selectedIPAgentIndex` /
 //! `viewSelectionMode` / `viewingAgentTaskId`; spinner tree visibility is
 //! `expandedView == Teammates`; in-process teammate rows live in

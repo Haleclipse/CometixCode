@@ -38,7 +38,6 @@ pub mod utils;
 
 use crate::commands::Command;
 use crate::components::base_text_input::{BaseInputState, BaseTextInput};
-use crate::components::bridge_dialog::{BridgeDialog, BridgeDialogSnapshot};
 use crate::components::global_search_dialog::GlobalSearchDialog;
 use crate::components::history_search_dialog::HistorySearchDialog;
 use crate::components::model_picker::{ModelPicker, ModelPickerResult};
@@ -629,7 +628,6 @@ pub fn PromptInput<'a>(
     let mut show_history_picker = hooks.use_state(|| false);
     let mut show_background_tasks = hooks.use_state(|| false);
     let mut show_teams_dialog = hooks.use_state(|| false);
-    let mut show_bridge_dialog = hooks.use_state(|| false);
     // PromptInput-scoped footer layout wake (L1, PORTING.md): created before
     // any dialog early-return so the hook slot order is stable; injected via
     // a narrow ContextProvider around the Footer subtree below. Producers
@@ -640,44 +638,6 @@ pub fn PromptInput<'a>(
     // Maps to: CC `useAppState(s => s.footerSelection)` — AppState so pills
     // rendered outside PromptInput can read focus without prop-drilling.
     let raw_footer_selection = use_app_state(&mut hooks, |state| state.footer_selection);
-    // Maps to: CC PromptInput `bridgeFooterVisible` — must match pill visibility
-    // so bridge is not an invisible selection stop.
-    let bridge_footer_visible = use_app_state(&mut hooks, |state| {
-        state.repl_bridge_connected
-            && (state.repl_bridge_explicit || state.repl_bridge_reconnecting)
-    });
-    // CC `AppState.tsx:138-148`: "Do NOT return new objects from the selector
-    // -- Object.is will always see them as changed. … For multiple independent
-    // fields, call the hook multiple times." One selector per field, and the
-    // snapshot is assembled OUTSIDE the selectors so `BridgeDialog` keeps
-    // taking it as a pure input.
-    let bridge_connected = use_app_state(&mut hooks, |state| state.repl_bridge_connected);
-    let bridge_session_active = use_app_state(&mut hooks, |state| state.repl_bridge_session_active);
-    let bridge_reconnecting = use_app_state(&mut hooks, |state| state.repl_bridge_reconnecting);
-    let bridge_connect_url =
-        use_app_state(&mut hooks, |state| state.repl_bridge_connect_url.clone());
-    let bridge_session_url =
-        use_app_state(&mut hooks, |state| state.repl_bridge_session_url.clone());
-    let bridge_error = use_app_state(&mut hooks, |state| state.repl_bridge_error.clone());
-    let bridge_explicit = use_app_state(&mut hooks, |state| state.repl_bridge_explicit);
-    let bridge_environment_id =
-        use_app_state(&mut hooks, |state| state.repl_bridge_environment_id.clone());
-    let bridge_session_id = use_app_state(&mut hooks, |state| state.repl_bridge_session_id.clone());
-    let bridge_verbose = use_app_state(&mut hooks, |state| state.verbose);
-    let bridge_dialog_snapshot = BridgeDialogSnapshot {
-        connected: bridge_connected,
-        session_active: bridge_session_active,
-        reconnecting: bridge_reconnecting,
-        connect_url: bridge_connect_url,
-        session_url: bridge_session_url,
-        error: bridge_error,
-        explicit: bridge_explicit,
-        environment_id: bridge_environment_id,
-        session_id: bridge_session_id,
-        verbose: bridge_verbose,
-        repo_name: None,
-        branch_name: None,
-    };
     let external_editor_hint_signature = hooks.use_state(|| Option::<String>::None);
     let editor_runtime = hooks
         .try_use_context::<ExternalEditorRuntime>()
@@ -808,7 +768,6 @@ pub fn PromptInput<'a>(
         || show_model_picker.get()
         || show_background_tasks.get()
         || show_teams_dialog.get()
-        || show_bridge_dialog.get()
         || is_external_editor_active.get();
     (props.on_modal_overlay_change)(prompt_dialog_active);
 
@@ -1118,7 +1077,6 @@ pub fn PromptInput<'a>(
     let footer_items = [
         has_background_tasks.then_some(FooterItem::Tasks),
         teams_dialog_data.is_some().then_some(FooterItem::Teams),
-        bridge_footer_visible.then_some(FooterItem::Bridge),
     ]
     .into_iter()
     .flatten()
@@ -1151,7 +1109,6 @@ pub fn PromptInput<'a>(
     // hardcoded false, :432-434).
     let tasks_selected = footer_item_selected == Some(FooterItem::Tasks);
     let teams_selected = footer_item_selected == Some(FooterItem::Teams);
-    let bridge_selected = footer_item_selected == Some(FooterItem::Bridge);
     let select_footer_item = {
         let store = app_store.clone();
         move |item: Option<FooterItem>| {
@@ -1239,7 +1196,6 @@ pub fn PromptInput<'a>(
                 match store.as_ref().and_then(|s| s.get().footer_selection) {
                     Some(FooterItem::Tasks) => show_background_tasks.set(true),
                     Some(FooterItem::Teams) => show_teams_dialog.set(true),
-                    Some(FooterItem::Bridge) => show_bridge_dialog.set(true),
                     Some(_) | None => return false,
                 }
                 select(None);
@@ -2295,7 +2251,6 @@ pub fn PromptInput<'a>(
         || show_history_picker.get()
         || show_background_tasks.get()
         || show_teams_dialog.get()
-        || show_bridge_dialog.get()
         || show_model_picker.get()
         || is_external_editor_active.get();
     if input_child_unmounted && text_input.escape.is_pending() {
@@ -2399,51 +2354,6 @@ pub fn PromptInput<'a>(
                                 crate::tasks::in_process_teammate_task::kill_in_process_teammate(&task.task_id);
                             }
                         }
-                },
-            )
-        }
-        .into_any();
-    }
-
-    if show_bridge_dialog.get() {
-        let mut show_for_done = show_bridge_dialog;
-        let bridge_store = app_store.clone();
-        return element! {
-            BridgeDialog(
-                snapshot: bridge_dialog_snapshot,
-                on_done: move |_| show_for_done.set(false),
-                on_disconnect: move |_forget: bool| {
-                    if let Some(store) = bridge_store.as_ref() {
-                        // Maps to: CC bridge.tsx:163-172 handleDisconnect —
-                        // writes exactly enabled/explicit/outbound_only =
-                        // false (config/analytics writes stay deferred
-                        // seams). The extra connected/session_active/
-                        // reconnecting + footer_selection clears are the
-                        // Nyan stand-in for the unported useReplBridge
-                        // transport teardown, which in CC clears those flags
-                        // when the poll loop stops.
-                        // B3 flip-audit: CC bridge.tsx:164-171 —
-                        // `if (!prev.replBridgeEnabled) return prev` before
-                        // the disconnecting spread.
-                        store.set_state(|prev| {
-                            if !prev.repl_bridge_enabled {
-                                return crate::state::store::UpdateDecision::Same(());
-                            }
-                            let mut next = (**prev).clone();
-                            next.repl_bridge_enabled = false;
-                            next.repl_bridge_explicit = false;
-                            next.repl_bridge_outbound_only = false;
-                            next.repl_bridge_connected = false;
-                            next.repl_bridge_session_active = false;
-                            next.repl_bridge_reconnecting = false;
-                            next.footer_selection = None;
-                            crate::state::store::UpdateDecision::Replace {
-                                next: std::sync::Arc::new(next),
-                                result: (),
-                            }
-                        });
-                    }
-                    show_for_done.set(false);
                 },
             )
         }
@@ -2599,20 +2509,6 @@ pub fn PromptInput<'a>(
     // Subscribed read (see the twin in prompt_input_footer.rs): the writer
     // returned by `use_notifications` has no subscription of its own.
     let has_notification = use_app_state(&mut hooks, |state| state.notifications.current.is_some());
-    // Live bridge gates for the height budget — CC PromptInputFooter.tsx:241
-    // feature('BRIDGE_MODE') + :255 isBridgeEnabled(); not AppState. The
-    // entitlement closure is only evaluated past the cheap AppState gate
-    // (auth-IO short-circuit documented at the callee).
-    let bridge_feature_enabled = crate::utils::feature_flags::feature_enabled(
-        crate::utils::feature_flags::FeatureFlag::BridgeMode,
-    );
-    let status_indicator_count = use_app_state(&mut hooks, move |state| {
-        prompt_input_footer::bridge_status_indicator_count_from_app(
-            state,
-            bridge_feature_enabled,
-            crate::bridge::bridge_enabled::is_bridge_enabled,
-        )
-    });
     // Height computers read the scoped wake epoch: memory/sandbox/apiKeyHelper
     // visibility flips bump it, waking PromptInput to recompute height from
     // the live sources (both height sites read the same carrier — see
@@ -2774,7 +2670,6 @@ pub fn PromptInput<'a>(
             props.is_loading,
             props.permission_mode,
             notification_row_count,
-            status_indicator_count,
             prompt_input_footer::footer_has_items(
                 input_mode.get(),
                 show_vim_insert_footer,
@@ -3018,7 +2913,6 @@ pub fn PromptInput<'a>(
                             history_failed_match: history_failed_match,
                             is_loading: props.is_loading,
                             permission_mode: props.permission_mode,
-                            status_indicator_count: status_indicator_count,
                             // Maps to: CC BackgroundTaskStatus.tsx:199-208 —
                             // the pill renders getPillLabel(runningTasks);
                             // count and label come from the same
@@ -3029,7 +2923,6 @@ pub fn PromptInput<'a>(
                             // Maps to: CC PromptInput.tsx:3064-3066.
                             tasks_selected: tasks_selected,
                             teams_selected: teams_selected,
-                            bridge_selected: bridge_selected,
                             vim_mode: show_vim_insert_footer.then(|| "INSERT".to_string()),
                             mode: input_mode.get(),
                             is_pasting: false,

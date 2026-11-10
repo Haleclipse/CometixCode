@@ -39,7 +39,6 @@ pub enum FooterItem {
     Tmux,
     Bagel,
     Teams,
-    Bridge,
     Companion,
 }
 
@@ -51,7 +50,6 @@ impl FooterItem {
             Self::Tmux => "tmux",
             Self::Bagel => "bagel",
             Self::Teams => "teams",
-            Self::Bridge => "bridge",
             Self::Companion => "companion",
         }
     }
@@ -619,47 +617,6 @@ pub struct AppState {
     /// Maps to: CC `AppState.footerSelection` — focused footer pill, or
     /// `None` when the prompt owns focus.
     pub footer_selection: Option<FooterItem>,
-    // -- Always-on bridge (CC AppStateStore.ts:134-155) --
-    // The CC `feature('BRIDGE_MODE')` build gate and `isBridgeEnabled()`
-    // entitlement are NOT AppState (CC evaluates them at the read sites:
-    // PromptInputFooter.tsx:241/:255); Nyan mirrors that with
-    // `FeatureFlag::BridgeMode` + `bridge::bridge_enabled::is_bridge_enabled`.
-    // Truthful seam: no Nyan producer ever sets `repl_bridge_enabled` true
-    // (CC's settings-screen bridge toggle and useReplBridge transport are
-    // unported); only the BridgeDialog disconnect writes `false`, so the
-    // footer pill stays unreachable in production even when both live gates
-    // pass. `repl_bridge_outbound_only` / `repl_bridge_initial_name` are
-    // additionally read-never here (CC readers live in the unported bridge
-    // runtime); the URL/id/error fields are write-never but read by
-    // BridgeDialogSnapshot.
-    /// Maps to: CC AppStateStore.ts:134 `replBridgeEnabled`.
-    pub repl_bridge_enabled: bool,
-    /// Maps to: CC AppStateStore.ts:136 `replBridgeExplicit`.
-    pub repl_bridge_explicit: bool,
-    /// Maps to: CC AppStateStore.ts:138 `replBridgeOutboundOnly`.
-    pub repl_bridge_outbound_only: bool,
-    /// Maps to: CC AppStateStore.ts:140 `replBridgeConnected`.
-    pub repl_bridge_connected: bool,
-    /// Maps to: CC AppStateStore.ts:142 `replBridgeSessionActive`.
-    pub repl_bridge_session_active: bool,
-    /// Maps to: CC AppStateStore.ts:144 `replBridgeReconnecting`.
-    pub repl_bridge_reconnecting: bool,
-    /// Maps to: CC AppStateStore.ts:146 `replBridgeConnectUrl`.
-    pub repl_bridge_connect_url: Option<String>,
-    /// Maps to: CC AppStateStore.ts:148 `replBridgeSessionUrl`.
-    pub repl_bridge_session_url: Option<String>,
-    /// Maps to: CC AppStateStore.ts:150 `replBridgeEnvironmentId`.
-    pub repl_bridge_environment_id: Option<String>,
-    /// Maps to: CC AppStateStore.ts:151 `replBridgeSessionId`.
-    pub repl_bridge_session_id: Option<String>,
-    /// Maps to: CC AppStateStore.ts:153 `replBridgeError`.
-    pub repl_bridge_error: Option<String>,
-    /// Maps to: CC AppStateStore.ts:155 `replBridgeInitialName`.
-    pub repl_bridge_initial_name: Option<String>,
-    /// Maps to: CC AppStateStore.ts:157 `showRemoteCallout` — top-level
-    /// sibling of the replBridge* fields, not nested under them. Seeded from
-    /// the startup RemoteCallout snapshot; dismissed by the callout dialog.
-    pub show_remote_callout: bool,
     /// Maps to: CC `AppState.standaloneAgentContext` — non-swarm custom
     /// name/color for the swarm banner (resume / agent metadata).
     /// Value retention (no Arc): two-field small object; all write sites
@@ -781,21 +738,6 @@ impl Default for AppState {
             prompt_suggestion_enabled: false,
             prompt_suggestion: PromptSuggestionState::default(),
             footer_selection: None,
-            // Maps to: CC AppStateStore.ts:487-499 replBridge* /
-            // showRemoteCallout defaults (all false / undefined).
-            repl_bridge_enabled: false,
-            repl_bridge_explicit: false,
-            repl_bridge_outbound_only: false,
-            repl_bridge_connected: false,
-            repl_bridge_session_active: false,
-            repl_bridge_reconnecting: false,
-            repl_bridge_connect_url: None,
-            repl_bridge_session_url: None,
-            repl_bridge_environment_id: None,
-            repl_bridge_session_id: None,
-            repl_bridge_error: None,
-            repl_bridge_initial_name: None,
-            show_remote_callout: false,
             standalone_agent_context: None,
             foregrounded_task_id: None,
             inbox: Arc::new(crate::hooks::use_inbox_poller::InboxState::default()),

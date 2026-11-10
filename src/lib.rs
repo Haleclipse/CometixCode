@@ -10,7 +10,6 @@
 #![allow(special_module_name)] // `mod main` ≙ CC `main.tsx` at `src/main.rs`
 
 pub mod bootstrap;
-pub mod bridge;
 pub mod buddy;
 pub mod cli;
 pub mod commands;

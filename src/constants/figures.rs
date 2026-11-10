@@ -1073,9 +1073,6 @@ pub const REFERENCE_MARK: &str = "※";
 pub const FLAG_ICON: &str = "⚑";
 pub const BLOCKQUOTE_BAR: &str = "▎";
 pub const HEAVY_HORIZONTAL: &str = "━";
-pub const BRIDGE_READY_INDICATOR: &str = "·✔︎·";
-pub const BRIDGE_FAILED_INDICATOR: &str = "×";
-pub const BRIDGE_SPINNER_FRAMES: &[&str] = &["·|·", "·/·", "·—·", "·\\·"];
 
 // Backward-compatible Nyan aliases. Prefer `figures().pointer`, etc. in new code.
 pub const PROMPT_CHAR: &str = ">";

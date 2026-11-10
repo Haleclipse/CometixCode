@@ -109,8 +109,6 @@ pub const GLOBAL_CONFIG_KEYS: &[&str] = &[
     "copyOnSelect",
     "permissionExplainerEnabled",
     "prStatusFooterEnabled",
-    "remoteControlAtStartup",
-    "remoteDialogSeen",
 ];
 
 pub const PROJECT_CONFIG_KEYS: &[&str] = &[
@@ -262,7 +260,6 @@ pub struct ProjectConfig {
 
     // ── Worktree ──
     pub active_worktree_session: Option<crate::utils::worktree::WorktreeSession>,
-    pub remote_control_spawn_mode: Option<String>,
 
     /// Preserve Claude Code project config fields that this Rust port has not
     /// modeled yet. The TypeScript implementation keeps arbitrary object keys
@@ -407,8 +404,6 @@ pub struct GlobalConfig {
     pub ide_hint_shown_count: Option<u32>,
     pub auto_install_ide_extension: Option<bool>,
     pub todo_feature_enabled: Option<bool>,
-    /// Maps to CC `utils/config.ts` `GlobalConfig.remoteDialogSeen`.
-    pub remote_dialog_seen: Option<bool>,
 
     /// Keep the source JSON object until the MCP owner applies its schema.
     /// Unknown fields and explicit nulls must survive config caching/saving.
@@ -466,10 +461,6 @@ pub struct GlobalConfig {
     pub has_used_backslash_return: Option<bool>,
     /// Maps to CC `utils/config.ts` `GlobalConfig.optionAsMetaKeyInstalled`.
     pub option_as_meta_key_installed: Option<bool>,
-
-    // ── RC (Remote Control) ──
-    pub remote_control: Option<serde_json::Value>,
-    pub remote_control_at_startup: Option<bool>,
 
     /// Preserve Claude Code global config fields that are not yet strongly
     /// modeled by nyan. This mirrors the TS config object semantics and
@@ -582,7 +573,6 @@ impl Default for GlobalConfig {
             ide_hint_shown_count: None,
             auto_install_ide_extension: None,
             todo_feature_enabled: None,
-            remote_dialog_seen: None,
             mcp_servers: None,
             projects: HashMap::new(),
             user_id: None,
@@ -615,8 +605,6 @@ impl Default for GlobalConfig {
             shift_enter_key_binding_installed: None,
             has_used_backslash_return: None,
             option_as_meta_key_installed: None,
-            remote_control: None,
-            remote_control_at_startup: None,
             other_global_fields: HashMap::new(),
         }
     }
@@ -1509,12 +1497,6 @@ pub fn is_auto_updater_disabled() -> bool {
     get_auto_updater_disabled_reason().is_some()
 }
 
-pub fn get_remote_control_at_startup() -> bool {
-    load_global_config()
-        .remote_control_at_startup
-        .unwrap_or(false)
-}
-
 pub fn find_most_recent_backup() -> Option<PathBuf> {
     let backup_dir = get_config_backup_dir();
     let global_config_file_name = crate::utils::env::get_global_state_file()
@@ -1800,15 +1782,18 @@ mod tests {
     }
 
     #[test]
-    fn global_config_deserializes_official_startup_dialog_tracking_fields() {
-        let config: GlobalConfig = serde_json::from_str(
-            r#"{
-                "remoteDialogSeen": true
-            }"#,
-        )
-        .expect("global config should deserialize startup dialog tracking fields");
-
-        assert_eq!(config.remote_dialog_seen, Some(true));
+    fn cloud_remote_config_is_not_in_the_typed_defaults_or_config_keys() {
+        let global = serde_json::to_value(GlobalConfig::default()).unwrap();
+        for key in [
+            "remoteControl",
+            "remoteControlAtStartup",
+            "remoteDialogSeen",
+        ] {
+            assert!(global.get(key).is_none(), "{key}");
+            assert!(!GLOBAL_CONFIG_KEYS.contains(&key), "{key}");
+        }
+        let project = serde_json::to_value(ProjectConfig::default()).unwrap();
+        assert!(project.get("remoteControlSpawnMode").is_none());
     }
 
     #[test]

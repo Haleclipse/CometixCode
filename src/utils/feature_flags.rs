@@ -87,8 +87,6 @@ pub enum FeatureFlag {
     CompactLinePrefixKillswitch,
     /// Maps to CC GrowthBook `tengu_skill_dynamic_discovery`.
     DynamicSkillDiscovery,
-    /// Maps to CC `feature('BRIDGE_MODE')` build feature.
-    BridgeMode,
     /// Maps to CC build feature `MCP_SKILLS` (enabled in CC 2.1.88).
     McpSkills,
     /// Maps to CC build feature `EXPERIMENTAL_SKILL_SEARCH`.
@@ -383,14 +381,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         note: "Read-time nested .nyan/skills discovery is locally available; remote cohort delivery is represented by this explicit source-controlled seam.",
     },
     FeatureSwitch {
-        flag: FeatureFlag::BridgeMode,
-        cc_growthbook_name: "BRIDGE_MODE",
-        // CC ships BRIDGE_MODE on in production builds (scripts/build.ts:41
-        // "Generally available (ON in production)").
-        enabled: true,
-        note: "Remote Control build gate mirrors CC production (on); pill/dialog reachability still requires the isBridgeEnabled entitlement and a replBridgeEnabled producer (absent in Nyan — no bridge transport or settings-screen toggle).",
-    },
-    FeatureSwitch {
         flag: FeatureFlag::McpSkills,
         cc_growthbook_name: "MCP_SKILLS",
         enabled: true,
@@ -641,7 +631,6 @@ mod tests {
             "COORDINATOR_MODE",
             "PROACTIVE",
             "KAIROS",
-            "BRIDGE_MODE",
             "MCP_SKILLS",
             "EXPERIMENTAL_SKILL_SEARCH",
             "AGENT_MEMORY_SNAPSHOT",

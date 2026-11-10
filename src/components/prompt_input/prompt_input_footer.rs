@@ -18,36 +18,22 @@ use crate::hooks::use_credential_status::CredentialStatus;
 use crate::state::app_state::use_app_state;
 use crate::types::permissions::PermissionMode;
 use crate::utils::permissions::permission_mode::is_default_mode;
-use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
-/// Shared segmented footer-row payload (Notifications inline rows + Bridge).
+/// Segmented notification footer-row payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PromptFooterIndicator {
     pub text: String,
     pub segments: Vec<NotificationSegment>,
-    /// Official footer pills can use inverse styling when selected.
-    pub inverse: bool,
 }
 
 impl PromptFooterIndicator {
     pub(crate) fn from_segments(segments: Vec<NotificationSegment>) -> Self {
-        Self::from_segments_with_inverse(segments, false)
-    }
-
-    pub(crate) fn from_segments_with_inverse(
-        segments: Vec<NotificationSegment>,
-        inverse: bool,
-    ) -> Self {
         let text = segments
             .iter()
             .map(|segment| segment.text.as_str())
             .collect();
-        Self {
-            text,
-            segments,
-            inverse,
-        }
+        Self { text, segments }
     }
 
     pub(crate) fn dim(text: impl Into<String>) -> Self {
@@ -87,21 +73,16 @@ pub struct FooterProps {
     pub history_failed_match: bool,
     pub is_loading: bool,
     pub permission_mode: PermissionMode,
-    pub status_indicator_count: usize,
     pub background_task_count: usize,
     /// Maps to: CC `BackgroundTaskStatus.tsx:199-208` — the pill text is
     /// `getPillLabel(runningTasks)` (`tasks/pillLabel.ts`), computed by the
     /// owner from the same set `background_task_count` gates on.
     pub background_tasks_label: String,
     pub teammate_count: usize,
-    /// Maps to: CC `PromptInputFooter.tsx:58-60` `tasksSelected` /
-    /// `teamsSelected` / `bridgeSelected`, which PromptInput derives from the
-    /// effective `footerItemSelected` (`PromptInput.tsx:663-682`), so a pill
-    /// that stopped rendering is never drawn selected. `tmuxSelected` is
-    /// ant-only (Tungsten) and has no footer item here.
+    /// Effective footer selection from PromptInput: a pill that stopped
+    /// rendering is never drawn selected.
     pub tasks_selected: bool,
     pub teams_selected: bool,
-    pub bridge_selected: bool,
     pub vim_mode: Option<String>,
     pub mode: PromptInputMode,
     pub is_pasting: bool,
@@ -133,13 +114,11 @@ pub fn footer_row_should_render(
     _is_loading: bool,
     permission_mode: PermissionMode,
     notification_row_count: usize,
-    status_indicator_count: usize,
     has_footer_items: bool,
 ) -> bool {
     exit_hint_visible
         || is_searching
         || notification_row_count > 0
-        || status_indicator_count > 0
         || !is_default_mode(permission_mode)
         || !suppress_hint
         || has_footer_items
@@ -152,7 +131,6 @@ fn footer_body_height_for(
     is_loading: bool,
     permission_mode: PermissionMode,
     notification_row_count: usize,
-    status_indicator_count: usize,
     has_footer_items: bool,
 ) -> usize {
     if footer_row_should_render(
@@ -162,10 +140,9 @@ fn footer_body_height_for(
         is_loading,
         permission_mode,
         notification_row_count,
-        status_indicator_count,
         has_footer_items,
     ) {
-        (notification_row_count + status_indicator_count).max(1)
+        notification_row_count.max(1)
     } else {
         0
     }
@@ -179,7 +156,6 @@ pub fn footer_height_for(
     is_loading: bool,
     permission_mode: PermissionMode,
     notification_row_count: usize,
-    status_indicator_count: usize,
     has_footer_items: bool,
 ) -> usize {
     // Height MUST track the same condition as the mount
@@ -202,7 +178,6 @@ pub fn footer_height_for(
         is_loading,
         permission_mode,
         notification_row_count,
-        status_indicator_count,
         has_footer_items,
     )
 }
@@ -281,11 +256,10 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
         props.is_loading,
         props.permission_mode,
         notification_row_count,
-        props.status_indicator_count,
         has_footer_items,
     );
     let has_footer_row = footer_body_height > 0;
-    let has_right_side = notification_row_count > 0 || props.status_indicator_count > 0;
+    let has_right_side = notification_row_count > 0;
 
     if !has_status_line && !has_footer_row {
         return element! { View(width: 0u32, height: 0u32) }.into_any();
@@ -366,11 +340,6 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                                     } else {
                                         None
                                     })
-                                    #(if props.status_indicator_count > 0 {
-                                        Some(element! { BridgeStatusIndicator(bridge_selected: props.bridge_selected) })
-                                    } else {
-                                        None
-                                    })
                                 }
                             })
                         } else {
@@ -381,174 +350,6 @@ pub fn Footer(props: &FooterProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
             } else {
                 None
             })
-        }
-    }
-    .into_any()
-}
-
-/// Maps to: CC `PromptInputFooter.tsx` `BridgeStatusIndicator`. Reads the
-/// flat `AppState.repl_bridge_*` fields and delegates the status label/color
-/// to the canonical `bridge_status_util::get_bridge_status` port (CC calls
-/// `bridgeStatusUtil.getBridgeStatus`, PromptInputFooter.tsx:257-262);
-/// `selected` is the component's `bridgeSelected` prop.
-///
-/// The gates are explicit params because they are NOT AppState in CC either:
-/// `feature_enabled` mirrors PromptInputFooter.tsx:241 `feature('BRIDGE_MODE')`
-/// and `entitlement_enabled` mirrors :255 `isBridgeEnabled()` — both evaluated
-/// live at the call sites (`FeatureFlag::BridgeMode` /
-/// `bridge::bridge_enabled::is_bridge_enabled`).
-pub fn bridge_status_indicator(
-    state: &crate::state::app_state_store::AppState,
-    feature_enabled: bool,
-    entitlement_enabled: bool,
-    selected: bool,
-) -> Option<PromptFooterIndicator> {
-    if !feature_enabled || !entitlement_enabled || !state.repl_bridge_enabled {
-        return None;
-    }
-
-    // Maps to: CC PromptInputFooter.tsx:257-262 — the footer calls the
-    // canonical `bridgeStatusUtil.getBridgeStatus` with `error: undefined`
-    // (failed state is surfaced via notification, not a footer pill), so the
-    // failed branch is unreachable here.
-    let status = crate::bridge::bridge_status_util::get_bridge_status(
-        None,
-        state.repl_bridge_connected,
-        state.repl_bridge_session_active,
-        state.repl_bridge_reconnecting,
-    );
-
-    // Maps to: CC PromptInputFooter.tsx:265-267 — implicit (config-driven)
-    // remote shows only the reconnecting state.
-    if !state.repl_bridge_explicit && status.label != "Remote Control reconnecting" {
-        return None;
-    }
-
-    let mut segments =
-        vec![NotificationSegment::text(status.label).with_color(bridge_status_color(status.color))];
-    if selected {
-        segments.push(NotificationSegment::text(" · Enter to view").with_dim(true));
-    }
-    Some(PromptFooterIndicator::from_segments_with_inverse(
-        segments, selected,
-    ))
-}
-
-/// Consumer-side mapping from the canonical bridge status color
-/// (`bridge/bridge_status_util.rs`, CC `bridgeStatusUtil.ts` color keys) to
-/// the footer's segment color vocabulary.
-fn bridge_status_color(
-    color: crate::bridge::bridge_status_util::BridgeStatusColor,
-) -> NotificationColor {
-    match color {
-        crate::bridge::bridge_status_util::BridgeStatusColor::Error => NotificationColor::Error,
-        crate::bridge::bridge_status_util::BridgeStatusColor::Warning => NotificationColor::Warning,
-        crate::bridge::bridge_status_util::BridgeStatusColor::Success => NotificationColor::Success,
-    }
-}
-
-/// Bridge-only right-side stack count (CC `BridgeStatusIndicator`). The
-/// feature gate is a cheap constant; the entitlement is lazy.
-///
-/// Documented deviation from CC's operand order: CC evaluates
-/// `!isBridgeEnabled() || !enabled` (PromptInputFooter.tsx:255) with an
-/// in-memory-cached `isBridgeEnabled`. The Rust entitlement read performs
-/// real config/token-file/keychain IO per call, so the cheap
-/// `repl_bridge_enabled` AppState gate short-circuits first — the conjunction
-/// result is identical, and hot render frames stay free of auth IO (pinned by
-/// `logo_header_hot_path_avoids_uncached_auth_io...` in screens/repl.rs).
-pub fn bridge_status_indicator_count_from_app(
-    state: &crate::state::app_state_store::AppState,
-    feature_enabled: bool,
-    entitlement_enabled: impl FnOnce() -> bool,
-) -> usize {
-    if !feature_enabled || !state.repl_bridge_enabled {
-        return 0;
-    }
-    // Selection only styles the pill (CC :270-276); it never decides whether
-    // one renders.
-    usize::from(
-        bridge_status_indicator(state, feature_enabled, entitlement_enabled(), false).is_some(),
-    )
-}
-
-fn indicator_color(color: Option<NotificationColor>, theme: &Theme) -> Color {
-    match color {
-        Some(NotificationColor::Error) => theme.error,
-        Some(NotificationColor::Warning) => theme.warning,
-        Some(NotificationColor::Success) => theme.success,
-        Some(NotificationColor::Claude) => theme.claude,
-        Some(NotificationColor::Text) => theme.text,
-        Some(NotificationColor::Ide) => theme.ide,
-        Some(NotificationColor::Suggestion) => theme.suggestion,
-        None => theme.inactive,
-    }
-}
-
-/// Maps to: CC `PromptInputFooter.tsx:234-236` `BridgeStatusProps`.
-#[derive(Default, Props)]
-pub struct BridgeStatusIndicatorProps {
-    pub bridge_selected: bool,
-}
-
-/// Maps to: CC `PromptInputFooter.tsx:238-279` `BridgeStatusIndicator`.
-#[component]
-pub fn BridgeStatusIndicator(
-    props: &BridgeStatusIndicatorProps,
-    mut hooks: Hooks,
-) -> impl Into<AnyElement<'static>> {
-    // Maps to: CC PromptInputFooter.tsx:241 `if (!feature('BRIDGE_MODE'))
-    // return null` — build gate checked before any state read.
-    if !crate::utils::feature_flags::feature_enabled(
-        crate::utils::feature_flags::FeatureFlag::BridgeMode,
-    ) {
-        return element! { View(width: 0u32, height: 0u32) }.into_any();
-    }
-    let theme = hooks.use_context::<Theme>();
-    let bridge_selected = props.bridge_selected;
-    let indicator = use_app_state(&mut hooks, move |state| {
-        // Cheap AppState gate first, then the CC PromptInputFooter.tsx:255
-        // `isBridgeEnabled()` entitlement. Same documented operand-order
-        // deviation as `bridge_status_indicator_count_from_app`: the Rust
-        // entitlement read does real config/keychain IO, and `&&` keeps the
-        // result identical.
-        if !state.repl_bridge_enabled {
-            return None;
-        }
-        bridge_status_indicator(
-            state,
-            true,
-            crate::bridge::bridge_enabled::is_bridge_enabled(),
-            bridge_selected,
-        )
-    });
-
-    let Some(indicator) = indicator else {
-        return element! { View(width: 0u32, height: 0u32) }.into_any();
-    };
-
-    element! {
-        View(flex_direction: FlexDirection::Row, height: 1u32, overflow: Overflow::Hidden) {
-            #(indicator.segments.iter().map(|segment| {
-                // Maps to: CC PromptInputFooter.tsx:270-277 — the selected
-                // pill renders `color={bridgeSelected ? 'background' :
-                // status.color}` with `inverse`; the nested dim suffix sits
-                // inside the same background-keyed inverse Text.
-                let segment_color = if indicator.inverse {
-                    theme.background
-                } else {
-                    indicator_color(segment.color, &theme)
-                };
-                element! {
-                    Text(
-                        content: segment.text.clone(),
-                        color: segment_color,
-                        dim: segment.dim,
-                        invert: indicator.inverse,
-                        wrap: TextWrap::NoWrap,
-                    )
-                }
-            }))
         }
     }
     .into_any()
@@ -572,7 +373,6 @@ mod tests {
                 false,
                 PermissionMode::Default,
                 0,
-                0,
                 false,
             ),
             1,
@@ -587,7 +387,6 @@ mod tests {
                 true,
                 PermissionMode::Default,
                 1,
-                0,
                 false,
             ),
             1,
@@ -602,7 +401,6 @@ mod tests {
                 false,
                 PermissionMode::Plan,
                 0,
-                0,
                 false,
             ),
             1,
@@ -616,12 +414,28 @@ mod tests {
                 true,
                 false,
                 PermissionMode::Default,
-                0,
                 2,
                 false,
             ),
             2,
-            "right-side status indicators keep their official stacked footer rows"
+            "right-side notifications keep their stacked footer rows"
+        );
+    }
+
+    #[test]
+    fn footer_height_does_not_reserve_an_empty_remote_status_row() {
+        assert_eq!(
+            footer_height_for(
+                false,
+                false,
+                false,
+                true,
+                false,
+                PermissionMode::Default,
+                0,
+                false,
+            ),
+            0,
         );
     }
 
@@ -640,7 +454,6 @@ mod tests {
                 false,
                 PermissionMode::Default,
                 0,
-                0,
                 true,
             ),
             2,
@@ -654,7 +467,6 @@ mod tests {
                 true,
                 false,
                 PermissionMode::Default,
-                0,
                 0,
                 true,
             ),
@@ -944,102 +756,5 @@ mod tests {
         let highlight = Some(theme::current().suggestion);
         assert_eq!(tasks_pill_background(Some(FooterItem::Tasks), false), None);
         assert_eq!(tasks_pill_background(None, true), highlight);
-    }
-
-    /// Flat AppState fixture for bridge visibility tests (CC AppStateStore.ts
-    /// replBridge* fields). Truthful seam: production has no producer that
-    /// sets `repl_bridge_enabled` true (CC settings-screen toggle and
-    /// useReplBridge transport are unported), so these fixture states are
-    /// test-only reachable even though the two gates are now live-computed
-    /// (BridgeMode build gate is on; the isBridgeEnabled entitlement can be
-    /// genuinely true for a claude.ai subscriber with a cached
-    /// `tengu_ccr_bridge` GrowthBook value).
-    fn bridge_fixture(
-        enabled: bool,
-        explicit: bool,
-        connected: bool,
-        session_active: bool,
-        reconnecting: bool,
-    ) -> crate::state::app_state_store::AppState {
-        let mut state = crate::state::app_state_store::AppState::default();
-        state.repl_bridge_enabled = enabled;
-        state.repl_bridge_explicit = explicit;
-        state.repl_bridge_connected = connected;
-        state.repl_bridge_session_active = session_active;
-        state.repl_bridge_reconnecting = reconnecting;
-        state
-    }
-
-    #[test]
-    fn bridge_status_indicator_matches_official_footer_visibility_and_copy() {
-        // Gate args mirror PromptInputFooter.tsx:241 feature('BRIDGE_MODE')
-        // and :255 isBridgeEnabled().
-        let explicit_connected = bridge_fixture(true, true, true, false, false);
-        assert!(bridge_status_indicator(&explicit_connected, false, true, false).is_none());
-        assert!(bridge_status_indicator(&explicit_connected, true, false, false).is_none());
-        assert!(
-            bridge_status_indicator(
-                &bridge_fixture(false, true, true, false, false),
-                true,
-                true,
-                false,
-            )
-            .is_none()
-        );
-        assert!(
-            bridge_status_indicator(
-                &bridge_fixture(true, false, true, false, false),
-                true,
-                true,
-                false,
-            )
-            .is_none()
-        );
-
-        let active = bridge_status_indicator(
-            &bridge_fixture(true, true, false, true, false),
-            true,
-            true,
-            false,
-        )
-        .unwrap();
-        assert_eq!(active.text, "Remote Control active");
-        assert_eq!(active.segments[0].color, Some(NotificationColor::Success));
-        assert!(!active.inverse);
-
-        let connecting = bridge_status_indicator(
-            &bridge_fixture(true, true, false, false, false),
-            true,
-            true,
-            false,
-        )
-        .unwrap();
-        assert_eq!(connecting.text, "Remote Control connecting…");
-        assert_eq!(
-            connecting.segments[0].color,
-            Some(NotificationColor::Warning)
-        );
-    }
-
-    #[test]
-    fn bridge_status_indicator_allows_implicit_reconnecting_and_selected_suffix() {
-        let reconnecting = bridge_status_indicator(
-            &bridge_fixture(true, false, false, false, true),
-            true,
-            true,
-            true,
-        )
-        .unwrap();
-
-        assert_eq!(
-            reconnecting.text,
-            "Remote Control reconnecting · Enter to view"
-        );
-        assert_eq!(
-            reconnecting.segments[0].color,
-            Some(NotificationColor::Warning)
-        );
-        assert!(reconnecting.segments[1].dim);
-        assert!(reconnecting.inverse);
     }
 }

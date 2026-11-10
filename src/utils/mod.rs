@@ -14,7 +14,6 @@ pub mod auth;
 pub mod auth_file_descriptor;
 pub mod auto_mode_denials;
 pub mod auto_updater;
-pub mod background;
 pub mod bash;
 pub mod browser;
 pub mod buffered_writer;
@@ -178,7 +177,6 @@ pub mod team_memory_ops;
 pub mod teammate;
 pub mod teammate_context;
 pub mod teammate_mailbox;
-pub mod teleport;
 pub mod terminal;
 pub mod terminal_notification;
 #[cfg(test)]

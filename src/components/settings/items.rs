@@ -444,24 +444,6 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
             search_text: "teammate default model",
             visible: false, // condition: isAgentSwarmsEnabled()
         },
-        // condition: BRIDGE_MODE && isBridgeEnabled()
-        SettingItem {
-            id: "remoteControlAtStartup",
-            label: "Enable Remote Control for all sessions",
-            value: {
-                let options = vec![
-                    "default".to_string(),
-                    "true".to_string(),
-                    "false".to_string(),
-                ];
-                SettingValue::Enum {
-                    options,
-                    current: 0,
-                }
-            },
-            search_text: "remote control bridge session",
-            visible: false, // feature-gated (BRIDGE_MODE)
-        },
         // condition: hasExternalClaudeMdIncludes()
         SettingItem {
             id: "showExternalIncludesDialog",
@@ -488,6 +470,15 @@ pub fn default_items() -> Vec<SettingItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_control_setting_is_not_declared() {
+        assert!(
+            default_items()
+                .iter()
+                .all(|item| item.id != "remoteControlAtStartup")
+        );
+    }
 
     #[test]
     fn notification_channel_display_matches_official_config_values() {
