@@ -567,7 +567,7 @@ pub fn check_path_safety_for_auto_edit(
     {
         return PathSafetyForAutoEdit::Unsafe {
             message: format!(
-                "Claude requested permissions to write to {path}, which contains a suspicious Windows path pattern that requires manual approval."
+                "nyan requested permissions to write to {path}, which contains a suspicious Windows path pattern that requires manual approval."
             ),
             classifier_approvable: false,
         };
@@ -578,7 +578,7 @@ pub fn check_path_safety_for_auto_edit(
     {
         return PathSafetyForAutoEdit::Unsafe {
             message: format!(
-                "Claude requested permissions to write to {path}, but you haven't granted it yet."
+                "nyan requested permissions to write to {path}, but you haven't granted it yet."
             ),
             classifier_approvable: true,
         };
@@ -589,7 +589,7 @@ pub fn check_path_safety_for_auto_edit(
     {
         return PathSafetyForAutoEdit::Unsafe {
             message: format!(
-                "Claude requested permissions to edit {path} which is a sensitive file."
+                "nyan requested permissions to edit {path} which is a sensitive file."
             ),
             classifier_approvable: true,
         };
@@ -1149,7 +1149,7 @@ pub fn check_read_permission_for_tool(
         if contains_vulnerable_unc_path(candidate) {
             return PermissionResult::Ask {
                 message: format!(
-                    "Claude requested permissions to read from {expanded_path}, which appears to be a UNC path that could access network resources."
+                    "nyan requested permissions to read from {expanded_path}, which appears to be a UNC path that could access network resources."
                 ),
                 updated_input: None,
                 suggestions: Vec::new(),
@@ -1168,7 +1168,7 @@ pub fn check_read_permission_for_tool(
         if has_suspicious_windows_path_pattern(candidate) {
             return PermissionResult::Ask {
                 message: format!(
-                    "Claude requested permissions to read from {expanded_path}, which contains a suspicious Windows path pattern that requires manual approval."
+                    "nyan requested permissions to read from {expanded_path}, which contains a suspicious Windows path pattern that requires manual approval."
                 ),
                 updated_input: None,
                 suggestions: Vec::new(),
@@ -1209,7 +1209,7 @@ pub fn check_read_permission_for_tool(
         ) {
             return PermissionResult::Ask {
                 message: format!(
-                    "Claude requested permissions to read from {expanded_path}, but you haven't granted it yet."
+                    "nyan requested permissions to read from {expanded_path}, but you haven't granted it yet."
                 ),
                 updated_input: None,
                 suggestions: Vec::new(),
@@ -1271,7 +1271,7 @@ pub fn check_read_permission_for_tool(
 
     PermissionResult::Ask {
         message: format!(
-            "Claude requested permissions to read from {expanded_path}, but you haven't granted it yet."
+            "nyan requested permissions to read from {expanded_path}, but you haven't granted it yet."
         ),
         updated_input: None,
         suggestions: generate_suggestions(
@@ -1400,7 +1400,7 @@ pub fn check_write_permission_for_tool(
         ) {
             return PermissionResult::Ask {
                 message: format!(
-                    "Claude requested permissions to write to {path}, but you haven't granted it yet."
+                    "nyan requested permissions to write to {path}, but you haven't granted it yet."
                 ),
                 updated_input: None,
                 decision_reason: Some(PermissionDecisionReason::Rule { rule }),
@@ -1445,7 +1445,7 @@ pub fn check_write_permission_for_tool(
 
     PermissionResult::Ask {
         message: format!(
-            "Claude requested permissions to write to {path}, but you haven't granted it yet."
+            "nyan requested permissions to write to {path}, but you haven't granted it yet."
         ),
         updated_input: None,
         suggestions: generate_suggestions(

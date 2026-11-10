@@ -194,7 +194,7 @@ pub fn MemoryCommandPanel<'a>(
                 )
                 View(margin_top: 1u32, flex_direction: FlexDirection::Row) {
                     Text(content: "Learn more: ".to_string(), dim: true, wrap: TextWrap::NoWrap)
-                    Link(url: "https://code.claude.com/docs/en/memory".to_string())
+                    Link(url: format!("{}/agents-md.md", crate::constants::product::DOCS_URL))
                 }
             }
         }
@@ -230,7 +230,9 @@ mod tests {
         assert!(text.contains("Auto-memory: off"), "canvas=\n{text}");
         assert!(text.contains("User memory"), "canvas=\n{text}");
         assert!(
-            text.contains("Learn more: https://code.claude.com/docs/en/memory"),
+            text.contains(
+                "Learn more: https://github.com/blxzer77/nyan/blob/master/docs/nyan/agents-md.md"
+            ),
             "canvas=\n{text}"
         );
     }

@@ -150,7 +150,7 @@ pub fn powershell_tool_use_options(
         options.push(PowerShellPermissionOption::input(
             "Yes",
             PowerShellToolUseOptionValue::Yes,
-            "and tell Claude what to do next",
+            "and tell nyan what to do next",
             None,
             false,
             None,
@@ -192,7 +192,7 @@ pub fn powershell_tool_use_options(
         options.push(PowerShellPermissionOption::input(
             "No",
             PowerShellToolUseOptionValue::No,
-            "and tell Claude what to do differently",
+            "and tell nyan what to do differently",
             None,
             false,
             None,
@@ -336,7 +336,7 @@ mod tests {
         assert_eq!(
             options[0].kind,
             PowerShellPermissionOptionKind::Input {
-                placeholder: "and tell Claude what to do next".to_string(),
+                placeholder: "and tell nyan what to do next".to_string(),
                 initial_value: None,
                 show_label_with_value: false,
                 label_value_separator: None,
@@ -345,7 +345,7 @@ mod tests {
         assert_eq!(
             options.last().expect("no option").kind,
             PowerShellPermissionOptionKind::Input {
-                placeholder: "and tell Claude what to do differently".to_string(),
+                placeholder: "and tell nyan what to do differently".to_string(),
                 initial_value: None,
                 show_label_with_value: false,
                 label_value_separator: None,

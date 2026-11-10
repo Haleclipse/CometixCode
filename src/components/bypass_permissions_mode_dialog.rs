@@ -128,7 +128,6 @@ pub fn BypassPermissionsModeDialog<'a>(
                     content: "By proceeding, you accept all responsibility for actions taken while\nrunning in Bypass Permissions mode.".to_string(),
                     wrap: TextWrap::Wrap,
                 )
-                Link(url: "https://code.claude.com/docs/en/security".to_string())
             }
             Select(
                 options: options,
@@ -184,10 +183,6 @@ mod tests {
         assert!(text.contains("sandboxed container/VM"), "canvas=\n{text}");
         assert!(
             text.contains("accept all responsibility"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("https://code.claude.com/docs/en/security"),
             "canvas=\n{text}"
         );
         assert!(text.contains("No, exit"), "canvas=\n{text}");

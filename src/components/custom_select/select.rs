@@ -827,7 +827,7 @@ mod tests {
                     options: vec![
                         SelectOptionData {
                             label: "Default".to_string(),
-                            description: Some("Claude completes coding tasks efficiently".to_string()),
+                            description: Some("nyan completes coding tasks efficiently".to_string()),
                             dim_description: true,
                             value: "default".to_string(),
                             disabled: false,
@@ -835,7 +835,7 @@ mod tests {
                         },
                         SelectOptionData {
                             label: "Learning".to_string(),
-                            description: Some("Claude asks for hands-on practice".to_string()),
+                            description: Some("nyan asks for hands-on practice".to_string()),
                             dim_description: true,
                             value: "Learning".to_string(),
                             disabled: false,
@@ -859,7 +859,7 @@ mod tests {
         let pointer = canvas
             .cell(pointer_column, pointer_row)
             .expect("pointer cell");
-        let (desc_column, desc_row) = find_text_cell(&canvas, "Claude completes")
+        let (desc_column, desc_row) = find_text_cell(&canvas, "nyan completes")
             .expect("description should render in the same two-column row");
         let desc_style = canvas
             .cell(desc_column, desc_row)
@@ -867,7 +867,7 @@ mod tests {
             .expect("description style");
 
         assert!(
-            first_row.contains("Default") && first_row.contains("Claude completes"),
+            first_row.contains("Default") && first_row.contains("nyan completes"),
             "compact Select descriptions should render in the official two-column row; canvas=\n{text}"
         );
         assert!(

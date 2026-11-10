@@ -43,7 +43,7 @@ pub fn get_steps_for_path(cwd: &Path) -> Vec<Step> {
     vec![
         Step {
             key: "workspace".to_string(),
-            text: "Ask Claude to create a new app or clone a repository".to_string(),
+            text: "Ask nyan to create a new app or clone a repository".to_string(),
             is_complete: false,
             is_completable: true,
             is_enabled: is_workspace_dir_empty,
@@ -231,7 +231,7 @@ mod tests {
         let feed_steps = feed_steps(&steps);
         assert_eq!(
             feed_steps[0].text,
-            "Ask Claude to create a new app or clone a repository"
+            "Ask nyan to create a new app or clone a repository"
         );
         assert!(feed_steps[0].is_enabled);
         assert!(!feed_steps[0].is_complete);

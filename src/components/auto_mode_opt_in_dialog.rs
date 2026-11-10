@@ -12,7 +12,7 @@ use iocraft::prelude::*;
 
 /// Maps to: CC `components/AutoModeOptInDialog.tsx`
 /// `AUTO_MODE_DESCRIPTION`.
-pub const AUTO_MODE_DESCRIPTION: &str = "Auto mode lets Claude handle permission prompts automatically — Claude checks each tool call for risky actions and prompt injection before executing. Actions Claude identifies as safe are executed, while actions Claude identifies as risky are blocked and Claude may try a different approach. Ideal for long-running tasks. Sessions are slightly more expensive. Claude can make mistakes that allow harmful commands to run, it's recommended to only use in isolated environments. Shift+Tab to change mode.";
+pub const AUTO_MODE_DESCRIPTION: &str = "Auto mode lets nyan handle permission prompts automatically — nyan checks each tool call for risky actions and prompt injection before executing. Actions nyan identifies as safe are executed, while actions nyan identifies as risky are blocked and nyan may try a different approach. Ideal for long-running tasks. Sessions are slightly more expensive. nyan can make mistakes that allow harmful commands to run, it's recommended to only use in isolated environments. Shift+Tab to change mode.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AutoModeOptInChoice {
@@ -138,7 +138,6 @@ pub fn AutoModeOptInDialog<'a>(
         ) {
             View(flex_direction: FlexDirection::Column, row_gap: 1u32) {
                 Text(content: AUTO_MODE_DESCRIPTION.to_string(), wrap: TextWrap::Wrap)
-                Link(url: "https://code.claude.com/docs/en/security".to_string())
             }
             Select(
                 options: options,
@@ -188,11 +187,7 @@ mod tests {
 
         assert!(text.contains("Enable auto mode?"), "canvas=\n{text}");
         assert!(
-            text.contains("Auto mode lets Claude handle permission prompts automatically"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("https://code.claude.com/docs/en/security"),
+            text.contains("Auto mode lets nyan handle permission prompts automatically"),
             "canvas=\n{text}"
         );
         assert!(

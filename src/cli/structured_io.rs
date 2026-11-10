@@ -1070,7 +1070,7 @@ mod tests {
         // The dialog-only strings CC never sends. Both are populated so a
         // re-added key would show up rather than serialize as empty.
         request.description = "Run rm -rf /outside".to_string();
-        request.message = "Claude requested permissions to use Bash".to_string();
+        request.message = "nyan requested permissions to use Bash".to_string();
         request.suggestions = vec![PermissionUpdate::AddRules {
             destination: PermissionUpdateDestination::LocalSettings,
             behavior: PermissionBehavior::Allow,

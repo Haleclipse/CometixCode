@@ -28,7 +28,7 @@ pub(crate) fn built_in_output_styles_ordered() -> Vec<(String, Option<OutputStyl
             "Explanatory".to_string(),
             Some(OutputStyleConfig {
                 name: "Explanatory".to_string(),
-                description: "Claude explains its implementation choices and codebase patterns"
+                description: "nyan explains its implementation choices and codebase patterns"
                     .to_string(),
                 keep_coding_instructions: Some(true),
                 source: "built-in".to_string(),
@@ -41,7 +41,7 @@ pub(crate) fn built_in_output_styles_ordered() -> Vec<(String, Option<OutputStyl
             Some(OutputStyleConfig {
                 name: "Learning".to_string(),
                 description:
-                    "Claude pauses and asks you to write small pieces of code for hands-on practice"
+                    "nyan pauses and asks you to write small pieces of code for hands-on practice"
                         .to_string(),
                 keep_coding_instructions: Some(true),
                 source: "built-in".to_string(),

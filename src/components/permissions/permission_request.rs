@@ -1597,7 +1597,7 @@ mod tests {
             "canvas=\n{verbose_text}"
         );
         assert!(
-            text.contains("Do you want to allow Claude to fetch this content?"),
+            text.contains("Do you want to allow nyan to fetch this content?"),
             "WebFetch requests should use official WebFetchPermissionRequest copy; canvas=\n{text}"
         );
         assert!(

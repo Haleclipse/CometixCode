@@ -572,7 +572,7 @@ impl crate::tool::ToolCall for WebSearchTool {
             .get("query")
             .and_then(|value| value.as_str())
             .unwrap_or_default();
-        format!("Claude wants to search the web for: {query}")
+        format!("nyan wants to search the web for: {query}")
     }
 
     /// Maps to: CC `WebSearchTool.shouldDefer`.

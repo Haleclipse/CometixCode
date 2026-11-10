@@ -237,11 +237,6 @@ pub fn TrustDialog<'a>(
                     content: "nyan'll be able to read, edit, and execute files here.".to_string(),
                     wrap: TextWrap::Wrap,
                 )
-                Text(
-                    content: "Security guide: https://code.claude.com/docs/en/security".to_string(),
-                    color: theme.inactive,
-                    wrap: TextWrap::NoWrap,
-                )
                 Select(
                     options: options,
                     focused_index: focused_index.get().min(option_count - 1),
@@ -327,10 +322,6 @@ mod tests {
         );
         assert!(
             text.contains("nyan'll be able to read, edit, and execute files here."),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("https://code.claude.com/docs/en/security"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Yes, I trust this folder"), "canvas=\n{text}");

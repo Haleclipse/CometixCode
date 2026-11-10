@@ -142,7 +142,7 @@ mod tests {
         )
         .render(Some(100))
         .to_string();
-        assert!(text.contains("Generate with Claude (recommended)"));
+        assert!(text.contains("Generate with nyan (recommended)"));
         assert!(text.contains("Manual configuration"));
     }
 

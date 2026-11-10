@@ -93,7 +93,7 @@ pub(crate) fn output_to_value(output: &Output) -> serde_json::Value {
 }
 
 /// Maps to: CC `AskUserQuestionTool.tsx:175-197`
-/// `AskUserQuestionResultMessage` — the "User answered Claude's questions:"
+/// `AskUserQuestionResultMessage` — the "User answered nyan's questions:"
 /// header (always with the colon) plus one `· {question} → {answer}` line per
 /// entry, iterated in the record's insertion order.
 pub(crate) fn render_tool_result_message(
@@ -103,7 +103,7 @@ pub(crate) fn render_tool_result_message(
         return Vec::new();
     };
     let mut lines = vec![ToolRenderLine::new(
-        format!("{BLACK_CIRCLE} User answered Claude's questions:"),
+        format!("{BLACK_CIRCLE} User answered nyan's questions:"),
         ToolRenderTone::Normal,
     )];
     lines.extend(output.answers.iter().map(|(question, answer)| {
@@ -146,7 +146,7 @@ mod tests {
         // CC's header always carries the colon, even with zero answers.
         assert_eq!(
             lines[0].text,
-            format!("{BLACK_CIRCLE} User answered Claude's questions:")
+            format!("{BLACK_CIRCLE} User answered nyan's questions:")
         );
         assert_eq!(lines[1].text, "· Which auth method? → OAuth");
         assert_eq!(lines[1].tone, ToolRenderTone::Inactive);

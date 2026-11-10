@@ -170,7 +170,7 @@ pub fn web_fetch_permission_options(
         ));
     }
     options.push(WebFetchPermissionOption::select(
-        "No, and tell Claude what to do differently (esc)",
+        "No, and tell nyan what to do differently (esc)",
         WebFetchPermissionOptionValue::No,
     ));
     options
@@ -294,14 +294,14 @@ pub fn WebFetchPermissionRequest<'a>(
             View(flex_direction: FlexDirection::Column) {
                 // Maps to: CC `WebFetchPermissionRequest.tsx:135-138` — mounted
                 // inside the same `flexDirection="column"` Box, immediately
-                // before the "Do you want to allow Claude to fetch this
+                // before the "Do you want to allow nyan to fetch this
                 // content?" line.
                 PermissionRuleExplanation(
                     decision_reason: request.decision_reason.clone(),
                     tool_type: PermissionRuleToolType::Tool,
                     permission_mode: request.mode,
                 )
-                Text(content: "Do you want to allow Claude to fetch this content?".to_string(), wrap: TextWrap::NoWrap)
+                Text(content: "Do you want to allow nyan to fetch this content?".to_string(), wrap: TextWrap::NoWrap)
                 Select(
                     options: select_options,
                     focused_index: focused,
@@ -409,7 +409,7 @@ mod tests {
         assert_eq!(options[1].label, "Yes, and don't ask again for example.com");
         assert_eq!(
             options[2].label,
-            "No, and tell Claude what to do differently (esc)"
+            "No, and tell nyan what to do differently (esc)"
         );
         assert_eq!(
             web_fetch_permission_option_to_prompt_choice(
@@ -449,7 +449,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("Do you want to allow Claude to fetch this content?"),
+            text.contains("Do you want to allow nyan to fetch this content?"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Yes"), "canvas=\n{text}");
@@ -458,7 +458,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("No, and tell Claude what to do differently (esc)"),
+            text.contains("No, and tell nyan what to do differently (esc)"),
             "canvas=\n{text}"
         );
         assert!(
@@ -470,7 +470,7 @@ mod tests {
     /// Maps to: CC `WebFetchPermissionRequest.tsx:134-139` —
     /// `<PermissionRuleExplanation permissionResult={toolUseConfirm.permissionResult}
     /// toolType="tool" />` is the first child of the `flexDirection="column"`
-    /// Box, immediately before "Do you want to allow Claude to fetch this
+    /// Box, immediately before "Do you want to allow nyan to fetch this
     /// content?". `toolType` is `"tool"` at `:137`, and
     /// `PermissionRuleExplanation.tsx:95-97` renders nothing without a reason.
     #[test]
@@ -514,7 +514,7 @@ mod tests {
             .find("Permission rule WebFetch(domain:example.com)")
             .expect("explanation rendered");
         let prompt_at = with_reason
-            .find("Do you want to allow Claude to fetch this content?")
+            .find("Do you want to allow nyan to fetch this content?")
             .expect("prompt rendered");
         assert!(
             explanation_at < prompt_at,

@@ -41,7 +41,7 @@ pub(crate) fn render_tool_result_message(
             ToolRenderTone::Normal,
         ),
         ToolRenderLine::new(
-            "Claude is now exploring and designing an implementation approach.",
+            "nyan is now exploring and designing an implementation approach.",
             ToolRenderTone::Inactive,
         ),
     ]

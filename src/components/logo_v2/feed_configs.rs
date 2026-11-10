@@ -83,7 +83,7 @@ pub fn create_project_onboarding_feed(steps: &[ProjectOnboardingStep]) -> FeedCo
 
     if launched_from_home_directory() {
         lines.push(FeedLine::text(
-            "Note: You have launched claude in your home directory. For the best experience, launch it in a project directory instead.",
+            "Note: You have launched nyan in your home directory. For the best experience, launch it in a project directory instead.",
         ));
     }
 

@@ -207,7 +207,7 @@ pub fn BriefToolResultMessage(
             View(flex_direction: FlexDirection::Column, margin_top: 1u32, padding_left: 2u32) {
                 View(flex_direction: FlexDirection::Row) {
                     Text(
-                        content: "Claude".to_string(),
+                        content: "nyan".to_string(),
                         color: theme.brief_label_claude,
                         wrap: TextWrap::NoWrap,
                     )
@@ -283,7 +283,7 @@ mod tests {
             "canvas=\n{canvas}"
         );
         assert!(!canvas.contains(BLACK_CIRCLE), "canvas=\n{canvas}");
-        assert!(!canvas.contains("Claude"), "canvas=\n{canvas}");
+        assert!(!canvas.contains("nyan"), "canvas=\n{canvas}");
     }
 
     #[test]
@@ -308,7 +308,7 @@ mod tests {
         )
         .expect("brief-only result");
         assert_eq!(brief_only.layout, BriefResultLayout::BriefOnly);
-        assert!(render(brief_only).contains("Claude"));
+        assert!(render(brief_only).contains("nyan"));
     }
 
     #[test]

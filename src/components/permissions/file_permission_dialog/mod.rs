@@ -642,7 +642,7 @@ mod tests {
         );
         assert_eq!(
             claude_options[1].label,
-            "Yes, and allow Claude to edit its own settings for this session"
+            "Yes, and allow nyan to edit its own settings for this session"
         );
     }
 

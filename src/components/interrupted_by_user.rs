@@ -8,7 +8,7 @@
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
-pub const INTERRUPTED_BY_USER_TEXT: &str = "Interrupted · What should Claude do instead?";
+pub const INTERRUPTED_BY_USER_TEXT: &str = "Interrupted · What should nyan do instead?";
 
 #[component]
 pub fn InterruptedByUser(hooks: Hooks) -> impl Into<AnyElement<'static>> {
@@ -17,7 +17,7 @@ pub fn InterruptedByUser(hooks: Hooks) -> impl Into<AnyElement<'static>> {
     element! {
         View(flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
             Text(content: "Interrupted ".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
-            Text(content: "· What should Claude do instead?".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
+            Text(content: "· What should nyan do instead?".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
         }
     }
 }

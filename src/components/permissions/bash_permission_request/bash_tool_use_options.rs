@@ -215,7 +215,7 @@ pub fn bash_tool_use_options(input: BashToolUseOptionsInput) -> Vec<BashPermissi
         options.push(BashPermissionOption::input(
             "Yes",
             BashToolUseOptionValue::Yes,
-            "and tell Claude what to do next",
+            "and tell nyan what to do next",
             None,
             false,
             None,
@@ -282,7 +282,7 @@ pub fn bash_tool_use_options(input: BashToolUseOptionsInput) -> Vec<BashPermissi
         options.push(BashPermissionOption::input(
             "No",
             BashToolUseOptionValue::No,
-            "and tell Claude what to do differently",
+            "and tell nyan what to do differently",
             None,
             false,
             None,
@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(
             options[0].kind,
             BashPermissionOptionKind::Input {
-                placeholder: "and tell Claude what to do next".to_string(),
+                placeholder: "and tell nyan what to do next".to_string(),
                 initial_value: None,
                 show_label_with_value: false,
                 label_value_separator: None,
@@ -455,7 +455,7 @@ mod tests {
         assert_eq!(
             options.last().expect("no option").kind,
             BashPermissionOptionKind::Input {
-                placeholder: "and tell Claude what to do differently".to_string(),
+                placeholder: "and tell nyan what to do differently".to_string(),
                 initial_value: None,
                 show_label_with_value: false,
                 label_value_separator: None,

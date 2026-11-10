@@ -17264,7 +17264,7 @@ mod tests {
         );
         let compact_text = text.split_whitespace().collect::<String>();
         assert!(
-            compact_text.contains(&format!("claude--resume{other_session_id}")),
+            compact_text.contains(&format!("nyan--resume{other_session_id}")),
             "cross-project guidance should include the resume command; canvas=\n{text}"
         );
         assert!(

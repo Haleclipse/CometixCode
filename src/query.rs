@@ -11832,7 +11832,7 @@ mod tests {
                     .ok();
                     tx.send(crate::services::api::claude::QueryModelStreamItem::SystemError(
                         crate::types::message::SystemApiErrorMessage {
-                            content: "API Error: Claude's response exceeded the 4096 output token maximum. To configure this behavior, set the NYAN_MAX_OUTPUT_TOKENS environment variable.".to_string(),
+                            content: "API Error: The model's response exceeded the 4096 output token maximum. To configure this behavior, set the NYAN_MAX_OUTPUT_TOKENS environment variable.".to_string(),
                             api_error: "max_output_tokens".to_string(),
                             error: "max_output_tokens".to_string(),
                             error_details: None,
@@ -11887,7 +11887,8 @@ mod tests {
             match event {
                 QueryEvent::Message(message) if model_is_api_error(&message) => {
                     surfaced_error |= model_assistant_text(&message).is_some_and(|error| {
-                        error.contains("Claude's response exceeded the 4096 output token maximum")
+                        error
+                            .contains("The model's response exceeded the 4096 output token maximum")
                     });
                 }
                 QueryEvent::Message(crate::types::message::Message::User(user))

@@ -257,7 +257,7 @@ pub fn SkillPermissionRequest(
             worker_badge: props.worker_badge.clone(),
         ) {
             Text(
-                content: "Claude may use instructions, code, or files from this Skill.".to_string(),
+                content: "nyan may use instructions, code, or files from this Skill.".to_string(),
                 wrap: TextWrap::Wrap,
             )
             // CC `:235-237` renders this Box unconditionally; `commandObj?.description`
@@ -429,7 +429,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("Claude may use instructions, code, or files from this Skill."),
+            text.contains("nyan may use instructions, code, or files from this Skill."),
             "canvas=\n{text}"
         );
         assert!(text.contains("Deploys the app"), "canvas=\n{text}");

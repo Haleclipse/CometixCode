@@ -666,7 +666,6 @@ mod tests {
                         message: "Invalid model".to_string(),
                         expected: None,
                         invalid_value: None,
-                        doc_link: None,
                         suggestion: Some("Use a supported model".to_string()),
                     }],
                 )

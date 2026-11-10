@@ -61,7 +61,7 @@ pub fn CostThresholdDialog<'a>(
         ) {
             View(flex_direction: FlexDirection::Column) {
                 Text(content: "Learn more about how to monitor your spending:".to_string())
-                Link(url: "https://code.claude.com/docs/en/costs".to_string())
+                Link(url: format!("{}/cost.md", crate::constants::product::DOCS_URL))
             }
             Select(
                 options: options,
@@ -114,7 +114,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("https://code.claude.com/docs/en/costs"),
+            text.contains("https://github.com/blxzer77/nyan/blob/master/docs/nyan/cost.md"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Got it, thanks!"), "canvas=\n{text}");

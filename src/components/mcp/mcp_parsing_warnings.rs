@@ -156,10 +156,6 @@ pub fn McpParsingWarnings(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     element! {
         View(flex_direction: FlexDirection::Column, margin_top: 1u32, margin_bottom: 1u32) {
             Text(content: "MCP Config Diagnostics".to_string(), weight: Weight::Bold, wrap: TextWrap::NoWrap)
-            View(margin_top: 1u32, flex_direction: FlexDirection::Row) {
-                Text(content: "For help configuring MCP servers, see: ".to_string(), dim: true, wrap: TextWrap::NoWrap)
-                Link(url: "https://code.claude.com/docs/en/mcp".to_string())
-            }
             #(sections.into_iter().filter_map(|section| render_section(section, theme)))
         }
     }.into_any()

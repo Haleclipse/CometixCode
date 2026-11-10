@@ -3,6 +3,8 @@
 //! The official component groups validation errors by file, sorts paths,
 //! treeifies dot-notation paths, and deduplicates suggestion/docLink pairs. This
 //! port preserves that data shaping and renders it with iocraft text colors.
+//! @nyan: errors carry no docLink (see `ValidationTip`), so only suggestions
+//! are deduplicated and there is no "Learn more" row.
 
 use crate::utils::settings::ValidationError;
 use crate::utils::theme::Theme;
@@ -48,27 +50,13 @@ pub fn build_nested_tree(errors: &[ValidationError]) -> TreeNode {
 
 /// Maps to: CC `components/ValidationErrorsList.tsx` suggestion/docLink pair
 /// deduplication.
-pub fn unique_suggestion_doc_pairs(
-    errors: &[ValidationError],
-) -> Vec<(Option<String>, Option<String>)> {
+pub fn unique_suggestions(errors: &[ValidationError]) -> Vec<String> {
     let mut seen = HashSet::new();
-    let mut pairs = Vec::new();
-
-    for error in errors {
-        if error.suggestion.is_none() && error.doc_link.is_none() {
-            continue;
-        }
-        let key = format!(
-            "{}|{}",
-            error.suggestion.as_deref().unwrap_or_default(),
-            error.doc_link.as_deref().unwrap_or_default()
-        );
-        if seen.insert(key) {
-            pairs.push((error.suggestion.clone(), error.doc_link.clone()));
-        }
-    }
-
-    pairs
+    errors
+        .iter()
+        .filter_map(|error| error.suggestion.clone())
+        .filter(|suggestion| seen.insert(suggestion.clone()))
+        .collect()
 }
 
 fn sorted_errors_by_file(errors: &[ValidationError]) -> BTreeMap<String, Vec<ValidationError>> {
@@ -115,28 +103,21 @@ pub fn ValidationErrorsList(
             #(errors_by_file.into_iter().map(|(file, file_errors)| {
                 let error_tree = build_nested_tree(&file_errors);
                 let tree_output = treeify(&error_tree, TreeifyOptions::default());
-                let pairs = unique_suggestion_doc_pairs(&file_errors);
+                let suggestions = unique_suggestions(&file_errors);
                 element! {
                     View(flex_direction: FlexDirection::Column) {
                         Text(content: file)
                         View(padding_left: 1u32) {
                             Text(content: tree_output, color: theme.inactive, wrap: TextWrap::Wrap)
                         }
-                        #(if pairs.is_empty() {
+                        #(if suggestions.is_empty() {
                             None
                         } else {
                             Some(element! {
                                 View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
-                                    #(pairs.into_iter().map(|(suggestion, doc_link)| {
-                                        element! {
-                                            View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
-                                                #(suggestion.map(|suggestion| element! {
-                                                    Text(content: suggestion, color: theme.inactive, wrap: TextWrap::Wrap)
-                                                }))
-                                                #(doc_link.map(|doc_link| element! {
-                                                    Text(content: format!("Learn more: {doc_link}"), color: theme.inactive, wrap: TextWrap::Wrap)
-                                                }))
-                                            }
+                                    #(suggestions.into_iter().map(|suggestion| element! {
+                                        View(flex_direction: FlexDirection::Column, margin_bottom: 1u32) {
+                                            Text(content: suggestion, color: theme.inactive, wrap: TextWrap::Wrap)
                                         }
                                     }))
                                 }
@@ -160,7 +141,6 @@ mod tests {
         message: &str,
         invalid_value: Option<&str>,
         suggestion: Option<&str>,
-        doc_link: Option<&str>,
     ) -> ValidationError {
         ValidationError {
             file: file.map(|s| s.to_string()),
@@ -168,7 +148,6 @@ mod tests {
             message: message.to_string(),
             expected: None,
             invalid_value: invalid_value.map(|s| s.to_string()),
-            doc_link: doc_link.map(|s| s.to_string()),
             suggestion: suggestion.map(|s| s.to_string()),
         }
     }
@@ -180,7 +159,6 @@ mod tests {
             "permissions.allow.0",
             "Invalid permission rule",
             Some("BadRule"),
-            None,
             None,
         )];
 
@@ -196,7 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn validation_errors_list_deduplicates_suggestion_doc_pairs() {
+    fn validation_errors_list_deduplicates_suggestions() {
         let errors = vec![
             validation_error(
                 Some("a.json"),
@@ -204,7 +182,6 @@ mod tests {
                 "Invalid model",
                 None,
                 Some("Use a supported model"),
-                Some("https://docs.example/settings"),
             ),
             validation_error(
                 Some("a.json"),
@@ -212,15 +189,11 @@ mod tests {
                 "Invalid theme",
                 None,
                 Some("Use a supported model"),
-                Some("https://docs.example/settings"),
             ),
+            validation_error(Some("a.json"), "env", "Invalid env", None, None),
         ];
 
-        let pairs = unique_suggestion_doc_pairs(&errors);
-
-        assert_eq!(pairs.len(), 1);
-        assert_eq!(pairs[0].0.as_deref(), Some("Use a supported model"));
-        assert_eq!(pairs[0].1.as_deref(), Some("https://docs.example/settings"));
+        assert_eq!(unique_suggestions(&errors), ["Use a supported model"]);
     }
 
     #[test]
@@ -234,7 +207,6 @@ mod tests {
                         "Invalid theme",
                         None,
                         None,
-                        None,
                     ),
                     validation_error(
                         Some("a.json"),
@@ -242,7 +214,6 @@ mod tests {
                         "Invalid or malformed JSON",
                         None,
                         Some("Fix the JSON syntax"),
-                        Some("https://code.claude.com/docs/en/settings"),
                     ),
                 ])
             }
@@ -262,9 +233,6 @@ mod tests {
         );
         assert!(text.contains("└ theme: Invalid theme"), "canvas=\n{text}");
         assert!(text.contains("Fix the JSON syntax"), "canvas=\n{text}");
-        assert!(
-            text.contains("Learn more: https://code.claude.com/docs/en/settings"),
-            "canvas=\n{text}"
-        );
+        assert!(!text.contains("Learn more"), "canvas=\n{text}");
     }
 }

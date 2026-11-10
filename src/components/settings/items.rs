@@ -303,7 +303,7 @@ pub fn build_items(config: &GlobalConfig, settings: &SettingsJson) -> Vec<Settin
         // condition: KAIROS || KAIROS_PUSH_NOTIFICATION
         SettingItem {
             id: "agentPushNotifEnabled",
-            label: "Push when Claude decides",
+            label: "Push when nyan decides",
             value: SettingValue::Bool(false),
             search_text: "push notification agent decides",
             visible: false, // feature-gated

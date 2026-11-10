@@ -95,11 +95,11 @@ pub fn DescriptionStep(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
     let mut submit_handler = submit;
     element! {
         WizardDialogLayout(
-            subtitle: Some("Description (tell Claude when to use this agent)".to_string()),
+            subtitle: Some("Description (tell nyan when to use this agent)".to_string()),
             footer_text: Some("Type to enter text · Enter to continue · Ctrl+G to open in editor · Esc to go back".to_string()),
         ) {
             View(flex_direction: FlexDirection::Column) {
-                Text(content: "When should Claude use this agent?".to_string())
+                Text(content: "When should nyan use this agent?".to_string())
                 View(margin_top: 1u32) {
                     TextInput(
                         value: value, cursor_offset: cursor, focus: true, show_cursor: true, columns: 80usize,

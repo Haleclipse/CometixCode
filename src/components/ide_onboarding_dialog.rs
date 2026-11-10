@@ -112,7 +112,7 @@ pub fn IdeOnboardingDialog<'a>(
             ) {
                 View(flex_direction: FlexDirection::Column, gap: 1u32) {
                     View(flex_direction: FlexDirection::Row) {
-                        Text(content: "• Claude has context of ".to_string(), wrap: TextWrap::NoWrap)
+                        Text(content: "• nyan has context of ".to_string(), wrap: TextWrap::NoWrap)
                         Text(content: "⧉ open files".to_string(), color: theme.suggestion, wrap: TextWrap::NoWrap)
                         Text(content: " and ".to_string(), wrap: TextWrap::NoWrap)
                         Text(content: "⧉ selected lines".to_string(), color: theme.suggestion, wrap: TextWrap::NoWrap)
@@ -185,7 +185,7 @@ mod tests {
             text.contains("installed extension v1.2.3"),
             "canvas=\n{text}"
         );
-        assert!(text.contains("• Claude has context of"), "canvas=\n{text}");
+        assert!(text.contains("• nyan has context of"), "canvas=\n{text}");
         assert!(text.contains("⧉ open files"), "canvas=\n{text}");
         assert!(text.contains("⧉ selected lines"), "canvas=\n{text}");
         assert!(

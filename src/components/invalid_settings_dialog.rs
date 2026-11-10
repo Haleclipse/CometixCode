@@ -146,7 +146,6 @@ mod tests {
             message: "Invalid setting".to_string(),
             expected: None,
             invalid_value: None,
-            doc_link: None,
             suggestion: None,
         }
     }

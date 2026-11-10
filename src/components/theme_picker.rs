@@ -110,7 +110,7 @@ fn theme_picker_demo_diff_lines(
         lines: vec![
             " function greet() {".to_string(),
             "-  console.log(\"Hello, World!\");".to_string(),
-            "+  console.log(\"Hello, Claude!\");".to_string(),
+            "+  console.log(\"Hello, nyan!\");".to_string(),
             " }".to_string(),
         ],
     };
@@ -597,7 +597,7 @@ mod tests {
         // StructuredDiff's filePath only picks the language: no header row.
         assert!(!text.contains("demo.js"), "canvas=\n{text}");
         assert!(text.contains("Hello, World!"), "canvas=\n{text}");
-        assert!(text.contains("Hello, Claude!"), "canvas=\n{text}");
+        assert!(text.contains("Hello, nyan!"), "canvas=\n{text}");
         assert!(
             text.contains("Syntax theme: Monokai Extended (ctrl+t to disable)"),
             "canvas=\n{text}"

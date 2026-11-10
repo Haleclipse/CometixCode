@@ -33,7 +33,7 @@ Usage notes:
 ```
 # AGENTS.md
 
-This file provides guidance to nyan (claude.ai/code) when working with code in this repository.
+This file provides guidance to nyan when working with code in this repository.
 ```"##;
 
 const NEW_INIT_PROMPT: &str = r##"Set up a minimal AGENTS.md (and optionally skills and hooks) for this repo. AGENTS.md is loaded into every nyan session, so it must be concise — only include what the agent would get wrong without it.
@@ -126,7 +126,7 @@ Prefix the file with:
 ```
 # AGENTS.md
 
-This file provides guidance to nyan (claude.ai/code) when working with code in this repository.
+This file provides guidance to nyan when working with code in this repository.
 ```
 
 If AGENTS.md already exists: read it, propose specific changes as diffs, and explain why each change improves it. Do not silently overwrite.
@@ -267,15 +267,15 @@ mod tests {
 
     #[test]
     fn init_prompts_match_official_source_bytes() {
-        assert_eq!(OLD_INIT_PROMPT.len(), 1580);
+        assert_eq!(OLD_INIT_PROMPT.len(), 1563);
         assert_eq!(
             sha256(OLD_INIT_PROMPT),
-            "16b988f277f3110ed27b4a8f45a69628de6382870a0029d4148380a9ca059a7e"
+            "274ea0b4ec4c1a3c9f74e4d7f1ffae3727733fb28b8e45b2827d43ed2657ad2b"
         );
-        assert_eq!(NEW_INIT_PROMPT.len(), 13443);
+        assert_eq!(NEW_INIT_PROMPT.len(), 13426);
         assert_eq!(
             sha256(NEW_INIT_PROMPT),
-            "11545fb94b664165fd97f7e713414131338b0d793e5d8a99d9eae2a0dac485fd"
+            "98e5a04f79876dbbfe5406c60f454b8c6b0eba8b562f6427f95a2a31f7abadb4"
         );
     }
 

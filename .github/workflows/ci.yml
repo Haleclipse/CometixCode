@@ -53,6 +53,9 @@ jobs:
       - name: Check quality drift
         shell: bash
         run: node scripts/ci/check-quality-drift.mjs
+      - name: Check UI branding
+        shell: bash
+        run: node scripts/ci/check-ui-branding.mjs
 
   build:
     name: build

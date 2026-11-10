@@ -350,12 +350,11 @@ fn render_security_step(theme: Theme) -> AnyElement<'static> {
             View(flex_direction: FlexDirection::Column, width: 70u32) {
                 OrderedList() {
                     OrderedListItem() {
-                        Text(content: "Claude can make mistakes".to_string())
-                        Text(content: "You should always review Claude's responses, especially when\nrunning code.\n".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
+                        Text(content: "nyan can make mistakes".to_string())
+                        Text(content: "You should always review nyan's responses, especially when\nrunning code.\n".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
                     }
                     OrderedListItem() {
                         Text(content: "Due to prompt injection risks, only use it with code you trust".to_string())
-                        Text(content: "For more details see:\nhttps://code.claude.com/docs/en/security".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
                     }
                 }
             }
@@ -551,13 +550,13 @@ mod tests {
 
         assert!(text.contains("Welcome to nyan"), "canvas=\n{text}");
         assert!(text.contains("Security notes:"), "canvas=\n{text}");
-        assert!(text.contains("Claude can make mistakes"), "canvas=\n{text}");
+        assert!(text.contains("nyan can make mistakes"), "canvas=\n{text}");
         assert!(
-            text.contains("Due to prompt injection risks, only use it with code you trust"),
+            text.contains("You should always review nyan's responses"),
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("https://code.claude.com/docs/en/security"),
+            text.contains("Due to prompt injection risks, only use it with code you trust"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Press Enter to continue…"), "canvas=\n{text}");

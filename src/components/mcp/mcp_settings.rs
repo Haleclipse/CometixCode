@@ -70,7 +70,8 @@ impl From<&crate::types::tools::Tool> for McpToolInfo {
     }
 }
 
-pub const NO_MCP_SERVERS_CONFIGURED: &str = "No MCP servers configured. Please run /doctor if this is unexpected. Otherwise, run `claude mcp --help` or visit https://code.claude.com/docs/en/mcp to learn more.";
+pub const NO_MCP_SERVERS_CONFIGURED: &str =
+    "No MCP servers configured. Please run /doctor if this is unexpected.";
 
 #[derive(Default, Props)]
 pub struct MCPSettingsProps {

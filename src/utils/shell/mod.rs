@@ -133,7 +133,7 @@ pub fn find_suitable_shell() -> Result<PathBuf, String> {
             }
         }
     }
-    Err("No suitable shell found. Claude CLI requires a Posix shell environment. Please ensure you have a valid shell installed and the SHELL environment variable set.".to_string())
+    Err("No suitable shell found. nyan requires a Posix shell environment. Please ensure you have a valid shell installed and the SHELL environment variable set.".to_string())
 }
 
 /// Maps to CC memoized `getShellConfig()`.
@@ -235,7 +235,7 @@ pub fn exec(
             cwd = fallback;
         } else {
             return Ok(crate::utils::shell_command::create_failed_command(format!(
-                "Working directory \"{}\" no longer exists. Please restart Claude from an existing directory.",
+                "Working directory \"{}\" no longer exists. Please restart nyan from an existing directory.",
                 cwd.display()
             )));
         }

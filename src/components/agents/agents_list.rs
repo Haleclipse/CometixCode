@@ -359,7 +359,7 @@ pub fn AgentsList<'a>(
             .collect::<Vec<_>>();
         element! { View(flex_direction: FlexDirection::Column, row_gap: 1u32) {
             #(create_row)
-            Text(content: "No agents found. Create specialized subagents that Claude can delegate to.".to_string(), dim: true)
+            Text(content: "No agents found. Create specialized subagents that nyan can delegate to.".to_string(), dim: true)
             Text(content: "Each subagent has its own context window, custom system prompt, and specific tools.".to_string(), dim: true)
             Text(content: "Try creating: Code Reviewer, Code Simplifier, Security Reviewer, Tech Lead, or UX Reviewer.".to_string(), dim: true)
             #((source != AgentsListSource::Source(AgentDisplaySource::BuiltIn) && !builtins.is_empty()).then(|| element! { View(flex_direction: FlexDirection::Column) {

@@ -399,8 +399,8 @@ impl crate::tool::ToolCall for WebFetchTool {
             .and_then(|value| value.as_str())
             .and_then(preapproved::parse_web_fetch_url_host_path)
             .map_or_else(
-                || "Claude wants to fetch content from this URL".to_string(),
-                |(hostname, _)| format!("Claude wants to fetch content from {hostname}"),
+                || "nyan wants to fetch content from this URL".to_string(),
+                |(hostname, _)| format!("nyan wants to fetch content from {hostname}"),
             )
     }
 
@@ -518,7 +518,7 @@ impl crate::tool::ToolCall for WebFetchTool {
         if let Some(rule) = rule_for(PermissionBehavior::Ask) {
             return PermissionResult::Ask {
                 message: format!(
-                    "Claude requested permissions to use {}, but you haven't granted it yet.",
+                    "nyan requested permissions to use {}, but you haven't granted it yet.",
                     prompt::WEB_FETCH_TOOL_NAME
                 ),
                 updated_input: None,
@@ -544,7 +544,7 @@ impl crate::tool::ToolCall for WebFetchTool {
 
         PermissionResult::Ask {
             message: format!(
-                "Claude requested permissions to use {}, but you haven't granted it yet.",
+                "nyan requested permissions to use {}, but you haven't granted it yet.",
                 prompt::WEB_FETCH_TOOL_NAME
             ),
             updated_input: None,

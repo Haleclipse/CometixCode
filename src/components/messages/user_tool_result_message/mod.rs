@@ -2109,7 +2109,7 @@ mod tests {
         let answered = render_tool_result_lines_for_result(
             "AskUserQuestion",
             ToolResultStatus::Success,
-            "User answered Claude's questions:\n· Proceed? → Yes",
+            "User answered nyan's questions:\n· Proceed? → Yes",
             Some(&raw),
             None,
             &[],
@@ -2118,7 +2118,7 @@ mod tests {
         assert!(
             answered[0]
                 .text
-                .ends_with(" User answered Claude's questions:")
+                .ends_with(" User answered nyan's questions:")
         );
         assert_eq!(answered[1].text, "· Proceed? → Yes");
         assert_eq!(answered[1].tone, ToolRenderTone::Inactive);
@@ -2161,7 +2161,7 @@ mod tests {
         assert_eq!(entered[0].tone, ToolRenderTone::Normal);
         assert_eq!(
             entered[1].text,
-            "Claude is now exploring and designing an implementation approach."
+            "nyan is now exploring and designing an implementation approach."
         );
         assert_eq!(entered[1].tone, ToolRenderTone::Inactive);
 
@@ -2217,7 +2217,7 @@ mod tests {
         let approved = render_tool_result_lines_for_result(
             "ExitPlanMode",
             ToolResultStatus::Success,
-            "User approved Claude's plan",
+            "User approved nyan's plan",
             Some(&raw),
             None,
             &[],
@@ -2226,7 +2226,7 @@ mod tests {
         assert_eq!(
             approved[0].text,
             format!(
-                "{} User approved Claude's plan",
+                "{} User approved nyan's plan",
                 crate::constants::figures::BLACK_CIRCLE
             )
         );
@@ -2297,7 +2297,7 @@ mod tests {
             &[],
             ToolRenderOptions::default(),
         );
-        assert_eq!(rejected[0].text, "User rejected Claude's plan:");
+        assert_eq!(rejected[0].text, "User rejected nyan's plan:");
         assert_eq!(rejected[0].tone, ToolRenderTone::Inactive);
         assert_eq!(rejected[1].text, "## Plan");
     }
@@ -2931,7 +2931,7 @@ mod tests {
             .render(None)
             .to_string();
             assert!(
-                canvas.contains("Interrupted · What should Claude do instead?"),
+                canvas.contains("Interrupted · What should nyan do instead?"),
                 "canvas=\n{canvas}"
             );
             assert!(

@@ -10,7 +10,7 @@ fn builtin_tips() -> Vec<Tip> {
     vec![
         Tip {
             id: "memory-command".to_string(),
-            content: "Use /memory to view and manage Claude memory".to_string(),
+            content: "Use /memory to view and manage nyan memory".to_string(),
             cooldown_sessions: 15,
         },
         Tip {
@@ -25,12 +25,12 @@ fn builtin_tips() -> Vec<Tip> {
         },
         Tip {
             id: "prompt-queue".to_string(),
-            content: "Hit Enter to queue another message while Claude is working".to_string(),
+            content: "Hit Enter to queue another message while nyan is working".to_string(),
             cooldown_sessions: 5,
         },
         Tip {
             id: "todo-list".to_string(),
-            content: "Ask Claude to use a todo list for complex tasks".to_string(),
+            content: "Ask nyan to use a todo list for complex tasks".to_string(),
             cooldown_sessions: 20,
         },
         Tip {

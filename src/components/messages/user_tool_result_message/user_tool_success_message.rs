@@ -271,12 +271,12 @@ mod tests {
         let default = render_with_provider(false, false);
         assert!(default.contains("Hello there"), "canvas=\n{default}");
         assert!(!default.contains(crate::constants::figures::BLACK_CIRCLE));
-        assert!(!default.contains("Claude"));
+        assert!(!default.contains("nyan"));
 
         let transcript = render_with_provider(true, true);
         assert!(transcript.contains("Hello there"), "canvas=\n{transcript}");
         assert!(transcript.contains(crate::constants::figures::BLACK_CIRCLE));
-        assert!(!transcript.contains("Claude"));
+        assert!(!transcript.contains("nyan"));
     }
 
     #[test]
@@ -287,6 +287,6 @@ mod tests {
         );
         let canvas = render_with_provider(true, false);
         assert!(canvas.contains("Hello there"), "canvas=\n{canvas}");
-        assert!(!canvas.contains("Claude"), "canvas=\n{canvas}");
+        assert!(!canvas.contains("nyan"), "canvas=\n{canvas}");
     }
 }

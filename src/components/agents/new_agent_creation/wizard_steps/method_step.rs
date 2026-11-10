@@ -18,7 +18,7 @@ pub fn MethodStep(mut hooks: Hooks) -> impl Into<AnyElement<'static>> {
         ) {
             WizardChoice(
                 options: vec![
-                    SelectOptionData { label: "Generate with Claude (recommended)".to_string(), value: "generate".to_string(), ..Default::default() },
+                    SelectOptionData { label: "Generate with nyan (recommended)".to_string(), value: "generate".to_string(), ..Default::default() },
                     SelectOptionData { label: "Manual configuration".to_string(), value: "manual".to_string(), ..Default::default() },
                 ],
                 on_select: move |value| {

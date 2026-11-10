@@ -395,15 +395,9 @@ pub fn MCPListPanel<'a>(
                             }
                         })
                     })
-                    View(flex_direction: FlexDirection::Column) {
-                        #(if has_failed_clients {
-                            Some(element! { Text(content: if debug_mode { "※ Error logs shown inline with --debug".to_string() } else { "※ Run claude --debug to see error logs".to_string() }, dim: true, wrap: TextWrap::NoWrap) })
-                        } else { None })
-                        View(flex_direction: FlexDirection::Row) {
-                            Link(url: "https://code.claude.com/docs/en/mcp".to_string())
-                            Text(content: " for help".to_string(), dim: true, wrap: TextWrap::NoWrap)
-                        }
-                    }
+                    #(if has_failed_clients {
+                        Some(element! { Text(content: if debug_mode { "※ Error logs shown inline with --debug".to_string() } else { "※ Run nyan --debug to see error logs".to_string() }, dim: true, wrap: TextWrap::NoWrap) })
+                    } else { None })
                 }
             }
             View(padding_left: 1u32, padding_right: 1u32) {

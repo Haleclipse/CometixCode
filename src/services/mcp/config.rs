@@ -486,7 +486,7 @@ pub fn parse_mcp_config_value_readonly(
                 "Windows requires 'cmd /c' wrapper to execute npx",
                 McpConfigErrorSeverity::Warning,
                 Some(&name),
-                Some("Change command to \"cmd\" with args [\"/c\", \"npx\", ...]. See: https://code.claude.com/docs/en/mcp#configure-mcp-servers".to_string()),
+                Some("Change command to \"cmd\" with args [\"/c\", \"npx\", ...].".to_string()),
             ));
         }
         servers.insert(name, ScopedMcpServerConfig::from_config(scope, &config));

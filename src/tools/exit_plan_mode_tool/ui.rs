@@ -142,7 +142,7 @@ pub fn render_result_lines(
     }
 
     let mut lines = vec![ToolRenderLine::new(
-        format!("{BLACK_CIRCLE} User approved Claude's plan"),
+        format!("{BLACK_CIRCLE} User approved nyan's plan"),
         ToolRenderTone::Normal,
     )];
     // CC `{filePath && …}` — JS falsy: only the empty string skips the line.
@@ -169,7 +169,7 @@ pub fn render_result_lines(
 /// leaf entry (`ExitPlanModeTool/UI.tsx:81`), not this component.
 pub fn render_rejected_result_lines(plan: &str) -> Vec<ToolRenderLine> {
     let mut lines = vec![ToolRenderLine::new(
-        "User rejected Claude's plan:",
+        "User rejected nyan's plan:",
         ToolRenderTone::Inactive,
     )];
     lines.extend(

@@ -261,7 +261,7 @@ mod tests {
                 BaseTextInput(
                     input_state: state(Vec::new()),
                     value: String::new(),
-                    placeholder: Some("Ask Claude".to_string()),
+                    placeholder: Some("Ask nyan".to_string()),
                     focus: true,
                     show_cursor: true,
                     terminal_focus: true,
@@ -271,7 +271,7 @@ mod tests {
         .render(Some(80));
         let text = canvas.to_string();
 
-        assert_eq!(text, "Ask Claude\n");
+        assert_eq!(text, "Ask nyan\n");
         assert!(
             canvas
                 .resolved_text_style(0, 0)

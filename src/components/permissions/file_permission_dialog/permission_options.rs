@@ -93,7 +93,7 @@ pub fn get_file_permission_options_from_params(
         options.push(PermissionOptionWithLabel::input(
             "yes",
             "Yes",
-            "and tell Claude what to do next",
+            "and tell nyan what to do next",
             PermissionOption::AcceptOnce,
         ));
     } else {
@@ -113,7 +113,7 @@ pub fn get_file_permission_options_from_params(
             } else {
                 "yes-claude-folder"
             },
-            "Yes, and allow Claude to edit its own settings for this session",
+            "Yes, and allow nyan to edit its own settings for this session",
             PermissionOption::AcceptSession {
                 scope: Some(if params.in_global_claude_folder {
                     PermissionSessionScope::GlobalClaudeFolder
@@ -154,7 +154,7 @@ pub fn get_file_permission_options_from_params(
         options.push(PermissionOptionWithLabel::input(
             "no",
             "No",
-            "and tell Claude what to do differently",
+            "and tell nyan what to do differently",
             PermissionOption::Reject,
         ));
     } else {
@@ -182,7 +182,7 @@ mod tests {
         assert_eq!(options[0].value, "yes");
         assert_eq!(
             options[0].input_placeholder.as_deref(),
-            Some("and tell Claude what to do next")
+            Some("and tell nyan what to do next")
         );
         assert_eq!(options[1].value, "yes-session");
         assert_eq!(
@@ -192,7 +192,7 @@ mod tests {
         assert_eq!(options[2].value, "no");
         assert_eq!(
             options[2].input_placeholder.as_deref(),
-            Some("and tell Claude what to do differently")
+            Some("and tell nyan what to do differently")
         );
     }
 

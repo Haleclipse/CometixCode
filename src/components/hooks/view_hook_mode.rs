@@ -95,7 +95,7 @@ pub fn ViewHookMode<'a>(
                     }
                 }))
                 Text(
-                    content: "To modify or remove this hook, edit settings.json directly or ask Claude to help.".to_string(),
+                    content: "To modify or remove this hook, edit settings.json directly or ask nyan to help.".to_string(),
                     dim: true,
                     wrap: TextWrap::Wrap,
                 )

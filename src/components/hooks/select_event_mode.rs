@@ -91,17 +91,11 @@ pub fn SelectEventMode<'a>(
         ) {
             View(flex_direction: FlexDirection::Column, gap: 1u32) {
                 View(flex_direction: FlexDirection::Column) {
-                    View(flex_direction: FlexDirection::Row) {
-                        Text(
-                            content: format!("{info} This menu is read-only. To add or modify hooks, edit settings.json directly or ask Claude. "),
-                            dim: true,
-                            wrap: TextWrap::Wrap,
-                        )
-                        Link(
-                            url: "https://code.claude.com/docs/en/hooks".to_string(),
-                            label: Some("Learn more".to_string()),
-                        )
-                    }
+                    Text(
+                        content: format!("{info} This menu is read-only. To add or modify hooks, edit settings.json directly or ask nyan."),
+                        dim: true,
+                        wrap: TextWrap::Wrap,
+                    )
                 }
                 View(flex_direction: FlexDirection::Column) {
                     Select(
@@ -140,6 +134,7 @@ mod tests {
         assert!(text.contains("Hooks"), "canvas=\n{text}");
         assert!(text.contains("2 hooks configured"), "canvas=\n{text}");
         assert!(text.contains("This menu is read-only"), "canvas=\n{text}");
+        assert!(text.contains("or ask nyan."), "canvas=\n{text}");
         assert!(text.contains("PreToolUse (2)"), "canvas=\n{text}");
         assert!(text.contains("Before tool execution"), "canvas=\n{text}");
     }

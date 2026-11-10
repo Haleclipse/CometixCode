@@ -219,17 +219,10 @@ fn OverridesSelect(
         segment.styles.color = Some(theme.inactive);
         segment
     };
-    let mut link = link_segment(
-        "https://code.claude.com/docs/en/sandboxing#configure-sandboxing".to_string(),
-        Some("code.claude.com/docs/en/sandboxing#configure-sandboxing".to_string()),
-        None,
-        None,
-    );
-    link.styles.color = Some(theme.inactive);
     let allow_text = vec![
         heading("Allow unsandboxed fallback:"),
         body(
-            " When a command fails due to sandbox restrictions, Claude can retry with dangerouslyDisableSandbox to run outside the sandbox (falling back to default permissions).",
+            " When a command fails due to sandbox restrictions, nyan can retry with dangerouslyDisableSandbox to run outside the sandbox (falling back to default permissions).",
         ),
     ];
     let strict_text = vec![
@@ -238,7 +231,6 @@ fn OverridesSelect(
             " All bash commands invoked by the model must run in the sandbox unless they are explicitly listed in excludedCommands.",
         ),
     ];
-    let learn_more = vec![body("Learn more: "), link];
 
     // CC :102-138.
     element! {
@@ -259,7 +251,6 @@ fn OverridesSelect(
             View(flex_direction: FlexDirection::Column, margin_top: 1u32, gap: 1) {
                 Text(segments: Some(allow_text), wrap: TextWrap::Wrap)
                 Text(segments: Some(strict_text), wrap: TextWrap::Wrap)
-                Text(segments: Some(learn_more), wrap: TextWrap::Wrap)
             }
         }
     }

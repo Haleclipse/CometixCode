@@ -174,9 +174,9 @@ pub fn EnterPlanModePermissionRequest<'a>(
             worker_badge: props.worker_badge.clone(),
         ) {
             View(flex_direction: FlexDirection::Column, margin_top: 1u32, padding_left: 1u32, padding_right: 1u32) {
-                Text(content: "Claude wants to enter plan mode to explore and design an implementation approach.".to_string(), wrap: TextWrap::Wrap)
+                Text(content: "nyan wants to enter plan mode to explore and design an implementation approach.".to_string(), wrap: TextWrap::Wrap)
                 View(margin_top: 1u32, flex_direction: FlexDirection::Column) {
-                    Text(content: "In plan mode, Claude will:".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
+                    Text(content: "In plan mode, nyan will:".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
                     Text(content: " · Explore the codebase thoroughly".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
                     Text(content: " · Identify existing patterns".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)
                     Text(content: " · Design an implementation strategy".to_string(), color: theme.inactive, wrap: TextWrap::NoWrap)

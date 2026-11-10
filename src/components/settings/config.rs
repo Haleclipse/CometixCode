@@ -2477,7 +2477,7 @@ mod tests {
         // StructuredDiff's filePath only picks the language: no header row.
         assert!(!text.contains("demo.js"), "canvas=\n{text}");
         assert!(text.contains("Hello, World!"), "canvas=\n{text}");
-        assert!(text.contains("Hello, Claude!"), "canvas=\n{text}");
+        assert!(text.contains("Hello, nyan!"), "canvas=\n{text}");
         assert!(
             text.contains("Syntax theme: Monokai Extended (ctrl+t to disable)"),
             "canvas=\n{text}"
@@ -2503,9 +2503,9 @@ mod tests {
             .expect("mock render should produce a canvas");
         let (title_x, title_y) = find_text(canvas, "Theme").expect("Theme title should render");
         let (added_x, added_y) =
-            find_text(canvas, "Hello, Claude!").expect("diff preview should render added line");
+            find_text(canvas, "Hello, nyan!").expect("diff preview should render added line");
         let (added_word_x, added_word_y) =
-            find_text(canvas, "Claude").expect("word-level added highlight should render");
+            find_text(canvas, "nyan!").expect("word-level added highlight should render");
         let (removed_word_x, removed_word_y) =
             find_text(canvas, "World").expect("word-level removed highlight should render");
 
@@ -2698,18 +2698,17 @@ mod tests {
             "official OutputStylePicker copy should render; canvas=\n{text}"
         );
         assert!(
-            normalized.contains(
-                "Claude completes coding tasks efficiently and provides concise responses"
-            ),
+            normalized
+                .contains("nyan completes coding tasks efficiently and provides concise responses"),
             "Default output style description should match official fallback copy; canvas=\n{text}"
         );
         assert!(
-            normalized.contains("Claude explains its implementation choices and codebase patterns"),
+            normalized.contains("nyan explains its implementation choices and codebase patterns"),
             "Explanatory output style description should match official copy; canvas=\n{text}"
         );
         assert!(
             normalized.contains(
-                "Claude pauses and asks you to write small pieces of code for hands-on practice"
+                "nyan pauses and asks you to write small pieces of code for hands-on practice"
             ),
             "Learning output style description should match official copy; canvas=\n{text}"
         );
@@ -2717,7 +2716,7 @@ mod tests {
             text.lines().any(|line| {
                 line.contains("Default")
                     && line.contains(
-                        "Claude completes coding tasks efficiently and provides concise responses",
+                        "nyan completes coding tasks efficiently and provides concise responses",
                     )
             }),
             "OutputStylePicker should use official compact two-column rows, not expanded description rows; canvas=\n{text}"

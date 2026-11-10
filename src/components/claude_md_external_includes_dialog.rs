@@ -139,7 +139,6 @@ pub fn ClaudeMdExternalIncludesDialog<'a>(
                 color: theme.inactive,
                 wrap: TextWrap::Wrap,
             )
-            Link(url: "https://code.claude.com/docs/en/security".to_string())
 
             Select(
                 options: options,
@@ -207,10 +206,6 @@ mod tests {
         assert!(text.contains("/shared/rules.md"), "canvas=\n{text}");
         assert!(
             text.contains("Important: Only use nyan with files you trust."),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("https://code.claude.com/docs/en/security"),
             "canvas=\n{text}"
         );
         assert!(

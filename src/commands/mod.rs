@@ -545,7 +545,7 @@ fn commands() -> Vec<Command> {
             .executable(execution::call_config),
         Command::local_ui(
             "copy",
-            "Copy Claude's last response to clipboard (or /copy N for the Nth-latest)",
+            "Copy nyan's last response to clipboard (or /copy N for the Nth-latest)",
         )
         .executable(execution::call_copy),
         Command::local_ui(context::NAME, context::INTERACTIVE_DESCRIPTION)
@@ -595,7 +595,7 @@ fn commands() -> Vec<Command> {
             .argument_hint("[enable|disable [server-name]]")
             .immediate()
             .executable(execution::call_mcp),
-        Command::local_ui("memory", "Edit Claude memory files")
+        Command::local_ui("memory", "Edit nyan memory files")
             .executable(execution::call_memory),
         Command::local_ui("model", "Set the AI model for nyan")
             .description_when(model::description)

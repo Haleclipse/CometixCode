@@ -701,13 +701,13 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             (
                 "includeCoAuthoredBy",
                 zod::boolean().optional().describe(
-                    "Deprecated: Use attribution instead. Whether to include Claude's co-authored by attribution in commits and PRs (defaults to true)",
+                    "Deprecated: Use attribution instead. Whether to include nyan's co-authored by attribution in commits and PRs (defaults to true)",
                 ),
             ),
             (
                 "includeGitInstructions",
                 zod::boolean().optional().describe(
-                    "Include built-in commit and PR workflow instructions in Claude's system prompt (default: true)",
+                    "Include built-in commit and PR workflow instructions in nyan's system prompt (default: true)",
                 ),
             ),
             (
@@ -858,7 +858,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             (
                 "language",
                 zod::string().optional().describe(
-                    "Preferred language for Claude responses (e.g., \"japanese\", \"spanish\")",
+                    "Preferred language for nyan responses (e.g., \"japanese\", \"spanish\")",
                 ),
             ),
             (
@@ -1021,7 +1021,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             (
                 "autoMemoryEnabled",
                 zod::boolean().optional().describe(
-                    "Enable auto-memory for this project. When false, Claude will not read from or write to the auto-memory directory.",
+                    "Enable auto-memory for this project. When false, nyan will not read from or write to the auto-memory directory.",
                 ),
             ),
             (

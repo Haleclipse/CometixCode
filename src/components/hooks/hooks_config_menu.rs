@@ -139,7 +139,7 @@ pub fn HooksConfigMenu<'a>(
                         Text(content: "· Tool operations will proceed without hook validation".to_string(), dim: true, wrap: TextWrap::Wrap)
                     }
                     Text(
-                        content: "To re-enable hooks, remove \"disableAllHooks\" from settings.json or ask Claude.".to_string(),
+                        content: "To re-enable hooks, remove \"disableAllHooks\" from settings.json or ask nyan.".to_string(),
                         dim: true,
                         wrap: TextWrap::Wrap,
                     )

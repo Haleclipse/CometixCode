@@ -32,8 +32,6 @@ pub struct ValidationError {
     pub message: String,
     pub expected: Option<String>,
     pub invalid_value: Option<String>,
-    /// Maps to: CC `utils/settings/validation.ts` `ValidationError.docLink`.
-    pub doc_link: Option<String>,
     pub suggestion: Option<String>,
 }
 
@@ -231,7 +229,6 @@ fn format_zod_issue(issue: &Issue, file_path: &str) -> ValidationError {
         message,
         expected,
         invalid_value,
-        doc_link: tip.doc_link,
         suggestion: tip.suggestion,
     }
 }
@@ -316,7 +313,6 @@ pub fn filter_invalid_permission_rules(
                     message: format!("Non-string value in {key} array was removed"),
                     expected: None,
                     invalid_value: Some(rule.to_string()),
-                    doc_link: None,
                     suggestion: None,
                 });
                 return false;
@@ -336,7 +332,6 @@ pub fn filter_invalid_permission_rules(
                     message,
                     expected: None,
                     invalid_value: Some(rule_str.to_string()),
-                    doc_link: None,
                     suggestion: None,
                 });
                 return false;
@@ -439,10 +434,6 @@ mod tests {
             Some(
                 "Valid modes: \"acceptEdits\" (ask before file changes), \"plan\" (analysis only), \"bypassPermissions\" (auto-accept all), or \"default\" (standard behavior)"
             )
-        );
-        assert_eq!(
-            mode_error.doc_link.as_deref(),
-            Some("https://code.claude.com/docs/en/iam#permission-modes")
         );
 
         // invalid_type → "Expected X, but received Y".

@@ -155,7 +155,7 @@ mod tests {
                     multiline: true,
                     columns: 40usize,
                     show_cursor: true,
-                    placeholder: Some("Ask Claude".to_string()),
+                    placeholder: Some("Ask nyan".to_string()),
                 )
             }
         }
@@ -164,7 +164,7 @@ mod tests {
     #[test]
     fn text_input_component_composes_base_text_input_placeholder() {
         let text = element! { ContextProvider(value: Context::owned(crate::state::store::AppStore::new(crate::state::app_state_store::AppState::default(), None))) { TextInputHarness } }.render(Some(80)).to_string();
-        assert_eq!(text, "Ask Claude\n");
+        assert_eq!(text, "Ask nyan\n");
     }
 
     #[component]

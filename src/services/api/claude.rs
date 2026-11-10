@@ -4373,7 +4373,7 @@ async fn drain_stream_events(
 
 fn max_output_tokens_system_api_error_message(max_output_tokens: u32) -> SystemApiErrorMessage {
     let content = format!(
-        "{}: Claude's response exceeded the {} output token maximum. To configure this behavior, set the NYAN_MAX_OUTPUT_TOKENS environment variable.",
+        "{}: The model's response exceeded the {} output token maximum. To configure this behavior, set the NYAN_MAX_OUTPUT_TOKENS environment variable.",
         crate::services::api::errors::API_ERROR_MESSAGE_PREFIX,
         max_output_tokens,
     );
@@ -8210,7 +8210,7 @@ mod tests {
         assert!(
             error
                 .content
-                .contains("Claude's response exceeded the 64000 output token maximum")
+                .contains("The model's response exceeded the 64000 output token maximum")
         );
         assert_eq!(error.api_error, "max_output_tokens");
         assert_eq!(error.error, "max_output_tokens");

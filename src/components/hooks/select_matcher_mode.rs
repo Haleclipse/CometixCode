@@ -144,7 +144,7 @@ pub fn SelectMatcherMode<'a>(
                 vec![element! {
                     View(flex_direction: FlexDirection::Column, gap: 1u32) {
                         Text(content: "No hooks configured for this event.".to_string(), dim: true, wrap: TextWrap::Wrap)
-                        Text(content: "To add hooks, edit settings.json directly or ask Claude.".to_string(), dim: true, wrap: TextWrap::Wrap)
+                        Text(content: "To add hooks, edit settings.json directly or ask nyan.".to_string(), dim: true, wrap: TextWrap::Wrap)
                     }
                 }.into_any()]
             } else {

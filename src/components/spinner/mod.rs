@@ -586,7 +586,7 @@ fn effective_spinner_tip(
     }
     if time_based_tips_enabled && elapsed_ms > 30_000 && btw_use_count == 0 {
         return Some(
-            "Use /btw to ask a quick side question without interrupting Claude's current work"
+            "Use /btw to ask a quick side question without interrupting nyan's current work"
                 .to_string(),
         );
     }
@@ -1960,9 +1960,7 @@ mod tests {
     fn effective_spinner_tip_matches_official_time_based_tip_order() {
         assert_eq!(
             effective_spinner_tip(30_001, Some("Custom tip"), false, true, 0).as_deref(),
-            Some(
-                "Use /btw to ask a quick side question without interrupting Claude's current work"
-            )
+            Some("Use /btw to ask a quick side question without interrupting nyan's current work")
         );
         assert_eq!(
             effective_spinner_tip(1_800_001, Some("Custom tip"), false, true, 0).as_deref(),

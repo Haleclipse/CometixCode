@@ -16,7 +16,7 @@ pub enum CrossProjectResumeResult {
 /// Maps to: CC `utils/crossProjectResume.ts#checkCrossProjectResume`.
 ///
 /// CC's same-repo worktree shortcut is a staged rollout that external builds
-/// never take, so even same-repo worktrees print a `cd ... && claude --resume ...`.
+/// never take, so even same-repo worktrees print a `cd ... && nyan --resume ...`.
 pub fn check_cross_project_resume(
     selection: &SessionSelection,
     show_all_projects: bool,
@@ -39,7 +39,7 @@ pub fn check_cross_project_resume(
     CrossProjectResumeResult::DifferentProject {
         project_path: project_path.to_string(),
         command: format!(
-            "cd {} && claude --resume {}",
+            "cd {} && nyan --resume {}",
             quote(&[project_path]),
             selection.session_id
         ),
@@ -65,7 +65,7 @@ mod tests {
             check_cross_project_resume(&worktree_selection, true),
             CrossProjectResumeResult::DifferentProject {
                 project_path: "/repo-wt/subdir".to_string(),
-                command: "cd /repo-wt/subdir && claude --resume abc".to_string(),
+                command: "cd /repo-wt/subdir && nyan --resume abc".to_string(),
             }
         );
 
@@ -78,7 +78,7 @@ mod tests {
             check_cross_project_resume(&other_selection, true),
             CrossProjectResumeResult::DifferentProject {
                 project_path: "/other project".to_string(),
-                command: "cd '/other project' && claude --resume abc".to_string(),
+                command: "cd '/other project' && nyan --resume abc".to_string(),
             }
         );
 

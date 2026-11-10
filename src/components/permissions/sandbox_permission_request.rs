@@ -77,7 +77,7 @@ pub fn sandbox_permission_options(host: &str) -> Vec<SandboxPermissionOption> {
             SandboxPermissionOptionValue::YesDontAskAgain,
         ),
         SandboxPermissionOption::select(
-            "No, and tell Claude what to do differently (esc)",
+            "No, and tell nyan what to do differently (esc)",
             SandboxPermissionOptionValue::No,
         ),
     ]
@@ -222,7 +222,7 @@ mod tests {
         );
         assert_eq!(
             options[2].label,
-            "No, and tell Claude what to do differently (esc)"
+            "No, and tell nyan what to do differently (esc)"
         );
         assert_eq!(options.len(), 3);
     }
@@ -271,7 +271,7 @@ mod tests {
             "canvas=\n{text}"
         );
         assert!(
-            text.contains("No, and tell Claude what to do differently"),
+            text.contains("No, and tell nyan what to do differently"),
             "canvas=\n{text}"
         );
     }

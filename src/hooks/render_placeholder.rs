@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn render_placeholder_matches_official_cursor_and_dim_branches() {
         let idle = render_placeholder(PlaceholderRenderOptions {
-            placeholder: Some("Ask Claude".to_string()),
+            placeholder: Some("Ask nyan".to_string()),
             value: String::new(),
             show_cursor: true,
             focus: false,
@@ -71,7 +71,7 @@ mod tests {
         });
         assert_eq!(
             idle.rendered_placeholder,
-            Some("\x1b[2mAsk Claude\x1b[22m".to_string())
+            Some("\x1b[2mAsk nyan\x1b[22m".to_string())
         );
         assert!(idle.show_placeholder);
 
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn render_placeholder_is_not_shown_when_value_is_present() {
         let with_value = render_placeholder(PlaceholderRenderOptions {
-            placeholder: Some("Ask Claude".to_string()),
+            placeholder: Some("Ask nyan".to_string()),
             value: "hello".to_string(),
             show_cursor: true,
             focus: true,

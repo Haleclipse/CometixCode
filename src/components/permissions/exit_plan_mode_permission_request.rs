@@ -461,7 +461,7 @@ pub fn ExitPlanModePermissionRequest<'a>(
             let mut select_option = option.to_select_option();
             if !is_empty && option.value == ExitPlanModePermissionOptionValue::No {
                 select_option.input = Some(SelectInputOptionData {
-                    placeholder: Some("Tell Claude what to change".to_string()),
+                    placeholder: Some("Tell nyan what to change".to_string()),
                     value: feedback.clone(),
                     show_label_with_value: true,
                     label_value_separator: Some(", ".to_string()),
@@ -505,7 +505,7 @@ pub fn ExitPlanModePermissionRequest<'a>(
                 worker_badge: props.worker_badge.clone(),
             ) {
                 View(flex_direction: FlexDirection::Column, padding_left: 1u32, padding_right: 1u32, margin_top: 1u32) {
-                    Text(content: "Claude wants to exit plan mode".to_string(), wrap: TextWrap::Wrap)
+                    Text(content: "nyan wants to exit plan mode".to_string(), wrap: TextWrap::Wrap)
                     View(margin_top: 1u32) {
                         Select(
                             options: select_options,
@@ -531,7 +531,7 @@ pub fn ExitPlanModePermissionRequest<'a>(
             ) {
                 View(flex_direction: FlexDirection::Column, margin_top: 1u32) {
                     View(padding_left: 1u32, padding_right: 1u32, flex_direction: FlexDirection::Column) {
-                        Text(content: "Here is Claude's plan:".to_string(), wrap: TextWrap::NoWrap)
+                        Text(content: "Here is nyan's plan:".to_string(), wrap: TextWrap::NoWrap)
                     }
                     View(
                         border_style: BorderStyle::Dashed,
@@ -567,7 +567,7 @@ pub fn ExitPlanModePermissionRequest<'a>(
                                 }
                             })
                         })
-                        Text(content: "Claude has written up a plan and is ready to execute. Would you like to proceed?".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
+                        Text(content: "nyan has written up a plan and is ready to execute. Would you like to proceed?".to_string(), color: theme.inactive, wrap: TextWrap::Wrap)
                         View(margin_top: 1u32) {
                             Select(
                                 options: select_options,
@@ -664,7 +664,7 @@ mod tests {
         .to_string();
 
         assert!(text.contains("Ready to code?"), "canvas=\n{text}");
-        assert!(text.contains("Here is Claude's plan:"), "canvas=\n{text}");
+        assert!(text.contains("Here is nyan's plan:"), "canvas=\n{text}");
         assert!(text.contains("edit files"), "canvas=\n{text}");
         assert!(text.contains("Requested permissions:"), "canvas=\n{text}");
         assert!(text.contains("Bash(prompt run tests)"), "canvas=\n{text}");
@@ -683,7 +683,7 @@ mod tests {
 
         assert!(text.contains("Exit plan mode?"), "canvas=\n{text}");
         assert!(
-            text.contains("Claude wants to exit plan mode"),
+            text.contains("nyan wants to exit plan mode"),
             "canvas=\n{text}"
         );
         assert!(text.contains("Yes"), "canvas=\n{text}");

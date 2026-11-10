@@ -141,7 +141,7 @@ pub fn AgentDetail<'a>(
             View(flex_direction: FlexDirection::Column) {
                 MixedText(contents: vec![
                     MixedTextContent::new("Description").weight(Weight::Bold),
-                    MixedTextContent::new(" (tells Claude when to use this agent):"),
+                    MixedTextContent::new(" (tells nyan when to use this agent):"),
                 ])
                 View(margin_left: 2u32) { Text(content: agent.when_to_use.clone()) }
             }

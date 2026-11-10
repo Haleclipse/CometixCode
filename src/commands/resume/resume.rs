@@ -287,11 +287,11 @@ mod tests {
 
     #[test]
     fn cross_project_message_matches_official_clipboard_copy() {
-        let message = cross_project_message("cd /tmp/project && claude --resume abc");
+        let message = cross_project_message("cd /tmp/project && nyan --resume abc");
 
         assert_eq!(
             message,
-            "\nThis conversation is from a different directory.\n\nTo resume, run:\n  cd /tmp/project && claude --resume abc\n\n(Command copied to clipboard)\n"
+            "\nThis conversation is from a different directory.\n\nTo resume, run:\n  cd /tmp/project && nyan --resume abc\n\n(Command copied to clipboard)\n"
         );
     }
 

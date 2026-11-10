@@ -365,15 +365,6 @@ fn SandboxModeTab(props: &SandboxModeTabProps, mut hooks: Hooks) -> impl Into<An
         " Commands will try to run in the sandbox automatically, and attempts to run outside of the sandbox fallback to regular permissions. Explicit ask/deny rules are always respected.",
     );
     auto_allow_body.styles.color = Some(theme.inactive);
-    let mut learn_more = StyledSegment::new("Learn more: ");
-    learn_more.styles.color = Some(theme.inactive);
-    let mut link = link_segment(
-        "https://code.claude.com/docs/en/sandboxing".to_string(),
-        Some("code.claude.com/docs/en/sandboxing".to_string()),
-        None,
-        None,
-    );
-    link.styles.color = Some(theme.inactive);
 
     // CC :175-209.
     element! {
@@ -402,7 +393,6 @@ fn SandboxModeTab(props: &SandboxModeTabProps, mut hooks: Hooks) -> impl Into<An
             )
             View(flex_direction: FlexDirection::Column, margin_top: 1u32, gap: 1) {
                 Text(segments: Some(vec![auto_allow_heading, auto_allow_body]), wrap: TextWrap::Wrap)
-                Text(segments: Some(vec![learn_more, link]), wrap: TextWrap::Wrap)
             }
         }
     }
@@ -542,10 +532,6 @@ mod tests {
         // CC's Select shows its indexes (hideIndexes defaults to false).
         assert!(
             text.contains("1. Sandbox BashTool, with auto-allow"),
-            "canvas=\n{text}"
-        );
-        assert!(
-            text.contains("Learn more: code.claude.com/docs/en/sandboxing"),
             "canvas=\n{text}"
         );
     }

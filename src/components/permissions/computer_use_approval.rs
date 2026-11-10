@@ -514,7 +514,7 @@ fn ComputerUseAppListPanel(
                     plural(checked.len(), "app")
                 ),
                 AppListOption::Deny => {
-                    "Deny, and tell Claude what to do differently (esc)".to_string()
+                    "Deny, and tell nyan what to do differently (esc)".to_string()
                 }
             },
             description: None,
@@ -594,7 +594,7 @@ fn ComputerUseAppListPanel(
                     Some(element! {
                         Text(
                             content: format!(
-                                "{} other {} will be hidden while Claude works.",
+                                "{} other {} will be hidden while nyan works.",
                                 request.will_hide.len(),
                                 plural(request.will_hide.len(), "app"),
                             ),

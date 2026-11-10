@@ -1834,7 +1834,7 @@ mod tests {
         assert_eq!(result.content, "Your questions have been answered");
         assert_eq!(
             rendered_tool_result_text(&all_rows, result),
-            format!("{BLACK_CIRCLE} User answered Claude's questions:\n· Proceed? → Yes")
+            format!("{BLACK_CIRCLE} User answered nyan's questions:\n· Proceed? → Yes")
         );
     }
 
@@ -1909,7 +1909,7 @@ mod tests {
         assert_eq!(
             rendered_tool_result_text(&all_rows, results[0]),
             format!(
-                "{BLACK_CIRCLE} Entered plan mode\nClaude is now exploring and designing an implementation approach."
+                "{BLACK_CIRCLE} Entered plan mode\nnyan is now exploring and designing an implementation approach."
             )
         );
         assert_eq!(results[1].content, "User has approved your plan");
@@ -1917,7 +1917,7 @@ mod tests {
         // BLACK_CIRCLE, exactly like the EnterPlanMode line above.
         assert!(
             rendered_tool_result_text(&all_rows, results[1])
-                .starts_with(&format!("{BLACK_CIRCLE} User approved Claude's plan"))
+                .starts_with(&format!("{BLACK_CIRCLE} User approved nyan's plan"))
         );
         assert!(rendered_tool_result_text(&all_rows, results[1]).contains("Plan saved to:"));
     }
@@ -1974,7 +1974,7 @@ mod tests {
                 &[],
                 Default::default(),
             );
-        assert_eq!(rejected_lines[0].text, "User rejected Claude's plan:");
+        assert_eq!(rejected_lines[0].text, "User rejected nyan's plan:");
         assert_eq!(rejected_lines[1].text, "## Plan");
         assert_eq!(rejected_lines[2].text, "Revise it");
     }

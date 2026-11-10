@@ -188,7 +188,6 @@ fn profile_scope_error(path: &Path, field: &str, message: impl Into<String>) -> 
         message: message.into(),
         expected: None,
         invalid_value: None,
-        doc_link: None,
         suggestion: None,
     }
 }
@@ -315,7 +314,6 @@ fn validate_merged_selection_profiles(settings: &SettingsJson) -> Vec<Validation
                 message: format!("model profile {r_ref:?} is not defined in settings.nyan.models"),
                 expected: None,
                 invalid_value: Some(val.to_string()),
-                doc_link: None,
                 suggestion: None,
             });
         }
@@ -388,7 +386,6 @@ fn strip_local_decision_tiers(settings: &mut SettingsJson) -> Vec<ValidationErro
                 ),
                 expected: None,
                 invalid_value: None,
-                doc_link: None,
                 suggestion: None,
             });
             *slot = None;

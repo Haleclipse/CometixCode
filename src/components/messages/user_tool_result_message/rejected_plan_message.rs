@@ -19,7 +19,7 @@ pub fn RejectedPlanMessage(
     element! {
         MessageResponse {
             View(flex_direction: FlexDirection::Column) {
-                Text(content: "User rejected Claude's plan:".to_string(), color: theme.subtle)
+                Text(content: "User rejected nyan's plan:".to_string(), color: theme.subtle)
                 View(
                     border_style: BorderStyle::Round,
                     border_color: theme.plan_mode,

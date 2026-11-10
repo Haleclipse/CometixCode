@@ -231,7 +231,7 @@ pub fn create_permission_request_message(
 ) -> String {
     let Some(reason) = decision_reason else {
         return format!(
-            "Claude requested permissions to use {tool_name}, but you haven't granted it yet."
+            "nyan requested permissions to use {tool_name}, but you haven't granted it yet."
         );
     };
     match reason {
@@ -301,7 +301,7 @@ pub fn create_permission_request_message(
             super::permission_mode::permission_mode_title(*mode)
         ),
         PermissionDecisionReason::Classifier { .. } => format!(
-            "Claude requested permissions to use {tool_name}, but you haven't granted it yet."
+            "nyan requested permissions to use {tool_name}, but you haven't granted it yet."
         ),
     }
 }

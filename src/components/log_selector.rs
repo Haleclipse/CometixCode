@@ -27,7 +27,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 const ALL_TAG_LABEL: &str = "All";
-const AGENTIC_SEARCH_OPTION_LABEL: &str = "Search deeply using Claude →";
+const AGENTIC_SEARCH_OPTION_LABEL: &str = "Search deeply using nyan →";
 const AGENTIC_SEARCH_READONLY_NOTICE: &str = "Agentic search is unavailable in nyan UI-only mode.";
 const DEEP_SEARCH_READ_WINDOW_BYTES: u64 = 256 * 1024;
 const DEEP_SEARCH_MAX_TEXT_LENGTH: usize = 50_000;
@@ -2347,7 +2347,7 @@ mod tests {
         assert!(should_show_agentic_search_option("  needle  ", false));
         assert!(!should_show_agentic_search_option("   ", false));
         assert!(!should_show_agentic_search_option("needle", true));
-        assert_eq!(AGENTIC_SEARCH_OPTION_LABEL, "Search deeply using Claude →");
+        assert_eq!(AGENTIC_SEARCH_OPTION_LABEL, "Search deeply using nyan →");
         assert!(AGENTIC_SEARCH_READONLY_NOTICE.contains("UI-only"));
     }
 

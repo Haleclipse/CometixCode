@@ -199,7 +199,7 @@ mod tests {
                     multiline: true,
                     columns: 40usize,
                     show_cursor: true,
-                    placeholder: Some("Ask Claude".to_string()),
+                    placeholder: Some("Ask nyan".to_string()),
                     initial_mode: Some(VimMode::Insert),
                     current_mode: VimMode::Insert,
                 )
@@ -214,6 +214,6 @@ mod tests {
                 VimTextInputHarness
             }
         }.render(Some(80)).to_string();
-        assert_eq!(text, "Ask Claude\n");
+        assert_eq!(text, "Ask nyan\n");
     }
 }

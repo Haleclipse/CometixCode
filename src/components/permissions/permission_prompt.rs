@@ -28,8 +28,8 @@ impl FeedbackType {
     /// CC `DEFAULT_PLACEHOLDERS` (:37-40).
     fn default_placeholder(self) -> &'static str {
         match self {
-            Self::Accept => "tell Claude what to do next",
-            Self::Reject => "tell Claude what to do differently",
+            Self::Accept => "tell nyan what to do next",
+            Self::Reject => "tell nyan what to do differently",
         }
     }
 }
@@ -603,14 +603,14 @@ mod tests {
         let (tab, down) = (press(KeyCode::Tab), press(KeyCode::Down));
         let from_yes = settled(vec![vec![tab.clone(), down.clone()]]);
         assert!(from_yes.contains("❯ 2. Yes, always"), "{from_yes}");
-        assert!(!from_yes.contains("tell Claude"), "{from_yes}");
+        assert!(!from_yes.contains("tell nyan"), "{from_yes}");
         for group in [
             vec![tab.clone(), down.clone()],
             vec![down.clone(), tab.clone()],
         ] {
             let from_always = settled(vec![vec![down.clone()], group]);
             assert!(
-                from_always.contains("❯ 3. No, tell Claude what to do differently"),
+                from_always.contains("❯ 3. No, tell nyan what to do differently"),
                 "{from_always}"
             );
         }

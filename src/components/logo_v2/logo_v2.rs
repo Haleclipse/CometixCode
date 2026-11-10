@@ -329,7 +329,7 @@ fn LogoRuntimeNotices(
                 .clone()
                 .unwrap_or_else(|| "C-b".to_string());
             let detach = if data.tmux_prefix_conflicts {
-                format!("Detach: {prefix} {prefix} d (press prefix twice - Claude uses {prefix})")
+                format!("Detach: {prefix} {prefix} d (press prefix twice - nyan uses {prefix})")
             } else {
                 format!("Detach: {prefix} d")
             };
@@ -936,7 +936,7 @@ mod tests {
         assert!(text.contains("Important service notice"), "canvas=\n{text}");
         assert!(text.contains("tmux session: cc-work"), "canvas=\n{text}");
         assert!(
-            text.contains("Detach: C-a C-a d (press prefix twice - Claude uses C-a)"),
+            text.contains("Detach: C-a C-a d (press prefix twice - nyan uses C-a)"),
             "canvas=\n{text}"
         );
         assert!(!text.contains("Message from"), "canvas=\n{text}");

@@ -249,6 +249,6 @@ mod tests {
     #[test]
     fn assistant_text_renders_user_abort_as_interrupted_message() {
         let rendered = render_assistant_text(ERROR_MESSAGE_USER_ABORT, false);
-        assert!(rendered.contains("Interrupted · What should Claude do instead?"));
+        assert!(rendered.contains("Interrupted · What should nyan do instead?"));
     }
 }

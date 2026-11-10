@@ -218,8 +218,8 @@ fn ResumeFailedMessage(
         .as_deref()
         .filter(|id| is_command_safe_session_id(id))
     {
-        Some(id) => format!("Run claude --resume {id} to retry, or claude to start a new session."),
-        None => "Run claude to start a new session.".to_string(),
+        Some(id) => format!("Run nyan --resume {id} to retry, or nyan to start a new session."),
+        None => "Run nyan to start a new session.".to_string(),
     };
     element! {
         View(flex_direction: FlexDirection::Column, row_gap: 1u32) {
@@ -743,14 +743,14 @@ mod tests {
         );
         assert!(
             text.contains(&format!(
-                "Run claude --resume {id} to retry, or claude to start a new session."
+                "Run nyan --resume {id} to retry, or nyan to start a new session."
             )),
             "canvas=\n{text}"
         );
         for unsafe_id in [None, Some(""), Some("a b"), Some("-x"), Some("CON")] {
             let text = render(unsafe_id);
             assert!(
-                text.contains("Run claude to start a new session."),
+                text.contains("Run nyan to start a new session."),
                 "{unsafe_id:?} canvas=\n{text}"
             );
             assert!(!text.contains("--resume"), "{unsafe_id:?} canvas=\n{text}");
@@ -795,7 +795,7 @@ mod tests {
     #[test]
     fn cross_project_message_preserves_official_visible_copy() {
         let text = element! {
-            CrossProjectMessage(command: "cd /tmp/repo && claude --resume abc".to_string())
+            CrossProjectMessage(command: "cd /tmp/repo && nyan --resume abc".to_string())
         }
         .render(Some(100))
         .to_string();
@@ -806,7 +806,7 @@ mod tests {
         );
         assert!(text.contains("To resume, run:"), "canvas=\n{text}");
         assert!(
-            text.contains(" cd /tmp/repo && claude --resume abc"),
+            text.contains(" cd /tmp/repo && nyan --resume abc"),
             "canvas=\n{text}"
         );
         assert!(

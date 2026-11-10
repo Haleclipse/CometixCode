@@ -569,7 +569,6 @@ mod tests {
                 message: "Invalid model".to_string(),
                 expected: None,
                 invalid_value: None,
-                doc_link: None,
                 suggestion: None,
             },
             ValidationError {
@@ -578,7 +577,6 @@ mod tests {
                 message: "Invalid permission".to_string(),
                 expected: None,
                 invalid_value: None,
-                doc_link: None,
                 suggestion: None,
             },
         ]);
@@ -600,7 +598,6 @@ mod tests {
             message: "Invalid model".to_string(),
             expected: None,
             invalid_value: None,
-            doc_link: None,
             suggestion: None,
         }];
         let installation = vec!["Add ~/.local/bin to PATH".to_string(), " ".to_string()];

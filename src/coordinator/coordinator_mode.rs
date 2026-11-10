@@ -359,7 +359,7 @@ When continuing a worker with {SEND_MESSAGE_TOOL_NAME}, it has full context from
 
 1. Implementation: "Fix the null pointer in src/auth/validate.ts:42. The user field can be undefined when the session expires. Add a null check and return early with an appropriate error. Commit and report the hash."
 
-2. Precise git operation: "Create a new branch from main called 'fix/session-expiry'. Cherry-pick only commit abc123 onto it. Push and create a draft PR targeting main. Add anthropics/claude-code as reviewer. Report the PR URL."
+2. Precise git operation: "Create a new branch from main called 'fix/session-expiry'. Cherry-pick only commit abc123 onto it. Push and create a draft PR targeting main. Add the nyan maintainers team as reviewer. Report the PR URL."
 
 3. Correction (continued worker, short): "The tests failed on the null check you added — validate.test.ts:58 expects 'Invalid session' but you changed it to 'Session expired'. Fix the assertion. Commit and report the hash."
 
@@ -439,6 +439,8 @@ mod tests {
         assert!(prompt.contains(SEND_MESSAGE_TOOL_NAME));
         assert!(prompt.contains(TASK_STOP_TOOL_NAME));
         assert!(prompt.contains("coordinator"));
+        assert!(prompt.contains("Add the nyan maintainers team as reviewer."));
+        assert!(!prompt.contains("anthropics/claude-code"));
     }
 
     #[test]

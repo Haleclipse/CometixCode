@@ -47,7 +47,7 @@ pub fn call(args: &str) -> Result<PreparedBranch, String> {
         .unwrap_or_default();
     Ok(PreparedBranch {
         success_message: format!(
-            "Branched conversation{title_info}. You are now in the branch.\nTo resume the original: claude -r {original_session_id}"
+            "Branched conversation{title_info}. You are now in the branch.\nTo resume the original: nyan -r {original_session_id}"
         ),
         target: crate::commands::resume::ResumeTarget {
             session_id: fork.session_id.clone(),
@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(
             prepared.success_message,
             format!(
-                "Branched conversation \"chosen\". You are now in the branch.\nTo resume the original: claude -r {original_id}"
+                "Branched conversation \"chosen\". You are now in the branch.\nTo resume the original: nyan -r {original_id}"
             )
         );
         let disk = parse_jsonl(&fs::read(fork_path).unwrap());
@@ -600,7 +600,7 @@ mod tests {
         assert_eq!(
             default.success_message,
             format!(
-                "Branched conversation. You are now in the branch.\nTo resume the original: claude -r {original_id}"
+                "Branched conversation. You are now in the branch.\nTo resume the original: nyan -r {original_id}"
             )
         );
     }
