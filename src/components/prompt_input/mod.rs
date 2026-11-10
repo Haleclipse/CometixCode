@@ -52,9 +52,10 @@ use crate::components::prompt_input::prompt_input_stash_notice::PromptInputStash
 use crate::components::quick_open_dialog::QuickOpenDialog;
 #[cfg(test)]
 use crate::components::tasks::AsyncAgentDetailData;
+#[cfg(test)]
+use crate::components::tasks::background_tasks_dialog::BackgroundTaskDetailData;
 use crate::components::tasks::background_tasks_dialog::{
-    BackgroundTaskCategory, BackgroundTaskDetailData, BackgroundTasksDialog,
-    BackgroundTasksDialogItem,
+    BackgroundTaskCategory, BackgroundTasksDialog, BackgroundTasksDialogItem,
 };
 #[cfg(test)]
 use crate::components::tasks::task_status_utils::TaskStatus;
@@ -131,12 +132,7 @@ struct PromptStash {
 }
 
 /// Maps to: CC `components/tasks/BackgroundTaskStatus.tsx:49-57` — the footer
-/// pill's task set. Same source as the dialog items, minus (ant builds only)
-/// panel agents: `isPanelAgentTask` = local_agent with
-/// `agentType !== 'main-session'` (CC `LocalAgentTask.tsx:216-218`), excluded
-/// behind the build-time `USER_TYPE === 'ant'` define → the
-/// `anthropic_internal` cargo feature. The dialog does NOT apply this
-/// exclusion.
+/// pill's task set, projected from the same items as the dialog.
 fn prompt_pill_tasks(
     items: &[BackgroundTasksDialogItem],
 ) -> Vec<crate::tasks::pill_label::PillTask> {
@@ -147,15 +143,7 @@ fn prompt_pill_tasks(
             // Monitor-kind shells are not distinguished by the shell snapshot
             // yet (Bash parity batch); every shell counts as a plain shell.
             BackgroundTaskCategory::Shell => Some(PillTask::LocalBash { is_monitor: false }),
-            BackgroundTaskCategory::LocalAgent => {
-                if cfg!(feature = "anthropic_internal")
-                    && let BackgroundTaskDetailData::Agent(agent) = &item.detail
-                    && agent.agent_type.as_deref() != Some("main-session")
-                {
-                    return None;
-                }
-                Some(PillTask::LocalAgent)
-            }
+            BackgroundTaskCategory::LocalAgent => Some(PillTask::LocalAgent),
             // The items source only produces Shell + LocalAgent today.
             _ => None,
         })
@@ -827,7 +815,7 @@ pub fn PromptInput<'a>(
     let background_task_items =
         crate::components::tasks::background_tasks_dialog::background_task_items(&tasks);
     // Maps to: CC BackgroundTaskStatus.tsx:49-57 `runningTasks` — the pill's
-    // set (ant builds exclude panel agents); the pill label + count read it.
+    // set; the pill label + count read it.
     let pill_tasks = prompt_pill_tasks(&background_task_items);
     let teams_dialog_data = prompt_teams_data();
     let prompt_dialog_active = search_dialog_active
@@ -3037,7 +3025,7 @@ pub fn PromptInput<'a>(
             } else {
                 element! {
                     // Narrow FooterLayoutWake provider: only the Footer
-                    // subtree (Footer / Notifications / MemoryUsageIndicator /
+                    // subtree (Footer / Notifications /
                     // SandboxPromptFooterHint) can reach the wake — layout
                     // flips wake PromptInput, not the whole tree.
                     ContextProvider(value: Context::owned(footer_layout_wake.clone())) {
@@ -3179,7 +3167,7 @@ mod tests {
     }
 
     #[test]
-    fn pill_tasks_project_items_and_apply_the_ant_panel_exclusion() {
+    fn pill_tasks_project_shell_and_agent_items() {
         use crate::tasks::pill_label::PillTask;
         fn agent_item(id: &str, agent_type: &str) -> BackgroundTasksDialogItem {
             BackgroundTasksDialogItem {
@@ -3216,34 +3204,9 @@ mod tests {
             pills[0],
             PillTask::LocalBash { is_monitor: false }
         ));
-        if cfg!(feature = "anthropic_internal") {
-            // CC BackgroundTaskStatus.tsx:49-57 — ant builds exclude panel
-            // agents (agentType !== 'main-session') from the pill only.
-            assert_eq!(pills.len(), 2);
-        } else {
-            assert_eq!(pills.len(), 3);
-        }
-
-        // Gate difference (CC useBackgroundTaskNavigation.ts:81-83): the
-        // dialog-open gate has NO panel-agent exclusion — it reads the raw
-        // item set (`has_background_tasks = !background_task_items.is_empty()`),
-        // so a panel-agent-only set still opens the dialog in ant builds even
-        // though the pill set is empty. In external builds the two sets are
-        // identical.
-        let panel_only = vec![agent_item("agent-panel", "worker")];
-        let panel_only_pills = prompt_pill_tasks(&panel_only);
-        if cfg!(feature = "anthropic_internal") {
-            assert!(
-                panel_only_pills.is_empty(),
-                "pill set applies the ant exclusion"
-            );
-        } else {
-            assert_eq!(panel_only_pills.len(), 1);
-        }
-        assert!(
-            !panel_only.is_empty(),
-            "the dialog-open gate's set is unexcluded in both builds"
-        );
+        assert_eq!(pills.len(), 3);
+        assert!(matches!(pills[1], PillTask::LocalAgent));
+        assert!(matches!(pills[2], PillTask::LocalAgent));
     }
 
     #[component]

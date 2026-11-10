@@ -123,10 +123,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/nyan-tools/actionlint"
           actionlint="$(node scripts/ci/fetch-tool.mjs actionlint --dest "$RUNNER_TEMP/nyan-tools/actionlint")"
           dirname "$actionlint" >> "$GITHUB_PATH"
-      - name: Check default and internal builds
-        run: |
-          cargo check --locked --lib --tests
-          cargo check --locked --lib --tests --features anthropic_internal
+      - name: Check build
+        run: cargo check --locked --lib --tests
       - name: Run clippy gates
         run: |
           cargo clippy --locked --lib --bins -- -D clippy::correctness -D clippy::disallowed_methods

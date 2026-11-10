@@ -12,26 +12,11 @@ pub const SHELL_TOOL_NAMES: &[&str] = &["Bash", "PowerShell"];
 pub fn is_powershell_tool_enabled() -> bool {
     is_powershell_tool_enabled_for_platform(
         std::env::consts::OS,
-        crate::utils::build_profile::build_audience(),
         crate::utils::process_env::var("NYAN_USE_POWERSHELL_TOOL").as_deref(),
     )
 }
 
 /// Maps to: CC `utils/shell/shellToolUtils.ts` `isPowerShellToolEnabled()`.
-pub fn is_powershell_tool_enabled_for_platform(
-    platform: &str,
-    audience: crate::utils::build_profile::BuildAudience,
-    env_value: Option<&str>,
-) -> bool {
-    if platform != "windows" {
-        return false;
-    }
-    if crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::Tools,
-    ) {
-        !crate::utils::env_utils::is_env_defined_falsy(env_value)
-    } else {
-        crate::utils::env_utils::is_env_truthy(env_value)
-    }
+pub fn is_powershell_tool_enabled_for_platform(platform: &str, env_value: Option<&str>) -> bool {
+    platform == "windows" && crate::utils::env_utils::is_env_truthy(env_value)
 }

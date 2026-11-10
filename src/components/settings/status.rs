@@ -11,7 +11,7 @@ use crate::utils::file::get_display_path;
 use crate::utils::format::format_number;
 use crate::utils::ide::IDEExtensionInstallationStatus;
 use crate::utils::model::model::render_model_name;
-use crate::utils::settings::{SettingsJson, ValidationError};
+use crate::utils::settings::ValidationError;
 use crate::utils::status::StartupDiagnosticsSnapshot;
 use crate::utils::status::{
     Property as StatusPropertyData, build_account_properties, build_api_provider_properties,
@@ -31,9 +31,9 @@ pub fn Status(props: &StatusProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
     // Maps to: CC `useAppState(s => s.settings)` + `getGlobalConfig()` cached
     // direct reads; the remaining context carries startup diagnostics only.
     let runtime_config = hooks.try_use_context::<StartupDiagnosticsSnapshot>();
-    let settings_snapshot =
+    // Subscribed for re-render only: the model row reads the resolved model.
+    let _settings =
         crate::state::app_state::use_app_state(&mut hooks, |state| state.settings.clone());
-    let settings = settings_snapshot.as_ref();
     let resolved_model = crate::utils::model::model::get_main_loop_model();
     let model_display_name = render_model_name(&resolved_model);
     let cwd = std::env::current_dir()
@@ -82,7 +82,6 @@ pub fn Status(props: &StatusProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
             .and_then(|context| context.ide_installation_status.as_ref()),
     );
     let mcp_properties = mcp_status_properties(&mcp_clients);
-    let sandbox_properties = sandbox_status_properties(settings);
     let setting_sources = crate::utils::status::build_setting_sources_properties();
     let setting_sources_text = (!setting_sources.is_empty()).then(|| setting_sources.join(", "));
 
@@ -103,9 +102,6 @@ pub fn Status(props: &StatusProps, mut hooks: Hooks) -> impl Into<AnyElement<'st
                 StatusProperty(label: property.label, value: property.value)
             }).collect::<Vec<_>>())
             #(mcp_properties.into_iter().map(|property| element! {
-                StatusProperty(label: property.label, value: property.value)
-            }).collect::<Vec<_>>())
-            #(sandbox_properties.into_iter().map(|property| element! {
                 StatusProperty(label: property.label, value: property.value)
             }).collect::<Vec<_>>())
             #(setting_sources_text.map(|sources| element! {
@@ -214,34 +210,6 @@ fn ide_status_properties(
     }
 
     Vec::new()
-}
-
-fn sandbox_status_properties(settings: &SettingsJson) -> Vec<StatusPropertyData> {
-    sandbox_status_properties_for_audience(settings, crate::utils::build_profile::build_audience())
-}
-
-fn sandbox_status_properties_for_audience(
-    settings: &SettingsJson,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> Vec<StatusPropertyData> {
-    if !crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::Ui,
-    ) {
-        return Vec::new();
-    }
-
-    let enabled = settings
-        .sandbox
-        .as_ref()
-        .and_then(|sandbox| sandbox.get("enabled"))
-        .and_then(|enabled| enabled.as_bool())
-        .unwrap_or(false);
-
-    vec![status_property(
-        "Bash Sandbox",
-        if enabled { "Enabled" } else { "Disabled" },
-    )]
 }
 
 /// Maps to: CC `utils/status.tsx:148-182` `buildMcpProperties`.
@@ -563,28 +531,6 @@ mod tests {
     }
 
     #[test]
-    fn sandbox_status_properties_match_official_internal_gate_readonly() {
-        use crate::utils::build_profile::BuildAudience;
-
-        let mut settings = SettingsJson::default();
-        settings.sandbox = Some(serde_json::json!({ "enabled": true }));
-
-        assert_eq!(
-            sandbox_status_properties_for_audience(&settings, BuildAudience::AnthropicInternal,),
-            vec![status_property("Bash Sandbox", "Enabled")]
-        );
-
-        settings.sandbox = Some(serde_json::json!({ "enabled": false }));
-        assert_eq!(
-            sandbox_status_properties_for_audience(&settings, BuildAudience::AnthropicInternal,),
-            vec![status_property("Bash Sandbox", "Disabled")]
-        );
-        assert!(
-            sandbox_status_properties_for_audience(&settings, BuildAudience::External,).is_empty()
-        );
-    }
-
-    #[test]
     fn memory_diagnostics_match_official_large_file_message_readonly() {
         let diagnostics = memory_diagnostics_from_files(&[
             ClaudeMdFile {
@@ -680,7 +626,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         crate::utils::config::set_test_global_config(Some(GlobalConfig::default()));
-        let settings = SettingsJson::default();
+        let settings = crate::utils::settings::SettingsJson::default();
         crate::utils::settings::settings_cache::install_test_settings(
             serde_json::from_value(serde_json::json!({"nyan": {
                 "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},

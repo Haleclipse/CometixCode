@@ -245,17 +245,6 @@ pub fn supported_settings() -> Vec<SettingConfig> {
         .options(TEAMMATE_MODES),
     ];
 
-    // Maps to CC `supportedSettings.ts:134-143` `process.env.USER_TYPE === 'ant'`.
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::ManagedConfiguration,
-    ) {
-        settings.push(SettingConfig::new(
-            "classifierPermissionsEnabled",
-            Settings,
-            Boolean,
-            "Enable AI-based classification for Bash(prompt:...) permission rules",
-        ));
-    }
     // Maps to CC `supportedSettings.ts:153-163` `feature('BRIDGE_MODE')`.
     if crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::BridgeMode,

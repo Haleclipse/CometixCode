@@ -9,9 +9,7 @@ const PROMPT_TAIL: &str = " Until fetched, only the name is known — there is n
 /// Maps to CC `getToolLocationHint()`.
 /// Nyan uses the hardcoded feature-switch collection rather than GrowthBook.
 fn tool_location_hint() -> &'static str {
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) || crate::utils::feature_flags::feature_enabled(
+    if crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::DeferredToolsDelta,
     ) {
         "Deferred tools appear by name in <system-reminder> messages."

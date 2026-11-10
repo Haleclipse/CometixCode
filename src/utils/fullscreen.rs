@@ -69,36 +69,17 @@ pub fn is_tmux_control_mode() -> bool {
     value
 }
 
-/// Pure audience-injected form of CC `utils/fullscreen.ts#isFullscreenEnvEnabled`.
-pub fn is_fullscreen_env_enabled_for_audience(
-    get_env: &impl Fn(&str) -> Option<String>,
-    is_tmux_control_mode: bool,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> bool {
-    let no_flicker = get_env("NYAN_NO_FLICKER");
-    if crate::utils::env_utils::is_env_defined_falsy(no_flicker.as_deref()) {
-        return false;
-    }
-    if crate::utils::env_utils::is_env_truthy(no_flicker.as_deref()) {
-        return true;
-    }
-    if is_tmux_control_mode {
-        return false;
-    }
-    crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::Ui,
-    )
+/// Pure environment-injected form of CC `utils/fullscreen.ts#isFullscreenEnvEnabled`.
+/// Fullscreen is opt-in, so tmux control mode only matters for the
+/// "disabled" notice.
+pub fn is_fullscreen_env_enabled_from_env(get_env: &impl Fn(&str) -> Option<String>) -> bool {
+    crate::utils::env_utils::is_env_truthy(get_env("NYAN_NO_FLICKER").as_deref())
 }
 
 /// Maps to: CC `utils/fullscreen.ts:106-135` `isFullscreenEnvEnabled`.
 pub fn is_fullscreen_env_enabled() -> bool {
     let tmux_control_mode = is_tmux_control_mode();
-    let enabled = is_fullscreen_env_enabled_for_audience(
-        &|key| crate::utils::process_env::var(key),
-        tmux_control_mode,
-        crate::utils::build_profile::build_audience(),
-    );
+    let enabled = is_fullscreen_env_enabled_from_env(&|key| crate::utils::process_env::var(key));
     if tmux_control_mode && !enabled {
         let mut logged = LOGGED_TMUX_CC_DISABLE
             .lock()
@@ -187,34 +168,16 @@ mod tests {
     }
 
     #[test]
-    fn fullscreen_env_enabled_matches_official_internal_default_and_overrides() {
-        use crate::utils::build_profile::BuildAudience;
-
-        assert!(is_fullscreen_env_enabled_for_audience(
-            &env(&[]),
-            false,
-            BuildAudience::AnthropicInternal,
-        ));
-        assert!(!is_fullscreen_env_enabled_for_audience(
-            &env(&[]),
-            false,
-            BuildAudience::External,
-        ));
-        assert!(is_fullscreen_env_enabled_for_audience(
-            &env(&[("NYAN_NO_FLICKER", "1")]),
-            true,
-            BuildAudience::External,
-        ));
-        assert!(!is_fullscreen_env_enabled_for_audience(
-            &env(&[("NYAN_NO_FLICKER", "0")]),
-            false,
-            BuildAudience::AnthropicInternal,
-        ));
-        assert!(!is_fullscreen_env_enabled_for_audience(
-            &env(&[]),
-            true,
-            BuildAudience::AnthropicInternal,
-        ));
+    fn fullscreen_env_enabled_matches_official_external_default_and_overrides() {
+        assert!(!is_fullscreen_env_enabled_from_env(&env(&[])));
+        assert!(is_fullscreen_env_enabled_from_env(&env(&[(
+            "NYAN_NO_FLICKER",
+            "1"
+        )])));
+        assert!(!is_fullscreen_env_enabled_from_env(&env(&[(
+            "NYAN_NO_FLICKER",
+            "0"
+        )])));
     }
 
     #[test]

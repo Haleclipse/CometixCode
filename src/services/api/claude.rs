@@ -8205,9 +8205,8 @@ mod tests {
             .into_iter()
             .map(|tool| tool.name)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
+        assert!(
             active_names.contains("TaskOutput"),
-            crate::utils::build_profile::build_audience().is_external(),
             "getTools applies TaskOutput's external-distribution isEnabled gate",
         );
     }

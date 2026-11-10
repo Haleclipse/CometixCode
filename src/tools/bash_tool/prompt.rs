@@ -32,21 +32,7 @@ fn get_commit_and_pr_instructions() -> String {
         return undercover_section;
     }
 
-    // For ant users, CC uses the short version pointing to skills (:56-76).
-    if crate::utils::build_profile::build_audience().is_internal() {
-        let skills_section = if !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
-        ) {
-            "For git commits and pull requests, use the `/commit` and `/commit-push-pr` skills:\n- `/commit` - Create a git commit with staged changes\n- `/commit-push-pr` - Commit, push, and create a pull request\n\nThese skills handle git safety protocols, proper commit message formatting, and PR creation.\n\nBefore creating a pull request, run `/simplify` to review your changes, then test end-to-end (e.g. via `/tmux` for interactive features).\n\n"
-        } else {
-            ""
-        };
-        return format!(
-            "{undercover_section}# Git operations\n\n{skills_section}IMPORTANT: NEVER skip hooks (--no-verify, --no-gpg-sign, etc) unless the user explicitly requests it.\n\nUse the gh command via the Bash tool for other GitHub-related tasks including working with issues, checks, and releases. If given a Github URL use the gh command to get the information needed.\n\n# Other common operations\n- View comments on a Github PR: gh api repos/foo/bar/pulls/123/comments"
-        );
-    }
-
-    // For external users, include full inline instructions (:78-160).
+    // Full inline instructions (:78-160).
     let texts = crate::utils::attribution::get_attribution_texts();
     let commit_attribution = texts.commit;
     let pr_attribution = texts.pr;

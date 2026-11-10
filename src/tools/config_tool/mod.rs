@@ -9,13 +9,6 @@ pub mod prompt;
 pub mod supported_settings;
 pub mod ui;
 
-/// Maps to: CC `tools.ts` internal-distribution `[ConfigTool]` gate.
-pub fn is_config_tool_enabled() -> bool {
-    crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Tools,
-    )
-}
-
 /// Maps to: CC `ConfigTool` metadata.
 /// Maps to: CC `ConfigTool.ts:36-48` `inputSchema`.
 ///

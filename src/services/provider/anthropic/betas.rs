@@ -2,11 +2,10 @@
 //! Maps to CC `utils/betas.ts`.
 
 pub use crate::constants::betas::{
-    ADVISOR_BETA_HEADER, CLAUDE_CODE_20250219_BETA_HEADER, CLI_INTERNAL_BETA_HEADER,
-    CONTEXT_1M_BETA_HEADER, CONTEXT_MANAGEMENT_BETA_HEADER, EFFORT_BETA_HEADER,
-    INTERLEAVED_THINKING_BETA_HEADER, PROMPT_CACHING_SCOPE_BETA_HEADER,
-    REDACT_THINKING_BETA_HEADER, STRUCTURED_OUTPUTS_BETA_HEADER, TASK_BUDGETS_BETA_HEADER,
-    TOOL_SEARCH_BETA_HEADER_1P,
+    ADVISOR_BETA_HEADER, CLAUDE_CODE_20250219_BETA_HEADER, CONTEXT_1M_BETA_HEADER,
+    CONTEXT_MANAGEMENT_BETA_HEADER, EFFORT_BETA_HEADER, INTERLEAVED_THINKING_BETA_HEADER,
+    PROMPT_CACHING_SCOPE_BETA_HEADER, REDACT_THINKING_BETA_HEADER, STRUCTURED_OUTPUTS_BETA_HEADER,
+    TASK_BUDGETS_BETA_HEADER, TOOL_SEARCH_BETA_HEADER_1P,
 };
 use crate::utils::model::model::get_canonical_name;
 use std::collections::HashMap;
@@ -28,12 +27,11 @@ struct AutoModeConfig {
 }
 
 /// Parameterized core of CC `utils/betas.ts:160-193#modelSupportsAutoMode`.
-/// Rust's public owner reads process/build/provider/cache globals and delegates
-/// here so both compiled audiences and provider branches have a deterministic
-/// test seam; this helper carries no separate policy or state.
+/// Rust's public owner reads the feature/cache globals and delegates here so
+/// the gate has a deterministic test seam; this helper carries no separate
+/// policy or state.
 fn model_supports_auto_mode_for(
     model: &str,
-    internal_build: bool,
     transcript_classifier_enabled: bool,
     allow_models: &[String],
 ) -> bool {
@@ -50,33 +48,11 @@ fn model_supports_auto_mode_for(
         return true;
     }
 
-    if internal_build {
-        if canonical.contains("claude-3-") {
-            return false;
-        }
-        for family in ["opus", "sonnet", "haiku"] {
-            let prefix = format!("claude-{family}-4");
-            if let Some(suffix) = canonical.strip_prefix(&prefix) {
-                let supported_version = suffix
-                    .strip_prefix('-')
-                    .and_then(|suffix| suffix.chars().next())
-                    .is_some_and(|version| ('6'..='9').contains(&version));
-                if !supported_version {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
     canonical.starts_with("claude-opus-4-6") || canonical.starts_with("claude-sonnet-4-6")
 }
 
 /// Maps to: CC `utils/betas.ts:160-193#modelSupportsAutoMode`.
 pub fn model_supports_auto_mode(model: &str) -> bool {
-    let internal_build = crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Permissions,
-    );
     let transcript_classifier_enabled = crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::TranscriptClassifier,
     );
@@ -88,12 +64,7 @@ pub fn model_supports_auto_mode(model: &str) -> bool {
     } else {
         Default::default()
     };
-    model_supports_auto_mode_for(
-        model,
-        internal_build,
-        transcript_classifier_enabled,
-        &allow_models,
-    )
+    model_supports_auto_mode_for(model, transcript_classifier_enabled, &allow_models)
 }
 
 fn has_1m_context(model: &str) -> bool {
@@ -166,13 +137,6 @@ pub fn get_all_model_betas(model: &str) -> Vec<String> {
 
     if !is_haiku(model) {
         beta_headers.push(CLAUDE_CODE_20250219_BETA_HEADER.to_string());
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Api,
-        ) && crate::utils::process_env::var("NYAN_ENTRYPOINT").as_deref() == Some("cli")
-            && !CLI_INTERNAL_BETA_HEADER.is_empty()
-        {
-            beta_headers.push(CLI_INTERNAL_BETA_HEADER.to_string());
-        }
     }
 
     if has_1m_context(model) {
@@ -242,23 +206,12 @@ pub fn get_model_betas(model: &str) -> Vec<String> {
 /// Maps to: CC `utils/betas.ts:397-428` `getMergedBetas`.
 pub fn get_merged_betas(model: &str, is_agentic_query: bool) -> Vec<String> {
     let mut beta_headers = get_model_betas(model);
-    if is_agentic_query {
-        if !beta_headers
+    if is_agentic_query
+        && !beta_headers
             .iter()
             .any(|beta| beta == CLAUDE_CODE_20250219_BETA_HEADER)
-        {
-            beta_headers.push(CLAUDE_CODE_20250219_BETA_HEADER.to_string());
-        }
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Api,
-        ) && crate::utils::process_env::var("NYAN_ENTRYPOINT").as_deref() == Some("cli")
-            && !CLI_INTERNAL_BETA_HEADER.is_empty()
-            && !beta_headers
-                .iter()
-                .any(|beta| beta == CLI_INTERNAL_BETA_HEADER)
-        {
-            beta_headers.push(CLI_INTERNAL_BETA_HEADER.to_string());
-        }
+    {
+        beta_headers.push(CLAUDE_CODE_20250219_BETA_HEADER.to_string());
     }
     beta_headers
 }
@@ -285,45 +238,20 @@ mod tests {
         assert!(!model_supports_auto_mode_for(
             "claude-sonnet-4-6",
             false,
-            false,
             &["claude-sonnet-4-6".to_string()],
         ));
         for model in ["claude-opus-4-6", "claude-sonnet-4-6"] {
-            assert!(model_supports_auto_mode_for(model, false, true, &[],));
+            assert!(model_supports_auto_mode_for(model, true, &[]));
         }
-        assert!(!model_supports_auto_mode_for(
-            "claude-haiku-4-5",
-            false,
-            true,
-            &[],
-        ));
+        assert!(!model_supports_auto_mode_for("claude-haiku-4-5", true, &[]));
+        assert!(!model_supports_auto_mode_for("claude-opus-4-5", true, &[]));
         assert!(model_supports_auto_mode_for(
             "CLAUDE-HAIKU-4-5",
-            false,
             true,
             &["claude-haiku-4-5".to_string()],
         ));
         assert!(model_supports_auto_mode_for(
-            "any-internal-model",
-            true,
-            true,
-            &[],
-        ));
-        assert!(!model_supports_auto_mode_for(
             "claude-3-5-sonnet",
-            true,
-            true,
-            &[],
-        ));
-        assert!(!model_supports_auto_mode_for(
-            "claude-opus-4-5",
-            true,
-            true,
-            &[],
-        ));
-        assert!(model_supports_auto_mode_for(
-            "claude-3-5-sonnet",
-            true,
             true,
             &["CLAUDE-3-5-SONNET".to_string()],
         ));
@@ -347,11 +275,7 @@ mod tests {
         assert!(model_supports_auto_mode("claude-sonnet-4-6"));
         // There is no allowModels payload: eligibility comes from the ported
         // family rules alone.
-        if cfg!(feature = "anthropic_internal") {
-            assert!(model_supports_auto_mode("internal-cached-model"));
-        } else {
-            assert!(!model_supports_auto_mode("internal-cached-model"));
-        }
+        assert!(!model_supports_auto_mode("internal-cached-model"));
         crate::utils::config::set_test_global_config(None);
     }
 

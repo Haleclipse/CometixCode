@@ -613,40 +613,6 @@ pub(crate) fn check_editable_internal_path(
             reason: "Scratchpad files for current session are allowed for writing".to_string(),
         });
     }
-    // DEVIATION(BUILD): CC gates template-job carve-outs with its TEMPLATES
-    // bundle feature. Nyan projects internal bundle features onto the
-    // compile-time `anthropic_internal` Cargo feature so the env key and
-    // policy are absent from external binaries.
-    #[cfg(feature = "anthropic_internal")]
-    if let Some(job_dir) = crate::utils::process_env::var_os("NYAN_JOB_DIR")
-        .as_deref()
-        .truthy()
-        .map(PathBuf::from)
-    {
-        let jobs_root = crate::utils::env_utils::get_config_home_dir().join("jobs");
-        let job_forms = paths_to_check(&job_dir.display().to_string(), cwd);
-        let jobs_root_forms = paths_to_check(&jobs_root.display().to_string(), cwd);
-        let job_dir_is_trusted = job_forms.iter().all(|job_form| {
-            jobs_root_forms.iter().any(|root_form| {
-                normalize_for_permission_comparison(job_form)
-                    != normalize_for_permission_comparison(root_form)
-                    && path_in_working_path(job_form, root_form)
-            })
-        });
-        if job_dir_is_trusted {
-            let target_forms = paths_to_check(&normalized.display().to_string(), cwd);
-            if target_forms.iter().all(|target| {
-                job_forms
-                    .iter()
-                    .any(|job| path_in_working_path(target, job))
-            }) {
-                return Some(PermissionDecisionReason::Other {
-                    reason: "Job directory files for current job are allowed for writing"
-                        .to_string(),
-                });
-            }
-        }
-    }
     if crate::tools::agent_tool::agent_memory::is_agent_memory_path(&normalized, cwd) {
         return Some(PermissionDecisionReason::Other {
             reason: "Agent memory files are allowed for writing".to_string(),
@@ -1967,71 +1933,6 @@ mod tests {
             "rule={absolute_rule:?} paths={:?} result={result:?}",
             crate::utils::fs_operations::get_paths_for_permission_check(Path::new(&candidate))
         );
-        let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[cfg(all(feature = "anthropic_internal", unix))]
-    #[test]
-    fn internal_template_job_carve_out_rejects_hijack_and_symlink_escape() {
-        use std::os::unix::fs::symlink;
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let root = std::env::temp_dir().join(format!(
-            "nyan-template-job-permission-{}",
-            uuid::Uuid::new_v4().simple()
-        ));
-        let config = root.join("config");
-        let job = config.join("jobs/current");
-        let outside = root.join("outside");
-        std::fs::create_dir_all(&job).unwrap();
-        std::fs::create_dir_all(&outside).unwrap();
-        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
-        let _job = EnvVarGuard::set("NYAN_JOB_DIR", &job);
-        let context = ToolPermissionContext::default();
-        let inside = job.join("result.txt");
-        assert!(matches!(
-            check_write_permission_for_tool(
-                &inside.display().to_string(),
-                &serde_json::json!({"file_path": inside}),
-                &context,
-                &root,
-            ),
-            PermissionResult::Allow {
-                decision_reason: Some(PermissionDecisionReason::Other { ref reason }),
-                ..
-            } if reason == "Job directory files for current job are allowed for writing"
-        ));
-
-        {
-            let _hijacked_job = EnvVarGuard::set("NYAN_JOB_DIR", &outside);
-            let hijacked = outside.join("result.txt");
-            assert!(!matches!(
-                check_write_permission_for_tool(
-                    &hijacked.display().to_string(),
-                    &serde_json::json!({"file_path": hijacked}),
-                    &context,
-                    &root,
-                ),
-                PermissionResult::Allow {
-                    decision_reason: Some(PermissionDecisionReason::Other { ref reason }),
-                    ..
-                } if reason == "Job directory files for current job are allowed for writing"
-            ));
-        }
-
-        symlink(&outside, job.join("escape")).unwrap();
-        let escaped = job.join("escape/result.txt");
-        assert!(!matches!(
-            check_write_permission_for_tool(
-                &escaped.display().to_string(),
-                &serde_json::json!({"file_path": escaped}),
-                &context,
-                &root,
-            ),
-            PermissionResult::Allow {
-                decision_reason: Some(PermissionDecisionReason::Other { ref reason }),
-                ..
-            } if reason == "Job directory files for current job are allowed for writing"
-        ));
         let _ = std::fs::remove_dir_all(root);
     }
 

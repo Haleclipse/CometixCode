@@ -755,14 +755,14 @@ pub async fn run_agent(input: RunAgentInput<'_>) -> anyhow::Result<RunAgentOutco
     // `prompt_messages` is CC's `initialMessages` and goes in WHOLE, hook
     // attachment included — that write is the one place CC hands an attachment
     // to `recordSidechainTranscript`, and `cleanMessagesForLogging` is what
-    // decides its fate per audience. Everything the query LOOP produces passes
+    // decides its fate. Everything the query LOOP produces passes
     // [`is_recordable_message`] first (CC `:231-246`), so no other attachment
     // can reach the file.
     //
     // This used to hand-roll its own message→entry conversion and hand the
     // result straight to `record_sidechain_transcript`, i.e. it wrote CC's
     // whole drop set to disk: the SubagentStart `hook_additional_context`
-    // attachment pushed above on EVERY audience, every `Message::Attachment`
+    // attachment pushed above, every `Message::Attachment`
     // the query loop yields (CC yields those WITHOUT recording,
     // `runAgent.ts:770-790`), hook results, and progress as a literal `null`
     // JSONL line. The conversion and the `cleanMessagesForLogging` privacy
@@ -1646,9 +1646,8 @@ fn record_query_event_to_agent_transcript(
 /// would reject them anyway. The port sends the same values through
 /// `QueryEvent::Message` (`query.rs` `emit_max_turns_reached`, the
 /// hook/skill/system-reminder attachments), so without this gate they reached
-/// the writer, where only `isLoggableMessage`'s audience check stood between
-/// them and the file: on an `ant` build every attachment was persisted, and
-/// each one also took the parent cursor, so the chain CC writes as
+/// the writer, where only `isLoggableMessage` stood between them and the
+/// file, and each one also took the parent cursor, so the chain CC writes as
 /// `assistant → user` was written as `assistant → attachment → user`.
 ///
 /// `hook_result` has no CC counterpart in this union (it is the port's carrier
@@ -2903,8 +2902,8 @@ mod tests {
 
     /// CC `recordSidechainTranscript` (sessionStorage.ts:1451-1462) filters
     /// through `cleanMessagesForLogging` → `isLoggableMessage` (:4351-4367)
-    /// before writing, so the sidechain JSONL never receives progress, and on
-    /// non-`ant` builds never receives attachments — "they have sensitive info
+    /// before writing, so the sidechain JSONL never receives progress or
+    /// attachments — "they have sensitive info
     /// for training that we don't want exposed to the public". The single
     /// exception is `hook_additional_context`, and only behind
     /// `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`.
@@ -2914,10 +2913,6 @@ mod tests {
     /// (CC runAgent.ts:546-555) and hands the whole vec to
     /// `SidechainTranscriptRecorder::start` (CC :735), so a writer that skips
     /// the filter puts raw hook output on disk with no env gate at all.
-    ///
-    /// `getUserType() !== 'ant'` is a build audience here (compile-time), so
-    /// this asserts against the CURRENT build and both sides are covered by
-    /// `just test-all-audiences`.
     #[test]
     fn sidechain_write_set_matches_official_is_loggable_message() {
         let _lock = TEST_ENV_LOCK
@@ -2967,8 +2962,6 @@ mod tests {
             origin: None,
             summarize_metadata: None,
         });
-        let internal = crate::utils::build_profile::build_audience().is_internal();
-
         let entries = sidechain_entries(&[
             prompt.clone(),
             subagent_start_hook_context.clone(),
@@ -2980,7 +2973,7 @@ mod tests {
             .map(|entry| entry["type"].as_str().unwrap_or_default().to_string())
             .collect::<Vec<_>>();
 
-        // Progress is dropped on EVERY audience, and never as the `null` line
+        // Progress is dropped, and never as the `null` line
         // a value-returning serializer would emit.
         assert!(
             !types.iter().any(|kind| kind == "progress"),
@@ -2992,24 +2985,19 @@ mod tests {
         );
         assert_eq!(types.first().map(String::as_str), Some("user"));
 
-        if internal {
-            assert_eq!(types, vec!["user", "attachment", "attachment"]);
-        } else {
-            assert_eq!(types, vec!["user"]);
-            let flat = serde_json::to_string(&entries).expect("entries serialize");
-            assert!(
-                !flat.contains("SECRET-FROM-HOOK"),
-                "SubagentStart hook context leaked into the sidechain: {flat}"
-            );
-        }
+        assert_eq!(types, vec!["user"]);
+        let flat = serde_json::to_string(&entries).expect("entries serialize");
+        assert!(
+            !flat.contains("SECRET-FROM-HOOK"),
+            "SubagentStart hook context leaked into the sidechain: {flat}"
+        );
 
-        // Flag on: the hook exception opens on every audience; plain
-        // attachments stay withheld externally.
+        // Flag on: the hook exception opens; plain attachments stay withheld.
         crate::utils::process_env::set("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
         let gated = sidechain_entries(&[subagent_start_hook_context, plain_attachment]);
         assert_eq!(
             gated.len(),
-            if internal { 2 } else { 1 },
+            1,
             "the env flag is not a blanket opt-in for attachments"
         );
         assert_eq!(gated[0]["attachment"]["type"], "hook_additional_context");
@@ -3999,20 +3987,12 @@ mod tests {
     /// and system `compact_boundary` — nothing else. Attachments are handled
     /// one branch earlier (`:770-790`) and are yielded WITHOUT being recorded.
     ///
-    /// The port had no gate, so every `Message` variant the actor emitted went
-    /// to the recorder and only `isLoggableMessage`'s audience check stood
-    /// between an attachment and the file. That check passes on `ant`
-    /// (`sessionStorage.ts:4357` `getUserType() !== 'ant'`), so an internal
-    /// build wrote hook/system-reminder attachment rows CC never writes AND
-    /// gave each one the parent cursor: `assistant → user` became
-    /// `assistant → attachment → user`, and a resumed agent's chain walk
-    /// (`get_agent_transcript_from_path` ← CC `:4210-4224`) reconstructed a
-    /// different conversation than CC does from the same run.
-    ///
-    /// The assertions are audience-INDEPENDENT by design: the gate, not the
-    /// privacy filter, is what keeps these off disk, so `just test` and
-    /// `just test-ant` must produce the identical file. Before the gate the
-    /// two audiences disagreed.
+    /// The gate, not `isLoggableMessage`'s privacy filter, is what keeps
+    /// attachment rows off disk and out of the parent cursor: without it
+    /// `assistant → user` would become `assistant → attachment → user`, and a
+    /// resumed agent's chain walk (`get_agent_transcript_from_path` ← CC
+    /// `:4210-4224`) would reconstruct a different conversation than CC does
+    /// from the same run.
     #[test]
     fn agent_transcript_records_only_the_official_recordable_message_types() {
         use crate::utils::session_storage::{
@@ -4182,7 +4162,7 @@ mod tests {
         let flat = std::fs::read_to_string(get_agent_transcript_path(agent_id)).unwrap();
         assert!(
             !flat.contains("SECRET-FROM-HOOK"),
-            "no attachment the query loop yields may be persisted on ANY audience: {flat}"
+            "no attachment the query loop yields may be persisted: {flat}"
         );
 
         assert_eq!(

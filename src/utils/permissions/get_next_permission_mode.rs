@@ -38,20 +38,7 @@ fn can_cycle_to_auto(ctx: &ToolPermissionContext) -> bool {
 /// Maps to CC `getNextPermissionMode(...)`.
 pub fn get_next_permission_mode(tool_permission_context: &ToolPermissionContext) -> PermissionMode {
     match tool_permission_context.mode {
-        PermissionMode::Default => {
-            // Maps to: CC getNextPermissionMode.ts:40-49. BuildAudience is
-            // the established compile-time carrier for the source ant branch.
-            if crate::utils::build_profile::build_audience().is_internal() {
-                if tool_permission_context.is_bypass_permissions_mode_available {
-                    return PermissionMode::BypassPermissions;
-                }
-                if can_cycle_to_auto(tool_permission_context) {
-                    return PermissionMode::Auto;
-                }
-                return PermissionMode::Default;
-            }
-            PermissionMode::AcceptEdits
-        }
+        PermissionMode::Default => PermissionMode::AcceptEdits,
         PermissionMode::AcceptEdits => PermissionMode::Plan,
         PermissionMode::Plan => {
             if tool_permission_context.is_bypass_permissions_mode_available {
@@ -114,11 +101,7 @@ mod tests {
         context.is_auto_mode_available = Some(false);
         assert_eq!(
             get_next_permission_mode(&context),
-            if crate::utils::build_profile::build_audience().is_internal() {
-                PermissionMode::Default
-            } else {
-                PermissionMode::AcceptEdits
-            }
+            PermissionMode::AcceptEdits
         );
         context.mode = PermissionMode::AcceptEdits;
         assert_eq!(get_next_permission_mode(&context), PermissionMode::Plan);
@@ -201,53 +184,24 @@ mod tests {
     fn cycle_permission_mode_matches_official_caller_owned_mode_assignment() {
         let context = ToolPermissionContext::default();
         let (next_mode, next_context) = cycle_permission_mode(&context);
-        assert_eq!(
-            next_mode,
-            if crate::utils::build_profile::build_audience().is_internal() {
-                PermissionMode::Default
-            } else {
-                PermissionMode::AcceptEdits
-            }
-        );
+        assert_eq!(next_mode, PermissionMode::AcceptEdits);
         assert_eq!(next_context.mode, PermissionMode::Default);
         assert_eq!(context.mode, PermissionMode::Default);
     }
 
     #[test]
-    fn next_permission_mode_matches_official_audience_and_default_priority() {
+    fn next_permission_mode_from_default_is_always_accept_edits() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
-        let internal = crate::utils::build_profile::build_audience().is_internal();
         let mut context = ToolPermissionContext::default();
-        for auto_available in [Some(false), Some(true), None] {
-            context.is_auto_mode_available = auto_available;
-            context.is_bypass_permissions_mode_available = true;
-            assert_eq!(
-                get_next_permission_mode(&context),
-                if internal {
-                    PermissionMode::BypassPermissions
-                } else {
+        for bypass_available in [true, false] {
+            for auto_available in [Some(false), Some(true), None] {
+                context.is_auto_mode_available = auto_available;
+                context.is_bypass_permissions_mode_available = bypass_available;
+                assert_eq!(
+                    get_next_permission_mode(&context),
                     PermissionMode::AcceptEdits
-                }
-            );
-        }
-        context.is_bypass_permissions_mode_available = false;
-        context.is_auto_mode_available = Some(true);
-        let expected = if !internal {
-            PermissionMode::AcceptEdits
-        } else if is_transcript_classifier_feature_enabled() && is_auto_mode_gate_enabled() {
-            PermissionMode::Auto
-        } else {
-            PermissionMode::Default
-        };
-        assert_eq!(get_next_permission_mode(&context), expected);
-        context.is_auto_mode_available = Some(false);
-        assert_eq!(
-            get_next_permission_mode(&context),
-            if internal {
-                PermissionMode::Default
-            } else {
-                PermissionMode::AcceptEdits
+                );
             }
-        );
+        }
     }
 }

@@ -41,7 +41,6 @@ const PRIVATE_COMMAND_NAMES: &[&str] = &[
     "fd",
     "fdfind",
 ];
-const ANT_PRIVATE_COMMAND_NAMES: &[&str] = &["aki"];
 
 fn private_command_config(
     words: &[String],
@@ -1040,66 +1039,6 @@ fn private_command_config(
             },
         ));
     }
-    if cfg!(feature = "anthropic_internal") && words.first().map(String::as_str) == Some("aki") {
-        return Some((
-            "aki",
-            1,
-            CommandConfig {
-                flags: &[
-                    ("-h", FlagArgType::None),
-                    ("--help", FlagArgType::None),
-                    ("-k", FlagArgType::None),
-                    ("--keyword", FlagArgType::None),
-                    ("-s", FlagArgType::None),
-                    ("--semantic", FlagArgType::None),
-                    ("--no-adaptive", FlagArgType::None),
-                    ("-n", FlagArgType::Number),
-                    ("--limit", FlagArgType::Number),
-                    ("-o", FlagArgType::Number),
-                    ("--offset", FlagArgType::Number),
-                    ("--source", FlagArgType::String),
-                    ("--exclude-source", FlagArgType::String),
-                    ("-a", FlagArgType::String),
-                    ("--after", FlagArgType::String),
-                    ("-b", FlagArgType::String),
-                    ("--before", FlagArgType::String),
-                    ("--collection", FlagArgType::String),
-                    ("--drive", FlagArgType::String),
-                    ("--folder", FlagArgType::String),
-                    ("--descendants", FlagArgType::None),
-                    ("-m", FlagArgType::String),
-                    ("--meta", FlagArgType::String),
-                    ("-t", FlagArgType::String),
-                    ("--threshold", FlagArgType::String),
-                    ("--kw-weight", FlagArgType::String),
-                    ("--sem-weight", FlagArgType::String),
-                    ("-j", FlagArgType::None),
-                    ("--json", FlagArgType::None),
-                    ("-c", FlagArgType::None),
-                    ("--chunk", FlagArgType::None),
-                    ("--preview", FlagArgType::None),
-                    ("-d", FlagArgType::None),
-                    ("--full-doc", FlagArgType::None),
-                    ("-v", FlagArgType::None),
-                    ("--verbose", FlagArgType::None),
-                    ("--stats", FlagArgType::None),
-                    ("-S", FlagArgType::Number),
-                    ("--summarize", FlagArgType::Number),
-                    ("--explain", FlagArgType::None),
-                    ("--examine", FlagArgType::String),
-                    ("--url", FlagArgType::String),
-                    ("--multi-turn", FlagArgType::Number),
-                    ("--multi-turn-model", FlagArgType::String),
-                    ("--multi-turn-context", FlagArgType::String),
-                    ("--no-rerank", FlagArgType::None),
-                    ("--audit", FlagArgType::None),
-                    ("--local", FlagArgType::None),
-                    ("--staging", FlagArgType::None),
-                ],
-                respects_double_dash: true,
-            },
-        ));
-    }
     None
 }
 
@@ -1461,13 +1400,12 @@ fn command_is_read_only(raw: &str) -> bool {
     if let Some(valid) = crate::utils::shell::read_only_command_validation::validate_shared_command(
         effective_raw,
         &effective_words,
-        cfg!(feature = "anthropic_internal"),
     ) {
         return valid;
     }
 
     // Maps to BashTool's private COMMAND_ALLOWLIST (51 entries total after
-    // shared spreads, plus ant-only `aki`).
+    // shared spreads).
     if effective_words.iter().skip(1).any(|word| {
         word.contains('$') || (word.contains('{') && (word.contains(',') || word.contains("..")))
     }) {
@@ -1752,12 +1690,6 @@ mod tests {
                 + 4,
             51,
             "Git + rg + pyright + two Docker configs complete COMMAND_ALLOWLIST"
-        );
-        assert_eq!(
-            super::ANT_PRIVATE_COMMAND_NAMES.len()
-                + crate::utils::shell::read_only_command_validation::GH_READ_ONLY_COMMAND_NAMES
-                    .len(),
-            23
         );
         assert_eq!(
             READONLY_COMMANDS.len()

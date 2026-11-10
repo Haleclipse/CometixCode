@@ -1,8 +1,9 @@
 //! Parsed Bash command abstraction.
 //!
-//! Maps to: CC `utils/bash/ParsedCommand.ts`. Tree-sitter builds preserve byte
-//! ranges for pipes/redirections; the external fallback delegates to the
-//! source-shaped legacy helpers in `commands.rs`.
+//! Maps to: CC `utils/bash/ParsedCommand.ts`. `ParsedCommand::parse` uses the
+//! regex implementation backed by the source-shaped legacy helpers in
+//! `commands.rs`; the tree-sitter builder preserves byte ranges for
+//! pipes/redirections.
 
 use super::tree_sitter_analysis::{TreeSitterAnalysis, analyze_command};
 use tree_sitter::Node;
@@ -235,12 +236,6 @@ impl ParsedCommand {
     pub fn parse(command: &str) -> Option<Box<dyn IParsedCommand>> {
         if command.is_empty() {
             return None;
-        }
-        if crate::utils::build_profile::build_audience().is_internal()
-            && let super::parser::ParseCommandRawResult::Parsed(tree) =
-                super::parser::parse_command_raw(command)
-        {
-            return Some(build_parsed_command_from_root(command, tree.root_node()));
         }
         Some(Box::new(RegexParsedCommandDeprecated::new(command)))
     }

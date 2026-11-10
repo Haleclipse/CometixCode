@@ -667,13 +667,7 @@ pub fn analyze_context_usage(input: AnalyzeContextUsageInput<'_>) -> ContextData
     }
     if built_in_tool_tokens > 0 {
         categories.push(ContextCategory {
-            name: if crate::utils::build_profile::has_internal_capability(
-                crate::utils::build_profile::InternalCapability::Context,
-            ) {
-                "[ANT-ONLY] System tools".to_string()
-            } else {
-                "System tools".to_string()
-            },
+            name: "System tools".to_string(),
             tokens: built_in_tool_tokens.saturating_sub(skill_tokens),
             color: theme.inactive,
             is_deferred: false,

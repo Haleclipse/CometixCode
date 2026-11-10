@@ -191,14 +191,6 @@ pub fn get_prompt(agent_definitions: &[AgentDefinition], is_coordinator: bool) -
         ", since it is not aware of the user's intent"
     };
 
-    let remote_isolation_note = if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        "\n- You can set `isolation: \"remote\"` to run the agent in a remote CCR environment. This is always a background task; you'll be notified when it completes. Use for long-running tasks that need a fresh sandbox."
-    } else {
-        ""
-    };
-
     let teammate_note = if crate::utils::teammate::is_teammate() {
         "\n- The name, team_name, and mode parameters are not available in this context — teammates cannot spawn other teammates. Omit them to spawn a subagent."
     } else {
@@ -212,7 +204,7 @@ pub fn get_prompt(agent_definitions: &[AgentDefinition], is_coordinator: bool) -
     };
 
     format!(
-        "{shared}\n{when_not_to_use_section}\n\nUsage notes:\n- Always include a short description (3-5 words) summarizing what the agent will do{concurrency_note}\n- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.{background_notes}\n- To continue a previously spawned agent, use {SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the `to` field. The agent resumes with its full context preserved. {resume_note}\n- The agent's outputs should generally be trusted\n- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.){research_note}\n- If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.\n- If the user specifies that they want you to run agents \"in parallel\", you MUST send a single message with multiple {AGENT_TOOL_NAME} tool use content blocks. For example, if you need to launch both a build-validator agent and a test-runner agent in parallel, send a single message with both tool calls.\n- You can optionally set `isolation: \"worktree\"` to run the agent in a temporary git worktree, giving it an isolated copy of the repository. The worktree is automatically cleaned up if the agent makes no changes; if changes are made, the worktree path and branch are returned in the result.{remote_isolation_note}{teammate_note}{when_to_fork}{writing_the_prompt}\n\n{examples}",
+        "{shared}\n{when_not_to_use_section}\n\nUsage notes:\n- Always include a short description (3-5 words) summarizing what the agent will do{concurrency_note}\n- When the agent is done, it will return a single message back to you. The result returned by the agent is not visible to the user. To show the user the result, you should send a text message back to the user with a concise summary of the result.{background_notes}\n- To continue a previously spawned agent, use {SEND_MESSAGE_TOOL_NAME} with the agent's ID or name as the `to` field. The agent resumes with its full context preserved. {resume_note}\n- The agent's outputs should generally be trusted\n- Clearly tell the agent whether you expect it to write code or just to do research (search, file reads, web fetches, etc.){research_note}\n- If the agent description mentions that it should be used proactively, then you should try your best to use it without the user having to ask for it first. Use your judgement.\n- If the user specifies that they want you to run agents \"in parallel\", you MUST send a single message with multiple {AGENT_TOOL_NAME} tool use content blocks. For example, if you need to launch both a build-validator agent and a test-runner agent in parallel, send a single message with both tool calls.\n- You can optionally set `isolation: \"worktree\"` to run the agent in a temporary git worktree, giving it an isolated copy of the repository. The worktree is automatically cleaned up if the agent makes no changes; if changes are made, the worktree path and branch are returned in the result.{teammate_note}{when_to_fork}{writing_the_prompt}\n\n{examples}",
         writing_the_prompt = writing_the_prompt_section(fork_enabled),
     )
 }

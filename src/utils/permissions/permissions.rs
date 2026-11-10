@@ -235,13 +235,6 @@ pub fn create_permission_request_message(
         );
     };
     match reason {
-        PermissionDecisionReason::Classifier { classifier, reason }
-            if cfg!(feature = "anthropic_internal") =>
-        {
-            format!(
-                "Classifier '{classifier}' requires approval for this {tool_name} command: {reason}"
-            )
-        }
         PermissionDecisionReason::Hook {
             hook_name, reason, ..
         } => reason.as_ref().map_or_else(
@@ -1850,14 +1843,8 @@ fn auto_mode_pre_classifier_fast_path(
         load_denial_tracking(params.app_store, params.local_denial_tracking.as_ref());
 
     // Maps to: CC `:572-591`. `feature('POWERSHELL_AUTO_MODE')` is CC's own
-    // "ant-only build flag" (`:561`), so in the external profile this port
-    // targets the guard is live. Porting the guard rather than its outcome
-    // keeps the internal profile.
-    if params.tool_name == crate::tools::powershell_tool::tool_name::POWERSHELL_TOOL_NAME
-        && !crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Permissions,
-        )
-    {
+    // "ant-only build flag" (`:561`), so the guard is always live here.
+    if params.tool_name == crate::tools::powershell_tool::tool_name::POWERSHELL_TOOL_NAME {
         if params.context.should_avoid_permission_prompts {
             // CC `:576-586`.
             let mut deny_req = request;
@@ -2124,7 +2111,6 @@ async fn apply_auto_mode_classifier_to_ask_async(
             params.messages,
             &action,
             classifier_tool_lookup(tool_use_context),
-            params.context,
             params.abort_signal.clone(),
         ),
         crate::utils::permissions::decision::should_escalate(
@@ -2182,14 +2168,13 @@ fn classify_and_assess_sync(
     let tool_name = params.tool_name.to_string();
     let input = params.input.clone();
     let tools = classifier_tool_lookup(tool_use_context).to_vec();
-    let context = params.context.clone();
     let signal = params.abort_signal.clone();
     let cwd = tool_use_context.map(|context| context.effective_cwd());
 
     crate::utils::process_runtime::block_on_from_sync(async move {
         let action = format_action_for_classifier(&tool_name, input.clone());
         let (result, escalate) = tokio::join!(
-            classify_yolo_action(&messages, &action, &tools, &context, signal.clone()),
+            classify_yolo_action(&messages, &action, &tools, signal.clone()),
             crate::utils::permissions::decision::should_escalate(
                 &tool_name,
                 &input,
@@ -4321,33 +4306,6 @@ mod tests {
         crate::utils::process_env::remove("NYAN_TRANSCRIPT_CLASSIFIER");
         crate::utils::permissions::auto_mode_state::reset_for_testing();
 
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Permissions,
-        ) {
-            // CC permissions.ts:572-591,600-648,918-926: internal permits
-            // classification; an explicit content ask prevents the acceptEdits
-            // fast-path, so both interactive and headless use the classifier.
-            for result in [interactive, headless] {
-                let HasPermissionsToUseToolResult::Allow {
-                    updated_input,
-                    decision_reason,
-                    ..
-                } = result
-                else {
-                    panic!("internal profile classifies PowerShell in auto mode, got {result:?}");
-                };
-                assert_eq!(updated_input, Some(input.clone()));
-                assert_eq!(
-                    decision_reason,
-                    Some(PermissionDecisionReason::Classifier {
-                        classifier: "auto-mode".into(),
-                        reason: "forced allow for PowerShell".into(),
-                    })
-                );
-            }
-            return;
-        }
-
         assert!(
             matches!(interactive, HasPermissionsToUseToolResult::Ask(_)),
             "CC :590 returns the untouched ask rather than the forced classifier allow, got {interactive:?}"
@@ -6037,21 +5995,10 @@ mod tests {
                 &input,
                 &context,
             );
-            if crate::utils::build_profile::has_internal_capability(
-                crate::utils::build_profile::InternalCapability::Permissions,
-            ) && mode == PermissionMode::Auto
-            {
-                // The ant-only passthrough branch; it reaches the classifier.
-                assert!(
-                    !matches!(decision, HasPermissionsToUseToolResult::Allow { .. }),
-                    "internal builds keep the auto-mode passthrough"
-                );
-            } else {
-                assert!(
-                    matches!(decision, HasPermissionsToUseToolResult::Allow { .. }),
-                    "AgentTool.checkPermissions returns allow in {mode:?}; CC returns it verbatim"
-                );
-            }
+            assert!(
+                matches!(decision, HasPermissionsToUseToolResult::Allow { .. }),
+                "AgentTool.checkPermissions returns allow in {mode:?}; CC returns it verbatim"
+            );
         }
 
         // The tool's allow is the LAST word, not the first: CC still evaluates

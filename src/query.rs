@@ -718,7 +718,7 @@ where
     let system_prompt = params.system_prompt.clone();
     let user_context = params.user_context.clone();
     let request = build_call_model_request(
-        prepare_call_model_messages(initial_messages, &user_context, false),
+        prepare_call_model_messages(initial_messages, &user_context),
         params.tool_use_context.tool_permission_context.clone(),
         &params.query_source,
         &system_prompt,
@@ -1293,13 +1293,12 @@ where
         // Prepend user context immediately before `deps.callModel(...)`. The
         // current REPL path has no user-context provider yet, so this is
         // normally a no-op in production. The loop also owns official
-        // `FallbackTriggeredError` handling: switch to the fallback model,
-        // strip model-bound thinking signatures for ant-internal retries, and
+        // `FallbackTriggeredError` handling: switch to the fallback model and
         // rerun the entire request without leaking partial tool results.
         let mut fallback_retry_used = current_model_override.is_some();
         let mut stream = loop {
             let messages_for_model =
-                prepare_call_model_messages(messages_for_query.clone(), &user_context, false);
+                prepare_call_model_messages(messages_for_query.clone(), &user_context);
             let cached_mc_new_user_message_index = pending_cache_edits.as_ref().and_then(|_| {
                 messages_for_model
                     .iter()
@@ -1365,8 +1364,6 @@ where
                         && let Some(fallback) = model_fallback_from_error(&error)
                     {
                         fallback_retry_used = true;
-                        messages_for_query =
-                            strip_signature_blocks_for_model_fallback_retry(messages_for_query);
                         current_model_override = Some(fallback.fallback_model.clone());
                         if event_tx
                             .send(QueryEvent::Message(model_fallback_warning_message(
@@ -2025,8 +2022,8 @@ where
                 } => {
                     // Maps to CC `query.ts` catch of `FallbackTriggeredError`
                     // thrown by a streaming-to-non-streaming fallback: discard
-                    // partial stream state, switch to the fallback model, strip
-                    // model-bound thinking signatures, and retry this turn.
+                    // partial stream state, switch to the fallback model, and
+                    // retry this turn.
                     if fallback_retry_used {
                         let error = anyhow::Error::new(
                             crate::services::api::with_retry::FallbackTriggeredError {
@@ -2057,8 +2054,6 @@ where
                     if let Some(executor) = streaming_tool_executor.as_mut() {
                         executor.discard();
                     }
-                    messages_for_query =
-                        strip_signature_blocks_for_model_fallback_retry(messages_for_query);
                     model_fallback_retry_messages = Some(messages_for_query.clone());
                     model_fallback_retry_tracking = Some(query_tracking.clone());
                     current_model_override = Some(fallback_model.clone());
@@ -4257,18 +4252,6 @@ fn should_preempt_context_blocking_limit_with_owners(
     )
 }
 
-fn strip_signature_blocks_for_model_fallback_retry(
-    messages_for_query: Vec<Message>,
-) -> Vec<Message> {
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Api,
-    ) {
-        crate::utils::messages::strip_signature_blocks(messages_for_query)
-    } else {
-        messages_for_query
-    }
-}
-
 fn model_fallback_from_error(
     error: &anyhow::Error,
 ) -> Option<&crate::services::api::with_retry::FallbackTriggeredError> {
@@ -4300,22 +4283,9 @@ fn model_fallback_warning_message(
 fn prepare_call_model_messages(
     messages_for_query: Vec<Message>,
     user_context: &std::collections::BTreeMap<String, String>,
-    strip_signature_blocks_for_fallback_retry: bool,
 ) -> Vec<Message> {
     // Maps to CC `query.ts` `deps.callModel({ messages:
-    // prependUserContext(messagesForQuery, userContext), ... })`. The
-    // `stripSignatureBlocks(messagesForQuery)` branch is only official on an
-    // ant-internal model-fallback retry after `FallbackTriggeredError`; Rust
-    // toggles this on the retry path owned by `query_loop(...)`, matching the
-    // official placement immediately before `deps.callModel(...)`.
-    let messages_for_query = if strip_signature_blocks_for_fallback_retry
-        && crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Api,
-        ) {
-        crate::utils::messages::strip_signature_blocks(messages_for_query)
-    } else {
-        messages_for_query
-    };
+    // prependUserContext(messagesForQuery, userContext), ... })`.
     crate::utils::api::prepend_user_context(messages_for_query, user_context)
 }
 
@@ -5796,7 +5766,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "anthropic_internal")]
     fn install_primary_model_profile() {
         crate::utils::settings::settings_cache::install_test_settings(
             serde_json::from_value(serde_json::json!({
@@ -6216,48 +6185,6 @@ mod tests {
         assert_eq!(texts[2], "tool result B");
     }
 
-    #[cfg(feature = "anthropic_internal")]
-    #[test]
-    fn prepare_call_model_messages_strips_signature_blocks_only_for_fallback_retry() {
-        let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::set("NODE_ENV", "test");
-        let messages = vec![crate::types::message::Message::Assistant(
-            crate::types::message::AssistantMessage {
-                uuid: uuid::Uuid::new_v4().to_string(),
-                timestamp: chrono::Utc::now(),
-                content: vec![
-                    crate::types::message::AssistantContent::Thinking {
-                        text: "signed thinking".to_string(),
-                        signature: "sig".to_string(),
-                    },
-                    crate::types::message::AssistantContent::Text("visible".to_string()),
-                    crate::types::message::AssistantContent::RedactedThinking {
-                        data: "signature".to_string(),
-                    },
-                ],
-                model: None,
-                stop_reason: Some(crate::types::message::StopReason::EndTurn),
-                usage: None,
-            },
-        )];
-        let context = std::collections::BTreeMap::new();
-
-        let normal = prepare_call_model_messages(messages.clone(), &context, false);
-        let fallback = prepare_call_model_messages(messages, &context, true);
-
-        assert!(matches!(
-            &normal[0],
-            crate::types::message::Message::Assistant(message)
-                if message.content.len() == 3
-        ));
-        assert!(matches!(
-            &fallback[0],
-            crate::types::message::Message::Assistant(message)
-                if message.content == vec![crate::types::message::AssistantContent::Text("visible".to_string())]
-        ));
-        crate::utils::process_env::remove("NODE_ENV");
-    }
-
     #[tokio::test]
     async fn prompt_query_creates_real_app_store_file_history_snapshot_before_model_call() {
         #[derive(Clone)]
@@ -6493,7 +6420,6 @@ mod tests {
             gates: config::QueryConfigGates {
                 streaming_tool_execution: false,
                 emit_tool_use_summaries: true,
-                is_ant: false,
             },
         };
         let block = crate::types::message::ToolUseBlock {
@@ -7021,9 +6947,8 @@ mod tests {
         assert!(!tracking.chain_id.is_empty());
     }
 
-    #[cfg(feature = "anthropic_internal")]
     #[test]
-    fn query_actor_retries_call_model_after_model_fallback_and_strips_signature_blocks() {
+    fn query_actor_retries_call_model_after_model_fallback() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NODE_ENV", "test");
         install_primary_model_profile();
@@ -7162,20 +7087,7 @@ mod tests {
             ]
         );
         let seen_messages = seen_messages.lock().unwrap();
-        assert!(seen_messages[0].iter().any(|message| matches!(
-            message,
-            crate::types::message::Message::Assistant(assistant)
-                if assistant.content.iter().any(|content| matches!(
-                    content,
-                    crate::types::message::AssistantContent::Thinking { .. }
-                        | crate::types::message::AssistantContent::RedactedThinking { .. }
-                ))
-        )));
-        assert!(seen_messages[1].iter().any(|message| matches!(
-            message,
-            crate::types::message::Message::Assistant(assistant)
-                if assistant.content == vec![crate::types::message::AssistantContent::Text("visible".to_string())]
-        )));
+        assert_eq!(seen_messages[0], seen_messages[1]);
         let mut events = Vec::new();
         while let Ok(event) = event_rx.try_recv() {
             events.push(event);
@@ -7190,7 +7102,6 @@ mod tests {
         )));
     }
 
-    #[cfg(feature = "anthropic_internal")]
     #[test]
     fn query_actor_retries_after_streaming_non_streaming_model_fallback_signal() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
@@ -7363,11 +7274,7 @@ mod tests {
             ]
         );
         let seen_messages = seen_messages.lock().unwrap();
-        assert!(seen_messages[1].iter().any(|message| matches!(
-            message,
-            crate::types::message::Message::Assistant(assistant)
-                if assistant.content == vec![crate::types::message::AssistantContent::Text("visible".to_string())]
-        )));
+        assert_eq!(seen_messages[0], seen_messages[1]);
         let mut events = Vec::new();
         while let Ok(event) = event_rx.try_recv() {
             events.push(event);
@@ -7389,7 +7296,6 @@ mod tests {
         )));
     }
 
-    #[cfg(feature = "anthropic_internal")]
     #[test]
     fn query_actor_keeps_fallback_model_for_tool_result_continuation() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
@@ -14546,7 +14452,6 @@ mod prompt_context_contract_tests {
                         "session_id:",
                         "streaming_tool_execution:",
                         "emit_tool_use_summaries:",
-                        "is_ant:",
                     ] {
                         assert!(
                             !prompt.contains(gate),

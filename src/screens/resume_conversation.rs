@@ -496,7 +496,6 @@ pub fn ResumeConversation(
     }
 
     let initial_agent_for_select = props.repl_props.main_thread_agent_definition.clone();
-    let worktree_paths_for_select = props.worktree_paths.clone();
     let app_store_for_select = app_store.clone();
     let load_tx_more = load_channel.0.clone();
     let load_tx_reload = load_channel.0.clone();
@@ -519,18 +518,13 @@ pub fn ResumeConversation(
                 });
             },
             on_select: move |selection: SessionSelection| {
-                match check_cross_project_resume(
-                    &selection,
-                    show_all_projects.get(),
-                    &worktree_paths_for_select,
-                ) {
+                match check_cross_project_resume(&selection, show_all_projects.get()) {
                     CrossProjectResumeResult::DifferentProject { command, .. } => {
                         // CC onSelect sets resuming before the clipboard await (:218).
                         resuming.set(true);
                         on_select_cross_project(command);
                     }
-                    CrossProjectResumeResult::SameProject
-                    | CrossProjectResumeResult::SameRepoWorktree { .. } => {
+                    CrossProjectResumeResult::SameProject => {
                         resuming.set(true);
                         resuming_session_id.set(Some(selection.session_id.clone()));
                         let restore_tx = restore_tx.clone();

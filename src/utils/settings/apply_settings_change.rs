@@ -25,23 +25,6 @@ pub fn apply_settings_change(source: SettingSource, store: &AppStore) {
                 &permission_rules,
             );
 
-        // Maps to CC's internal-distribution broad-shell re-strip after sync.
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Permissions,
-        ) && crate::utils::process_env::var("NYAN_ENTRYPOINT").as_deref() != Some("local-agent")
-        {
-            let dangerous =
-                crate::utils::permissions::permission_setup::find_overly_broad_bash_permissions(
-                    &permission_rules,
-                    &[],
-                );
-            if !dangerous.is_empty() {
-                permission_context = crate::utils::permissions::permission_setup::remove_dangerous_permissions(
-                    &permission_context,
-                    &dangerous,
-                );
-            }
-        }
         if permission_context.is_bypass_permissions_mode_available
             && crate::utils::permissions::permission_setup::is_bypass_permissions_mode_disabled()
         {

@@ -17,13 +17,7 @@ pub struct CommandConfig {
     pub respects_double_dash: bool,
 }
 
-pub fn command_config(
-    words: &[String],
-    internal: bool,
-) -> Option<(&'static str, usize, CommandConfig)> {
-    // A caller may express its audience but cannot elevate an external binary:
-    // internal command maps remain compile-gated.
-    let internal = internal && cfg!(feature = "anthropic_internal");
+pub fn command_config(words: &[String]) -> Option<(&'static str, usize, CommandConfig)> {
     let first = words.first()?.as_str();
     match first {
         "git" => {
@@ -846,595 +840,6 @@ pub fn command_config(
             }
             None
         }
-        "gh" => {
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("pr")
-                && words.get(2).map(String::as_str) == Some("view")
-            {
-                return Some((
-                    "gh pr view",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--json", FlagArgType::String),
-                            ("--comments", FlagArgType::None),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("pr")
-                && words.get(2).map(String::as_str) == Some("list")
-            {
-                return Some((
-                    "gh pr list",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--state", FlagArgType::String),
-                            ("-s", FlagArgType::String),
-                            ("--author", FlagArgType::String),
-                            ("--assignee", FlagArgType::String),
-                            ("--label", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--base", FlagArgType::String),
-                            ("--head", FlagArgType::String),
-                            ("--search", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                            ("--draft", FlagArgType::None),
-                            ("--app", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("pr")
-                && words.get(2).map(String::as_str) == Some("diff")
-            {
-                return Some((
-                    "gh pr diff",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--color", FlagArgType::String),
-                            ("--name-only", FlagArgType::None),
-                            ("--patch", FlagArgType::None),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("pr")
-                && words.get(2).map(String::as_str) == Some("checks")
-            {
-                return Some((
-                    "gh pr checks",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--watch", FlagArgType::None),
-                            ("--required", FlagArgType::None),
-                            ("--fail-fast", FlagArgType::None),
-                            ("--json", FlagArgType::String),
-                            ("--interval", FlagArgType::Number),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("issue")
-                && words.get(2).map(String::as_str) == Some("view")
-            {
-                return Some((
-                    "gh issue view",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--json", FlagArgType::String),
-                            ("--comments", FlagArgType::None),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("issue")
-                && words.get(2).map(String::as_str) == Some("list")
-            {
-                return Some((
-                    "gh issue list",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--state", FlagArgType::String),
-                            ("-s", FlagArgType::String),
-                            ("--assignee", FlagArgType::String),
-                            ("--author", FlagArgType::String),
-                            ("--label", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--milestone", FlagArgType::String),
-                            ("--search", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                            ("--app", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("repo")
-                && words.get(2).map(String::as_str) == Some("view")
-            {
-                return Some((
-                    "gh repo view",
-                    3,
-                    CommandConfig {
-                        flags: &[("--json", FlagArgType::String)],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("run")
-                && words.get(2).map(String::as_str) == Some("list")
-            {
-                return Some((
-                    "gh run list",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--branch", FlagArgType::String),
-                            ("-b", FlagArgType::String),
-                            ("--status", FlagArgType::String),
-                            ("-s", FlagArgType::String),
-                            ("--workflow", FlagArgType::String),
-                            ("-w", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--json", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                            ("--event", FlagArgType::String),
-                            ("-e", FlagArgType::String),
-                            ("--user", FlagArgType::String),
-                            ("-u", FlagArgType::String),
-                            ("--created", FlagArgType::String),
-                            ("--commit", FlagArgType::String),
-                            ("-c", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("run")
-                && words.get(2).map(String::as_str) == Some("view")
-            {
-                return Some((
-                    "gh run view",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--log", FlagArgType::None),
-                            ("--log-failed", FlagArgType::None),
-                            ("--exit-status", FlagArgType::None),
-                            ("--verbose", FlagArgType::None),
-                            ("-v", FlagArgType::None),
-                            ("--json", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                            ("--job", FlagArgType::String),
-                            ("-j", FlagArgType::String),
-                            ("--attempt", FlagArgType::Number),
-                            ("-a", FlagArgType::Number),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("auth")
-                && words.get(2).map(String::as_str) == Some("status")
-            {
-                return Some((
-                    "gh auth status",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--active", FlagArgType::None),
-                            ("-a", FlagArgType::None),
-                            ("--hostname", FlagArgType::String),
-                            ("-h", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("pr")
-                && words.get(2).map(String::as_str) == Some("status")
-            {
-                return Some((
-                    "gh pr status",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--conflict-status", FlagArgType::None),
-                            ("-c", FlagArgType::None),
-                            ("--json", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("issue")
-                && words.get(2).map(String::as_str) == Some("status")
-            {
-                return Some((
-                    "gh issue status",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--json", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("release")
-                && words.get(2).map(String::as_str) == Some("list")
-            {
-                return Some((
-                    "gh release list",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--exclude-drafts", FlagArgType::None),
-                            ("--exclude-pre-releases", FlagArgType::None),
-                            ("--json", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--order", FlagArgType::String),
-                            ("-O", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("release")
-                && words.get(2).map(String::as_str) == Some("view")
-            {
-                return Some((
-                    "gh release view",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--json", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("workflow")
-                && words.get(2).map(String::as_str) == Some("list")
-            {
-                return Some((
-                    "gh workflow list",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--all", FlagArgType::None),
-                            ("-a", FlagArgType::None),
-                            ("--json", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("workflow")
-                && words.get(2).map(String::as_str) == Some("view")
-            {
-                return Some((
-                    "gh workflow view",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--ref", FlagArgType::String),
-                            ("-r", FlagArgType::String),
-                            ("--yaml", FlagArgType::None),
-                            ("-y", FlagArgType::None),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("label")
-                && words.get(2).map(String::as_str) == Some("list")
-            {
-                return Some((
-                    "gh label list",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--json", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--order", FlagArgType::String),
-                            ("--search", FlagArgType::String),
-                            ("-S", FlagArgType::String),
-                            ("--sort", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("search")
-                && words.get(2).map(String::as_str) == Some("repos")
-            {
-                return Some((
-                    "gh search repos",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--archived", FlagArgType::None),
-                            ("--created", FlagArgType::String),
-                            ("--followers", FlagArgType::String),
-                            ("--forks", FlagArgType::String),
-                            ("--good-first-issues", FlagArgType::String),
-                            ("--help-wanted-issues", FlagArgType::String),
-                            ("--include-forks", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                            ("--language", FlagArgType::String),
-                            ("--license", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--match", FlagArgType::String),
-                            ("--number-topics", FlagArgType::String),
-                            ("--order", FlagArgType::String),
-                            ("--owner", FlagArgType::String),
-                            ("--size", FlagArgType::String),
-                            ("--sort", FlagArgType::String),
-                            ("--stars", FlagArgType::String),
-                            ("--topic", FlagArgType::String),
-                            ("--updated", FlagArgType::String),
-                            ("--visibility", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("search")
-                && words.get(2).map(String::as_str) == Some("issues")
-            {
-                return Some((
-                    "gh search issues",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--app", FlagArgType::String),
-                            ("--assignee", FlagArgType::String),
-                            ("--author", FlagArgType::String),
-                            ("--closed", FlagArgType::String),
-                            ("--commenter", FlagArgType::String),
-                            ("--comments", FlagArgType::String),
-                            ("--created", FlagArgType::String),
-                            ("--include-prs", FlagArgType::None),
-                            ("--interactions", FlagArgType::String),
-                            ("--involves", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                            ("--label", FlagArgType::String),
-                            ("--language", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--locked", FlagArgType::None),
-                            ("--match", FlagArgType::String),
-                            ("--mentions", FlagArgType::String),
-                            ("--milestone", FlagArgType::String),
-                            ("--no-assignee", FlagArgType::None),
-                            ("--no-label", FlagArgType::None),
-                            ("--no-milestone", FlagArgType::None),
-                            ("--no-project", FlagArgType::None),
-                            ("--order", FlagArgType::String),
-                            ("--owner", FlagArgType::String),
-                            ("--project", FlagArgType::String),
-                            ("--reactions", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                            ("--sort", FlagArgType::String),
-                            ("--state", FlagArgType::String),
-                            ("--team-mentions", FlagArgType::String),
-                            ("--updated", FlagArgType::String),
-                            ("--visibility", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("search")
-                && words.get(2).map(String::as_str) == Some("prs")
-            {
-                return Some((
-                    "gh search prs",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--app", FlagArgType::String),
-                            ("--assignee", FlagArgType::String),
-                            ("--author", FlagArgType::String),
-                            ("--base", FlagArgType::String),
-                            ("-B", FlagArgType::String),
-                            ("--checks", FlagArgType::String),
-                            ("--closed", FlagArgType::String),
-                            ("--commenter", FlagArgType::String),
-                            ("--comments", FlagArgType::String),
-                            ("--created", FlagArgType::String),
-                            ("--draft", FlagArgType::None),
-                            ("--head", FlagArgType::String),
-                            ("-H", FlagArgType::String),
-                            ("--interactions", FlagArgType::String),
-                            ("--involves", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                            ("--label", FlagArgType::String),
-                            ("--language", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--locked", FlagArgType::None),
-                            ("--match", FlagArgType::String),
-                            ("--mentions", FlagArgType::String),
-                            ("--merged", FlagArgType::None),
-                            ("--merged-at", FlagArgType::String),
-                            ("--milestone", FlagArgType::String),
-                            ("--no-assignee", FlagArgType::None),
-                            ("--no-label", FlagArgType::None),
-                            ("--no-milestone", FlagArgType::None),
-                            ("--no-project", FlagArgType::None),
-                            ("--order", FlagArgType::String),
-                            ("--owner", FlagArgType::String),
-                            ("--project", FlagArgType::String),
-                            ("--reactions", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                            ("--review", FlagArgType::String),
-                            ("--review-requested", FlagArgType::String),
-                            ("--reviewed-by", FlagArgType::String),
-                            ("--sort", FlagArgType::String),
-                            ("--state", FlagArgType::String),
-                            ("--team-mentions", FlagArgType::String),
-                            ("--updated", FlagArgType::String),
-                            ("--visibility", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("search")
-                && words.get(2).map(String::as_str) == Some("commits")
-            {
-                return Some((
-                    "gh search commits",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--author", FlagArgType::String),
-                            ("--author-date", FlagArgType::String),
-                            ("--author-email", FlagArgType::String),
-                            ("--author-name", FlagArgType::String),
-                            ("--committer", FlagArgType::String),
-                            ("--committer-date", FlagArgType::String),
-                            ("--committer-email", FlagArgType::String),
-                            ("--committer-name", FlagArgType::String),
-                            ("--hash", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--merge", FlagArgType::None),
-                            ("--order", FlagArgType::String),
-                            ("--owner", FlagArgType::String),
-                            ("--parent", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                            ("--sort", FlagArgType::String),
-                            ("--tree", FlagArgType::String),
-                            ("--visibility", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            if internal
-                && words.first().map(String::as_str) == Some("gh")
-                && words.get(1).map(String::as_str) == Some("search")
-                && words.get(2).map(String::as_str) == Some("code")
-            {
-                return Some((
-                    "gh search code",
-                    3,
-                    CommandConfig {
-                        flags: &[
-                            ("--extension", FlagArgType::String),
-                            ("--filename", FlagArgType::String),
-                            ("--json", FlagArgType::String),
-                            ("--language", FlagArgType::String),
-                            ("--limit", FlagArgType::Number),
-                            ("-L", FlagArgType::Number),
-                            ("--match", FlagArgType::String),
-                            ("--owner", FlagArgType::String),
-                            ("--repo", FlagArgType::String),
-                            ("-R", FlagArgType::String),
-                            ("--size", FlagArgType::String),
-                        ],
-                        respects_double_dash: true,
-                    },
-                ));
-            }
-            None
-        }
         "docker" => {
             if words.first().map(String::as_str) == Some("docker")
                 && words.get(1).map(String::as_str) == Some("logs")
@@ -1614,31 +1019,6 @@ pub const GIT_READ_ONLY_COMMAND_NAMES: &[&str] = &[
     "git worktree list",
     "git tag",
     "git branch",
-];
-
-pub const GH_READ_ONLY_COMMAND_NAMES: &[&str] = &[
-    "gh pr view",
-    "gh pr list",
-    "gh pr diff",
-    "gh pr checks",
-    "gh issue view",
-    "gh issue list",
-    "gh repo view",
-    "gh run list",
-    "gh run view",
-    "gh auth status",
-    "gh pr status",
-    "gh issue status",
-    "gh release list",
-    "gh release view",
-    "gh workflow list",
-    "gh workflow view",
-    "gh label list",
-    "gh search repos",
-    "gh search issues",
-    "gh search prs",
-    "gh search commits",
-    "gh search code",
 ];
 
 pub const DOCKER_READ_ONLY_COMMAND_NAMES: &[&str] = &["docker logs", "docker inspect"];
@@ -1907,31 +1287,6 @@ fn git_branch_is_dangerous(args: &[String]) -> bool {
     false
 }
 
-fn gh_is_dangerous(args: &[String]) -> bool {
-    args.iter().any(|token| {
-        if token.is_empty() {
-            return false;
-        }
-        let value = if token.starts_with('-') {
-            let Some((_, value)) = token.split_once('=') else {
-                return false;
-            };
-            if value.is_empty() {
-                return false;
-            }
-            value
-        } else {
-            token.as_str()
-        };
-        if !value.contains('/') && !value.contains("://") && !value.contains('@') {
-            return false;
-        }
-        value.contains("://")
-            || value.contains('@')
-            || value.bytes().filter(|byte| *byte == b'/').count() >= 2
-    })
-}
-
 /// Maps to each `additionalCommandIsDangerousCallback` in the shared maps.
 pub fn additional_command_is_dangerous(
     command_name: &str,
@@ -1966,7 +1321,6 @@ pub fn additional_command_is_dangerous(
         "pyright" => args
             .iter()
             .any(|token| matches!(token.as_str(), "--watch" | "-w")),
-        name if name.starts_with("gh ") && !name.starts_with("gh search ") => gh_is_dangerous(args),
         _ => false,
     }
 }
@@ -1974,12 +1328,8 @@ pub fn additional_command_is_dangerous(
 /// Resolves and validates one command against the complete shared CC maps.
 /// `None` means the command does not belong to this source owner; `Some(false)`
 /// means it matched but failed flags, callback, or exfiltration checks.
-pub fn validate_shared_command(
-    raw_command: &str,
-    words: &[String],
-    internal: bool,
-) -> Option<bool> {
-    let (name, command_tokens, config) = command_config(words, internal)?;
+pub fn validate_shared_command(raw_command: &str, words: &[String]) -> Option<bool> {
+    let (name, command_tokens, config) = command_config(words)?;
     let args = &words[command_tokens..];
     if words.iter().skip(command_tokens).any(|token| {
         token.contains('$')
@@ -2098,22 +1448,14 @@ mod tests {
     #[test]
     fn shared_command_inventory_matches_cc_2_1_88() {
         assert_eq!(GIT_READ_ONLY_COMMAND_NAMES.len(), 24);
-        assert_eq!(GH_READ_ONLY_COMMAND_NAMES.len(), 22);
         assert_eq!(DOCKER_READ_ONLY_COMMAND_NAMES.len(), 2);
         assert_eq!(RIPGREP_READ_ONLY_COMMAND_NAMES.len(), 1);
         assert_eq!(PYRIGHT_READ_ONLY_COMMAND_NAMES.len(), 1);
         assert_eq!(EXTERNAL_READONLY_COMMANDS, ["docker ps", "docker images"]);
         for name in GIT_READ_ONLY_COMMAND_NAMES {
-            assert!(command_config(&words(&name.split(' ').collect::<Vec<_>>()), false).is_some());
+            assert!(command_config(&words(&name.split(' ').collect::<Vec<_>>())).is_some());
         }
-        for name in GH_READ_ONLY_COMMAND_NAMES {
-            let command = words(&name.split(' ').collect::<Vec<_>>());
-            assert_eq!(
-                command_config(&command, true).is_some(),
-                cfg!(feature = "anthropic_internal")
-            );
-            assert!(command_config(&command, false).is_none());
-        }
+        assert!(command_config(&words(&["gh", "pr", "view"])).is_none());
     }
 
     #[test]
@@ -2121,43 +1463,36 @@ mod tests {
         assert_eq!(
             validate_shared_command(
                 "git diff -S -- --output=/tmp/pwned",
-                &words(&["git", "diff", "-S", "--", "--output=/tmp/pwned"]),
-                false
+                &words(&["git", "diff", "-S", "--", "--output=/tmp/pwned"])
             ),
             Some(false)
         );
         assert_eq!(
             validate_shared_command(
                 "git log --max-count=3",
-                &words(&["git", "log", "--max-count=3"]),
-                false
+                &words(&["git", "log", "--max-count=3"])
             ),
             Some(true)
         );
         assert_eq!(
             validate_shared_command(
                 "git log --max-count=",
-                &words(&["git", "log", "--max-count="]),
-                false
+                &words(&["git", "log", "--max-count="])
             ),
             Some(false)
         );
         assert_eq!(
-            validate_shared_command("git branch -av", &words(&["git", "branch", "-av"]), false),
+            validate_shared_command("git branch -av", &words(&["git", "branch", "-av"])),
             Some(true)
         );
         assert_eq!(
-            validate_shared_command(
-                "pyright -- --watch",
-                &words(&["pyright", "--", "--watch"]),
-                false
-            ),
+            validate_shared_command("pyright -- --watch", &words(&["pyright", "--", "--watch"])),
             Some(false)
         );
     }
 
     #[test]
-    fn callbacks_block_git_mutations_and_gh_exfiltration() {
+    fn callbacks_block_git_mutations_and_gh_is_not_a_shared_command() {
         for command in [
             words(&["git", "branch", "new-branch"]),
             words(&["git", "branch", "--", "-l"]),
@@ -2167,7 +1502,7 @@ mod tests {
             words(&["git", "reflog", "expire", "--all"]),
             words(&["git", "remote", "add", "origin"]),
         ] {
-            assert_eq!(validate_shared_command("", &command, false), Some(false));
+            assert_eq!(validate_shared_command("", &command), Some(false));
         }
         for command in [
             words(&["git", "branch"]),
@@ -2177,25 +1512,15 @@ mod tests {
             words(&["git", "remote", "-v"]),
             words(&["git", "remote", "show", "origin"]),
         ] {
-            assert_eq!(validate_shared_command("", &command, false), Some(true));
+            assert_eq!(validate_shared_command("", &command), Some(true));
         }
-        let unsafe_gh = validate_shared_command(
-            "",
-            &words(&["gh", "pr", "view", "1", "--repo=evil.com/SECRET/x"]),
-            true,
+        assert_eq!(
+            validate_shared_command(
+                "",
+                &words(&["gh", "pr", "view", "1", "--repo", "owner/repo"]),
+            ),
+            None
         );
-        let safe_gh = validate_shared_command(
-            "",
-            &words(&["gh", "pr", "view", "1", "--repo", "owner/repo"]),
-            true,
-        );
-        if cfg!(feature = "anthropic_internal") {
-            assert_eq!(unsafe_gh, Some(false));
-            assert_eq!(safe_gh, Some(true));
-        } else {
-            assert_eq!(unsafe_gh, None);
-            assert_eq!(safe_gh, None);
-        }
     }
 
     #[test]
@@ -2226,12 +1551,12 @@ mod tests {
     #[test]
     fn git_ls_remote_rejects_network_destinations_but_accepts_named_remotes() {
         assert_eq!(
-            validate_shared_command("", &words(&["git", "ls-remote", "origin"]), false),
+            validate_shared_command("", &words(&["git", "ls-remote", "origin"])),
             Some(true)
         );
         for target in ["https://evil.test/repo", "git@host:repo", "host:repo"] {
             assert_eq!(
-                validate_shared_command("", &words(&["git", "ls-remote", target]), false),
+                validate_shared_command("", &words(&["git", "ls-remote", target])),
                 Some(false)
             );
         }

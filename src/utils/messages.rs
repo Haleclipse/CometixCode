@@ -31,19 +31,6 @@ pub fn normalize_content_from_api(
                     }
                     let mut normalized = if let Some(input) = input.as_str() {
                         let parsed = crate::utils::json::safe_parse_json(Some(input), true);
-                        if parsed.is_null() && !input.is_empty() {
-                            // Analytics remains the existing project-wide omission;
-                            // the source's ant-only raw prefix stays in debug only.
-                            if crate::utils::build_profile::build_audience().is_internal() {
-                                let prefix = String::from_utf16_lossy(
-                                    &input.encode_utf16().take(200).collect::<Vec<_>>(),
-                                );
-                                crate::utils::debug::log_for_debugging_with_level(
-                                    &format!("tool input JSON parse fail: {prefix}"),
-                                    crate::utils::debug::DebugLogLevel::Warn,
-                                );
-                            }
-                        }
                         if parsed.is_null() {
                             serde_json::json!({})
                         } else {
@@ -1521,38 +1508,6 @@ pub fn strip_advisor_blocks(
     if changed { result } else { result }
 }
 
-/// Maps to: CC `utils/messages.ts` `stripSignatureBlocks(...)`.
-///
-/// Rust currently models signature-bearing assistant content as thinking and
-/// redacted-thinking blocks. Connector text is not ported yet.
-pub fn strip_signature_blocks(
-    messages: Vec<crate::types::message::Message>,
-) -> Vec<crate::types::message::Message> {
-    use crate::types::message::{AssistantContent, Message};
-
-    let mut changed = false;
-    let mut result = Vec::with_capacity(messages.len());
-    for message in messages {
-        let Message::Assistant(mut assistant) = message else {
-            result.push(message);
-            continue;
-        };
-        let original_len = assistant.content.len();
-        assistant.content.retain(|content| {
-            !matches!(
-                content,
-                AssistantContent::Thinking { .. } | AssistantContent::RedactedThinking { .. }
-            )
-        });
-        if assistant.content.len() != original_len {
-            changed = true;
-        }
-        result.push(Message::Assistant(assistant));
-    }
-
-    if changed { result } else { result }
-}
-
 pub fn is_tool_cancel_message(content: &str) -> bool {
     content.starts_with(CANCEL_MESSAGE)
 }
@@ -2903,8 +2858,6 @@ Read the team config to discover your teammates' names. Check the task list peri
             use crate::tools::file_read_tool::{Output, ReadOutput, ReadTextOutput, ReadImageOutput, ReadNotebookOutput, ReadPdfOutput, FileReadTool};
             // CC only handles image/text/notebook/pdf in this inner switch.
             if matches!(content, Output::Parts { .. } | Output::FileUnchanged { .. }) {
-                let stack = format!("Error: Unknown attachment type: file\n{}", std::backtrace::Backtrace::force_capture());
-                crate::utils::debug::log_ant_error("normalizeAttachmentForAPI", Some(&stack));
                 return vec![];
             }
             let called = create_tool_use_message("Read", serde_json::json!({"file_path":filename}));
@@ -3338,8 +3291,7 @@ Treat this as a fresh planning session. Do not assume the existing plan is relev
         Attachment::CompactionReminder => vec![meta_message("Auto-compact is enabled. When the context window is nearly full, older messages will be automatically summarized so you can continue working seamlessly. There is no need to stop or rush — you have unlimited context through automatic compaction.")],
         Attachment::CompanionIntro { name, species } => vec![meta_message(crate::buddy::prompt::companion_intro_text(name,species))],
         Attachment::VerifyPlanReminder => {
-            let tool_name = if crate::utils::build_profile::has_internal_capability(crate::utils::build_profile::InternalCapability::Prompts) && crate::utils::process_env::var("NYAN_VERIFY_PLAN").as_deref() == Some("true") { "VerifyPlanExecution" } else { "" };
-            vec![meta_message(format!("You have completed implementing the plan. Please call the \"{tool_name}\" tool directly (NOT the Agent tool or an agent) to verify that all plan items were completed correctly."))]
+            vec![meta_message("You have completed implementing the plan. Please call the \"\" tool directly (NOT the Agent tool or an agent) to verify that all plan items were completed correctly.")]
         }
         Attachment::DynamicSkill { .. }
         | Attachment::CommandPermissions { .. }
@@ -3353,13 +3305,7 @@ Treat this as a fresh planning session. Do not assume the existing plan is relev
         // No-source: CC services/compact/snipCompact.ts is a generated empty
         // stub. SNIP_NUDGE_TEXT cannot be recovered for HISTORY_SNIP builds.
         Attachment::ContextEfficiency => vec![],
-        other => {
-            let kind = other.wire_type();
-            if matches!(kind,"autocheckpointing"|"background_task_status"|"todo"|"task_progress"|"ultramemory") { return vec![]; }
-            let stack = format!("Error: Unknown attachment type: {kind}\n{}", std::backtrace::Backtrace::force_capture());
-            crate::utils::debug::log_ant_error("normalizeAttachmentForAPI", Some(&stack));
-            vec![]
-        },
+        _ => vec![],
     }
 }
 
@@ -4634,39 +4580,6 @@ mod tests {
     }
 
     #[test]
-    fn strip_signature_blocks_removes_thinking_like_official() {
-        let messages = vec![crate::types::message::Message::Assistant(
-            crate::types::message::AssistantMessage {
-                uuid: uuid::Uuid::new_v4().to_string(),
-                timestamp: chrono::Utc::now(),
-                content: vec![
-                    crate::types::message::AssistantContent::Thinking {
-                        text: "hidden reasoning".to_string(),
-                        signature: String::new(),
-                    },
-                    crate::types::message::AssistantContent::RedactedThinking {
-                        data: "redacted".to_string(),
-                    },
-                    crate::types::message::AssistantContent::Text("visible".to_string()),
-                ],
-                model: None,
-                stop_reason: Some(crate::types::message::StopReason::EndTurn),
-                usage: None,
-            },
-        )];
-
-        let stripped = strip_signature_blocks(messages);
-
-        assert!(matches!(
-            &stripped[0],
-            crate::types::message::Message::Assistant(assistant)
-                if assistant.content == vec![
-                    crate::types::message::AssistantContent::Text("visible".to_string())
-                ]
-        ));
-    }
-
-    #[test]
     fn extract_tag_matches_official_attributes_multiline_and_nested_tags() {
         assert_eq!(
             extract_tag(
@@ -5749,7 +5662,6 @@ mod plan_instruction_tests {
         );
     }
 
-    #[cfg(not(feature = "anthropic_internal"))]
     #[test]
     fn plan_five_phase_templates_match_source_agent_count_and_newline_branches() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();

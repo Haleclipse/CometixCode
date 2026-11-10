@@ -62,14 +62,11 @@
 | `src/utils/native_installer/pid_lock.rs:51-71`、`:87-95` | **能编译但行为不对**。非 Unix `is_process_running_platform` 恒为 `false`，Windows 上所有 PID lock 都会被诊断为非运行。 | 用 `OpenProcess` + `GetExitCodeProcess`（并验证 executable path，避免 PID reuse）；再实现 acquire/release/清理。 | L |
 | `src/utils/native_installer/pid_lock.rs:125-133` | **不可用**。stale lock cleanup 当前是安全禁用的 no-op，与平台无关，但 Windows native installer 还没有可用的安装锁生命周期。 | 在安装器实现前明确禁用自动安装；完成 Windows installer 后再接入 lock mutation。 | L |
 
-### 5. PTY、终端尺寸和录制
+### 5. PTY 和终端尺寸
 
 | 位置 | 现状 | 建议方案 | 工作量 |
 |---|---|---|---|
 | `src/utils/shell/mod.rs:288-309`、`:426-432` | **能编译但行为不对（需要真实终端的命令）**。Bash 执行使用 stdin null 或普通 pipe，不创建 PTY；PowerShell streaming 也使用普通 pipe。交互式程序可能阻塞、检测不到终端或无法正确渲染。 | 最小发布版把 shell 定位为 non-interactive，检测到交互提示时给出明确建议；若要完整支持，增加 Windows ConPTY backend。 | M（明确降级）/XL（ConPTY） |
-| `src/utils/asciicast.rs:141-161` | **正常**。Windows 走 crossterm `terminal::size()`，失败回退 `(80,24)`。 | 在 Windows console、非 TTY 和 CI 三种环境验证尺寸回退。 | S |
-| `src/utils/asciicast.rs:216-235` | **能编译但行为不完整**。resize 监听只编译 Unix `SIGWINCH`；Windows 录制不会收到同等的 console resize 事件。 | 用 Windows console resize/ConPTY 事件补录制 resize；在未实现前把 Windows 录制标成“不保证 resize 事件”。 | M |
-| `src/utils/asciicast.rs:185-191` | **能编译但权限语义不同**。Windows 不设置 `0o600`，录制文件使用默认 ACL。 | 录制文件按 Windows ACL 处理，或在 Windows 文档中说明其访问范围。 | M |
 
 ### 6. Keychain / 凭据存储
 

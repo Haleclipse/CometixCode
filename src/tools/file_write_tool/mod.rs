@@ -678,19 +678,6 @@ impl ToolCall for FileWriteTool {
                 });
             }
 
-            // Maps to: CC `FileWriteTool.ts:329` notifyVscodeFileUpdated.
-            let vscode_path = full_path.display().to_string();
-            let vscode_old_content = old_content.clone();
-            let vscode_new_content = input.content.clone();
-            tokio::spawn(async move {
-                let _ = crate::services::mcp::vscode_sdk_mcp::notify_vscode_file_updated(
-                    &vscode_path,
-                    vscode_old_content.as_deref(),
-                    Some(&vscode_new_content),
-                )
-                .await;
-            });
-
             let read_timestamp_ms =
                 match crate::utils::file::get_file_modification_time_result(&write_target) {
                     Ok(timestamp) => timestamp,

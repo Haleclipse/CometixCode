@@ -223,23 +223,6 @@ pub fn clear_conversation(store: &AppStore) -> ClearConversationOutcome {
     crate::cost_tracker::reset_session_stats();
 
     let new_session_id = crate::bootstrap::state::regenerate_session_id(true);
-    // Update the environment variable so subprocesses use the new session ID.
-    // Maps to: CC `commands/clear/conversation.ts:204-207` — gated on
-    // `USER_TYPE === 'ant'` (≙ internal Api capability, the established
-    // mapping) and on the variable already being present in the spawn env.
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Api,
-    ) {
-        let mut update = crate::utils::process_env::begin_update();
-        if update
-            .snapshot()
-            .var_os("NYAN_SESSION_ID")
-            .is_some_and(|value| !value.is_empty())
-        {
-            update.set("NYAN_SESSION_ID", &new_session_id);
-        }
-        update.commit();
-    }
     crate::utils::session_storage::reset_session_file_pointer();
 
     for (task_id, agent_id) in &local_agent_repoints {

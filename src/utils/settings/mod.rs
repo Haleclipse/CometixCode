@@ -554,9 +554,6 @@ pub fn get_auto_mode_config() -> Option<types::AutoModeSettings> {
         };
         allow.extend(auto_mode.allow.unwrap_or_default());
         soft_deny.extend(auto_mode.soft_deny.unwrap_or_default());
-        if crate::utils::build_profile::build_audience().is_internal() {
-            soft_deny.extend(auto_mode.deny.unwrap_or_default());
-        }
         environment.extend(auto_mode.environment.unwrap_or_default());
     }
     if allow.is_empty() && soft_deny.is_empty() && environment.is_empty() {
@@ -565,7 +562,6 @@ pub fn get_auto_mode_config() -> Option<types::AutoModeSettings> {
     Some(types::AutoModeSettings {
         allow: (!allow.is_empty()).then_some(allow),
         soft_deny: (!soft_deny.is_empty()).then_some(soft_deny),
-        deny: None,
         environment: (!environment.is_empty()).then_some(environment),
     })
 }
@@ -816,7 +812,6 @@ mod tests {
                     auto_mode: Some(types::AutoModeSettings {
                         allow: Some(vec![name.into(), "duplicate".into()]),
                         soft_deny: Some(vec![format!("{name}-soft")]),
-                        deny: Some(vec![format!("{name}-legacy")]),
                         environment: Some(vec![format!("{name}-environment")]),
                     }),
                     ..Default::default()
@@ -842,15 +837,14 @@ mod tests {
                 "duplicate".into()
             ])
         );
-        let mut expected = Vec::new();
-        for name in ["user", "local", "flag"] {
-            expected.push(format!("{name}-soft"));
-            if crate::utils::build_profile::build_audience().is_internal() {
-                expected.push(format!("{name}-legacy"));
-            }
-        }
-        assert_eq!(result.soft_deny, Some(expected));
-        assert!(result.deny.is_none());
+        assert_eq!(
+            result.soft_deny,
+            Some(vec![
+                "user-soft".into(),
+                "local-soft".into(),
+                "flag-soft".into()
+            ])
+        );
         assert_eq!(
             result.environment,
             Some(vec![

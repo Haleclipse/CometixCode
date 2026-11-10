@@ -19,10 +19,6 @@ name = "nyan"
 path = "src/bin/nyan.rs"
 
 [features]
-# L1 replacement for CC runtime `process.env.USER_TYPE === 'ant'` gates.
-# The default build is the external distribution; this feature compiles the
-# Anthropic-internal capability profile and cannot be enabled at runtime.
-anthropic_internal = []
 # Maps to CC build-time `feature('ULTRATHINK')` transcript highlighting.
 ultrathink = []
 
@@ -172,15 +168,6 @@ rmcp = { version = "3.9.0", default-features = false, features = [
     "transport-child-process",
     "transport-streamable-http-client-reqwest",
 ] }
-
-# CC `asciicast.ts:118-125` reads `process.stdout.columns/rows`, which Node
-# services with ioctl(TIOCGWINSZ) on Unix and GetConsoleScreenBufferInfo on
-# Windows. utils/asciicast.rs calls libc directly for the first; the second
-# comes from crossterm, whose Windows backend is that same console call.
-# Declared only for the targets that compile the `cfg(not(unix))` arm — the
-# crate is already in the tree through iocraft, so this costs no extra build.
-[target.'cfg(not(unix))'.dependencies]
-crossterm = "0.29"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = [

@@ -7,7 +7,6 @@
 
 use super::ProcessUserInputBaseResult;
 use crate::commands::{self, Command, CommandKind};
-use crate::constants::product;
 use crate::constants::query_source::QuerySource;
 use crate::types::message::{
     RenderableMessage, RenderableMessageKind, SystemMessage, SystemMessageLevel, UserContent,
@@ -887,22 +886,6 @@ pub(crate) fn call_clear(
         "",
         false,
         Some(SlashCommandAction::ClearConversation),
-    )
-}
-
-pub(crate) fn call_version(
-    command: &Command,
-    args: &str,
-    uuid: Option<String>,
-    _context: &crate::tool::ToolUseContext,
-) -> ProcessUserInputBaseResult {
-    local_command_result(
-        uuid,
-        commands::get_command_name(command),
-        args,
-        product::VERSION,
-        false,
-        None,
     )
 }
 
@@ -1966,23 +1949,6 @@ mod tests {
         assert_eq!(
             local_output(&result),
             "<local-command-stdout></local-command-stdout>"
-        );
-    }
-
-    #[cfg(feature = "anthropic_internal")]
-    #[test]
-    fn process_slash_command_version_outputs_product_version_for_internal_registry() {
-        let registry = declared_commands_for_tests();
-        let result = process_slash_command("/version", Some("cmd-1".to_string()), &registry);
-
-        assert!(!result.should_query);
-        assert!(result.local_action.is_none());
-        assert_eq!(
-            local_output(&result),
-            format!(
-                "<local-command-stdout>{}</local-command-stdout>",
-                product::VERSION
-            )
         );
     }
 

@@ -3,7 +3,7 @@
 //!
 //! Status rows match CC `NotificationContent`: inline apiKeyHelper/auth/
 //! debug/verbose; mounts of root components (`IdeStatusIndicator`, `TokenWarning`,
-//! `UpdateNotifier`, `MemoryUsageIndicator`) and PromptInput-local
+//! `UpdateNotifier`) and PromptInput-local
 //! `SandboxPromptFooterHint`. No parallel `*_footer.rs` adapter layer.
 
 use super::prompt_input_footer::PromptFooterIndicator;
@@ -78,7 +78,7 @@ fn configured_api_key_helper_present(store: &AppStore) -> bool {
 }
 
 /// Height budget for Notifications rows. Wake-dependent rows (apiKeyHelper /
-/// memory / sandbox) are computed live — no mirrored bag (D9).
+/// sandbox) are computed live — no mirrored bag (D9).
 pub fn direct_footer_row_count(
     has_current_notification: bool,
     verbose: bool,
@@ -87,7 +87,6 @@ pub fn direct_footer_row_count(
     credential_missing: bool,
     token_usage: u64,
     api_key_helper_slow: bool,
-    memory_visible: bool,
     sandbox_hint_visible: bool,
 ) -> usize {
     let mut count = usize::from(has_current_notification);
@@ -97,7 +96,6 @@ pub fn direct_footer_row_count(
     }
     let model = main_loop_model.unwrap_or(DEFAULT_MODEL);
     count += token_warning_hint_row_count(token_usage, model, is_brief_only);
-    count += usize::from(memory_visible);
     count += usize::from(sandbox_hint_visible);
     count
 }
@@ -131,7 +129,6 @@ pub fn direct_footer_row_count_from_app(
         crate::utils::sandbox::sandbox_adapter::get_sandbox_enabled_setting(&state.settings);
     let sandbox_hint_visible =
         sandbox_enabled && super::sandbox_prompt_footer_hint::sandbox_hint_recent_count() > 0;
-    let memory_visible = crate::components::memory_usage_indicator::memory_hint_visible_now();
     // apiKeyHelper: prefer live elapsed; store handle optional at height sites
     // that only have AppState (tests pass false via direct_footer_row_count).
     let api_key_helper_slow = {
@@ -156,7 +153,6 @@ pub fn direct_footer_row_count_from_app(
         credential_status.is_missing(),
         token_usage,
         api_key_helper_slow,
-        memory_visible,
         sandbox_hint_visible,
     );
     let is_remote_mode = is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref());
@@ -354,7 +350,7 @@ pub fn Notifications(
             overflow: Overflow::Hidden,
         ) {
             // CC order: Ide → notif → apiKeyHelper → auth/debug/verbose
-            // → TokenWarning → AutoUpdater → Memory → Sandbox.
+            // → TokenWarning → AutoUpdater → Sandbox.
             IdeStatusIndicator(
                 ide_status: ide_status,
                 ide_selection: ide_selection,
@@ -377,7 +373,6 @@ pub fn Notifications(
                 update_available: props.update_available.clone(),
                 verbose: verbose,
             )
-            crate::components::memory_usage_indicator::MemoryUsageIndicator
             super::sandbox_prompt_footer_hint::SandboxPromptFooterHint
         }
     }
@@ -674,18 +669,6 @@ mod tests {
         .to_string();
         assert!(text.contains("Debug mode"), "canvas=\n{text}");
         assert!(text.contains("42 tokens"), "canvas=\n{text}");
-    }
-
-    #[test]
-    fn direct_footer_row_count_includes_memory_wake_channel() {
-        assert_eq!(
-            direct_footer_row_count(false, false, false, None, false, 0, false, true, false),
-            1
-        );
-        assert_eq!(
-            direct_footer_row_count(false, false, false, None, false, 0, false, false, false),
-            0
-        );
     }
 
     #[test]

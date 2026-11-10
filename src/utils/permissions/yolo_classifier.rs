@@ -2,11 +2,9 @@
 //! Keeps JSON and two-stage XML requests in their defining source owner.
 //! Source-file size exception: the original is 1495 lines; tests stay inline.
 
-use crate::tool::ToolPermissionContext;
 use crate::types::message::{AssistantContent, Message, UserContent};
 use crate::types::permissions::{ClassifierPromptLengths, ClassifierUsage, YoloClassifierResult};
 use crate::types::tools::Tool;
-use crate::utils::build_profile::{InternalCapability, has_internal_capability};
 #[cfg(not(test))]
 use crate::utils::side_query::side_query;
 use crate::utils::side_query::{SideQueryOptions, SideQuerySystem, SideQueryThinking};
@@ -26,11 +24,6 @@ const BASE_SYSTEM_PROMPT: &str =
     include_str!("yolo_classifier_prompts/auto_mode_system_prompt.txt");
 const EXTERNAL_PERMISSIONS_TEMPLATE: &str =
     include_str!("yolo_classifier_prompts/permissions_external.txt");
-#[cfg(feature = "anthropic_internal")]
-const ANTHROPIC_PERMISSIONS_TEMPLATE: &str =
-    include_str!("yolo_classifier_prompts/permissions_anthropic.txt");
-#[cfg(not(feature = "anthropic_internal"))]
-const ANTHROPIC_PERMISSIONS_TEMPLATE: &str = "";
 
 /// Maps to: CC `yoloClassifier.ts:87-91` `AutoModeRules`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,7 +92,6 @@ enum TwoStageMode {
 #[serde(rename_all = "camelCase")]
 struct AutoModeConfig {
     two_stage_classifier: Option<Value>,
-    force_external_permissions: Option<bool>,
     jsonl_transcript: Option<bool>,
 }
 
@@ -121,13 +113,6 @@ struct ClassifierDumpContext {
     model: String,
 }
 
-/// Maps to: CC `yoloClassifier.ts:71-78` `isUsingExternalPermissions`.
-fn is_using_external_permissions() -> bool {
-    if !has_internal_capability(InternalCapability::Permissions) {
-        return true;
-    }
-    auto_mode_config().force_external_permissions == Some(true)
-}
 /// Maps to: CC `yoloClassifier.ts:100-106` `getDefaultExternalAutoModeRules`.
 pub fn get_default_external_auto_mode_rules() -> AutoModeRules {
     AutoModeRules {
@@ -166,36 +151,18 @@ pub fn build_default_external_system_prompt() -> String {
     prompt
 }
 /// Maps to: CC `yoloClassifier.ts:484-540` `buildYoloSystemPrompt`.
-pub fn build_yolo_system_prompt(context: &ToolPermissionContext) -> String {
-    let using_external = is_using_external_permissions();
-    let template = if using_external {
-        EXTERNAL_PERMISSIONS_TEMPLATE
-    } else {
-        ANTHROPIC_PERMISSIONS_TEMPLATE
-    };
-    let mut prompt = BASE_SYSTEM_PROMPT.replacen("<permissions_template>", template, 1);
-    let auto_mode = crate::utils::settings::get_auto_mode_config();
-    // The sole source bashClassifier.ts is an external disabled stub; keep its
-    // real empty-list results, never manufacture internal prompt rules.
-    let mut allow = if using_external {
-        vec![]
-    } else {
-        super::bash_classifier::get_bash_prompt_allow_descriptions(context)
-    };
-    let mut deny = if using_external {
-        vec![]
-    } else {
-        super::bash_classifier::get_bash_prompt_deny_descriptions(context)
-    };
-    if !using_external && has_internal_capability(InternalCapability::Permissions) {
-        deny.extend(POWERSHELL_DENY_GUIDANCE.iter().map(|s| (*s).to_owned()));
-    }
-    let mut environment = Vec::new();
-    if let Some(config) = auto_mode {
-        allow.extend(config.allow.unwrap_or_default());
-        deny.extend(config.soft_deny.unwrap_or_default());
-        environment = config.environment.unwrap_or_default();
-    }
+pub fn build_yolo_system_prompt() -> String {
+    let mut prompt =
+        BASE_SYSTEM_PROMPT.replacen("<permissions_template>", EXTERNAL_PERMISSIONS_TEMPLATE, 1);
+    let (allow, deny, environment) = crate::utils::settings::get_auto_mode_config()
+        .map(|config| {
+            (
+                config.allow.unwrap_or_default(),
+                config.soft_deny.unwrap_or_default(),
+                config.environment.unwrap_or_default(),
+            )
+        })
+        .unwrap_or_default();
     for (tag, values) in [
         ("user_allow_rules_to_replace", allow),
         ("user_deny_rules_to_replace", deny),
@@ -218,50 +185,6 @@ pub fn build_yolo_system_prompt(context: &ToolPermissionContext) -> String {
             .into_owned();
     }
     prompt
-}
-/// Maps to: CC `yoloClassifier.ts:144-146` `getAutoModeDumpDir`.
-fn get_auto_mode_dump_dir() -> std::path::PathBuf {
-    super::filesystem::get_claude_temp_dir().join("auto-mode")
-}
-/// Maps to: CC `yoloClassifier.ts:153-180` `maybeDumpAutoMode`.
-fn maybe_dump_auto_mode(
-    request: Value,
-    response: ApiMessage,
-    timestamp: i64,
-    suffix: Option<&'static str>,
-) {
-    if !has_internal_capability(InternalCapability::Permissions)
-        || !crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("NYAN_DUMP_AUTO_MODE").as_deref(),
-        )
-    {
-        return;
-    }
-    let base = suffix
-        .map(|s| format!("{timestamp}.{s}"))
-        .unwrap_or_else(|| timestamp.to_string());
-    // A3: source `void maybeDumpAutoMode` outlives the query's private runtime.
-    let Some(runtime) = crate::utils::process_runtime::runtime_handle_for_detached_work() else {
-        tracing::warn!("Cannot dump classifier request: process runtime unavailable");
-        return;
-    };
-    runtime.spawn(async move {
-        let _ = async {
-            tokio::fs::create_dir_all(get_auto_mode_dump_dir()).await?;
-            tokio::fs::write(
-                get_auto_mode_dump_dir().join(format!("{base}.req.json")),
-                serde_json::to_string_pretty(&request)?,
-            )
-            .await?;
-            tokio::fs::write(
-                get_auto_mode_dump_dir().join(format!("{base}.res.json")),
-                serde_json::to_string_pretty(&response)?,
-            )
-            .await?;
-            Ok::<(), anyhow::Error>(())
-        }
-        .await;
-    });
 }
 /// Maps to: CC `yoloClassifier.ts:186-192` `getAutoModeClassifierErrorDumpPath`.
 pub fn get_auto_mode_classifier_error_dump_path() -> String {
@@ -631,7 +554,6 @@ async fn classify_yolo_action_xml(
     let result: anyhow::Result<YoloClassifierResult> = async {
         if mode != TwoStageMode::Thinking {
             let stage_start = std::time::Instant::now();
-            let timestamp = chrono::Utc::now().timestamp_millis();
             let mut content = wrapped.clone();
             content.push(ContentBlockParam::Text(classifier_text_block(
                 XML_S1_SUFFIX,
@@ -664,7 +586,6 @@ async fn classify_yolo_action_xml(
             stage1_msg_id = Some(raw.id.clone());
             let text = crate::utils::messages::extract_text_content(&raw.content, None);
             let block = parse_xml_block(&text);
-            maybe_dump_auto_mode(snapshot.clone(), raw, timestamp, Some("stage1"));
             crate::bootstrap::state::set_last_classifier_requests(Some(vec![snapshot.clone()]));
             stage1_opts = Some(snapshot);
             if block == Some(false) || mode == TwoStageMode::Fast {
@@ -695,7 +616,6 @@ async fn classify_yolo_action_xml(
             }
         }
         let stage_start = std::time::Instant::now();
-        let timestamp = chrono::Utc::now().timestamp_millis();
         let mut content = wrapped.clone();
         content.push(ContentBlockParam::Text(classifier_text_block(
             XML_S2_SUFFIX,
@@ -732,7 +652,6 @@ async fn classify_yolo_action_xml(
             .as_ref()
             .map(|s| combine_usage(s, &usage))
             .unwrap_or_else(|| usage.clone());
-        maybe_dump_auto_mode(snapshot.clone(), raw, timestamp, Some("stage2"));
         let mut requests = stage1_opts.clone().into_iter().collect::<Vec<_>>();
         requests.push(snapshot);
         crate::bootstrap::state::set_last_classifier_requests(Some(requests));
@@ -816,7 +735,6 @@ pub async fn classify_yolo_action(
     messages: &[Message],
     action: &TranscriptEntry,
     tools: &[Tool],
-    context: &ToolPermissionContext,
     signal: Option<anthropic_sdk::AbortSignal>,
 ) -> YoloClassifierResult {
     let lookup = build_tool_lookup(tools);
@@ -828,7 +746,7 @@ pub async fn classify_yolo_action(
             ..Default::default()
         };
     }
-    let system = build_yolo_system_prompt(context);
+    let system = build_yolo_system_prompt();
     let entries = build_transcript_entries(messages);
     let prefix: Vec<_> = build_claude_md_message().into_iter().collect();
     let mut prompt_lengths = ClassifierPromptLengths {
@@ -889,7 +807,6 @@ pub async fn classify_yolo_action(
         .await;
     }
     let start = std::time::Instant::now();
-    let timestamp = chrono::Utc::now().timestamp_millis();
     let mut request_messages = prefix;
     request_messages.push(MessageParam {
         role: "user".into(),
@@ -932,7 +849,6 @@ pub async fn classify_yolo_action(
                 stage1_msg_id: Some(raw.id.clone()),
                 ..Default::default()
             };
-            maybe_dump_auto_mode(snapshot.clone(), raw.clone(), timestamp, None);
             crate::bootstrap::state::set_last_classifier_requests(Some(vec![snapshot]));
             let block = super::classifier_shared::extract_tool_use_block(
                 &raw.content,
@@ -1003,18 +919,6 @@ pub(crate) fn get_classifier_model() -> String {
 }
 /// Maps to: CC `yoloClassifier.ts:1353-1369` `resolveTwoStageClassifier`.
 fn resolve_two_stage_classifier() -> Option<Value> {
-    if has_internal_capability(InternalCapability::Permissions) {
-        let env = crate::utils::process_env::var("NYAN_TWO_STAGE_CLASSIFIER");
-        if matches!(env.as_deref(), Some("fast" | "thinking")) {
-            return env.map(Value::String);
-        }
-        if crate::utils::env_utils::is_env_truthy(env.as_deref()) {
-            return Some(Value::Bool(true));
-        }
-        if crate::utils::env_utils::is_env_defined_falsy(env.as_deref()) {
-            return Some(Value::Bool(false));
-        }
-    }
     auto_mode_config().two_stage_classifier
 }
 /// Maps to: CC `yoloClassifier.ts:1374-1377` `isTwoStageClassifierEnabled`.
@@ -1028,27 +932,8 @@ fn is_two_stage_classifier_enabled() -> bool {
 }
 /// Maps to: CC `yoloClassifier.ts:1379-1390` `isJsonlTranscriptEnabled`.
 fn is_jsonl_transcript_enabled() -> bool {
-    if has_internal_capability(InternalCapability::Permissions) {
-        let env = crate::utils::process_env::var("NYAN_JSONL_TRANSCRIPT");
-        if crate::utils::env_utils::is_env_truthy(env.as_deref()) {
-            return true;
-        }
-        if crate::utils::env_utils::is_env_defined_falsy(env.as_deref()) {
-            return false;
-        }
-    }
     auto_mode_config().jsonl_transcript == Some(true)
 }
-/// Maps to: CC `yoloClassifier.ts:1402-1414` `POWERSHELL_DENY_GUIDANCE`.
-#[cfg(feature = "anthropic_internal")]
-const POWERSHELL_DENY_GUIDANCE: &[&str] = &[
-    "PowerShell Download-and-Execute: `iex (iwr ...)`, `Invoke-Expression (Invoke-WebRequest ...)`, `Invoke-Expression (New-Object Net.WebClient).DownloadString(...)`, and any pipeline feeding remote content into `Invoke-Expression`/`iex` fall under \"Code from External\" — same as `curl | bash`.",
-    "PowerShell Irreversible Destruction: `Remove-Item -Recurse -Force`, `rm -r -fo`, `Clear-Content`, and `Set-Content` truncation of pre-existing files fall under \"Irreversible Local Destruction\" — same as `rm -rf` and `> file`.",
-    "PowerShell Persistence: modifying `$PROFILE` (any of the four profile paths), `Register-ScheduledTask`, `New-Service`, writing to registry Run keys (`HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run` or the HKLM equivalent), and WMI event subscriptions fall under \"Unauthorized Persistence\" — same as `.bashrc` edits and cron jobs.",
-    "PowerShell Elevation: `Start-Process -Verb RunAs`, `-ExecutionPolicy Bypass`, and disabling AMSI/Defender (`Set-MpPreference -DisableRealtimeMonitoring`) fall under \"Security Weaken\".",
-];
-#[cfg(not(feature = "anthropic_internal"))]
-const POWERSHELL_DENY_GUIDANCE: &[&str] = &[];
 /// Maps to: CC `yoloClassifier.ts:1463-1471` `detectPromptTooLong`.
 fn detect_prompt_too_long(error: &anyhow::Error) -> Option<(Option<u64>, Option<u64>)> {
     // Keep SDK source messages when side_query contributes anyhow context.
@@ -1091,7 +976,6 @@ pub fn classify_yolo_action_sync_with_signal(
     tool_name: &str,
     input: &Value,
     tools: &[Tool],
-    context: &ToolPermissionContext,
     signal: Option<anthropic_sdk::AbortSignal>,
 ) -> YoloClassifierDecision {
     #[cfg(test)]
@@ -1101,9 +985,8 @@ pub fn classify_yolo_action_sync_with_signal(
     let action = format_action_for_classifier(tool_name, input.clone());
     let messages = messages.to_vec();
     let tools = tools.to_vec();
-    let context = context.clone();
     let result = crate::utils::process_runtime::block_on_from_sync(async move {
-        classify_yolo_action(&messages, &action, &tools, &context, signal).await
+        classify_yolo_action(&messages, &action, &tools, signal).await
     })
     .unwrap_or_else(|| YoloClassifierResult {
         should_block: true,
@@ -1398,22 +1281,13 @@ mod tests {
             const { RefCell::new(None) };
     }
 
-    struct ConfigGuard(Option<String>, Option<Vec<Value>>, Vec<EnvVarGuard>);
+    struct ConfigGuard(Option<String>, Option<Vec<Value>>);
     impl ConfigGuard {
         fn new(config: Value) -> Self {
-            let vars = [
-                "NYAN_TWO_STAGE_CLASSIFIER",
-                "NYAN_JSONL_TRANSCRIPT",
-                "NYAN_DUMP_AUTO_MODE",
-            ]
-            .into_iter()
-            .map(EnvVarGuard::unset)
-            .collect();
             Self::set_config(config);
             Self(
                 crate::bootstrap::state::get_cached_claude_md_content(),
                 crate::bootstrap::state::get_last_classifier_requests(),
-                vars,
             )
         }
         fn set_config(config: Value) {
@@ -1426,7 +1300,6 @@ mod tests {
             AUTO_MODE_CONFIG.with(|c| c.borrow_mut().take());
             crate::bootstrap::state::set_cached_claude_md_content(self.0.take());
             crate::bootstrap::state::set_last_classifier_requests(self.1.take());
-            self.2.clear();
         }
     }
     fn api_response(text: &str, id: &str) -> ApiMessage {
@@ -1472,14 +1345,7 @@ mod tests {
                         requests: vec![],
                     }),
                     async {
-                        let result = classify_yolo_action(
-                            &[],
-                            &action(),
-                            &[],
-                            &ToolPermissionContext::default(),
-                            None,
-                        )
-                        .await;
+                        let result = classify_yolo_action(&[], &action(), &[], None).await;
                         assert_eq!(result.should_block, expected_block);
                         if expected_block {
                             assert_eq!(
@@ -1627,14 +1493,7 @@ mod tests {
                         requests: vec![],
                     }),
                     async {
-                        let result = classify_yolo_action(
-                            &[],
-                            &action(),
-                            &[],
-                            &ToolPermissionContext::default(),
-                            None,
-                        )
-                        .await;
+                        let result = classify_yolo_action(&[], &action(), &[], None).await;
                         assert_eq!(
                             (
                                 result.should_block,
@@ -1732,14 +1591,7 @@ mod tests {
                     requests: vec![],
                 }),
                 async {
-                    let result = classify_yolo_action(
-                        &[],
-                        &action(),
-                        &[],
-                        &ToolPermissionContext::default(),
-                        None,
-                    )
-                    .await;
+                    let result = classify_yolo_action(&[], &action(), &[], None).await;
                     assert!(result.transcript_too_long);
                     assert!(result.unavailable);
                     assert_eq!(
@@ -1758,14 +1610,7 @@ mod tests {
                     requests: vec![],
                 }),
                 async {
-                    let result = classify_yolo_action(
-                        &[],
-                        &action(),
-                        &[],
-                        &ToolPermissionContext::default(),
-                        Some(signal),
-                    )
-                    .await;
+                    let result = classify_yolo_action(&[], &action(), &[], Some(signal)).await;
                     assert_eq!(result.reason, "Classifier request aborted");
                     assert!(result.error_dump_path.is_none());
                     assert!(result.duration_ms.is_none());
@@ -1787,14 +1632,7 @@ mod tests {
                     requests: vec![],
                 }),
                 async {
-                    let result = classify_yolo_action(
-                        &[],
-                        &large,
-                        &[],
-                        &ToolPermissionContext::default(),
-                        None,
-                    )
-                    .await;
+                    let result = classify_yolo_action(&[], &large, &[], None).await;
                     assert!(!result.should_block);
                     assert!(!result.transcript_too_long);
                     assert_eq!(result.prompt_lengths.unwrap().user_prompts, 0);
@@ -1804,26 +1642,13 @@ mod tests {
     }
 
     #[test]
-    fn internal_template_and_two_stage_env_match_official() {
+    fn external_template_and_two_stage_config_match_official() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _config = ConfigGuard::new(json!({}));
-        let internal = has_internal_capability(InternalCapability::Permissions);
-        assert_eq!(is_using_external_permissions(), !internal);
-        let prompt = build_yolo_system_prompt(&ToolPermissionContext::default());
-        assert_eq!(
-            prompt.contains("Allow Rules (Anthropic Internal)"),
-            internal
-        );
-        ConfigGuard::set_config(json!({"forceExternalPermissions":true}));
-        assert!(is_using_external_permissions());
-        assert!(
-            !build_yolo_system_prompt(&ToolPermissionContext::default())
-                .contains("Anthropic Internal")
-        );
+        assert!(!build_yolo_system_prompt().contains("Anthropic Internal"));
         assert!(!build_default_external_system_prompt().contains("_to_replace>"));
         ConfigGuard::set_config(json!({"twoStageClassifier":true}));
-        let _env = EnvVarGuard::set("NYAN_TWO_STAGE_CLASSIFIER", "false");
-        assert_eq!(is_two_stage_classifier_enabled(), !internal);
+        assert!(is_two_stage_classifier_enabled());
     }
 
     #[tokio::test]
@@ -1845,14 +1670,7 @@ mod tests {
                     requests: vec![],
                 }),
                 async {
-                    let result = classify_yolo_action(
-                        &[],
-                        &action(),
-                        &[],
-                        &ToolPermissionContext::default(),
-                        None,
-                    )
-                    .await;
+                    let result = classify_yolo_action(&[], &action(), &[], None).await;
                     assert!(result.transcript_too_long);
                     let dump = std::fs::read_to_string(result.error_dump_path.unwrap()).unwrap();
                     assert!(dump.contains("prompt is too long: 22 tokens > 20 maximum"));
@@ -1879,14 +1697,7 @@ mod tests {
                     requests: vec![],
                 }),
                 async {
-                    let result = classify_yolo_action(
-                        &[],
-                        &action(),
-                        &[],
-                        &ToolPermissionContext::default(),
-                        None,
-                    )
-                    .await;
+                    let result = classify_yolo_action(&[], &action(), &[], None).await;
                     assert!(result.should_block);
                     assert!(!result.unavailable);
                     assert!(result.transcript_too_long);
@@ -1907,14 +1718,8 @@ mod tests {
     fn force_env_is_test_only_on_sync_path() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let _env = EnvVarGuard::set("NYAN_AUTO_CLASSIFIER_FORCE", "allow");
-        let result = classify_yolo_action_sync_with_signal(
-            &[],
-            "Bash",
-            &json!({"command":"ls"}),
-            &[],
-            &ToolPermissionContext::default(),
-            None,
-        );
+        let result =
+            classify_yolo_action_sync_with_signal(&[], "Bash", &json!({"command":"ls"}), &[], None);
         assert!(matches!(result, YoloClassifierDecision::Allow { .. }));
     }
 }

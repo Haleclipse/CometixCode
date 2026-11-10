@@ -340,10 +340,7 @@ impl ClientBetaMessages<'_> {
 fn build_fetch(source: Option<String>, base_url: Option<&str>) -> ResolvedFetch {
     ResolvedFetch {
         inject_client_request_id:
-            crate::utils::model::providers::is_first_party_anthropic_base_url_for_audience(
-                base_url,
-                crate::utils::build_profile::build_audience(),
-            ),
+            crate::utils::model::providers::is_first_party_anthropic_base_url_for(base_url),
         source,
     }
 }

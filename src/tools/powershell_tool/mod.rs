@@ -1074,32 +1074,15 @@ mod tests {
 
     #[test]
     fn powershell_tool_visibility_matches_official_windows_build_gate() {
-        use crate::utils::build_profile::BuildAudience;
-
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        assert!(!is_powershell_tool_enabled_for_platform(
-            "macos",
-            BuildAudience::AnthropicInternal,
-            Some("1")
-        ));
-        assert!(is_powershell_tool_enabled_for_platform(
-            "windows",
-            BuildAudience::AnthropicInternal,
-            None
-        ));
+        assert!(!is_powershell_tool_enabled_for_platform("macos", Some("1")));
+        assert!(!is_powershell_tool_enabled_for_platform("windows", None));
         assert!(!is_powershell_tool_enabled_for_platform(
             "windows",
-            BuildAudience::AnthropicInternal,
             Some("0")
         ));
-        assert!(!is_powershell_tool_enabled_for_platform(
-            "windows",
-            BuildAudience::External,
-            None
-        ));
         assert!(is_powershell_tool_enabled_for_platform(
             "windows",
-            BuildAudience::External,
             Some("true")
         ));
 

@@ -3,23 +3,23 @@
 //! L1: `PromptInput-scoped footer layout wake` (PORTING.md). CC has no such
 //! carrier — Ink auto-layout means each footer row's local `setState`
 //! re-renders that child and the terminal reflows (Notifications.tsx:237-250
-//! apiKeyHelper 1s poll; :362-363 self-contained `<MemoryUsageIndicator />` /
-//! `<SandboxPromptFooterHint />` children). Nyan PromptInput budgets its
+//! apiKeyHelper 1s poll; :362-363 self-contained `<SandboxPromptFooterHint />`
+//! child). Nyan PromptInput budgets its
 //! own height retained-style, so a row visibility flip must wake PromptInput
 //! — and only PromptInput — to recompute heights from the live sources.
 //!
 //! Ownership: PromptInput creates the wake via [`use_footer_layout_wake`] and
 //! injects it through a narrow `ContextProvider` around its Footer subtree
-//! (Footer / Notifications / MemoryUsageIndicator / SandboxPromptFooterHint).
-//! All three producers are event-driven, never periodic: the memory 10s poll
-//! and the apiKeyHelper 1s poll bump ONLY on visibility flips; the sandbox
+//! (Footer / Notifications / SandboxPromptFooterHint).
+//! Both producers are event-driven, never periodic: the apiKeyHelper 1s poll
+//! bumps ONLY on visibility flips; the sandbox
 //! violation subscription + 5s decay bumps on recent-count changes (post
 //! S9-1 its render text derives from the same module atomic the height
 //! helpers read, so count changes must re-render; visibility flips are a
 //! subset). Both height-compute sites (prompt_input/mod.rs and
 //! prompt_input_footer.rs `Footer`) read the same epoch. This replaces the
 //! deleted `AppState.footer_layout_epoch`, whose bump woke the whole tree via
-//! the AppStore version counter on every 1s/10s row flip (performance bug);
+//! the AppStore version counter on every 1s row flip (performance bug);
 //! layout/text wakes no longer invoke AppStore `on_change` or listeners.
 //!
 //! CAUTION ruling (recorded 2026-08-01, this batch): producers bump from
@@ -51,7 +51,7 @@ struct WakeShared {
 }
 
 /// Cheap-to-clone producer/reader handle. `Send + Sync`, so the tokio-side
-/// producers (memory poll, sandbox subscription, apiKeyHelper poll) can bump
+/// producers (sandbox subscription, apiKeyHelper poll) can bump
 /// it directly — the bump is a lossless atomic increment plus a waker wake.
 #[derive(Clone)]
 pub struct FooterLayoutWake {

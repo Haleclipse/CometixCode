@@ -52,26 +52,15 @@ mod tests {
 
     /// Maps to: CC `TaskListTool/prompt.ts:5-49` — the teammate line and the
     /// "## Teammate Workflow" section only exist under agent swarms.
-    ///
-    /// The swarms gate is ant-always-on (`agentSwarmsEnabled.ts:26`, a
-    /// build-time `--define`), so the "off" half only exists on the external
-    /// build; the internal build's prompt carries the teammate sections
-    /// regardless of the env opt-in. This test used to assert the off shape
-    /// unconditionally, which failed under `--features anthropic_internal`.
     #[test]
     fn task_list_prompt_matches_official_swarms_branches() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
 
         crate::utils::process_env::remove("NYAN_EXPERIMENTAL_AGENT_TEAMS");
         let no_opt_in = get_prompt();
-        if crate::utils::build_profile::build_audience().is_internal() {
-            assert!(no_opt_in.contains("Before assigning tasks to teammates"));
-            assert!(no_opt_in.contains("## Teammate Workflow"));
-        } else {
-            assert!(!no_opt_in.contains("Before assigning tasks to teammates"));
-            assert!(!no_opt_in.contains("## Teammate Workflow"));
-            assert!(no_opt_in.ends_with("description and comments.\n"));
-        }
+        assert!(!no_opt_in.contains("Before assigning tasks to teammates"));
+        assert!(!no_opt_in.contains("## Teammate Workflow"));
+        assert!(no_opt_in.ends_with("description and comments.\n"));
         assert!(no_opt_in.contains(
             "must be resolved first (tasks with blockedBy cannot be claimed until dependencies resolve)"
         ));

@@ -1604,14 +1604,6 @@ pub fn run(config: crate::cli::CliConfig) {
     // Maps to CC `showSetupScreens(...)` launch boundary and Onboarding's
     // mount-once auth initializer. Materialize once; `Main` only reads this
     // Arc and therefore performs no auth/config/process IO during a frame.
-    // Maps to: CC main.tsx:3230-3233; recording starts before Ink mounts.
-    {
-        let _runtime = rt.enter();
-        if let Err(error) = utils::asciicast::install_asciicast_recorder() {
-            eprintln!("{error}");
-            utils::cleanup_registry::exit_process(1);
-        }
-    }
     let setup_snapshot = Arc::new(default_setup_screens_snapshot());
 
     // Maps to CC `loadKeybindingsSyncWithWarnings()` (loadUserBindings.ts,
@@ -1742,7 +1734,7 @@ pub fn run(config: crate::cli::CliConfig) {
             let result = mount()
                 .render_loop()
                 .ignore_ctrl_c()
-                .stdout(utils::asciicast::RecordingStdout(std::io::stdout()))
+                .stdout(std::io::stdout())
                 .on_frame_profile(move |event| {
                     if profile_to_stderr {
                         eprintln!(
@@ -1827,7 +1819,6 @@ pub fn run(config: crate::cli::CliConfig) {
             utils::swarm::team_helpers::cleanup_session_teams().await;
             result
         });
-        utils::asciicast::dispose_asciicast_recorder();
         render_result.unwrap();
         let requested_exit_code = exit_code.load(Ordering::SeqCst);
         if requested_exit_code != 0 {
@@ -1853,7 +1844,7 @@ pub fn run(config: crate::cli::CliConfig) {
             let result = mount()
                 .render_loop()
                 .ignore_ctrl_c()
-                .stdout(utils::asciicast::RecordingStdout(std::io::stdout()))
+                .stdout(std::io::stdout())
                 .await;
             if let Err(error) = crate::cost_tracker::save_current_session_stats() {
                 utils::debug::log_for_debugging(&format!(
@@ -1873,7 +1864,6 @@ pub fn run(config: crate::cli::CliConfig) {
             utils::swarm::team_helpers::cleanup_session_teams().await;
             result
         });
-        utils::asciicast::dispose_asciicast_recorder();
         render_result.unwrap();
         let requested_exit_code = exit_code.load(Ordering::SeqCst);
         if requested_exit_code != 0 {

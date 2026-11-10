@@ -28,9 +28,3 @@ pub const PROMPT_CACHING_SCOPE_BETA_HEADER: &str = "prompt-caching-scope-2026-01
 pub const REDACT_THINKING_BETA_HEADER: &str = "redact-thinking-2026-02-12";
 /// Maps to CC `constants/betas.ts` `ADVISOR_BETA_HEADER`.
 pub const ADVISOR_BETA_HEADER: &str = "advisor-tool-2026-03-01";
-/// Maps to CC `constants/betas.ts` `CLI_INTERNAL_BETA_HEADER` value gate.
-#[cfg(feature = "anthropic_internal")]
-pub const CLI_INTERNAL_BETA_HEADER: &str = "cli-internal-2026-02-09";
-/// External CC bundles expose the same constant as the empty string.
-#[cfg(not(feature = "anthropic_internal"))]
-pub const CLI_INTERNAL_BETA_HEADER: &str = "";

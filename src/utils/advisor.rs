@@ -31,9 +31,7 @@ pub fn can_user_configure_advisor() -> bool {
 /// Maps to CC `modelSupportsAdvisor()` (`utils/advisor.ts:88-96`).
 pub fn model_supports_advisor(model: &str) -> bool {
     let model = model.to_ascii_lowercase();
-    model.contains("opus-4-6")
-        || model.contains("sonnet-4-6")
-        || crate::utils::process_env::var("USER_TYPE").as_deref() == Some("ant")
+    model.contains("opus-4-6") || model.contains("sonnet-4-6")
 }
 
 /// Maps to CC `isValidAdvisorModel()` (`utils/advisor.ts:98-106`).
@@ -55,12 +53,10 @@ mod tests {
 
     #[test]
     fn advisor_model_predicates_match_official_launch_allowlist() {
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
         assert!(model_supports_advisor("claude-opus-4-6"));
         assert!(model_supports_advisor("claude-sonnet-4-6-20260301"));
         assert!(!model_supports_advisor("claude-opus-4-5"));
-        let _ant = EnvVarGuard::set("USER_TYPE", "ant");
-        assert!(is_valid_advisor_model("custom-enterprise-model"));
+        assert!(!is_valid_advisor_model("custom-enterprise-model"));
     }
 
     #[test]

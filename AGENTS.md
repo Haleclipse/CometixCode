@@ -8,7 +8,6 @@
 - **构建命令调用**：直接调用 `cargo` 或 `just`（由系统 `devguard` 限流排队），**严禁**绕过 devguard 调用底层二进制，**严禁**设置 `DEVGUARD_DISABLE=1`。
 - **常用开发命令**：
   - `just check`：快速执行类型与借用检查（不运行测试，用于代码重构时的轻量反馈）。
-  - `just check-ant`：检查开启 `anthropic_internal` feature 时的编译。
   - `scripts/ci/test.sh -E 'test(/<pattern>/)'`：精准运行匹配模式的单个或模块单测。
   - `just test`：运行完整本地单测套件（已内置环境隔离与终端尺寸钉住）。
 

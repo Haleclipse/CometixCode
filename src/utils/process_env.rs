@@ -452,9 +452,7 @@ pub(crate) fn publish_startup_environment() {
     // keychain prefetch, which has signalled completion and is exiting; the
     // global config freshness watcher, started by the first config load and
     // asleep for its first 5 s, which only stats, reads and parses the
-    // config file; and, in print mode for internal builds with an early
-    // error, the error log sink's buffered writer, which only appends to its
-    // file. Anything added to those threads must keep away from getenv (no
+    // config file. Anything added to those threads must keep away from getenv (no
     // `node_os::homedir`, local time or DNS).
     unsafe {
         for (key, _) in &os {

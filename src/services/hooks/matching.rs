@@ -329,7 +329,7 @@ mod tests {
         );
         assert_eq!(
             list.len(),
-            usize::from(crate::utils::build_profile::build_audience().is_external()),
+            1,
             "external CC runs the hook when tree-sitter is parse-unavailable"
         );
 

@@ -88,25 +88,6 @@ pub fn strip_images_from_messages(messages: &[Message]) -> Vec<Message> {
         .collect()
 }
 
-/// Maps to CC `stripReinjectedAttachments(...)`.
-pub fn strip_reinjected_attachments(messages: Vec<Message>) -> Vec<Message> {
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        return messages;
-    }
-    messages
-        .into_iter()
-        .filter(|message| {
-            !matches!(
-                message,
-                Message::Attachment(attachment)
-                    if matches!(attachment.attachment_type(), "skill_discovery" | "skill_listing")
-            )
-        })
-        .collect()
-}
-
 const PTL_RETRY_MARKER: &str = "[earlier conversation truncated for compaction retry]";
 
 /// Maps to CC `truncateHeadForPTLRetry(...)`.
@@ -1234,8 +1215,7 @@ async fn stream_compact_summary_fallback(
     context: &crate::tool::ToolUseContext,
 ) -> Result<CompactSummaryResponse, String> {
     let after_boundary = crate::utils::messages::get_messages_after_compact_boundary(messages);
-    let mut api_messages =
-        strip_reinjected_attachments(strip_images_from_messages(&after_boundary));
+    let mut api_messages = strip_images_from_messages(&after_boundary);
     api_messages.push(Message::User(summary_request));
     let summary_resolution = compact_summary_resolution(context);
     let model = summary_resolution.model.clone();

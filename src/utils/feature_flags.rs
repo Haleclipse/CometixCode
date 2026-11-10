@@ -174,7 +174,7 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::ImmediateModelCommand,
         cc_growthbook_name: "tengu_immediate_model_command",
         enabled: false,
-        note: "External /model immediate command gate; the anthropic_internal build remains enabled separately.",
+        note: "/model and /effort immediate command gate.",
     },
     FeatureSwitch {
         flag: FeatureFlag::KeybindingCustomization,
@@ -270,7 +270,7 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::NewInit,
         cc_growthbook_name: "NEW_INIT",
         enabled: true,
-        note: "Build feature is present; /init still requires the anthropic_internal build or NYAN_NEW_INIT at runtime.",
+        note: "Build feature is present; /init still requires NYAN_NEW_INIT at runtime.",
     },
     FeatureSwitch {
         flag: FeatureFlag::BreakCacheCommand,

@@ -1379,9 +1379,7 @@ pub(crate) fn get_deferred_tools_delta_attachment(
     model: &str,
     messages: &[Message],
 ) -> Option<AttachmentMessage> {
-    let delta_enabled = crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) || crate::utils::feature_flags::feature_enabled(
+    let delta_enabled = crate::utils::feature_flags::feature_enabled(
         crate::utils::feature_flags::FeatureFlag::DeferredToolsDelta,
     );
     if !delta_enabled

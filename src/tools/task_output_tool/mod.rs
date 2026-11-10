@@ -10,13 +10,6 @@
 pub mod constants;
 pub mod ui;
 
-/// Maps to CC `TaskOutputTool.tsx:194-196` external-distribution gate.
-pub fn is_task_output_tool_enabled() -> bool {
-    !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Tools,
-    )
-}
-
 /// Maps to: CC `TaskOutputTool.tsx:30-43` `inputSchema`.
 ///
 /// `block` and `timeout` carry a `.default()` with no outer `.optional()`, so
@@ -348,10 +341,6 @@ impl crate::tool::ToolCall for TaskOutputTool {
         _options: &crate::tool::ToolPromptOptions<'_>,
     ) -> String {
         API_PROMPT.to_string()
-    }
-
-    fn is_enabled(&self) -> bool {
-        is_task_output_tool_enabled()
     }
 
     /// Maps to: CC `TaskOutputTool.tsx:178-180` `userFacingName() => 'Task
@@ -725,12 +714,7 @@ mod tests {
     #[test]
     fn task_output_behavior_metadata_matches_official_consumers() {
         let tool = TaskOutputTool;
-        assert_eq!(
-            is_task_output_tool_enabled(),
-            !crate::utils::build_profile::has_internal_capability(
-                crate::utils::build_profile::InternalCapability::Tools,
-            )
-        );
+        assert!(crate::tool::ToolCall::is_enabled(&tool));
         assert_eq!(
             crate::tool::ToolCall::search_hint(&tool),
             Some("read output/logs from a background task")

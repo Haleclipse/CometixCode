@@ -336,9 +336,7 @@ pub fn persist_file_snapshot_if_remote() -> impl std::future::Future<Output = ()
                 cwd: cwd.clone(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
                 git_branch: Some(crate::utils::git::get_branch()).filter(|value| !value.is_empty()),
-                user_type: crate::utils::build_profile::build_audience()
-                    .as_str()
-                    .to_string(),
+                user_type: "external".to_string(),
                 entrypoint: "cli".to_string(),
                 slug: Some(get_plan_slug(Some(&session_id))),
                 team_name: None,

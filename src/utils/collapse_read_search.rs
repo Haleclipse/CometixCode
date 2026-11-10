@@ -580,13 +580,9 @@ pub(crate) fn collapse_read_search_groups(
                         .and_then(|input| input.get("file_path"))
                         .and_then(serde_json::Value::as_str);
                     if let Some(file_path) = file_path {
-                        #[cfg(feature = "anthropic_internal")]
-                        let is_team_memory = crate::utils::team_memory_ops::is_team_mem_file(
-                            std::path::Path::new(file_path),
-                        );
-                        #[cfg(not(feature = "anthropic_internal"))]
-                        let is_team_memory = false;
-                        if is_team_memory {
+                        if crate::utils::team_memory_ops::is_team_mem_file(std::path::Path::new(
+                            file_path,
+                        )) {
                             entry.team_memory_read_paths.insert(file_path.to_string());
                         } else if is_auto_managed_memory_file(file_path) {
                             entry.memory_read_paths.insert(file_path.to_string());
@@ -598,12 +594,7 @@ pub(crate) fn collapse_read_search_groups(
                     }
                 }
                 "search" => {
-                    #[cfg(feature = "anthropic_internal")]
-                    let is_team_memory =
-                        crate::utils::team_memory_ops::is_team_memory_search(tool_input);
-                    #[cfg(not(feature = "anthropic_internal"))]
-                    let is_team_memory = false;
-                    if is_team_memory {
+                    if crate::utils::team_memory_ops::is_team_memory_search(tool_input) {
                         entry.team_memory_search_count += 1;
                     } else if is_memory_search(tool_input) {
                         entry.memory_search_count += 1;
@@ -614,17 +605,9 @@ pub(crate) fn collapse_read_search_groups(
                 "list" => entry.list_count += 1,
                 "bash" => entry.bash_count += 1,
                 "memory_write" => {
-                    #[cfg(feature = "anthropic_internal")]
-                    let is_team_memory =
-                        crate::utils::team_memory_ops::is_team_memory_write_or_edit(
-                            tool_name, tool_input,
-                        );
-                    #[cfg(not(feature = "anthropic_internal"))]
-                    let is_team_memory = {
-                        let _ = tool_name;
-                        false
-                    };
-                    if is_team_memory {
+                    if crate::utils::team_memory_ops::is_team_memory_write_or_edit(
+                        tool_name, tool_input,
+                    ) {
                         entry.team_memory_write_count += 1;
                     } else {
                         entry.memory_write_count += 1;
@@ -915,8 +898,7 @@ pub fn get_search_read_summary_text(
             ));
         }
         // CC gates this on `feature('TEAMMEM')` (collapseReadSearch.ts:1017);
-        // this file's other TEAMMEM branches use the same cfg boundary.
-        #[cfg(feature = "anthropic_internal")]
+        // the counts stay zero while the TeamMemory switch is off.
         crate::utils::team_memory_ops::append_team_memory_summary_parts(
             counts, is_active, &mut parts,
         );

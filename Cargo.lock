@@ -2293,7 +2293,6 @@ dependencies = [
  "chalk",
  "chardetng",
  "chrono",
- "crossterm",
  "encoding_rs",
  "flate2",
  "futures",

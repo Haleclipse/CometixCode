@@ -174,9 +174,7 @@ pub fn build_segment_without_redirections(segment_command: &str) -> String {
         .unwrap_or_else(|| segment_command.to_string())
 }
 
-/// Maps to CC `checkCommandOperatorPermissions(...)`. `ParsedCommand` selects
-/// the tree-sitter implementation for internal builds and the official-shaped
-/// regex fallback otherwise.
+/// Maps to CC `checkCommandOperatorPermissions(...)`.
 pub fn check_command_operator_permissions<F>(
     input_command: &str,
     bash_tool_has_permission_fn: F,

@@ -100,7 +100,6 @@ pub fn ResumeCommand<'a>(
         move || initial_project_path
     });
     let sessions = hooks.use_state(Vec::new);
-    let worktree_paths = hooks.use_state(Vec::new);
     let mut show_all_projects = hooks.use_state(|| false);
     let mut is_loading = hooks.use_state(|| true);
     let mut is_resuming = hooks.use_state(|| false);
@@ -142,7 +141,6 @@ pub fn ResumeCommand<'a>(
     hooks.use_future({
         let project_path = project_path;
         let mut sessions = sessions;
-        let mut worktree_paths = worktree_paths;
         let mut is_loading = is_loading;
         let mut pending_result = pending_result;
         async move {
@@ -155,7 +153,6 @@ pub fn ResumeCommand<'a>(
             })
             .await
             .unwrap_or_default();
-            worktree_paths.set(paths.clone());
             // Maps to: CC resume.tsx:93-113 `loadLogs(allProjects, paths)`.
             while let Ok(show_all_projects) = load_rx.recv().await {
                 is_loading.set(true);
@@ -215,13 +212,8 @@ pub fn ResumeCommand<'a>(
     let selected = { pending_select.read().clone() };
     if let Some(selection) = selected {
         pending_select.set(None);
-        match check_cross_project_resume(
-            &selection,
-            show_all_projects.get(),
-            &worktree_paths.read(),
-        ) {
-            CrossProjectResumeResult::SameProject
-            | CrossProjectResumeResult::SameRepoWorktree { .. } => {
+        match check_cross_project_resume(&selection, show_all_projects.get()) {
+            CrossProjectResumeResult::SameProject => {
                 is_resuming.set(true);
                 (props.on_select)(selection);
             }

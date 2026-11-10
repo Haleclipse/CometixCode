@@ -33,7 +33,7 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
 | 提取 | **无**：`QuerySource::ExtractMemories` 只是枚举值（`constants/query_source.rs:77`）；`stop_hooks.rs:84-88` 注释标为 TODO 接缝 | `query/stop_hooks.rs:140`（`handle_stop_hooks`） |
 | 合并（auto-dream） | **无**：`dream_task.rs:10-13` "driver missing"；`autoDreamEnabled` 是死设置；consolidation lock 未移植（`dream_task.rs:19-21,198-201`），但 `/memory` 已在读 `.consolidate-lock` 的 mtime（`components/memory/memory_file_selector.rs:268`）；dream 任务不进后台任务列表（`background_task_items()`，`components/tasks/background_tasks_dialog.rs:37`，见 `dream_task.rs:14-16`） | `tasks/dream_task.rs` |
 | 相关记忆注入 | **无生产者**：`Attachment::RelevantMemories` 枚举成员与 `RelevantMemory` 结构、渲染齐全 | `utils/attachments.rs:159`（枚举）、`:552`（结构体）、`utils/messages.rs:3297` |
-| 秘密扫描 | 规则齐全（36 条），但规则表与扫描函数都只在 `anthropic_internal` 构建编译 | `services/team_memory_sync/secret_scanner.rs:38`（`SECRET_RULES`）、`:222`（`scan_for_secrets`） |
+| 秘密扫描 | 规则齐全（36 条），规则表与扫描函数在默认构建中编译 | `services/team_memory_sync/secret_scanner.rs:38`（`SECRET_RULES`）、`:222`（`scan_for_secrets`） |
 | 分叉 agent | **已有**：`run_forked_agent`，共享 prompt cache；`CacheSafeParams` 只含 system prompt / user & system context / `tool_use_context` / `fork_context_messages`，**不含 model**——model 取自 `tool_use_context.main_loop_model`；结果带 `total_usage` | `utils/forked_agent.rs:373-379,462-464,518`、`tool.rs:1281` |
 | 会话费用 | **未接线**：`cost_tracker` 只累加别处算好的 USD，token → USD 的计算半边未移植，主 API 路径也没有调用 `add_to_total_cost` | `utils/model_cost.rs:4-9`、`cost_tracker.rs:97,113` |
 | Context Memory / exact facts | **无** | — |
@@ -117,8 +117,8 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
 
 **检查内容**（同一个函数 `memdir/write_guard.rs::check_memory_content`，任一命中即判违规，不做局部脱敏）：
 
-1. **秘密扫描**：把 CC 的 36 条 secret 规则（`SECRET_RULES` 与 `scan_for_secrets`，`services/team_memory_sync/secret_scanner.rs:38,222`）
-   从 `anthropic_internal` 门控中解开（`@nyan`），对 memdir 生效。
+1. **秘密扫描**：CC 的 36 条 secret 规则（`SECRET_RULES` 与 `scan_for_secrets`，`services/team_memory_sync/secret_scanner.rs:38,222`）
+   对 memdir 生效（`@nyan`）。
 2. **legacy 文本启发式**：`authorization:` / `bearer <token>`、`-----BEGIN … PRIVATE KEY-----`、
    `api_key|access_token|password|secret` 赋值。
 3. 不做 legacy 的 frontmatter 键白名单与绝对路径拒绝：CC 的记忆是用户也会手写的自由 Markdown，白名单会误拒；

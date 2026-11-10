@@ -265,7 +265,6 @@ pub fn get_initial_tab(view: &ViewState) -> &'static str {
 #[derive(Default, Props)]
 pub struct PluginSettingsProps {
     pub args: Option<String>,
-    pub show_mcp_redirect_message: bool,
     pub on_complete: Handler<Option<String>>,
 }
 
@@ -556,25 +555,10 @@ pub fn PluginSettings(
                 element!{Tab(id:Some(id.into()),title:title){#(if tab==id{body.take()}else{None})}}
             }).collect::<Vec<_>>();
             element!{Pane(color:Some(theme.suggestion)){
-                Tabs(title:Some("Plugins".into()),color:Some(theme.suggestion),selected_tab:Some(tab.clone()),on_tab_change:handle_tab_change,disable_navigation:child_search_active.get(),banner:if props.show_mcp_redirect_message&&tab=="installed"{vec![element!{McpRedirectBanner}.into_any()]}else{vec![]}){#(tabs)}
+                Tabs(title:Some("Plugins".into()),color:Some(theme.suggestion),selected_tab:Some(tab.clone()),on_tab_change:handle_tab_change,disable_navigation:child_search_active.get()){#(tabs)}
             }}.into_any()
         },
     }
-}
-
-/// Maps to: CC PluginSettings.tsx:70-101#McpRedirectBanner.
-#[component]
-fn McpRedirectBanner(hooks: Hooks) -> impl Into<AnyElement<'static>> {
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        return element! {View}.into_any();
-    }
-    let theme = *hooks.use_context::<crate::utils::theme::Theme>();
-    element!{View(flex_direction:FlexDirection::Row,align_items:AlignItems::FLEX_START,padding_left:1u32,margin_top:1u32,border_style:BorderStyle::Single,border_left:true,border_right:false,border_top:false,border_bottom:false,border_color:theme.permission){
-        View(flex_shrink:0.0f32){Text(content:"i ",weight:Weight::Bold,italic:true,color:theme.permission)}
-        Text(content:"[ANT-ONLY] MCP servers are now managed in /plugins. Use /mcp no-redirect to test old UI")
-    }}.into_any()
 }
 
 /// Maps to: CC PluginSettings.tsx#ErrorRowAction.

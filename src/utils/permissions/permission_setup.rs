@@ -117,12 +117,6 @@ pub fn is_dangerous_task_permission(tool_name: &str, _rule_content: Option<&str>
 }
 
 fn is_dangerous_classifier_permission(tool_name: &str, rule_content: Option<&str>) -> bool {
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Permissions,
-    ) && tool_name == "Tmux"
-    {
-        return true;
-    }
     is_dangerous_bash_permission(tool_name, rule_content)
         || is_dangerous_powershell_permission(tool_name, rule_content)
         || is_dangerous_task_permission(tool_name, rule_content)
@@ -585,18 +579,12 @@ pub fn get_auto_mode_unavailable_reason() -> Option<AutoModeUnavailableReason> {
 
 /// Maps to CC `permissionSetup.ts#getAutoModeUnavailableNotification`.
 pub fn get_auto_mode_unavailable_notification(reason: AutoModeUnavailableReason) -> String {
-    let base = match reason {
+    match reason {
         AutoModeUnavailableReason::Settings => "auto mode disabled by settings",
         AutoModeUnavailableReason::CircuitBreaker => "auto mode is unavailable for your plan",
         AutoModeUnavailableReason::Model => "auto mode unavailable for this model",
-    };
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Permissions,
-    ) {
-        format!("{base} · #claude-code-feedback")
-    } else {
-        base.to_string()
     }
+    .to_string()
 }
 
 /// Maps to: CC `permissionSetup.ts:1311-1320#AutoModeEnabledState`.
@@ -614,17 +602,7 @@ pub enum AutoModeEnabledState {
 /// source-controlled value here, so the startup gate check trips the auto-mode
 /// circuit breaker.
 pub fn get_auto_mode_enabled_state() -> AutoModeEnabledState {
-    #[cfg(test)]
-    if let Some(state) = AUTO_MODE_ENABLED_STATE_FOR_TEST.get() {
-        return state;
-    }
     AutoModeEnabledState::Disabled
-}
-
-#[cfg(test)]
-thread_local! {
-    static AUTO_MODE_ENABLED_STATE_FOR_TEST: std::cell::Cell<Option<AutoModeEnabledState>> =
-        const { std::cell::Cell::new(None) };
 }
 
 /// Maps to: CC `permissionSetup.ts:1036-1045#AutoModeGateCheckResult`.
@@ -1925,44 +1903,6 @@ mod gate_tests {
         let next = (result.update_context)(&plan);
         assert_eq!(next.mode, PermissionMode::Plan);
         assert_eq!(next.pre_plan_mode, Some(PermissionMode::Default));
-        super::super::auto_mode_state::reset_for_testing();
-    }
-
-    #[cfg(feature = "anthropic_internal")]
-    #[tokio::test]
-    async fn auto_gate_matches_official_opt_in_carousel() {
-        // permissionSetup.ts:1091-1141: opt-in allows explicit entry, but not carousel without consent.
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
-        AUTO_MODE_ENABLED_STATE_FOR_TEST.set(Some(AutoModeEnabledState::OptIn));
-        settings(serde_json::json!({}));
-        super::super::auto_mode_state::reset_for_testing();
-        crate::utils::settings::settings_cache::install_test_settings(
-            serde_json::from_value(serde_json::json!({
-                "nyan": {
-                    "providers": {"p": {"kind": "anthropic", "protocol": "anthropicMessages"}},
-                    "models": {"main": {"provider": "p", "model": "claude-sonnet-4-6",
-                        "capabilities": {"contextWindow": 200000, "maxOutputTokens": 64000}}},
-                    "selection": {"main": "main"}
-                }
-            }))
-            .unwrap(),
-        );
-        let ctx = Arc::new(ToolPermissionContext {
-            mode: PermissionMode::Auto,
-            ..Default::default()
-        });
-        let result = verify_auto_mode_gate_access(&ctx).await;
-        let next = (result.update_context)(&ctx);
-        assert_eq!(next.mode, PermissionMode::Auto);
-        assert_eq!(next.is_auto_mode_available, Some(false));
-        super::super::auto_mode_state::set_auto_mode_flag_cli(true);
-        let result = verify_auto_mode_gate_access(&ctx).await;
-        assert_eq!(
-            (result.update_context)(&ctx).is_auto_mode_available,
-            Some(true)
-        );
-        crate::utils::settings::settings_cache::reset_settings_cache();
-        AUTO_MODE_ENABLED_STATE_FOR_TEST.set(None);
         super::super::auto_mode_state::reset_for_testing();
     }
 }

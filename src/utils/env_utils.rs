@@ -105,25 +105,6 @@ pub fn get_teams_dir() -> PathBuf {
     get_config_home_dir().join("teams")
 }
 
-/// Pure audience-injected form of CC `utils/envUtils.ts#isRunningOnHomespace`.
-pub fn is_running_on_homespace_for_audience(
-    get_env: &impl Fn(&str) -> Option<String>,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> bool {
-    crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::ManagedConfiguration,
-    ) && is_env_truthy(get_env("COO_RUNNING_ON_HOMESPACE").as_deref())
-}
-
-/// Maps to: CC `utils/envUtils.ts:114-123` `isRunningOnHomespace`.
-pub fn is_running_on_homespace() -> bool {
-    is_running_on_homespace_for_audience(
-        &|key| process_env::var(key),
-        crate::utils::build_profile::build_audience(),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use crate::utils::test_env::{EnvVarGuard, HOME_VAR, TEST_ENV_LOCK};
@@ -164,38 +145,5 @@ mod tests {
         assert_eq!(super::get_config_home_dir(), first);
         let _later = EnvVarGuard::set(HOME_VAR, "/home/later");
         assert_eq!(super::get_config_home_dir(), first);
-    }
-
-    #[test]
-    fn homespace_detection_matches_official_internal_build_and_env_gate() {
-        use crate::utils::build_profile::BuildAudience;
-
-        assert!(!super::is_running_on_homespace_for_audience(
-            &|_| None,
-            BuildAudience::AnthropicInternal,
-        ));
-        assert!(!super::is_running_on_homespace_for_audience(
-            &|key| (key == "COO_RUNNING_ON_HOMESPACE").then(|| "1".to_string()),
-            BuildAudience::External,
-        ));
-        assert!(super::is_running_on_homespace_for_audience(
-            &|key| (key == "COO_RUNNING_ON_HOMESPACE").then(|| "true".to_string()),
-            BuildAudience::AnthropicInternal,
-        ));
-    }
-
-    #[test]
-    fn homespace_detection_matches_official_canonical_process_environment() {
-        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _homespace = EnvVarGuard::unset("COO_RUNNING_ON_HOMESPACE");
-
-        assert!(!super::is_running_on_homespace());
-        crate::utils::process_env::set("COO_RUNNING_ON_HOMESPACE", " true ");
-        assert_eq!(
-            super::is_running_on_homespace(),
-            crate::utils::build_profile::build_audience().is_internal()
-        );
-        crate::utils::process_env::set("COO_RUNNING_ON_HOMESPACE", "off");
-        assert!(!super::is_running_on_homespace());
     }
 }

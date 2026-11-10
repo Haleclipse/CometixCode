@@ -385,13 +385,12 @@ pub fn get_agent_definitions_with_overrides(cwd: &Path) -> AgentDefinitionsResul
     }
 
     let markdown_files = load_agent_markdown_files(cwd);
-    let audience = crate::utils::build_profile::build_audience();
     let settings = crate::utils::settings::get_initial_settings();
     let nyan = settings.nyan.as_deref();
     let mut custom_agents = Vec::new();
     let mut failed_files = Vec::new();
     for markdown_file in markdown_files {
-        match parse_agent_from_markdown(&markdown_file, audience) {
+        match parse_agent_from_markdown(&markdown_file) {
             Some(agent) => match validate_agent_model(&agent, nyan) {
                 Ok(()) => custom_agents.push(agent),
                 Err(error) => failed_files.push(FailedAgentFile {
@@ -685,16 +684,9 @@ pub fn parse_agent_from_json(
         None => None,
         Some(value) => {
             // Zod enum, exact match: external builds accept only 'worktree';
-            // 'remote' is ant-only — anything else rejects the agent.
+            // anything else rejects the agent.
             let value = value.as_str()?;
-            let audience = crate::utils::build_profile::build_audience();
-            let valid = value == "worktree"
-                || (value == "remote"
-                    && crate::utils::build_profile::audience_has_internal_capability(
-                        audience,
-                        crate::utils::build_profile::InternalCapability::Tools,
-                    ));
-            if !valid {
+            if value != "worktree" {
                 return None;
             }
             Some(value.to_string())
@@ -759,7 +751,6 @@ fn cli_flag_agents_from_bootstrap() -> Vec<AgentDefinition> {
 /// Maps to: CC `tools/AgentTool/loadAgentsDir.ts#parseAgentFromMarkdown`.
 fn parse_agent_from_markdown(
     markdown_file: &crate::utils::markdown_config_loader::MarkdownFile,
-    audience: crate::utils::build_profile::BuildAudience,
 ) -> Option<AgentDefinition> {
     let frontmatter = &markdown_file.frontmatter;
     // CC :549-562: `!agentType || typeof agentType !== 'string'` — JS
@@ -857,15 +848,8 @@ fn parse_agent_from_markdown(
         .get("isolation")
         .and_then(serde_json::Value::as_str)
         // CC :609-615 compares EXACT values (no trim).
-        .and_then(|value| {
-            (value == "worktree"
-                || (value == "remote"
-                    && crate::utils::build_profile::audience_has_internal_capability(
-                        audience,
-                        crate::utils::build_profile::InternalCapability::Tools,
-                    )))
-            .then(|| value.to_string())
-        });
+        .filter(|value| *value == "worktree")
+        .map(ToOwned::to_owned);
     Some(agent)
 }
 
@@ -1383,29 +1367,12 @@ mod tests {
                 "invalid {key} must reject the whole agent"
             );
         }
-        // The isolation enum is audience-shaped at BUILD time
-        // (AgentTool.tsx:215-218 — the `"external" === 'ant'` residue is the
-        // bundler's USER_TYPE --define): ant builds accept
-        // ['worktree','remote'], external builds only ['worktree']. This row
-        // used to sit in the all-or-nothing loop above, which pinned the
-        // external arm as if it were audience-free.
+        // The isolation enum (AgentTool.tsx:215-218) accepts only 'worktree'.
         let mut remote = value.clone();
         remote["isolation"] = serde_json::json!("remote");
         let parsed =
             parse_agent_from_json("reviewer", &remote, AgentDefinitionSource::FlagSettings);
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Tools,
-        ) {
-            assert_eq!(
-                parsed
-                    .expect("ant builds accept isolation: remote")
-                    .isolation
-                    .as_deref(),
-                Some("remote")
-            );
-        } else {
-            assert!(parsed.is_none(), "external builds reject isolation: remote");
-        }
+        assert!(parsed.is_none(), "isolation: remote is rejected");
         // zod `min(1)` has no trim — a lone-space description passes; the
         // empty string does not. initialPrompt is a plain string: "" passes
         // the schema (the construction spread drops it below).
@@ -1643,12 +1610,11 @@ mod tests {
     }
 
     #[test]
-    fn isolation_frontmatter_honors_official_external_and_internal_remote_gate() {
-        use crate::utils::build_profile::BuildAudience;
+    fn isolation_frontmatter_honors_official_external_remote_gate() {
         use crate::utils::frontmatter_parser::FrontmatterData;
         use crate::utils::markdown_config_loader::{MarkdownConfigSource, MarkdownFile};
 
-        let parse = |isolation: &str, audience| {
+        let parse = |isolation: &str| {
             let mut frontmatter = FrontmatterData::new();
             frontmatter.insert("name".to_string(), serde_json::json!("reviewer"));
             frontmatter.insert(
@@ -1656,29 +1622,19 @@ mod tests {
                 serde_json::json!("Review changes"),
             );
             frontmatter.insert("isolation".to_string(), serde_json::json!(isolation));
-            parse_agent_from_markdown(
-                &MarkdownFile {
-                    file_path: PathBuf::from("reviewer.md"),
-                    base_dir: PathBuf::from("."),
-                    frontmatter,
-                    content: "Review carefully".to_string(),
-                    source: MarkdownConfigSource::ProjectSettings,
-                },
-                audience,
-            )
+            parse_agent_from_markdown(&MarkdownFile {
+                file_path: PathBuf::from("reviewer.md"),
+                base_dir: PathBuf::from("."),
+                frontmatter,
+                content: "Review carefully".to_string(),
+                source: MarkdownConfigSource::ProjectSettings,
+            })
             .and_then(|agent| agent.isolation)
         };
 
-        assert_eq!(
-            parse("worktree", BuildAudience::External).as_deref(),
-            Some("worktree")
-        );
-        assert_eq!(parse("remote", BuildAudience::External), None);
-        assert_eq!(
-            parse("remote", BuildAudience::AnthropicInternal).as_deref(),
-            Some("remote")
-        );
-        assert_eq!(parse("invalid", BuildAudience::AnthropicInternal), None);
+        assert_eq!(parse("worktree").as_deref(), Some("worktree"));
+        assert_eq!(parse("remote"), None);
+        assert_eq!(parse("invalid"), None);
     }
 
     #[test]
@@ -2048,11 +2004,7 @@ mod prompt_contract_tests {
                 content: body.to_string(),
                 source: crate::utils::markdown_config_loader::MarkdownConfigSource::ProjectSettings,
             };
-            let agent = parse_agent_from_markdown(
-                &markdown,
-                crate::utils::build_profile::BuildAudience::External,
-            )
-            .unwrap();
+            let agent = parse_agent_from_markdown(&markdown).unwrap();
             assert_eq!(agent.system_prompt.as_deref(), Some(expected));
             assert_eq!(
                 agent

@@ -71,7 +71,6 @@ pub mod mcp_server_desktop_import_dialog;
 pub mod mcp_server_dialog_copy;
 pub mod mcp_server_multiselect_dialog;
 pub mod memory;
-pub mod memory_usage_indicator;
 pub mod message;
 pub mod message_actions;
 pub mod message_model;

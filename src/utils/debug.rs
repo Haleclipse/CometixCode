@@ -83,24 +83,6 @@ pub fn log_for_debugging(message: &str) {
     log_for_debugging_with_level(message, DebugLogLevel::Debug);
 }
 
-/// Maps to: CC `utils/debug.ts:258-268` `logAntError`.
-/// `error_stack` projects `error instanceof Error && error.stack`: callers pass
-/// `None` for non-Error values or absent stacks. A Rust error/backtrace is the
-/// native stack carrier; it must not be presented as a JavaScript stack.
-pub fn log_ant_error(context: &str, error_stack: Option<&str>) {
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::InternalDiagnostics,
-    ) {
-        return;
-    }
-    if let Some(stack) = error_stack.filter(|stack| !stack.is_empty()) {
-        log_for_debugging_with_level(
-            &format!("[ANT-ONLY] {context} stack trace:\n{stack}"),
-            DebugLogLevel::Error,
-        );
-    }
-}
-
 pub fn log_for_debugging_with_level(message: &str, level: DebugLogLevel) {
     if level < get_min_debug_log_level() {
         return;
@@ -135,10 +117,7 @@ fn should_log_debug_message(message: &str) -> bool {
     if cfg!(test) && !is_debug_to_stderr() {
         return false;
     }
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::InternalDiagnostics,
-    ) && !is_debug_mode()
-    {
+    if !is_debug_mode() {
         return false;
     }
     should_show_debug_message(message, config().filter.as_ref())
@@ -499,44 +478,6 @@ fn parse_flag_value<'a>(argv: &'a [String], flag: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn log_ant_error_matches_official_audience_stack_and_error_level() {
-        const CHILD: &str = "NYAN_TEST_LOG_ANT_ERROR_CHILD";
-        if crate::utils::process_env::var_os(CHILD).is_some() {
-            init_from_parts(false, true, None, None);
-            log_ant_error("absent-stack", None);
-            log_ant_error("empty-stack", Some(""));
-            log_ant_error(
-                "attachment",
-                Some("Error: unknown attachment\n  native frame"),
-            );
-            return;
-        }
-
-        // Separate process keeps the production OnceLock and stderr sink real
-        // without changing other tests' debug configuration.
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "utils::debug::tests::log_ant_error_matches_official_audience_stack_and_error_level",
-                "--nocapture",
-            ])
-            .env(CHILD, "1")
-            .env_remove("NYAN_DEBUG_LOG_LEVEL")
-            .output()
-            .unwrap();
-        assert!(output.status.success());
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        if cfg!(feature = "anthropic_internal") {
-            assert!(stderr.contains("[ERROR]"), "{stderr}");
-            assert!(stderr.contains("[ANT-ONLY] attachment stack trace:\\nError: unknown attachment\\n  native frame"), "{stderr}");
-        } else {
-            assert!(stderr.is_empty(), "{stderr}");
-        }
-        assert!(!stderr.contains("absent-stack"));
-        assert!(!stderr.contains("empty-stack"));
-    }
 
     fn argv(args: &[&str]) -> Vec<String> {
         std::iter::once("nyan".to_string())

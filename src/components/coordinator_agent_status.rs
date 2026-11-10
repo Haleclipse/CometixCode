@@ -73,16 +73,6 @@ pub fn get_visible_agent_tasks(tasks: &[CoordinatorAgentTask]) -> Vec<Coordinato
     visible
 }
 
-/// Maps to: CC `CoordinatorAgentStatus.tsx#useCoordinatorTaskCount` return
-/// shape, with the build/audience gate supplied by the caller.
-pub fn coordinator_task_count(visible_task_count: usize, is_ant_build: bool) -> usize {
-    if !is_ant_build || visible_task_count == 0 {
-        0
-    } else {
-        visible_task_count + 1
-    }
-}
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CoordinatorMainLineDisplay {
     pub prefix: String,
@@ -320,8 +310,6 @@ mod tests {
             visible.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(),
             vec!["a", "b"]
         );
-        assert_eq!(coordinator_task_count(visible.len(), true), 3);
-        assert_eq!(coordinator_task_count(visible.len(), false), 0);
     }
 
     #[test]

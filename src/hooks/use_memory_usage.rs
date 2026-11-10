@@ -1,74 +1,5 @@
-//! Maps to: CC `hooks/useMemoryUsage.ts`.
-//!
-//! Node exposes `process.memoryUsage().heapUsed` (V8 heap). Nyan has no V8
-//! heap; D6 samples **process RSS** into the same `heap_used` field / thresholds
-//! so the ant-only footer indicator keeps official copy and gates.
-
-/// Maps to: CC `hooks/useMemoryUsage.ts#MemoryUsageStatus`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum MemoryUsageStatus {
-    Unknown,
-    #[default]
-    Normal,
-    High,
-    Critical,
-}
-
-/// Maps to: CC `hooks/useMemoryUsage.ts#MemoryUsageInfo`.
-///
-/// `heap_used` keeps the official field name; the value is process RSS bytes
-/// (Rust stand-in for Node `heapUsed`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MemoryUsageInfo {
-    pub heap_used: u64,
-    pub status: MemoryUsageStatus,
-}
-
-/// Maps to: CC `HIGH_MEMORY_THRESHOLD` (1.5 GiB).
-pub const HIGH_MEMORY_THRESHOLD_BYTES: u64 = 3 * 1024 * 1024 * 1024 / 2;
-/// Maps to: CC `CRITICAL_MEMORY_THRESHOLD` (2.5 GiB).
-pub const CRITICAL_MEMORY_THRESHOLD_BYTES: u64 = 5 * 1024 * 1024 * 1024 / 2;
-
-/// Maps to: CC `useMemoryUsage` status calculation from `heapUsed`.
-pub fn memory_usage_status_for_bytes(bytes: u64) -> MemoryUsageStatus {
-    if bytes >= CRITICAL_MEMORY_THRESHOLD_BYTES {
-        MemoryUsageStatus::Critical
-    } else if bytes >= HIGH_MEMORY_THRESHOLD_BYTES {
-        MemoryUsageStatus::High
-    } else {
-        MemoryUsageStatus::Normal
-    }
-}
-
-/// Deprecated alias — prefer [`memory_usage_status_for_bytes`].
-pub fn memory_usage_status_for_heap(heap_used: u64) -> MemoryUsageStatus {
-    memory_usage_status_for_bytes(heap_used)
-}
-
-/// Sample current process memory for the indicator (RSS → `heap_used`).
-pub fn sample_memory_usage() -> MemoryUsageInfo {
-    memory_usage_info_for_sample(
-        try_process_rss_bytes(),
-        cfg!(any(target_os = "linux", target_os = "macos", windows)),
-    )
-}
-
-fn memory_usage_info_for_sample(sample: Option<u64>, provider_supported: bool) -> MemoryUsageInfo {
-    let Some(heap_used) = sample else {
-        return MemoryUsageInfo {
-            heap_used: 0,
-            status: if provider_supported {
-                MemoryUsageStatus::Unknown
-            } else {
-                MemoryUsageStatus::Normal
-            },
-        };
-    };
-    MemoryUsageInfo {
-        heap_used,
-        status: memory_usage_status_for_bytes(heap_used),
-    }
-}
+//! Process RSS sampling, the Rust stand-in for Node `process.memoryUsage()`
+//! (CC `hooks/useMemoryUsage.ts`); used by the frame timing log.
 
 /// Process resident set size in bytes, returning `None` when the platform
 /// provider cannot read it.
@@ -120,11 +51,6 @@ pub fn try_process_rss_bytes() -> Option<u64> {
 /// callers that cannot represent an unavailable sample.
 pub fn process_rss_bytes() -> u64 {
     try_process_rss_bytes().unwrap_or(0)
-}
-
-/// Alias kept for older call sites.
-pub fn approximate_process_memory_bytes() -> u64 {
-    process_rss_bytes()
 }
 
 /// Parse `VmRSS:` from `/proc/self/status` (value in KiB).
@@ -230,22 +156,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn memory_usage_status_matches_official_thresholds() {
-        assert_eq!(
-            memory_usage_status_for_bytes(HIGH_MEMORY_THRESHOLD_BYTES - 1),
-            MemoryUsageStatus::Normal
-        );
-        assert_eq!(
-            memory_usage_status_for_bytes(HIGH_MEMORY_THRESHOLD_BYTES),
-            MemoryUsageStatus::High
-        );
-        assert_eq!(
-            memory_usage_status_for_bytes(CRITICAL_MEMORY_THRESHOLD_BYTES),
-            MemoryUsageStatus::Critical
-        );
-    }
-
-    #[test]
     fn parse_linux_vm_rss_kib_reads_status_line() {
         let status = "Name:\tnyan\nVmSize:\t  123456 kB\nVmRSS:\t   2048 kB\n";
         assert_eq!(parse_linux_vm_rss_kib(status), Some(2048));
@@ -258,18 +168,6 @@ mod tests {
         assert_eq!(
             parse_linux_statm_rss_pages("10000 1234 10 1 0 50 0"),
             Some(1234)
-        );
-    }
-
-    #[test]
-    fn failed_rss_samples_are_unknown_only_with_a_provider() {
-        assert_eq!(
-            memory_usage_info_for_sample(None, true).status,
-            MemoryUsageStatus::Unknown
-        );
-        assert_eq!(
-            memory_usage_info_for_sample(None, false).status,
-            MemoryUsageStatus::Normal
         );
     }
 

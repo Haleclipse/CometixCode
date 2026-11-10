@@ -21,15 +21,8 @@ pub struct DevBarProps {
 }
 
 /// Maps to: CC `components/DevBar.tsx#shouldShowDevBar`.
-pub fn should_show_dev_bar(
-    build_mode: &str,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> bool {
+pub fn should_show_dev_bar(build_mode: &str) -> bool {
     build_mode == "development"
-        || crate::utils::build_profile::audience_has_internal_capability(
-            audience,
-            crate::utils::build_profile::InternalCapability::Ui,
-        )
 }
 
 /// Maps to: CC `components/DevBar.tsx` `recentOps` formatting.
@@ -79,14 +72,8 @@ mod tests {
 
     #[test]
     fn dev_bar_visibility_gate_matches_official_constants() {
-        use crate::utils::build_profile::BuildAudience;
-
-        assert!(should_show_dev_bar("development", BuildAudience::External));
-        assert!(should_show_dev_bar(
-            "production",
-            BuildAudience::AnthropicInternal
-        ));
-        assert!(!should_show_dev_bar("production", BuildAudience::External));
+        assert!(should_show_dev_bar("development"));
+        assert!(!should_show_dev_bar("production"));
     }
 
     #[test]

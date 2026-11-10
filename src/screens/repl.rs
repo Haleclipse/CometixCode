@@ -3417,7 +3417,6 @@ fn resume(
         .and_then(|path| std::path::Path::new(path).parent())
         .map(std::path::Path::to_path_buf);
     crate::bootstrap::state::switch_session(session_id.clone(), project_dir);
-    crate::utils::asciicast::rename_recording_for_session();
     crate::utils::session_storage::reset_session_file_pointer();
     crate::utils::session_storage::clear_session_metadata();
     crate::utils::session_storage::restore_session_metadata(
@@ -4327,14 +4326,6 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         clean_messages.pop();
                     }
                 }
-                let feedback_message = outcome.result.as_ref().and_then(|result| {
-                    crate::services::prompt_suggestion::speculation::create_speculation_feedback_message(
-                        &clean_messages,
-                        result.boundary.as_ref(),
-                        result.time_saved_ms,
-                        app_store.get().speculation_session_time_saved_ms,
-                    )
-                });
                 let user_message = Message::User(crate::types::message::UserMessage {
                     uuid: uuid::Uuid::new_v4().to_string(),
                     timestamp: chrono::Utc::now(),
@@ -4351,8 +4342,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     origin: None,
                     summarize_metadata: None,
                 });
-                let mut injected_messages = clean_messages.clone();
-                injected_messages.extend(feedback_message);
+                let injected_messages = clean_messages.clone();
                 let transcript_values =
                     crate::utils::session_storage::typed_messages_as_transcript_values(
                         &clean_messages,
@@ -4389,12 +4379,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                 // hydrating projection's row drops, which the render-list
                 // filter and the per-block components now own.
                 let mut entries = history_state.read().as_ref().clone();
-                entries.extend(
-                    injected_messages
-                        .iter()
-                        .cloned()
-                        .map(HistoryEntry::Message),
-                );
+                entries.extend(injected_messages.iter().cloned().map(HistoryEntry::Message));
                 let entries = Arc::new(entries);
                 history_state.set(Arc::clone(&entries));
                 let history = history_model_messages(&entries);
@@ -4412,7 +4397,8 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                         return crate::state::store::UpdateDecision::Same(());
                     }
                     let mut next = (**prev).clone();
-                    next.prompt_suggestion = crate::state::app_state_store::PromptSuggestionState::default();
+                    next.prompt_suggestion =
+                        crate::state::app_state_store::PromptSuggestionState::default();
                     crate::state::store::UpdateDecision::Replace {
                         next: Arc::new(next),
                         result: (),
@@ -4452,9 +4438,9 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
                     let mut tool_use_context = cache.tool_use_context.clone();
                     tool_use_context.messages = history.clone();
                     tool_use_context.app_store = crate::tool::AppStoreRef::new(app_store.clone());
-                    tool_use_context.read_file_state.replace(
-                        resume_restore_stores.read().read_file_state.clone(),
-                    );
+                    tool_use_context
+                        .read_file_state
+                        .replace(resume_restore_stores.read().read_file_state.clone());
                     tool_use_context.loaded_nested_memory_paths =
                         loaded_nested_memory_paths.read().clone();
                     tool_use_context.resume_restore_stores = resume_restore_stores.read().clone();
@@ -12991,14 +12977,8 @@ mod tests {
         assert_eq!(rows[0].uuid, "init-command-permissions");
         let wire = crate::utils::session_storage::typed_messages_as_transcript_values(&messages);
         // CC sessionStorage.ts:4351-4367 intentionally withholds ordinary
-        // attachments from external JSONL; internal retains them.
-        if crate::utils::build_profile::build_audience().is_internal() {
-            assert_eq!(wire.len(), 1);
-            assert_eq!(wire[0]["uuid"], "init-command-permissions");
-            assert_eq!(wire[0]["attachment"]["type"], "command_permissions");
-        } else {
-            assert!(wire.is_empty());
-        }
+        // attachments from external JSONL.
+        assert!(wire.is_empty());
     }
 
     /// Maps to: CC `REPL.tsx:4904-4920` `rewindConversationTo` — slicing to
@@ -16208,25 +16188,6 @@ mod tests {
             error,
             "Session empty-session has no renderable transcript messages."
         );
-    }
-
-    #[test]
-    fn model_immediate_gate_matches_internal_or_hardcoded_feature_switch() {
-        use crate::utils::build_profile::BuildAudience;
-        use crate::utils::immediate_command::should_inference_config_command_be_immediate_from;
-
-        assert!(should_inference_config_command_be_immediate_from(
-            BuildAudience::AnthropicInternal,
-            false
-        ));
-        assert!(should_inference_config_command_be_immediate_from(
-            BuildAudience::External,
-            true
-        ));
-        assert!(!should_inference_config_command_be_immediate_from(
-            BuildAudience::External,
-            false
-        ));
     }
 
     #[test]

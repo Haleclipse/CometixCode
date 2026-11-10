@@ -101,47 +101,6 @@ test-one filter:
 test-doc:
     cargo test --doc
 
-# --- Anthropic-internal build profile ---------------------------------------
-#
-# CC gates ~510 sites on `USER_TYPE === 'ant'`, which its bundler substitutes at
-# build time (`"external" === 'ant'` in the external source). Nyan models it
-# as a Cargo feature (utils/build_profile.rs). The recipes above only ever build
-# `external`, which leaves a hole in the gate that the env pinning above does
-# not cover: the audience is a THIRD axis, next to host state and process
-# isolation.
-#
-# Measured 2026-08-05:
-#   131  production gate sites
-#    50  `#[cfg(feature = "anthropic_internal")]`  — NOT COMPILED by `just check`
-#    13  `cfg!(feature = "anthropic_internal")`    — compiled, branch never taken
-#    29  tests that exist only under the feature   — invisible to `just test`
-#
-# The 50 attribute-gated sites are the real hazard: a signature change in shared
-# code cannot break them visibly, because rustc never sees them. Run `just
-# check-ant` after any cross-cutting refactor; run `just test-ant` before
-# claiming a batch is green.
-check-ant *args:
-    cargo check --lib --tests --features anthropic_internal {{args}}
-
-test-ant *args:
-    {{quote(test_runner)}} --features anthropic_internal {{args}}
-
-# Substring filter under the internal build: `just t-ant sandbox_permission`.
-# `test-ant *args` word-splits, so a filterset containing `(` needs this form.
-t-ant pattern:
-    {{quote(test_runner)}} --features anthropic_internal -E {{quote("test(/" + pattern + "/)")}}
-
-# Both audiences, for a release-shaped gate. Runs BOTH even when the first
-# fails — a bare `just test; just test-ant` aborts on the first non-zero exit,
-# which would silently skip the audience this recipe exists to cover.
-test-all-audiences:
-    #!/usr/bin/env bash
-    set -uo pipefail
-    rc=0
-    just test || rc=1
-    just test-ant || rc=1
-    exit $rc
-
 # EMPTY as of 2026-08-05. `just test` is expected to be fully green; a red test
 # is a red test.
 #

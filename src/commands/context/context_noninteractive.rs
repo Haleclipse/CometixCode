@@ -130,34 +130,6 @@ pub fn format_context_as_markdown_table(data: &ContextData) -> String {
         output.push('\n');
     }
 
-    let internal_context = crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Context,
-    );
-    if internal_context && !data.system_tools.is_empty() {
-        output.push_str("### [ANT-ONLY] System Tools\n\n");
-        output.push_str("| Tool | Tokens |\n|------|--------|\n");
-        for tool in &data.system_tools {
-            output.push_str(&format!(
-                "| {} | {} |\n",
-                tool.name,
-                format_tokens(tool.tokens)
-            ));
-        }
-        output.push('\n');
-    }
-    if internal_context && !data.system_prompt_sections.is_empty() {
-        output.push_str("### [ANT-ONLY] System Prompt Sections\n\n");
-        output.push_str("| Section | Tokens |\n|---------|--------|\n");
-        for section in &data.system_prompt_sections {
-            output.push_str(&format!(
-                "| {} | {} |\n",
-                section.name,
-                format_tokens(section.tokens)
-            ));
-        }
-        output.push('\n');
-    }
-
     if !data.agents.is_empty() {
         output.push_str("### Custom Agents\n\n");
         output.push_str("| Agent Type | Source | Tokens |\n");
@@ -207,52 +179,6 @@ pub fn format_context_as_markdown_table(data: &ContextData) -> String {
         output.push('\n');
     }
 
-    if internal_context && let Some(breakdown) = &data.message_breakdown {
-        output.push_str("### [ANT-ONLY] Message Breakdown\n\n");
-        output.push_str("| Category | Tokens |\n|----------|--------|\n");
-        for (label, tokens) in [
-            ("Tool calls", breakdown.tool_call_tokens),
-            ("Tool results", breakdown.tool_result_tokens),
-            ("Attachments", breakdown.attachment_tokens),
-            (
-                "Assistant messages (non-tool)",
-                breakdown.assistant_message_tokens,
-            ),
-            (
-                "User messages (non-tool-result)",
-                breakdown.user_message_tokens,
-            ),
-        ] {
-            output.push_str(&format!("| {label} | {} |\n", format_tokens(tokens)));
-        }
-        output.push('\n');
-        if !breakdown.tool_calls_by_type.is_empty() {
-            output.push_str("#### Top Tools\n\n");
-            output.push_str("| Tool | Call Tokens | Result Tokens |\n");
-            output.push_str("|------|-------------|---------------|\n");
-            for tool in &breakdown.tool_calls_by_type {
-                output.push_str(&format!(
-                    "| {} | {} | {} |\n",
-                    tool.name,
-                    format_tokens(tool.call_tokens),
-                    format_tokens(tool.result_tokens)
-                ));
-            }
-            output.push('\n');
-        }
-        if !breakdown.attachments_by_type.is_empty() {
-            output.push_str("#### Top Attachments\n\n");
-            output.push_str("| Attachment | Tokens |\n|------------|--------|\n");
-            for attachment in &breakdown.attachments_by_type {
-                output.push_str(&format!(
-                    "| {} | {} |\n",
-                    attachment.name,
-                    format_tokens(attachment.tokens)
-                ));
-            }
-            output.push('\n');
-        }
-    }
     output
 }
 

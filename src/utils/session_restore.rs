@@ -393,7 +393,6 @@ pub fn process_resumed_conversation(
             .and_then(|path| Path::new(path).parent())
             .map(Path::to_path_buf);
         crate::bootstrap::state::switch_session(session_id.to_string(), session_project_dir);
-        crate::utils::asciicast::rename_recording_for_session();
         crate::utils::session_storage::reset_session_file_pointer();
         if let Some(path) = result.full_path.as_deref() {
             crate::cost_tracker::restore_cost_state_from_transcript(Path::new(path));

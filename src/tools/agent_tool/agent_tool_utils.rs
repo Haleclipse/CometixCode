@@ -492,26 +492,10 @@ pub async fn classify_handoff_if_needed(
         crate::tools::agent_tool::constants::AGENT_TOOL_NAME,
     ) {
         Some(decision) => crate::utils::permissions::yolo_classifier::decision_to_result(decision),
-        None => {
-            classify_yolo_action(
-                agent_messages,
-                &action,
-                tools,
-                tool_permission_context,
-                abort_signal,
-            )
-            .await
-        }
+        None => classify_yolo_action(agent_messages, &action, tools, abort_signal).await,
     };
     #[cfg(not(test))]
-    let result = classify_yolo_action(
-        agent_messages,
-        &action,
-        tools,
-        tool_permission_context,
-        abort_signal,
-    )
-    .await;
+    let result = classify_yolo_action(agent_messages, &action, tools, abort_signal).await;
 
     // `:461` — everything below is gated on shouldBlock.
     if !result.should_block {

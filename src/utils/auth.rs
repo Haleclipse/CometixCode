@@ -596,7 +596,6 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let _config_home = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _api_key = EnvVarGuard::unset("ANTHROPIC_API_KEY");
-        let _homespace = EnvVarGuard::unset("COO_RUNNING_ON_HOMESPACE");
         let _ci = EnvVarGuard::unset("CI");
         let _node_env = EnvVarGuard::unset("NODE_ENV");
         std::fs::write(

@@ -1,7 +1,7 @@
 //! Team-memory predicates used by Read/Search collapse.
 //!
-//! Maps to: CC `utils/teamMemoryOps.ts`. The module is exposed only in the
-//! internal build, matching the source `feature('TEAMMEM')` boundary.
+//! Maps to: CC `utils/teamMemoryOps.ts`. The source `feature('TEAMMEM')`
+//! boundary is the `FeatureFlag::TeamMemory` switch behind `is_team_mem_file`.
 
 pub use crate::memdir::team_mem_paths::is_team_mem_file;
 
@@ -80,8 +80,7 @@ mod tests {
 /// CC's sole caller is `collapseReadSearch.ts:1018`, reached only under
 /// `feature('TEAMMEM')` (`:1017` `if (feature('TEAMMEM') && teamMemOps)`,
 /// where `teamMemOps` is itself the TEAMMEM-conditional `require` at
-/// `:34-36`, so the two conjuncts are one gate). The definition carries the
-/// same cfg as that call site.
+/// `:34-36`, so the two conjuncts are one gate).
 ///
 /// Part order and verb tense follow CC exactly: recall → search → write, with
 /// the verb capitalised only when it opens the sentence (`parts.length === 0`)
@@ -93,7 +92,6 @@ mod tests {
 /// They were briefly shared with `collapse_read_search.rs` as `summary_verb` /
 /// `plural`, which reads like de-duplication but creates a cross-owner helper
 /// with no upstream symbol behind it. Repetition is the faithful shape here.
-#[cfg(feature = "anthropic_internal")]
 pub fn append_team_memory_summary_parts(
     counts: &crate::utils::collapse_read_search::SearchReadMemoryCounts,
     is_active: bool,

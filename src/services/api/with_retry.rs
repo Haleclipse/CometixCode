@@ -466,14 +466,7 @@ fn should_retry(error: &ApiError) -> bool {
         return true;
     }
     if should_retry_header == Some("false") {
-        let is_5xx = error.status.is_some_and(|s| s >= 500);
-        // Internal builds can ignore x-should-retry:false for 5xx only.
-        if !crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Api,
-        ) || !is_5xx
-        {
-            return false;
-        }
+        return false;
     }
 
     // Connection errors are retryable (handled separately in the error enum)
@@ -842,9 +835,7 @@ where
                             }
 
                             // External users (non-sandbox, non-persistent) get a terminal error
-                            if !crate::utils::build_profile::has_internal_capability(
-                                crate::utils::build_profile::InternalCapability::Api,
-                            ) && crate::utils::process_env::var("IS_SANDBOX")
+                            if crate::utils::process_env::var("IS_SANDBOX")
                                 .truthy()
                                 .is_none()
                                 && !is_persistent_retry_enabled()

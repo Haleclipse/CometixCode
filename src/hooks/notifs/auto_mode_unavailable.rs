@@ -17,17 +17,11 @@ pub enum AutoModeUnavailableReason {
     Model,
 }
 
-pub fn auto_mode_unavailable_text(reason: AutoModeUnavailableReason, is_ant_user: bool) -> String {
-    let base = match reason {
+pub fn auto_mode_unavailable_text(reason: AutoModeUnavailableReason) -> &'static str {
+    match reason {
         AutoModeUnavailableReason::Settings => "auto mode disabled by settings",
         AutoModeUnavailableReason::CircuitBreaker => "auto mode is unavailable for your plan",
         AutoModeUnavailableReason::Model => "auto mode unavailable for this model",
-    };
-
-    if is_ant_user {
-        format!("{base} · #claude-code-feedback")
-    } else {
-        base.to_string()
     }
 }
 
@@ -50,13 +44,10 @@ pub fn should_show_auto_mode_unavailable_notification(
         && has_auto_mode_opt_in
 }
 
-pub fn auto_mode_unavailable_notification(
-    reason: AutoModeUnavailableReason,
-    is_ant_user: bool,
-) -> Notification {
+pub fn auto_mode_unavailable_notification(reason: AutoModeUnavailableReason) -> Notification {
     Notification::text(
         AUTO_MODE_UNAVAILABLE_NOTIFICATION_KEY,
-        auto_mode_unavailable_text(reason, is_ant_user),
+        auto_mode_unavailable_text(reason),
         NotificationPriority::Medium,
     )
     .with_color(NotificationColor::Warning)
@@ -69,23 +60,23 @@ mod tests {
     #[test]
     fn auto_mode_unavailable_text_matches_official_reason_copy() {
         assert_eq!(
-            auto_mode_unavailable_text(AutoModeUnavailableReason::Settings, false),
+            auto_mode_unavailable_text(AutoModeUnavailableReason::Settings),
             "auto mode disabled by settings"
         );
         assert_eq!(
-            auto_mode_unavailable_text(AutoModeUnavailableReason::CircuitBreaker, false),
+            auto_mode_unavailable_text(AutoModeUnavailableReason::CircuitBreaker),
             "auto mode is unavailable for your plan"
         );
         assert_eq!(
-            auto_mode_unavailable_text(AutoModeUnavailableReason::Model, true),
-            "auto mode unavailable for this model · #claude-code-feedback"
+            auto_mode_unavailable_text(AutoModeUnavailableReason::Model),
+            "auto mode unavailable for this model"
         );
     }
 
     #[test]
     fn auto_mode_unavailable_notification_matches_official_key_color_priority() {
         let notification =
-            auto_mode_unavailable_notification(AutoModeUnavailableReason::CircuitBreaker, false);
+            auto_mode_unavailable_notification(AutoModeUnavailableReason::CircuitBreaker);
 
         assert_eq!(notification.key, AUTO_MODE_UNAVAILABLE_NOTIFICATION_KEY);
         assert_eq!(notification.text, "auto mode is unavailable for your plan");

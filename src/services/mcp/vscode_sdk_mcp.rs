@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 pub const VSCODE_MCP_SERVER_NAME: &str = "claude-vscode";
 pub const LOG_EVENT_METHOD: &str = "log_event";
-pub const FILE_UPDATED_METHOD: &str = "file_updated";
 pub const EXPERIMENT_GATES_METHOD: &str = "experiment_gates";
 
 /// Maps to: CC `vscodeSdkMcp.ts` local `AutoModeEnabledState`.
@@ -64,30 +63,6 @@ pub fn vscode_experiment_gates(
     gates
 }
 
-pub fn file_updated_params(
-    file_path: &str,
-    old_content: Option<&str>,
-    new_content: Option<&str>,
-) -> Value {
-    // Maps to: CC `notifyVscodeFileUpdated(...)` notification params.
-    serde_json::json!({
-        "filePath": file_path,
-        "oldContent": old_content,
-        "newContent": new_content,
-    })
-}
-
-pub fn should_notify_vscode_file_updated_for_audience(
-    audience: crate::utils::build_profile::BuildAudience,
-    has_vscode_client: bool,
-) -> bool {
-    // Maps to CC's internal-distribution + connected-client guard.
-    crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::Api,
-    ) && has_vscode_client
-}
-
 pub fn handle_vscode_log_event_notification(
     server_name: &str,
     notification: &rmcp::model::CustomNotification,
@@ -112,14 +87,8 @@ pub fn handle_vscode_log_event_notification(
     true
 }
 
-/// Maps to: CC `vscodeSdkMcp.ts:32-33` `vscodeMcpClient`: the connected
-/// `claude-vscode` record `setupVscodeSdkMcp` keeps for later notifications.
-static VSCODE_MCP_CLIENT: std::sync::Mutex<
-    Option<crate::services::mcp::types::ConnectedMcpServer>,
-> = std::sync::Mutex::new(None);
-
 /// Maps to: CC `services/mcp/vscodeSdkMcp.ts:64-112` `setupVscodeSdkMcp`:
-/// keeps the connected `claude-vscode` SDK client and sends it the initial
+/// sends the connected `claude-vscode` SDK client the initial
 /// `experiment_gates` notification. The `log_event` handler CC registers on
 /// it is dispatched by `client.rs#on_custom_notification` for this server.
 pub async fn setup_vscode_sdk_mcp(
@@ -132,9 +101,6 @@ pub async fn setup_vscode_sdk_mcp(
     else {
         return false;
     };
-    *VSCODE_MCP_CLIENT
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.clone());
     let gates = vscode_experiment_gates(None);
     client
         .client
@@ -144,43 +110,6 @@ pub async fn setup_vscode_sdk_mcp(
         )
         .await
         .is_ok()
-}
-
-/// Maps to: CC `vscodeSdkMcp.ts:39-59` `notifyVscodeFileUpdated`: a
-/// `file_updated` notification to the kept `claude-vscode` client, for
-/// internal builds only.
-pub async fn notify_vscode_file_updated(
-    file_path: &str,
-    old_content: Option<&str>,
-    new_content: Option<&str>,
-) -> bool {
-    let client = VSCODE_MCP_CLIENT
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
-    if !should_notify_vscode_file_updated_for_audience(
-        crate::utils::build_profile::build_audience(),
-        client.is_some(),
-    ) {
-        return false;
-    }
-    let Some(client) = client else {
-        return false;
-    };
-    let params = file_updated_params(file_path, old_content, new_content);
-    match client
-        .client
-        .notification(FILE_UPDATED_METHOD, params)
-        .await
-    {
-        Ok(()) => true,
-        Err(error) => {
-            crate::utils::debug::log_for_debugging(&format!(
-                "[VSCode] Failed to send file_updated notification: {error}"
-            ));
-            false
-        }
-    }
 }
 
 #[cfg(test)]
@@ -224,32 +153,6 @@ mod tests {
         assert_eq!(
             gates.get("tengu_auto_mode_state"),
             Some(&Value::String("opt-in".to_string()))
-        );
-    }
-
-    #[test]
-    fn file_updated_notification_gate_matches_internal_and_client_guard() {
-        use crate::utils::build_profile::BuildAudience;
-
-        assert!(should_notify_vscode_file_updated_for_audience(
-            BuildAudience::AnthropicInternal,
-            true
-        ));
-        assert!(!should_notify_vscode_file_updated_for_audience(
-            BuildAudience::AnthropicInternal,
-            false
-        ));
-        assert!(!should_notify_vscode_file_updated_for_audience(
-            BuildAudience::External,
-            true
-        ));
-        assert_eq!(
-            file_updated_params("src/lib.rs", Some("old"), None),
-            serde_json::json!({
-                "filePath": "src/lib.rs",
-                "oldContent": "old",
-                "newContent": null,
-            })
         );
     }
 

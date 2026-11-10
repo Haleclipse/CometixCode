@@ -122,14 +122,9 @@ impl crate::tool::ToolCall for TaskStopTool {
         &["KillShell"]
     }
 
-    /// Maps to: CC `TaskStopTool.ts:46` `userFacingName: () =>
-    /// process.env.USER_TYPE === 'ant' ? '' : 'Stop Task'`.
+    /// Maps to: CC `TaskStopTool.ts:46` `userFacingName`.
     fn user_facing_name(&self, _args: Option<&serde_json::Value>) -> String {
-        if crate::utils::process_env::var("USER_TYPE").as_deref() == Some("ant") {
-            String::new()
-        } else {
-            "Stop Task".to_string()
-        }
+        "Stop Task".to_string()
     }
 
     fn search_hint(&self) -> Option<&'static str> {

@@ -1740,26 +1740,13 @@ impl crate::tool::ToolCall for AgentTool {
         true
     }
 
-    /// Maps to: CC `AgentTool.tsx:1692-1709` `checkPermissions(...)`. The auto
-    /// mode passthrough is ant-only; every other mode auto-approves the spawn.
+    /// Maps to: CC `AgentTool.tsx:1692-1709` `checkPermissions(...)`: the
+    /// spawn is auto-approved.
     fn check_permissions(
         &self,
         args: &serde_json::Value,
-        context: &crate::tool::ToolUseContext,
+        _context: &crate::tool::ToolUseContext,
     ) -> crate::utils::permissions::permission_result::PermissionResult {
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Permissions,
-        ) && context.tool_permission_context.mode
-            == crate::types::permissions::PermissionMode::Auto
-        {
-            return crate::utils::permissions::permission_result::PermissionResult::Passthrough {
-                message: "Agent tool requires permission to spawn sub-agents.".to_string(),
-                decision_reason: None,
-                suggestions: Vec::new(),
-                blocked_path: None,
-                pending_classifier_check: None,
-            };
-        }
         crate::utils::permissions::permission_result::PermissionResult::Allow {
             updated_input: Some(args.clone()),
             user_modified: None,
@@ -1961,26 +1948,6 @@ impl crate::tool::ToolCall for AgentTool {
             };
             let effective_isolation =
                 effective_isolation_for_agent_tool(requested_isolation, &agent_definition);
-            // Not-implemented notice, not a validation rule. Unreachable on an
-            // external build — the schema enum is `["worktree"]` (`:105`,
-            // matching CC `AgentTool.tsx:215`'s external arm) and a frontmatter
-            // `remote` is dropped by the audience gate
-            // (`load_agents_dir.rs:686-693`) — so it only fires if either is
-            // widened for an internal audience, which is exactly when the
-            // missing implementation would matter.
-            //
-            // Two `Unsupported Agent isolation mode` early returns used to sit
-            // around this one, rejecting any non-`worktree`/`remote` value.
-            // Both were dead: CC rejects a bad `isolation` at the zod enum, and
-            // this port does the equivalent one layer up, in the execution gate
-            // at `tool_execution.rs:566-576` (`Maps to: CC
-            // toolExecution.ts:615-676`), whose fallback validator checks
-            // `enum`. A value that fails there never reaches `call`.
-            if effective_isolation.as_deref() == Some("remote") {
-                return agent_tool_error(
-                    "Failed to create remote session: remote isolation is unavailable; no remote subagent was started.",
-                );
-            }
             // Maps to CC `AgentTool.tsx`: `cwd` is documented as mutually
             // exclusive in the schema description, but the runtime does not
             // throw. If both are supplied, it still creates/cleans the

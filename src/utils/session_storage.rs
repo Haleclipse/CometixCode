@@ -3751,8 +3751,8 @@ pub fn record_transcript(
 /// `messages` must ALREADY be filtered. CC's `recordSidechainTranscript` runs
 /// `cleanMessagesForLogging` (`:1457`) → `isLoggableMessage` (`:4351-4367`)
 /// before it reaches `insertMessageChain`, and that filter is the privacy
-/// boundary: progress is never persisted, and non-`ant` builds withhold every
-/// attachment except `hook_additional_context` behind
+/// boundary: progress is never persisted, and every attachment is withheld
+/// except `hook_additional_context` behind
 /// `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`. Typed callers must go through
 /// [`record_typed_sidechain_transcript`], which owns both halves; handing raw
 /// entries straight to this function skips the filter (that is exactly how the
@@ -3832,13 +3832,12 @@ pub fn record_typed_sidechain_transcript(
     // lands on disk. Two producers reach it:
     //
     // - forked agents record assistant|user|progress (forkedAgent.ts:582-597),
-    //   and `isLoggableMessage` (:4351-4352) drops the progress on every
-    //   audience;
+    //   and `isLoggableMessage` (:4351-4352) drops the progress;
     // - AgentTool records its `initialMessages` once (runAgent.ts:735), and
     //   those END with the SubagentStart `hook_additional_context` attachment
-    //   when a hook produced context (:546-554). Attachments survive this
-    //   filter on `ant` builds and are withheld on every other one (:4357-4366)
-    //   unless `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT` is set.
+    //   when a hook produced context (:546-554). Attachments are withheld by
+    //   this filter (:4357-4366) unless
+    //   `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT` is set.
     //
     // The attachments the query LOOP yields never arrive: `runAgent.ts:771-790`
     // yields them and `continue`s without recording, and `isRecordableMessage`
@@ -3859,9 +3858,7 @@ pub fn record_typed_sidechain_transcript(
         cwd: stamp_cwd.to_string_lossy().to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         git_branch: None,
-        user_type: crate::utils::build_profile::build_audience()
-            .as_str()
-            .to_string(),
+        user_type: "external".to_string(),
         entrypoint: "nyan".to_string(),
         slug: None,
         team_name: None,
@@ -3937,9 +3934,7 @@ pub fn record_typed_messages_with_team(
         cwd: project_path.clone(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         git_branch: Some(crate::utils::git::get_branch()).filter(|branch| !branch.is_empty()),
-        user_type: crate::utils::build_profile::build_audience()
-            .as_str()
-            .to_string(),
+        user_type: "external".to_string(),
         entrypoint: "cli".to_string(),
         slug: None,
         team_name: team_info.and_then(|info| info.team_name.clone()),
@@ -4060,8 +4055,8 @@ impl SidechainTranscriptRecorder {
     ///
     /// The seed is the LAST INPUT message's uuid (`initialMessages.at(-1)?.uuid
     /// ?? null`), not the last row the write produced. The two differ whenever
-    /// `cleanMessagesForLogging` drops the tail: on a non-`ant` build whose
-    /// SubagentStart hook produced context, `initialMessages` ends with the
+    /// `cleanMessagesForLogging` drops the tail: when the SubagentStart hook
+    /// produced context, `initialMessages` ends with the
     /// `hook_additional_context` attachment (`runAgent.ts:546-554`), the filter
     /// withholds it (`:4357-4366`), and CC still parents the first loop message
     /// to that never-written uuid. Reproducing that is the point: the reader is
@@ -4236,9 +4231,7 @@ fn record_typed_message(
         cwd: project_path.clone(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         git_branch: Some(crate::utils::git::get_branch()).filter(|branch| !branch.is_empty()),
-        user_type: crate::utils::build_profile::build_audience()
-            .as_str()
-            .to_string(),
+        user_type: "external".to_string(),
         entrypoint: "cli".to_string(),
         slug: None,
         team_name: team_info.and_then(|info| info.team_name.clone()),
@@ -4869,24 +4862,16 @@ fn typed_message_entry(
 
 /// The attachment half of CC `isLoggableMessage`
 /// (`utils/sessionStorage.ts:4351-4367`). Attachments are withheld from
-/// non-ant transcripts; the source's own comment gives the reason: "they have
+/// transcripts; the source's own comment gives the reason: "they have
 /// sensitive info for training that we don't want exposed to the public". The
 /// single exception is hook output, and only behind the env flag, because it
 /// is user-configured content that is useful on resume.
-///
-/// `getUserType() !== 'ant'` maps to the build audience here — the same
-/// projection `record_transcript`'s `user_type` field already uses. Note it
-/// is a compile-time feature rather than CC's runtime lookup, so the two
-/// audiences are covered by `just test-all-audiences`, not by one run.
 ///
 /// Shared by BOTH arms of `typed_message_entry` that emit
 /// `"type":"attachment"` rows (`Message::Attachment` and
 /// `Message::HookResult`), because CC keys the filter on the wire type,
 /// not on which union member carried the payload.
 fn attachment_row_is_withheld(payload: &serde_json::Value) -> bool {
-    if crate::utils::build_profile::build_audience().is_internal() {
-        return false;
-    }
     let is_hook_context =
         payload.get("type").and_then(|value| value.as_str()) == Some("hook_additional_context");
     let keep_hook_context = crate::utils::env_utils::is_env_truthy(
@@ -6222,15 +6207,13 @@ mod tests {
 
         for message in [user, system, attachment] {
             let expected = message.uuid().to_string();
-            // CC `isLoggableMessage` withholds attachments from non-ant
-            // transcripts (sessionStorage.ts:4357-4366), so on an external
-            // build there is no entry to check. Assert that this is the ONLY
-            // message kind that may go missing, and only on that build.
+            // CC `isLoggableMessage` withholds attachments from transcripts
+            // (sessionStorage.ts:4357-4366), so there is no entry to check.
+            // Assert that this is the ONLY message kind that may go missing.
             let Some((entry, uuid)) = typed_message_entry(&message) else {
                 assert!(
-                    matches!(message, Message::Attachment(_))
-                        && !crate::utils::build_profile::build_audience().is_internal(),
-                    "only attachments, and only on an external build, are unloggable here"
+                    matches!(message, Message::Attachment(_)),
+                    "only attachments are unloggable here"
                 );
                 continue;
             };
@@ -8075,10 +8058,9 @@ mod tests {
     /// paths: a failed write, a batch the privacy filter emptied, and — the one
     /// this exercises — an `initialMessages` tail the filter withholds.
     ///
-    /// Both audiences run this: `hook_additional_context` IS written on `ant`
-    /// and withheld elsewhere (`:4357-4366`), and the cursor must be the
-    /// attachment's uuid either way. On a non-`ant` build that means the first
-    /// loop row names a parent no row carries — CC's own outcome, and one the
+    /// `hook_additional_context` is withheld (`:4357-4366`), yet the cursor
+    /// must still be the attachment's uuid. That means the first loop row
+    /// names a parent no row carries — CC's own outcome, and one the
     /// leaf-to-root reader (`getAgentTranscript` `:4210-4224`) is sensitive to,
     /// so "repairing" it would make the port reconstruct a different prefix
     /// than CC from the same run.
@@ -8136,20 +8118,14 @@ mod tests {
         futures::executor::block_on(flush_session_storage()).unwrap();
 
         let rows = read_jsonl(&get_agent_transcript_path(agent_id));
-        let internal = crate::utils::build_profile::build_audience().is_internal();
-        let expected_uuids: Vec<&str> = if internal {
-            vec!["prompt-uuid", attachment_uuid.as_str(), "assistant-uuid"]
-        } else {
-            vec!["prompt-uuid", "assistant-uuid"]
-        };
         assert_eq!(
             rows.iter()
                 .map(|row| row["uuid"].as_str().unwrap())
                 .collect::<Vec<_>>(),
-            expected_uuids,
+            vec!["prompt-uuid", "assistant-uuid"],
             "the privacy filter is the only thing that decides what is written"
         );
-        // Identical on both audiences — the cursor never consults the write.
+        // The cursor never consults the write.
         assert_eq!(
             rows.last().unwrap()["parentUuid"].as_str(),
             Some(attachment_uuid.as_str())
@@ -9189,15 +9165,11 @@ mod tests {
 
     /// Maps to: CC `isLoggableMessage` (sessionStorage.ts:4357-4366).
     ///
-    /// Attachments are withheld from non-ant transcripts — the source's comment
+    /// Attachments are withheld from transcripts — the source's comment
     /// gives the reason: "they have sensitive info for training that we don't
     /// want exposed to the public". Hook output is the single exception, and
     /// only behind `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`, because it is
     /// user-configured content worth having on resume.
-    ///
-    /// `getUserType() !== 'ant'` is the build audience here, which is a
-    /// compile-time feature — so this asserts against the CURRENT build and
-    /// both sides are covered by `just test-all-audiences`.
     #[test]
     fn attachments_are_withheld_from_external_transcripts_like_official() {
         let _lock = TEST_ENV_LOCK
@@ -9215,22 +9187,20 @@ mod tests {
                 serde_json::json!({"type": "hook_additional_context", "content": "hook output"}),
             ),
         );
-        let internal = crate::utils::build_profile::build_audience().is_internal();
 
-        // Flag off: an external build logs neither.
-        assert_eq!(typed_message_entry(&plain).is_some(), internal);
-        assert_eq!(typed_message_entry(&hook).is_some(), internal);
+        // Flag off: neither is logged.
+        assert!(typed_message_entry(&plain).is_none());
+        assert!(typed_message_entry(&hook).is_none());
 
         // Flag on: it opens the hook exception ONLY — not attachments at large.
         crate::utils::process_env::set("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
-        assert_eq!(
-            typed_message_entry(&plain).is_some(),
-            internal,
+        assert!(
+            typed_message_entry(&plain).is_none(),
             "the env flag is not a blanket opt-in for attachments"
         );
         assert!(
             typed_message_entry(&hook).is_some(),
-            "hook_additional_context is loggable on every audience once the flag is set"
+            "hook_additional_context is loggable once the flag is set"
         );
         crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
     }
@@ -9242,11 +9212,9 @@ mod tests {
     /// `hook_result` union member of types/message.ts:119 has no runtime
     /// producer), and the filter keys on that WIRE type. So the
     /// `Message::HookResult` arm — which writes `"type":"attachment"` —
-    /// takes the same withholding as the `Attachment` arm: an external
-    /// build writes nothing, except `hook_additional_context` behind
-    /// `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`; an internal build
-    /// writes everything. Asserted against the CURRENT build audience;
-    /// both sides run under `just test-all-audiences`.
+    /// takes the same withholding as the `Attachment` arm: nothing is
+    /// written, except `hook_additional_context` behind
+    /// `NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT`.
     #[test]
     fn hook_results_take_the_attachment_withholding_like_official() {
         let _lock = TEST_ENV_LOCK
@@ -9274,69 +9242,41 @@ mod tests {
                 "hookEvent": "SessionStart"
             })),
         );
-        let internal = crate::utils::build_profile::build_audience().is_internal();
 
-        // Flag off: an external build withholds both hook rows.
-        assert_eq!(typed_message_entry(&context).is_some(), internal);
-        assert_eq!(typed_message_entry(&system).is_some(), internal);
+        // Flag off: both hook rows are withheld.
+        assert!(typed_message_entry(&context).is_none());
+        assert!(typed_message_entry(&system).is_none());
 
         // Flag on: only hook_additional_context comes through — the same
-        // single exception the Attachment arm grants.
+        // single exception the Attachment arm grants. The row keeps CC's wire
+        // shape: hook results have no wire type of their own — they are
+        // attachment rows.
         crate::utils::process_env::set("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT", "1");
-        assert!(
-            typed_message_entry(&context).is_some(),
-            "hook_additional_context is loggable on every audience once the flag is set"
-        );
+        let (entry, _) =
+            typed_message_entry(&context).expect("hook_additional_context is loggable");
         assert_eq!(
-            typed_message_entry(&system).is_some(),
-            internal,
+            entry.get("type").and_then(serde_json::Value::as_str),
+            Some("attachment")
+        );
+        assert!(
+            typed_message_entry(&system).is_none(),
             "the env flag opens the hook-context exception only"
         );
         crate::utils::process_env::remove("NYAN_SAVE_HOOK_ADDITIONAL_CONTEXT");
-
-        // The row that IS written keeps CC's wire shape: hook results have no
-        // wire type of their own — they are attachment rows.
-        if internal {
-            let (entry, _) = typed_message_entry(&system).expect("internal build writes hook rows");
-            assert_eq!(
-                entry.get("type").and_then(serde_json::Value::as_str),
-                Some("attachment")
-            );
-        }
     }
 
     #[test]
-    fn typed_attachment_transcript_round_trip_preserves_open_payload() {
-        let payload = serde_json::json!({
-            "type": "task_status",
-            "taskId": "agent-1",
-            "status": "running",
-            "deltaSummary": {"nested": [1, 2, 3]},
-            "futureField": {"kept": true}
-        });
+    fn typed_attachment_is_not_written_to_transcript_values() {
+        // CC `isLoggableMessage` (sessionStorage.ts:4357-4366) keeps
+        // attachments out of transcripts entirely.
         let messages = vec![crate::types::message::Message::Attachment(
-            crate::types::message::AttachmentMessage::new(payload.clone()),
+            crate::types::message::AttachmentMessage::new(serde_json::json!({
+                "type": "task_status",
+                "taskId": "agent-1",
+                "status": "running",
+            })),
         )];
-
-        let entries = typed_messages_as_transcript_values(&messages);
-        if !crate::utils::build_profile::build_audience().is_internal() {
-            // CC `isLoggableMessage` (sessionStorage.ts:4357-4366) keeps
-            // attachments out of non-ant transcripts entirely, so there is
-            // nothing to round-trip on this build. The payload fidelity this
-            // test covers is exercised by the internal-audience run
-            // (`just test-all-audiences`).
-            assert!(entries.is_empty());
-            return;
-        }
-        assert_eq!(entries[0].get("attachment"), Some(&payload));
-        let restored = crate::utils::conversation::into_typed_messages(entries);
-        // The malformed-for-`task_status` payload rides `Attachment::Unknown`
-        // (batch D2), whose wire projection is the untouched open payload.
-        assert!(matches!(
-            restored.as_slice(),
-            [crate::types::message::Message::Attachment(attachment)]
-                if attachment.attachment.to_wire() == payload
-        ));
+        assert!(typed_messages_as_transcript_values(&messages).is_empty());
     }
 
     #[test]

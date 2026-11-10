@@ -17,20 +17,11 @@ pub struct McpInstructionsDelta {
 /// Maps to CC `utils/mcpInstructionsDelta.ts:29-44`
 /// `isMcpInstructionsDeltaEnabled()`.
 pub fn is_mcp_instructions_delta_enabled() -> bool {
-    if crate::utils::env_utils::is_env_truthy(
+    // A defined-falsy value and GrowthBook's external source default are both
+    // false; no cohort is fabricated.
+    crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_MCP_INSTR_DELTA").as_deref(),
-    ) {
-        return true;
-    }
-    if crate::utils::env_utils::is_env_defined_falsy(
-        crate::utils::process_env::var("NYAN_MCP_INSTR_DELTA").as_deref(),
-    ) {
-        return false;
-    }
-    crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
     )
-    // GrowthBook's external source default is false; no cohort is fabricated.
 }
 
 /// Maps to CC `utils/mcpInstructionsDelta.ts:46-130`

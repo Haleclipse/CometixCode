@@ -87,7 +87,6 @@ pub fn is_auto_managed_memory_file(file_path: &str) -> bool {
     if is_auto_mem_file(file_path) {
         return true;
     }
-    #[cfg(feature = "anthropic_internal")]
     if crate::memdir::team_mem_paths::is_team_mem_file(file_path) {
         return true;
     }
@@ -126,7 +125,6 @@ pub fn is_memory_directory(dir_path: &str) -> bool {
     {
         return true;
     }
-    #[cfg(feature = "anthropic_internal")]
     if crate::memdir::team_mem_paths::is_team_memory_enabled()
         && crate::memdir::team_mem_paths::is_team_mem_path(&normalized_path)
     {

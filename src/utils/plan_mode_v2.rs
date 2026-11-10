@@ -38,11 +38,6 @@ pub fn get_plan_mode_v2_explore_agent_count() -> usize {
 /// Maps to CC `utils/planModeV2.ts:42-60`
 /// `isPlanModeInterviewPhaseEnabled()`.
 pub fn is_plan_mode_interview_phase_enabled() -> bool {
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        return true;
-    }
     // The `isEnvDefinedFalsy` branch and the GrowthBook fallback both yield
     // `false`: GrowthBook delivery is intentionally absent. Preserve its source
     // default rather than inventing a cohort assignment.

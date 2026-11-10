@@ -105,39 +105,6 @@ const SAFE_ENV_VARS: &[&str] = &[
     "BLOCKSIZE",
 ];
 
-const ANT_ONLY_SAFE_ENV_VARS: &[&str] = &[
-    "KUBECONFIG",
-    "DOCKER_HOST",
-    "AWS_PROFILE",
-    "CLOUDSDK_CORE_PROJECT",
-    "CLUSTER",
-    "COO_CLUSTER",
-    "COO_CLUSTER_NAME",
-    "COO_NAMESPACE",
-    "COO_LAUNCH_YAML_DRY_RUN",
-    "SKIP_NODE_VERSION_CHECK",
-    "EXPECTTEST_ACCEPT",
-    "CI",
-    "GIT_LFS_SKIP_SMUDGE",
-    "CUDA_VISIBLE_DEVICES",
-    "JAX_PLATFORMS",
-    "COLUMNS",
-    "TMUX",
-    "POSTGRESQL_VERSION",
-    "FIRESTORE_EMULATOR_HOST",
-    "HARNESS_QUIET",
-    "TEST_CROSSCHECK_LISTS_MATCH_UPDATE",
-    "DBT_PER_DEVELOPER_ENVIRONMENTS",
-    "STATSIG_FORD_DB_CHECKS",
-    "ANT_ENVIRONMENT",
-    "ANT_SERVICE",
-    "MONOREPO_ROOT_DIR",
-    "PYENV_VERSION",
-    "PGPASSWORD",
-    "GH_TOKEN",
-    "GROWTHBOOK_API_KEY",
-];
-
 const BARE_SHELL_PREFIXES: &[&str] = &[
     "sh",
     "bash",
@@ -468,9 +435,6 @@ fn skip_timeout_flags(args: &[String]) -> isize {
 
 fn is_safe_env_var(var_name: &str) -> bool {
     SAFE_ENV_VARS.contains(&var_name)
-        || (crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Permissions,
-        ) && ANT_ONLY_SAFE_ENV_VARS.contains(&var_name))
 }
 
 fn strip_comment_lines(command: &str) -> String {
@@ -702,59 +666,6 @@ pub fn bash_tool_check_exact_match_permission(
         suggestions: suggestion_for_exact_command(command),
         blocked_path: None,
         pending_classifier_check: None,
-    }
-}
-
-/// Maps to CC `checkEarlyExitDeny(...)` and `checkSemanticsDeny(...)`.
-pub(super) fn ast_security_result(
-    command: &str,
-    tool_permission_context: &ToolPermissionContext,
-    reason: &str,
-    subcommands: &[crate::utils::bash::ast::SimpleCommand],
-) -> PermissionResult {
-    let exact = bash_tool_check_exact_match_permission(command, tool_permission_context);
-    if !matches!(exact, PermissionResult::Passthrough { .. }) {
-        return exact;
-    }
-    let full = matching_rules_for_input(
-        command,
-        tool_permission_context,
-        BashRuleMatchMode::Prefix,
-        false,
-    );
-    let deny = full.matching_deny_rules.first().cloned().or_else(|| {
-        subcommands.iter().find_map(|subcommand| {
-            matching_rules_for_input(
-                &subcommand.text,
-                tool_permission_context,
-                BashRuleMatchMode::Prefix,
-                false,
-            )
-            .matching_deny_rules
-            .first()
-            .cloned()
-        })
-    });
-    if let Some(rule) = deny {
-        return PermissionResult::Deny {
-            message: format!("Permission to use Bash with command {command} has been denied."),
-            decision_reason: PermissionDecisionReason::Rule { rule },
-            tool_use_id: None,
-        };
-    }
-    let decision_reason = PermissionDecisionReason::Other {
-        reason: reason.to_string(),
-    };
-    PermissionResult::Ask {
-        message: create_permission_request_message(Some(&decision_reason)),
-        updated_input: None,
-        decision_reason: Some(decision_reason),
-        suggestions: Vec::new(),
-        blocked_path: None,
-        metadata: None,
-        is_bash_security_check_for_misparsing: false,
-        pending_classifier_check: build_pending_classifier_check(command, tool_permission_context),
-        content_blocks: Vec::new(),
     }
 }
 

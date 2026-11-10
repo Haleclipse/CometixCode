@@ -123,7 +123,6 @@ pub fn get_system_prompt_with_settings(
             get_session_specific_guidance_section(&enabled_tools, &skill_tool_commands)
         }),
         system_prompt_section("memory", get_memory_prompt_section),
-        system_prompt_section("ant_model_override", get_ant_model_override_section),
         system_prompt_section("language", || {
             get_language_section(settings.language.as_deref())
         }),
@@ -274,30 +273,16 @@ fn get_simple_system_section() -> String {
 
 /// Maps to CC `constants/prompts.ts` `getSimpleDoingTasksSection()`.
 fn get_simple_doing_tasks_section() -> String {
-    let is_internal = crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    );
-    let mut code_style_subitems = vec![
+    let code_style_subitems = [
         "Don't add features, refactor code, or make \"improvements\" beyond what was asked. A bug fix doesn't need surrounding code cleaned up. A simple feature doesn't need extra configurability. Don't add docstrings, comments, or type annotations to code you didn't change. Only add comments where the logic isn't self-evident.".to_string(),
         "Don't add error handling, fallbacks, or validation for scenarios that can't happen. Trust internal code and framework guarantees. Only validate at system boundaries (user input, external APIs). Don't use feature flags or backwards-compatibility shims when you can just change the code.".to_string(),
         "Don't create helpers, utilities, or abstractions for one-time operations. Don't design for hypothetical future requirements. The right amount of complexity is what the task actually requires—no speculative abstractions, but no half-finished implementations either. Three similar lines of code is better than a premature abstraction.".to_string(),
     ];
-    if is_internal {
-        code_style_subitems.extend([
-            "Default to writing no comments. Only add one when the WHY is non-obvious: a hidden constraint, a subtle invariant, a workaround for a specific bug, behavior that would surprise a reader. If removing the comment wouldn't confuse a future reader, don't write it.".to_string(),
-            "Don't explain WHAT the code does, since well-named identifiers already do that. Don't reference the current task, fix, or callers (\"used by X\", \"added for the Y flow\", \"handles the case from issue #123\"), since those belong in the PR description and rot as the codebase evolves.".to_string(),
-            "Don't remove existing comments unless you're removing the code they describe or you know they're wrong. A comment that looks pointless to you may encode a constraint or a lesson from a past bug that isn't visible in the current diff.".to_string(),
-            "Before reporting a task complete, verify it actually works: run the test, execute the script, check the output. Minimum complexity means no gold-plating, not skipping the finish line. If you can't verify (no test exists, can't run the code), say so explicitly rather than claiming success.".to_string(),
-        ]);
-    }
 
     let mut items = vec![
         PromptItem::Text("The user will primarily request you to perform software engineering tasks. These may include solving bugs, adding new functionality, refactoring code, explaining code, and more. When given an unclear or generic instruction, consider it in the context of these software engineering tasks and the current working directory. For example, if the user asks you to change \"methodName\" to snake case, do not reply with just \"method_name\", instead find the method in the code and modify the code.".to_string()),
         PromptItem::Text("You are highly capable and often allow users to complete ambitious tasks that would otherwise be too complex or take too long. You should defer to user judgement about whether a task is too large to attempt.".to_string()),
     ];
-    if is_internal {
-        items.push(PromptItem::Text("If you notice the user's request is based on a misconception, or spot a bug adjacent to what they asked about, say so. You're a collaborator, not just an executor—users benefit from your judgment, not just your compliance.".to_string()));
-    }
     items.extend([
         PromptItem::Text("In general, do not propose changes to code you haven't read. If a user asks about or wants you to modify a file, read it first. Understand existing code before suggesting modifications.".to_string()),
         PromptItem::Text("Do not create files unless they're absolutely necessary for achieving your goal. Generally prefer editing an existing file to creating a new one, as this prevents file bloat and builds on existing work more effectively.".to_string()),
@@ -311,12 +296,6 @@ fn get_simple_doing_tasks_section() -> String {
     items.extend([
         PromptItem::Text("Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.".to_string()),
     ]);
-    if is_internal {
-        items.extend([
-            PromptItem::Text("Report outcomes faithfully: if tests fail, say so with the relevant output; if you did not run a verification step, say that rather than implying it succeeded. Never claim \"all tests pass\" when output shows failures, never suppress or simplify failing checks (tests, lints, type errors) to manufacture a green result, and never characterize incomplete or broken work as done. Equally, when a check did pass or a task is complete, state it plainly — do not hedge confirmed results with unnecessary disclaimers, downgrade finished work to \"partial,\" or re-verify things you already checked. The goal is an accurate report, not a defensive one.".to_string()),
-            PromptItem::Text("If the user reports a bug, slowness, or unexpected behavior with Claude Code itself (as opposed to asking you to fix their own code), recommend the appropriate slash command: /issue for model-related problems (odd outputs, wrong tool choices, hallucinations, refusals), or /share to upload the full session transcript for product bugs, crashes, slowness, or general issues. Only recommend these when the user is describing a problem with Claude Code. After /share produces a ccshare link, if you have a Slack MCP tool available, offer to post the link to #claude-code-feedback (channel ID C07VBSHV7EV) for the user.".to_string()),
-        ]);
-    }
     // Maps to CC `prompts.ts:216-219` `userHelpSubitems`.
     let user_help_subitems = vec![
         "/help: Get help with using Claude Code".to_string(),
@@ -481,15 +460,6 @@ fn get_memory_prompt_section() -> Option<String> {
     crate::memdir::memdir::load_memory_prompt()
 }
 
-/// Maps to CC `constants/prompts.ts` `getAntModelOverrideSection()`.
-///
-/// TODO: Port the ant-only model override config if/when internal build support
-/// is added. External Nyan builds keep this section absent like upstream
-/// external bundles.
-fn get_ant_model_override_section() -> Option<String> {
-    None
-}
-
 /// Maps to CC `constants/prompts.ts` `getLanguageSection(...)`.
 fn get_language_section(language_preference: Option<&str>) -> Option<String> {
     let language = language_preference?.trim();
@@ -588,35 +558,21 @@ fn get_function_result_clearing_section(_model: &str) -> Option<String> {
 
 /// Maps to CC `constants/prompts.ts` `getSimpleToneAndStyleSection()`.
 fn get_simple_tone_and_style_section() -> String {
-    let mut items = vec![
+    let items = vec![
         PromptItem::Text(
             "Only use emojis if the user explicitly requests it. Avoid using emojis in all communication unless asked."
                 .to_string(),
         ),
-    ];
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        items.push(PromptItem::Text(
-            "Your responses should be short and concise.".to_string(),
-        ));
-    }
-    items.extend([
+        PromptItem::Text("Your responses should be short and concise.".to_string()),
         PromptItem::Text("When referencing specific functions or pieces of code include the pattern file_path:line_number to allow the user to easily navigate to the source code location.".to_string()),
         PromptItem::Text("When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. anthropics/claude-code#100) so they render as clickable links.".to_string()),
         PromptItem::Text("Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like \"Let me read the file:\" followed by a read tool call should just be \"Let me read the file.\" with a period.".to_string()),
-    ]);
+    ];
     section("Tone and style", items)
 }
 
 /// Maps to CC `constants/prompts.ts` `getOutputEfficiencySection()` external branch.
 fn get_output_efficiency_section() -> String {
-    if crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        return "# Communicating with the user\nWhen sending user-facing text, you're writing for a person, not logging to a console. Assume users can't see most tool calls or thinking - only your text output. Before your first tool call, briefly state what you're about to do. While working, give short updates at key moments: when you find something load-bearing (a bug, a root cause), when changing direction, when you've made progress without an update.\n\nWhen making updates, assume the person has stepped away and lost the thread. They don't know codenames, abbreviations, or shorthand you created along the way, and didn't track your process. Write so they can pick back up cold: use complete, grammatically correct sentences without unexplained jargon. Expand technical terms. Err on the side of more explanation. Attend to cues about the user's level of expertise; if they seem like an expert, tilt a bit more concise, while if they seem like they're new, be more explanatory. \n\nWrite user-facing text in flowing prose while eschewing fragments, excessive em dashes, symbols and notation, or similarly hard-to-parse content. Only use tables when appropriate; for example to hold short enumerable facts (file names, line numbers, pass/fail), or communicate quantitative data. Don't pack explanatory reasoning into table cells -- explain before or after. Avoid semantic backtracking: structure each sentence so a person can read it linearly, building up meaning without having to re-parse what came before. \n\nWhat's most important is the reader understanding your output without mental overhead or follow-ups, not how terse you are. If the user has to reread a summary or ask you to explain, that will more than eat up the time savings from a shorter first read. Match responses to the task: a simple question gets a direct answer in prose, not headers and numbered sections. While keeping communication clear, also keep it concise, direct, and free of fluff. Avoid filler or stating the obvious. Get straight to the point. Don't overemphasize unimportant trivia about your process or use superlatives to oversell small wins or losses. Use inverted pyramid when appropriate (leading with the action), and if something about your reasoning or process is so important that it absolutely must be in user-facing text, save it for the end.\n\nThese user-facing text instructions do not apply to code or tool calls.".to_string();
-    }
-
     "# Output efficiency\n\nIMPORTANT: Go straight to the point. Try the simplest approach first without going in circles. Do not overdo it. Be extra concise.\n\nKeep your text output brief and direct. Lead with the answer or action, not the reasoning. Skip filler words, preamble, and unnecessary transitions. Do not restate what the user said — just do it. When explaining, include only what is necessary for the user to understand.\n\nFocus text output on:\n- Decisions that need the user's input\n- High-level status updates at natural milestones\n- Errors or blockers that change the plan\n\nIf you can say it in one sentence, don't use three. Prefer short, direct sentences over long explanations. This does not apply to code or tool calls.".to_string()
 }
 
@@ -633,21 +589,13 @@ pub fn compute_env_info(
 ) -> String {
     let is_git = crate::utils::git::get_is_git(cwd);
     let uname_sr = get_uname_sr();
-    // Internal partial seam: utils/undercover.ts:36-43 stays ON while the
-    // commitAttribution repo-class cache is unprimed (null). Its transition to
-    // OFF for verified internal repos needs the unported classification chain.
-    let mut model_description = String::new();
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        model_description = match crate::utils::model::model::get_marketing_name_for_model(model_id)
-        {
-            Some(marketing_name) => format!(
-                "You are powered by the model named {marketing_name}. The exact model ID is {model_id}."
-            ),
-            None => format!("You are powered by the model {model_id}."),
-        };
-    }
+    let model_description = match crate::utils::model::model::get_marketing_name_for_model(model_id)
+    {
+        Some(marketing_name) => format!(
+            "You are powered by the model named {marketing_name}. The exact model ID is {model_id}."
+        ),
+        None => format!("You are powered by the model {model_id}."),
+    };
     let additional_dirs_info = if additional_working_directories.is_empty() {
         String::new()
     } else {
@@ -727,33 +675,23 @@ pub fn compute_simple_env_info_with_cwd(
         PromptItem::Text(get_shell_info_line()),
         PromptItem::Text(format!("OS Version: {uname_sr}")),
     ]);
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        let model_description = match crate::utils::model::model::get_marketing_name_for_model(
-            model_id,
-        ) {
-            Some(marketing_name) => format!(
-                "You are powered by the model named {marketing_name}. The exact model ID is {model_id}."
-            ),
-            None => format!("You are powered by the model {model_id}."),
-        };
-        env_items.push(PromptItem::Text(model_description));
-    }
+    let model_description = match crate::utils::model::model::get_marketing_name_for_model(model_id)
+    {
+        Some(marketing_name) => format!(
+            "You are powered by the model named {marketing_name}. The exact model ID is {model_id}."
+        ),
+        None => format!("You are powered by the model {model_id}."),
+    };
+    env_items.push(PromptItem::Text(model_description));
     if let Some(cutoff) = get_knowledge_cutoff(model_id) {
         env_items.push(PromptItem::Text(format!(
             "Assistant knowledge cutoff is {cutoff}."
         )));
     }
-    // Same unprimed internal undercover seam as computeEnvInfo above.
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Prompts,
-    ) {
-        env_items.push(PromptItem::Text(format!(
+    env_items.push(PromptItem::Text(format!(
         "The most recent Claude model family is Claude 4.5/4.6. Model IDs — Opus 4.6: '{CLAUDE_4_5_OR_4_6_OPUS_MODEL_ID}', Sonnet 4.6: '{CLAUDE_4_5_OR_4_6_SONNET_MODEL_ID}', Haiku 4.5: '{CLAUDE_4_5_HAIKU_MODEL_ID}'. When building AI applications, default to the latest and most capable Claude models."
-        )));
-        env_items.push(PromptItem::Text("Claude Code is available as a CLI in the terminal, desktop app (Mac/Windows), web app (claude.ai/code), and IDE extensions (VS Code, JetBrains).".to_string()));
-    }
+    )));
+    env_items.push(PromptItem::Text("Claude Code is available as a CLI in the terminal, desktop app (Mac/Windows), web app (claude.ai/code), and IDE extensions (VS Code, JetBrains).".to_string()));
 
     format!(
         "# Environment\nYou have been invoked in the following environment: \n{}",
@@ -915,18 +853,13 @@ mod tests {
                 .any(|section| section.starts_with("# Using your tools"))
         );
         // CC constants/prompts.ts#computeSimpleEnvInfo uses the canonical marketing
-        // name ("Sonnet 4.6") and suppresses model disclosure under undercover.
+        // name ("Sonnet 4.6").
         let environment = prompt
             .iter()
             .find(|section| section.starts_with("# Environment"))
             .unwrap();
         assert!(environment.contains("Primary working directory:"));
-        assert_eq!(
-            environment.contains("You are powered by the model named Sonnet 4.6."),
-            !crate::utils::build_profile::has_internal_capability(
-                crate::utils::build_profile::InternalCapability::Prompts
-            )
-        );
+        assert!(environment.contains("You are powered by the model named Sonnet 4.6."));
     }
 
     #[test]
@@ -991,39 +924,6 @@ mod tests {
         let _delta = EnvVarGuard::set("NYAN_MCP_INSTR_DELTA", "true");
         let prompt = get_system_prompt(&[], "claude-sonnet-4-6", &[], &clients);
         assert_eq!(section(&prompt), None);
-    }
-
-    #[cfg(feature = "anthropic_internal")]
-    #[test]
-    fn default_system_prompt_includes_internal_static_guidance() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
-        crate::utils::process_env::remove("NYAN_SIMPLE");
-        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::remove("NYAN_USE_GLOBAL_CACHE_SCOPE");
-        crate::utils::process_env::set("NYAN_DISABLE_AUTO_MEMORY", "1");
-        let prompt = get_system_prompt_with_settings(
-            &[],
-            "claude-sonnet-4-6",
-            &[],
-            &[],
-            &crate::utils::settings::types::SettingsJson::default(),
-        );
-        crate::utils::process_env::remove("NYAN_DISABLE_AUTO_MEMORY");
-
-        let doing_tasks = prompt
-            .iter()
-            .find(|section| section.starts_with("# Doing tasks"))
-            .expect("doing tasks section");
-        assert!(doing_tasks.contains("Default to writing no comments"));
-        assert!(doing_tasks.contains("Report outcomes faithfully"));
-        assert!(doing_tasks.contains("recommend the appropriate slash command"));
-
-        let communicating = prompt
-            .iter()
-            .find(|section| section.starts_with("# Communicating with the user"))
-            .expect("internal communicating section");
-        assert!(communicating.contains("Write user-facing text in flowing prose"));
-        assert!(communicating.contains("These user-facing text instructions do not apply"));
     }
 
     #[test]
@@ -1384,15 +1284,8 @@ mod tests {
         } else {
             "Shell: zsh"
         };
-        let model = if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Prompts,
-        ) {
-            ""
-        } else {
-            "You are powered by the model named Sonnet 4.6 (with 1M context). The exact model ID is claude-sonnet-4-6[1m]."
-        };
+        let model = "You are powered by the model named Sonnet 4.6 (with 1M context). The exact model ID is claude-sonnet-4-6[1m].";
         // CC constants/prompts.ts:624-648; getMarketingNameForModel :589-591.
-        // Internal case is source's null/unprimed repo classification only.
         assert_eq!(
             actual,
             format!(
@@ -1414,34 +1307,19 @@ mod tests {
         assert!(actual.contains("\nShell: unknown"));
         assert!(!actual.contains("Additional working directories"));
         assert!(!actual.contains("Assistant knowledge cutoff"));
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Prompts,
-        ) {
-            assert!(actual.ends_with("</env>\n"));
-        } else {
-            assert!(actual.ends_with("</env>\nYou are powered by the model deployment-private."));
-        }
+        assert!(actual.ends_with("</env>\nYou are powered by the model deployment-private."));
     }
 
     #[test]
-    fn compute_simple_env_info_matches_official_marketing_name_and_undercover_omission() {
+    fn compute_simple_env_info_matches_official_marketing_name() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let root = TestDir::new();
         let actual = compute_simple_env_info_with_cwd("claude-opus-4-5", &[], root.path());
         // CC constants/prompts.ts:659-668 and :691-702 retain the original model
-        // ID and delegate to model.ts, or omit every model-identifying bullet
-        // while undercover (only the unprimed internal case is implemented).
-        if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Prompts,
-        ) {
-            assert!(!actual.contains("You are powered"));
-            assert!(!actual.contains("The most recent Claude model family"));
-            assert!(!actual.contains("Claude Code is available"));
-        } else {
-            assert!(actual.contains(
-                "You are powered by the model named Opus 4.5. The exact model ID is claude-opus-4-5."
-            ));
-        }
+        // ID and delegate to model.ts.
+        assert!(actual.contains(
+            "You are powered by the model named Opus 4.5. The exact model ID is claude-opus-4-5."
+        ));
         assert!(actual.contains("Assistant knowledge cutoff is May 2025."));
     }
 

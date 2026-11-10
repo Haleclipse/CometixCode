@@ -241,9 +241,6 @@ pub fn get_all_base_tools() -> Vec<Tool> {
         crate::tools::skill_tool::skill_tool_schema(),
         crate::tools::enter_plan_mode_tool::enter_plan_mode_tool_schema(),
     ]);
-    if crate::tools::config_tool::is_config_tool_enabled() {
-        tools.push(crate::tools::config_tool::config_tool_schema());
-    }
     if crate::utils::tasks::is_todo_v2_enabled() {
         tools.extend([
             crate::tools::task_create_tool::task_create_tool_schema(),
@@ -744,21 +741,15 @@ mod tests {
             .into_iter()
             .map(|tool| tool.name)
             .collect::<Vec<_>>();
-        assert_eq!(
-            names.iter().any(|name| name == "TaskOutput"),
-            crate::utils::build_profile::build_audience().is_external()
-        );
+        assert!(names.iter().any(|name| name == "TaskOutput"));
     }
 
     #[test]
-    fn config_tool_is_available_only_for_internal_build() {
-        let names = get_all_base_tools()
-            .into_iter()
-            .map(|tool| tool.name)
-            .collect::<Vec<_>>();
-        assert_eq!(
-            names.iter().any(|name| name == "Config"),
-            crate::utils::build_profile::build_audience().is_internal()
+    fn config_tool_is_not_registered() {
+        assert!(
+            get_all_base_tools()
+                .iter()
+                .all(|tool| tool.name != "Config")
         );
     }
 
@@ -842,20 +833,13 @@ mod tests {
             .collect::<std::collections::BTreeSet<_>>();
         assert!(without.contains("SendMessage"));
         for tool_name in ["TeamCreate", "TeamDelete"] {
-            assert_eq!(
-                without.contains(tool_name),
-                crate::utils::build_profile::build_audience().is_internal(),
-                "unexpected {tool_name}"
-            );
+            assert!(!without.contains(tool_name), "unexpected {tool_name}");
         }
         let active_without = get_tools(&crate::tool::ToolPermissionContext::default())
             .into_iter()
             .map(|tool| tool.name)
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(
-            active_without.contains("SendMessage"),
-            crate::utils::build_profile::build_audience().is_internal()
-        );
+        assert!(!active_without.contains("SendMessage"));
 
         crate::utils::process_env::set("NYAN_EXPERIMENTAL_AGENT_TEAMS", "1");
         let with = get_all_base_tools()

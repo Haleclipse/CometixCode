@@ -350,15 +350,11 @@ cargo nextest run --profile ci \
 
 ```sh
 cargo check --locked --lib --tests
-cargo check --locked --lib --tests --features anthropic_internal
 cargo clippy --locked --lib --bins -- -D clippy::correctness -D clippy::disallowed_methods
 cargo clippy --locked --lib --tests -- -D clippy::correctness
 actionlint   # 固定版本二进制，见 tools.lock.json
 ```
 
-- `anthropic_internal` 的检查是 justfile:140-160 明确要求的事故面：按 justfile 2026-08-05 的测量，50 个
-  `#[cfg(feature = "anthropic_internal")]` 站点在默认构建里根本不编译（当前代码 48 处）。feature 只作用于本 crate，
-  依赖产物可复用，所以同一 job 里第二条 check 只多 crate 的时间。
 - 生产 clippy 实测 0 error（1623 warning 不阻塞）；`-D clippy::disallowed_methods` 守住 `process_env` 载体和
   `utils::proxy` 这两个项目不变量。测试代码不 deny `disallowed_methods`：`cargo clippy --lib --tests` 的
   `disallowed_methods` 共 666 条，其中 648 条是既存的 `std::env::temp_dir`，只 deny correctness；
@@ -457,7 +453,7 @@ master 的 docs-only 提交同样只产生 policy+gate 的绿 run；release 前�
 - `scripts/ci/prepare-test-home.py`：重建 `target/test-home`，写带 `hasTrustDialogAccepted` 的
   `state.json`。
 - `scripts/ci/test.sh`：调用上面的脚本、导出钉住变量、拼 nextest 命令；`--archive`/`--partition` 可选。
-- justfile 的 `_prep`、`test`、`t`、`test-one`、`test-ant` 改成调用同一个脚本，行为不变。
+- justfile 的 `_prep`、`test`、`t`、`test-one` 改成调用同一个脚本，行为不变。
 
 这样 `just test` 仍然是开发机的唯一入口，CI 调用同一份逻辑。
 
@@ -544,7 +540,6 @@ SHA pinning 的取舍（单人项目的成本收益）：
 | job | 内容 | 目的 |
 |---|---|---|
 | full | `build` + 单 job 跑全量（4 核约 3 分钟测试） | 每日确认主分支绿 |
-| internal | `nextest archive --features anthropic_internal` + 全量 | justfile 测得 29 个只在 feature 下的测试 |
 | doctest | `cargo test --doc` | 当前 17 ignored、0 passed，成本 4 分钟，只放夜间 |
 | windows | `cargo check --target x86_64-pc-windows-gnu` 或 `windows-latest` 原生 check | 不在 PR 关键路径 |
 | fmt-drift | `cargo fmt --check` 的差异计数写进 job summary | 不阻塞，防止数字悄悄变大 |

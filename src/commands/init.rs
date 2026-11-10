@@ -207,25 +207,12 @@ When building the list, work through these checks and include only what applies:
 
 /// Maps to the repeated `feature('NEW_INIT') && (...)` gate in CC
 /// `commands/init.ts:229-250`. The build feature is source-controlled; the
-/// runtime cohort is the internal build or `NYAN_NEW_INIT` truthy.
-pub fn is_new_init_enabled_for_audience(
-    audience: crate::utils::build_profile::BuildAudience,
-    env_enabled: bool,
-) -> bool {
-    feature_enabled(FeatureFlag::NewInit)
-        && (crate::utils::build_profile::audience_has_internal_capability(
-            audience,
-            crate::utils::build_profile::InternalCapability::Commands,
-        ) || env_enabled)
-}
-
+/// runtime cohort is `NYAN_NEW_INIT` truthy.
 pub fn is_new_init_enabled() -> bool {
-    is_new_init_enabled_for_audience(
-        crate::utils::build_profile::build_audience(),
-        crate::utils::env_utils::is_env_truthy(
+    feature_enabled(FeatureFlag::NewInit)
+        && crate::utils::env_utils::is_env_truthy(
             crate::utils::process_env::var("NYAN_NEW_INIT").as_deref(),
-        ),
-    )
+        )
 }
 
 /// Maps to: CC `commands/init.ts:229-235` dynamic `description` getter.
@@ -301,18 +288,8 @@ mod tests {
         let registry = crate::commands::declared_commands_for_tests();
         let command = crate::commands::find_command("init", &registry).unwrap();
 
-        assert_eq!(
-            is_new_init_enabled(),
-            crate::utils::build_profile::build_audience().is_internal()
-        );
-        assert_eq!(
-            description(),
-            if crate::utils::build_profile::build_audience().is_internal() {
-                NEW_DESCRIPTION
-            } else {
-                OLD_DESCRIPTION
-            }
-        );
+        assert!(!is_new_init_enabled());
+        assert_eq!(description(), OLD_DESCRIPTION);
         crate::utils::process_env::set("NYAN_NEW_INIT", "1");
         assert!(is_new_init_enabled());
         assert_eq!(description(), NEW_DESCRIPTION);
@@ -322,10 +299,7 @@ mod tests {
             NEW_DESCRIPTION
         );
         crate::utils::process_env::remove("NYAN_NEW_INIT");
-        assert!(is_new_init_enabled_for_audience(
-            crate::utils::build_profile::BuildAudience::AnthropicInternal,
-            false,
-        ));
+        assert!(!is_new_init_enabled());
     }
 
     #[test]
@@ -352,18 +326,11 @@ mod tests {
                     if text == "<command-message>init</command-message>\n<command-name>/init</command-name>\n<command-args>ignored args</command-args>"
             )
         ));
-        let expected_prompt = if crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::Commands,
-        ) {
-            NEW_INIT_PROMPT
-        } else {
-            OLD_INIT_PROMPT
-        };
         assert!(matches!(
             &result.messages[1].kind,
             crate::types::message::RenderableMessageKind::User { message } if matches!(
                 message.first_content_block(),
-                Some(crate::types::message::UserContent::MetaText(text)) if text == expected_prompt
+                Some(crate::types::message::UserContent::MetaText(text)) if text == OLD_INIT_PROMPT
             )
         ));
     }

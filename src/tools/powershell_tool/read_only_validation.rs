@@ -566,7 +566,6 @@ static CMDLET_ALLOWLIST: LazyLock<HashMap<&'static str, CmdletConfig>> = LazyLoc
         ),
         // ── External commands with shared validation ─────────────────────────
         ("git", CmdletConfig::external()),
-        ("gh", CmdletConfig::external()),
         ("docker", CmdletConfig::external()),
         ("dotnet", CmdletConfig::external()),
         // ── Windows-specific system commands ─────────────────────────────────
@@ -1105,7 +1104,7 @@ pub fn is_allowlisted_command(cmd: &ParsedCommandElement, original_command: &str
 
     let canonical = resolve_to_canonical(&cmd.name);
 
-    if matches!(canonical.as_str(), "git" | "gh" | "docker" | "dotnet") {
+    if matches!(canonical.as_str(), "git" | "docker" | "dotnet") {
         return is_external_command_safe(&canonical, &cmd.args, original_command);
     }
 
@@ -1203,14 +1202,13 @@ fn additional_check_is_dangerous(check: AdditionalCheck, cmd: &ParsedCommandElem
 }
 
 // ---------------------------------------------------------------------------
-// External command validation (git, gh, docker, dotnet) using shared configs
+// External command validation (git, docker, dotnet) using shared configs
 // ---------------------------------------------------------------------------
 
 /// Maps to: CC `readOnlyValidation.ts:1522-1535#isExternalCommandSafe`.
 fn is_external_command_safe(command: &str, args: &[String], raw_command: &str) -> bool {
     match command {
         "git" => is_git_safe(args, raw_command),
-        "gh" => is_gh_safe(args, raw_command),
         "docker" => is_docker_safe(args, raw_command),
         "dotnet" => is_dotnet_safe(args),
         _ => false,
@@ -1310,7 +1308,7 @@ fn is_git_safe(args: &[String], raw_command: &str) -> bool {
 
     let mut words = vec!["git".to_string()];
     words.extend(args[index..].iter().map(|arg| arg.to_lowercase()));
-    let Some((name, command_tokens, config)) = command_config(&words, false) else {
+    let Some((name, command_tokens, config)) = command_config(&words) else {
         return false;
     };
     let flag_args: Vec<String> = args[index + command_tokens - 1..].to_vec();
@@ -1344,45 +1342,6 @@ fn is_git_safe(args: &[String], raw_command: &str) -> bool {
     )
 }
 
-/// Maps to: CC `readOnlyValidation.ts:1703-1757#isGhSafe`.
-fn is_gh_safe(args: &[String], raw_command: &str) -> bool {
-    // gh commands are network-dependent; only allow for ant users.
-    if crate::utils::process_env::var("USER_TYPE").as_deref() != Some("ant") {
-        return false;
-    }
-
-    if args.is_empty() {
-        return true;
-    }
-
-    let mut words = vec!["gh".to_string()];
-    words.extend(args.iter().map(|arg| arg.to_lowercase()));
-    let Some((name, command_tokens, config)) = command_config(&words, false) else {
-        return false;
-    };
-    let flag_args: Vec<String> = args[command_tokens - 1..].to_vec();
-
-    // SECURITY: reject any arg containing `$`. All gh subcommands are
-    // network-facing, so a variable argument is an exfiltration vector:
-    // `gh search repos $env:SECRET_API_KEY` sends the secret to the API.
-    if flag_args.iter().any(|arg| arg.contains('$')) {
-        return false;
-    }
-    if additional_command_is_dangerous(name, "", &flag_args) {
-        return false;
-    }
-    validate_flags(
-        &flag_args,
-        0,
-        config,
-        ValidateFlagsOptions {
-            command_name: Some("gh"),
-            raw_command: Some(raw_command),
-            xargs_target_commands: None,
-        },
-    )
-}
-
 /// Maps to: CC `readOnlyValidation.ts:1759-1807#isDockerSafe`.
 fn is_docker_safe(args: &[String], raw_command: &str) -> bool {
     if args.is_empty() {
@@ -1404,7 +1363,7 @@ fn is_docker_safe(args: &[String], raw_command: &str) -> bool {
 
     let mut words = vec!["docker".to_string()];
     words.extend(args.iter().map(|arg| arg.to_lowercase()));
-    let Some((name, command_tokens, config)) = command_config(&words, false) else {
+    let Some((name, command_tokens, config)) = command_config(&words) else {
         return false;
     };
     let flag_args: Vec<String> = args[command_tokens - 1..].to_vec();

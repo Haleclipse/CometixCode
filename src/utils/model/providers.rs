@@ -18,27 +18,13 @@ pub fn get_api_provider_name() -> &'static str {
     "firstParty"
 }
 
-/// Pure audience/value form of CC `utils/model/providers.ts#isFirstPartyAnthropicBaseUrl`.
-pub fn is_first_party_anthropic_base_url_for_audience(
-    base_url: Option<&str>,
-    audience: crate::utils::build_profile::BuildAudience,
-) -> bool {
+/// Pure value form of CC `utils/model/providers.ts#isFirstPartyAnthropicBaseUrl`.
+pub fn is_first_party_anthropic_base_url_for(base_url: Option<&str>) -> bool {
     // CC `if (!baseUrl) return true`.
     let Some(base_url) = base_url.filter(|value| !value.is_empty()) else {
         return true;
     };
-    let allowed_hosts: &[&str] = if crate::utils::build_profile::audience_has_internal_capability(
-        audience,
-        crate::utils::build_profile::InternalCapability::Models,
-    ) {
-        &["api.anthropic.com", "api-staging.anthropic.com"]
-    } else {
-        &["api.anthropic.com"]
-    };
-
-    parse_url_host(base_url)
-        .as_deref()
-        .is_some_and(|host| allowed_hosts.contains(&host))
+    parse_url_host(base_url).as_deref() == Some("api.anthropic.com")
 }
 
 /// Maps to CC `utils/model/providers.ts#isFirstPartyAnthropicBaseUrl`.
@@ -51,10 +37,7 @@ pub fn is_first_party_anthropic_base_url() -> bool {
     )
     .ok()
     .and_then(|profile| profile.base_url);
-    is_first_party_anthropic_base_url_for_audience(
-        base_url.as_deref(),
-        crate::utils::build_profile::build_audience(),
-    )
+    is_first_party_anthropic_base_url_for(base_url.as_deref())
 }
 
 /// CC `new URL(baseUrl).host` (`providers.ts:31`): the WHATWG host, with a
@@ -72,52 +55,37 @@ fn parse_url_host(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::build_profile::BuildAudience;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
-
-    fn audience(base_url: Option<&str>, audience: BuildAudience) -> bool {
-        is_first_party_anthropic_base_url_for_audience(base_url, audience)
-    }
 
     #[test]
     fn first_party_base_url_matches_official_host_allowlist() {
         // No base URL is the SDK's first-party default.
-        assert!(audience(None, BuildAudience::External));
+        assert!(is_first_party_anthropic_base_url_for(None));
         // `!baseUrl`: an empty value is unset.
-        assert!(audience(Some(""), BuildAudience::External));
+        assert!(is_first_party_anthropic_base_url_for(Some("")));
 
-        assert!(audience(
-            Some("https://api.anthropic.com/v1"),
-            BuildAudience::External
-        ));
+        assert!(is_first_party_anthropic_base_url_for(Some(
+            "https://api.anthropic.com/v1"
+        )));
         // `new URL(...).host` drops a default port and keeps any other.
-        assert!(audience(
-            Some("https://api.anthropic.com:443"),
-            BuildAudience::External
-        ));
-        assert!(!audience(
-            Some("https://api.anthropic.com:8443"),
-            BuildAudience::External
-        ));
-        assert!(audience(
-            Some("HTTPS://API.Anthropic.COM/v1"),
-            BuildAudience::External
-        ));
+        assert!(is_first_party_anthropic_base_url_for(Some(
+            "https://api.anthropic.com:443"
+        )));
+        assert!(!is_first_party_anthropic_base_url_for(Some(
+            "https://api.anthropic.com:8443"
+        )));
+        assert!(is_first_party_anthropic_base_url_for(Some(
+            "HTTPS://API.Anthropic.COM/v1"
+        )));
 
-        assert!(audience(
-            Some("https://api-staging.anthropic.com"),
-            BuildAudience::AnthropicInternal,
-        ));
-        assert!(!audience(
-            Some("https://api-staging.anthropic.com"),
-            BuildAudience::External,
-        ));
+        assert!(!is_first_party_anthropic_base_url_for(Some(
+            "https://api-staging.anthropic.com"
+        )));
 
-        assert!(!audience(
-            Some("api.anthropic.com"),
-            BuildAudience::External
-        ));
-        assert!(!audience(Some("not a url"), BuildAudience::External));
+        assert!(!is_first_party_anthropic_base_url_for(Some(
+            "api.anthropic.com"
+        )));
+        assert!(!is_first_party_anthropic_base_url_for(Some("not a url")));
     }
 
     #[test]

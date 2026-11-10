@@ -273,7 +273,6 @@ pub struct AutoModeSettings {
     pub allow: Option<Vec<String>>,
     #[serde(rename = "soft_deny")]
     pub soft_deny: Option<Vec<String>>,
-    pub deny: Option<Vec<String>>,
     pub environment: Option<Vec<String>>,
 }
 
@@ -578,8 +577,6 @@ fn extra_known_marketplaces_settings_key_check(
 /// Build-time gates, frozen at first access exactly as CC's memoized
 /// lazySchema freezes module-load state:
 /// - `NYAN_ENABLE_XAA` env → `xaaIdp`
-/// - `USER_TYPE=ant` → `classifierPermissionsEnabled` and the
-///   `autoMode.deny` back-compat alias
 /// - `feature('TRANSCRIPT_CLASSIFIER')` (on) → `skipAutoPermissionPrompt`,
 ///   `useAutoModeDuringPlan`, `autoMode`
 /// - `feature('KAIROS') || feature('KAIROS_BRIEF')` (Brief on) → `defaultView`
@@ -604,9 +601,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
         let transcript_classifier = feature_enabled(FeatureFlag::TranscriptClassifier);
         let kairos_or_brief =
             feature_enabled(FeatureFlag::Kairos) || feature_enabled(FeatureFlag::KairosBrief);
-        // USER_TYPE is a build-time define in CC. Keep the same axis for the
-        // remaining internal-only schema fields.
-        let is_ant = crate::utils::build_profile::build_audience().is_internal();
         let xaa = is_env_truthy(crate::utils::process_env::var("NYAN_ENABLE_XAA").as_deref());
 
         // @nyan: no `$schema` key. CC's points at the SchemaStore schema for
@@ -1020,14 +1014,6 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                 ),
             ),
         ]);
-        if is_ant {
-            shape.push((
-                "classifierPermissionsEnabled",
-                zod::boolean().optional().describe(
-                    "Enable AI-based classification for Bash(prompt:...) permission rules",
-                ),
-            ));
-        }
         shape.extend(vec![
             (
                 "channelsEnabled",
@@ -1094,7 +1080,7 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
             ),
         ]);
         if transcript_classifier {
-            let mut auto_mode_shape = vec![
+            let auto_mode_shape = vec![
                 (
                     "allow",
                     zod::array(zod::string())
@@ -1107,17 +1093,13 @@ pub fn settings_schema() -> &'static crate::utils::zod::Schema {
                         .optional()
                         .describe("Rules for the auto mode classifier deny section"),
                 ),
+                (
+                    "environment",
+                    zod::array(zod::string())
+                        .optional()
+                        .describe("Entries for the auto mode classifier environment section"),
+                ),
             ];
-            if is_ant {
-                // Back-compat alias for ant users; external users use soft_deny.
-                auto_mode_shape.push(("deny", zod::array(zod::string()).optional()));
-            }
-            auto_mode_shape.push((
-                "environment",
-                zod::array(zod::string())
-                    .optional()
-                    .describe("Entries for the auto mode classifier environment section"),
-            ));
             shape.extend(vec![
                 (
                     "skipAutoPermissionPrompt",

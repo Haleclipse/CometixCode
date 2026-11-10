@@ -839,19 +839,6 @@ impl crate::tool::ToolCall for FileEditTool {
                 });
             }
 
-            // Maps to: CC `FileEditTool.ts:518` notifyVscodeFileUpdated.
-            let vscode_path = full_path.display().to_string();
-            let vscode_original = original_file.clone();
-            let vscode_updated = updated_file.clone();
-            tokio::spawn(async move {
-                let _ = crate::services::mcp::vscode_sdk_mcp::notify_vscode_file_updated(
-                    &vscode_path,
-                    Some(&vscode_original),
-                    Some(&vscode_updated),
-                )
-                .await;
-            });
-
             let read_timestamp_ms =
                 match crate::utils::file::get_file_modification_time_result(&critical_target) {
                     Ok(timestamp) => timestamp,
@@ -1327,29 +1314,6 @@ mod tests {
             1
         );
         let _ = std::fs::remove_dir_all(root);
-    }
-
-    #[cfg(feature = "anthropic_internal")]
-    #[test]
-    fn validation_blocks_secrets_introduced_into_team_memory() {
-        let _guard = TEST_ENV_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let input = FileEditInput {
-            file_path: crate::memdir::team_mem_paths::get_team_mem_path()
-                .join("shared.md")
-                .display()
-                .to_string(),
-            old_string: String::new(),
-            new_string: format!("token: ghp_{}", "a".repeat(36)),
-            replace_all: false,
-        };
-        let error = validate_edit_input(&input, &ToolUseContext::default()).unwrap_err();
-        assert_eq!(error.error_code, 0);
-        assert_eq!(
-            error.message,
-            "Content contains potential secrets (GitHub PAT) and cannot be written to team memory. Team memory is shared with all repository collaborators. Remove the sensitive content and try again."
-        );
     }
 
     #[cfg(unix)]

@@ -2047,10 +2047,8 @@ mod tests {
         assert_eq!(drop_text_in_brief_turns(legacy.clone()), legacy);
     }
 
-    #[cfg(feature = "anthropic_internal")]
     struct TestGlobalConfigGuard(Option<crate::utils::config::GlobalConfig>);
 
-    #[cfg(feature = "anthropic_internal")]
     impl Drop for TestGlobalConfigGuard {
         fn drop(&mut self) {
             crate::utils::config::replace_test_global_config(self.0.take());
@@ -3469,10 +3467,9 @@ mod tests {
     #[test]
     fn compact_boundary_slice_hides_history_only_outside_verbose() {
         // The slice is also skipped in fullscreen (`Messages.tsx:579-584`
-        // `verbose || isFullscreenEnvEnabled()`), and fullscreen defaults ON
-        // for ant builds (NYAN_NO_FLICKER's audience default). Pin the
-        // env so BOTH audiences exercise the main-screen slice this test is
-        // about; the fullscreen skip itself is fullscreen.rs's contract.
+        // `verbose || isFullscreenEnvEnabled()`). Pin the env off so the
+        // main-screen slice this test is about is exercised; the fullscreen
+        // skip itself is fullscreen.rs's contract.
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::set("NYAN_NO_FLICKER", "0");
         let boundary = RenderableMessage {
@@ -4680,7 +4677,6 @@ mod tests {
         assert_eq!(collapsed[1].uuid, "u1");
     }
 
-    #[cfg(feature = "anthropic_internal")]
     #[test]
     fn collapse_read_search_team_memory_tracking_follows_switch_table() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();

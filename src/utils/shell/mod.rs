@@ -309,9 +309,9 @@ pub fn exec(
             .stderr(std::process::Stdio::piped());
     }
     // Env layering matches CC `Shell.ts:317-328` spread order exactly:
-    // `{ ...subprocessEnv(), SHELL, GIT_EDITOR, NYAN, ...envOverrides,
-    // ...(ant ? { NYAN_SESSION_ID } : {}) }` — explicit entries are
-    // applied after the scrubbed base so they survive the scrub.
+    // `{ ...subprocessEnv(), SHELL, GIT_EDITOR, NYAN, ...envOverrides }` —
+    // explicit entries are applied after the scrubbed base so they survive
+    // the scrub.
     crate::utils::subprocess_env::apply_subprocess_env_std(&mut process);
     process
         .env("SHELL", provider.shell_path())
@@ -319,9 +319,6 @@ pub fn exec(
         .env("NYAN", "1");
     for (key, value) in provider.get_environment_overrides(command) {
         process.env(key, value);
-    }
-    if crate::utils::build_profile::build_audience().is_internal() {
-        process.env("NYAN_SESSION_ID", crate::bootstrap::state::get_session_id());
     }
     #[cfg(unix)]
     if provider.detached() {
@@ -437,9 +434,6 @@ pub fn run_command_streaming(
         .env_remove("SHELL")
         .env("GIT_EDITOR", "true")
         .env("NYAN", "1");
-    if crate::utils::build_profile::build_audience().is_internal() {
-        process.env("NYAN_SESSION_ID", crate::bootstrap::state::get_session_id());
-    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

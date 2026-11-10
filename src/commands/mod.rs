@@ -496,18 +496,6 @@ fn is_interactive() -> bool {
     !is_non_interactive()
 }
 
-fn is_internal_build() -> bool {
-    crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::Commands,
-    )
-}
-
-/// CC `commands.ts:343`: `USER_TYPE === 'ant' && !process.env.IS_DEMO`.
-fn is_internal_non_demo() -> bool {
-    use crate::utils::process_env::JsTruthy as _;
-    is_internal_build() && crate::utils::process_env::var("IS_DEMO").truthy().is_none()
-}
-
 fn compact_enabled() -> bool {
     !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("DISABLE_COMPACT").as_deref(),
@@ -557,7 +545,7 @@ fn feedback_enabled() -> bool {
         crate::utils::process_env::var("DISABLE_FEEDBACK_COMMAND").as_deref(),
     ) && !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("DISABLE_BUG_COMMAND").as_deref(),
-    ) && !is_internal_build()
+    )
 }
 
 fn remote_env_enabled() -> bool {
@@ -646,9 +634,6 @@ fn commands() -> Vec<Command> {
             .aliases(&["quit"])
             .immediate()
             .executable(execution::call_exit),
-        Command::local("files", "List all files currently in context")
-            .enabled_when(is_internal_build)
-            .supports_non_interactive(),
         Command::local("heapdump", "Dump the JS heap to ~/Desktop")
             .hidden()
             .supports_non_interactive(),
@@ -723,9 +708,6 @@ fn commands() -> Vec<Command> {
         .executable(execution::call_status),
         statusline::command(),
         Command::local("stickers", "Order nyan stickers"),
-        Command::local_ui("tag", "Toggle a searchable tag on the current session")
-            .argument_hint("<tag-name>")
-            .enabled_when(is_internal_build),
         Command::local_ui("theme", "Change the theme")
             .executable(execution::call_theme),
         Command::local_ui("feedback", "Submit feedback about nyan")
@@ -794,21 +776,6 @@ fn commands() -> Vec<Command> {
             .aliases(tasks::ALIASES)
             .executable(tasks::call),
     );
-
-    // Maps to CC internal-distribution + `!IS_DEMO` command registry gate.
-    // `/version` is the only internal command with a live Rust implementation;
-    // no-source internal descriptors are not advertised as executable.
-    if is_internal_non_demo() {
-        result.push(
-            Command::local(
-                "version",
-                "Print the version this session is running (not what autoupdate downloaded)",
-            )
-            .enabled_when(is_internal_build)
-            .supports_non_interactive()
-            .executable(execution::call_version),
-        );
-    }
 
     result
 }
@@ -1194,14 +1161,8 @@ pub fn filter_commands_for_remote_mode(commands: Vec<Command>) -> Vec<Command> {
 
 /// Maps to: CC `commands.ts::isBridgeSafeCommand`.
 pub fn is_bridge_safe_command(command: &Command) -> bool {
-    const BRIDGE_SAFE_LOCAL_NAMES: &[&str] = &[
-        "compact",
-        "clear",
-        "cost",
-        "summary",
-        "release-notes",
-        "files",
-    ];
+    const BRIDGE_SAFE_LOCAL_NAMES: &[&str] =
+        &["compact", "clear", "cost", "summary", "release-notes"];
     match command.kind {
         CommandKind::LocalUi => false,
         CommandKind::Prompt => true,
@@ -1248,7 +1209,7 @@ pub fn declared_commands_for_tests() -> Vec<Command> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+    use crate::utils::test_env::TEST_ENV_LOCK;
 
     #[test]
     fn description_source_annotations_match_bun_prompt_and_plugin_gates() {
@@ -1373,21 +1334,14 @@ mod tests {
     #[test]
     fn commands_catalog_matches_official_direct_and_provider_shape() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _demo = EnvVarGuard::unset("IS_DEMO");
 
         let catalog = commands();
-        // 64 direct descriptors + internal /version, plus @nyan `/retrieval`
-        // and `/decision`. `/login` and `/logout` are gone: Anthropic is
+        // 61 direct descriptors plus @nyan `/retrieval` and `/decision`. `/login` and `/logout` are gone: Anthropic is
         // API-key only; `/fast` is gone with Fast mode; `/passes` is gone
         // with claude.ai guest passes; `/upgrade`, `/extra-usage`,
         // `/rate-limit-options` and `/usage` are gone with the claude.ai
         // subscription quota; `/chrome` is gone with Claude in Chrome.
-        let base_len = if crate::utils::build_profile::build_audience().is_internal() {
-            66
-        } else {
-            65
-        };
-        assert_eq!(catalog.len(), base_len);
+        assert_eq!(catalog.len(), 63);
         for removed in [
             "login",
             "logout",
@@ -1426,7 +1380,6 @@ mod tests {
             "doctor",
             "effort",
             "exit",
-            "files",
             "heapdump",
             "help",
             "ide",
@@ -1452,7 +1405,6 @@ mod tests {
             "status",
             "statusline",
             "stickers",
-            "tag",
             "theme",
             "feedback",
             "review",
@@ -1474,10 +1426,7 @@ mod tests {
         ] {
             assert!(declared_names.contains(expected), "missing /{expected}");
         }
-        assert_eq!(
-            catalog.iter().any(|command| command.name == "version"),
-            crate::utils::build_profile::build_audience().is_internal()
-        );
+        assert!(catalog.iter().all(|command| command.name != "version"));
     }
 
     #[test]

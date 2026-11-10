@@ -107,28 +107,6 @@ fn get_log_writer(path: &Path) -> io::Result<JsonlWriter> {
     Ok(writer)
 }
 
-/// Maps to: CC `utils/errorLogSink.ts:111-126` `appendToLog`.
-/// L1 Compile-time distribution capability projection: the source ant gate
-/// and its userType field come from the immutable build audience.
-fn append_to_log(path: &Path, message: &Value) -> io::Result<()> {
-    if !crate::utils::build_profile::has_internal_capability(
-        crate::utils::build_profile::InternalCapability::InternalDiagnostics,
-    ) {
-        return Ok(());
-    }
-    let mut value = json!({"timestamp": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)});
-    if let Some(fields) = message.as_object() {
-        for (key, field) in fields {
-            value[key] = field.clone();
-        }
-    }
-    value["cwd"] = json!(std::env::current_dir()?.to_string_lossy());
-    value["userType"] = json!("ant");
-    value["sessionId"] = json!(crate::bootstrap::state::get_session_id());
-    value["version"] = json!(crate::constants::product::VERSION);
-    get_log_writer(path)?.write(&value)
-}
-
 /// Maps to: CC `utils/errorLogSink.ts:128-147` `extractServerMessage`.
 fn extract_server_message(data: &Value) -> Option<&str> {
     data.as_str()
@@ -169,10 +147,7 @@ fn log_error_impl(error: LogError) -> io::Result<()> {
         &format!("{}: {context}{error_str}", error.name),
         DebugLogLevel::Error,
     );
-    append_to_log(
-        &get_errors_path()?,
-        &json!({"error": format!("{context}{error_str}")}),
-    )
+    Ok(())
 }
 
 /// Maps to: CC `utils/errorLogSink.ts:179-195` `logMCPErrorImpl`.
@@ -392,10 +367,9 @@ mod tests {
         assert!(rows.iter().all(|row| row.as_object().unwrap().len() == 4));
     }
 
-    // CC errorLogSink.ts:111-174: USER_TYPE gates only ordinary errors; Axios
-    // details are enriched only when the original config.url is truthy.
+    // CC errorLogSink.ts:152-174: ordinary errors go to the debug log only.
     #[test]
-    fn ordinary_error_rows_match_official_audience_axios_context_and_metadata() {
+    fn ordinary_errors_are_not_persisted_to_the_errors_log() {
         let _lock = TEST_ENV_LOCK.lock().unwrap();
         let home = TempDir::new();
         let _home = EnvVarGuard::set(HOME_VAR, home.path());
@@ -411,21 +385,7 @@ mod tests {
         };
         log_error_impl(error).unwrap();
         _flush_log_writers_for_testing().unwrap();
-        if !crate::utils::build_profile::has_internal_capability(
-            crate::utils::build_profile::InternalCapability::InternalDiagnostics,
-        ) {
-            assert!(!get_errors_path().unwrap().exists());
-            return;
-        }
-        let rows = read_records(&get_errors_path().unwrap());
-        assert_eq!(rows.len(), 1);
-        assert_eq!(
-            rows[0]["error"],
-            "[url=https://example.invalid/mcp,status=0,body=denied] failed"
-        );
-        assert_eq!(rows[0]["userType"], "ant");
-        assert_eq!(rows[0]["version"], crate::constants::product::VERSION);
-        assert_eq!(rows[0].as_object().unwrap().len(), 6);
+        assert!(!get_errors_path().unwrap().exists());
     }
 
     // CC errorLogSink.ts:128-147 string/top-level/nested precedence.
