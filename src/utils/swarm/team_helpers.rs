@@ -144,10 +144,10 @@ pub fn sanitize_name(name: &str) -> String {
 }
 
 /// Maps to: CC `teamHelpers.ts#sanitizeAgentName`.
-/// @nyan: `:` is sanitized like `@`, so a teammate name never parses as a
-/// `scheme:` peer address and stays addressable through SendMessage.
+/// @nyan: use the mailbox path key so the returned name, agent id and inbox
+/// agree, and the name never parses as a `scheme:` peer address.
 pub fn sanitize_agent_name(name: &str) -> String {
-    name.replace(['@', ':'], "-")
+    crate::utils::tasks::sanitize_path_component(name)
 }
 
 /// Maps to: CC `teamHelpers.ts#getTeamDir`.
@@ -329,25 +329,35 @@ pub(crate) fn create_team_record(
 /// `clear_team_tool_state_for_test`), so the move is a teamHelpers.ts
 /// file-alignment batch, not a two-file edit. Ledger: MODULE_MAP rows
 /// `tools/shared/spawnMultiAgent.ts` and `utils/swarm/teamHelpers.ts`.
+///
+/// @nyan: normalize both requested and existing names with the mailbox path
+/// key BEFORE the census, and return the normalized name. Reserve the leader's
+/// address even when the roster is absent, so aliases cannot share its inbox
+/// or take its agent id. Skip local-agent ids so SendMessage routes to the inbox.
 pub(crate) fn generate_unique_teammate_name(base_name: &str, team_name: Option<&str>) -> String {
-    let Some(team_name) = team_name else {
-        return base_name.to_string();
-    };
-    let Some(record) = read_team_file(team_name) else {
-        return base_name.to_string();
-    };
-    let existing = record
-        .members
-        .iter()
-        .map(|member| member.name.to_ascii_lowercase())
-        .collect::<std::collections::HashSet<_>>();
-    if !existing.contains(&base_name.to_ascii_lowercase()) {
-        return base_name.to_string();
+    let base_name = sanitize_agent_name(base_name);
+    let mut existing = std::collections::HashSet::from([
+        crate::utils::swarm::constants::TEAM_LEAD_NAME.to_string(),
+    ]);
+    if let Some(record) = team_name.and_then(read_team_file) {
+        existing.extend(
+            record
+                .members
+                .iter()
+                .map(|member| sanitize_agent_name(&member.name).to_ascii_lowercase()),
+        );
+    }
+    if !existing.contains(&base_name.to_ascii_lowercase())
+        && crate::types::ids::to_agent_id(&base_name).is_none()
+    {
+        return base_name;
     }
     let mut suffix = 2;
     loop {
         let candidate = format!("{base_name}-{suffix}");
-        if !existing.contains(&candidate.to_ascii_lowercase()) {
+        if !existing.contains(&candidate.to_ascii_lowercase())
+            && crate::types::ids::to_agent_id(&candidate).is_none()
+        {
             return candidate;
         }
         suffix += 1;
@@ -710,6 +720,17 @@ mod tests {
         assert_eq!(super::sanitize_agent_name("lead@west"), "lead-west");
         assert_eq!(super::sanitize_agent_name("qa:frontend"), "qa-frontend");
         assert_eq!(super::sanitize_agent_name("a:b@c"), "a-b-c");
+        for name in [
+            "qa frontend",
+            "qa.frontend",
+            "qa/frontend",
+            "qa\\frontend",
+            "qa\tfrontend",
+            "qa前frontend",
+        ] {
+            assert_eq!(super::sanitize_agent_name(name), "qa-frontend");
+        }
+        assert_eq!(super::sanitize_agent_name("QA_frontend-2"), "QA_frontend-2");
         assert_eq!(
             crate::utils::peer_address::parse_address(&super::sanitize_agent_name("qa:frontend"))
                 .scheme,
@@ -776,6 +797,325 @@ mod tests {
             "reviewer"
         );
 
+        super::clear_team_tool_state_for_test();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn member_record(name: &str) -> super::TeamMemberRecord {
+        super::TeamMemberRecord {
+            agent_id: crate::utils::agent_id::format_agent_id(name, "alpha"),
+            name: name.to_string(),
+            agent_type: None,
+            model: None,
+            prompt: None,
+            color: None,
+            plan_mode_required: None,
+            joined_at_ms: 1,
+            tmux_pane_id: "in-process".to_string(),
+            cwd: "/tmp".to_string(),
+            worktree_path: None,
+            session_id: None,
+            subscriptions: Vec::new(),
+            backend_type: Some("in-process".to_string()),
+            is_active: None,
+            mode: None,
+        }
+    }
+
+    #[test]
+    fn unique_teammate_name_dedupes_after_sanitizing() {
+        let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let (root, _config_guard, _io_guard) = team_disk_guards("unique-name-sanitized");
+        let mut record = super::create_team_record(
+            "alpha".to_string(),
+            None,
+            Some("team-lead".to_string()),
+            None,
+            "/tmp".to_string(),
+        );
+        record.members.push(member_record("qa-frontend"));
+        super::write_team_record_result(record.clone()).unwrap();
+
+        let colon = super::generate_unique_teammate_name("qa:frontend", Some("alpha"));
+        assert_eq!(colon, "qa-frontend-2");
+        record.members.push(member_record(&colon));
+        super::write_team_record_result(record.clone()).unwrap();
+        let at = super::generate_unique_teammate_name("qa@frontend", Some("alpha"));
+        assert_eq!(at, "qa-frontend-3");
+        record.members.push(member_record(&at));
+        super::write_team_record_result(record).unwrap();
+        assert_eq!(
+            super::generate_unique_teammate_name("qa.frontend", Some("alpha")),
+            "qa-frontend-4"
+        );
+
+        let existing_id = crate::utils::agent_id::format_agent_id("qa-frontend", "alpha");
+        let colon_id = crate::utils::agent_id::format_agent_id(&colon, "alpha");
+        assert_ne!(colon_id, existing_id);
+        assert_ne!(
+            crate::utils::teammate_mailbox::get_inbox_path(&colon, Some("alpha")),
+            crate::utils::teammate_mailbox::get_inbox_path("qa-frontend", Some("alpha"))
+        );
+
+        super::clear_team_tool_state_for_test();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unique_teammate_names_isolate_file_backed_mailboxes() {
+        use crate::utils::teammate_mailbox::{
+            clear_mailboxes_for_test, get_inbox_path, mark_message_as_read_by_index,
+            mark_messages_as_read, read_mailbox, read_unread_messages,
+        };
+
+        let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
+        let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
+            .lock()
+            .unwrap();
+        let _context_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
+            .lock()
+            .unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let (root, _config_guard, _io_guard) = team_disk_guards("unique-name-mailboxes");
+        let _write_guard = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
+        clear_mailboxes_for_test();
+        crate::utils::teammate::clear_dynamic_team_context();
+        let mut record = super::create_team_record(
+            "alpha".to_string(),
+            None,
+            Some("team-lead".to_string()),
+            None,
+            "/tmp".to_string(),
+        );
+        record.members.push(member_record("qa frontend"));
+        super::write_team_record_result(record.clone()).unwrap();
+
+        for (requested, expected) in [
+            ("team lead", "team-lead-2"),
+            ("team-lead", "team-lead-3"),
+            ("team:lead", "team-lead-4"),
+            ("team@lead", "team-lead-5"),
+            ("team.lead", "team-lead-6"),
+            ("qa-frontend", "qa-frontend-2"),
+            ("qa:frontend", "qa-frontend-3"),
+            ("qa.frontend", "qa-frontend-4"),
+            ("qa@frontend", "qa-frontend-5"),
+            ("qa/frontend", "qa-frontend-6"),
+            ("qa\\frontend", "qa-frontend-7"),
+            ("qa\tfrontend", "qa-frontend-8"),
+            ("qa前frontend", "qa-frontend-9"),
+            ("QA frontend", "QA-frontend-10"),
+            ("ax.0123456789abcdef", "ax-0123456789abcdef-2"),
+            ("ax-0123456789abcdef", "ax-0123456789abcdef-3"),
+            ("ax 0123456789abcdef", "ax-0123456789abcdef-4"),
+            ("ax中0123456789abcdef", "ax-0123456789abcdef-5"),
+            ("a0123456789abcdef", "a0123456789abcdef-2"),
+            (
+                "alabel-with-dash-0123456789ABCDEF",
+                "alabel-with-dash-0123456789ABCDEF-2",
+            ),
+            ("a-0123456789abcdef", "a-0123456789abcdef"),
+            ("ax-0123456789abcdeg", "ax-0123456789abcdeg"),
+            ("中文", "--"),
+            (".@", "---2"),
+            ("foo-2", "foo-2"),
+            ("foo-2", "foo-2-2"),
+        ] {
+            let name = super::generate_unique_teammate_name(requested, Some("alpha"));
+            assert_eq!(name, expected, "requested {requested}");
+            assert_eq!(name, crate::utils::tasks::sanitize_path_component(&name));
+            assert!(crate::types::ids::to_agent_id(&name).is_none());
+            record.members.push(member_record(&name));
+            super::write_team_record_result(record.clone()).unwrap();
+        }
+
+        let members = super::read_team_file("alpha").unwrap().members;
+        let ids = members
+            .iter()
+            .map(|member| &member.agent_id)
+            .collect::<std::collections::HashSet<_>>();
+        let paths = members
+            .iter()
+            .map(|member| get_inbox_path(&member.name, Some("alpha")))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(ids.len(), members.len());
+        assert_eq!(paths.len(), members.len());
+        for member in &members {
+            assert_eq!(
+                member.agent_id,
+                crate::utils::agent_id::format_agent_id(&member.name, "alpha")
+            );
+            assert_eq!(
+                Path::new(&get_inbox_path(&member.name, Some("alpha")))
+                    .file_stem()
+                    .unwrap()
+                    .to_str(),
+                Some(crate::utils::tasks::sanitize_path_component(&member.name).as_str())
+            );
+            let output = crate::tools::send_message_tool::send_message_output(&serde_json::json!({
+                "to": member.name,
+                "message": format!("private to {}", member.name),
+                "summary": "isolated delivery",
+            }));
+            assert!(output.success, "{}", output.message);
+            assert_eq!(
+                output.message,
+                format!("Message sent to {}'s inbox", member.name)
+            );
+            // Local-agent queue/resume branches return no mailbox routing.
+            assert_eq!(
+                output
+                    .routing
+                    .as_ref()
+                    .map(|routing| routing.target.as_str()),
+                Some(format!("@{}", member.name).as_str())
+            );
+            assert!(Path::new(&get_inbox_path(&member.name, Some("alpha"))).is_file());
+        }
+        clear_mailboxes_for_test();
+
+        for (index, member) in members.iter().enumerate() {
+            let inbox = read_mailbox(&member.name, Some("alpha"));
+            assert_eq!(inbox.len(), 1, "recipient {}", member.name);
+            assert_eq!(inbox[0].text, format!("private to {}", member.name));
+            assert_eq!(inbox[0].from, "team-lead");
+            assert!(!inbox[0].read);
+            if index % 2 == 0 {
+                assert!(mark_message_as_read_by_index(
+                    &member.name,
+                    Some("alpha"),
+                    0
+                ));
+            } else {
+                assert!(mark_messages_as_read(&member.name, Some("alpha")));
+            }
+            clear_mailboxes_for_test();
+            for (other_index, other) in members.iter().enumerate() {
+                let unread = read_unread_messages(&other.name, Some("alpha"));
+                assert_eq!(
+                    unread.len(),
+                    usize::from(other_index > index),
+                    "read {} must not consume {}",
+                    member.name,
+                    other.name
+                );
+            }
+        }
+
+        for member in members.iter().skip(2) {
+            crate::utils::teammate::set_dynamic_team_context(Some(
+                crate::utils::teammate::DynamicTeamContext {
+                    agent_id: member.agent_id.clone(),
+                    agent_name: member.name.clone(),
+                    team_name: "alpha".to_string(),
+                    color: None,
+                    plan_mode_required: false,
+                    parent_session_id: None,
+                },
+            ));
+            assert!(!crate::utils::teammate::is_team_lead(Some(
+                &record.lead_agent_id
+            )));
+            let output = crate::tools::send_message_tool::send_message_output(&serde_json::json!({
+                "to": "team-lead",
+                "message": member.name,
+                "summary": "reply with allocated identity",
+            }));
+            assert!(output.success, "{}", output.message);
+        }
+        clear_mailboxes_for_test();
+        let replies = read_unread_messages("team-lead", Some("alpha"));
+        assert_eq!(replies.len(), members.len() - 2);
+        for (reply, member) in replies.iter().zip(members.iter().skip(2)) {
+            assert_eq!(reply.from, member.name);
+            assert_eq!(reply.text, member.name);
+            assert_ne!(reply.from, "team-lead");
+            assert!(read_unread_messages(&member.name, Some("alpha")).is_empty());
+        }
+
+        crate::utils::teammate::clear_dynamic_team_context();
+        super::clear_team_tool_state_for_test();
+        clear_mailboxes_for_test();
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unique_teammate_name_never_yields_the_leader_identity() {
+        let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _context_lock = crate::utils::teammate::TEST_TEAMMATE_CONTEXT_LOCK
+            .lock()
+            .unwrap();
+        let (root, _config_guard, _io_guard) = team_disk_guards("unique-name-leader");
+        let record = super::create_team_record(
+            "alpha".to_string(),
+            None,
+            Some("team-lead".to_string()),
+            None,
+            "/tmp".to_string(),
+        );
+        let lead_agent_id = record.lead_agent_id.clone();
+        for team in [None, Some("alpha")] {
+            assert_eq!(
+                super::generate_unique_teammate_name("team lead", team),
+                "team-lead-2"
+            );
+        }
+        super::write_team_record_result(record).unwrap();
+
+        for requested in [
+            "team:lead",
+            "team@lead",
+            "team-lead",
+            "team lead",
+            "team.lead",
+            "team/lead",
+            "team\tlead",
+            "team前lead",
+        ] {
+            let name = super::generate_unique_teammate_name(requested, Some("alpha"));
+            let agent_id = crate::utils::agent_id::format_agent_id(&name, "alpha");
+            assert_eq!(name, "team-lead-2", "requested {requested}");
+            assert_ne!(agent_id, lead_agent_id, "requested {requested}");
+
+            crate::utils::teammate::set_dynamic_team_context(Some(
+                crate::utils::teammate::DynamicTeamContext {
+                    agent_id: agent_id.clone(),
+                    agent_name: name.clone(),
+                    team_name: "alpha".to_string(),
+                    color: None,
+                    plan_mode_required: false,
+                    parent_session_id: None,
+                },
+            ));
+            assert!(
+                !crate::utils::teammate::is_team_lead(Some(&lead_agent_id)),
+                "requested {requested}"
+            );
+            assert_eq!(crate::utils::teammate::get_agent_name(), Some(name.clone()));
+
+            let context = crate::utils::teammate_context::create_teammate_context(
+                crate::utils::teammate_context::CreateTeammateContextConfig {
+                    agent_id,
+                    agent_name: name.clone(),
+                    team_name: "alpha".to_string(),
+                    color: None,
+                    plan_mode_required: false,
+                    parent_session_id: "parent".to_string(),
+                    abort_controller: crate::tool::AbortController::default(),
+                },
+            );
+            crate::utils::teammate_context::with_teammate_context_sync(Some(context), || {
+                assert!(
+                    !crate::utils::teammate::is_team_lead(Some(&lead_agent_id)),
+                    "in-process requested {requested}"
+                );
+                assert_eq!(crate::utils::teammate::get_agent_name(), Some(name));
+            });
+        }
+
+        crate::utils::teammate::clear_dynamic_team_context();
         super::clear_team_tool_state_for_test();
         let _ = std::fs::remove_dir_all(root);
     }

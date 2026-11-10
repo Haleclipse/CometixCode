@@ -30,7 +30,7 @@ use crate::utils::swarm::spawn_utils::{
     BuildInheritedCliFlagsOptions, build_inherited_env_vars, get_teammate_command, shell_quote,
 };
 use crate::utils::swarm::team_helpers::{
-    TeamMemberRecord, generate_unique_teammate_name, sanitize_agent_name, write_team_record,
+    TeamMemberRecord, generate_unique_teammate_name, write_team_record,
 };
 use crate::utils::swarm::teammate_layout_manager::{
     assign_teammate_color, create_teammate_pane_in_swarm_view, enable_pane_border_status,
@@ -490,8 +490,7 @@ pub async fn handle_spawn_in_process(
         ));
     };
 
-    let unique_name = generate_unique_teammate_name(&input.name, Some(&team_name));
-    let sanitized_name = sanitize_agent_name(&unique_name);
+    let sanitized_name = generate_unique_teammate_name(&input.name, Some(&team_name));
     let teammate_id = format_agent_id(&sanitized_name, &team_name);
     let teammate_color = assign_teammate_color(&teammate_id)
         .official_name()
@@ -931,8 +930,7 @@ pub async fn handle_spawn_pane(
         ));
     };
 
-    let unique_name = generate_unique_teammate_name(&input.name, Some(&team_name));
-    let sanitized_name = sanitize_agent_name(&unique_name);
+    let sanitized_name = generate_unique_teammate_name(&input.name, Some(&team_name));
     let teammate_id = format_agent_id(&sanitized_name, &team_name);
     let teammate_color = assign_teammate_color(&teammate_id);
     let teammate_color_name = teammate_color.official_name().to_string();
@@ -1112,8 +1110,7 @@ pub async fn handle_spawn_separate_window(
         ));
     };
 
-    let unique_name = generate_unique_teammate_name(&input.name, Some(&team_name));
-    let sanitized_name = sanitize_agent_name(&unique_name);
+    let sanitized_name = generate_unique_teammate_name(&input.name, Some(&team_name));
     let teammate_id = format_agent_id(&sanitized_name, &team_name);
     let window_name = separate_window_name(&sanitized_name);
     // Maps to CC `spawnMultiAgent.ts:578`, same `cwd || getCwd()` truthiness as
