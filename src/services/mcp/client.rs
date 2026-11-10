@@ -8490,7 +8490,6 @@ rl.on('line', line => {
     #[test]
     fn websocket_connects_and_discovers_tools_from_live_server() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _ingress = EnvVarGuard::set("NYAN_SESSION_ACCESS_TOKEN", "retired-test-token");
 
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -8654,7 +8653,6 @@ rl.on('line', line => {
     #[test]
     fn streamable_http_401_challenge_returns_unavailable_without_credential_or_auth_cache_write() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
-        let _ingress = EnvVarGuard::set("NYAN_SESSION_ACCESS_TOKEN", "retired-test-token");
         let config_home =
             std::env::temp_dir().join(format!("nyan-mcp-http-401-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).expect("create config home");

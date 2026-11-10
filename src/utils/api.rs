@@ -441,14 +441,6 @@ pub fn normalize_tool_input(
     }
     let plan = crate::utils::plans::get_plan(agent_id);
     let path = crate::utils::plans::get_plan_file_path(agent_id);
-    let snapshot = crate::utils::plans::persist_file_snapshot_if_remote();
-    if let Some(runtime) = crate::utils::process_runtime::runtime_handle_for_detached_work() {
-        runtime.spawn(snapshot);
-    } else {
-        std::thread::spawn(move || {
-            let _ = crate::utils::process_runtime::block_on_from_sync(snapshot);
-        });
-    }
     if let Some(plan) = plan {
         let mut input = match input {
             serde_json::Value::Object(input) => input.clone(),

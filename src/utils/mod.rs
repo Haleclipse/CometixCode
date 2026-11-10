@@ -60,7 +60,6 @@ pub mod exec_file_no_throw;
 pub mod feature_flags;
 pub mod file;
 pub mod file_history;
-pub mod file_persistence;
 pub mod file_read;
 pub mod file_state_cache;
 pub mod fingerprint;

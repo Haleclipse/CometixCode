@@ -21,8 +21,6 @@ use crate::utils::swarm::constants::TEAMMATE_COMMAND_ENV_VAR;
 /// Maps to: CC `utils/swarm/spawnUtils.ts#TEAMMATE_ENV_VARS`.
 pub const TEAMMATE_ENV_VARS: &[&str] = &[
     "NYAN_CONFIG_DIR",
-    "NYAN_REMOTE",
-    "NYAN_REMOTE_MEMORY_DIR",
     "HTTPS_PROXY",
     "https_proxy",
     "HTTP_PROXY",
@@ -200,11 +198,14 @@ mod tests {
             "/tmp/nyan home/with space".to_string(),
         );
         env.insert("UNRELATED".to_string(), "ignored".to_string());
+        env.insert("NYAN_REMOTE".to_string(), "1".to_string());
+        env.insert("NYAN_REMOTE_MEMORY_DIR".to_string(), "/retired".to_string());
 
         let rendered = build_inherited_env_vars_from_map(&env);
         assert!(rendered.starts_with("NYAN=1 NYAN_EXPERIMENTAL_AGENT_TEAMS=1"));
         assert!(rendered.contains("NYAN_CONFIG_DIR='/tmp/nyan home/with space'"));
         assert!(!rendered.contains("UNRELATED"));
+        assert!(!rendered.contains("NYAN_REMOTE"));
     }
 
     #[test]

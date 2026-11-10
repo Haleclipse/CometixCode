@@ -708,15 +708,7 @@ fn resolve_git_subdir_url(url: &str) -> anyhow::Result<String> {
         .find(url)
         .is_some()
     {
-        Ok(
-            if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
-            ) {
-                format!("https://github.com/{url}.git")
-            } else {
-                format!("git@github.com:{url}.git")
-            },
-        )
+        Ok(format!("git@github.com:{url}.git"))
     } else {
         validate_git_url(url).map(str::to_owned)
     }
@@ -2069,6 +2061,20 @@ mod tests {
     fn write_file(path: &Path, content: &str) {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn git_subdir_shorthand_uses_ssh_and_ignores_retired_remote_env() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _remote = EnvVarGuard::set("NYAN_REMOTE", "1");
+        assert_eq!(
+            resolve_git_subdir_url("owner/repo").unwrap(),
+            "git@github.com:owner/repo.git"
+        );
+        assert_eq!(
+            resolve_git_subdir_url("https://example.com/owner/repo.git").unwrap(),
+            "https://example.com/owner/repo.git"
+        );
     }
 
     #[tokio::test]

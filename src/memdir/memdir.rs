@@ -973,8 +973,6 @@ mod tests {
             "NYAN_MEMORY_PATH_OVERRIDE",
             "NYAN_DISABLE_AUTO_MEMORY",
             "NYAN_SIMPLE",
-            "NYAN_REMOTE",
-            "NYAN_REMOTE_MEMORY_DIR",
         ]
         .map(EnvVarGuard::unset);
         // The lock guard resets the settings caches again on release.

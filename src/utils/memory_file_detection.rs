@@ -229,9 +229,8 @@ mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK, TestEnvGuard};
 
-    const ENV_KEYS: [&str; 4] = [
+    const ENV_KEYS: [&str; 3] = [
         "NYAN_CONFIG_DIR",
-        "NYAN_REMOTE_MEMORY_DIR",
         "NYAN_MEMORY_PATH_OVERRIDE",
         "NYAN_DISABLE_AUTO_MEMORY",
     ];

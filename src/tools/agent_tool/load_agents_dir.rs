@@ -1766,7 +1766,6 @@ mod tests {
     /// home the run inherited.
     struct SnapshotEnv {
         _loader: [EnvVarGuard; 3],
-        _remote_memory: EnvVarGuard,
         _auto_memory: EnvVarGuard,
         _lock: TestEnvGuard<'static>,
     }
@@ -1775,7 +1774,6 @@ mod tests {
         let lock = TEST_ENV_LOCK.lock().unwrap();
         SnapshotEnv {
             _loader: pin_loader_env(home, config_home),
-            _remote_memory: EnvVarGuard::unset("NYAN_REMOTE_MEMORY_DIR"),
             _auto_memory: EnvVarGuard::set("NYAN_DISABLE_AUTO_MEMORY", "false"),
             _lock: lock,
         }

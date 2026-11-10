@@ -916,22 +916,6 @@ impl crate::tool::ToolCall for SendMessageTool {
         }
     }
 
-    /// Maps to: CC `SendMessageTool.ts:585-602` `checkPermissions(...)`.
-    fn check_permissions(
-        &self,
-        args: &serde_json::Value,
-        _context: &crate::tool::ToolUseContext,
-    ) -> crate::utils::permissions::permission_result::PermissionResult {
-        crate::utils::permissions::permission_result::PermissionResult::Allow {
-            updated_input: Some(args.clone()),
-            user_modified: None,
-            decision_reason: None,
-            tool_use_id: None,
-            accept_feedback: None,
-            content_blocks: Vec::new(),
-        }
-    }
-
     /// Maps to: CC `SendMessageTool.ts:604-718` `validateInput(...)`.
     fn validate_input(
         &self,
@@ -1112,7 +1096,15 @@ mod tests {
     #[test]
     fn unsupported_address_schemes_fail_before_delivery_regardless_of_peer_gate() {
         use crate::tool::{ToolCall, ValidationResult};
-        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _lock = SEND_MESSAGE_TEAM_MAILBOX_TEST_LOCK.lock().unwrap();
+        let _team_state_lock = crate::utils::swarm::team_helpers::TEST_TEAM_HELPERS_LOCK
+            .lock()
+            .unwrap();
+        let _mailbox_lock = crate::utils::teammate_mailbox::TEST_TEAMMATE_MAILBOX_LOCK
+            .lock()
+            .unwrap();
+        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
+        let _guards = seed_team_for_send_message("alpha");
         let context = crate::tool::ToolUseContext::default();
         for enabled in [false, true] {
             let _gate = crate::utils::feature_flags::override_for_test(
@@ -1137,6 +1129,12 @@ mod tests {
                     assert_eq!(output.message, "Unsupported address scheme");
                     assert!(output.routing.is_none());
                 }
+                // Rejected before delivery: nothing lands in a mailbox.
+                assert!(
+                    crate::utils::teammate_mailbox::read_mailbox(recipient, Some("alpha"))
+                        .is_empty(),
+                    "{recipient} must not be written to a mailbox"
+                );
             }
             let input = serde_json::json!({"to": "uds:", "message": "hello"});
             assert!(matches!(

@@ -1342,11 +1342,6 @@ mod zod_schema_tests {
         );
     }
 
-    /// @nyan: `nyan` is a formal top-level key. The strict edit-time schema
-    /// must accept it (and its documented shape), or any nyan configuration
-    /// would be rejected as an unknown field; a typo inside `nyan` is stripped
-    /// like every other nested family, while a typo at the top level still
-    /// fails.
     #[test]
     fn settings_schema_omits_cloud_remote_configuration_and_keeps_ssh() {
         let projected = crate::utils::zod::to_json_schema(settings_schema());
@@ -1369,6 +1364,11 @@ mod zod_schema_tests {
         assert!(serialized.get("disableDeepLinkRegistration").is_none());
     }
 
+    /// @nyan: `nyan` is a formal top-level key. The strict edit-time schema
+    /// must accept it (and its documented shape), or any nyan configuration
+    /// would be rejected as an unknown field; a typo inside `nyan` is stripped
+    /// like every other nested family, while a typo at the top level still
+    /// fails.
     #[test]
     fn strict_settings_schema_accepts_the_nyan_family() {
         let ok = serde_json::json!({

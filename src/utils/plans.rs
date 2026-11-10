@@ -1,7 +1,7 @@
 //! Plan file path helpers.
 //!
 //! Maps to CC `utils/plans.ts`. Path/slug helpers and fork plan copying live
-//! here, along with source-owned resume recovery and remote file snapshots.
+//! here, along with resume slug restoration.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -184,13 +184,15 @@ fn get_slug_from_log(messages: &[serde_json::Value]) -> Option<&str> {
 }
 
 /// Maps to: CC `utils/plans.ts#copyPlanForResume:164-231`.
+/// @nyan: resume only restores the slug and checks the local plan file; the
+/// remote file-snapshot and message-history recovery paths are not ported.
 /// Raw messages carry LogOption's persisted fields; eager preparation preserves
 /// JavaScript execution through the first await, before a session switch.
 pub fn copy_plan_for_resume(
     messages: &[serde_json::Value],
     target_session_id: Option<&str>,
 ) -> impl std::future::Future<Output = bool> + Send + 'static + use<> {
-    let preparation = get_slug_from_log(messages).map(|slug| {
+    let read = get_slug_from_log(messages).map(|slug| {
         let session_id = target_session_id
             .map(String::from)
             .unwrap_or_else(crate::bootstrap::state::get_session_id);
@@ -198,158 +200,24 @@ pub fn copy_plan_for_resume(
         let plan_path = get_plans_directory().join(format!("{slug}.md"));
         // CC calls readFile before the first await: capture and start it now,
         // so a later setFsImplementation cannot change this request's backend.
-        let read = crate::utils::fs_operations::get_fs_implementation().read_file(
+        crate::utils::fs_operations::get_fs_implementation().read_file(
             &plan_path,
             crate::utils::fs_operations::BufferEncoding::Utf8,
-        );
-        (plan_path, messages.to_vec(), read)
+        )
     });
     async move {
-        let Some((plan_path, messages, read)) = preparation else {
+        let Some(read) = read else {
             return false;
         };
         match read.await {
             Ok(_) => true,
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
+            Err(error) => {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    crate::utils::log::log_error(crate::utils::log::LogError::new(
+                        error.to_string(),
+                    ));
+                }
                 false
-            }
-            Err(_) => {
-                if crate::utils::file_persistence::outputs_scanner::get_environment_kind().is_none()
-                {
-                    return false;
-                }
-                crate::utils::debug::log_for_debugging(&format!(
-                    "Plan file missing during resume: {}. Attempting recovery.",
-                    plan_path.display()
-                ));
-                let recovered = find_file_snapshot_entry(&messages, "plan")
-                    .and_then(|entry| entry.get("content").and_then(serde_json::Value::as_str))
-                    .filter(|content| !content.is_empty())
-                    .inspect(|content| {
-                        crate::utils::debug::log_for_debugging_with_level(
-                            &format!(
-                                "Plan recovered from file snapshot, {} chars",
-                                content.encode_utf16().count()
-                            ),
-                            crate::utils::debug::DebugLogLevel::Info,
-                        );
-                    })
-                    .or_else(|| {
-                        recover_plan_from_messages(&messages).inspect(|content| {
-                            crate::utils::debug::log_for_debugging_with_level(
-                                &format!(
-                                    "Plan recovered from message history, {} chars",
-                                    content.encode_utf16().count()
-                                ),
-                                crate::utils::debug::DebugLogLevel::Info,
-                            );
-                        })
-                    });
-                if let Some(content) = recovered {
-                    match tokio::fs::write(&plan_path, content).await {
-                        Ok(()) => true,
-                        Err(error) => {
-                            crate::utils::log::log_error(crate::utils::log::LogError::new(
-                                error.to_string(),
-                            ));
-                            false
-                        }
-                    }
-                } else {
-                    crate::utils::debug::log_for_debugging(
-                        "Plan file recovery failed: no file snapshot or plan content found in message history",
-                    );
-                    false
-                }
-            }
-        }
-    }
-}
-
-/// Maps to: CC `utils/plans.ts#recoverPlanFromMessages:279-326`.
-fn recover_plan_from_messages(messages: &[serde_json::Value]) -> Option<&str> {
-    for message in messages.iter().rev() {
-        let plan = match message.get("type").and_then(serde_json::Value::as_str) {
-            Some("assistant") => message.pointer("/message/content")
-                .and_then(serde_json::Value::as_array)
-                .and_then(|content| content.iter().find_map(|block| {
-                    (block["type"] == "tool_use" && block["name"] == crate::tools::exit_plan_mode_tool::constants::EXIT_PLAN_MODE_V2_TOOL_NAME)
-                        .then(|| block.pointer("/input/plan").and_then(serde_json::Value::as_str))
-                        .flatten().filter(|plan| !plan.is_empty())
-                })),
-            Some("user") => message.get("planContent").and_then(serde_json::Value::as_str),
-            Some("attachment") if message.pointer("/attachment/type").and_then(serde_json::Value::as_str) == Some("plan_file_reference") =>
-                message.pointer("/attachment/planContent").and_then(serde_json::Value::as_str),
-            _ => None,
-        };
-        if let Some(plan) = plan.filter(|plan| !plan.is_empty()) {
-            return Some(plan);
-        }
-    }
-    None
-}
-
-/// Maps to: CC `utils/plans.ts#findFileSnapshotEntry:332-353`.
-fn find_file_snapshot_entry<'a>(
-    messages: &'a [serde_json::Value],
-    key: &str,
-) -> Option<&'a serde_json::Value> {
-    for message in messages.iter().rev() {
-        if message["type"] == "system"
-            && message["subtype"] == "file_snapshot"
-            && let Some(files) = message.get("snapshotFiles")
-        {
-            // Source returns from the newest snapshot even if its key is absent.
-            return files
-                .as_array()
-                .and_then(|files| files.iter().find(|file| file["key"] == key));
-        }
-    }
-    None
-}
-
-/// Maps to: CC `utils/plans.ts#persistFileSnapshotIfRemote:360-397`.
-/// Snapshot construction is eager; transcript submission follows the async seam.
-pub fn persist_file_snapshot_if_remote() -> impl std::future::Future<Output = ()> + Send + 'static {
-    let message =
-        if crate::utils::file_persistence::outputs_scanner::get_environment_kind().is_some() {
-            get_plan(None).filter(|plan| !plan.is_empty()).map(|plan| serde_json::json!({
-            "type": "system", "subtype": "file_snapshot", "content": "File snapshot",
-            "level": "info", "isMeta": true,
-            "timestamp": chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-            "uuid": uuid::Uuid::new_v4().to_string(),
-            "snapshotFiles": [{"key": "plan", "path": get_plan_file_path(None), "content": plan}]
-        }))
-        } else {
-            None
-        };
-    async move {
-        if let Some(message) = message {
-            let session_id = crate::bootstrap::state::get_session_id();
-            let cwd = std::env::current_dir()
-                .unwrap_or_else(|_| crate::bootstrap::state::get_original_cwd())
-                .to_string_lossy()
-                .into_owned();
-            let stamp = crate::utils::session_storage::SessionStamp {
-                session_id: session_id.clone(),
-                cwd: cwd.clone(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                git_branch: Some(crate::utils::git::get_branch()).filter(|value| !value.is_empty()),
-                user_type: "external".to_string(),
-                entrypoint: "cli".to_string(),
-                slug: Some(get_plan_slug(Some(&session_id))),
-                team_name: None,
-                agent_name: None,
-            };
-            if let Err(error) = crate::utils::session_storage::record_transcript(
-                &cwd,
-                &session_id,
-                &[message],
-                None,
-                &stamp,
-            ) {
-                crate::utils::log::log_error(crate::utils::log::LogError::new(error.to_string()));
             }
         }
     }
@@ -573,13 +441,12 @@ mod tests {
         );
     }
     #[test]
-    fn copy_plan_for_resume_matches_official_local_remote_and_eager_slug() {
+    fn copy_plan_for_resume_restores_slug_and_checks_only_the_local_plan_file() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = test_plan_state_lock();
         let temp = PlanFixtureDirectory::new();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
         let _project = PinnedProjectDir::at(temp.path());
-        let _local = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "");
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -604,23 +471,14 @@ mod tests {
         assert!(runtime.block_on(copy_plan_for_resume(&messages, Some(&target))));
         assert_eq!(std::fs::read(&path).unwrap(), b"");
         std::fs::remove_file(&path).unwrap();
-        {
-            let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "byoc");
-            let mut snapshot_messages = messages.clone();
-            snapshot_messages.push(serde_json::json!({"type":"system","subtype":"file_snapshot","snapshotFiles":[{"key":"plan","path":"old/location","content":"snapshot wins"}]}));
-            assert!(runtime.block_on(copy_plan_for_resume(&snapshot_messages, Some(&target))));
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), "snapshot wins");
-            std::fs::remove_file(&path).unwrap();
-            snapshot_messages.push(
-                serde_json::json!({"type":"system","subtype":"file_snapshot","snapshotFiles":[]}),
-            );
-            assert!(runtime.block_on(copy_plan_for_resume(&snapshot_messages, Some(&target))));
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), "from messages");
-            std::fs::remove_file(&path).unwrap();
-            std::fs::create_dir(&path).unwrap();
-            // Non-ENOENT read error: no fallback or write attempt.
-            assert!(!runtime.block_on(copy_plan_for_resume(&snapshot_messages, Some(&target))));
-        }
+        // Retired remote snapshots and history never recreate a missing plan.
+        let mut stale_messages = messages.clone();
+        stale_messages.push(serde_json::json!({"type":"system","subtype":"file_snapshot","snapshotFiles":[{"key":"plan","path":"old/location","content":"stale snapshot"}]}));
+        assert!(!runtime.block_on(copy_plan_for_resume(&stale_messages, Some(&target))));
+        assert!(!path.exists());
+        // A non-ENOENT read error is reported as not restored.
+        std::fs::create_dir(&path).unwrap();
+        assert!(!runtime.block_on(copy_plan_for_resume(&messages, Some(&target))));
         let absent = uuid::Uuid::new_v4().to_string();
         assert!(!runtime.block_on(copy_plan_for_resume(&[], Some(&absent))));
         assert!(!PLAN_SLUG_CACHE.read().unwrap().contains_key(&absent));
@@ -651,270 +509,5 @@ mod tests {
             std::env::current_dir().unwrap().join(" ")
         );
         clear_plans_directory_cache();
-    }
-
-    #[test]
-    fn plan_recovery_matches_actual_original_bun_message_oracle() {
-        // AST-extracted source functions, Bun oracle 2026-09-12.
-        let cases: serde_json::Value = serde_json::from_str(
-            r###"[
-  {
-    "messages": [],
-    "slug": null,
-    "recovered": null,
-    "snapshot": null
-  },
-  {
-    "messages": [
-      {
-        "type": "user",
-        "planContent": "older"
-      },
-      {
-        "type": "attachment",
-        "attachment": {
-          "type": "plan_file_reference",
-          "planContent": "attached"
-        }
-      }
-    ],
-    "slug": null,
-    "recovered": "attached",
-    "snapshot": null
-  },
-  {
-    "messages": [
-      {
-        "type": "user",
-        "planContent": "older"
-      },
-      {
-        "type": "assistant",
-        "message": {
-          "content": [
-            {
-              "type": "tool_use",
-              "name": "ExitPlanMode",
-              "input": {
-                "plan": "first"
-              }
-            },
-            {
-              "type": "tool_use",
-              "name": "ExitPlanMode",
-              "input": {
-                "plan": "second"
-              }
-            }
-          ]
-        }
-      }
-    ],
-    "slug": null,
-    "recovered": "first",
-    "snapshot": null
-  },
-  {
-    "messages": [
-      {
-        "type": "user",
-        "planContent": "older"
-      },
-      {
-        "type": "assistant",
-        "message": {
-          "content": [
-            {
-              "type": "tool_use",
-              "name": "ExitPlanMode",
-              "input": {
-                "plan": ""
-              }
-            },
-            {
-              "type": "tool_use",
-              "name": "ExitPlanMode",
-              "input": {
-                "plan": "later"
-              }
-            }
-          ]
-        }
-      }
-    ],
-    "slug": null,
-    "recovered": "later",
-    "snapshot": null
-  },
-  {
-    "messages": [
-      {
-        "type": "system",
-        "subtype": "file_snapshot",
-        "snapshotFiles": [
-          {
-            "key": "plan",
-            "path": "p",
-            "content": "old"
-          }
-        ]
-      },
-      {
-        "type": "system",
-        "subtype": "file_snapshot",
-        "snapshotFiles": [
-          {
-            "key": "todos",
-            "path": "t",
-            "content": "todo"
-          }
-        ]
-      }
-    ],
-    "slug": null,
-    "recovered": null,
-    "snapshot": null
-  },
-  {
-    "messages": [
-      {
-        "type": "system",
-        "subtype": "file_snapshot",
-        "snapshotFiles": [
-          {
-            "key": "plan",
-            "path": "p",
-            "content": "old"
-          }
-        ]
-      },
-      {
-        "type": "system",
-        "subtype": "file_snapshot",
-        "snapshotFiles": []
-      }
-    ],
-    "slug": null,
-    "recovered": null,
-    "snapshot": null
-  },
-  {
-    "messages": [
-      {
-        "type": "user",
-        "slug": ""
-      },
-      {
-        "type": "user",
-        "slug": " "
-      },
-      {
-        "type": "user",
-        "slug": "later"
-      }
-    ],
-    "slug": " ",
-    "recovered": null,
-    "snapshot": null
-  }
-]
-"###,
-        )
-        .unwrap();
-        for case in cases.as_array().unwrap() {
-            let messages = case["messages"].as_array().unwrap();
-            assert_eq!(get_slug_from_log(messages), case["slug"].as_str());
-            assert_eq!(
-                recover_plan_from_messages(messages),
-                case["recovered"].as_str()
-            );
-            assert_eq!(
-                find_file_snapshot_entry(messages, "plan"),
-                if case["snapshot"].is_null() {
-                    None
-                } else {
-                    Some(&case["snapshot"])
-                }
-            );
-        }
-    }
-    #[test]
-    fn remote_file_snapshot_matches_official_wire_and_incremental_persistence() {
-        let _env_lock = TEST_ENV_LOCK.lock().unwrap();
-        let _plan_lock = test_plan_state_lock();
-        // Session storage's test profile defaults to read-only. Enable the
-        // actual writer so this exercises CC plans.ts:392-393 recordTranscript.
-        let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
-        let temp = PlanFixtureDirectory::new();
-        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", temp.path());
-        let _project = PinnedProjectDir::at(temp.path());
-        let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "anthropic_cloud");
-        let old_id = crate::bootstrap::state::get_session_id();
-        let old_dir = crate::bootstrap::state::get_session_project_dir();
-        let id = uuid::Uuid::new_v4().to_string();
-        let transcript_dir = temp.path().join("transcripts");
-        std::fs::create_dir_all(&transcript_dir).unwrap();
-        crate::bootstrap::state::switch_session(&id, Some(transcript_dir.clone()));
-        crate::utils::session_storage::clear_session_metadata();
-        crate::utils::session_storage::clear_session_messages_cache();
-        set_plan_slug(&id, "snapshot-plan");
-        let path = get_plan_file_path(None);
-        std::fs::write(&path, "# original\n").unwrap();
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        // Source snapshots before its first await (dynamic sessionStorage import).
-        let snapshot = persist_file_snapshot_if_remote();
-        std::fs::write(&path, "# later\n").unwrap();
-        runtime.block_on(snapshot);
-        let stamp = crate::utils::session_storage::SessionStamp {
-            session_id: id.clone(),
-            cwd: temp.path().to_string_lossy().into_owned(),
-            version: "test".into(),
-            git_branch: None,
-            user_type: "external".into(),
-            entrypoint: "cli".into(),
-            slug: Some("snapshot-plan".into()),
-            team_name: None,
-            agent_name: None,
-        };
-        crate::utils::session_storage::record_transcript(
-            &stamp.cwd,
-            &id,
-            &[serde_json::json!({
-                "type":"user","uuid":"seed-snapshot-user","message":{"role":"user","content":"seed"}
-            })],
-            None,
-            &stamp,
-        )
-        .unwrap();
-        runtime
-            .block_on(crate::utils::session_storage::flush_session_storage())
-            .unwrap();
-        let rows = crate::utils::json::parse_jsonl(
-            &std::fs::read(transcript_dir.join(format!("{id}.jsonl"))).unwrap(),
-        );
-        let snapshots = rows
-            .iter()
-            .filter(|row| row["subtype"] == "file_snapshot")
-            .collect::<Vec<_>>();
-        assert_eq!(snapshots.len(), 1);
-        let row = snapshots[0];
-        assert_eq!(row["type"], "system");
-        assert_eq!(row["content"], "File snapshot");
-        assert_eq!(row["level"], "info");
-        assert_eq!(row["isMeta"], true);
-        assert_eq!(
-            row["snapshotFiles"],
-            serde_json::json!([{"key":"plan","path":path,"content":"# original\n"}])
-        );
-        assert!(uuid::Uuid::parse_str(row["uuid"].as_str().unwrap()).is_ok());
-        assert!(chrono::DateTime::parse_from_rfc3339(row["timestamp"].as_str().unwrap()).is_ok());
-        clear_plan_slug(Some(&id));
-        clear_plans_directory_cache();
-        crate::utils::session_storage::clear_session_metadata();
-        crate::utils::session_storage::clear_session_messages_cache();
-        crate::bootstrap::state::switch_session(&old_id, old_dir);
     }
 }

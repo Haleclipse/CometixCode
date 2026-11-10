@@ -143,7 +143,6 @@ mod tests {
     #[test]
     fn agent_memory_paths_match_official_scopes_and_colon_sanitizing() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
-        let _remote_memory = EnvVarGuard::unset("NYAN_REMOTE_MEMORY_DIR");
         let root = std::env::temp_dir().join(format!(
             "nyan-agent-memory-{}",
             uuid::Uuid::new_v4().simple()
@@ -172,7 +171,8 @@ mod tests {
             cwd,
         ));
 
-        crate::utils::process_env::set("NYAN_REMOTE_MEMORY_DIR", root.join("remote"));
+        // The retired remote memory directory no longer relocates local memory.
+        let _remote_memory = EnvVarGuard::set("NYAN_REMOTE_MEMORY_DIR", root.join("remote"));
         let local = get_agent_memory_dir("plugin:reviewer", AgentMemoryScope::Local, cwd);
         assert!(
             local
@@ -180,7 +180,6 @@ mod tests {
                 .contains("agent-memory-local/plugin-reviewer")
         );
         assert_eq!(local, cwd.join(".nyan/agent-memory-local/plugin-reviewer"));
-        crate::utils::process_env::remove("NYAN_REMOTE_MEMORY_DIR");
         let _ = std::fs::remove_dir_all(root);
     }
 

@@ -5172,7 +5172,6 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &dir);
         let _project = PinnedProjectDir::at(&dir);
-        let _local = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "");
         let tools = vec![crate::tools::exit_plan_mode_tool::exit_plan_mode_tool_schema()];
         let plan_path = crate::utils::plans::get_plan_file_path(Some("agent-fixture"));
         std::fs::write(&plan_path, "").unwrap();
@@ -8897,17 +8896,15 @@ mod tests {
     fn nonstreaming_timeout_default() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("API_TIMEOUT_MS");
-        crate::utils::process_env::remove("NYAN_REMOTE");
         assert_eq!(get_nonstreaming_fallback_timeout_ms(), 300_000);
     }
 
     #[test]
-    fn nonstreaming_timeout_remote() {
+    fn nonstreaming_timeout_ignores_retired_remote_env() {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("API_TIMEOUT_MS");
-        crate::utils::process_env::set("NYAN_REMOTE", "1");
+        let _remote = EnvVarGuard::set("NYAN_REMOTE", "1");
         assert_eq!(get_nonstreaming_fallback_timeout_ms(), 300_000);
-        crate::utils::process_env::remove("NYAN_REMOTE");
     }
 
     #[test]

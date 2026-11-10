@@ -255,12 +255,10 @@ mod tests {
             .join(AUTO_MEM_DIRNAME)
     }
 
-    const AUTO_MEMORY_ENV_KEYS: [&str; 6] = [
+    const AUTO_MEMORY_ENV_KEYS: [&str; 4] = [
         "NYAN_MEMORY_PATH_OVERRIDE",
         "NYAN_DISABLE_AUTO_MEMORY",
         "NYAN_SIMPLE",
-        "NYAN_REMOTE",
-        "NYAN_REMOTE_MEMORY_DIR",
         "NYAN_CONFIG_DIR",
     ];
 

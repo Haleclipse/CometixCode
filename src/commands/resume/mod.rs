@@ -1269,7 +1269,6 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
         let _project = PinnedProjectDir::at(&root);
-        let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "byoc");
         let _simple = EnvVarGuard::set("NYAN_SIMPLE", "1");
         struct Restore(String, Option<PathBuf>, PathBuf);
         impl Drop for Restore {
@@ -1320,10 +1319,9 @@ mod tests {
         let plan_path = root.join("plans/interrupted-plan.md");
         assert!(!plan_path.exists());
         crate::utils::conversation_recovery::load_conversation_for_resume(&target).unwrap();
-        assert_eq!(
-            fs::read_to_string(plan_path).unwrap(),
-            "must survive interrupted permission"
-        );
+        // Only the slug is restored; a missing local plan file is not rebuilt
+        // from the transcript.
+        assert!(!plan_path.exists());
         assert_eq!(
             crate::utils::plans::get_plan_slug(Some(&id)),
             "interrupted-plan"

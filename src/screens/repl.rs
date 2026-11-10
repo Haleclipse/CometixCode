@@ -18129,7 +18129,6 @@ mod tests {
         let _project = PinnedProjectDir::at(temp.path());
         let _write = EnvVarGuard::set("NYAN_WRITE_ENABLED", "1");
         let _simple = EnvVarGuard::unset("NYAN_SIMPLE");
-        let _remote = EnvVarGuard::set("NYAN_ENVIRONMENT_KIND", "byoc");
         let _trust = crate::services::hooks::test_support::SessionTrustGuard::accepted();
         struct Restore(String, Option<PathBuf>);
         impl Drop for Restore {
@@ -18196,7 +18195,7 @@ mod tests {
             crate::utils::file_state_cache::READ_FILE_STATE_CACHE_SIZE,
         );
         assert_eq!(wrong_cache.len(), 2);
-        // REPL.tsx:2359/2420 retains raw log.messages for plan recovery even
+        // REPL.tsx:2359/2420 retains raw log.messages for slug restoration even
         // when deserializeMessages removes an interrupted ExitPlanMode call.
         crate::utils::plans::clear_plans_directory_cache();
         let mut original_messages = entries.clone();
@@ -18204,7 +18203,7 @@ mod tests {
         original_messages.push(json!({"type":"assistant","uuid":"pending-plan",
             "message":{"role":"assistant","content":[{"type":"tool_use","id":"pending",
                 "name":"ExitPlanMode","input":{"plan":"hot plan survives cleanup"}}]}}));
-        let recovered_plan_path =
+        let missing_plan_path =
             crate::utils::plans::get_plans_directory().join("hot-interrupted-plan.md");
         let target = resume::ResumeTarget {
             session_id: target_id.clone(),
@@ -18221,14 +18220,13 @@ mod tests {
             entrypoint: Some(ResumeEntrypoint::SlashCommandPicker),
         };
         let processed = resume(target, None, Arc::new(Default::default()), None, None).unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while !recovered_plan_path.exists() && std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(10));
-        }
+        // Resume restores the slug from the raw log but never rebuilds a missing
+        // plan file from transcript content.
         assert_eq!(
-            std::fs::read_to_string(recovered_plan_path).unwrap(),
-            "hot plan survives cleanup"
+            crate::utils::plans::get_plan_slug(Some(&target_id)),
+            "hot-interrupted-plan"
         );
+        assert!(!missing_plan_path.exists());
         crate::utils::plans::clear_plan_slug(Some(&target_id));
         let inputs = serde_json::Deserializer::from_str(&std::fs::read_to_string(&marker).unwrap())
             .into_iter::<serde_json::Value>()

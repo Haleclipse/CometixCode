@@ -27,6 +27,8 @@ pub fn parse_address(to: &str) -> PeerAddress {
             target: to.to_string(),
         };
     }
+    // @nyan: any other URI-style `scheme:` prefix is rejected uniformly; no
+    // scheme besides `uds:` is supported.
     let has_scheme = to.split_once(':').is_some_and(|(scheme, _)| {
         scheme.starts_with(|ch: char| ch.is_ascii_alphabetic())
             && scheme

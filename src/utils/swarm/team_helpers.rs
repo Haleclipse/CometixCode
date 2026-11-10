@@ -144,8 +144,10 @@ pub fn sanitize_name(name: &str) -> String {
 }
 
 /// Maps to: CC `teamHelpers.ts#sanitizeAgentName`.
+/// @nyan: `:` is sanitized like `@`, so a teammate name never parses as a
+/// `scheme:` peer address and stays addressable through SendMessage.
 pub fn sanitize_agent_name(name: &str) -> String {
-    name.replace('@', "-")
+    name.replace(['@', ':'], "-")
 }
 
 /// Maps to: CC `teamHelpers.ts#getTeamDir`.
@@ -706,6 +708,13 @@ mod tests {
         let _lock = TEST_TEAM_HELPERS_LOCK.lock().unwrap();
         assert_eq!(super::sanitize_name("My Team!"), "my-team-");
         assert_eq!(super::sanitize_agent_name("lead@west"), "lead-west");
+        assert_eq!(super::sanitize_agent_name("qa:frontend"), "qa-frontend");
+        assert_eq!(super::sanitize_agent_name("a:b@c"), "a-b-c");
+        assert_eq!(
+            crate::utils::peer_address::parse_address(&super::sanitize_agent_name("qa:frontend"))
+                .scheme,
+            crate::utils::peer_address::PeerAddressScheme::Other
+        );
     }
 
     #[test]

@@ -182,21 +182,12 @@ pub(crate) fn exit_plan_mode_call(
         .clone()
         .or_else(|| get_plan(context.agent_id.as_deref()));
 
-    // Sync disk when CCR/permission UI injected an edited plan. CC :258-261
-    // swallows the write failure (`.catch(e => logError(e))`) and continues;
-    // then snapshots the edited plan for remote recovery.
-    if let Some(ref edited) = input_plan {
-        if let Err(error) = std::fs::write(&file_path, edited) {
-            tracing::error!("Failed to write plan file {file_path_str}: {error}");
-        }
-        let snapshot = crate::utils::plans::persist_file_snapshot_if_remote();
-        if let Some(runtime) = crate::utils::process_runtime::runtime_handle_for_detached_work() {
-            runtime.spawn(snapshot);
-        } else {
-            std::thread::spawn(move || {
-                let _ = crate::utils::process_runtime::block_on_from_sync(snapshot);
-            });
-        }
+    // Sync disk when the permission UI injected an edited plan. CC :258-261
+    // swallows the write failure (`.catch(e => logError(e))`) and continues.
+    if let Some(ref edited) = input_plan
+        && let Err(error) = std::fs::write(&file_path, edited)
+    {
+        tracing::error!("Failed to write plan file {file_path_str}: {error}");
     }
 
     // Teammate + plan_mode_required → mailbox approval (CC :264-312).
