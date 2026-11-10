@@ -1,10 +1,8 @@
 //! Maps to: CC `tools/BashTool/bashSecurity.ts`.
 //!
-//! Legacy regex security checks for Bash commands. The internal primary gate
-//! lives in `utils/bash/ast.rs`; external/parser-unavailable paths use this
-//! source-compatible fallback. The deprecated async wrapper still delegates to
-//! this function because tree-sitter quote-context divergence telemetry is
-//! intentionally omitted by project policy.
+//! Supplemental regex checks used by the read-only command classifier. The
+//! primary permission gate is the fail-closed projection in `utils/bash/ast.rs`;
+//! syntax-analysis failures never fall back to these heuristics for approval.
 
 use crate::utils::bash::tree_sitter_analysis::TreeSitterAnalysis;
 use crate::utils::permissions::permission_result::{PermissionDecisionReason, PermissionResult};

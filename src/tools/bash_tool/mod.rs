@@ -1113,9 +1113,8 @@ impl crate::tool::ToolCall for BashTool {
     }
 
     /// Maps to CC `BashTool.preparePermissionMatcher` (`BashTool.tsx:663-681`).
-    /// External CC builds have no tree-sitter Bash parser, so
-    /// `parse-unavailable` deliberately fails safe by running every
-    /// Bash-content hook.
+    /// Run every Bash-content hook conservatively, even when syntax analysis
+    /// cannot recover all commands.
     fn prepare_permission_matcher(
         &self,
         _args: &serde_json::Value,
@@ -1135,15 +1134,13 @@ impl crate::tool::ToolCall for BashTool {
         let settings = crate::utils::settings::get_initial_settings();
         if crate::utils::sandbox::sandbox_adapter::is_auto_allow_bash_if_sandboxed_enabled(
             &settings,
-        ) && !bash_permissions::has_obscured_command_names(command)
-            && should_use_sandbox::should_use_sandbox(&should_use_sandbox::SandboxInput {
-                command: Some(command.to_string()),
-                dangerously_disable_sandbox: args
-                    .get("dangerouslyDisableSandbox")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false),
-            })
-        {
+        ) && should_use_sandbox::should_use_sandbox(&should_use_sandbox::SandboxInput {
+            command: Some(command.to_string()),
+            dangerously_disable_sandbox: args
+                .get("dangerouslyDisableSandbox")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+        }) {
             return bash_permissions::check_sandbox_auto_allow(
                 command,
                 &context.tool_permission_context,
@@ -1411,6 +1408,122 @@ impl crate::tool::ToolCall for BashTool {
 mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+
+    #[test]
+    fn bash_permission_entry_enforces_ast_with_and_without_sandbox() {
+        use crate::types::permissions::{PermissionRuleSource, PermissionRuleValue};
+        use crate::utils::permissions::permission_result::PermissionResult;
+
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let root = std::env::temp_dir().join(format!(
+            "nyan-ast-sandbox-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("settings.json"),
+            r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"allowUnsandboxedCommands":true}}"#,
+        )
+        .unwrap();
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &root);
+        let _legacy_override = EnvVarGuard::set("NYAN_DISABLE_COMMAND_INJECTION_CHECK", "1");
+        let mut context = crate::tool::ToolUseContext::default();
+        context.tool_permission_context.always_deny_rules.insert(
+            PermissionRuleSource::Session,
+            vec![PermissionRuleValue::new(
+                "Bash",
+                Some("git push:*".to_string()),
+            )],
+        );
+        context.tool_permission_context.always_ask_rules.insert(
+            PermissionRuleSource::Session,
+            vec![PermissionRuleValue::new("Bash", Some("rm:*".to_string()))],
+        );
+        for unsandboxed in [false, true] {
+            for (command, expected) in [
+                ("if true; then echo hello; fi", "allow"),
+                ("(git push origin main)", "deny"),
+                ("if true; then rm file; fi", "ask"),
+                ("echo 'unterminated", "ask"),
+                ("echo $(id)", "ask"),
+                ("eval 'echo hello'", "ask"),
+            ] {
+                let result = crate::tool::ToolCall::check_permissions(
+                    &BashTool,
+                    &serde_json::json!({
+                        "command": command,
+                        "dangerouslyDisableSandbox": unsandboxed,
+                    }),
+                    &context,
+                );
+                assert!(
+                    matches!(
+                        (expected, &result),
+                        ("allow", PermissionResult::Allow { .. })
+                            | ("ask", PermissionResult::Ask { .. })
+                            | ("deny", PermissionResult::Deny { .. })
+                    ),
+                    "{command:?}, unsandboxed={unsandboxed}: {result:?}"
+                );
+            }
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ast_security_prompts_survive_tool_wide_allow_in_permission_engine() {
+        use crate::types::permissions::{PermissionRuleSource, PermissionRuleValue};
+        use crate::utils::permissions::permissions::{
+            HasPermissionsToUseToolParams, HasPermissionsToUseToolResult,
+            has_permissions_to_use_tool_with_context,
+        };
+
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let config =
+            std::env::temp_dir().join(format!("nyan-ast-engine-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&config).unwrap();
+        let _config = EnvVarGuard::set("NYAN_CONFIG_DIR", &config);
+        let mut context = crate::tool::ToolUseContext::default();
+        context.tool_permission_context.always_allow_rules.insert(
+            PermissionRuleSource::Session,
+            vec![PermissionRuleValue::new("Bash", None)],
+        );
+        context.tool_permission_context.always_ask_rules.insert(
+            PermissionRuleSource::Session,
+            vec![PermissionRuleValue::new(
+                "Bash",
+                Some("cargo test:*".to_string()),
+            )],
+        );
+        for source in [
+            "echo 'unterminated".to_string(),
+            "echo $(id)".to_string(),
+            "cargo test && unrecognized-command".to_string(),
+            format!("echo x > {}", config.join("outside").display()),
+        ] {
+            let input = serde_json::json!({"command": source, "dangerouslyDisableSandbox": true});
+            let result = has_permissions_to_use_tool_with_context(
+                HasPermissionsToUseToolParams {
+                    tool_use_id: "ast-permission-test",
+                    tool_name: "Bash",
+                    mcp_info: None,
+                    input_summary: &source,
+                    input: &input,
+                    context: &context.tool_permission_context,
+                    messages: &[],
+                    app_store: None,
+                    local_denial_tracking: None,
+                    abort_signal: None,
+                },
+                Some(&context),
+            );
+            assert!(
+                matches!(result, HasPermissionsToUseToolResult::Ask(_)),
+                "{source:?}: {result:?}"
+            );
+        }
+        std::fs::remove_dir_all(config).unwrap();
+    }
 
     #[test]
     fn bash_read_search_classification_rejects_executable_shell_structure() {

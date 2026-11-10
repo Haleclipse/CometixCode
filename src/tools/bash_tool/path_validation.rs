@@ -4,9 +4,7 @@
 //! safety rules remain in `utils/permissions/path_validation.rs`, matching the
 //! official split between Bash command parsing and generic path policy.
 //!
-//! Internal tree-sitter builds consume AST-derived `Redirect[]` /
-//! `SimpleCommand[]` inputs directly; parser-unavailable external builds retain
-//! the official legacy `splitCommand_DEPRECATED` fallback.
+//! Commands and redirects come from the shared tree-sitter security projection.
 
 use crate::tool::ToolPermissionContext;
 use crate::types::permissions::{
@@ -771,62 +769,6 @@ pub fn check_path_command(
     }
 }
 
-/// Maps to CC local `parseCommandArguments(cmd)`.
-pub fn parse_command_arguments(command: &str) -> Vec<String> {
-    let Ok(arguments) = crate::utils::bash::shell_quote::try_parse_shell_command(command) else {
-        return Vec::new();
-    };
-    arguments
-        .into_iter()
-        .filter_map(|argument| match argument {
-            crate::utils::bash::shell_quote::ParseEntry::String(value)
-            | crate::utils::bash::shell_quote::ParseEntry::Glob(value) => Some(value),
-            crate::utils::bash::shell_quote::ParseEntry::Operator(_)
-            | crate::utils::bash::shell_quote::ParseEntry::Comment(_) => None,
-        })
-        .collect()
-}
-
-/// Maps to CC local `validateSinglePathCommand(...)`.
-pub fn validate_single_path_command(
-    cmd: &str,
-    cwd: &str,
-    tool_permission_context: &ToolPermissionContext,
-    compound_command_has_cd: bool,
-) -> PermissionResult {
-    let stripped_cmd = super::bash_permissions::strip_safe_wrappers(cmd);
-    let extracted_args = parse_command_arguments(&stripped_cmd);
-    if extracted_args.is_empty() {
-        return passthrough("Empty command - no paths to validate".to_string());
-    }
-    let Some((base_cmd, args)) = extracted_args.split_first() else {
-        return passthrough("Empty command - no paths to validate".to_string());
-    };
-    let Some(path_command) = PathCommand::parse(base_cmd) else {
-        return passthrough(format!(
-            "Command '{base_cmd}' is not a path-restricted command"
-        ));
-    };
-    let stripped = stripped_cmd.as_str();
-    let operation_type_override = if path_command == PathCommand::Sed
-        && super::sed_validation::sed_command_is_allowed_by_allowlist(
-            stripped,
-            super::sed_validation::SedValidationOptions::default(),
-        ) {
-        Some(FileOperationType::Read)
-    } else {
-        None
-    };
-    check_path_command(
-        path_command,
-        args,
-        cwd,
-        tool_permission_context,
-        compound_command_has_cd,
-        operation_type_override,
-    )
-}
-
 /// Maps to CC local `validateOutputRedirections(...)`.
 pub fn validate_output_redirections(
     redirections: &[OutputRedirection],
@@ -907,75 +849,8 @@ pub fn validate_output_redirections(
     passthrough("No unsafe redirections found".to_string())
 }
 
-/// Maps to CC `checkPathConstraints(input, cwd, toolPermissionContext, ...)`.
+/// Maps to CC `checkPathConstraints(...)` using verified argv and redirects.
 pub fn check_path_constraints(
-    command: &str,
-    cwd: &str,
-    tool_permission_context: &ToolPermissionContext,
-    compound_command_has_cd: bool,
-) -> PermissionResult {
-    if contains_process_substitution(command) {
-        return PermissionResult::Ask {
-            message: "Process substitution (>(...) or <(...)) can execute arbitrary commands and requires manual approval".to_string(),
-            updated_input: None,
-            decision_reason: Some(PermissionDecisionReason::Other {
-                reason: "Process substitution requires manual approval".to_string(),
-            }),
-            suggestions: Vec::new(),
-            blocked_path: None,
-            metadata: None,
-            is_bash_security_check_for_misparsing: false,
-            pending_classifier_check: None,
-            content_blocks: Vec::new(),
-        };
-    }
-
-    let extracted = crate::utils::bash::commands::extract_output_redirections(command);
-    if extracted.has_dangerous_redirection {
-        return PermissionResult::Ask {
-            message: "Shell expansion syntax in paths requires manual approval".to_string(),
-            updated_input: None,
-            decision_reason: Some(PermissionDecisionReason::Other {
-                reason: "Shell expansion syntax in paths requires manual approval".to_string(),
-            }),
-            suggestions: Vec::new(),
-            blocked_path: None,
-            metadata: None,
-            is_bash_security_check_for_misparsing: false,
-            pending_classifier_check: None,
-            content_blocks: Vec::new(),
-        };
-    }
-    let redirection_result = validate_output_redirections(
-        &extracted.redirections,
-        cwd,
-        tool_permission_context,
-        compound_command_has_cd,
-    );
-    if !matches!(redirection_result, PermissionResult::Passthrough { .. }) {
-        return redirection_result;
-    }
-
-    for cmd in crate::utils::bash::commands::split_command_deprecated(command) {
-        let result = validate_single_path_command(
-            &cmd,
-            cwd,
-            tool_permission_context,
-            compound_command_has_cd,
-        );
-        if matches!(
-            result,
-            PermissionResult::Ask { .. } | PermissionResult::Deny { .. }
-        ) {
-            return result;
-        }
-    }
-
-    passthrough("All path commands validated successfully".to_string())
-}
-
-/// AST-backed half of CC `checkPathConstraints(...)`.
-pub fn check_path_constraints_from_ast(
     commands: &[crate::utils::bash::ast::SimpleCommand],
     cwd: &str,
     tool_permission_context: &ToolPermissionContext,
@@ -1019,6 +894,22 @@ pub fn check_path_constraints_from_ast(
     );
     if !matches!(redirection_result, PermissionResult::Passthrough { .. }) {
         return redirection_result;
+    }
+
+    for redirect in commands.iter().flat_map(|command| &command.redirects) {
+        if redirect.op == "<" {
+            let result = check_path_command(
+                PathCommand::Cat,
+                &["--".to_string(), redirect.target.clone()],
+                cwd,
+                tool_permission_context,
+                compound_command_has_cd,
+                Some(FileOperationType::Read),
+            );
+            if !matches!(result, PermissionResult::Passthrough { .. }) {
+                return result;
+            }
+        }
     }
 
     for command in commands {
@@ -1228,13 +1119,6 @@ fn env_command_index(argv: &[String]) -> Option<usize> {
     None
 }
 
-fn contains_process_substitution(command: &str) -> bool {
-    command.contains(">(")
-        || command.contains("<(")
-        || command.contains("> >(")
-        || command.contains(">>(")
-}
-
 fn passthrough(message: String) -> PermissionResult {
     PermissionResult::Passthrough {
         message,
@@ -1296,17 +1180,24 @@ mod tests {
         );
     }
 
+    fn parsed(command: &str) -> Vec<crate::utils::bash::ast::SimpleCommand> {
+        match crate::utils::bash::ast::parse_for_security(command) {
+            crate::utils::bash::ast::ParseForSecurityResult::Simple { commands } => commands,
+            other => panic!("expected verified commands, got {other:?}"),
+        }
+    }
+
     #[test]
-    fn command_argument_parser_delegates_to_shell_quote_owner() {
-        assert_eq!(
-            parse_command_arguments("grep '' *.rs /tmp/file"),
-            ["grep", "", "*.rs", "/tmp/file"]
-        );
-        assert_eq!(
-            parse_command_arguments("echo x > out"),
-            ["echo", "x", "out"]
-        );
-        assert!(parse_command_arguments("echo ${}").is_empty());
+    fn path_arguments_and_redirects_are_separate_ast_fields() {
+        let commands = parsed("grep '' '*.rs' /tmp/file");
+        assert_eq!(commands[0].argv, ["grep", "", "*.rs", "/tmp/file"]);
+        let commands = parsed("echo x > out");
+        assert_eq!(commands[0].argv, ["echo", "x"]);
+        assert_eq!(commands[0].redirects[0].target, "out");
+        assert!(matches!(
+            crate::utils::bash::ast::parse_for_security("echo ${}"),
+            crate::utils::bash::ast::ParseForSecurityResult::TooComplex { .. }
+        ));
     }
 
     #[test]
@@ -1328,19 +1219,18 @@ mod tests {
         let cwd = allowed.display().to_string();
 
         assert!(matches!(
-            check_path_constraints("ls .", &cwd, &context, false),
+            check_path_constraints(&parsed("ls ."), &cwd, &context),
             PermissionResult::Passthrough { ref message, .. }
-                if message == "All path commands validated successfully"
+                if message == "All AST path commands validated successfully"
         ));
 
         let outside =
             std::env::temp_dir().join(format!("nyan-outside-{}", uuid::Uuid::new_v4().simple()));
         let outside_file = outside.join("out.txt");
         let result = check_path_constraints(
-            &format!("echo hi > {}", outside_file.display()),
+            &parsed(&format!("echo hi > {}", outside_file.display())),
             &cwd,
             &context,
-            false,
         );
         let _ = std::fs::remove_dir_all(&allowed);
         assert!(matches!(
@@ -1397,7 +1287,7 @@ mod tests {
             panic!("static redirect command parses");
         };
         assert!(matches!(
-            check_path_constraints_from_ast(
+            check_path_constraints(
                 &commands,
                 &allowed.display().to_string(),
                 &context,
@@ -1412,7 +1302,7 @@ mod tests {
             panic!("wrapped command parses");
         };
         assert!(matches!(
-            check_path_constraints_from_ast(&commands, &allowed.display().to_string(), &context,),
+            check_path_constraints(&commands, &allowed.display().to_string(), &context,),
             PermissionResult::Ask { .. }
         ));
         let _ = std::fs::remove_dir_all(allowed);

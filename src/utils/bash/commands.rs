@@ -8,7 +8,6 @@
 
 use super::shell_quote::ParseEntry;
 
-const COMMAND_LIST_SEPARATORS: &[&str] = &["&&", "||", ";", ";;", "|"];
 pub const ALL_SUPPORTED_CONTROL_OPERATORS: &[&str] = &["&&", "||", ";", ";;", "|", ">&", ">", ">>"];
 
 fn flush_word(word: &mut String, command_words: &mut Vec<String>) {
@@ -254,63 +253,6 @@ pub fn split_command_deprecated(command: &str) -> Vec<String> {
             .filter(|part| !part.is_empty())
             .collect(),
     )
-}
-
-fn syntax_is_balanced(command: &str) -> bool {
-    let mut quote = None;
-    let mut escaped = false;
-    for character in command.chars() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if character == '\\' && quote != Some('\'') {
-            escaped = true;
-            continue;
-        }
-        if quote == Some(character) {
-            quote = None;
-        } else if quote.is_none() && matches!(character, '\'' | '"') {
-            quote = Some(character);
-        }
-    }
-    quote.is_none() && !escaped
-}
-
-fn is_command_list(command: &str) -> bool {
-    if !syntax_is_balanced(command) {
-        return false;
-    }
-    let parts = split_command_with_operators(command);
-    for (index, part) in parts.iter().enumerate() {
-        if part.starts_with('#') {
-            return false;
-        }
-        if COMMAND_LIST_SEPARATORS.contains(&part.as_str()) || matches!(part.as_str(), ">" | ">>") {
-            continue;
-        }
-        if part == ">&" {
-            if parts
-                .get(index + 1)
-                .is_some_and(|next| matches!(next.trim(), "0" | "1" | "2"))
-            {
-                continue;
-            }
-            return false;
-        }
-        if matches!(part.as_str(), "(" | ")" | "&" | "|&" | "<") {
-            return false;
-        }
-    }
-    true
-}
-
-/// Maps to CC `isUnsafeCompoundCommand_DEPRECATED(command)`.
-pub fn is_unsafe_compound_command_deprecated(command: &str) -> bool {
-    if !syntax_is_balanced(command) {
-        return true;
-    }
-    split_command_deprecated(command).len() > 1 && !is_command_list(command)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

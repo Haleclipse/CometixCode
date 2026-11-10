@@ -3,13 +3,14 @@
 //! Maps to: CC `utils/bash/bashParser.ts` parser initialization,
 //! `SHELL_KEYWORDS`, `PARSE_TIMEOUT_MICROS`, and `MAX_NODES`.
 //!
-//! CC loads a feature-gated NAPI module. Rust links `tree-sitter-bash`
-//! directly, while callers retain the same external/internal feature boundary.
+//! Rust links `tree-sitter-bash` directly for every build; security consumers
+//! fail closed if parsing exceeds its time, node, or depth budget.
 
 use tree_sitter::{Node, Parser, Tree};
 
 pub const PARSE_TIMEOUT_MICROS: u64 = 50_000;
 pub const MAX_NODES: usize = 50_000;
+const MAX_DEPTH: usize = 128;
 
 pub const SHELL_KEYWORDS: &[&str] = &[
     "if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac",
@@ -27,15 +28,15 @@ fn parser() -> Result<Parser, String> {
 }
 
 fn exceeds_node_budget(root: Node<'_>) -> bool {
-    let mut stack = vec![root];
+    let mut stack = vec![(root, 0)];
     let mut count = 0usize;
-    while let Some(node) = stack.pop() {
+    while let Some((node, depth)) = stack.pop() {
         count += 1;
-        if count > MAX_NODES {
+        if count > MAX_NODES || depth > MAX_DEPTH {
             return true;
         }
         let mut cursor = node.walk();
-        stack.extend(node.children(&mut cursor));
+        stack.extend(node.children(&mut cursor).map(|child| (child, depth + 1)));
     }
     false
 }

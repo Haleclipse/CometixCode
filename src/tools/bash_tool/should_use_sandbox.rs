@@ -32,16 +32,6 @@ pub fn should_use_sandbox(input: &SandboxInput) -> bool {
     !contains_excluded_command(command, &settings)
 }
 
-/// Maps to CC `shouldUseSandbox.ts:64-69` — `splitCommand_DEPRECATED` failures
-/// fall back to the whole command so matching still runs.
-fn split_subcommands(command: &str) -> Vec<String> {
-    let subcommands = crate::utils::bash::commands::split_command_deprecated(command);
-    if subcommands.is_empty() {
-        return vec![command.to_string()];
-    }
-    subcommands
-}
-
 /// Maps to CC local `containsExcludedCommand(command)` settings branch.
 pub fn contains_excluded_command(
     command: &str,
@@ -53,10 +43,19 @@ pub fn contains_excluded_command(
         return false;
     }
 
-    for subcommand in split_subcommands(command) {
-        let trimmed = subcommand.trim();
-        let mut candidates = vec![trimmed.to_string()];
-        let mut seen = std::collections::HashSet::from([trimmed.to_string()]);
+    let commands = match crate::utils::bash::ast::parse_for_security(command) {
+        crate::utils::bash::ast::ParseForSecurityResult::Simple { commands } => commands,
+        _ => return true,
+    };
+    for subcommand in commands {
+        let trimmed = subcommand.text.trim();
+        let normalized =
+            super::path_validation::strip_wrappers_from_argv(&subcommand.argv).join(" ");
+        let mut candidates = vec![trimmed.to_string(), normalized];
+        let mut seen = candidates
+            .iter()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
         let mut start = 0usize;
         while start < candidates.len() {
             let end = candidates.len();
@@ -147,10 +146,18 @@ mod tests {
     }
 
     #[test]
-    fn unparsable_commands_fall_back_to_the_whole_command() {
+    fn ast_exclusions_cover_control_flow_quotes_and_fail_closed() {
         let settings = settings_with_excluded(vec!["bazel:*"]);
-        assert_eq!(split_subcommands("bazel build"), vec!["bazel build"]);
-        assert!(!split_subcommands("").is_empty());
-        assert!(contains_excluded_command("bazel build //...", &settings));
+        for command in [
+            "bazel build //...",
+            "if true; then bazel build //...; fi",
+            "(bazel build //...)",
+            "b\"\"azel build //...",
+            "echo \"prefix: $(bazel build //...)\"",
+            "echo 'unterminated",
+        ] {
+            assert!(contains_excluded_command(command, &settings), "{command}");
+        }
+        assert!(!contains_excluded_command("", &settings));
     }
 }
