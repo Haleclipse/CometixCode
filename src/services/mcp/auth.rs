@@ -2094,6 +2094,26 @@ mod runtime {
             .map_err(|_| anyhow::anyhow!("Authentication timeout"))?
     }
 
+    /// Maps to: CC `performMCPOAuthFlow` Client ID Metadata Document branch.
+    ///
+    /// @nyan: CC falls back to its own vendor-hosted metadata document when
+    /// `MCP_OAUTH_CLIENT_METADATA_URL` is unset. nyan has no default document,
+    /// so only an explicitly provided URL is presented; otherwise the flow
+    /// continues to dynamic client registration.
+    pub(super) fn client_id_metadata_document_url(
+        metadata: &AuthorizationMetadata,
+    ) -> Option<String> {
+        let supported = metadata
+            .additional_fields
+            .get("client_id_metadata_document_supported")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !supported {
+            return None;
+        }
+        crate::utils::process_env::var("MCP_OAUTH_CLIENT_METADATA_URL").truthy()
+    }
+
     #[derive(Clone, Debug, Default, PartialEq, Eq)]
     pub(super) struct CachedReauthState {
         pub(super) step_up_scope: Option<String>,
@@ -2338,18 +2358,7 @@ mod runtime {
                 preconfigured_oauth_client_config(client_id, &redirect_uri, &scopes, &server_key);
             manager.configure_client(client_config)?;
             (client_id.to_string(), None)
-        } else if metadata
-            .additional_fields
-            .get("client_id_metadata_document_supported")
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
-        {
-            let client_metadata_url =
-                crate::utils::process_env::var("MCP_OAUTH_CLIENT_METADATA_URL")
-                    .truthy()
-                    .unwrap_or_else(|| {
-                        crate::constants::oauth::MCP_CLIENT_METADATA_URL.to_string()
-                    });
+        } else if let Some(client_metadata_url) = client_id_metadata_document_url(&metadata) {
             let client_config =
                 OAuthClientConfig::new(client_metadata_url.clone(), redirect_uri.clone())
                     .with_scopes(scopes.clone());
@@ -3074,6 +3083,35 @@ mod tests {
             runtime::allowed_authorization_server_metadata_url("https://metadata.google.internal"),
             None
         );
+    }
+
+    #[test]
+    fn client_id_metadata_document_url_requires_explicit_env_url() {
+        let _lock = TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut supported = rmcp::transport::auth::AuthorizationMetadata::default();
+        supported.additional_fields.insert(
+            "client_id_metadata_document_supported".to_string(),
+            Value::Bool(true),
+        );
+        let unsupported = rmcp::transport::auth::AuthorizationMetadata::default();
+
+        let _env = EnvVarGuard::unset("MCP_OAUTH_CLIENT_METADATA_URL");
+        assert_eq!(runtime::client_id_metadata_document_url(&supported), None);
+
+        let _env = EnvVarGuard::set("MCP_OAUTH_CLIENT_METADATA_URL", "");
+        assert_eq!(runtime::client_id_metadata_document_url(&supported), None);
+
+        let _env = EnvVarGuard::set(
+            "MCP_OAUTH_CLIENT_METADATA_URL",
+            "https://client.example/oauth/metadata.json",
+        );
+        assert_eq!(
+            runtime::client_id_metadata_document_url(&supported).as_deref(),
+            Some("https://client.example/oauth/metadata.json")
+        );
+        assert_eq!(runtime::client_id_metadata_document_url(&unsupported), None);
     }
 
     #[test]
