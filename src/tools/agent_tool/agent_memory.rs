@@ -10,7 +10,6 @@
 use std::path::{Path, PathBuf};
 
 use crate::memdir::paths::get_memory_base_dir;
-use crate::utils::process_env::JsTruthy;
 
 /// Maps to CC `agentMemory.ts#AgentMemoryScope`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,17 +71,7 @@ pub fn is_agent_memory_path(absolute_path: &Path, cwd: &Path) -> bool {
     {
         return true;
     }
-    if let Some(remote_memory_dir) =
-        crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR").truthy()
-    {
-        let remote_projects = PathBuf::from(remote_memory_dir).join("projects");
-        normalized.starts_with(&remote_projects)
-            && normalized.components().any(|component| {
-                component.as_os_str() == std::ffi::OsStr::new("agent-memory-local")
-            })
-    } else {
-        is_strictly_inside(&normalized, &cwd.join(".nyan").join("agent-memory-local"))
-    }
+    is_strictly_inside(&normalized, &cwd.join(".nyan").join("agent-memory-local"))
 }
 
 /// Maps to CC `agentMemory.ts#getAgentMemoryEntrypoint`.
@@ -143,29 +132,6 @@ pub fn load_agent_memory_prompt(agent_type: &str, scope: AgentMemoryScope, cwd: 
 }
 
 fn get_local_agent_memory_dir(dir_name: &str, cwd: &Path) -> PathBuf {
-    if let Some(remote_memory_dir) =
-        crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR").truthy()
-    {
-        // CC agentMemory.ts:35-36:
-        // `sanitizePath(findCanonicalGitRoot(getProjectRoot()) ?? getProjectRoot())`
-        // — the canonical-worktree git root (#24382) run through the shared
-        // sanitizePath (200-char cap + hash suffix), not a bespoke sanitizer.
-        // Deviation: CC anchors on `getProjectRoot()` (STATE.projectRoot, never
-        // updated mid-session); this port has no projectRoot slot yet, so
-        // `get_original_cwd()` is the nearest anchor — unlike CC's, it IS
-        // updated by the worktree tools (exit_worktree_tool), so the remote
-        // namespace can drift across worktree enter/exit.
-        let project_root = crate::bootstrap::state::get_original_cwd();
-        let canonical =
-            crate::utils::git::find_canonical_git_root(&project_root).unwrap_or(project_root);
-        return PathBuf::from(remote_memory_dir)
-            .join("projects")
-            .join(crate::utils::session_storage::sanitize_path(
-                &canonical.display().to_string(),
-            ))
-            .join("agent-memory-local")
-            .join(dir_name);
-    }
     cwd.join(".nyan").join("agent-memory-local").join(dir_name)
 }
 
@@ -213,7 +179,7 @@ mod tests {
                 .to_string_lossy()
                 .contains("agent-memory-local/plugin-reviewer")
         );
-        assert!(local.to_string_lossy().contains("projects"));
+        assert_eq!(local, cwd.join(".nyan/agent-memory-local/plugin-reviewer"));
         crate::utils::process_env::remove("NYAN_REMOTE_MEMORY_DIR");
         let _ = std::fs::remove_dir_all(root);
     }

@@ -225,12 +225,6 @@ pub(crate) fn system_message_from_entry(
             content: text,
             commands: string_array_field(entry, &["commands"]),
         },
-        "bridge_status" => SystemMessage::BridgeStatus {
-            base,
-            content: text,
-            url: first_string(entry, &["url"]).unwrap_or_default(),
-            upgrade_nudge: first_string(entry, &["upgradeNudge", "upgrade_nudge"]),
-        },
         "scheduled_task_fire" => SystemMessage::ScheduledTaskFire {
             base,
             content: text,
@@ -482,6 +476,34 @@ mod tests {
                 Some((name, description))
             })
             .collect()
+    }
+
+    #[test]
+    fn retired_bridge_status_uses_the_unknown_system_message_fallback() {
+        let timestamp = chrono::Utc::now();
+        let entry = json!({
+            "type": "system", "subtype": "bridge_status", "content": "Disconnected",
+            "url": "https://example.invalid/retired", "upgradeNudge": "retired"
+        });
+        let message = system_message_from_entry(&entry, "legacy".to_string(), timestamp);
+        let saved = crate::utils::session_storage::system_entry_json(&message, "legacy");
+        assert_eq!(saved["subtype"], "informational");
+        assert_eq!(saved["content"], "Disconnected");
+        assert!(saved.get("url").is_none());
+        assert!(saved.get("upgradeNudge").is_none());
+        let crate::types::message::SystemMessage::Informational {
+            base,
+            content,
+            level,
+            ..
+        } = message
+        else {
+            panic!("retired subtypes must use the existing informational fallback");
+        };
+        assert_eq!(base.uuid, "legacy");
+        assert_eq!(base.timestamp, timestamp);
+        assert_eq!(content, "Disconnected");
+        assert_eq!(level, crate::types::message::SystemMessageLevel::Info);
     }
 
     fn owned_pairs(expected: &[(&str, &str)]) -> Vec<(String, String)> {

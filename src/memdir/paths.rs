@@ -7,7 +7,6 @@ use std::path::{Component, Path, PathBuf};
 use chrono::Datelike;
 
 use crate::utils::env_utils::{is_env_defined_falsy, is_env_truthy};
-use crate::utils::process_env::JsTruthy;
 #[cfg(test)]
 use crate::utils::settings::types::SettingsJson;
 
@@ -26,13 +25,6 @@ pub fn is_auto_memory_enabled() -> bool {
     if is_env_truthy(crate::utils::process_env::var("NYAN_SIMPLE").as_deref()) {
         return false;
     }
-    if is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref())
-        && crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR")
-            .truthy()
-            .is_none()
-    {
-        return false;
-    }
     crate::utils::settings::get_initial_settings()
         .auto_memory_enabled
         .unwrap_or(true)
@@ -40,10 +32,7 @@ pub fn is_auto_memory_enabled() -> bool {
 
 /// Maps to CC `memdir/paths.ts:85-90` `getMemoryBaseDir()`.
 pub fn get_memory_base_dir() -> PathBuf {
-    crate::utils::process_env::var("NYAN_REMOTE_MEMORY_DIR")
-        .truthy()
-        .map(PathBuf::from)
-        .unwrap_or_else(crate::utils::env_utils::get_config_home_dir)
+    crate::utils::env_utils::get_config_home_dir()
 }
 
 /// Maps to CC `memdir/paths.ts:161-166` `getAutoMemPathOverride()`.
@@ -328,7 +317,10 @@ mod tests {
         }
         {
             let _env = EnvVarGuard::set("NYAN_REMOTE", "1");
-            assert!(!is_auto_memory_enabled());
+            assert!(is_auto_memory_enabled());
+            let _memory = EnvVarGuard::set("NYAN_REMOTE_MEMORY_DIR", "/retired/memory");
+            assert_eq!(get_memory_base_dir(), PathBuf::from(CONFIG_HOME));
+            assert_eq!(get_auto_mem_path(), default_auto_mem_path());
         }
     }
 

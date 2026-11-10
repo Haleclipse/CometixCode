@@ -740,9 +740,7 @@ pub fn get_claude_temp_dir_name() -> String {
 /// Nyan forward-port of CC 2.1.285's check of its per-uid temp root
 /// (user, 10-03), used by `/copy` and the sandbox temp directory. Opens the
 /// directory without following a symlink and requires the user's own uid,
-/// fixing a mode other than 0700. A directory owned by someone else is
-/// accepted, with a warning, when running as root in a container
-/// (`NYAN_CONTAINER_ID`, trimmed as 2.1.285's environment reads are).
+/// fixing a mode other than 0700. A directory owned by someone else is rejected.
 #[cfg(unix)]
 pub(crate) fn verify_owned_temp_dir(dir: &Path) -> std::io::Result<()> {
     use std::os::unix::ffi::OsStrExt as _;
@@ -786,20 +784,6 @@ pub(crate) fn verify_owned_temp_dir(dir: &Path) -> std::io::Result<()> {
     };
     let metadata = directory.metadata()?;
     if metadata.uid() != uid {
-        if uid == 0
-            && crate::utils::process_env::var("NYAN_CONTAINER_ID")
-                .map(|value| value.trim().to_owned())
-                .truthy()
-                .is_some()
-        {
-            // `logForDiagnosticsNoPII('warn', 'tempdir_owner_mismatch', …)`;
-            // `diagLogs.ts` is not ported, so this goes to the debug log.
-            crate::utils::debug::log_for_debugging(&format!(
-                "tempdir_owner_mismatch: observed uid {}",
-                metadata.uid()
-            ));
-            return Ok(());
-        }
         return Err(std::io::Error::other(format!(
             "Temp directory {shown} is owned by uid {}, expected {uid}. Refusing to use it \u{2014} another user may have pre-created it. {HINT}",
             metadata.uid()

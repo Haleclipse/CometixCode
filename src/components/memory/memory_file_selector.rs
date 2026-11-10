@@ -854,7 +854,9 @@ mod tests {
         }
         {
             let _env = EnvVarGuard::set("NYAN_REMOTE", "1");
-            assert!(!auto_memory_snapshot().enabled);
+            assert_eq!(auto_memory_snapshot(), enabled);
+            let _memory = EnvVarGuard::set("NYAN_REMOTE_MEMORY_DIR", "/retired/memory");
+            assert_eq!(auto_memory_snapshot(), enabled);
         }
     }
 

@@ -20,11 +20,6 @@ const SUBCOMMANDS: &[&str] = &[
     "install",
     "setup-token",
     "migrate",
-    "remote-control",
-    "rc",
-    "remote",
-    "sync",
-    "bridge",
     "ps",
     "logs",
     "attach",
@@ -99,9 +94,6 @@ pub fn parse_cli_config(argv: &[String]) -> CliConfig {
             if *sub == "daemon" {
                 config.daemon = true;
             }
-            if matches!(*sub, "remote-control" | "rc" | "remote" | "sync" | "bridge") {
-                config.remote = true;
-            }
             if matches!(*sub, "ps" | "logs" | "attach" | "kill") {
                 config.background = true;
             }
@@ -166,7 +158,6 @@ pub fn parse_cli_config(argv: &[String]) -> CliConfig {
             "--cowork" | "--cowork=true" => config.cowork = true,
             "--worktree" => config.worktree = true,
             "--tmux" => config.tmux = true,
-            "--remote" => config.remote = true,
             "--bg" | "--background" => config.background = true,
             "--init" => config.init = true,
             "--init-only" => config.init_only = true,
@@ -476,6 +467,23 @@ mod tests {
             assert!(!config.show_help);
             assert_eq!(config.unimplemented_reasons(), vec![flag]);
         }
+    }
+
+    #[test]
+    fn retired_remote_words_follow_normal_prompt_routing() {
+        for word in ["remote-control", "rc", "remote", "sync", "bridge"] {
+            let config = parse_cli_config(&argv(&[word, "hello"]));
+            assert_eq!(config.prompt.as_deref(), Some(word));
+            assert!(config.unknown_flags.is_empty());
+            assert!(config.subcommand.is_none());
+            assert!(config.unimplemented_reasons().is_empty());
+        }
+        let config = parse_cli_config(&argv(&["--remote", "hello"]));
+        assert_eq!(config.unknown_flags, vec!["--remote"]);
+        assert_eq!(config.prompt.as_deref(), Some("hello"));
+        assert!(!config.unimplemented_reasons().is_empty());
+        assert!(parse_cli_config(&argv(&["--bg"])).background);
+        assert!(parse_cli_config(&argv(&["daemon"])).daemon);
     }
 
     #[test]

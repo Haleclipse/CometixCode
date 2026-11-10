@@ -1582,8 +1582,7 @@ pub fn get_max_output_tokens_for_model(model: &str) -> u32 {
 /// Maps to: CC services/api/claude.ts:807-811
 ///
 /// Per-attempt timeout for non-streaming fallback requests, in milliseconds.
-/// Reads API_TIMEOUT_MS when set. Remote sessions default to 120s.
-/// Otherwise defaults to 300s.
+/// Reads API_TIMEOUT_MS when set; otherwise defaults to 300s.
 pub fn get_nonstreaming_fallback_timeout_ms() -> u64 {
     if let Some(override_str) = crate::utils::process_env::var("API_TIMEOUT_MS")
         && let Ok(ms) = override_str.parse::<u64>()
@@ -1591,13 +1590,7 @@ pub fn get_nonstreaming_fallback_timeout_ms() -> u64 {
     {
         return ms;
     }
-    if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
-    ) {
-        120_000
-    } else {
-        300_000
-    }
+    300_000
 }
 
 // ---------------------------------------------------------------------------
@@ -8913,7 +8906,7 @@ mod tests {
         let _env_guard = TEST_ENV_LOCK.lock().unwrap();
         crate::utils::process_env::remove("API_TIMEOUT_MS");
         crate::utils::process_env::set("NYAN_REMOTE", "1");
-        assert_eq!(get_nonstreaming_fallback_timeout_ms(), 120_000);
+        assert_eq!(get_nonstreaming_fallback_timeout_ms(), 300_000);
         crate::utils::process_env::remove("NYAN_REMOTE");
     }
 

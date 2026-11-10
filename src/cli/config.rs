@@ -115,11 +115,10 @@ pub struct CliConfig {
     pub teammate_mode: Option<String>,
     pub agent_type: Option<String>,
 
-    // --- Worktree / tmux / remote / bg / daemon / subcommands ---
+    // --- Worktree / tmux / bg / daemon / subcommands ---
     pub subcommand: Option<String>,
     pub worktree: bool,
     pub tmux: bool,
-    pub remote: bool,
     pub background: bool,
     pub daemon: bool,
 
@@ -174,11 +173,10 @@ impl CliConfig {
             ("settings/dirs/agents/plugins", ImplStatus::Live),
             ("teammate/swarm", ImplStatus::Live),
             (
-                "worktree/tmux/remote/bg/daemon/subcommands",
+                "worktree/tmux/bg/daemon/subcommands",
                 if self.subcommand.is_some()
                     || self.worktree
                     || self.tmux
-                    || self.remote
                     || self.background
                     || self.daemon
                 {
@@ -233,9 +231,6 @@ impl CliConfig {
         }
         if self.tmux {
             reasons.push("--tmux".to_string());
-        }
-        if self.remote {
-            reasons.push("--remote".to_string());
         }
         if self.background {
             reasons.push("--background".to_string());
@@ -322,7 +317,7 @@ Unimplemented (parsed, then exit 1):
       --session-id / --fork-session
       Subcommands: mcp, auth, plugin, doctor, …
       --init / --init-only / --maintenance
-      --worktree / --tmux / --remote / --bg / daemon
+      --worktree / --tmux / --bg / daemon
 "
         );
     }

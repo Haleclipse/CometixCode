@@ -109,8 +109,6 @@ pub enum FeatureFlag {
     PerMessageBudgetLimitOverride,
     /// Maps to CC GrowthBook `tengu_attribution_header` (fallback true).
     AttributionHeader,
-    /// Maps to CC GrowthBook `tengu_quartz_lantern` remote single-file git diff gate.
-    RemoteGitDiff,
     /// Maps to CC GrowthBook `tengu_chomp_inflection` prompt-suggestion cohort gate.
     PromptSuggestion,
     /// Maps to CC GrowthBook `tengu_harbor_ledger` channel allowlist payload.
@@ -447,12 +445,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_attribution_header",
         enabled: true,
         note: "Official fallback is true (constants/system.ts:56 getFeatureValue_CACHED_MAY_BE_STALE('tengu_attribution_header', true)). Production still stays off because NYAN_ATTRIBUTION_HEADER defaults to 0; flip this switch to kill the header even when the env is enabled.",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::RemoteGitDiff,
-        cc_growthbook_name: "tengu_quartz_lantern",
-        enabled: false,
-        note: "Official default false; Write/Edit skip the single-file git diff attachment even when NYAN_REMOTE is truthy.",
     },
     FeatureSwitch {
         flag: FeatureFlag::PromptSuggestion,

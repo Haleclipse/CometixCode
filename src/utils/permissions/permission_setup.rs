@@ -464,16 +464,7 @@ pub fn initial_permission_mode_from_cli(
         .and_then(|p| p.default_mode.as_deref())
         .filter(|v| !v.is_empty())
     {
-        let remote = crate::utils::env_utils::is_env_truthy(
-            crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
-        );
-        if remote && !["acceptEdits", "plan", "default"].contains(&mode) {
-            crate::utils::debug::log_for_debugging(&format!(
-                "settings defaultMode \"{mode}\" is not supported in NYAN_REMOTE — only acceptEdits and plan are allowed"
-            ));
-        } else {
-            modes.push(permission_mode_from_string(mode));
-        }
+        modes.push(permission_mode_from_string(mode));
     }
     let mut notification = None;
     for mode in modes {
@@ -1816,6 +1807,21 @@ mod gate_tests {
         assert_eq!(
             get_auto_mode_enabled_state(),
             AutoModeEnabledState::Disabled
+        );
+    }
+
+    #[test]
+    fn retired_remote_env_does_not_override_settings_permission_mode() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _remote = crate::utils::test_env::EnvVarGuard::set("NYAN_REMOTE", "1");
+        settings(serde_json::json!({"permissions":{"defaultMode":"dontAsk"}}));
+        assert_eq!(
+            initial_permission_mode_from_cli(None, false),
+            (PermissionMode::DontAsk, None)
+        );
+        assert_eq!(
+            initial_permission_mode_from_cli(Some("plan"), false),
+            (PermissionMode::Plan, None)
         );
     }
 

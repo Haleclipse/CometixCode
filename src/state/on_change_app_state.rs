@@ -3,9 +3,7 @@
 //!
 //! Every effective `AppStore::set_state`/`replace_with` install that changes
 //! one of the watched fields triggers the corresponding effect here;
-//! scattered mutation callsites need zero changes (CC's comment block at onChangeAppState.ts:50-64 documents
-//! how permission-mode sync was previously missed by 6 of 8+ mutation paths
-//! until it was centralized in this diff).
+//! scattered mutation callsites need zero changes.
 //!
 //! Diff style mirrors CC: scalar fields use `!=` (CC `!==` on primitives);
 //! Arc-wrapped fields use `Arc::ptr_eq` (CC `!==` reference identity).
@@ -15,57 +13,8 @@ use std::sync::Arc;
 use super::app_state_store::{AppState, ExpandedView};
 use crate::utils::config::save_global_config;
 
-/// Maps to: CC `onChangeAppState.ts:24-40 externalMetadataToAppState` — the
-/// inverse of the push below, applied on worker restart.
-///
-/// CC returns a `(prev: AppState) => AppState` updater and the single caller
-/// does `setAppState(externalMetadataToAppState(metadata))`
-/// (`cli/print.ts:5057`). This returns the `&mut AppState` mutator that
-/// `AppStore::replace_with` takes, which is the same position in the Rust write
-/// channel.
-///
-/// Both fields are applied only when actually present as a value. CC tests
-/// `typeof metadata.permission_mode === 'string'` / `=== 'boolean'`, so an
-/// explicit JSON `null` does NOT clear the field — it is simply not applied.
-/// In the RFC 7396 three-state encoding that is `Some(Some(_))` only; both
-/// `Some(None)` (null) and `None` (absent) fall through.
-pub fn external_metadata_to_app_state(
-    metadata: &crate::utils::session_state::SessionExternalMetadata,
-) -> impl FnOnce(&mut AppState) + '_ {
-    move |state| {
-        // CC `:29-36`.
-        if let Some(Some(mode)) = metadata.permission_mode.as_ref() {
-            let mut context = (*state.tool_permission_context).clone();
-            context.mode =
-                crate::utils::permissions::permission_mode::permission_mode_from_string(mode);
-            state.set_tool_permission_context(context);
-        }
-        // CC `:37-39`.
-        if let Some(Some(is_ultraplan_mode)) = metadata.is_ultraplan_mode {
-            state.is_ultraplan_mode = Some(is_ultraplan_mode);
-        }
-    }
-}
-
 /// Maps to: CC `onChangeAppState({newState, oldState})`.
 pub fn on_change_app_state(new: &AppState, old: &AppState) {
-    // toolPermissionContext.mode — single choke point for external mode sync.
-    // Maps to: onChangeAppState.ts:65-92.
-    let prev_mode = old.tool_permission_context.mode;
-    let new_mode = new.tool_permission_context.mode;
-    if prev_mode != new_mode {
-        // CC: externalize mode, notifySessionMetadataChanged (CCR) +
-        // notifyPermissionModeChanged (SDK status stream). Those transport
-        // channels (CCR client / SDK control stream) do not exist yet in
-        // Nyan; this seam is where they attach. The diff-driven trigger
-        // is in place so no mutation path needs revisiting later.
-        tracing::debug!(
-            from = ?prev_mode,
-            to = ?new_mode,
-            "permission mode changed (external notify seam)"
-        );
-    }
-
     // mainLoopProfile — mirror into bootstrap state so non-AppState readers
     // (`get_main_loop_model`) follow the session. Maps to the override half of
     // onChangeAppState.ts:94-112. @nyan: never persisted; the picker's Ctrl+S
@@ -146,69 +95,7 @@ mod tests {
     use crate::state::store::AppStore;
     use crate::tool::ToolPermissionContext;
     use crate::types::permissions::PermissionMode;
-    use crate::utils::session_state::SessionExternalMetadata;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
-
-    fn apply(metadata: &SessionExternalMetadata) -> AppState {
-        let mut state = AppState::default();
-        external_metadata_to_app_state(metadata)(&mut state);
-        state
-    }
-
-    /// Maps to: CC `:29-39` — a present string/boolean is applied.
-    #[test]
-    fn present_values_are_applied() {
-        let state = apply(&SessionExternalMetadata {
-            permission_mode: Some(Some("plan".to_string())),
-            is_ultraplan_mode: Some(Some(true)),
-            ..SessionExternalMetadata::default()
-        });
-
-        assert_eq!(state.tool_permission_context.mode, PermissionMode::Plan);
-        assert_eq!(state.is_ultraplan_mode, Some(true));
-    }
-
-    /// Maps to: CC `:29`/`:37` — the guard is `typeof x === 'string'` /
-    /// `'boolean'`, so an explicit JSON `null` does NOT clear the field. In the
-    /// RFC 7396 encoding that is `Some(None)`, and it must fall through exactly
-    /// like an absent key.
-    #[test]
-    fn explicit_null_does_not_clear_because_official_tests_typeof() {
-        let mut state = AppState::default();
-        state.is_ultraplan_mode = Some(true);
-        state.set_tool_permission_context(ToolPermissionContext {
-            mode: PermissionMode::Plan,
-            ..ToolPermissionContext::default()
-        });
-
-        external_metadata_to_app_state(&SessionExternalMetadata {
-            permission_mode: Some(None),
-            is_ultraplan_mode: Some(None),
-            ..SessionExternalMetadata::default()
-        })(&mut state);
-
-        assert_eq!(
-            state.tool_permission_context.mode,
-            PermissionMode::Plan,
-            "null is not a value, so nothing is applied"
-        );
-        assert_eq!(state.is_ultraplan_mode, Some(true));
-    }
-
-    /// Absent keys leave everything alone — the same fall-through as null, via
-    /// a different arm.
-    #[test]
-    fn absent_keys_leave_state_untouched() {
-        let baseline = AppState::default();
-
-        let state = apply(&SessionExternalMetadata::default());
-
-        assert_eq!(
-            state.tool_permission_context.mode,
-            baseline.tool_permission_context.mode
-        );
-        assert_eq!(state.is_ultraplan_mode, baseline.is_ultraplan_mode);
-    }
 
     /// The diff must fire exactly for the fields that changed — the
     /// triggering matrix is the contract that scattered callsites rely on.

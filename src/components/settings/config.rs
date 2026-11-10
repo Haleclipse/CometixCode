@@ -294,7 +294,6 @@ fn config_summary_label(item: &SettingItem) -> &'static str {
         "diffTool" => "diff tool",
         "autoConnectIde" => "auto-connect to IDE",
         "autoInstallIdeExtension" => "auto-install IDE extension",
-        "remoteControl" => "Remote Control for all sessions",
         _ => item.label,
     }
 }

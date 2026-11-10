@@ -901,14 +901,6 @@ pub enum SystemMessage {
         content: String,
         commands: Vec<String>,
     },
-    /// CC `SystemBridgeStatusMessage` (`types/message.ts:77`), built by
-    /// `createBridgeStatusMessage` (`utils/messages.ts:4369-4383`).
-    BridgeStatus {
-        base: SystemBase,
-        content: String,
-        url: String,
-        upgrade_nudge: Option<String>,
-    },
     /// CC `SystemScheduledTaskFireMessage` (`types/message.ts:78`), built by
     /// `createScheduledTaskFireMessage` (`utils/messages.ts:4385-4396`).
     ScheduledTaskFire { base: SystemBase, content: String },
@@ -1029,7 +1021,6 @@ impl SystemMessage {
             | Self::ApiError { base, .. }
             | Self::LocalCommand { base, .. }
             | Self::PermissionRetry { base, .. }
-            | Self::BridgeStatus { base, .. }
             | Self::ScheduledTaskFire { base, .. }
             | Self::StopHookSummary { base, .. }
             | Self::TurnDuration { base, .. }
@@ -1050,7 +1041,6 @@ impl SystemMessage {
             | Self::ApiError { base, .. }
             | Self::LocalCommand { base, .. }
             | Self::PermissionRetry { base, .. }
-            | Self::BridgeStatus { base, .. }
             | Self::ScheduledTaskFire { base, .. }
             | Self::StopHookSummary { base, .. }
             | Self::TurnDuration { base, .. }
@@ -1080,7 +1070,6 @@ impl SystemMessage {
             Self::ApiError { .. } => "api_error",
             Self::LocalCommand { .. } => "local_command",
             Self::PermissionRetry { .. } => "permission_retry",
-            Self::BridgeStatus { .. } => "bridge_status",
             Self::ScheduledTaskFire { .. } => "scheduled_task_fire",
             Self::StopHookSummary { .. } => "stop_hook_summary",
             Self::TurnDuration { .. } => "turn_duration",
@@ -1096,7 +1085,7 @@ impl SystemMessage {
     }
 
     /// The `content` field of the subtypes that carry one (informational,
-    /// local_command, permission_retry, bridge_status, scheduled_task_fire,
+    /// local_command, permission_retry, scheduled_task_fire,
     /// away_summary, thinking — `types/message.ts:67-102`). Boundary/metrics
     /// subtypes carry none and return `None`.
     pub fn content(&self) -> Option<&str> {
@@ -1104,7 +1093,6 @@ impl SystemMessage {
             Self::Informational { content, .. }
             | Self::LocalCommand { content, .. }
             | Self::PermissionRetry { content, .. }
-            | Self::BridgeStatus { content, .. }
             | Self::ScheduledTaskFire { content, .. }
             | Self::AwaySummary { content, .. }
             | Self::Thinking { content, .. } => Some(content),

@@ -372,14 +372,6 @@ pub(crate) fn validate_edit_input(
     })
 }
 
-/// Maps to `getFeatureValue_CACHED_MAY_BE_STALE('tengu_quartz_lantern', false)`,
-/// resolved from the source-controlled switch table instead of GrowthBook.
-fn remote_git_diff_enabled() -> bool {
-    crate::utils::feature_flags::feature_enabled(
-        crate::utils::feature_flags::FeatureFlag::RemoteGitDiff,
-    )
-}
-
 fn edit_error(
     message: impl Into<String>,
     dynamic_skill_dirs: Vec<String>,
@@ -868,18 +860,6 @@ impl crate::tool::ToolCall for FileEditTool {
             // CC: logEvent('tengu_edit_string_lengths', {oldStringBytes,
             // newStringBytes, replaceAll}) — joins with analytics.
 
-            let git_diff = if crate::utils::env_utils::is_env_truthy(
-                crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
-            ) && remote_git_diff_enabled()
-            {
-                // CC: logEvent('tengu_tool_use_diff_computed', {isEditTool,
-                // durationMs, hasDiff}) after the fetch — joins with
-                // analytics.
-                crate::utils::git_diff::fetch_single_file_git_diff(&full_path).await
-            } else {
-                None
-            };
-
             crate::tool::ToolResult {
                 data: crate::tool::ToolOutput::Edit(FileEditOutput {
                     file_path: input.file_path,
@@ -889,7 +869,7 @@ impl crate::tool::ToolCall for FileEditTool {
                     structured_patch: patch,
                     user_modified: context.user_modified.unwrap_or(false),
                     replace_all: input.replace_all,
-                    git_diff,
+                    git_diff: None,
                     updated_file,
                     read_timestamp_ms,
                     dynamic_skill_dirs,
@@ -1725,7 +1705,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn remote_git_diff_gate_reads_switch_table() {
+    async fn retired_remote_env_does_not_attach_diff_but_generic_diff_still_works() {
         let _guard = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -1766,14 +1746,9 @@ mod tests {
         let ToolOutput::Edit(output) = result.data else {
             panic!("expected Edit output")
         };
-        assert!(!remote_git_diff_enabled());
-        assert!(
-            output.git_diff.is_none(),
-            "the source-controlled switch keeps the remote diff gate closed"
-        );
+        assert!(output.git_diff.is_none());
 
-        // The attachment payload itself stays covered: the same file still
-        // produces the official single-file diff once the gate is on.
+        // Generic single-file diffs remain available independently of cloud sessions.
         let diff = crate::utils::git_diff::fetch_single_file_git_diff(&path)
             .await
             .expect("remote diff payload");

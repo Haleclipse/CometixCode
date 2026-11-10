@@ -60,19 +60,12 @@
 //! bridge callbacks (`:316-331`), the `resolvedToolUseIds` duplicate-response
 //! guard (`:155`/`:176-187`), `sendMcpMessage` (`:758-773`),
 //! `createSandboxAskCallback` + `SANDBOX_NETWORK_ACCESS_TOOL_NAME`
-//! (`:62`/`:731-753`), and the race's `onPermissionPrompt` /
-//! `buildRequiresActionDetails` / `notifySessionStateChanged('running')`
-//! session-state leg (`:534`, `:587-589`, `:650-656`) — the
-//! `RequiresActionDetails` type it would feed already exists in
-//! `crate::utils::session_state`, unwired.
+//! (`:62`/`:731-753`).
 
 use crate::cli::print::{ControlResponseInput, json_line};
 
 /// Applies one `update_environment_variables` stdin message to the process
-/// env carrier. Used by the bridge session runner for auth-token refresh
-/// (`NYAN_SESSION_ACCESS_TOKEN`), which must be readable by the REPL
-/// process itself — `getSessionIngressAuthToken()` re-reads it per
-/// `refreshHeaders` — not just by child Bash commands.
+/// env carrier, visible to both the current process and future children.
 ///
 /// Maps to: CC `cli/structuredIO.ts:348-360` (`processLine`'s
 /// `update_environment_variables` arm). The stdin loop lives in

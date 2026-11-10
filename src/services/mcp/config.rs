@@ -11,8 +11,6 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-const CCR_PROXY_PATH_MARKERS: &[&str] = &["/v2/session_ingress/shttp/mcp/", "/v2/ccr-sessions/"];
-
 /// Maps to: CC `ValidationError.mcpErrorMetadata.severity` for MCP configs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum McpConfigErrorSeverity {
@@ -91,67 +89,6 @@ fn mcp_config_error(
     }
 }
 
-fn percent_decode_query_value(value: &str) -> Option<String> {
-    let bytes = value.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'%' if index + 2 < bytes.len() => {
-                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok()?;
-                let byte = u8::from_str_radix(hex, 16).ok()?;
-                out.push(byte);
-                index += 3;
-            }
-            b'+' => {
-                out.push(b' ');
-                index += 1;
-            }
-            byte => {
-                out.push(byte);
-                index += 1;
-            }
-        }
-    }
-    String::from_utf8(out).ok()
-}
-
-/// Maps to: CC `services/mcp/config.ts#unwrapCcrProxyUrl`.
-pub fn unwrap_ccr_proxy_url(url: &str) -> String {
-    if !CCR_PROXY_PATH_MARKERS
-        .iter()
-        .any(|marker| url.contains(marker))
-    {
-        return url.to_string();
-    }
-
-    // Maps to CC `new URL(url)` guard: malformed proxy strings keep their
-    // original value instead of trusting an arbitrary `mcp_url` substring.
-    let Some(scheme_separator) = url.find("://") else {
-        return url.to_string();
-    };
-    let after_scheme = &url[scheme_separator + 3..];
-    let authority_end = after_scheme
-        .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
-    if scheme_separator == 0 || authority_end == 0 || url.chars().any(char::is_whitespace) {
-        return url.to_string();
-    }
-
-    let Some(query) = url.split_once('?').map(|(_, query)| query) else {
-        return url.to_string();
-    };
-    for part in query.split('&') {
-        let Some((key, value)) = part.split_once('=') else {
-            continue;
-        };
-        if key == "mcp_url" {
-            return percent_decode_query_value(value).unwrap_or_else(|| value.to_string());
-        }
-    }
-    url.to_string()
-}
-
 fn scoped_server_command_array(config: &ScopedMcpServerConfig) -> Option<Vec<String>> {
     if config.transport != Transport::Stdio {
         return None;
@@ -170,10 +107,7 @@ pub fn get_mcp_server_signature(config: &ScopedMcpServerConfig) -> Option<String
         let encoded = serde_json::to_string(&command).unwrap_or_else(|_| "[]".to_string());
         return Some(format!("stdio:{encoded}"));
     }
-    config
-        .url
-        .as_deref()
-        .map(|url| format!("url:{}", unwrap_ccr_proxy_url(url)))
+    config.url.as_deref().map(|url| format!("url:{url}"))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1382,7 +1316,17 @@ mod tests {
     }
 
     #[test]
-    fn mcp_server_signature_unwraps_ccr_proxy_urls_and_dedups_plugins() {
+    fn server_signatures_do_not_unwrap_retired_cloud_proxy_urls() {
+        let url = "https://example.invalid/v2/ccr-sessions/abc?mcp_url=https%3A%2F%2Fvendor.example%2Fmcp";
+        let (_, config) = test_scoped_config("proxy", Transport::Http, None, &[], Some(url));
+        assert_eq!(
+            get_mcp_server_signature(&config),
+            Some(format!("url:{url}"))
+        );
+    }
+
+    #[test]
+    fn mcp_server_signature_dedups_exact_urls_and_stdio_commands() {
         let manual = indexmap::IndexMap::from([test_scoped_config(
             "docs",
             Transport::Http,
@@ -1396,9 +1340,7 @@ mod tests {
                 Transport::Http,
                 None,
                 &[],
-                Some(
-                    "https://ccr.example/v2/session_ingress/shttp/mcp/x?mcp_url=https%3A%2F%2Fvendor.example%2Fmcp",
-                ),
+                Some("https://vendor.example/mcp"),
             ),
             test_scoped_config(
                 "plugin:toolbox:b",
@@ -1417,18 +1359,6 @@ mod tests {
             test_scoped_config("plugin:toolbox:sdk", Transport::Sdk, None, &[], None),
         ]);
 
-        assert_eq!(
-            unwrap_ccr_proxy_url(
-                "https://ccr.example/v2/ccr-sessions/abc?mcp_url=https%3A%2F%2Fvendor.example%2Fmcp"
-            ),
-            "https://vendor.example/mcp"
-        );
-        assert_eq!(
-            unwrap_ccr_proxy_url(
-                "not a url /v2/ccr-sessions/abc?mcp_url=https%3A%2F%2Fvendor.example%2Fmcp"
-            ),
-            "not a url /v2/ccr-sessions/abc?mcp_url=https%3A%2F%2Fvendor.example%2Fmcp"
-        );
         assert_eq!(
             get_mcp_server_signature(&manual["docs"]).as_deref(),
             Some("url:https://vendor.example/mcp")

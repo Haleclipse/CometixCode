@@ -123,10 +123,6 @@ pub const INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL: &str =
 /// Maps to: CC services/api/errors.ts:160-161
 pub const ORG_DISABLED_ERROR_MESSAGE_ENV_KEY: &str = "Your ANTHROPIC_API_KEY belongs to a disabled organization \u{00b7} Update or unset the environment variable";
 
-/// Maps to: CC services/api/errors.ts:164-165
-pub const CCR_AUTH_ERROR_MESSAGE: &str =
-    "Authentication error \u{00b7} This may be a temporary network issue, please try again";
-
 /// Maps to: CC services/api/errors.ts:166
 pub const REPEATED_529_ERROR_MESSAGE: &str = "Repeated 529 Overloaded errors";
 
@@ -318,13 +314,6 @@ pub fn get_request_too_large_error_message() -> String {
             "Request too large ({limits}). Double press esc to go back and try with a smaller file."
         )
     }
-}
-
-/// Check if we're in CCR (Claude Code Remote) mode.
-///
-/// Maps to: CC services/api/errors.ts:217-219
-fn is_ccr_mode() -> bool {
-    crate::utils::env_utils::is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref())
 }
 
 // ---------------------------------------------------------------------------
@@ -892,13 +881,6 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
 
     // --- x-api-key authentication errors ---
     if msg_lower.contains("x-api-key") {
-        if is_ccr_mode() {
-            return create_assistant_api_error_message(
-                CCR_AUTH_ERROR_MESSAGE,
-                Some(SdkAssistantMessageError::AuthenticationFailed),
-                None,
-            );
-        }
         // TODO(port): Wire getAnthropicApiKeyWithSource() to distinguish
         // external vs internal key sources.
         return create_assistant_api_error_message(
@@ -910,13 +892,6 @@ pub fn get_assistant_message_from_error(error: &ApiErrorInfo, model: &str) -> Ap
 
     // --- Generic 401/403 ---
     if matches!(error.status(), Some(401) | Some(403)) {
-        if is_ccr_mode() {
-            return create_assistant_api_error_message(
-                CCR_AUTH_ERROR_MESSAGE,
-                Some(SdkAssistantMessageError::AuthenticationFailed),
-                None,
-            );
-        }
         let content = if get_is_non_interactive_session() {
             format!("Failed to authenticate. {API_ERROR_MESSAGE_PREFIX}: {msg}")
         } else {
@@ -1376,6 +1351,24 @@ mod tests {
             ),
             "{}",
             msg.content[0].text
+        );
+    }
+
+    #[test]
+    fn retired_remote_env_does_not_mask_invalid_api_key_errors() {
+        let _lock = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        let _remote = crate::utils::test_env::EnvVarGuard::set("NYAN_REMOTE", "1");
+        let err = ApiErrorInfo::Http {
+            status: 401,
+            message: "invalid x-api-key".to_string(),
+            headers: HashMap::new(),
+            body: None,
+        };
+        let msg = get_assistant_message_from_error(&err, "test-model");
+        assert_eq!(msg.content[0].text, INVALID_API_KEY_ERROR_MESSAGE);
+        assert_eq!(
+            msg.error,
+            Some(SdkAssistantMessageError::AuthenticationFailed)
         );
     }
 

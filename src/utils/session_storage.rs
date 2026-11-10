@@ -4362,18 +4362,6 @@ pub(crate) fn system_entry_json(
             set("commands", serde_json::json!(commands));
             set("level", serde_json::json!("info"));
         }
-        SystemMessage::BridgeStatus {
-            content,
-            url,
-            upgrade_nudge,
-            ..
-        } => {
-            set("content", serde_json::json!(content));
-            set("url", serde_json::json!(url));
-            if let Some(upgrade_nudge) = upgrade_nudge {
-                set("upgradeNudge", serde_json::json!(upgrade_nudge));
-            }
-        }
         SystemMessage::ScheduledTaskFire { content, .. } => {
             set("content", serde_json::json!(content));
         }

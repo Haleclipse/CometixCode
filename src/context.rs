@@ -206,10 +206,7 @@ fn build_system_context_with_cache_breaker(
 ) -> BTreeMap<String, String> {
     let mut context = BTreeMap::new();
 
-    // Maps to CC `context.ts`: skip git status in Claude Code Remote and when
-    // `utils/gitSettings.ts#shouldIncludeGitInstructions()` returns false.
-    if !crate::utils::env_utils::is_env_truthy(get_env("NYAN_REMOTE").as_deref())
-        && should_include_git_instructions(&get_env, include_git_instructions_setting)
+    if should_include_git_instructions(&get_env, include_git_instructions_setting)
         && let Some(git_status) = get_git_status()
     {
         context.insert("gitStatus".to_string(), git_status);
@@ -412,15 +409,18 @@ mod tests {
     }
 
     #[test]
-    fn get_system_context_skips_git_status_for_remote_or_disabled_git_instructions() {
-        for key in ["NYAN_REMOTE", "NYAN_DISABLE_GIT_INSTRUCTIONS"] {
+    fn get_system_context_only_skips_git_status_for_disabled_git_instructions() {
+        for (key, included) in [
+            ("NYAN_REMOTE", true),
+            ("NYAN_DISABLE_GIT_INSTRUCTIONS", false),
+        ] {
             let context = build_system_context(
                 |requested| (requested == key).then(|| "1".to_string()),
                 None,
                 || Some("should not be inserted".to_string()),
             );
 
-            assert!(!context.contains_key("gitStatus"));
+            assert_eq!(context.contains_key("gitStatus"), included);
         }
     }
 

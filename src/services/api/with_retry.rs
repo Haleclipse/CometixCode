@@ -442,14 +442,6 @@ fn should_retry(error: &ApiError) -> bool {
         return true;
     }
 
-    // CCR mode: auth errors are transient blips
-    if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
-    ) && (error.status == Some(401) || error.status == Some(403))
-    {
-        return true;
-    }
-
     // Overloaded error in message body
     if error.message.contains("\"type\":\"overloaded_error\"") {
         return true;
@@ -1088,6 +1080,19 @@ mod tests {
     use crate::utils::test_env::TEST_ENV_LOCK;
 
     // -- BASE_DELAY_MS --
+
+    #[test]
+    fn retired_remote_env_does_not_make_forbidden_retryable() {
+        let _lock = TEST_ENV_LOCK.lock().unwrap();
+        let _remote = crate::utils::test_env::EnvVarGuard::set("NYAN_REMOTE", "1");
+        let error = ApiError {
+            status: Some(403),
+            message: "forbidden".to_string(),
+            headers: std::collections::HashMap::new(),
+            body: None,
+        };
+        assert!(!should_retry(&error));
+    }
 
     #[test]
     fn base_delay_ms_value() {

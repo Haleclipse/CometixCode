@@ -1875,23 +1875,6 @@ mod runtime {
         Ok(tokio::time::timeout(timeout, serve_client(handler, transport)).await??)
     }
 
-    pub(super) fn streamable_http_auth_header(
-        oauth_token: Option<String>,
-        session_bearer: Option<String>,
-        has_static_authorization: bool,
-    ) -> Option<String> {
-        // Maps to: CC HTTP MCP request header precedence in
-        // `connectToServer`: OAuth provider wins; otherwise session ingress
-        // bearer is attached when no static Authorization header overrides it.
-        if oauth_token.is_some() {
-            oauth_token
-        } else if !has_static_authorization {
-            session_bearer
-        } else {
-            None
-        }
-    }
-
     fn header_map_from_strings(
         headers: BTreeMap<String, String>,
     ) -> anyhow::Result<HashMap<HeaderName, HeaderValue>> {
@@ -1925,12 +1908,6 @@ mod runtime {
             .tokens()?
             .and_then(|tokens| tokens.access_token)
             .filter(|token| !token.is_empty());
-        let session_bearer = crate::utils::session_ingress_auth::get_session_ingress_auth_token();
-        let has_static_authorization = headers
-            .keys()
-            .any(|key| key.eq_ignore_ascii_case("authorization"));
-        let auth_header =
-            streamable_http_auth_header(oauth_token, session_bearer, has_static_authorization);
 
         // rmcp re-initializes an expired session in the transport by default.
         // The SDK transport CC uses throws instead, and the tool call clears
@@ -1940,7 +1917,7 @@ mod runtime {
             StreamableHttpClientTransportConfig::with_uri(url.to_string())
                 .custom_headers(header_map_from_strings(headers)?)
                 .reinit_on_expired_session(false)
-                .auth_header(auth_header.unwrap_or_default()),
+                .auth_header(oauth_token.unwrap_or_default()),
         )
     }
 
@@ -2027,9 +2004,6 @@ mod runtime {
             "User-Agent".to_string(),
             crate::utils::http::get_mcp_user_agent(),
         )]);
-        if let Some(token) = crate::utils::session_ingress_auth::get_session_ingress_auth_token() {
-            headers.insert("Authorization".to_string(), format!("Bearer {token}"));
-        }
         headers.extend(
             crate::services::mcp::headers_helper::get_mcp_server_headers(name, config).await,
         );
@@ -8516,6 +8490,7 @@ rl.on('line', line => {
     #[test]
     fn websocket_connects_and_discovers_tools_from_live_server() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _ingress = EnvVarGuard::set("NYAN_SESSION_ACCESS_TOKEN", "retired-test-token");
 
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -8539,6 +8514,7 @@ rl.on('line', line => {
                         stream,
                         |request: &Request, mut response: Response| {
                             assert_eq!(request.uri().path(), "/mcp");
+                            assert!(!request.headers().contains_key("authorization"));
                             assert!(
                                 request
                                     .headers()
@@ -8678,6 +8654,7 @@ rl.on('line', line => {
     #[test]
     fn streamable_http_401_challenge_returns_unavailable_without_credential_or_auth_cache_write() {
         let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _ingress = EnvVarGuard::set("NYAN_SESSION_ACCESS_TOKEN", "retired-test-token");
         let config_home =
             std::env::temp_dir().join(format!("nyan-mcp-http-401-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&config_home).expect("create config home");
@@ -8726,6 +8703,7 @@ rl.on('line', line => {
                     let raw = String::from_utf8_lossy(&buffer).to_string();
                     assert!(raw.starts_with("POST /mcp HTTP/1.1"), "{raw}");
                     assert!(raw.contains("initialize"), "{raw}");
+                    assert!(!raw.to_ascii_lowercase().contains("\r\nauthorization:"));
                     socket
                         .write_all(
                             b"HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Bearer error=\"insufficient_scope\", scope=\"admin write\", resource_metadata=\"/.well-known/oauth-protected-resource/mcp\"\r\nContent-Length: 12\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nunauthorized",
@@ -8948,28 +8926,6 @@ rl.on('line', line => {
                 server.await.expect("fixture server task");
                 let _ = drain_mcp_connection_callback_observations().await;
             });
-    }
-
-    #[test]
-    fn streamable_http_auth_header_precedence_matches_official_connect_to_server() {
-        assert_eq!(
-            runtime::streamable_http_auth_header(
-                Some("oauth-token".to_string()),
-                Some("session-token".to_string()),
-                false,
-            )
-            .as_deref(),
-            Some("oauth-token")
-        );
-        assert_eq!(
-            runtime::streamable_http_auth_header(None, Some("session-token".to_string()), false,)
-                .as_deref(),
-            Some("session-token")
-        );
-        assert_eq!(
-            runtime::streamable_http_auth_header(None, Some("session-token".to_string()), true,),
-            None
-        );
     }
 
     #[test]

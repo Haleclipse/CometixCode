@@ -532,11 +532,6 @@ fn render_system(
             SystemTextMessage(content: content.clone(), add_margin: add_margin, level: Some(SystemMessageLevel::Info))
         }
         .into_any(),
-        // CC `SystemTextMessage.tsx:112-114,483-509`.
-        SystemMessage::BridgeStatus { content, .. } => element! {
-            SystemTextMessage(content: format!("Bridge: {}", content), add_margin: add_margin, level: Some(SystemMessageLevel::Info))
-        }
-        .into_any(),
         SystemMessage::StopHookSummary {
             hook_label,
             hook_count,

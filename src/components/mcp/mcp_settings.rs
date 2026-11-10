@@ -93,11 +93,9 @@ fn remote_server_authentication_state_for_settings(
                     .ok()
                     .flatten()
                     .is_some();
-            let has_session_auth = client_type == McpServerConnectionType::Connected
-                && crate::utils::session_ingress_auth::get_session_ingress_auth_token().is_some();
             let has_tools_and_connected =
                 client_type == McpServerConnectionType::Connected && tools_count > 0;
-            Some(has_oauth_tokens || has_session_auth || has_tools_and_connected)
+            Some(has_oauth_tokens || has_tools_and_connected)
         }
         _ => None,
     }

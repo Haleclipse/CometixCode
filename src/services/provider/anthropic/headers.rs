@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use crate::utils::process_env::{EnvSnapshot, JsTruthy};
+use crate::utils::process_env::EnvSnapshot;
 
 /// Headers sent for every model request, regardless of provider.
 pub fn common_headers() -> HashMap<String, Option<String>> {
@@ -20,7 +20,7 @@ pub fn common_headers() -> HashMap<String, Option<String>> {
     ])
 }
 
-/// Anthropic-shaped adapter headers. Session and remote ids are nyan's; the
+/// Anthropic-shaped adapter headers. The session id is nyan's; the
 /// additional-protection flag keeps Anthropic's own header name because that
 /// is the provider wire field, not our product name.
 pub fn anthropic_adapter_headers(env: &EnvSnapshot) -> HashMap<String, Option<String>> {
@@ -28,18 +28,6 @@ pub fn anthropic_adapter_headers(env: &EnvSnapshot) -> HashMap<String, Option<St
         "X-Nyan-Session-Id".to_string(),
         Some(crate::bootstrap::state::get_session_id()),
     )]);
-    if let Some(container_id) = env.var("NYAN_CONTAINER_ID").truthy() {
-        headers.insert(
-            "x-nyan-remote-container-id".to_string(),
-            Some(container_id.to_string()),
-        );
-    }
-    if let Some(remote_session_id) = env.var("NYAN_REMOTE_SESSION_ID").truthy() {
-        headers.insert(
-            "x-nyan-remote-session-id".to_string(),
-            Some(remote_session_id.to_string()),
-        );
-    }
     if crate::utils::env_utils::is_env_truthy(env.var("NYAN_ADDITIONAL_PROTECTION")) {
         headers.insert(
             "x-anthropic-additional-protection".to_string(),
@@ -116,6 +104,7 @@ mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _container = crate::utils::test_env::EnvVarGuard::set("NYAN_CONTAINER_ID", "box");
+        let _remote = crate::utils::test_env::EnvVarGuard::set("NYAN_REMOTE_SESSION_ID", "retired");
         let _protection =
             crate::utils::test_env::EnvVarGuard::set("NYAN_ADDITIONAL_PROTECTION", "1");
         let env = crate::utils::process_env::snapshot();
@@ -125,7 +114,7 @@ mod tests {
             headers
                 .get("x-nyan-remote-container-id")
                 .and_then(Option::as_deref),
-            Some("box")
+            None
         );
         assert_eq!(
             headers
@@ -133,6 +122,7 @@ mod tests {
                 .and_then(Option::as_deref),
             Some("true")
         );
+        assert!(!headers.contains_key("x-nyan-remote-session-id"));
         assert!(!headers.contains_key("x-claude-remote-container-id"));
     }
 
