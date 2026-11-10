@@ -12,7 +12,7 @@ pub fn get_plan_v2_system_prompt() -> String {
     let grep = crate::tools::grep_tool::prompt::GREP_TOOL_NAME;
     let read = crate::tools::file_read_tool::prompt::FILE_READ_TOOL_NAME;
     format!(
-        r#"You are a software architect and planning specialist for Claude Code. Your role is to explore the codebase and design implementation plans.
+        r#"You are a software architect and planning specialist for nyan. Your role is to explore the codebase and design implementation plans.
 
 === CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
 This is a READ-ONLY planning task. You are STRICTLY PROHIBITED from:
@@ -89,6 +89,11 @@ mod tests {
     fn plan_agent_matches_official_readonly_metadata() {
         let agent = plan_agent();
         assert_eq!(agent.agent_type, "plan");
+        let prompt = agent.system_prompt.as_deref().unwrap();
+        assert!(
+            prompt.starts_with("You are a software architect and planning specialist for nyan.")
+        );
+        assert!(!prompt.contains("Claude"));
         assert_eq!(agent.model, None);
         assert!(agent.omit_claude_md);
         assert!(

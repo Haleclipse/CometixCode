@@ -4444,10 +4444,9 @@ pub(crate) fn build_call_model_request(
     options.skip_cache_write = Some(tool_use_context.skip_cache_write);
     options.is_non_interactive_session = tool_use_context.is_non_interactive_session;
     // Maps to CC `query.ts:685-686` `hasAppendSystemPrompt:
-    // !!toolUseContext.options.appendSystemPrompt` — selects the Agent SDK
-    // "Claude Code preset" prefix in `getCLISyspromptPrefix` for headless
-    // sessions that append to the default prompt. `!!` treats an empty
-    // string as absent.
+    // !!toolUseContext.options.appendSystemPrompt` — selects the non-interactive
+    // assistant prefix in `getCLISyspromptPrefix` for headless sessions that
+    // append to the default prompt. `!!` treats an empty string as absent.
     options.has_append_system_prompt = tool_use_context
         .append_system_prompt
         .as_deref()
@@ -8015,10 +8014,7 @@ mod tests {
         // CC query.ts:450 appends only the supplied systemContext; runtime
         // session/config fields are not a second implicit context producer.
         assert_eq!(request.system_prompt.len(), 2);
-        assert!(
-            request.system_prompt[0]
-                .starts_with("You are Claude Code, Anthropic's official CLI for Claude.")
-        );
+        assert!(request.system_prompt[0].starts_with("You are nyan, an AI assistant."));
         assert!(request.system_prompt[0].contains("\n\nCWD: "));
         assert!(request.system_prompt[0].contains("\nDate: "));
         assert!(

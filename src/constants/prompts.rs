@@ -17,7 +17,7 @@ const ISSUES_EXPLAINER: &str =
     "report the issue at https://github.com/anthropics/claude-code/issues";
 
 /// Maps to: CC `constants/prompts.ts:758` `DEFAULT_AGENT_PROMPT`.
-pub const DEFAULT_AGENT_PROMPT: &str = "You are an agent for Claude Code, Anthropic's official CLI for Claude. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.";
+pub const DEFAULT_AGENT_PROMPT: &str = "You are an agent for nyan. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.";
 
 const CLAUDE_4_5_OR_4_6_OPUS_MODEL_ID: &str = "claude-opus-4-6";
 const CLAUDE_4_5_OR_4_6_SONNET_MODEL_ID: &str = "claude-sonnet-4-6";
@@ -202,7 +202,7 @@ pub fn get_simple_system_prompt_if_enabled() -> SystemPrompt {
         .map(|path| path.display().to_string())
         .unwrap_or_default();
     vec![format!(
-        "You are Claude Code, Anthropic's official CLI for Claude.\n\nCWD: {cwd}\nDate: {}",
+        "You are nyan, an AI assistant.\n\nCWD: {cwd}\nDate: {}",
         crate::constants::common::get_session_start_date()
     )]
 }
@@ -298,7 +298,7 @@ fn get_simple_doing_tasks_section() -> String {
     ]);
     // Maps to CC `prompts.ts:216-219` `userHelpSubitems`.
     let user_help_subitems = vec![
-        "/help: Get help with using Claude Code".to_string(),
+        "/help: Get help with using nyan".to_string(),
         format!("To give feedback, users should {}", ISSUES_EXPLAINER),
     ];
     items.extend([
@@ -814,7 +814,10 @@ mod tests {
         crate::utils::process_env::remove("NYAN_SIMPLE");
 
         assert_eq!(prompt.len(), 1);
-        assert!(prompt[0].starts_with("You are Claude Code, Anthropic's official CLI for Claude."));
+        assert_eq!(
+            prompt[0].split("\n\n").next(),
+            Some("You are nyan, an AI assistant.")
+        );
         assert!(prompt[0].contains("\n\nCWD: "));
         assert!(prompt[0].contains("\nDate: "));
     }
@@ -1262,11 +1265,11 @@ mod tests {
     }
 
     #[test]
-    fn default_agent_prompt_matches_official_verbatim() {
-        // CC constants/prompts.ts:758.
+    fn default_agent_prompt_matches_nyan_copy() {
+        // CC constants/prompts.ts:758, with nyan identity.
         assert_eq!(
             DEFAULT_AGENT_PROMPT,
-            r#"You are an agent for Claude Code, Anthropic's official CLI for Claude. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials."#
+            r#"You are an agent for nyan. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials."#
         );
     }
 

@@ -35,7 +35,7 @@ pub fn cron_create_input_schema() -> &'static crate::utils::zod::Schema {
             (
                 "durable",
                 semantic_boolean(zod::boolean().optional()).describe(
-                    "true = persist to .nyan/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this Claude session ends. Use true only when the user asks the task to survive across sessions.",
+                    "true = persist to .nyan/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this nyan session ends. Use true only when the user asks the task to survive across sessions.",
                 ),
             ),
         ])
@@ -233,7 +233,7 @@ pub(crate) fn cron_create_model_content(output: &CreateOutput) -> String {
     let where_text = if output.durable.unwrap_or(false) {
         "Persisted to .nyan/scheduled_tasks.json"
     } else {
-        "Session-only (not written to disk, dies when Claude exits)"
+        "Session-only (not written to disk, dies when nyan exits)"
     };
     if output.recurring {
         format!(
@@ -746,6 +746,27 @@ impl crate::tool::ToolCall for CronListTool {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn cron_create_prompts_and_results_use_nyan_identity() {
+        for durable in [false, true] {
+            let description = super::prompt::build_cron_create_description(durable);
+            let prompt = super::prompt::build_cron_create_prompt(durable);
+            assert!(!description.contains("Claude"));
+            assert!(prompt.contains("this nyan session"));
+            assert!(prompt.contains("gone when nyan exits"));
+            assert!(!prompt.contains("Claude"));
+        }
+        let output = super::CreateOutput {
+            id: "job".to_string(),
+            human_schedule: "every minute".to_string(),
+            recurring: true,
+            durable: Some(false),
+        };
+        let content = super::cron_create_model_content(&output);
+        assert!(content.contains("Session-only (not written to disk, dies when nyan exits)"));
+        assert!(!content.contains("Claude"));
+    }
+
+    #[test]
     fn cron_create_semantic_boolean_preprocessing_matches_official_schema() {
         let parsed = crate::tool::ToolCall::normalize_input(
             &super::CronCreateTool,
@@ -831,6 +852,10 @@ mod tests {
     fn cron_tool_schemas_match_official_names_and_inputs() {
         let create = super::cron_create_tool_schema();
         assert_eq!(create.name, "CronCreate");
+        assert_eq!(
+            create.input_schema["properties"]["durable"]["description"],
+            "true = persist to .nyan/scheduled_tasks.json and survive restarts. false (default) = in-memory only, dies when this nyan session ends. Use true only when the user asks the task to survive across sessions."
+        );
         assert_eq!(
             create.input_schema.get("required"),
             Some(&serde_json::json!(["cron", "prompt"]))

@@ -3692,7 +3692,7 @@ mod tests {
     }
 
     #[test]
-    fn general_purpose_system_prompt_uses_official_builtin_copy() {
+    fn general_purpose_system_prompt_uses_nyan_builtin_copy() {
         let agent = super::super::built_in::general_purpose_agent::general_purpose_agent();
         let prompt = get_agent_system_prompt(
             &agent,
@@ -3702,7 +3702,7 @@ mod tests {
             &[tool("Read")],
         )
         .join("\n");
-        assert!(prompt.contains("You are an agent for Claude Code"));
+        assert!(prompt.starts_with("You are an agent for nyan."));
         assert!(prompt.contains("NEVER proactively create documentation files"));
         assert!(prompt.contains("<env>"));
         assert!(prompt.contains("Working directory:"));

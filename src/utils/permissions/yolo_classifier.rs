@@ -1240,7 +1240,8 @@ mod tests {
     #[test]
     fn system_prompt_includes_bundled_rules_and_classify_tool_name() {
         let prompt = build_default_external_system_prompt();
-        assert!(prompt.contains("security classifier"));
+        assert!(prompt.starts_with("You are a security classifier for nyan's auto mode."));
+        assert!(!prompt.contains("Claude"));
         assert!(prompt.contains("classify_result"));
         assert!(prompt.contains("Allow Rules") || prompt.contains("read-only"));
         let rules = get_default_external_auto_mode_rules();

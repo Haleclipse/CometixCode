@@ -154,7 +154,7 @@ pub async fn exec_prompt_hook_with_executor(
         hook_event,
         processed_prompt,
         messages: messages_to_query,
-        system_prompt: vec!["You are evaluating a hook in Claude Code.\n\nYour response must be a JSON object matching one of the following schemas:\n1. If the condition is met, return: {\"ok\": true}\n2. If the condition is not met, return: {\"ok\": false, \"reason\": \"Reason for why it is not met\"}".to_string()],
+        system_prompt: vec!["You are evaluating a hook in nyan.\n\nYour response must be a JSON object matching one of the following schemas:\n1. If the condition is met, return: {\"ok\": true}\n2. If the condition is not met, return: {\"ok\": false, \"reason\": \"Reason for why it is not met\"}".to_string()],
         tools: tool_use_context.tools.clone(),
         model: model.clone(),
         timeout_ms,
@@ -348,6 +348,9 @@ mod tests {
         assert_eq!(result.outcome, HookOutcome::Success);
         assert!(result.system_message.unwrap().contains("hook_success"));
         let request = seen.lock().unwrap().pop().unwrap();
+        assert_eq!(request.system_prompt.len(), 1);
+        assert!(request.system_prompt[0].starts_with("You are evaluating a hook in nyan."));
+        assert!(!request.system_prompt[0].contains("Claude"));
         assert_eq!(request.hook_name, "my-hook");
         assert_eq!(request.hook_event, HookEvent::Stop);
         assert_eq!(request.processed_prompt, r#"Check {"x":1}"#);

@@ -99,7 +99,7 @@ pub fn sync_hook_response_schema() -> &'static crate::utils::zod::Schema {
             (
                 "continue",
                 zod::boolean()
-                    .describe("Whether Claude should continue after hook (default: true)")
+                    .describe("Whether nyan should continue after hook (default: true)")
                     .optional(),
             ),
             (

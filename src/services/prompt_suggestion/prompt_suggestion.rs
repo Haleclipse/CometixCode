@@ -10,7 +10,7 @@ use std::sync::{LazyLock, Mutex};
 
 const MAX_PARENT_UNCACHED_TOKENS: u64 = 10_000;
 
-const SUGGESTION_PROMPT: &str = r#"[SUGGESTION MODE: Suggest what the user might naturally type next into Claude Code.]
+const SUGGESTION_PROMPT: &str = r#"[SUGGESTION MODE: Suggest what the user might naturally type next into nyan.]
 
 FIRST: Look at the user's recent messages and original request.
 
@@ -21,8 +21,8 @@ THE TEST: Would they think "I was just about to type that"?
 EXAMPLES:
 User asked "fix the bug and run tests", bug is fixed → "run the tests"
 After code written → "try it out"
-Claude offers options → suggest the one the user would likely pick, based on conversation
-Claude asks to continue → "yes" or "go ahead"
+Assistant offers options → suggest the one the user would likely pick, based on conversation
+Assistant asks to continue → "yes" or "go ahead"
 Task complete, obvious follow-up → "commit this" or "push it"
 After error or misunderstanding → silence (let them assess/correct)
 
@@ -31,7 +31,7 @@ Be specific: "run the tests" beats "continue".
 NEVER SUGGEST:
 - Evaluative ("looks good", "thanks")
 - Questions ("what about...?")
-- Claude-voice ("Let me...", "I'll...", "Here's...")
+- Assistant-voice ("Let me...", "I'll...", "Here's...")
 - New ideas they didn't ask about
 - Multiple sentences
 
@@ -675,6 +675,14 @@ mod tests {
             request.query_source,
             crate::constants::query_source::QuerySource::PromptSuggestion
         );
+        assert!(request.messages.iter().any(|message| {
+            matches!(message, Message::User(user) if user.content.iter().any(|content| {
+                matches!(content, UserContent::Text(text) if text.starts_with("[SUGGESTION MODE: Suggest what the user might naturally type next into nyan.]")
+                    && text.contains("Assistant offers options")
+                    && text.contains("Assistant-voice")
+                    && !text.contains("Claude"))
+            }))
+        }));
         assert_eq!(request.options.skip_cache_write, Some(true));
         assert_eq!(request.options.max_output_tokens_override, None);
     }

@@ -141,7 +141,7 @@ where
         Some(Arc::new(state))
     }));
     let system_prompt = vec![format!(
-        "You are verifying a stop condition in Claude Code. Your task is to verify that the agent completed the given plan. The conversation transcript is available at: {}\nYou can read this file to analyze the conversation history if needed.\n\nUse the available tools to inspect the codebase and verify the condition.\nUse as few steps as possible - be efficient and direct.\n\nWhen done, return your result using the StructuredOutput tool with:\n- ok: true if the condition is met\n- ok: false with reason if the condition is not met",
+        "You are verifying a stop condition in nyan. Your task is to verify that the agent completed the given plan. The conversation transcript is available at: {}\nYou can read this file to analyze the conversation history if needed.\n\nUse the available tools to inspect the codebase and verify the condition.\nUse as few steps as possible - be efficient and direct.\n\nWhen done, return your result using the StructuredOutput tool with:\n- ok: true if the condition is met\n- ok: false with reason if the condition is not met",
         transcript_path.display()
     )];
     super::hook_helpers::register_structured_output_enforcement(&hook_agent_id);
@@ -446,6 +446,8 @@ mod tests {
                 let state = context.get_app_state().unwrap();
                 assert_eq!(state.tool_permission_context.mode, PermissionMode::DontAsk);
                 let path = crate::utils::session_storage::get_agent_transcript_path("parent-agent");
+                assert_eq!(params.system_prompt.len(), 1);
+                assert_eq!(params.system_prompt[0].split(". ").next(), Some("You are verifying a stop condition in nyan"));
                 assert!(params.system_prompt[0].contains(&path.display().to_string()));
                 assert_eq!(state.tool_permission_context.always_allow_rules[&PermissionRuleSource::Session],
                     vec![crate::utils::permissions::permission_rule_parser::permission_rule_value_from_string(&format!("Read(/{})", path.display()))]);

@@ -17,7 +17,7 @@ pub const OFFSET_INSTRUCTION_TARGETED: &str = "- When you already know which par
 
 /// @nyan: the paragraphs nyan adds on top of CC's prompt, each tied to the
 /// switch that owns it (docs/nyan/tool-io.md T1/T4/T5/T6). Empty strings in,
-/// empty strings out — the off state is CC's prompt byte for byte.
+/// empty strings out — the off state keeps the base prompt without extras.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NyanPromptExtras {
     pub completion_notes: bool,
@@ -71,6 +71,6 @@ pub fn render_prompt_template(
         ""
     };
     format!(
-        "Reads a file from the local filesystem. You can access any file directly by using this tool.\nAssume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n- The file_path parameter must be an absolute path, not a relative path\n- By default, it reads up to {MAX_LINES_TO_READ} lines starting from the beginning of the file{max_size_instruction}\n{offset_instruction}\n{line_format}\n- This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.{pdf_instruction}\n- This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.\n- This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.\n- You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths.\n- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.{nyan_prompt}"
+        "Reads a file from the local filesystem. You can access any file directly by using this tool.\nAssume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.\n\nUsage:\n- The file_path parameter must be an absolute path, not a relative path\n- By default, it reads up to {MAX_LINES_TO_READ} lines starting from the beginning of the file{max_size_instruction}\n{offset_instruction}\n{line_format}\n- This tool allows you to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually to the model.{pdf_instruction}\n- This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.\n- This tool can only read files, not directories. To read a directory, use an ls command via the Bash tool.\n- You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths.\n- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.{nyan_prompt}"
     )
 }

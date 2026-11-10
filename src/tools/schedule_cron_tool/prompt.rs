@@ -28,7 +28,7 @@ pub fn build_cron_create_description(durable_enabled: bool) -> String {
         "Schedule a prompt to run at a future time — either recurring on a cron schedule, or once at a specific time. Pass durable: true to persist to .nyan/scheduled_tasks.json; otherwise session-only."
             .to_string()
     } else {
-        "Schedule a prompt to run at a future time within this Claude session — either recurring on a cron schedule, or once at a specific time."
+        "Schedule a prompt to run at a future time within this nyan session — either recurring on a cron schedule, or once at a specific time."
             .to_string()
     }
 }
@@ -36,9 +36,9 @@ pub fn build_cron_create_description(durable_enabled: bool) -> String {
 /// Maps to: CC `ScheduleCronTool/prompt.ts:74-121` `buildCronCreatePrompt`.
 pub fn build_cron_create_prompt(durable_enabled: bool) -> String {
     let durability_section = if durable_enabled {
-        "## Durability\n\nBy default (durable: false) the job lives only in this Claude session — nothing is written to disk, and the job is gone when Claude exits. Pass durable: true to write to .nyan/scheduled_tasks.json so the job survives restarts. Only use durable: true when the user explicitly asks for the task to persist (\"keep doing this every day\", \"set this up permanently\"). Most \"remind me in 5 minutes\" / \"check back in an hour\" requests should stay session-only."
+        "## Durability\n\nBy default (durable: false) the job lives only in this nyan session — nothing is written to disk, and the job is gone when nyan exits. Pass durable: true to write to .nyan/scheduled_tasks.json so the job survives restarts. Only use durable: true when the user explicitly asks for the task to persist (\"keep doing this every day\", \"set this up permanently\"). Most \"remind me in 5 minutes\" / \"check back in an hour\" requests should stay session-only."
     } else {
-        "## Session-only\n\nJobs live only in this Claude session — nothing is written to disk, and the job is gone when Claude exits."
+        "## Session-only\n\nJobs live only in this nyan session — nothing is written to disk, and the job is gone when nyan exits."
     };
 
     let durable_runtime_note = if durable_enabled {

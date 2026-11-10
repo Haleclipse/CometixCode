@@ -953,6 +953,9 @@ mod tests {
                     prompt
                         .contains("Searches are performed automatically within a single API call")
                 );
+                assert!(prompt.contains("Allows you to search the web"));
+                assert!(prompt.contains("the model's knowledge cutoff"));
+                assert!(!prompt.contains("Claude"));
                 assert!(!prompt.contains("configured web providers"));
             }
             {

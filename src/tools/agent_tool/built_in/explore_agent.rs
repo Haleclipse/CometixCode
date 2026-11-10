@@ -13,7 +13,7 @@ pub fn get_explore_system_prompt() -> String {
     let grep = crate::tools::grep_tool::prompt::GREP_TOOL_NAME;
     let read = crate::tools::file_read_tool::prompt::FILE_READ_TOOL_NAME;
     format!(
-        r#"You are a file search specialist for Claude Code, Anthropic's official CLI for Claude. You excel at thoroughly navigating and exploring codebases.
+        r#"You are a file search specialist for nyan. You excel at thoroughly navigating and exploring codebases.
 
 === CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
 This is a READ-ONLY exploration task. You are STRICTLY PROHIBITED from:
@@ -76,6 +76,9 @@ mod tests {
     fn explore_agent_matches_official_readonly_metadata() {
         let agent = explore_agent();
         assert_eq!(agent.agent_type, "explore");
+        let prompt = agent.system_prompt.as_deref().unwrap();
+        assert!(prompt.starts_with("You are a file search specialist for nyan."));
+        assert!(!prompt.contains("Claude"));
         // No model of its own: `selection.subagents.explore` and the type
         // default (`@light`) decide.
         assert_eq!(agent.model, None);

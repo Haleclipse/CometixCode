@@ -161,7 +161,7 @@ pub fn get_coordinator_system_prompt() -> String {
     };
 
     format!(
-        r#"You are Claude Code, an AI assistant that orchestrates software engineering tasks across multiple workers.
+        r#"You are nyan, an AI assistant that orchestrates software engineering tasks across multiple workers.
 
 ## 1. Your Role
 
@@ -435,6 +435,8 @@ mod tests {
     #[test]
     fn coordinator_prompt_mentions_worker_tools() {
         let prompt = get_coordinator_system_prompt();
+        assert!(prompt.starts_with("You are nyan, an AI assistant that orchestrates"));
+        assert!(!prompt.contains("Claude"));
         assert!(prompt.contains(AGENT_TOOL_NAME));
         assert!(prompt.contains(SEND_MESSAGE_TOOL_NAME));
         assert!(prompt.contains(TASK_STOP_TOOL_NAME));

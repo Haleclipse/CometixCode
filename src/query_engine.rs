@@ -560,11 +560,8 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
     context.is_non_interactive_session = true;
     // Maps to CC `QueryEngine.ts:360-361` `customSystemPrompt, appendSystemPrompt`
     // on the tool-use context options. `query.ts:685-686` reads the latter back
-    // as `hasAppendSystemPrompt`, which is what flips `getCLISyspromptPrefix`
-    // from "You are a Claude agent, built on Anthropic's Claude Agent SDK." to
-    // the "...running within the Claude Agent SDK." preset for `-p
-    // --append-system-prompt` runs — the block the server's cache policy
-    // prefix-matches on.
+    // as `hasAppendSystemPrompt`, selecting the non-interactive assistant
+    // prefix for `-p --append-system-prompt` runs. Both modes identify as nyan.
     let (custom_system_prompt, append_system_prompt) =
         resolve_system_prompt_overrides(config, overrides)?;
     context.custom_system_prompt = custom_system_prompt;

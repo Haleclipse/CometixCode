@@ -11,8 +11,8 @@ use crate::utils::diff::{
 };
 use crate::utils::file::add_line_numbers;
 
-/// Claude can't emit curly quotes, so we define them as constants for
-/// normalization when applying edits. Maps to: CC utils.ts quote constants.
+/// Curly quote constants for normalization when applying model-generated edits.
+/// Maps to: CC utils.ts quote constants.
 pub const LEFT_SINGLE_CURLY_QUOTE: char = '‘';
 pub const RIGHT_SINGLE_CURLY_QUOTE: char = '’';
 pub const LEFT_DOUBLE_CURLY_QUOTE: char = '“';
@@ -21,7 +21,7 @@ pub const RIGHT_DOUBLE_CURLY_QUOTE: char = '”';
 const SNIPPET_CONTEXT_LINES: usize = 4;
 const DIFF_SNIPPET_MAX_BYTES: usize = 8192;
 
-/// Contains replacements to de-sanitize strings from Claude.
+/// Contains replacements to de-sanitize model-generated strings.
 /// Maps to: CC `utils.ts#DESANITIZATIONS`.
 const DESANITIZATIONS: &[(&str, &str)] = &[
     ("<fnr>", "<function_results>"),

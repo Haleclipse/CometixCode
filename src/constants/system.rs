@@ -3,9 +3,10 @@
 //! Critical system constants extracted to break circular dependencies
 //! (CC file header). Used by side queries and main API attribution.
 
-const DEFAULT_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
-const AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK.";
-const AGENT_SDK_PREFIX: &str = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+const DEFAULT_PREFIX: &str = "You are nyan, an AI assistant.";
+const AGENT_SDK_CLAUDE_CODE_PRESET_PREFIX: &str =
+    "You are nyan, an AI assistant running in a non-interactive session.";
+const AGENT_SDK_PREFIX: &str = "You are a nyan agent.";
 
 /// Maps to: CC `constants/system.ts:14-18` `CLI_SYSPROMPT_PREFIX_VALUES`.
 const CLI_SYSPROMPT_PREFIX_VALUES: [&str; 3] = [
@@ -26,9 +27,9 @@ pub static CLI_SYSPROMPT_PREFIXES: std::sync::LazyLock<std::collections::HashSet
 
 /// Maps to: CC `getCLISyspromptPrefix(options?)`.
 ///
-/// - Vertex: always DEFAULT_PREFIX
-/// - Non-interactive + append system prompt: Agent SDK Claude Code preset
-/// - Non-interactive: Agent SDK prefix
+/// @nyan: all session modes identify as nyan, without vendor or SDK claims.
+/// - Non-interactive + append system prompt: non-interactive assistant prefix
+/// - Non-interactive: agent prefix
 /// - Interactive: DEFAULT_PREFIX
 pub fn get_cli_sysprompt_prefix(
     is_non_interactive: bool,
@@ -95,32 +96,39 @@ mod tests {
     fn cli_sysprompt_prefix_interactive_is_default() {
         assert_eq!(
             get_cli_sysprompt_prefix(false, false),
-            "You are Claude Code, Anthropic's official CLI for Claude."
+            "You are nyan, an AI assistant."
         );
     }
 
     #[test]
-    fn cli_sysprompt_prefix_print_mode_matches_official_agent_sdk_variants() {
+    fn cli_sysprompt_prefix_print_mode_uses_nyan_identity() {
         let _env = TEST_ENV_LOCK.lock().unwrap();
         // CC `getCLISyspromptPrefix({ isNonInteractive: true })` — `-p` / SDK.
         assert_eq!(
             get_cli_sysprompt_prefix(true, false),
-            "You are a Claude agent, built on Anthropic's Claude Agent SDK."
+            "You are a nyan agent."
         );
         // CC `hasAppendSystemPrompt: true` — `-p --append-system-prompt`.
         assert_eq!(
             get_cli_sysprompt_prefix(true, true),
-            "You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK."
+            "You are nyan, an AI assistant running in a non-interactive session."
         );
     }
 
     #[test]
-    fn cli_sysprompt_prefixes_contains_every_official_variant() {
+    fn cli_sysprompt_prefixes_contains_every_nyan_variant() {
         assert!(CLI_SYSPROMPT_PREFIXES.contains(get_cli_sysprompt_prefix(false, false)));
+        assert!(CLI_SYSPROMPT_PREFIXES.contains(get_cli_sysprompt_prefix(false, true)));
         assert!(CLI_SYSPROMPT_PREFIXES.contains(get_cli_sysprompt_prefix(true, false)));
         assert!(CLI_SYSPROMPT_PREFIXES.contains(get_cli_sysprompt_prefix(true, true)));
         assert_eq!(CLI_SYSPROMPT_PREFIXES.len(), 3);
         assert!(!CLI_SYSPROMPT_PREFIXES.contains("You are Claude Code."));
+        for prefix in CLI_SYSPROMPT_PREFIXES.iter() {
+            assert!(prefix.contains("nyan"));
+            assert!(!prefix.contains("Claude"));
+            assert!(!prefix.contains("Anthropic"));
+            assert!(!prefix.contains("SDK"));
+        }
     }
 
     #[test]

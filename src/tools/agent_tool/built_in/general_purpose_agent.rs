@@ -5,7 +5,7 @@ use crate::tools::agent_tool::load_agents_dir::{AgentDefinition, AgentDefinition
 pub const GENERAL_PURPOSE_WHEN_TO_USE: &str = "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.";
 
 /// Maps to CC `generalPurposeAgent.ts#getGeneralPurposeSystemPrompt`.
-pub const GENERAL_PURPOSE_SYSTEM_PROMPT: &str = r#"You are an agent for Claude Code, Anthropic's official CLI for Claude. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.
+pub const GENERAL_PURPOSE_SYSTEM_PROMPT: &str = r#"You are an agent for nyan. Given the user's message, you should use the tools available to complete the task. Complete the task fully—don't gold-plate, but don't leave it half-done. When you complete the task, respond with a concise report covering what was done and any key findings — the caller will relay this to the user, so it only needs the essentials.
 
 Your strengths:
 - Searching for code, configurations, and patterns across large codebases
@@ -40,6 +40,9 @@ mod tests {
     fn general_purpose_agent_matches_official_metadata() {
         let agent = general_purpose_agent();
         assert_eq!(agent.agent_type, "general-purpose");
+        let prompt = agent.system_prompt.as_deref().unwrap();
+        assert!(prompt.starts_with("You are an agent for nyan."));
+        assert!(!prompt.contains("Claude"));
         assert_eq!(agent.source, AgentDefinitionSource::BuiltIn);
         assert_eq!(agent.tools.as_deref(), Some(&["*".to_string()][..]));
         assert!(

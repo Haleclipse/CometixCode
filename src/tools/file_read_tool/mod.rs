@@ -3449,6 +3449,17 @@ mod tests {
     fn file_read_tool_schema_matches_official_input_shape() {
         let schema = file_read_tool_schema();
         assert_eq!(schema.name, "Read");
+        assert!(
+            schema
+                .description
+                .contains("This tool allows you to read images")
+        );
+        assert!(
+            schema
+                .description
+                .contains("presented visually to the model")
+        );
+        assert!(!schema.description.contains("Claude"));
         assert!(schema.strict.unwrap());
         // @nyan: T4 makes `file_path` one half of a mutually exclusive pair,
         // so nothing is required at the schema level; validate_input enforces
