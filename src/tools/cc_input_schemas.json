@@ -708,42 +708,6 @@
       "additionalProperties": false
     }
   },
-  "RemoteTriggerTool": {
-    "name": "RemoteTrigger",
-    "schema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": [
-            "list",
-            "get",
-            "create",
-            "update",
-            "run"
-          ]
-        },
-        "trigger_id": {
-          "description": "Required for get, update, and run",
-          "type": "string",
-          "pattern": "^[\\w-]+$"
-        },
-        "body": {
-          "description": "JSON body for create and update",
-          "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {}
-        }
-      },
-      "required": [
-        "action"
-      ],
-      "additionalProperties": false
-    }
-  },
   "ScheduleCronTool::CronCreateTool": {
     "name": "CronCreate",
     "schema": {

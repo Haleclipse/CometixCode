@@ -65,14 +65,9 @@ pub fn teammate_shutdown_notification(count: u32) -> Notification {
 /// so future runtime wiring can reuse the exact producer semantics without
 /// starting task execution or writing session data.
 pub fn teammate_lifecycle_notifications_from_tasks<'a>(
-    remote_mode: bool,
     state: &mut TeammateLifecycleNotificationState,
     tasks: impl IntoIterator<Item = &'a TeammateLifecycleTaskSnapshot>,
 ) -> Vec<Notification> {
-    if remote_mode {
-        return Vec::new();
-    }
-
     let mut notifications = Vec::new();
     for task in tasks {
         if task.task_type != IN_PROCESS_TEAMMATE_TASK_TYPE {
@@ -162,7 +157,7 @@ mod tests {
             },
         ];
 
-        let first = teammate_lifecycle_notifications_from_tasks(false, &mut state, &tasks);
+        let first = teammate_lifecycle_notifications_from_tasks(&mut state, &tasks);
         assert_eq!(
             first
                 .iter()
@@ -171,7 +166,7 @@ mod tests {
             vec!["1 agent spawned", "1 agent spawned", "1 agent shut down"]
         );
 
-        let second = teammate_lifecycle_notifications_from_tasks(false, &mut state, &tasks);
+        let second = teammate_lifecycle_notifications_from_tasks(&mut state, &tasks);
         assert!(
             second.is_empty(),
             "already-seen running/completed tasks must not emit duplicates"
@@ -182,27 +177,8 @@ mod tests {
             task_type: IN_PROCESS_TEAMMATE_TASK_TYPE.to_string(),
             status: COMPLETED_TASK_STATUS.to_string(),
         }];
-        let shutdown =
-            teammate_lifecycle_notifications_from_tasks(false, &mut state, &completed_agent_a);
+        let shutdown = teammate_lifecycle_notifications_from_tasks(&mut state, &completed_agent_a);
         assert_eq!(shutdown.len(), 1);
         assert_eq!(shutdown[0].text, "1 agent shut down");
-    }
-
-    #[test]
-    fn teammate_lifecycle_task_planner_skips_remote_mode_without_marking_seen() {
-        let mut state = TeammateLifecycleNotificationState::default();
-        let tasks = vec![TeammateLifecycleTaskSnapshot {
-            id: "agent-a".to_string(),
-            task_type: IN_PROCESS_TEAMMATE_TASK_TYPE.to_string(),
-            status: RUNNING_TASK_STATUS.to_string(),
-        }];
-
-        let remote = teammate_lifecycle_notifications_from_tasks(true, &mut state, &tasks);
-        assert!(remote.is_empty());
-        assert!(state.seen_running_ids.is_empty());
-
-        let local = teammate_lifecycle_notifications_from_tasks(false, &mut state, &tasks);
-        assert_eq!(local.len(), 1);
-        assert_eq!(local[0].text, "1 agent spawned");
     }
 }

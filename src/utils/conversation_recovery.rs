@@ -1173,7 +1173,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_trigger_tool_use_and_result_match_official_ui_shape() {
+    fn retired_remote_trigger_recovers_as_an_unregistered_tool() {
         let entries = vec![
             json!({
                 "type": "assistant",
@@ -1195,24 +1195,17 @@ mod tests {
                     .next()
             })
             .expect("expected RemoteTrigger tool use");
-        assert_eq!(
-            tool_use,
-            ("RemoteTrigger".to_string(), "run nightly".to_string())
-        );
+        assert_eq!(tool_use, ("RemoteTrigger".to_string(), String::new()));
 
         let result = messages
             .iter()
             .find_map(tool_result_of)
             .expect("expected RemoteTrigger tool result");
-        // Raw wire content stays (D3 item 6); the pretty JSON derives at
-        // render from the raw `toolUseResult`.
+        // Raw wire content survives without a tool-specific renderer.
         assert_eq!(result.content, "HTTP 202\n{\"ok\":true}");
-        // CC RemoteTriggerTool/UI.tsx:11-19 renders the line count, never the
-        // JSON body — `HTTP {status} ({lines} lines)`.
-        assert_eq!(
-            rendered_tool_result_text(&messages, result),
-            "HTTP 202 (3 lines)"
-        );
+        let rendered = rendered_tool_result_text(&messages, result);
+        assert!(rendered.contains("HTTP 202"));
+        assert!(!rendered.contains("(3 lines)"));
         // No display shape — the raw `toolUseResult` rides the row.
         assert_eq!(
             result.tool_use_result,

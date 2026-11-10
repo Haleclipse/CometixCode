@@ -26,8 +26,6 @@ pub enum FeatureFlag {
     KairosCron,
     /// Maps to CC GrowthBook `tengu_kairos_cron_durable`.
     DurableCron,
-    /// Maps to CC GrowthBook `tengu_surreal_dali`.
-    RemoteTrigger,
     /// Maps to CC GrowthBook `tengu_glacier_2xr`.
     DeferredToolsDelta,
     /// Maps to CC Statsig/GrowthBook gate `tengu_streaming_tool_execution2`.
@@ -206,12 +204,6 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         cc_growthbook_name: "tengu_kairos_cron_durable",
         enabled: true,
         note: "Official default true; durable store, polling scheduler, and lease lock are wired.",
-    },
-    FeatureSwitch {
-        flag: FeatureFlag::RemoteTrigger,
-        cc_growthbook_name: "tengu_surreal_dali",
-        enabled: false,
-        note: "Remote trigger API remains disabled until CCR auth/policy/network execution is ported.",
     },
     FeatureSwitch {
         flag: FeatureFlag::DeferredToolsDelta,
@@ -394,7 +386,7 @@ pub const FEATURE_SWITCHES: &[FeatureSwitch] = &[
         flag: FeatureFlag::UdsInbox,
         cc_growthbook_name: "UDS_INBOX",
         enabled: false,
-        note: "Cross-session peer addressing (uds:/bridge: targets, ListPeers, peer transports) is unported; SendMessage keeps the official bypass-immune bridge consent gate wired behind this switch so enabling the transport cannot silently skip it.",
+        note: "Local cross-session peer addressing (uds: targets, ListPeers, peer transports) is unported.",
     },
     FeatureSwitch {
         flag: FeatureFlag::PersistThresholdOverrides,
@@ -606,7 +598,6 @@ mod tests {
             "tengu_harbor_permissions",
             "tengu_kairos_cron",
             "tengu_kairos_cron_durable",
-            "tengu_surreal_dali",
             "tengu_glacier_2xr",
             "tengu_streaming_tool_execution2",
             "tengu_scratch",

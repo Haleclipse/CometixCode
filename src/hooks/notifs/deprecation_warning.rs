@@ -14,14 +14,9 @@ pub struct DeprecationWarningNotificationState {
 }
 
 pub fn deprecation_warning_notification(
-    is_remote_mode: bool,
     deprecation_warning: Option<&str>,
     state: &mut DeprecationWarningNotificationState,
 ) -> Option<Notification> {
-    if is_remote_mode {
-        return None;
-    }
-
     let Some(warning) = deprecation_warning.filter(|warning| !warning.trim().is_empty()) else {
         state.last_warning = None;
         return None;
@@ -50,7 +45,6 @@ mod tests {
     fn deprecation_warning_notification_matches_official_payload() {
         let mut state = DeprecationWarningNotificationState::default();
         let notification = deprecation_warning_notification(
-            false,
             Some("⚠ Claude 3 Opus will be retired on January 5, 2026. Consider switching to a newer model."),
             &mut state,
         )
@@ -76,26 +70,11 @@ mod tests {
         let mut state = DeprecationWarningNotificationState::default();
         let warning = "⚠ Claude 3.7 Sonnet will be retired on February 19, 2026. Consider switching to a newer model.";
 
-        assert!(deprecation_warning_notification(false, Some(warning), &mut state).is_some());
-        assert!(deprecation_warning_notification(false, Some(warning), &mut state).is_none());
+        assert!(deprecation_warning_notification(Some(warning), &mut state).is_some());
+        assert!(deprecation_warning_notification(Some(warning), &mut state).is_none());
 
-        assert!(deprecation_warning_notification(false, None, &mut state).is_none());
+        assert!(deprecation_warning_notification(None, &mut state).is_none());
         assert_eq!(state.last_warning, None);
-        assert!(deprecation_warning_notification(false, Some(warning), &mut state).is_some());
-    }
-
-    #[test]
-    fn deprecation_warning_notification_skips_remote_mode_without_mutating_state() {
-        let mut state = DeprecationWarningNotificationState {
-            last_warning: Some("previous".to_string()),
-        };
-
-        assert!(deprecation_warning_notification(
-            true,
-            Some("⚠ Claude 3 Opus will be retired on January 5, 2026. Consider switching to a newer model."),
-            &mut state,
-        )
-        .is_none());
-        assert_eq!(state.last_warning.as_deref(), Some("previous"));
+        assert!(deprecation_warning_notification(Some(warning), &mut state).is_some());
     }
 }

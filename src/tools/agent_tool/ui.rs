@@ -62,8 +62,8 @@ pub(crate) fn verbose_agent_transcript_tool_result_projection(
 
 /// The Rust stand-in for CC's `outputSchema.safeParse(toolUseResult)`
 /// (`UserToolSuccessMessage.tsx:80`): the sync/async union
-/// (`AgentTool.tsx:271-294`), plus the teammate_spawned and remote_launched
-/// shapes CC adds dynamically at runtime when multi-agent features are
+/// (`AgentTool.tsx:271-294`), plus the teammate_spawned
+/// shape CC adds dynamically at runtime when multi-agent features are
 /// enabled (`AgentTool.tsx:270` note, `:300-315`).
 pub(crate) fn parse_output(value: &serde_json::Value) -> Option<super::AgentOutput> {
     let map = value.as_object()?;
@@ -104,8 +104,6 @@ pub(crate) fn parse_output(value: &serde_json::Value) -> Option<super::AgentOutp
         worktree_path: None,
         worktree_branch: None,
         usage: None,
-        task_id: None,
-        session_url: None,
     };
     match map.get("status")?.as_str()? {
         "completed" => {
@@ -162,11 +160,6 @@ pub(crate) fn parse_output(value: &serde_json::Value) -> Option<super::AgentOutp
             output.plan_mode_required = map
                 .get("plan_mode_required")
                 .and_then(serde_json::Value::as_bool);
-        }
-        "remote_launched" => {
-            output.status = "remote_launched".to_string();
-            output.task_id = optional_string("taskId")?;
-            output.session_url = optional_string("sessionUrl")?;
         }
         _ => return None,
     }
@@ -871,8 +864,7 @@ pub(crate) fn grouped_agent_stat(
         .as_ref()
         .and_then(|parsed| parsed.get("run_in_background"))
         == Some(&serde_json::Value::Bool(true));
-    let backgrounded_mid_execution =
-        matches!(output_status, Some("async_launched" | "remote_launched"));
+    let backgrounded_mid_execution = matches!(output_status, Some("async_launched"));
 
     GroupedAgentStat {
         agent_type,
@@ -1242,8 +1234,7 @@ fn agent_verbose_progress_rows(
 /// ELEMENT half (see the section note above; [`render_tool_result_lines`] is
 /// the line half of the same upstream renderer).
 ///
-/// Covers all three success statuses in both modes, as the one CC function
-/// does: remote_launched (`:343-356`), async_launched (`:357-390`) and
+/// Covers local success statuses in both modes: async_launched (`:357-390`) and
 /// completed (`:392-469`). The completed branch's non-transcript hint is the
 /// real [`CtrlOToExpand`] component (`:462-467`), so a nested mount inside a
 /// [`SubAgentProvider`] self-suppresses exactly as CC's `SubAgentContext`
@@ -1269,13 +1260,7 @@ pub(crate) fn render_tool_result_message(
         return None;
     }
     let output = tool_use_result.and_then(parse_output)?;
-    let (agent_status, task_id, session_url, prompt, content) = (
-        &output.status,
-        &output.task_id,
-        &output.session_url,
-        &output.prompt,
-        &output.content,
-    );
+    let (agent_status, prompt, content) = (&output.status, &output.prompt, &output.content);
     let (total_tool_use_count, total_duration_ms, total_tokens) = (
         &output.total_tool_use_count,
         &output.total_duration_ms,
@@ -1283,43 +1268,6 @@ pub(crate) fn render_tool_result_message(
     );
 
     match agent_status.as_str() {
-        "remote_launched" => {
-            // CC `:346-353`: `Remote agent launched ` in normal text, then a
-            // dim `· {taskId} · {sessionUrl}` tail. Nyan keeps its existing
-            // defensive per-field omission where CC interpolates the required
-            // fields unconditionally.
-            let mut detail = String::new();
-            if let Some(task_id) = task_id.as_deref().filter(|value| !value.is_empty()) {
-                detail.push_str("· ");
-                detail.push_str(task_id);
-            }
-            if let Some(session_url) = session_url.as_deref().filter(|value| !value.is_empty()) {
-                if !detail.is_empty() {
-                    detail.push(' ');
-                }
-                detail.push_str("· ");
-                detail.push_str(session_url);
-            }
-            let head = if detail.is_empty() {
-                "Remote agent launched".to_string()
-            } else {
-                "Remote agent launched ".to_string()
-            };
-            let dim_tail = (!detail.is_empty()).then_some(detail);
-            Some(
-                element! {
-                    View(flex_direction: FlexDirection::Column) {
-                        MessageResponse {
-                            Text(content: head, wrap: TextWrap::NoWrap)
-                            #(dim_tail.map(|tail| element! {
-                                Text(content: tail, dim: true, wrap: TextWrap::NoWrap)
-                            }))
-                        }
-                    }
-                }
-                .into_any(),
-            )
-        }
         "async_launched" => {
             // CC `:364-380`: the ` (↓ to manage · ctrl+o to expand)`
             // parenthetical is dim and renders only outside transcript mode;
@@ -1433,8 +1381,6 @@ pub(crate) fn render_tool_result_message(
 pub(crate) fn render_tool_result_lines(
     status: &str,
     _agent_id: Option<&str>,
-    task_id: Option<&str>,
-    session_url: Option<&str>,
     prompt: Option<&str>,
     content: &[String],
     total_tool_use_count: Option<usize>,
@@ -1443,32 +1389,6 @@ pub(crate) fn render_tool_result_lines(
     options: ToolRenderOptions,
 ) -> Vec<ToolRenderLine> {
     match status {
-        "remote_launched" => {
-            // CC `UI.tsx:346-353` dims the `· {taskId} · {sessionUrl}` tail
-            // inside the otherwise-normal line. `text` keeps the full joined
-            // copy for plain-text consumers; the styled split rides
-            // `segments`, which the component renderer prefers.
-            let mut detail = String::new();
-            if let Some(task_id) = task_id.filter(|value| !value.is_empty()) {
-                detail.push_str(" · ");
-                detail.push_str(task_id);
-            }
-            if let Some(session_url) = session_url.filter(|value| !value.is_empty()) {
-                detail.push_str(" · ");
-                detail.push_str(session_url);
-            }
-            let mut line = ToolRenderLine::new(
-                format!("Remote agent launched{detail}"),
-                ToolRenderTone::Normal,
-            );
-            if !detail.is_empty() {
-                line = line.with_segments(vec![
-                    ToolRenderSegment::new("Remote agent launched "),
-                    ToolRenderSegment::new(detail.trim_start().to_string()).with_dim(true),
-                ]);
-            }
-            vec![line]
-        }
         "async_launched" => {
             // CC `UI.tsx:362-381` dims the whole ` (↓ to manage · ctrl+o to
             // expand)` parenthetical (`<Text dimColor>{' ('}…{')'}</Text>`).
@@ -3141,7 +3061,7 @@ mod grouped_agent_stat_tests {
         assert!(!stat(base.clone(), None).is_async);
         assert!(!stat(base.clone(), Some("completed")).is_async);
         assert!(stat(base.clone(), Some("async_launched")).is_async);
-        assert!(stat(base.clone(), Some("remote_launched")).is_async);
+        assert!(!stat(base.clone(), Some("remote_launched")).is_async);
 
         let mut backgrounded = base.clone();
         backgrounded["run_in_background"] = serde_json::json!(true);
@@ -3481,24 +3401,7 @@ mod tests {
         assert_eq!(async_transcript[1].text, "Prompt:");
         assert_eq!(async_transcript[2].text, "  Run tests");
 
-        let remote_raw = serde_json::json!({
-            "status": "remote_launched",
-            "taskId": "task-remote",
-            "sessionUrl": "https://example.test/session",
-        });
-        let remote = render_tool_result_lines_for_result(
-            "Agent",
-            ToolResultStatus::Success,
-            "",
-            Some(&remote_raw),
-            None,
-            &[],
-            ToolRenderOptions::default(),
-        );
-        assert_eq!(
-            remote[0].text,
-            "Remote agent launched · task-remote · https://example.test/session"
-        );
+        assert!(parse_output(&serde_json::json!({"status": "remote_launched"})).is_none());
     }
 
     #[test]
@@ -3787,40 +3690,10 @@ mod tests {
         );
     }
 
-    /// CC dims the `· {taskId} · {sessionUrl}` tail of remote_launched
-    /// (`UI.tsx:348-352`) and the whole ` (↓ to manage · ctrl+o to expand)`
-    /// parenthetical of async_launched (`:364-380`). The line half carries the
-    /// split on `segments`; `text` keeps the full copy for plain-text readers.
+    /// The async launch parenthetical is dim; `text` keeps the full copy.
     #[test]
-    fn remote_and_async_lines_carry_dim_segments() {
+    fn async_lines_carry_dim_segments() {
         use crate::components::messages::user_tool_result_message::render_tool_result_lines_for_result;
-
-        let remote_raw = serde_json::json!({
-            "status": "remote_launched",
-            "taskId": "task-remote",
-            "sessionUrl": "https://example.test/session",
-        });
-        let remote = render_tool_result_lines_for_result(
-            "Agent",
-            ToolResultStatus::Success,
-            "",
-            Some(&remote_raw),
-            None,
-            &[],
-            ToolRenderOptions::default(),
-        );
-        assert_eq!(
-            remote[0].text,
-            "Remote agent launched · task-remote · https://example.test/session"
-        );
-        assert_eq!(
-            remote[0].segments,
-            vec![
-                ToolRenderSegment::new("Remote agent launched "),
-                ToolRenderSegment::new("· task-remote · https://example.test/session")
-                    .with_dim(true),
-            ]
-        );
 
         let async_raw = serde_json::json!({
             "status": "async_launched",

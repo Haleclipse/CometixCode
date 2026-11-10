@@ -171,26 +171,6 @@ pub(crate) fn render_tool_result_message(
             options,
         ),
         "local_agent" => render_local_agent_lines(&output, task, options),
-        "remote_agent" => {
-            let mut lines = vec![ToolRenderLine::new(
-                format!("  {} [{}]", task.description, task.status),
-                ToolRenderTone::Normal,
-            )];
-            if !task.output.is_empty() {
-                if options.show_full() {
-                    lines.push(ToolRenderLine::new(
-                        format!("    {}", task.output),
-                        ToolRenderTone::Normal,
-                    ));
-                } else {
-                    lines.push(ToolRenderLine::new(
-                        format!("     {}", ctrl_o_to_expand_hint()),
-                        ToolRenderTone::Inactive,
-                    ));
-                }
-            }
-            lines
-        }
         // Default rendering: `task.output.slice(0, 500)` in every mode —
         // CC has no verbose full-text branch here.
         _ => {

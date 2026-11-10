@@ -18,7 +18,6 @@ use crate::services::compact::auto_compact::is_auto_compact_enabled;
 use crate::state::store::AppStore;
 use crate::utils::auth::get_api_key_helper_elapsed_ms;
 use crate::utils::config::load_global_config;
-use crate::utils::env_utils::is_env_truthy;
 use crate::utils::format::format_duration;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
@@ -32,20 +31,15 @@ const DEFAULT_MODEL: &str = "claude-sonnet-4-5";
 /// Maps to: CC `Notifications.tsx` auth-error footer row.
 pub fn auth_status_indicator(
     credential_status: &CredentialStatus,
-    is_remote_mode: bool,
 ) -> Option<PromptFooterIndicator> {
     let CredentialStatus::Missing { provider } = credential_status else {
         return None;
     };
 
     Some(PromptFooterIndicator::colored(
-        if is_remote_mode {
-            "Authentication error · Try again".to_string()
-        } else {
-            format!(
-                "No credential for provider {provider} · check settings.nyan.providers.{provider}.credential"
-            )
-        },
+        format!(
+            "No credential for provider {provider} · check settings.nyan.providers.{provider}.credential"
+        ),
         NotificationColor::Error,
     ))
 }
@@ -155,8 +149,7 @@ pub fn direct_footer_row_count_from_app(
         api_key_helper_slow,
         sandbox_hint_visible,
     );
-    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref());
-    if auth_status_indicator(credential_status, is_remote_mode).is_some() {
+    if auth_status_indicator(credential_status).is_some() {
         count += 1;
     }
     if debug {
@@ -251,7 +244,6 @@ pub fn Notifications(
         },
         std::sync::Arc::as_ptr(&props.messages) as usize,
     );
-    let is_remote_mode = is_env_truthy(crate::utils::process_env::var("NYAN_REMOTE").as_deref());
     let theme = hooks.use_context::<Theme>();
     let store = hooks.try_use_context::<AppStore>().map(|s| s.clone());
 
@@ -319,7 +311,7 @@ pub fn Notifications(
         mid_rows.push(FooterRow::from_indicator(indicator));
     }
 
-    if let Some(indicator) = auth_status_indicator(&credential_status, is_remote_mode) {
+    if let Some(indicator) = auth_status_indicator(&credential_status) {
         tail_rows.push(FooterRow::from_indicator(indicator));
     }
     if debug {
@@ -616,17 +608,14 @@ mod tests {
     }
 
     #[test]
-    fn auth_status_indicator_names_the_provider_locally_and_stays_generic_remotely() {
-        let local = auth_status_indicator(&missing("deepseek"), false).unwrap();
-        let remote = auth_status_indicator(&missing("deepseek"), true).unwrap();
+    fn auth_status_indicator_names_the_provider() {
+        let indicator = auth_status_indicator(&missing("deepseek")).unwrap();
         assert_eq!(
-            local.text,
+            indicator.text,
             "No credential for provider deepseek · check settings.nyan.providers.deepseek.credential"
         );
-        assert_eq!(remote.text, "Authentication error · Try again");
-        assert_eq!(local.segments[0].color, Some(NotificationColor::Error));
-        assert_eq!(remote.segments[0].color, Some(NotificationColor::Error));
-        assert!(auth_status_indicator(&CredentialStatus::Ready, false).is_none());
+        assert_eq!(indicator.segments[0].color, Some(NotificationColor::Error));
+        assert!(auth_status_indicator(&CredentialStatus::Ready).is_none());
     }
 
     #[test]
@@ -698,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    fn notifications_remote_auth_copy_uses_canonical_process_env() {
+    fn notifications_retired_remote_env_keeps_provider_specific_auth_copy() {
         let _runtime = NotificationsRuntimeFixture::new(true);
         let store = crate::state::store::AppStore::new(
             crate::state::app_state_store::AppState::default(),
@@ -721,7 +710,9 @@ mod tests {
         .render(Some(120))
         .to_string();
         assert!(
-            text.contains("Authentication error · Try again"),
+            text.contains(
+                "No credential for provider cpa · check settings.nyan.providers.cpa.credential"
+            ),
             "canvas=\n{text}"
         );
     }

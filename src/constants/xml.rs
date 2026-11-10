@@ -45,19 +45,6 @@ pub const WORKTREE_TAG: &str = "worktree";
 pub const WORKTREE_PATH_TAG: &str = "worktreePath";
 pub const WORKTREE_BRANCH_TAG: &str = "worktreeBranch";
 
-// XML tag names for ultraplan mode (remote parallel planning sessions).
-pub const ULTRAPLAN_TAG: &str = "ultraplan";
-
-// XML tag name for remote /review results (teleported review session
-// output). Remote session wraps its final review in this tag; local poller
-// extracts it.
-pub const REMOTE_REVIEW_TAG: &str = "remote-review";
-
-// run_hunt.sh's heartbeat echoes the orchestrator's progress.json inside
-// this tag every ~10s. Local poller parses the latest for the task-status
-// line.
-pub const REMOTE_REVIEW_PROGRESS_TAG: &str = "remote-review-progress";
-
 // XML tag name for teammate messages (swarm inter-agent communication).
 pub const TEAMMATE_MESSAGE_TAG: &str = "teammate-message";
 

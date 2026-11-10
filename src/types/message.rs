@@ -840,7 +840,7 @@ pub struct MicrocompactMetadata {
     pub cleared_attachment_uuids: Vec<String>,
 }
 
-/// Maps to: CC `types/message.ts:104-110` — `SystemMessage` is a 16-subtype
+/// Maps to: CC `types/message.ts:104-110` — `SystemMessage` is a
 /// discriminated union over `SystemMessageBase`. The Rust enum is that same
 /// discrimination at the same (type) layer per the discrimination-placement
 /// contract (PORTING.md rule 1); the old flat `{content, level, subtype}`

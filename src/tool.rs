@@ -1972,8 +1972,6 @@ pub enum ToolOutput {
     /// CC `tools/AskUserQuestionTool/AskUserQuestionTool.tsx` outputSchema
     /// (:128).
     AskUserQuestion(crate::tools::ask_user_question_tool::Output),
-    /// CC `tools/RemoteTriggerTool/RemoteTriggerTool.ts` outputSchema (:35).
-    RemoteTrigger(crate::tools::remote_trigger_tool::Output),
     /// CC `tools/LSPTool/LSPTool.ts` outputSchema (:76).
     Lsp(crate::tools::lsp_tool::Output),
     /// CC `tools/WebFetchTool/WebFetchTool.ts` outputSchema (:32).
@@ -2467,7 +2465,6 @@ fn output_variant_name(output: &ToolOutput) -> &'static str {
         ToolOutput::PowerShell(_) => "PowerShell",
         ToolOutput::TodoWrite(_) => "TodoWrite",
         ToolOutput::AskUserQuestion(_) => "AskUserQuestion",
-        ToolOutput::RemoteTrigger(_) => "RemoteTrigger",
         ToolOutput::Lsp(_) => "Lsp",
         ToolOutput::WebFetch(_) => "WebFetch",
         ToolOutput::WebSearch(_) => "WebSearch",

@@ -98,9 +98,6 @@ pub fn use_kick_off_check_and_disable_bypass_permissions_if_needed(hooks: &mut H
     let store = crate::state::app_state::use_app_state_store(hooks);
     hooks.use_effect(
         move || {
-            if crate::bootstrap::state::get_is_remote_mode() {
-                return;
-            }
             if let Some(runtime) = crate::utils::process_runtime::runtime_handle_for_detached_work()
             {
                 runtime.spawn(async move {
@@ -121,9 +118,6 @@ pub fn use_kick_off_check_and_disable_auto_mode_if_needed(hooks: &mut Hooks) {
     let first_run = hooks.use_const(|| Arc::new(AtomicBool::new(true))).clone();
     hooks.use_effect(
         move || {
-            if crate::bootstrap::state::get_is_remote_mode() {
-                return;
-            }
             if !first_run.swap(false, Ordering::SeqCst) {
                 reset_auto_mode_gate_check();
             }

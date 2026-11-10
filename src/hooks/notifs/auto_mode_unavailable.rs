@@ -31,10 +31,9 @@ pub fn should_show_auto_mode_unavailable_notification(
     is_auto_mode_available: bool,
     has_auto_mode_opt_in: bool,
     transcript_classifier_enabled: bool,
-    is_remote_mode: bool,
     already_shown: bool,
 ) -> bool {
-    if !transcript_classifier_enabled || is_remote_mode || already_shown {
+    if !transcript_classifier_enabled || already_shown {
         return false;
     }
 
@@ -93,7 +92,6 @@ mod tests {
             true,
             true,
             false,
-            false,
         ));
         assert!(!should_show_auto_mode_unavailable_notification(
             PermissionMode::Default,
@@ -101,7 +99,6 @@ mod tests {
             true,
             true,
             true,
-            false,
             false,
         ));
         assert!(!should_show_auto_mode_unavailable_notification(
@@ -111,7 +108,6 @@ mod tests {
             true,
             true,
             false,
-            false,
         ));
         assert!(!should_show_auto_mode_unavailable_notification(
             PermissionMode::Default,
@@ -119,7 +115,6 @@ mod tests {
             false,
             true,
             true,
-            false,
             false,
         ));
         assert!(!should_show_auto_mode_unavailable_notification(
@@ -128,7 +123,6 @@ mod tests {
             false,
             false,
             true,
-            false,
             false,
         ));
         assert!(!should_show_auto_mode_unavailable_notification(
@@ -138,7 +132,6 @@ mod tests {
             true,
             false,
             false,
-            false,
         ));
         assert!(!should_show_auto_mode_unavailable_notification(
             PermissionMode::Default,
@@ -146,16 +139,6 @@ mod tests {
             false,
             true,
             true,
-            true,
-            false,
-        ));
-        assert!(!should_show_auto_mode_unavailable_notification(
-            PermissionMode::Default,
-            PermissionMode::Plan,
-            false,
-            true,
-            true,
-            false,
             true,
         ));
     }

@@ -223,11 +223,6 @@ pub struct AgentOutput {
     /// fills the schema's nullable server_tool_use/service_tier/cache_creation
     /// legs with null (the run_agent aggregate does not track them yet).
     pub usage: Option<crate::types::message::TokenUsage>,
-    /// Maps to CC `RemoteLaunchedOutput.taskId` (ant-only private shape the
-    /// renderer narrows to, `AgentTool/UI.tsx:342-355`). No live producer.
-    pub task_id: Option<String>,
-    /// Maps to CC `RemoteLaunchedOutput.sessionUrl`.
-    pub session_url: Option<String>,
 }
 
 static ACTIVE_SUBAGENTS_COUNT: std::sync::atomic::AtomicUsize =
@@ -490,8 +485,6 @@ fn async_launched_tool_result(
             worktree_path: None,
             worktree_branch: None,
             usage: None,
-            task_id: None,
-            session_url: None,
         }),
         new_messages: Vec::new(),
     }
@@ -1913,8 +1906,6 @@ impl crate::tool::ToolCall for AgentTool {
                             worktree_path: None,
                             worktree_branch: None,
                             usage: None,
-                            task_id: None,
-                            session_url: None,
                         }),
                         new_messages: Vec::new(),
                     },
@@ -2269,8 +2260,6 @@ impl crate::tool::ToolCall for AgentTool {
                             worktree_path: worktree_result.worktree_path,
                             worktree_branch: worktree_result.worktree_branch,
                             usage: completed.usage,
-                            task_id: None,
-                            session_url: None,
                         }),
                         new_messages: Vec::new(),
                     }
@@ -3543,8 +3532,6 @@ mod tests {
             worktree_path: None,
             worktree_branch: None,
             usage: None,
-            task_id: None,
-            session_url: None,
         });
 
         let (content, status) =
@@ -3584,8 +3571,6 @@ mod tests {
             worktree_path: Some("/tmp/worktree".to_string()),
             worktree_branch: Some("agent-plan".to_string()),
             usage: None,
-            task_id: None,
-            session_url: None,
         });
 
         let (content, status) =
@@ -3626,8 +3611,6 @@ mod tests {
             worktree_path: Some("/tmp/worktree".to_string()),
             worktree_branch: Some("worktree-agent".to_string()),
             usage: None,
-            task_id: None,
-            session_url: None,
         });
         let (content, status) =
             AgentTool.map_tool_result_to_tool_result_block_param(&output, "toolu_agent");

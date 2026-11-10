@@ -4,20 +4,8 @@
 //! footer pill and the turn-duration transcript line so the two surfaces agree
 //! on terminology (CC pillLabel.ts:5-9).
 
-use crate::constants::figures::{DIAMOND_FILLED, DIAMOND_OPEN};
-
-/// Maps to: CC `tasks/pillLabel.ts:44-51` — the `ultraplanPhase` literals read
-/// off `RemoteAgentTaskState` (`'plan_ready' | 'needs_input'`); [`Self::Other`]
-/// covers CC's `default` switch arm for any other present phase value.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UltraplanPhase {
-    PlanReady,
-    NeedsInput,
-    Other,
-}
-
 /// Projection of CC's `BackgroundTaskState` union (`tasks/types.ts:22-29`)
-/// carrying only the fields `getPillLabel` / `pillNeedsCta` read. Rust has no
+/// carrying only the fields `getPillLabel` reads. Rust has no
 /// unified rich task union yet; precedent for the projection-enum shape is
 /// `FooterTaskProjection` in `components/tasks/task_status_utils.rs`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,13 +18,6 @@ pub enum PillTask {
     InProcessTeammate { team_name: String },
     /// CC `LocalAgentTaskState` (pillLabel.ts:37-38).
     LocalAgent,
-    /// CC `RemoteAgentTaskState` (pillLabel.ts:39-56).
-    /// SEAM (producer missing): no Rust production site constructs
-    /// remote_agent tasks yet.
-    RemoteAgent {
-        is_ultraplan: bool,
-        ultraplan_phase: Option<UltraplanPhase>,
-    },
     /// CC `LocalWorkflowTaskState` (pillLabel.ts:57-58).
     /// SEAM (producer missing): the ant WORKFLOW_SCRIPTS task type has no Rust
     /// producer.
@@ -117,29 +98,6 @@ pub fn get_pill_label(tasks: &[PillTask]) -> String {
                     format!("{n} local agents")
                 };
             }
-            PillTask::RemoteAgent {
-                is_ultraplan,
-                ultraplan_phase,
-            } => {
-                // CC `:39-56` — ◇ open diamond while running/needs-input,
-                // ◆ filled once ExitPlanMode is awaiting approval.
-                if n == 1 && *is_ultraplan {
-                    return match ultraplan_phase {
-                        Some(UltraplanPhase::PlanReady) => {
-                            format!("{DIAMOND_FILLED} ultraplan ready")
-                        }
-                        Some(UltraplanPhase::NeedsInput) => {
-                            format!("{DIAMOND_OPEN} ultraplan needs your input")
-                        }
-                        _ => format!("{DIAMOND_OPEN} ultraplan"),
-                    };
-                }
-                return if n == 1 {
-                    format!("{DIAMOND_OPEN} 1 cloud session")
-                } else {
-                    format!("{DIAMOND_OPEN} {n} cloud sessions")
-                };
-            }
             PillTask::LocalWorkflow => {
                 // CC `:57-58`.
                 return if n == 1 {
@@ -165,22 +123,6 @@ pub fn get_pill_label(tasks: &[PillTask]) -> String {
 
     // CC `:66` — mixed-type fallback.
     format!("{n} background {}", if n == 1 { "task" } else { "tasks" })
-}
-
-/// Maps to: CC `tasks/pillLabel.ts:74-82` `pillNeedsCta` — true only for a
-/// single ultraplan remote agent in one of the two attention states
-/// (`ultraplanPhase !== undefined`); plain running shows just the label.
-pub fn pill_needs_cta(tasks: &[PillTask]) -> bool {
-    if tasks.len() != 1 {
-        return false;
-    }
-    matches!(
-        tasks[0],
-        PillTask::RemoteAgent {
-            is_ultraplan: true,
-            ultraplan_phase: Some(_),
-        }
-    )
 }
 
 #[cfg(test)]
@@ -270,53 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn remote_agent_ultraplan_three_phases_and_cloud_session_fallback() {
-        // CC pillLabel.ts:39-56.
-        assert_eq!(
-            get_pill_label(&[PillTask::RemoteAgent {
-                is_ultraplan: true,
-                ultraplan_phase: Some(UltraplanPhase::PlanReady),
-            }]),
-            format!("{DIAMOND_FILLED} ultraplan ready")
-        );
-        assert_eq!(
-            get_pill_label(&[PillTask::RemoteAgent {
-                is_ultraplan: true,
-                ultraplan_phase: Some(UltraplanPhase::NeedsInput),
-            }]),
-            format!("{DIAMOND_OPEN} ultraplan needs your input")
-        );
-        assert_eq!(
-            get_pill_label(&[PillTask::RemoteAgent {
-                is_ultraplan: true,
-                ultraplan_phase: None,
-            }]),
-            format!("{DIAMOND_OPEN} ultraplan")
-        );
-        assert_eq!(
-            get_pill_label(&[PillTask::RemoteAgent {
-                is_ultraplan: false,
-                ultraplan_phase: None,
-            }]),
-            format!("{DIAMOND_OPEN} 1 cloud session")
-        );
-        // n > 1 ultraplan falls through to cloud sessions (CC `:43` n === 1).
-        assert_eq!(
-            get_pill_label(&[
-                PillTask::RemoteAgent {
-                    is_ultraplan: true,
-                    ultraplan_phase: Some(UltraplanPhase::PlanReady),
-                },
-                PillTask::RemoteAgent {
-                    is_ultraplan: false,
-                    ultraplan_phase: None,
-                },
-            ]),
-            format!("{DIAMOND_OPEN} 2 cloud sessions")
-        );
-    }
-
-    #[test]
     fn mixed_types_fall_back_to_background_task_count() {
         // CC pillLabel.ts:66.
         assert_eq!(
@@ -329,37 +224,5 @@ mod tests {
         // Empty input never happens in CC (both call sites gate on length);
         // the Rust total function yields the fallback.
         assert_eq!(get_pill_label(&[]), "0 background tasks");
-    }
-
-    #[test]
-    fn cta_only_for_a_single_ultraplan_with_a_present_phase() {
-        // CC pillLabel.ts:74-82.
-        assert!(pill_needs_cta(&[PillTask::RemoteAgent {
-            is_ultraplan: true,
-            ultraplan_phase: Some(UltraplanPhase::PlanReady),
-        }]));
-        assert!(pill_needs_cta(&[PillTask::RemoteAgent {
-            is_ultraplan: true,
-            ultraplan_phase: Some(UltraplanPhase::Other),
-        }]));
-        assert!(!pill_needs_cta(&[PillTask::RemoteAgent {
-            is_ultraplan: true,
-            ultraplan_phase: None,
-        }]));
-        assert!(!pill_needs_cta(&[PillTask::RemoteAgent {
-            is_ultraplan: false,
-            ultraplan_phase: Some(UltraplanPhase::PlanReady),
-        }]));
-        assert!(!pill_needs_cta(&[PillTask::LocalAgent]));
-        assert!(!pill_needs_cta(&[
-            PillTask::RemoteAgent {
-                is_ultraplan: true,
-                ultraplan_phase: Some(UltraplanPhase::PlanReady),
-            },
-            PillTask::RemoteAgent {
-                is_ultraplan: true,
-                ultraplan_phase: Some(UltraplanPhase::PlanReady),
-            },
-        ]));
     }
 }

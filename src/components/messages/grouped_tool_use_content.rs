@@ -1342,8 +1342,8 @@ mod tests {
                 ),
                 result_row_with_output(
                     "toolu_agent_2",
-                    "Remote agent launched in CCR.",
-                    serde_json::json!({"status": "remote_launched"}),
+                    "Async agent launched successfully.",
+                    serde_json::json!({"status": "async_launched"}),
                 ),
             ],
         };

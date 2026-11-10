@@ -22,7 +22,6 @@ pub enum IdeConnectionStatus {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct IdeStatusSnapshot {
-    pub is_remote_mode: bool,
     pub is_supported_terminal: bool,
     pub ide_status: Option<IdeConnectionStatus>,
     pub ide_name: Option<String>,
@@ -35,10 +34,6 @@ pub struct IdeStatusSnapshot {
 }
 
 pub fn ide_status_notifications(snapshot: &IdeStatusSnapshot) -> Vec<Notification> {
-    if snapshot.is_remote_mode {
-        return Vec::new();
-    }
-
     let should_show_ide_selection = snapshot.ide_status == Some(IdeConnectionStatus::Connected)
         && snapshot.ide_selection_active;
     let should_show_connected =
@@ -85,8 +80,7 @@ pub fn ide_status_hint_candidate(
     snapshot: &IdeStatusSnapshot,
     show_jetbrains_info: bool,
 ) -> Option<&str> {
-    if snapshot.is_remote_mode
-        || snapshot.is_supported_terminal
+    if snapshot.is_supported_terminal
         || snapshot.ide_status.is_some()
         || show_jetbrains_info
         || snapshot.has_shown_hint_this_session
@@ -250,16 +244,6 @@ mod tests {
         assert!(ide_status_notifications(&snap).is_empty());
 
         snap.ide_selection_active = true;
-        assert!(ide_status_notifications(&snap).is_empty());
-    }
-
-    #[test]
-    fn ide_status_remote_mode_suppresses_all_notifications() {
-        let mut snap = snapshot();
-        snap.is_remote_mode = true;
-        snap.ide_install_error = true;
-        snap.detected_ide_name = Some("VS Code".to_string());
-
         assert!(ide_status_notifications(&snap).is_empty());
     }
 }

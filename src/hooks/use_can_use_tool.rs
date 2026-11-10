@@ -1579,45 +1579,6 @@ mod tests {
         assert!(queue.is_empty());
     }
 
-    /// Maps to: CC `tools/RemoteTriggerTool/RemoteTriggerTool.ts`, which defines
-    /// no `checkPermissions` — `grep -rc checkPermissions
-    /// tools/RemoteTriggerTool/` is 0 — so EVERY action resolves through
-    /// `TOOL_DEFAULTS` (`Tool.ts:762-766`) to allow. CC draws no read/write
-    /// distinction for this tool.
-    ///
-    /// The old assertion that `create` prompts came from the invented
-    /// `remote_trigger_read_allows` helper, which allowed only `list`/`get`.
-    /// That helper was STRICTER than CC, so this port was prompting on actions
-    /// the original never asks about.
-    #[test]
-    fn remote_trigger_allows_every_action_matches_official() {
-        let mut queue = Vec::new();
-        let list = ToolUsePermissionRequest {
-            tool_use_id: "toolu_remote_list".to_string(),
-            tool_name: "RemoteTrigger".to_string(),
-            input_summary: "list".to_string(),
-            input: serde_json::json!({"action": "list"}),
-        };
-        let result =
-            can_use_tool_or_queue_permission(&list, &ToolPermissionContext::default(), &mut queue);
-        assert!(matches!(result, CanUseToolResult::Allow { .. }));
-        assert!(queue.is_empty());
-
-        let create = ToolUsePermissionRequest {
-            tool_use_id: "toolu_remote_create".to_string(),
-            tool_name: "RemoteTrigger".to_string(),
-            input_summary: "create".to_string(),
-            input: serde_json::json!({"action": "create", "body": {"name": "nightly"}}),
-        };
-        let result = can_use_tool_or_queue_permission(
-            &create,
-            &ToolPermissionContext::default(),
-            &mut queue,
-        );
-        assert!(matches!(result, CanUseToolResult::Allow { .. }));
-        assert!(queue.is_empty());
-    }
-
     #[test]
     fn accept_edits_mode_allows_working_directory_file_edits_without_prompt() {
         let mut queue = Vec::new();

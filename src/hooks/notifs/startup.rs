@@ -15,11 +15,10 @@ pub struct StartupNotificationState {
 }
 
 pub fn apply_startup_notifications_once(
-    is_remote_mode: bool,
     state: &mut StartupNotificationState,
     notifications: impl IntoIterator<Item = Notification>,
 ) -> NotificationsState {
-    if is_remote_mode || state.has_run {
+    if state.has_run {
         return NotificationsState::default();
     }
 
@@ -37,7 +36,7 @@ pub fn startup_notifications(
     errors: &[ValidationError],
 ) -> NotificationsState {
     let mut state = StartupNotificationState::default();
-    startup_notifications_with_gate(settings, errors, false, &mut state)
+    startup_notifications_with_gate(settings, errors, &mut state)
 }
 
 fn git_bash_startup_notification_for_platform(
@@ -55,7 +54,6 @@ fn git_bash_startup_notification_for_platform(
 pub fn startup_notifications_with_gate(
     settings: &SettingsJson,
     errors: &[ValidationError],
-    is_remote_mode: bool,
     state: &mut StartupNotificationState,
 ) -> NotificationsState {
     let mut notifications = settings_errors_notification_from_errors(errors)
@@ -84,7 +82,7 @@ pub fn startup_notifications_with_gate(
             .with_color(NotificationColor::Warning),
         );
     }
-    apply_startup_notifications_once(is_remote_mode, state, notifications)
+    apply_startup_notifications_once(state, notifications)
 }
 
 #[cfg(test)]
@@ -149,10 +147,9 @@ mod tests {
     }
 
     #[test]
-    fn startup_notification_gate_matches_official_remote_mode_and_once_guard() {
+    fn startup_notification_gate_preserves_once_guard() {
         let mut state = StartupNotificationState::default();
         let first = apply_startup_notifications_once(
-            false,
             &mut state,
             [Notification::text(
                 "first-startup",
@@ -174,7 +171,6 @@ mod tests {
         assert!(state.has_run);
 
         let second = apply_startup_notifications_once(
-            false,
             &mut state,
             [Notification::text(
                 "second-startup",
@@ -187,30 +183,12 @@ mod tests {
     }
 
     #[test]
-    fn startup_notification_gate_skips_remote_mode_without_setting_once_guard() {
-        let mut state = StartupNotificationState::default();
-        let remote = apply_startup_notifications_once(
-            true,
-            &mut state,
-            [Notification::text(
-                "remote-startup",
-                "remote startup notification",
-                NotificationPriority::Medium,
-            )],
-        );
-
-        assert!(remote.current.is_none());
-        assert!(remote.queue.is_empty());
-        assert!(!state.has_run);
-    }
-
-    #[test]
     fn startup_notifications_with_gate_uses_settings_errors_as_compute_result() {
         let settings = SettingsJson::default();
         let errors = vec![validation_error("permissions")];
         let mut state = StartupNotificationState::default();
 
-        let first = startup_notifications_with_gate(&settings, &errors, false, &mut state);
+        let first = startup_notifications_with_gate(&settings, &errors, &mut state);
         // Seed shape (CC `main.tsx:4107-4110`): queued, not promoted.
         assert!(first.current.is_none());
         assert_eq!(
@@ -222,7 +200,7 @@ mod tests {
             vec![SETTINGS_ERRORS_NOTIFICATION_KEY]
         );
 
-        let second = startup_notifications_with_gate(&settings, &errors, false, &mut state);
+        let second = startup_notifications_with_gate(&settings, &errors, &mut state);
         assert!(second.current.is_none());
         assert!(second.queue.is_empty());
     }

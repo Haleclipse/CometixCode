@@ -687,11 +687,10 @@ pub fn register_mcp_connection_handlers(store: &AppStore) {
 ///   also a functional fix: computing it once from a launch snapshot left the
 ///   status line stale for the whole session.
 pub fn start_settings_change_detector() {
-    // CC `startDeferredPrefetches` returns early in bare mode (`main.tsx:651-661`),
-    // and `initialize()` in remote mode (`changeDetector.ts:84`).
+    // CC `startDeferredPrefetches` returns early in bare mode (`main.tsx:651-661`).
     // `CLAUDE_CODE_EXIT_AFTER_FIRST_RENDER`, the other early return, is not
     // ported.
-    if crate::utils::env_utils::is_bare_mode() || crate::bootstrap::state::get_is_remote_mode() {
+    if crate::utils::env_utils::is_bare_mode() {
         return;
     }
     #[cfg(not(test))]

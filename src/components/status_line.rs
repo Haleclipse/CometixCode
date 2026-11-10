@@ -20,8 +20,7 @@ use crate::types::message::Message;
 use crate::types::permissions::PermissionMode;
 use crate::types::status_line::{
     StatusLineAgent, StatusLineCommandInput, StatusLineContextWindow, StatusLineCost,
-    StatusLineModel, StatusLineOutputStyle, StatusLineRemote, StatusLineVim, StatusLineWorkspace,
-    StatusLineWorktree,
+    StatusLineModel, StatusLineOutputStyle, StatusLineVim, StatusLineWorkspace, StatusLineWorktree,
 };
 use crate::utils::context::{calculate_context_percentages, get_context_window_for_model};
 use crate::utils::model::model::render_model_name;
@@ -170,7 +169,6 @@ pub fn build_status_line_command_input(
         exceeds_200k_tokens,
         vim: None,
         agent: None,
-        remote: None,
         worktree: None,
     };
 
@@ -187,14 +185,6 @@ pub fn build_status_line_command_input(
         input.agent = Some(StatusLineAgent {
             name: agent,
             r#type: None,
-        });
-    }
-
-    if crate::utils::env_utils::is_env_truthy(
-        crate::utils::process_env::var("NYAN_REMOTE").as_deref(),
-    ) {
-        input.remote = Some(StatusLineRemote {
-            session_id: session_id.clone(),
         });
     }
 
@@ -593,6 +583,8 @@ mod tests {
 
     #[test]
     fn build_status_line_command_input_resolves_model_and_null_usage_like_official() {
+        let _lock = crate::utils::test_env::TEST_ENV_LOCK.lock().unwrap();
+        let _remote = crate::utils::test_env::EnvVarGuard::set("NYAN_REMOTE", "1");
         let settings = SettingsJson {
             output_style: Some("explanatory".to_string()),
             ..Default::default()
@@ -608,6 +600,12 @@ mod tests {
             None,
         );
 
+        assert!(
+            serde_json::to_value(&input)
+                .unwrap()
+                .get("remote")
+                .is_none()
+        );
         assert_eq!(input.model.id, "grok-4.5");
         assert!(input.context_window.current_usage.is_none());
         assert!(input.context_window.used_percentage.is_none());

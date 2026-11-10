@@ -543,11 +543,10 @@ pub fn is_progress_reporting_available(env: &TerminalProgressEnvironment<'_>) ->
 /// this function only decides which progress state should be requested.
 pub fn messages_terminal_progress_state(
     terminal_progress_bar_enabled: bool,
-    remote_mode: bool,
     proactive_active: bool,
     has_tools_in_progress: bool,
 ) -> MessagesTerminalProgressState {
-    if !terminal_progress_bar_enabled || remote_mode || proactive_active {
+    if !terminal_progress_bar_enabled || proactive_active {
         return MessagesTerminalProgressState::Disabled;
     }
 
@@ -566,13 +565,11 @@ pub fn messages_terminal_progress_plan(
     memory: &mut MessagesTerminalProgressMemory,
     progress_reporting_available: bool,
     terminal_progress_bar_enabled: bool,
-    remote_mode: bool,
     proactive_active: bool,
     has_tools_in_progress: bool,
 ) -> Option<TerminalProgressPlan> {
     let next_state = messages_terminal_progress_state(
         terminal_progress_bar_enabled,
-        remote_mode,
         proactive_active,
         has_tools_in_progress,
     );
@@ -1182,23 +1179,19 @@ mod tests {
     #[test]
     fn messages_terminal_progress_state_matches_official_messages_gate() {
         assert_eq!(
-            messages_terminal_progress_state(true, false, false, false),
+            messages_terminal_progress_state(true, false, false),
             MessagesTerminalProgressState::Completed
         );
         assert_eq!(
-            messages_terminal_progress_state(true, false, false, true),
+            messages_terminal_progress_state(true, false, true),
             MessagesTerminalProgressState::Indeterminate
         );
         assert_eq!(
-            messages_terminal_progress_state(false, false, false, true),
+            messages_terminal_progress_state(false, false, true),
             MessagesTerminalProgressState::Disabled
         );
         assert_eq!(
-            messages_terminal_progress_state(true, true, false, true),
-            MessagesTerminalProgressState::Disabled
-        );
-        assert_eq!(
-            messages_terminal_progress_state(true, false, true, true),
+            messages_terminal_progress_state(true, true, true),
             MessagesTerminalProgressState::Disabled
         );
     }
@@ -1208,7 +1201,7 @@ mod tests {
         let mut memory = MessagesTerminalProgressMemory::default();
 
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, false, false, false, false),
+            messages_terminal_progress_plan(&mut memory, true, false, false, false),
             None
         );
         assert_eq!(
@@ -1217,27 +1210,27 @@ mod tests {
         );
 
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, true, false, false, false)
+            messages_terminal_progress_plan(&mut memory, true, true, false, false)
                 .map(|plan| plan.action),
             Some(TerminalProgressAction::Clear)
         );
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, true, false, false, false),
+            messages_terminal_progress_plan(&mut memory, true, true, false, false),
             None
         );
 
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, true, false, false, true)
+            messages_terminal_progress_plan(&mut memory, true, true, false, true)
                 .map(|plan| plan.action),
             Some(TerminalProgressAction::Indeterminate)
         );
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, true, false, false, true),
+            messages_terminal_progress_plan(&mut memory, true, true, false, true),
             None
         );
 
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, true, true, false, true)
+            messages_terminal_progress_plan(&mut memory, true, false, false, true)
                 .map(|plan| plan.action),
             Some(TerminalProgressAction::Clear)
         );
@@ -1248,7 +1241,7 @@ mod tests {
         let mut memory = MessagesTerminalProgressMemory::default();
 
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, false, true, false, false, true),
+            messages_terminal_progress_plan(&mut memory, false, true, false, true),
             None
         );
         assert_eq!(
@@ -1257,11 +1250,11 @@ mod tests {
         );
 
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, true, false, false, true),
+            messages_terminal_progress_plan(&mut memory, true, true, false, true),
             None
         );
         assert_eq!(
-            messages_terminal_progress_plan(&mut memory, true, true, false, false, false)
+            messages_terminal_progress_plan(&mut memory, true, true, false, false)
                 .map(|plan| plan.action),
             Some(TerminalProgressAction::Clear)
         );

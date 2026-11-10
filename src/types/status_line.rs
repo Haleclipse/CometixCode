@@ -26,8 +26,6 @@ pub struct StatusLineCommandInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<StatusLineAgent>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remote: Option<StatusLineRemote>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub worktree: Option<StatusLineWorktree>,
 }
 
@@ -79,11 +77,6 @@ pub struct StatusLineAgent {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub r#type: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StatusLineRemote {
-    pub session_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

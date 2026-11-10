@@ -353,7 +353,6 @@ pub struct GlobalConfig {
     pub has_completed_onboarding: Option<bool>,
     pub has_acknowledged_cost_threshold: Option<bool>,
     pub has_seen_undercover_auto_notice: Option<bool>,
-    pub has_seen_ultraplan_terms: Option<bool>,
     pub has_reset_auto_mode_opt_in_for_default_offer: Option<bool>,
 
     pub theme: Option<String>,
@@ -542,7 +541,6 @@ impl Default for GlobalConfig {
             has_completed_onboarding: None,
             has_acknowledged_cost_threshold: None,
             has_seen_undercover_auto_notice: None,
-            has_seen_ultraplan_terms: None,
             has_reset_auto_mode_opt_in_for_default_offer: None,
             theme: None,
             editor_mode: None,

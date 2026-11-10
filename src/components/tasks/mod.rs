@@ -6,8 +6,6 @@ pub mod background_task_status;
 pub mod background_tasks_dialog;
 pub mod dream_detail_dialog;
 pub mod in_process_teammate_detail_dialog;
-pub mod remote_session_detail_dialog;
-pub mod remote_session_progress;
 pub mod render_tool_activity;
 pub mod shell_detail_dialog;
 pub mod shell_progress;
@@ -24,10 +22,6 @@ pub use background_tasks_dialog::{
 };
 pub use dream_detail_dialog::{DreamDetailData, DreamDetailDialog, DreamTurn};
 pub use in_process_teammate_detail_dialog::{InProcessTeammateDetailDialog, TeammateDetailData};
-pub use remote_session_detail_dialog::{
-    RemoteSessionDetailAction, RemoteSessionDetailData, RemoteSessionDetailDialog,
-};
-pub use remote_session_progress::{RemoteSessionProgress, RemoteSessionProgressData};
 pub use render_tool_activity::{ToolActivity, render_tool_activity};
 pub use shell_detail_dialog::{ShellDetailData, ShellDetailDialog, TaskOutputResult};
 pub use shell_progress::{ShellProgress, TaskStatusText};

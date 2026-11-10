@@ -1,6 +1,5 @@
 //! Maps to: CC `components/tasks/BackgroundTask.tsx:1-146`.
 
-use super::remote_session_progress::{RemoteSessionProgress, RemoteSessionProgressData};
 use super::shell_progress::{ShellProgress, TaskStatusText};
 use super::task_status_utils::TaskStatus;
 use crate::utils::theme::{Theme, ThemeColorKey};
@@ -12,10 +11,6 @@ pub enum BackgroundTaskData {
         command: String,
         monitor_description: Option<String>,
         status: TaskStatus,
-    },
-    RemoteAgent {
-        title: String,
-        progress: RemoteSessionProgressData,
     },
     LocalAgent {
         description: String,
@@ -76,16 +71,6 @@ pub fn BackgroundTask(props: &BackgroundTaskProps, hooks: Hooks) -> impl Into<An
             Text(content: format!("{} ", truncate_activity(monitor_description.as_deref().unwrap_or(command), limit)))
             ShellProgress(status: *status)
         }}.into_any(),
-        BackgroundTaskData::RemoteAgent { title, progress } if progress.is_remote_review => element! { RemoteSessionProgress(session: Some(progress.clone())) }.into_any(),
-        BackgroundTaskData::RemoteAgent { title, progress } => {
-            let running = matches!(progress.status, TaskStatus::Running | TaskStatus::Pending);
-            element! { View(flex_direction: FlexDirection::Row) {
-                Text(content: format!("{} ", if running { crate::constants::figures::DIAMOND_OPEN } else { crate::constants::figures::DIAMOND_FILLED }), dim: true)
-                Text(content: truncate_activity(title, limit))
-                Text(content: " · ".to_string(), dim: true)
-                RemoteSessionProgress(session: Some(progress.clone()))
-            }}.into_any()
-        }
         BackgroundTaskData::LocalAgent { description, status, notified } => element! { View(flex_direction: FlexDirection::Row) {
             Text(content: format!("{} ", truncate_activity(description, limit)))
             TaskStatusText(status: *status, label: (*status == TaskStatus::Completed).then(|| "done".to_string()), suffix: (*status == TaskStatus::Completed && !*notified).then(|| ", unread".to_string()))

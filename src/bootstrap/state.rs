@@ -56,20 +56,6 @@ static LAST_CLASSIFIER_REQUESTS: LazyLock<RwLock<Option<Vec<serde_json::Value>>>
 /// Maps to: CC `bootstrap/state.ts:123,347` `STATE.cachedClaudeMdContent`.
 static CACHED_CLAUDE_MD_CONTENT: LazyLock<RwLock<Option<String>>> =
     LazyLock::new(|| RwLock::new(None));
-/// Maps to: CC `bootstrap/state.ts:198,389` `STATE.isRemoteMode`.
-/// Remote startup's setter caller is not yet ported; never infer it from env.
-static IS_REMOTE_MODE: LazyLock<RwLock<bool>> = LazyLock::new(|| RwLock::new(false));
-
-/// Maps to: CC `bootstrap/state.ts:1631-1633` `getIsRemoteMode`.
-pub fn get_is_remote_mode() -> bool {
-    *IS_REMOTE_MODE.read().unwrap_or_else(|p| p.into_inner())
-}
-
-/// Maps to: CC `bootstrap/state.ts:1635-1637` `setIsRemoteMode`.
-pub fn set_is_remote_mode(value: bool) {
-    *IS_REMOTE_MODE.write().unwrap_or_else(|p| p.into_inner()) = value;
-}
-
 /// Maps to: CC `bootstrap/state.ts:1199-1201` `setLastClassifierRequests`.
 pub fn set_last_classifier_requests(requests: Option<Vec<serde_json::Value>>) {
     *LAST_CLASSIFIER_REQUESTS

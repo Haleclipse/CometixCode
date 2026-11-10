@@ -33,13 +33,6 @@ fn pill_tasks_from_app_state(state: &crate::state::app_state_store::AppState) ->
                 "local_agent" => Some(PillTask::LocalAgent),
                 "local_workflow" => Some(PillTask::LocalWorkflow),
                 "monitor_mcp" => Some(PillTask::MonitorMcp),
-                // SEAM (producer missing): the Other stub carries no
-                // isUltraplan/ultraplanPhase fields and no Rust site writes
-                // remote_agent entries yet.
-                "remote_agent" => Some(PillTask::RemoteAgent {
-                    is_ultraplan: false,
-                    ultraplan_phase: None,
-                }),
                 _ => None,
             },
         })

@@ -25,9 +25,8 @@ use crate::tools::{
     ask_user_question_tool, bash_tool, code_search_tool, enter_plan_mode_tool, enter_worktree_tool,
     exit_plan_mode_tool, exit_worktree_tool, file_edit_tool, file_read_tool, file_write_tool,
     glob_tool, grep_tool, list_mcp_resources_tool, lsp_tool, mcp_tool, notebook_edit_tool,
-    powershell_tool, read_mcp_resource_tool, remote_trigger_tool, schedule_cron_tool,
-    send_message_tool, skill_tool, synthetic_output_tool, task_output_tool, task_stop_tool,
-    web_fetch_tool, web_search_tool,
+    powershell_tool, read_mcp_resource_tool, schedule_cron_tool, send_message_tool, skill_tool,
+    synthetic_output_tool, task_output_tool, task_stop_tool, web_fetch_tool, web_search_tool,
 };
 use crate::types::message::{ReadResultKind, ToolResultStatus};
 use crate::utils::truncate::truncate;
@@ -271,7 +270,6 @@ pub(crate) fn migrated_output_parses(tool_name: &str) -> Option<fn(&serde_json::
         "structuredoutput" => {
             |raw| crate::tools::synthetic_output_tool::ui::parse_output(raw).is_some()
         }
-        "remotetrigger" => |raw| crate::tools::remote_trigger_tool::ui::parse_output(raw).is_some(),
         "lsp" => |raw| crate::tools::lsp_tool::ui::parse_output(raw).is_some(),
         "askuserquestion" => {
             |raw| crate::tools::ask_user_question_tool::ui::parse_output(raw).is_some()
@@ -649,16 +647,6 @@ fn render_tool_result_lines_by_tool_name(
             tool_use_result,
         ));
     }
-    if tool_name.eq_ignore_ascii_case("RemoteTrigger") {
-        // RemoteTriggerTool defines no renderToolUseErrorMessage, so the
-        // error leaf is FallbackToolUseErrorMessage directly.
-        if status == ToolResultStatus::Error {
-            return Some(fallback_tool_use_error_lines(content, options.verbose));
-        }
-        return Some(remote_trigger_tool::ui::render_tool_result_message(
-            tool_use_result,
-        ));
-    }
     // AskUserQuestion's rejected leaf renders from the reject dispatch
     // (`renderToolUseRejectedMessage`); its error renderer returns null,
     // which `?? FallbackToolUseErrorMessage` resolves to the fallback.
@@ -710,8 +698,6 @@ fn render_tool_result_lines_by_tool_name(
         return Some(crate::tools::agent_tool::ui::render_tool_result_lines(
             &output.status,
             output.agent_id.as_deref(),
-            output.task_id.as_deref(),
-            output.session_url.as_deref(),
             output.prompt.as_deref(),
             &output.content,
             output.total_tool_use_count,
@@ -2819,7 +2805,7 @@ mod tests {
     }
 
     #[test]
-    fn user_tool_result_renders_remote_trigger_result_like_official_tool_ui() {
+    fn user_tool_result_retired_remote_trigger_uses_generic_content() {
         // The raw `toolUseResult` on the row drives the renderer.
         let raw = serde_json::json!({
             "status": 202,
@@ -2834,11 +2820,8 @@ mod tests {
             &[],
             ToolRenderOptions::default(),
         );
-        assert_eq!(lines[0].text, "HTTP 202 (3 lines)");
-        assert_eq!(lines[0].tone, ToolRenderTone::Normal);
-        // CC renders the line count dim inline.
-        assert_eq!(lines[0].segments[1].text, "(3 lines)");
-        assert!(lines[0].segments[1].dim);
+        assert!(lines.iter().any(|line| line.text.contains("HTTP 202")));
+        assert!(lines.iter().all(|line| !line.text.contains("(3 lines)")));
     }
 
     #[test]

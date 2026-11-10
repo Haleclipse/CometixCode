@@ -9688,7 +9688,6 @@ static TOOL_CALL_REGISTRY: &[&dyn crate::tool::ToolCall] = &[
     &crate::tools::schedule_cron_tool::CronCreateTool,
     &crate::tools::schedule_cron_tool::CronDeleteTool,
     &crate::tools::schedule_cron_tool::CronListTool,
-    &crate::tools::remote_trigger_tool::RemoteTriggerTool,
     &crate::tools::tool_search_tool::ToolSearchTool,
     &crate::tools::web_fetch_tool::WebFetchTool,
     &crate::tools::web_search_tool::WebSearchTool,
@@ -12212,7 +12211,7 @@ rl.on('line', line => {
     }
 
     #[tokio::test]
-    async fn local_tool_executor_remote_trigger_returns_explicit_501_payload_without_network() {
+    async fn local_tool_executor_retired_remote_trigger_returns_unknown_tool_error() {
         let request = mock_permission_request_with_input(
             "perm-remote-trigger".to_string(),
             "toolu_remote_trigger".to_string(),
@@ -12232,31 +12231,20 @@ rl.on('line', line => {
             .await
             .expect("RemoteTrigger should produce a tool_result");
 
-        match user_tool_result_block(&message) {
-            Some(block) => {
-                assert_eq!(block.tool_use_id.0, "toolu_remote_trigger");
-                // CC pairs `validateStatus: () => true` with a result block that
-                // never sets `is_error`, leaving the status code for the model to
-                // read (RemoteTriggerTool.ts:152-158).
-                assert_eq!(block.derived_status(), ToolResultStatus::Success);
-                assert!(block.content.starts_with("HTTP 501\n"));
-                assert!(block.content.contains("no remote API request was sent"));
-                // No display shape — the raw Output object rides the row.
-                let raw = block
-                    .tool_use_result
-                    .as_ref()
-                    .expect("raw output should ride the row");
-                assert_eq!(raw.get("status"), Some(&serde_json::json!(501)));
-                assert!(
-                    raw.get("json")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(
-                            |json| json.contains("Remote trigger execution is unavailable")
-                        )
-                );
-            }
-            other => panic!("unexpected RemoteTrigger result: {other:?}"),
-        }
+        let block = user_tool_result_block(&message).expect("unknown tool result block");
+        assert_eq!(block.tool_use_id.0, "toolu_remote_trigger");
+        assert_eq!(block.derived_status(), ToolResultStatus::Error);
+        assert!(
+            block
+                .content
+                .contains("No such tool available: RemoteTrigger")
+        );
+        assert_eq!(
+            block.tool_use_result,
+            Some(serde_json::json!(
+                "Error: Error: No such tool available: RemoteTrigger"
+            ))
+        );
     }
 
     #[tokio::test]

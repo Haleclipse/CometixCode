@@ -25,7 +25,6 @@ pub mod mcp_tool;
 pub mod notebook_edit_tool;
 pub mod powershell_tool;
 pub mod read_mcp_resource_tool;
-pub mod remote_trigger_tool;
 pub mod schedule_cron_tool;
 pub mod send_message_tool;
 pub mod shared;
@@ -264,9 +263,6 @@ pub fn get_all_base_tools() -> Vec<Tool> {
         tools.push(crate::tools::schedule_cron_tool::cron_create_tool_schema());
         tools.push(crate::tools::schedule_cron_tool::cron_delete_tool_schema());
         tools.push(crate::tools::schedule_cron_tool::cron_list_tool_schema());
-    }
-    if crate::tools::remote_trigger_tool::prompt::is_remote_trigger_tool_enabled() {
-        tools.push(crate::tools::remote_trigger_tool::remote_trigger_tool_schema());
     }
     tools.push(crate::tools::brief_tool::brief_tool_schema());
     if crate::tools::powershell_tool::is_powershell_tool_enabled() {
@@ -783,17 +779,13 @@ mod tests {
     }
 
     #[test]
-    fn remote_trigger_tool_follows_hardcoded_feature_switch_default() {
-        let present = get_all_base_tools()
-            .into_iter()
-            .map(|tool| tool.name)
-            .any(|name| name == "RemoteTrigger");
-        assert_eq!(
-            present,
-            crate::utils::feature_flags::feature_enabled(
-                crate::utils::feature_flags::FeatureFlag::RemoteTrigger,
-            )
+    fn retired_remote_trigger_is_not_registered() {
+        assert!(
+            get_all_base_tools()
+                .iter()
+                .all(|tool| tool.name != "RemoteTrigger")
         );
+        assert!(crate::services::tools::tool_execution::find_tool_call("RemoteTrigger").is_none());
     }
 
     #[test]
@@ -954,7 +946,6 @@ mod tests {
             crate::tools::schedule_cron_tool::cron_create_tool_schema(),
             crate::tools::schedule_cron_tool::cron_delete_tool_schema(),
             crate::tools::schedule_cron_tool::cron_list_tool_schema(),
-            crate::tools::remote_trigger_tool::remote_trigger_tool_schema(),
             crate::tools::team_create_tool::team_create_tool_schema(),
             crate::tools::team_delete_tool::team_delete_tool_schema(),
             crate::tools::tool_search_tool::tool_search_tool_schema(),

@@ -3871,10 +3871,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
             let mut hint_is_checking = hint_is_checking;
             let tasks = hint_resolution_tasks.0.clone();
             move || {
-                if crate::bootstrap::state::get_is_remote_mode()
-                    || hint_recommendation.read().is_some()
-                    || hint_is_checking.get()
-                {
+                if hint_recommendation.read().is_some() || hint_is_checking.get() {
                     return;
                 }
                 let Some(hint) = crate::utils::claude_code_hints::get_pending_hint_snapshot()
@@ -3941,10 +3938,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // inside `<AppStateProvider>` (REPL.tsx is mounted by App.tsx), so the read
     // is strict: no fallback store, no provider-less path (Contract B clause 2).
     let app_store = crate::state::app_state::use_app_state_store(&mut hooks);
-    crate::hooks::use_manage_plugins::use_manage_plugins(
-        &mut hooks,
-        !crate::bootstrap::state::get_is_remote_mode(),
-    );
+    crate::hooks::use_manage_plugins::use_manage_plugins(&mut hooks);
     // Maps to: CC REPL.tsx `useKickOffCheckAndDisable*PermissionsIfNeeded`.
     crate::utils::permissions::bypass_permissions_killswitch::use_kick_off_check_and_disable_bypass_permissions_if_needed(&mut hooks);
     crate::utils::permissions::bypass_permissions_killswitch::use_kick_off_check_and_disable_auto_mode_if_needed(&mut hooks);
@@ -4197,8 +4191,7 @@ pub fn Repl(props: &ReplProps, mut hooks: Hooks) -> impl Into<AnyElement<'static
     // Maps to: CC REPL.tsx:1239-1242 `useIdeSelection(mcp.clients,
     // setIDESelection)`. CC upstream quirk preserved (do NOT "fix"): REPL
     // passes `mcp.clients` — NOT the merged `mcpClients` — so only the
-    // live-managed MCP connections ever carry a selection handler. CC passes
-    // an empty list for a remote session, which this port has not built. The
+    // live-managed MCP connections ever carry a selection handler. The
     // hook's `onSelect` is this channel, drained into the state below.
     //
     // SEAM (recorded, not implemented in this slice):
@@ -17646,18 +17639,8 @@ mod tests {
     fn plugin_refresh_commands_reach_live_repl_suggestions_without_remount() {
         crate::utils::process_runtime::initialize_test_process_runtime();
         let _lock = env_lock().lock().unwrap();
-        struct RemoteModeRestore(bool);
-        impl Drop for RemoteModeRestore {
-            fn drop(&mut self) {
-                crate::bootstrap::state::set_is_remote_mode(self.0);
-            }
-        }
-        // This fixture tests the refresh writer -> subscribed REPL reader.
-        // Skip unrelated initial discovery so it cannot overwrite the staged
-        // refresh result; no query is submitted and no provider is contacted.
-        let _remote = RemoteModeRestore(crate::bootstrap::state::get_is_remote_mode());
-        crate::bootstrap::state::set_is_remote_mode(true);
         let store = crate::state::store::AppStore::new(Default::default(), None);
+        let initial_commands = store.get().plugins.commands.clone();
         let mut app = element! {
             ContextProvider(value: Context::owned(
                 crate::keybindings::keybinding_context::KeybindingRuntime::with_default_bindings()
@@ -17689,7 +17672,11 @@ mod tests {
                     break;
                 };
                 text = canvas_lines(&canvas).join("\n");
-                if stage == 0 && text.contains('❯') {
+                // Wait for ordinary plugin discovery before staging refresh results.
+                if stage == 0
+                    && text.contains('❯')
+                    && !Arc::ptr_eq(&initial_commands, &store.get().plugins.commands)
+                {
                     store.replace_with(|state| {
                         let mut command = crate::commands::declared_commands_for_tests()
                             .into_iter()

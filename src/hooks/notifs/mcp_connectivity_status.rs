@@ -46,14 +46,7 @@ impl McpConnectivityClient {
     }
 }
 
-pub fn mcp_connectivity_notifications(
-    clients: &[McpConnectivityClient],
-    is_remote_mode: bool,
-) -> Vec<Notification> {
-    if is_remote_mode {
-        return Vec::new();
-    }
-
+pub fn mcp_connectivity_notifications(clients: &[McpConnectivityClient]) -> Vec<Notification> {
     let failed_local = clients
         .iter()
         .filter(|client| {
@@ -116,26 +109,19 @@ mod tests {
 
     #[test]
     fn mcp_connectivity_notifications_match_official_failed_local_payload() {
-        let notifications = mcp_connectivity_notifications(
-            &[
-                McpConnectivityClient::new(
-                    "local-a",
-                    McpConnectionStatus::Failed,
-                    McpConfigType::Local,
-                ),
-                McpConnectivityClient::new(
-                    "local-b",
-                    McpConnectionStatus::Failed,
-                    McpConfigType::Local,
-                ),
-                McpConnectivityClient::new(
-                    "ide",
-                    McpConnectionStatus::Failed,
-                    McpConfigType::SseIde,
-                ),
-            ],
-            false,
-        );
+        let notifications = mcp_connectivity_notifications(&[
+            McpConnectivityClient::new(
+                "local-a",
+                McpConnectionStatus::Failed,
+                McpConfigType::Local,
+            ),
+            McpConnectivityClient::new(
+                "local-b",
+                McpConnectionStatus::Failed,
+                McpConfigType::Local,
+            ),
+            McpConnectivityClient::new("ide", McpConnectionStatus::Failed, McpConfigType::SseIde),
+        ]);
 
         assert_eq!(notifications.len(), 1);
         let notification = &notifications[0];
@@ -155,21 +141,18 @@ mod tests {
 
     #[test]
     fn mcp_connectivity_notifications_match_official_auth_copy() {
-        let notifications = mcp_connectivity_notifications(
-            &[
-                McpConnectivityClient::new(
-                    "needs-a",
-                    McpConnectionStatus::NeedsAuth,
-                    McpConfigType::Local,
-                ),
-                McpConnectivityClient::new(
-                    "needs-b",
-                    McpConnectionStatus::NeedsAuth,
-                    McpConfigType::WsIde,
-                ),
-            ],
-            false,
-        );
+        let notifications = mcp_connectivity_notifications(&[
+            McpConnectivityClient::new(
+                "needs-a",
+                McpConnectionStatus::NeedsAuth,
+                McpConfigType::Local,
+            ),
+            McpConnectivityClient::new(
+                "needs-b",
+                McpConnectionStatus::NeedsAuth,
+                McpConfigType::WsIde,
+            ),
+        ]);
 
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].key, MCP_NEEDS_AUTH_KEY);
@@ -181,23 +164,12 @@ mod tests {
     }
 
     #[test]
-    fn mcp_connectivity_notifications_suppress_remote_and_clean_states() {
+    fn mcp_connectivity_notifications_suppress_clean_states() {
         let clients = [McpConnectivityClient::new(
             "ok",
             McpConnectionStatus::Connected,
             McpConfigType::Local,
         )];
-        assert!(mcp_connectivity_notifications(&clients, false).is_empty());
-        assert!(
-            mcp_connectivity_notifications(
-                &[McpConnectivityClient::new(
-                    "bad",
-                    McpConnectionStatus::Failed,
-                    McpConfigType::Local,
-                )],
-                true,
-            )
-            .is_empty()
-        );
+        assert!(mcp_connectivity_notifications(&clients).is_empty());
     }
 }

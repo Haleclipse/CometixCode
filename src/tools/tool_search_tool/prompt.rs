@@ -67,7 +67,6 @@ pub fn is_deferred_tool(tool: &crate::types::tools::Tool) -> bool {
             | "CronCreate"
             | "CronDelete"
             | "CronList"
-            | "RemoteTrigger"
     )
 }
 

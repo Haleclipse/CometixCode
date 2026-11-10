@@ -10,16 +10,13 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 /// Maps to: CC `useManagePlugins.ts#useManagePlugins`.
-pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>, enabled: bool) {
+pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>) {
     let store = crate::state::app_state::use_app_state_store(hooks);
     let needs_refresh = crate::state::app_state::use_app_state(hooks, |s| s.plugins.needs_refresh);
     let notifications = crate::context::notifications::use_notifications(hooks);
     let mount_notifications = notifications.clone();
     hooks.use_effect(
         move || {
-            if !enabled {
-                return;
-            }
             let store = store.clone();
             let notifications = mount_notifications.clone();
             crate::utils::process_runtime::runtime_handle_for_detached_work()
@@ -37,11 +34,11 @@ pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>, enabled: bool) {
                     ));
                 });
         },
-        enabled,
+        (),
     );
     hooks.use_effect(
         move || {
-            if !enabled || !needs_refresh {
+            if !needs_refresh {
                 return;
             }
             let mut notifications = notifications.clone();
@@ -54,7 +51,7 @@ pub fn use_manage_plugins(hooks: &mut Hooks<'_, '_>, enabled: bool) {
                 .with_color(NotificationColor::Suggestion),
             );
         },
-        (enabled, needs_refresh),
+        needs_refresh,
     );
 }
 

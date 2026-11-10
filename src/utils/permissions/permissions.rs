@@ -840,7 +840,7 @@ fn get_updated_input_or_fallback(
 ///   WebSearch — all have a CC counterpart that defines `checkPermissions`.
 /// - Rust tools WITHOUT an override — TaskOutput, TaskStop, TaskCreate, TaskGet,
 ///   TaskUpdate, TaskList, TeamCreate, TeamDelete, CronCreate, CronDelete,
-///   CronList, RemoteTrigger, ToolSearch, Brief/SendUserMessage,
+///   CronList, ToolSearch, Brief/SendUserMessage,
 ///   ListMcpResourcesTool, ReadMcpResourceTool, EnterPlanMode, EnterWorktree,
 ///   ExitWorktree — none of their CC counterparts defines `checkPermissions`
 ///   either, so CC also resolves them through `TOOL_DEFAULTS` to `allow`.
@@ -1270,8 +1270,7 @@ fn has_permissions_to_use_tool_inner<'a>(
     // check. Both are CC's passthrough seed (permissions.ts:1210-1213), so this
     // tail is CC steps 2a/2b/3 plus the outer dontAsk + classifier transforms.
     //
-    // The `tool_has_builtin_allow_permission` / `config_get_allows` /
-    // `remote_trigger_read_allows` allow-list that used to sit here had no CC
+    // The action-specific allow-lists that used to sit here had no CC
     // owner: it existed only because the branch above discarded the tool's own
     // `allow`. Every name on it now gets that allow back from its own
     // `check_permissions` (see the audit note above `has_permissions_to_use_tool_inner`).
@@ -1811,22 +1810,9 @@ enum AutoModePreClassifier {
 /// - `:532-548` the non-`classifierApprovable` safetyCheck immunity;
 /// - `:549-551` `requiresUserInteraction && ask`.
 ///
-/// The 2026-08-26 re-verification of the #129 "the `:532-548` guard cannot
-/// change either fast-path's answer today" argument found it **false**, which is
-/// why the guard landed with this fix rather than later. Rust has two
-/// `classifier_approvable: false` producers, not one:
-/// - `filesystem.rs:525-530` (suspicious Windows path). For this one the #129
-///   argument does hold: `filesystem.rs:1279-1288` returns the `Ask` before the
-///   acceptEdits allow at `:1314-1320`, so the fast-path below re-derives the
-///   same `Ask`, and no write tool is on the allowlist.
-/// - `tools/send_message_tool/mod.rs:918-932` (`SendMessageTool.ts:585-602`
-///   cross-machine bridge consent). `SendMessage` **is** on the auto-mode
-///   allowlist (`classifierDecision.ts:83`, `classifier_decision.rs:34`), so
-///   without `:532-548` the allowlist fast-path below would ALLOW exactly the
-///   prompt-injection vector CC's `:590-592` comment says must stay immune.
-///   It is currently unreachable only because `FeatureFlag::UdsInbox` is
-///   `enabled: false`, whose own note promises that "enabling the transport
-///   cannot silently skip" this gate.
+/// Safety checks with `classifier_approvable: false`, such as suspicious
+/// Windows paths in `filesystem.rs`, must bypass neither user consent nor the
+/// classifier-approval restriction.
 ///
 /// @nyan: CC emits `logEvent('tengu_auto_mode_decision', …)` at `:626-640`
 /// (acceptEdits fast-path) and `:666-677` (allowlist fast-path), both with
@@ -6053,11 +6039,6 @@ mod tests {
             ("TaskStop", serde_json::json!({ "task_id": "t1" })),
             ("EnterWorktree", serde_json::json!({})),
             ("ExitWorktree", serde_json::json!({ "action": "keep" })),
-            (
-                "RemoteTrigger",
-                // Not just the read actions: CC allows every action here.
-                serde_json::json!({ "action": "create", "body": {} }),
-            ),
             (
                 "CronCreate",
                 serde_json::json!({ "cron": "*/5 * * * *", "prompt": "ping" }),

@@ -7,8 +7,7 @@
 use super::task_status_utils::TaskStatus;
 use super::{
     AsyncAgentDetailData, AsyncAgentDetailDialog, BackgroundTask, BackgroundTaskData,
-    DreamDetailData, DreamDetailDialog, DreamTurn, InProcessTeammateDetailDialog,
-    RemoteSessionDetailAction, RemoteSessionDetailData, RemoteSessionDetailDialog, ShellDetailData,
+    DreamDetailData, DreamDetailDialog, DreamTurn, InProcessTeammateDetailDialog, ShellDetailData,
     ShellDetailDialog, TeammateDetailData,
 };
 use crate::components::design_system::dialog::Dialog;
@@ -33,7 +32,7 @@ fn task_status_from_runtime(value: &str) -> TaskStatus {
 
 /// Maps to CC `BackgroundTasksDialog.tsx:225-279,872-938`: native task projection.
 /// Local agents retain the established registry-data / AppStore-notification adapter.
-/// Remote, teammate, workflow, monitor-MCP and dream task projections remain unported.
+/// Teammate, workflow and monitor-MCP task projections remain unported.
 pub(crate) fn background_task_items(
     tasks: &std::collections::BTreeMap<
         String,
@@ -232,7 +231,6 @@ pub enum BackgroundTaskCategory {
     Teammate,
     Shell,
     Monitor,
-    Remote,
     LocalAgent,
     Workflow,
     Dream,
@@ -242,7 +240,6 @@ pub enum BackgroundTaskCategory {
 pub enum BackgroundTaskDetailData {
     Shell(ShellDetailData),
     Agent(AsyncAgentDetailData),
-    Remote(RemoteSessionDetailData),
     Teammate(TeammateDetailData),
     Dream(DreamDetailData),
     Unsupported,
@@ -263,7 +260,6 @@ pub enum BackgroundTasksDialogAction {
     Stop(String),
     Foreground(String),
     ViewLeader,
-    Remote(RemoteSessionDetailAction),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ViewState {
@@ -306,7 +302,6 @@ fn selectable_items(
         BackgroundTaskCategory::Leader,
         BackgroundTaskCategory::Shell,
         BackgroundTaskCategory::Monitor,
-        BackgroundTaskCategory::Remote,
         BackgroundTaskCategory::LocalAgent,
         BackgroundTaskCategory::Workflow,
         BackgroundTaskCategory::Dream,
@@ -603,7 +598,6 @@ pub fn BackgroundTasksDialog<'a>(
         return match &item.detail {
             BackgroundTaskDetailData::Shell(data) => element! { ShellDetailDialog(key: format!("shell-{}", item.id), shell: Some(data.clone()), on_done: move |message| done.set(Some(message)), on_back: move |_| back.set(Some(InputAction::Back)), on_kill_shell: move |_| stop.set(Some(BackgroundTasksDialogAction::Stop(item_id.clone())))) }.into_any(),
             BackgroundTaskDetailData::Agent(data) => element! { AsyncAgentDetailDialog(key: format!("agent-{}", item.id), agent: Some(data.clone()), on_done: move |_| done.set(Some("Background tasks dialog dismissed".to_string())), on_back: move |_| back.set(Some(InputAction::Back)), on_kill_agent: move |_| stop.set(Some(BackgroundTasksDialogAction::Stop(item_id.clone())))) }.into_any(),
-            BackgroundTaskDetailData::Remote(data) => element! { RemoteSessionDetailDialog(session: Some(data.clone()), on_done: move |message| done.set(Some(message)), on_back: move |_| back.set(Some(InputAction::Back)), on_kill: move |_| stop.set(Some(BackgroundTasksDialogAction::Stop(item_id.clone()))), on_action: move |action| stop.set(Some(BackgroundTasksDialogAction::Remote(action)))) }.into_any(),
             BackgroundTaskDetailData::Teammate(data) => {
                 let kill_id = item_id.clone();
                 let foreground_id = item_id.clone();
@@ -623,10 +617,8 @@ pub fn BackgroundTasksDialog<'a>(
     let running_agents = items
         .iter()
         .filter(|item| {
-            matches!(
-                item.category,
-                BackgroundTaskCategory::Remote | BackgroundTaskCategory::LocalAgent
-            ) && matches!(item.status, TaskStatus::Running | TaskStatus::Pending)
+            item.category == BackgroundTaskCategory::LocalAgent
+                && matches!(item.status, TaskStatus::Running | TaskStatus::Pending)
         })
         .count();
     let running_teammates = items
@@ -672,7 +664,6 @@ pub fn BackgroundTasksDialog<'a>(
         BackgroundTaskCategory::Leader,
         BackgroundTaskCategory::Shell,
         BackgroundTaskCategory::Monitor,
-        BackgroundTaskCategory::Remote,
         BackgroundTaskCategory::LocalAgent,
         BackgroundTaskCategory::Workflow,
         BackgroundTaskCategory::Dream,
@@ -689,7 +680,6 @@ pub fn BackgroundTasksDialog<'a>(
                 BackgroundTaskCategory::Teammate => "Agents",
                 BackgroundTaskCategory::Shell => "Shells",
                 BackgroundTaskCategory::Monitor => "Monitors",
-                BackgroundTaskCategory::Remote => "Remote agents",
                 BackgroundTaskCategory::LocalAgent => "Local agents",
                 BackgroundTaskCategory::Workflow => "Workflows",
                 BackgroundTaskCategory::Dream => "Dreams",
@@ -809,8 +799,8 @@ mod tests {
                 1,
             ),
             item(
-                "remote",
-                BackgroundTaskCategory::Remote,
+                "agent",
+                BackgroundTaskCategory::LocalAgent,
                 TaskStatus::Running,
                 2,
             ),
@@ -819,7 +809,7 @@ mod tests {
         assert!(text.contains("Background tasks"));
         assert!(text.contains("1 active shell · 1 active agent"));
         assert!(text.contains("Shells (1)"));
-        assert!(text.contains("Remote agents (1)"));
+        assert!(text.contains("Local agents (1)"));
         assert!(text.contains("x to stop"));
     }
 

@@ -7,7 +7,6 @@
 pub enum TaskType {
     LocalBash,
     LocalAgent,
-    RemoteAgent,
     InProcessTeammate,
     LocalWorkflow,
     MonitorMcp,
@@ -19,7 +18,6 @@ impl TaskType {
         match self {
             Self::LocalBash => "local_bash",
             Self::LocalAgent => "local_agent",
-            Self::RemoteAgent => "remote_agent",
             Self::InProcessTeammate => "in_process_teammate",
             Self::LocalWorkflow => "local_workflow",
             Self::MonitorMcp => "monitor_mcp",
@@ -31,7 +29,6 @@ impl TaskType {
         match self {
             Self::LocalBash => 'b',
             Self::LocalAgent => 'a',
-            Self::RemoteAgent => 'r',
             Self::InProcessTeammate => 't',
             Self::LocalWorkflow => 'w',
             Self::MonitorMcp => 'm',
@@ -68,7 +65,6 @@ mod tests {
         for (task_type, prefix) in [
             (TaskType::LocalBash, 'b'),
             (TaskType::LocalAgent, 'a'),
-            (TaskType::RemoteAgent, 'r'),
             (TaskType::InProcessTeammate, 't'),
             (TaskType::LocalWorkflow, 'w'),
             (TaskType::MonitorMcp, 'm'),

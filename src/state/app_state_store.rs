@@ -677,12 +677,6 @@ pub struct AppState {
     // ideSelection, and the auto-updater values are component-local (CC
     // Notifications props), threaded to the height budget by their
     // REPL/PromptInput owners.
-    /// Maps to: CC `AppStateStore.ts:445` `isUltraplanMode?: boolean` — the
-    /// remote-harness side, set via the `set_permission_mode` control request
-    /// and pushed to CCR `external_metadata.is_ultraplan_mode` by
-    /// `onChangeAppState`. Optional in CC with no `getDefaultAppState` entry,
-    /// hence `Option<bool>` defaulting to `None` rather than `false`.
-    pub is_ultraplan_mode: Option<bool>,
 }
 
 impl Default for AppState {
@@ -749,8 +743,6 @@ impl Default for AppState {
             spinner_tip: None,
             todos: Arc::new(std::collections::BTreeMap::new()),
             tasks: Arc::new(std::collections::BTreeMap::new()),
-            // CC `AppStateStore.ts:445` is optional with no default entry.
-            is_ultraplan_mode: None,
         }
     }
 }

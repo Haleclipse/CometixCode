@@ -537,7 +537,6 @@ fn assistant_tool_use_input_schema(tool_name: &str) -> Option<&'static crate::ut
         "enterworktree" => Some(crate::tools::enter_worktree_tool::input_schema()),
         "exitworktree" => Some(crate::tools::exit_worktree_tool::input_schema()),
         "lsp" => Some(crate::tools::lsp_tool::input_schema()),
-        "remotetrigger" => Some(crate::tools::remote_trigger_tool::input_schema()),
         "croncreate" => Some(crate::tools::schedule_cron_tool::cron_create_input_schema()),
         "crondelete" => Some(crate::tools::schedule_cron_tool::cron_delete_input_schema()),
         "cronlist" => Some(crate::tools::schedule_cron_tool::cron_list_input_schema()),
@@ -752,7 +751,6 @@ pub(crate) fn tool_use_display_name(tool_name: &str, input: Option<&serde_json::
         "enterworktree" => "Creating worktree".to_string(),
         "exitworktree" => "Exiting worktree".to_string(),
         "lsp" => "LSP".to_string(),
-        "remotetrigger" => "RemoteTrigger".to_string(),
         "listmcpresourcestool" | "listmcpresources" => "listMcpResources".to_string(),
         "readmcpresourcetool" | "readmcpresource" => "readMcpResource".to_string(),
         "write" => crate::tools::file_write_tool::ui::user_facing_name(input),
@@ -936,9 +934,6 @@ pub(crate) fn render_tool_use_message(
         "enterworktree" => Some("Creating worktree…".to_string()),
         "exitworktree" => Some("Exiting worktree…".to_string()),
         "lsp" => crate::tools::lsp_tool::ui::lsp_tool_use_summary(input, verbose),
-        "remotetrigger" => {
-            crate::tools::remote_trigger_tool::ui::remote_trigger_tool_use_summary(input)
-        }
         "croncreate" => crate::tools::schedule_cron_tool::ui::cron_create_tool_use_summary(input),
         "crondelete" => crate::components::messages::user_tool_result_message::utils::first_string(
             input,
@@ -2664,14 +2659,6 @@ mod tests {
                     "line": 12, "character": 4
                 }),
             ),
-            ("RemoteTrigger", serde_json::json!({ "action": "list" })),
-            (
-                "RemoteTrigger",
-                serde_json::json!({
-                    "action": "create", "trigger_id": "nightly-build",
-                    "body": { "branch": "main" }
-                }),
-            ),
             (
                 "CronCreate",
                 serde_json::json!({
@@ -2726,7 +2713,6 @@ mod tests {
             "enterworktree",
             "exitworktree",
             "lsp",
-            "remotetrigger",
             "croncreate",
             "crondelete",
             "cronlist",
