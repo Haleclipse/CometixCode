@@ -9752,7 +9752,7 @@ mod tests {
         let crate::types::message::Message::User(user) = &restored[0] else {
             panic!("continuation must remain a meta user message");
         };
-        let api = crate::services::api::claude::user_message_to_message_param(
+        let api = crate::services::api::request::user_message_to_message_param(
             user,
             false,
             false,
@@ -9879,7 +9879,7 @@ mod tests {
             ),
             (0, 0, 0, 0)
         );
-        let param = crate::services::api::claude::assistant_message_to_message_param(
+        let param = crate::services::api::request::assistant_message_to_message_param(
             assistant,
             false,
             false,

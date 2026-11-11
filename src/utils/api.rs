@@ -1,6 +1,6 @@
 //! API utility helpers.
 //!
-//! Maps to CC `utils/api.ts`. The API service (`services/api/claude.rs`) owns
+//! Maps to CC `utils/api.ts`. The API service (`services/api/request.rs`) owns
 //! request orchestration, while this module owns schema conversion helpers such
 //! as `toolToAPISchema(...)`.
 

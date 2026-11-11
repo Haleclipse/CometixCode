@@ -15,7 +15,7 @@ use super::agent_tool_utils::{
 };
 use super::load_agents_dir::AgentDefinition;
 use crate::constants::query_source::QuerySource;
-use crate::services::api::claude::SystemPrompt;
+use crate::services::api::request::SystemPrompt;
 use crate::tool::{ToolCallProgressFn, ToolUseContext};
 use crate::types::message::{AssistantContent, Message, TokenUsage, UserContent};
 use crate::types::permissions::{
@@ -3818,7 +3818,7 @@ mod tests {
                         let assistant = completed_block(text);
                         stamped.lock().unwrap().push(assistant.uuid.clone());
                         tx.send(
-                            crate::services::api::claude::QueryModelStreamItem::Assistant(
+                            crate::services::api::request::QueryModelStreamItem::Assistant(
                                 assistant,
                             ),
                         )
@@ -3826,7 +3826,7 @@ mod tests {
                         .ok();
                     }
                     tx.send(
-                        crate::services::api::claude::QueryModelStreamItem::AssistantDelta {
+                        crate::services::api::request::QueryModelStreamItem::AssistantDelta {
                             stop_reason: Some(crate::types::message::StopReason::EndTurn),
                             usage: Some(final_usage()),
                         },

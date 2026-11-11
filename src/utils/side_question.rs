@@ -7,7 +7,7 @@
 //! caching from the parent context while keeping the side-question response
 //! separate from the main conversation.
 
-use crate::services::api::claude::NonNullableUsage;
+use crate::services::api::request::NonNullableUsage;
 use crate::types::message::{AssistantContent, Message, SystemMessage, UserContent, UserMessage};
 use crate::types::permissions::{PermissionDecision, PermissionDecisionReason};
 use crate::utils::forked_agent::{CacheSafeParams, run_forked_agent};

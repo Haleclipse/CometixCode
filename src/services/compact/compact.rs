@@ -1110,7 +1110,7 @@ fn compact_summary_model(context: &crate::tool::ToolUseContext) -> String {
 }
 
 fn compact_summary_max_output_tokens(model: &str) -> u32 {
-    (13_107u32).min(crate::services::api::claude::get_max_output_tokens_for_model(model))
+    (13_107u32).min(crate::services::api::request::get_max_output_tokens_for_model(model))
 }
 
 fn compact_fork_params(
@@ -1219,7 +1219,7 @@ async fn stream_compact_summary_fallback(
     api_messages.push(Message::User(summary_request));
     let summary_resolution = compact_summary_resolution(context);
     let model = summary_resolution.model.clone();
-    let mut options = crate::services::api::claude::Options::new(
+    let mut options = crate::services::api::request::Options::new(
         model.clone(),
         crate::constants::query_source::QuerySource::Compact
             .as_api_source()
@@ -1234,7 +1234,7 @@ async fn stream_compact_summary_fallback(
     // definitions. The text-only compact fallback exposes no agent tools.
     options.agents = Vec::new();
     options.abort_signal = Some(context.abort_controller.signal());
-    let mut stream = crate::services::api::claude::query_model_with_streaming(
+    let mut stream = crate::services::api::request::query_model_with_streaming(
         &api_messages,
         &vec!["You are a helpful AI assistant tasked with summarizing conversations.".to_string()],
         &crate::utils::thinking::ThinkingConfig::Disabled,
@@ -1253,7 +1253,7 @@ async fn stream_compact_summary_fallback(
     let mut response = None;
     while let Some(item) = stream.recv().await {
         match item {
-            crate::services::api::claude::QueryModelStreamItem::Stream(
+            crate::services::api::request::QueryModelStreamItem::Stream(
                 crate::types::message::StreamEvent::ApiEvent { event, .. },
             ) => {
                 if event.get("type").and_then(serde_json::Value::as_str)
@@ -1273,10 +1273,10 @@ async fn stream_compact_summary_fallback(
                     context.response_length_sink.add(streamed);
                 }
             }
-            crate::services::api::claude::QueryModelStreamItem::Assistant(assistant) => {
+            crate::services::api::request::QueryModelStreamItem::Assistant(assistant) => {
                 response = Some(assistant);
             }
-            crate::services::api::claude::QueryModelStreamItem::AssistantDelta {
+            crate::services::api::request::QueryModelStreamItem::AssistantDelta {
                 stop_reason,
                 usage,
             } => {
@@ -1285,17 +1285,17 @@ async fn stream_compact_summary_fallback(
                     assistant.usage = usage;
                 }
             }
-            crate::services::api::claude::QueryModelStreamItem::SystemError(error) => {
+            crate::services::api::request::QueryModelStreamItem::SystemError(error) => {
                 return Err(format!("API Error: {}", error.content));
             }
             // Retry heartbeats are non-terminal: withRetry is still working
             // toward an assistant response, so the compact loop keeps waiting
             // (CC's consumer ignores the SystemAPIErrorMessage yields).
-            crate::services::api::claude::QueryModelStreamItem::SystemApiError(_)
-            | crate::services::api::claude::QueryModelStreamItem::ModelFallback { .. }
-            | crate::services::api::claude::QueryModelStreamItem::Content(_)
-            | crate::services::api::claude::QueryModelStreamItem::CompletedContent(_)
-            | crate::services::api::claude::QueryModelStreamItem::StreamingFallback => {}
+            crate::services::api::request::QueryModelStreamItem::SystemApiError(_)
+            | crate::services::api::request::QueryModelStreamItem::ModelFallback { .. }
+            | crate::services::api::request::QueryModelStreamItem::Content(_)
+            | crate::services::api::request::QueryModelStreamItem::CompletedContent(_)
+            | crate::services::api::request::QueryModelStreamItem::StreamingFallback => {}
         }
     }
     let assistant = response.ok_or_else(|| ERROR_MESSAGE_INCOMPLETE_RESPONSE.to_string())?;

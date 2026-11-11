@@ -75,7 +75,7 @@ Prompt 缓存命中率的核心在于**请求前缀（System Prompt + Tools + �
 ## 2. Anthropic Messages 协议对齐审计
 
 ### 2.1 缓存控制断点 (Breakpoints) 位置与数量
-- **nyan 现状** (`src/services/api/claude.rs:1285-1376`, `src/utils/api.rs:245,262`):
+- **nyan 现状** (`src/services/api/request.rs:1285-1376`, `src/utils/api.rs:245,262`):
   - 系统提示词：1P 模式下拆分为 1 个全局断点；3P 模式下为 1 个默认断点。
   - 工具列表：`api.rs` 中 `BetaTool.cache_control` 与 `Tool.cache_control` **均硬编码为 `None`**。整个工具集没有缓存断点。
   - 消息列表：`add_cache_breakpoints` 仅在最后一条消息（或 `skip_cache_write` 时的倒数第二条消息）放置 1 个断点。
@@ -106,7 +106,7 @@ Prompt 缓存命中率的核心在于**请求前缀（System Prompt + Tools + �
 - **预期影响与验证**：长达 1 小时的会话间隔无需重新预热；验证 `cache_read_input_tokens` 在 5 分钟闲置后依然生效。
 
 ### 2.3 动态工具增删与占位符前缀保护
-- **nyan 现状** (`src/services/api/claude.rs:2000-2014`):
+- **nyan 现状** (`src/services/api/request.rs:2000-2014`):
   - 当通过 `tool_search` 动态发现新工具并追加至 `sdk_tools` 时，工具列表产生物理插入，导致工具列表尾部的哈希全量变更。
 - **Pi 的做法** (`packages/ai/src/api/anthropic-messages.ts:217-222, 1522-1526`):
   - 初始请求即注入 `__pi_deferred_placeholder__` (`defer_loading: true`)，使服务端内部提示词预留结构，后续动态 `tool_addition` / `tool_removal` 不破坏缓存前缀。
@@ -116,7 +116,7 @@ Prompt 缓存命中率的核心在于**请求前缀（System Prompt + Tools + �
 - **预期影响与验证**：首次执行 `ToolSearch` 展开新工具后，下一次调用不再引发整个系统提示词+工具前缀的全量 cache miss。
 
 ### 2.4 Thinking / Reasoning 机制与多轮回传
-- **nyan 现状** (`src/services/api/claude.rs:2115-2135`, `src/services/provider/anthropic/wire.rs:44-55`):
+- **nyan 现状** (`src/services/api/request.rs:2115-2135`, `src/services/provider/anthropic/wire.rs:44-55`):
   - 支持 `adaptive` 与 `budget` 模式；
   - 支持 `thinking.signature` 抓取并随 `AssistantPart::Thinking` 回传；
   - 支持 `interleaved-thinking-2025-05-14` 与 `redact-thinking-2026-03-12`。
@@ -128,13 +128,13 @@ Prompt 缓存命中率的核心在于**请求前缀（System Prompt + Tools + �
 - **优先级**：`P2`
 
 ### 2.5 图片输入：错误工具结果中的图片严重 Bug
-- **nyan 现状** (`src/services/api/claude.rs:645-725`):
+- **nyan 现状** (`src/services/api/request.rs:645-725`):
   - 在 `tool_result_api_content` 中，当 `is_error: true` 时，如果 `result.content_blocks` 包含 image，nyan 仍然直接将其序列化到 `tool_result` 块的 content 中。
   - **严重 Bug**：Anthropic 官方 API 明确禁止在 `tool_result` 的 `is_error: true` 块中附带图片，服务端会直接拒绝请求报 HTTP 400（`Invalid request: images are not supported in error tool results`）。
 - **Pi 的做法** (`packages/ai/src/api/transform-messages.ts:31-40`):
   - `splitErrorToolResultImages` 函数：在组装请求前扫描所有 toolResult，如果 `msg.isError` 且含有 image，将该 toolResult 中的图片替换为占位提示文本 `(image attached after the tool results)`，并将原始图片以独立块的形式附加到紧随其后的同一条 user 消息末尾。
 - **建议改法**：
-  - 在 `src/services/api/claude.rs` 或 IR 消息投影层引入类似 `split_error_tool_result_images` 的预处理，剥离错误工具结果中的图片并移至随后的 user message。
+  - 在 `src/services/api/request.rs` 或 IR 消息投影层引入类似 `split_error_tool_result_images` 的预处理，剥离错误工具结果中的图片并移至随后的 user message。
 - **优先级**：`P0`（导致命令或工具执行失败且截获图片时整个会话直接崩溃，无法继续对话）
 - **预期影响与验证**：修复工具报错带图场景下的 400 崩溃；单元测试断言 `is_error: true` 的 tool_result 块绝不含 image 子块。
 
@@ -428,7 +428,7 @@ Prompt 缓存命中率的核心在于**请求前缀（System Prompt + Tools + �
 | PR 序号 | 目标模块 / 协议 | 核心改动内容 | 优先级 | 影响的共享文件与冲突缓解措施 |
 | :--- | :--- | :--- | :--- | :--- |
 | **PR 1** | **Common IR & 提示词前缀稳定性** | 1. 统一 `Usage` 跨厂商缓存命中字段（增加 `cache_write_tokens` 等）；<br>2. 调整系统提示词结构，将高频变化的 `cwd` 等环境信息后置，保护静态前缀；<br>3. 修复 `openai/chat.rs` 对 DeepSeek/Kimi/OpenRouter 缓存命中字段解析。 | **P0** | **共享文件**：`src/services/provider/ir.rs`、`src/constants/prompts.rs`、`src/services/provider/openai/chat.rs`。<br>*缓解措施*：作为基石 PR 率先合入，后续各 adapter 依赖更新后的 IR 字段。 |
-| **PR 2** | **Anthropic 协议对齐** | 1. 在最后一个工具上显式添加 `cache_control`；<br>2. 实现 `split_error_tool_result_images`，修复 `is_error: true` 带图引发的 400 崩溃；<br>3. 引入 `__pi_deferred_placeholder__` 保护动态工具前缀；<br>4. 支持 `PI_CACHE_RETENTION=long` 透传 1h TTL。 | **P0** | **共享文件**：`src/utils/api.rs`、`src/services/api/claude.rs`。<br>*缓解措施*：改动严格限制在 Anthropic 专有逻辑中，不影响其他 provider。 |
+| **PR 2** | **Anthropic 协议对齐** | 1. 在最后一个工具上显式添加 `cache_control`；<br>2. 实现 `split_error_tool_result_images`，修复 `is_error: true` 带图引发的 400 崩溃；<br>3. 引入 `__pi_deferred_placeholder__` 保护动态工具前缀；<br>4. 支持 `PI_CACHE_RETENTION=long` 透传 1h TTL。 | **P0** | **共享文件**：`src/utils/api.rs`、`src/services/api/request.rs`。<br>*缓解措施*：改动严格限制在 Anthropic 专有逻辑中，不影响其他 provider。 |
 | **PR 3** | **OpenAI Chat Completions 协议对齐** | 1. 发送 64 字符截断安全的 `prompt_cache_key`；<br>2. 支持 `prompt_cache_retention: "24h"`；<br>3. 流式解析捕获 `reasoning_content`，并在多轮对话中支持推理内容保留；<br>4. 支持 OpenRouter 等网关的 Anthropic 风格 `cache_control`。 | **P0** | **共享文件**：`src/services/provider/openai/chat.rs`、`src/services/provider/openai/mod.rs`。<br>*缓解措施*：独立于 Responses，与 Responses 并行开发互不干扰。 |
 | **PR 4** | **OpenAI Responses 协议对齐** | 1. 为 `Backend::Api` 补充发送 `prompt_cache_key`；<br>2. 针对 Codex 后端增加 `prompt_cache_key` 的 64 字符截断保护，防止超长 400 报错；<br>3. 允许配置 `prompt_cache_retention: "24h"`。 | **P1** | **共享文件**：`src/services/provider/openai/responses.rs`。<br>*缓解措施*：文件内改动集中在 `build_body`，无跨模块耦合。 |
 | **PR 5** | **Google Gemini 协议对齐** | 1. 为 Gemini 3+ 模型增加离散 `thinkingLevel` 支持；<br>2. 修复 `ToolResult` 中丢失图片的问题，保留多模态数据；<br>3. 确保系统提示词与内容格式严格对齐 Google 32k+ 隐式缓存要求。 | **P0** | **共享文件**：`src/services/provider/gemini/wire.rs`、`src/services/provider/gemini/adapter.rs`。<br>*缓解措施*：Gemini 模块完全解耦，零冲突风险。 |

@@ -2,7 +2,7 @@
 //! Maps to official `query/deps.ts`.
 
 use crate::constants::query_source::QuerySource;
-use crate::services::api::claude::{Options, SystemPrompt};
+use crate::services::api::request::{Options, SystemPrompt};
 use crate::services::compact::auto_compact::{
     AutoCompactCacheSafeParams, AutoCompactTrackingState, auto_compact_if_needed,
 };
@@ -15,7 +15,7 @@ use crate::utils::thinking::ThinkingConfig;
 use futures::future::BoxFuture;
 
 pub type CallModelStream =
-    tokio::sync::mpsc::Receiver<crate::services::api::claude::QueryModelStreamItem>;
+    tokio::sync::mpsc::Receiver<crate::services::api::request::QueryModelStreamItem>;
 pub type CallModelStreamFuture = BoxFuture<'static, anyhow::Result<CallModelStream>>;
 
 pub use crate::services::compact::auto_compact::AutocompactResult;
@@ -100,7 +100,7 @@ pub struct ProductionDeps;
 impl QueryDeps for ProductionDeps {
     fn call_model(&self, request: CallModelRequest) -> CallModelStreamFuture {
         Box::pin(async move {
-            crate::services::api::claude::query_model_with_streaming(
+            crate::services::api::request::query_model_with_streaming(
                 &request.messages,
                 &request.system_prompt,
                 &request.thinking_config,

@@ -85,7 +85,7 @@ Summary [ 50.6s] 6633 tests run: 6607 passed, 26 failed, 5 skipped
 | 平台字形 | 4 | 断言 `⏺`，Linux 上 `BLACK_CIRCLE = "●"`（`src/constants/figures.rs:1049-1053`） |
 | 缺 Tokio runtime | 6 | `use_typeahead.rs:1541` 在同步测试里 `spawn_blocking`；`in_child_process` 的子进程级联失败 |
 | 渲染/快照 | 13 | canvas 文本、重渲染次数、picker 状态断言 |
-| API/设置状态 | 3 | `services/api/claude` 的 system prompt 断言 |
+| API/设置状态 | 3 | `services/api/request` 的 system prompt 断言 |
 
 `docs/nyan/README.md:77-79` 已记录 4 个 prompt_input 基线失败；本机干净环境只复现其中 2 个，说明它们同时受负载影响。
 **这 26 个不是 CI 引入的**：它们在本机直接跑 `just test` 就存在。但 CI 的第一职责是把“绿”变成有意义的信号，
@@ -757,7 +757,7 @@ master `f9e624f` 的 26 个（`src/utils/test_env.rs:147` 的 `in_child_process`
 | `screens::repl::tests::resume_by_{ambiguous,exact,id,missing_arg}_…` | use_typeahead.rs:1541 no reactor | 缺 runtime |
 | `screens::repl::tests::{resume_cross_project_…, resume_pending_clipboard_…}` | test_env.rs:147 子进程断言级联；子进程内 repl.rs:14465 未渲染 “Failed to resume” | 缺 runtime/渲染 |
 | `screens::repl::tests::resume_picker_selection_error_…` | repl.rs:14465 未渲染 “Failed to resume” | 渲染 |
-| `services::api::claude::tests::{sdk_params_skip_global_…, sdk_params_use_system_prompt_…, sdk_request_adapter_…}` | claude.rs:5914/5798/5853 | 设置状态 |
+| `services::api::request::tests::{sdk_params_skip_global_…, sdk_params_use_system_prompt_…, sdk_request_adapter_…}` | request.rs:5914/5798/5853 | 设置状态 |
 | `utils::conversation_recovery::tests::{ask_user_question_…, enter_exit_plan_mode_…}` | 断言以 `⏺` 开头 | 平台字形 |
 
 负载敏感、在宿主环境出现的 5 个见 1.3；它们在本机干净环境通过，但 CI 的 4 核并发可能让它们重新出现，

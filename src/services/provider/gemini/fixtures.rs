@@ -1181,11 +1181,11 @@ async fn test_gemini_burst_429_retries_and_recovers() {
     .await;
     let _env = QueryEnv::new(&server.base_url);
 
-    let options = crate::services::api::claude::Options::new(
+    let options = crate::services::api::request::Options::new(
         "gemini-2.5-flash".to_string(),
         "repl_main_thread".to_string(),
     );
-    let mut rx = crate::services::api::claude::query_model_with_streaming(
+    let mut rx = crate::services::api::request::query_model_with_streaming(
         &[user_msg("go")],
         &vec![],
         &crate::utils::thinking::ThinkingConfig::Disabled,
@@ -1197,7 +1197,7 @@ async fn test_gemini_burst_429_retries_and_recovers() {
 
     let mut found_text = false;
     while let Some(item) = rx.recv().await {
-        if let crate::services::api::claude::QueryModelStreamItem::Assistant(msg) = item {
+        if let crate::services::api::request::QueryModelStreamItem::Assistant(msg) = item {
             if let Some(crate::types::message::AssistantContent::Text(text)) =
                 msg.first_content_block()
             {
@@ -1232,11 +1232,11 @@ async fn test_gemini_billing_quota_429_does_not_retry() {
     .await;
     let _env = QueryEnv::new(&server.base_url);
 
-    let options = crate::services::api::claude::Options::new(
+    let options = crate::services::api::request::Options::new(
         "gemini-2.5-flash".to_string(),
         "repl_main_thread".to_string(),
     );
-    let result = crate::services::api::claude::query_model_with_streaming(
+    let result = crate::services::api::request::query_model_with_streaming(
         &[user_msg("go")],
         &vec![],
         &crate::utils::thinking::ThinkingConfig::Disabled,
@@ -1250,7 +1250,8 @@ async fn test_gemini_billing_quota_429_does_not_retry() {
         Ok(mut rx) => {
             let mut text = String::new();
             while let Some(item) = rx.recv().await {
-                if let crate::services::api::claude::QueryModelStreamItem::SystemError(err) = item {
+                if let crate::services::api::request::QueryModelStreamItem::SystemError(err) = item
+                {
                     text = err.content;
                 }
             }
@@ -1286,11 +1287,11 @@ async fn test_gemini_503_unavailable_retries_and_recovers() {
     .await;
     let _env = QueryEnv::new(&server.base_url);
 
-    let options = crate::services::api::claude::Options::new(
+    let options = crate::services::api::request::Options::new(
         "gemini-2.5-flash".to_string(),
         "repl_main_thread".to_string(),
     );
-    let mut rx = crate::services::api::claude::query_model_with_streaming(
+    let mut rx = crate::services::api::request::query_model_with_streaming(
         &[user_msg("go")],
         &vec![],
         &crate::utils::thinking::ThinkingConfig::Disabled,
@@ -1302,7 +1303,7 @@ async fn test_gemini_503_unavailable_retries_and_recovers() {
 
     let mut found_text = false;
     while let Some(item) = rx.recv().await {
-        if let crate::services::api::claude::QueryModelStreamItem::Assistant(msg) = item {
+        if let crate::services::api::request::QueryModelStreamItem::Assistant(msg) = item {
             if let Some(crate::types::message::AssistantContent::Text(text)) =
                 msg.first_content_block()
             {
@@ -1336,7 +1337,7 @@ async fn test_gemini_main_loop_without_effort_sends_no_thinking_config() {
         &context,
     );
     assert_eq!(request.options.effort_value, None);
-    let mut rx = crate::services::api::claude::query_model_with_streaming(
+    let mut rx = crate::services::api::request::query_model_with_streaming(
         &request.messages,
         &request.system_prompt,
         &request.thinking_config,
@@ -1373,11 +1374,11 @@ async fn test_gemini_401_unauthenticated_fails_fast_without_retry() {
     .await;
     let _env = QueryEnv::new(&server.base_url);
 
-    let options = crate::services::api::claude::Options::new(
+    let options = crate::services::api::request::Options::new(
         "gemini-2.5-flash".to_string(),
         "repl_main_thread".to_string(),
     );
-    let result = crate::services::api::claude::query_model_with_streaming(
+    let result = crate::services::api::request::query_model_with_streaming(
         &[user_msg("go")],
         &vec![],
         &crate::utils::thinking::ThinkingConfig::Disabled,
@@ -1393,7 +1394,7 @@ async fn test_gemini_401_unauthenticated_fails_fast_without_retry() {
             while let Some(item) = rx.recv().await {
                 if matches!(
                     item,
-                    crate::services::api::claude::QueryModelStreamItem::SystemError(_)
+                    crate::services::api::request::QueryModelStreamItem::SystemError(_)
                 ) {
                     has_err = true;
                 }
@@ -1425,11 +1426,11 @@ async fn test_gemini_partial_stream_after_output_does_not_replay() {
     .await;
     let _env = QueryEnv::new(&server.base_url);
 
-    let options = crate::services::api::claude::Options::new(
+    let options = crate::services::api::request::Options::new(
         "gemini-2.5-flash".to_string(),
         "repl_main_thread".to_string(),
     );
-    let mut rx = crate::services::api::claude::query_model_with_streaming(
+    let mut rx = crate::services::api::request::query_model_with_streaming(
         &[user_msg("go")],
         &vec![],
         &crate::utils::thinking::ThinkingConfig::Disabled,
@@ -1443,7 +1444,7 @@ async fn test_gemini_partial_stream_after_output_does_not_replay() {
     while let Some(item) = rx.recv().await {
         if matches!(
             item,
-            crate::services::api::claude::QueryModelStreamItem::SystemError(_)
+            crate::services::api::request::QueryModelStreamItem::SystemError(_)
         ) {
             got_error = true;
         }
@@ -1557,11 +1558,11 @@ async fn test_gemini_non_streaming_fallback_on_404() {
     .await;
     let _env = QueryEnv::new(&server.base_url);
 
-    let options = crate::services::api::claude::Options::new(
+    let options = crate::services::api::request::Options::new(
         "gemini-2.5-flash".to_string(),
         "repl_main_thread".to_string(),
     );
-    let mut rx = crate::services::api::claude::query_model_with_streaming(
+    let mut rx = crate::services::api::request::query_model_with_streaming(
         &[user_msg("go")],
         &vec![],
         &crate::utils::thinking::ThinkingConfig::Disabled,
@@ -1578,13 +1579,13 @@ async fn test_gemini_non_streaming_fallback_on_404() {
     assert!(
         items.iter().any(|i| matches!(
             i,
-            crate::services::api::claude::QueryModelStreamItem::StreamingFallback
+            crate::services::api::request::QueryModelStreamItem::StreamingFallback
         )),
         "expected StreamingFallback item: {items:?}"
     );
 
     let found_text = items.iter().any(|item| {
-        if let crate::services::api::claude::QueryModelStreamItem::Assistant(msg) = item {
+        if let crate::services::api::request::QueryModelStreamItem::Assistant(msg) = item {
             if let Some(crate::types::message::AssistantContent::Text(text)) =
                 msg.first_content_block()
             {

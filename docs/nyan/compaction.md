@@ -254,7 +254,7 @@ legacy 的思想（`packages/coding-agent/src/core/cache-warmer.ts`）：在 cac
 - **何时保活**：一次真实请求结束后，若它的 prompt 中 cache 部分（`cache_read + cache_creation`）≥
   `nyan.cache.minCachedTokens`（默认 20000），就排一个保活定时器；否则不值得（重写成本本来就小）。
 - **TTL 从响应里读，不让用户配**：Anthropic usage 带 `cache_creation.ephemeral_5m_input_tokens` /
-  `ephemeral_1h_input_tokens`（CC 已解析，`services/api/claude.rs:148`）——哪个非零就是哪个 TTL。都为零且
+  `ephemeral_1h_input_tokens`（CC 已解析，`services/api/request.rs:148`）——哪个非零就是哪个 TTL。都为零且
   `cache_read` 也为零（这个模型 / 网关没 cache）就不保活。网关若对 Claude 的实际寿命更长（本机实测空闲 23 分钟仍
   命中），按 5 分钟保活只是多花少量读取，不会出错。
 - **没有 `ephemeral_*` 字段但 `cache_read > 0`**（经网关的 GPT / DeepSeek 等，由上游自动缓存）：TTL 未知，**不保活**。
@@ -269,7 +269,7 @@ legacy 的思想（`packages/coding-agent/src/core/cache-warmer.ts`）：在 cac
   `max_output_tokens = Some(1)`、`max_turns = 1`、`skip_transcript = true`，追加一条极短的 user 消息。分叉请求 = 主会话前缀（system、tools、历史逐字节相同）+ 这条消息，读到整段已缓存前缀、刷新其寿命，
   只新写几个 token——与 CC 现有分叉共享 cache 的机制相同，不需要另存"最后一次请求的原始字节"。
   - **与 thinking 的兼容**：`max_output_tokens` 进入 thinking 参数（`utils/forked_agent.rs:451` 的注释已指出）。
-    `local_thinking_config_to_sdk`（`services/api/claude.rs:1807`）中，`Adaptive` 只在
+    `local_thinking_config_to_sdk`（`services/api/request.rs:1807`）中，`Adaptive` 只在
     `model_supports_adaptive_thinking(model, profile)`（`utils/thinking.rs:193`）为真时原样发出；否则被转成
     `Enabled { budget_tokens = min(模型上限, max_output) − 1 }`，`Enabled` 也被夹到 `max_output − 1`——1 token 时
     budget 退化为 1（低于 API 下限，非法），且与主请求的 thinking 参数不同。规则：thinking 关闭（`Disabled` 或
@@ -368,7 +368,7 @@ legacy 的思想（`packages/coding-agent/src/core/cache-warmer.ts`）：在 cac
 | D | legacy 摘要格式；校验落在 `stream_compact_summary` 与 fallback；回退开关、摘要模型配置 | `services/compact/compact.rs`、`services/compact/prompt.rs` | — |
 | E | keepRecentTokens 切点 + 走 partial compact UpTo；回执（`CompactMetadata.nyan: Option<_>`） | `services/compact/auto_compact.rs`、`services/compact/compact.rs`、`types/message.rs` | B、D |
 | F | cache 保活：第一步实测 thinking 参数与消息级 cache key；从 usage 读 TTL、token 账、thinking 兼容判定（`model_supports_adaptive_thinking`）、定时器、`QuerySource::CacheWarm` 分叉重放、费用记账、四项 `nyan.cache.*` 配置 | 新 `services/cache_warmer.rs`、`constants/query_source.rs`（`CacheWarm`）、`query/stop_hooks.rs`（启动）、`query.rs`（新请求时停止）、`cost_tracker.rs` | 批次 0 |
-| G | 网关 cache 身份（C13-3）：普通子代理请求带 `X-Claude-Code-Agent-Id`；cache 共享分叉不带 | `services/api/claude.rs`（按请求加头，`agent_id` 已在 options 里，`claude.rs:411`）、`utils/forked_agent.rs` | — |
+| G | 网关 cache 身份（C13-3）：普通子代理请求带 `X-Claude-Code-Agent-Id`；cache 共享分叉不带 | `services/api/request.rs`（按请求加头，`agent_id` 已在 options 里，`request.rs:411`）、`utils/forked_agent.rs` | — |
 
 A、C、D、F、G 可并行（写集不重叠；A 与 F 都依赖批次 0 的 `is_cache_sharing_fork`；`query.rs` 中 A 改
 `:932-1051`、F 改新请求入口，hunk 不重叠）；B 在 A 后；E 最后。

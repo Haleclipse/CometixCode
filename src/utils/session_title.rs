@@ -99,7 +99,7 @@ pub async fn generate_session_title(
         return None;
     }
 
-    let system_prompt: crate::services::api::claude::SystemPrompt =
+    let system_prompt: crate::services::api::request::SystemPrompt =
         vec![SESSION_TITLE_PROMPT.to_string()];
     let output_format = serde_json::json!({
         "type": "json_schema",
@@ -112,7 +112,7 @@ pub async fn generate_session_title(
             "additionalProperties": false
         }
     });
-    let mut options = crate::services::api::claude::Options::for_utility(
+    let mut options = crate::services::api::request::Options::for_utility(
         "title",
         "generate_session_title".to_string(),
     );
@@ -124,7 +124,7 @@ pub async fn generate_session_title(
     options.mcp_tools = Vec::new();
     options.abort_signal = Some(abort_controller.signal());
 
-    match crate::services::api::claude::query_haiku(
+    match crate::services::api::request::query_haiku(
         &system_prompt,
         trimmed,
         Some(&output_format),

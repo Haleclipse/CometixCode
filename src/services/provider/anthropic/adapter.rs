@@ -6,7 +6,7 @@
 //! existing Anthropic retry defaults until PR 8).
 //!
 //! The wire *request* is still produced by the proven query-layer builder in
-//! `services/api/claude.rs`, which owns the cache-prefix-sensitive bytes and is
+//! `services/api/request.rs`, which owns the cache-prefix-sensitive bytes and is
 //! pinned by `fixtures.rs`. This adapter therefore accepts a prepared
 //! [`WireRequest`] alongside the IR request; migrating request construction
 //! itself onto `ModelRequest` is a follow-up that those fixtures guard.

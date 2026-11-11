@@ -10,7 +10,7 @@
 use serde_json::{Value, json};
 
 use super::mock::{MockAnthropic, RecordedRequest, Reply, StreamSpec, message_stream};
-use crate::services::api::claude::{Options, QueryModelStreamItem, query_model_with_streaming};
+use crate::services::api::request::{Options, QueryModelStreamItem, query_model_with_streaming};
 use crate::types::ids::ToolUseId;
 use crate::types::message::{
     AssistantContent, AssistantMessage, Message, ToolResult, ToolUseBlock,
@@ -504,7 +504,7 @@ async fn tool_search_placeholder_is_on_the_wire_and_tool_cache_anchors_on_a_full
             json!("ToolSearch"),
             json!("Probe"),
             json!("WebFetch"),
-            json!(crate::services::api::claude::DEFERRED_TOOL_PLACEHOLDER_NAME),
+            json!(crate::services::api::request::DEFERRED_TOOL_PLACEHOLDER_NAME),
         ]
     );
     let deferred = tools

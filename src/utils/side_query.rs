@@ -42,7 +42,7 @@
 use serde_json::json;
 
 use crate::constants::system::{get_attribution_header, get_cli_sysprompt_prefix};
-use crate::services::api::claude::get_api_metadata;
+use crate::services::api::request::get_api_metadata;
 use crate::utils::fingerprint::compute_fingerprint;
 use crate::utils::model::model::normalize_model_string_for_api;
 use anthropic_sdk::resources::beta::messages::{

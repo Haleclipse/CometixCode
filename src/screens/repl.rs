@@ -3470,13 +3470,13 @@ fn apply_resume_restore_result(
 /// merging `getCoordinatorUserContext` into `userContext`.
 fn build_repl_query_prompt_contexts(
     overrides: &crate::utils::system_prompt::CliSystemPromptOverrides,
-    default_system_prompt: crate::services::api::claude::SystemPrompt,
+    default_system_prompt: crate::services::api::request::SystemPrompt,
     main_thread_agent_definition: Option<
         &crate::tools::agent_tool::load_agents_dir::AgentDefinition,
     >,
     mcp_state: &crate::state::app_state_store::McpState,
 ) -> (
-    crate::services::api::claude::SystemPrompt,
+    crate::services::api::request::SystemPrompt,
     std::collections::BTreeMap<String, String>,
     std::collections::BTreeMap<String, String>,
 ) {

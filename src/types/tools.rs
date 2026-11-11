@@ -177,7 +177,7 @@ pub struct McpToolAnnotations {
 /// Maps to: CC `Tool.ts` `Tool` metadata consumed by `utils/api.ts#toolToAPISchema`.
 ///
 /// This type is the model/API-visible metadata half of CC's `Tool` interface,
-/// carried from the tool registry into `services/api/claude.rs`. The
+/// carried from the tool registry into `services/api/request.rs`. The
 /// behavioral half (`Tool.call`) is the `ToolCall` trait in `crate::tool`,
 /// implemented by each `tools/<tool>` module.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

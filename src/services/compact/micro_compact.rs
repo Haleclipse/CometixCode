@@ -163,15 +163,15 @@ pub fn consume_pending_cache_edits() -> Option<CacheEditsBlock> {
 }
 
 /// Maps to CC `microCompact.ts#getPinnedCacheEdits`.
-pub fn get_pinned_cache_edits() -> Vec<crate::services::api::claude::CachedMcPinnedEdit> {
+pub fn get_pinned_cache_edits() -> Vec<crate::services::api::request::CachedMcPinnedEdit> {
     CACHED_MC_STATE
         .lock()
         .unwrap()
         .pinned_edits
         .iter()
-        .map(|pinned| crate::services::api::claude::CachedMcPinnedEdit {
+        .map(|pinned| crate::services::api::request::CachedMcPinnedEdit {
             user_message_index: pinned.user_message_index,
-            block: crate::services::api::claude::CachedMcEditsBlock::delete_refs(
+            block: crate::services::api::request::CachedMcEditsBlock::delete_refs(
                 pinned.block.deleted_tool_ids.clone(),
             ),
         })

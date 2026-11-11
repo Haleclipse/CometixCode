@@ -7,7 +7,7 @@
 //! without adding those concerns to `query.rs`.
 
 use crate::constants::query_source::QuerySource;
-use crate::services::api::claude::SystemPrompt;
+use crate::services::api::request::SystemPrompt;
 use crate::tool::ToolUseContext;
 use crate::types::message::Message;
 use std::future::Future;

@@ -128,12 +128,12 @@ pub async fn extract_prompt(
         origin: None,
         summarize_metadata: None,
     });
-    let mut options = crate::services::api::claude::Options::new(model, "web_extract".to_string());
+    let mut options = crate::services::api::request::Options::new(model, "web_extract".to_string());
     options.is_non_interactive_session = is_non_interactive_session;
     options.has_append_system_prompt = false;
     options.mcp_tools = Vec::new();
     options.abort_signal = Some(abort_controller.signal());
-    let assistant = crate::services::api::claude::query_model_without_streaming(
+    let assistant = crate::services::api::request::query_model_without_streaming(
         &[user_message],
         &Vec::new(),
         &crate::utils::thinking::ThinkingConfig::Disabled,

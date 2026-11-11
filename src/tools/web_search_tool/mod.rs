@@ -354,13 +354,13 @@ async fn run_nyan_web_search(
 /// Maps to CC `tools/WebSearchTool/WebSearchTool.ts` `call(...)` progress
 /// extraction from `server_tool_use` and `web_search_tool_result` stream events.
 fn web_search_progress_from_stream_content(
-    item: &crate::services::api::claude::ClaudeStreamItem,
+    item: &crate::services::api::request::RequestStreamItem,
     query: &str,
     tool_use_queries: &mut std::collections::HashMap<String, String>,
     outer_tool_use_id: &crate::types::ids::ToolUseId,
 ) -> Option<crate::types::tools::ToolProgress> {
     match item {
-        crate::services::api::claude::ClaudeStreamItem::ToolUse {
+        crate::services::api::request::RequestStreamItem::ToolUse {
             id,
             name,
             input,
@@ -379,7 +379,7 @@ fn web_search_progress_from_stream_content(
                 query: search_query.to_string(),
             })
         }
-        crate::services::api::claude::ClaudeStreamItem::WebSearchToolResult {
+        crate::services::api::request::RequestStreamItem::WebSearchToolResult {
             tool_use_id,
             content,
         } => {
@@ -404,16 +404,16 @@ fn web_search_progress_from_stream_content(
 /// `queryModelWithStreaming(...)` and forwarding `WebSearchProgress` updates.
 async fn query_web_search_model_with_streaming(
     messages: &[crate::types::message::Message],
-    system_prompt: &crate::services::api::claude::SystemPrompt,
+    system_prompt: &crate::services::api::request::SystemPrompt,
     thinking_config: &crate::utils::thinking::ThinkingConfig,
-    options: &crate::services::api::claude::Options,
+    options: &crate::services::api::request::Options,
     query: &str,
     outer_tool_use_id: &str,
     started_at: std::time::Instant,
     on_progress: Option<crate::tool::ToolCallProgressFn<'_>>,
     abort_controller: &crate::tool::AbortController,
 ) -> anyhow::Result<Output> {
-    let mut stream = crate::services::api::claude::query_model_with_streaming(
+    let mut stream = crate::services::api::request::query_model_with_streaming(
         messages,
         system_prompt,
         thinking_config,
@@ -436,7 +436,7 @@ async fn query_web_search_model_with_streaming(
             break;
         };
         match item {
-            crate::services::api::claude::QueryModelStreamItem::Content(content) => {
+            crate::services::api::request::QueryModelStreamItem::Content(content) => {
                 if let Some(progress) = web_search_progress_from_stream_content(
                     &content,
                     query,
@@ -446,10 +446,10 @@ async fn query_web_search_model_with_streaming(
                     emit_web_search_progress(on_progress, progress);
                 }
             }
-            crate::services::api::claude::QueryModelStreamItem::Assistant(message) => {
+            crate::services::api::request::QueryModelStreamItem::Assistant(message) => {
                 final_assistant = Some(message);
             }
-            crate::services::api::claude::QueryModelStreamItem::AssistantDelta {
+            crate::services::api::request::QueryModelStreamItem::AssistantDelta {
                 stop_reason,
                 usage,
             } => {
@@ -458,10 +458,10 @@ async fn query_web_search_model_with_streaming(
                     assistant.usage = usage;
                 }
             }
-            crate::services::api::claude::QueryModelStreamItem::SystemError(error) => {
+            crate::services::api::request::QueryModelStreamItem::SystemError(error) => {
                 last_error = Some(error);
             }
-            crate::services::api::claude::QueryModelStreamItem::ModelFallback {
+            crate::services::api::request::QueryModelStreamItem::ModelFallback {
                 original_model,
                 fallback_model,
             } => {
@@ -474,10 +474,10 @@ async fn query_web_search_model_with_streaming(
             }
             // Retry heartbeats are non-terminal; keep waiting for the final
             // assistant (CC's consumer ignores SystemAPIErrorMessage yields).
-            crate::services::api::claude::QueryModelStreamItem::SystemApiError(_)
-            | crate::services::api::claude::QueryModelStreamItem::Stream(_)
-            | crate::services::api::claude::QueryModelStreamItem::CompletedContent(_)
-            | crate::services::api::claude::QueryModelStreamItem::StreamingFallback => {}
+            crate::services::api::request::QueryModelStreamItem::SystemApiError(_)
+            | crate::services::api::request::QueryModelStreamItem::Stream(_)
+            | crate::services::api::request::QueryModelStreamItem::CompletedContent(_)
+            | crate::services::api::request::QueryModelStreamItem::StreamingFallback => {}
         }
     }
 
@@ -708,7 +708,7 @@ impl crate::tool::ToolCall for WebSearchTool {
                 }
             }
             let mut options =
-                crate::services::api::claude::Options::new(model, "web_search_tool".to_string());
+                crate::services::api::request::Options::new(model, "web_search_tool".to_string());
             options.is_non_interactive_session = context.is_non_interactive_session;
             // CC :283 `!!context.options.appendSystemPrompt` — JS falsy: the
             // empty string reads false.
@@ -1219,7 +1219,7 @@ mod tests {
         let mut tool_use_queries = std::collections::HashMap::new();
 
         let query_progress = web_search_progress_from_stream_content(
-            &crate::services::api::claude::ClaudeStreamItem::ToolUse {
+            &crate::services::api::request::RequestStreamItem::ToolUse {
                 id: "srvu_1".to_string(),
                 name: "web_search".to_string(),
                 input: serde_json::json!({"query": "rust ownership"}),
@@ -1237,7 +1237,7 @@ mod tests {
         ));
 
         let duplicate = web_search_progress_from_stream_content(
-            &crate::services::api::claude::ClaudeStreamItem::ToolUse {
+            &crate::services::api::request::RequestStreamItem::ToolUse {
                 id: "srvu_1".to_string(),
                 name: "web_search".to_string(),
                 input: serde_json::json!({"query": "rust ownership"}),
@@ -1250,7 +1250,7 @@ mod tests {
         assert!(duplicate.is_none());
 
         let results_progress = web_search_progress_from_stream_content(
-            &crate::services::api::claude::ClaudeStreamItem::WebSearchToolResult {
+            &crate::services::api::request::RequestStreamItem::WebSearchToolResult {
                 tool_use_id: "srvu_1".to_string(),
                 content: serde_json::json!([
                     {"title": "Rust Book", "url": "https://doc.rust-lang.org/book/"},

@@ -177,7 +177,7 @@ pub(crate) fn is_search_or_read_powershell_command(
 }
 
 /// Maps to CC `PowerShellTool` metadata and `toolToAPISchema(...)` input schema
-/// projection. This lives with the tool instead of `services/api/claude.rs` so
+/// projection. This lives with the tool instead of `services/api/request.rs` so
 /// the API layer only converts tool definitions it is given.
 /// Maps to: CC `PowerShellTool.tsx:277-296` `fullInputSchema`.
 fn full_input_fields() -> Vec<crate::utils::zod::ObjectField> {

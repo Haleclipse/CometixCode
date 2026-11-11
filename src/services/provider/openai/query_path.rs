@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use super::mock::{MockOpenAi, Reply};
-use crate::services::api::claude::{Options, QueryModelStreamItem, query_model_with_streaming};
+use crate::services::api::request::{Options, QueryModelStreamItem, query_model_with_streaming};
 use crate::types::ids::ToolUseId;
 use crate::types::message::{
     AssistantContent, AssistantMessage, Message, ToolResult, ToolUseBlock, UserContent,

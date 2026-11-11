@@ -83,7 +83,7 @@ query loop
   → provider-specific SDK / stream parser
 ```
 
-client factory 构造 Direct、Bedrock、Foundry、Vertex 四种 Anthropic SDK client，并同时处理 header、API key、proxy、timeout 和 provider auth（`src/services/api/client.rs:1-9,152-163,184-246,291-515`）。目标设计中 Anthropic credential 只使用 API key。请求 body 直接使用 `BetaMessageCreateParams`，stream parser 直接处理 Anthropic content block delta（`src/services/api/claude.rs:2027-2116,2264-2403,3010-3175`）。
+client factory 构造 Direct、Bedrock、Foundry、Vertex 四种 Anthropic SDK client，并同时处理 header、API key、proxy、timeout 和 provider auth（`src/services/api/client.rs:1-9,152-163,184-246,291-515`）。目标设计中 Anthropic credential 只使用 API key。请求 body 直接使用 `BetaMessageCreateParams`，stream parser 直接处理 Anthropic content block delta（`src/services/api/request.rs:2027-2116,2264-2403,3010-3175`）。
 
 当前 header 已有可复用边界：
 

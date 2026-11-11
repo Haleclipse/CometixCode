@@ -931,7 +931,7 @@ async fn run_query(input: QueryRunInput<'_>) -> Result<QueryEngineOutcome, Strin
                 .task_budget
                 .as_deref()
                 .and_then(|value| value.parse::<u64>().ok())
-                .map(|total| crate::services::api::claude::TaskBudget {
+                .map(|total| crate::services::api::request::TaskBudget {
                     total,
                     remaining: None,
                 })

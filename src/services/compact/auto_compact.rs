@@ -72,7 +72,7 @@ pub struct AutocompactResult {
 /// Maps to CC `services/compact/autoCompact.ts` `getEffectiveContextWindowSize(...)`.
 pub fn get_effective_context_window_size(model: &str) -> i64 {
     let reserved_tokens_for_summary =
-        (crate::services::api::claude::get_max_output_tokens_for_model(model) as i64)
+        (crate::services::api::request::get_max_output_tokens_for_model(model) as i64)
             .min(MAX_OUTPUT_TOKENS_FOR_SUMMARY);
     let mut context_window = crate::utils::context::get_context_window_for_model(model, &[]);
 

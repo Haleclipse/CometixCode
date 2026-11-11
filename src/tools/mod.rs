@@ -200,7 +200,7 @@ pub fn get_tools_for_default_preset() -> Vec<String> {
 /// Maps to: CC `tools.ts` `getAllBaseTools()`.
 ///
 /// This Rust registry is intentionally housed in `src/tools`, not the API
-/// layer. `services/api/claude.rs` mirrors CC `claude.ts` by accepting tools and
+/// layer. `services/api/request.rs` mirrors CC `claude.ts` by accepting tools and
 /// converting them to Anthropic SDK request params.
 pub fn get_all_base_tools() -> Vec<Tool> {
     let mut tools = vec![

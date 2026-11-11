@@ -371,10 +371,10 @@ pub fn truncate_json_snippet(value: &Value, max_bytes: usize) -> String {
 }
 
 /// Inspect content blocks on a local MessageParam for diagnostics.
-pub fn content_block_types(param: &super::claude::MessageParam) -> Vec<String> {
+pub fn content_block_types(param: &super::request::MessageParam) -> Vec<String> {
     match &param.content {
-        super::claude::MessageContent::Text(_) => vec!["text(string)".to_string()],
-        super::claude::MessageContent::Blocks(blocks) => blocks
+        super::request::MessageContent::Text(_) => vec!["text(string)".to_string()],
+        super::request::MessageContent::Blocks(blocks) => blocks
             .iter()
             .map(|block| {
                 block

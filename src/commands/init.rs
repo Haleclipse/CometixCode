@@ -392,7 +392,7 @@ mod tests {
             &result.messages[1],
             false
         ));
-        let api = crate::services::api::claude::user_message_to_message_param(
+        let api = crate::services::api::request::user_message_to_message_param(
             prompt,
             false,
             false,

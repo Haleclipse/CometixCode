@@ -655,7 +655,7 @@ mod tests {
                     name: "StructuredOutput".into(),
                     input: json!({"ok":true,"extra":"stripped by Zod"}),
                 })];
-                tx.send(crate::services::api::claude::QueryModelStreamItem::Assistant(message))
+                tx.send(crate::services::api::request::QueryModelStreamItem::Assistant(message))
                     .await
                     .unwrap();
                 Ok(rx)

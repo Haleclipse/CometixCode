@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use crate::services::api::claude::SystemPrompt;
+use crate::services::api::request::SystemPrompt;
 use crate::utils::process_env::JsTruthy;
 
 /// Maps to CC `constants/prompts.ts` `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`.

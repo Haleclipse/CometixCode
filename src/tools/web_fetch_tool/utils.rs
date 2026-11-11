@@ -577,7 +577,7 @@ pub(crate) async fn apply_prompt_to_markdown(
         prompt,
         is_preapproved_domain,
     );
-    let mut options = crate::services::api::claude::Options::for_utility(
+    let mut options = crate::services::api::request::Options::for_utility(
         "webfetch",
         "web_fetch_apply".to_string(),
     );
@@ -586,7 +586,7 @@ pub(crate) async fn apply_prompt_to_markdown(
     options.mcp_tools = Vec::new();
     options.abort_signal = Some(abort_controller.signal());
     let assistant =
-        crate::services::api::claude::query_haiku(&Vec::new(), &model_prompt, None, &options)
+        crate::services::api::request::query_haiku(&Vec::new(), &model_prompt, None, &options)
             .await?;
     ensure_not_aborted(abort_controller)?;
     for block in assistant.content {

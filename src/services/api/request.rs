@@ -2,7 +2,7 @@
 //!
 //! Maps to: CC services/api/claude.ts:1-3420
 //!
-//! This module contains the Claude API interaction layer for nyan:
+//! This module contains the API request construction layer for nyan:
 //! - Extra body parameter assembly from env vars and beta headers
 //! - Prompt caching configuration and cache control
 //! - Message conversion (UserMessage/AssistantMessage -> API MessageParam)
@@ -177,7 +177,7 @@ pub const EMPTY_USAGE: NonNullableUsage = NonNullableUsage {
 /// This is intentionally still below the tool-execution layer: it records what
 /// the model requested, but does not run tools or write sessions.
 #[derive(Debug, Clone, PartialEq)]
-pub enum ClaudeStreamItem {
+pub enum RequestStreamItem {
     Text(String),
     /// Thinking text (+ optional signature).
     ///
@@ -2764,14 +2764,16 @@ fn sdk_output_config_from_options(
     }))
 }
 
-fn stream_item_for_delta(delta: &crate::services::provider::ir::Delta) -> Option<ClaudeStreamItem> {
+fn stream_item_for_delta(
+    delta: &crate::services::provider::ir::Delta,
+) -> Option<RequestStreamItem> {
     use crate::services::provider::ir::Delta;
     match delta {
-        Delta::Text { text } if !text.is_empty() => Some(ClaudeStreamItem::Text(text.clone())),
+        Delta::Text { text } if !text.is_empty() => Some(RequestStreamItem::Text(text.clone())),
         Delta::Thinking { text } if !text.is_empty() => {
             // Preview-only; signature arrives via a Signature delta on the
             // active block and is attached at block stop.
-            Some(ClaudeStreamItem::Thinking {
+            Some(RequestStreamItem::Thinking {
                 text: text.clone(),
                 signature: String::new(),
             })
@@ -2781,7 +2783,7 @@ fn stream_item_for_delta(delta: &crate::services::provider::ir::Delta) -> Option
 }
 
 #[derive(Debug)]
-enum ActiveClaudeStreamBlock {
+enum ActiveRequestStreamBlock {
     Text(String),
     Thinking {
         thinking: String,
@@ -2801,7 +2803,7 @@ enum ActiveClaudeStreamBlock {
     Ignored,
 }
 
-impl ActiveClaudeStreamBlock {
+impl ActiveRequestStreamBlock {
     /// Start a block from a neutral IR event. Mirrors `from_content_block`,
     /// which still serves the non-streaming fallback response.
     fn from_block_start(block: crate::services::provider::ir::BlockStart) -> Self {
@@ -2931,23 +2933,23 @@ impl ActiveClaudeStreamBlock {
         Ok(())
     }
 
-    fn into_item(self) -> Option<ClaudeStreamItem> {
+    fn into_item(self) -> Option<RequestStreamItem> {
         match self {
-            Self::Text(text) => Some(ClaudeStreamItem::Text(text)),
+            Self::Text(text) => Some(RequestStreamItem::Text(text)),
             Self::Thinking {
                 thinking,
                 signature,
-            } if !thinking.is_empty() => Some(ClaudeStreamItem::Thinking {
+            } if !thinking.is_empty() => Some(RequestStreamItem::Thinking {
                 text: thinking,
                 signature,
             }),
-            Self::RedactedThinking(data) => Some(ClaudeStreamItem::RedactedThinking(data)),
+            Self::RedactedThinking(data) => Some(RequestStreamItem::RedactedThinking(data)),
             Self::ToolUse {
                 id,
                 name,
                 input_json,
                 is_server,
-            } => Some(ClaudeStreamItem::ToolUse {
+            } => Some(RequestStreamItem::ToolUse {
                 id,
                 name,
                 input: parse_tool_input_json(&input_json),
@@ -2956,7 +2958,7 @@ impl ActiveClaudeStreamBlock {
             Self::WebSearchToolResult {
                 tool_use_id,
                 content,
-            } => Some(ClaudeStreamItem::WebSearchToolResult {
+            } => Some(RequestStreamItem::WebSearchToolResult {
                 tool_use_id,
                 content,
             }),
@@ -2981,18 +2983,18 @@ fn parse_tool_input_json(input_json: &str) -> JsonValue {
     serde_json::from_str(trimmed).unwrap_or_else(|_| JsonValue::String(trimmed.to_string()))
 }
 
-fn claude_stream_item_to_assistant_content(
-    item: ClaudeStreamItem,
+fn request_stream_item_to_assistant_content(
+    item: RequestStreamItem,
 ) -> Option<crate::types::message::AssistantContent> {
     match item {
-        ClaudeStreamItem::Text(text) => Some(crate::types::message::AssistantContent::Text(text)),
-        ClaudeStreamItem::Thinking { text, signature } => {
+        RequestStreamItem::Text(text) => Some(crate::types::message::AssistantContent::Text(text)),
+        RequestStreamItem::Thinking { text, signature } => {
             Some(crate::types::message::AssistantContent::Thinking { text, signature })
         }
-        ClaudeStreamItem::RedactedThinking(data) => {
+        RequestStreamItem::RedactedThinking(data) => {
             Some(crate::types::message::AssistantContent::RedactedThinking { data })
         }
-        ClaudeStreamItem::ToolUse {
+        RequestStreamItem::ToolUse {
             id,
             name,
             input,
@@ -3011,7 +3013,7 @@ fn claude_stream_item_to_assistant_content(
                 Some(crate::types::message::AssistantContent::ToolUse(block))
             }
         }
-        ClaudeStreamItem::WebSearchToolResult {
+        RequestStreamItem::WebSearchToolResult {
             tool_use_id,
             content,
         } => Some(
@@ -3111,7 +3113,7 @@ async fn collect_query_model_stream_to_final_assistant(
 
 /// Convenience production stream opener for the REPL query actor.
 /// Maps to the `query.ts -> deps.callModel(...) -> claude.ts#queryModelWithStreaming(...)`
-/// API boundary while keeping SDK/request assembly in `services/api/claude.rs`.
+/// API boundary while keeping SDK/request assembly in `services/api/request.rs`.
 ///
 /// Official `query.ts` supplies `fallbackModel` from `toolUseContext.options`;
 /// this helper has no context, so it does not re-scan argv.
@@ -4011,7 +4013,7 @@ async fn drain_stream_events(
     tx: tokio::sync::mpsc::Sender<QueryModelStreamItem>,
     ir_usage: &mut Option<crate::services::provider::ir::Usage>,
 ) -> anyhow::Result<()> {
-    let mut blocks: HashMap<usize, ActiveClaudeStreamBlock> = HashMap::new();
+    let mut blocks: HashMap<usize, ActiveRequestStreamBlock> = HashMap::new();
     let mut content_block_count = 0usize;
     let mut has_tool_use = false;
     let mut response_model = Some(options.model.clone());
@@ -4247,7 +4249,7 @@ async fn drain_stream_events(
                 }
             }
             StreamEventKind::BlockStart { index, block } => {
-                blocks.insert(index, ActiveClaudeStreamBlock::from_block_start(block));
+                blocks.insert(index, ActiveRequestStreamBlock::from_block_start(block));
             }
             StreamEventKind::BlockDelta { index, delta } => {
                 let delta_item = stream_item_for_delta(&delta);
@@ -4269,12 +4271,13 @@ async fn drain_stream_events(
                     if let Some(item) = block.into_item() {
                         has_tool_use |= matches!(
                             item,
-                            ClaudeStreamItem::ToolUse {
+                            RequestStreamItem::ToolUse {
                                 is_server: false,
                                 ..
                             }
                         );
-                        let Some(assistant_content) = claude_stream_item_to_assistant_content(item)
+                        let Some(assistant_content) =
+                            request_stream_item_to_assistant_content(item)
                         else {
                             continue;
                         };
@@ -4482,11 +4485,11 @@ pub enum QueryModelStreamItem {
     Stream(StreamEvent),
     /// Streaming content-block delta/progress item. Text/thinking variants are
     /// previews only; the completed formal block is sent as `CompletedContent`.
-    Content(ClaudeStreamItem),
+    Content(RequestStreamItem),
     /// Legacy compatibility seam for injected deps that still separate a
     /// completed block from its assistant envelope. Production streaming emits
     /// `Assistant` directly at every `content_block_stop`.
-    CompletedContent(ClaudeStreamItem),
+    CompletedContent(RequestStreamItem),
     /// Rust transport for CC's post-yield reference mutation in
     /// `message_delta`: the final usage/stop reason is written back to the last
     /// assistant envelope yielded at `content_block_stop`.
@@ -4636,9 +4639,9 @@ pub(crate) fn sdk_message_response_to_assistant_message(
         .content
         .into_iter()
         .filter_map(|block| {
-            ActiveClaudeStreamBlock::from_content_block(block)
+            ActiveRequestStreamBlock::from_content_block(block)
                 .into_item()
-                .and_then(claude_stream_item_to_assistant_content)
+                .and_then(request_stream_item_to_assistant_content)
         })
         .collect::<Vec<_>>();
     content.push(crate::types::message::AssistantContent::MessageIdentity(
@@ -5164,6 +5167,19 @@ fn single_shot_query_options(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn stream_types_belong_to_request_module() {
+        assert!(module_path!().ends_with("::services::api::request::tests"));
+        assert!(
+            std::any::type_name::<RequestStreamItem>()
+                .ends_with("::api::request::RequestStreamItem")
+        );
+        assert!(
+            std::any::type_name::<ActiveRequestStreamBlock>()
+                .ends_with("::api::request::ActiveRequestStreamBlock")
+        );
+    }
+
+    #[test]
     fn api_stream_and_fallback_normalize_plan_before_typed_messages_like_official() {
         let _env_lock = TEST_ENV_LOCK.lock().unwrap();
         let _plan_lock = crate::utils::plans::test_plan_state_lock();
@@ -5188,7 +5204,7 @@ mod tests {
         ], &tools, Some("agent-fixture")).unwrap();
         assert_eq!(object[0]["input"], expected);
 
-        let mut streamed = ActiveClaudeStreamBlock::ToolUse {
+        let mut streamed = ActiveRequestStreamBlock::ToolUse {
             id: "toolu-stream".into(),
             name: "ExitPlanMode".into(),
             input_json: "{\"keep\":true}".into(),
@@ -5197,7 +5213,7 @@ mod tests {
         streamed
             .normalize_api_content(&tools, Some("agent-fixture"))
             .unwrap();
-        let Some(ClaudeStreamItem::ToolUse { input, .. }) = streamed.into_item() else {
+        let Some(RequestStreamItem::ToolUse { input, .. }) = streamed.into_item() else {
             panic!("missing tool input")
         };
         assert_eq!(input, expected);
@@ -5293,7 +5309,7 @@ mod tests {
         assert_eq!(alias_wire["name"], "ExitPlanMode");
         assert_eq!(alias_wire["input"], serde_json::json!({"keep":true}));
         // Unknown / unavailable tools must not receive the plan corrections.
-        let mut unknown = ActiveClaudeStreamBlock::ToolUse {
+        let mut unknown = ActiveRequestStreamBlock::ToolUse {
             id: "unknown".into(),
             name: "ExitPlanMode".into(),
             input_json: "{}".into(),
@@ -5302,7 +5318,7 @@ mod tests {
         unknown
             .normalize_api_content(&[], Some("agent-fixture"))
             .unwrap();
-        let Some(ClaudeStreamItem::ToolUse { input, .. }) = unknown.into_item() else {
+        let Some(RequestStreamItem::ToolUse { input, .. }) = unknown.into_item() else {
             panic!("missing input")
         };
         assert_eq!(input, serde_json::json!({}));
@@ -5598,7 +5614,7 @@ mod tests {
     #[tokio::test]
     async fn query_model_without_streaming_collector_returns_final_assistant() {
         let (tx, mut rx) = tokio::sync::mpsc::channel(4);
-        tx.send(QueryModelStreamItem::Content(ClaudeStreamItem::Text(
+        tx.send(QueryModelStreamItem::Content(RequestStreamItem::Text(
             "partial".to_string(),
         )))
         .await

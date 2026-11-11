@@ -5,10 +5,10 @@
 //! non-streaming Claude query, parses its text response, and reports a typed
 //! success/error result through caller-provided callbacks. Nyan keeps the
 //! same boundary and injects the query executor for tests/safety; the default
-//! executor calls `services/api/claude.rs#query_model_without_streaming`.
+//! executor calls `services/api/request.rs#query_model_without_streaming`.
 
 use super::post_sampling_hooks::{PostSamplingHook, REPLHookContext};
-use crate::services::api::claude::{Options, SystemPrompt, query_model_without_streaming};
+use crate::services::api::request::{Options, SystemPrompt, query_model_without_streaming};
 use crate::tool::ToolUseContext;
 use crate::types::message::{AssistantContent, AssistantMessage, Message};
 use crate::types::tools::Tool;
@@ -234,7 +234,7 @@ fn default_api_query_executor(
 mod tests {
     use super::*;
     use crate::constants::query_source::QuerySource;
-    use crate::services::api::claude::SystemPrompt;
+    use crate::services::api::request::SystemPrompt;
     use crate::types::message::{AssistantMessage, UserContent, UserMessage};
     use chrono::Utc;
     use std::sync::Mutex;

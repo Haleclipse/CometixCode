@@ -277,8 +277,8 @@ where
 /// @nyan: generation is the `agent_creation` utility role (default `@light`,
 /// `selection.utility.agent_creation` overrides it), routed through the
 /// resolved profile and effort instead of the main loop model.
-fn agent_creation_options() -> crate::services::api::claude::Options {
-    let mut options = crate::services::api::claude::Options::for_utility(
+fn agent_creation_options() -> crate::services::api::request::Options {
+    let mut options = crate::services::api::request::Options::for_utility(
         "agent_creation",
         "agent_creation".to_string(),
     );
@@ -298,7 +298,7 @@ pub fn production_agent_generator_runtime() -> AgentGeneratorRuntime {
                 &[],
                 auto_memory_enabled,
                 |user, system| async move {
-                    use crate::services::api::claude::query_model_without_streaming;
+                    use crate::services::api::request::query_model_without_streaming;
                     use crate::types::message::{
                         AssistantContent, Message, UserContent, UserMessage,
                     };

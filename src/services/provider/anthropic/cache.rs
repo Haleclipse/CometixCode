@@ -1,7 +1,7 @@
 //! Anthropic prompt-cache policy: cache-control objects, the profile TTL, and
 //! the sticky cache-TTL usage record the cache warmer reads.
 //!
-//! @nyan: relocated from `services/api/claude.rs` (provider redesign PR 4).
+//! @nyan: relocated from `services/api/request.rs` (provider redesign PR 4).
 //! Cache markers are an Anthropic wire concept; nothing outside the Anthropic
 //! adapter should build them.
 

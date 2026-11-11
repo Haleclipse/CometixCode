@@ -1,7 +1,7 @@
 //! Maps to: CC `cost-tracker.ts` getters used by StatusLine / session stats.
 //!
 //! @nyan: every completed model request is recorded once, at the request layer
-//! (`services/api/claude.rs` and `utils/side_query.rs`), through
+//! (`services/api/request.rs` and `utils/side_query.rs`), through
 //! [`record_request`]. Each record is priced from the model catalog / profile
 //! (`utils/model/pricing.rs`), added to the process totals, and appended to the
 //! main session transcript as a `usage` entry. Resume replays those entries

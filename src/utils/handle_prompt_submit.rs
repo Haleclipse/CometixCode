@@ -532,7 +532,7 @@ mod tests {
                     })
                     .unwrap_or_default();
                 tx.send(
-                    crate::services::api::claude::QueryModelStreamItem::Assistant(
+                    crate::services::api::request::QueryModelStreamItem::Assistant(
                         crate::types::message::AssistantMessage {
                             uuid: uuid::Uuid::new_v4().to_string(),
                             timestamp: chrono::Utc::now(),

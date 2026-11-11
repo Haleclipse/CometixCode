@@ -132,7 +132,7 @@ pub fn renderable_messages_from_entries(entries: &[serde_json::Value]) -> Vec<Re
 /// the raw `toolUseResult` via its own `parse_output`
 /// (CC `Tool.renderToolResultMessage` + `outputSchema.safeParse`).
 /// `content` stays the raw wire text and the API projection builds tool_result
-/// params from tool_use_id/content/is_error only (services/api/claude.rs).
+/// params from tool_use_id/content/is_error only (services/api/request.rs).
 pub fn messages_from_entries(entries: &[serde_json::Value]) -> Vec<crate::types::message::Message> {
     crate::utils::conversation::into_typed_messages(entries.to_vec())
 }

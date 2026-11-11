@@ -1,7 +1,7 @@
 # 费用统计（/cost）
 
 nyan 在请求层统一记账：每个完成的模型请求只记一次，覆盖主对话、子 agent、标题/摘要/记忆提取等小任务、压缩、
-cache 续命请求和 side query。记账点是 `services/api/claude.rs` 的流式结束处与非流式回退处，以及
+cache 续命请求和 side query。记账点是 `services/api/request.rs` 的流式结束处与非流式回退处，以及
 `utils/side_query.rs`；实现见 `src/cost_tracker.rs`、`src/utils/model/pricing.rs`。
 
 ## 价格来源

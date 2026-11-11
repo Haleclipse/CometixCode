@@ -10,7 +10,7 @@ use crate::types::message::Message;
 
 #[derive(Clone, Debug)]
 pub struct CompactCommandCacheContext {
-    pub system_prompt: crate::services::api::claude::SystemPrompt,
+    pub system_prompt: crate::services::api::request::SystemPrompt,
     pub user_context: std::collections::BTreeMap<String, String>,
     pub system_context: std::collections::BTreeMap<String, String>,
 }

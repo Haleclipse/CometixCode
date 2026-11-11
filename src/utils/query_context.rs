@@ -1,7 +1,7 @@
 //! Maps to CC `utils/queryContext.ts` shared API cache-prefix preparation.
 //! `buildSideQuestionFallbackParams` remains unported.
 
-use crate::services::api::claude::SystemPrompt;
+use crate::services::api::request::SystemPrompt;
 use crate::services::mcp::types::McpServerConnection;
 use crate::types::tools::Tool;
 use std::collections::BTreeMap;

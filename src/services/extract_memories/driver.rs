@@ -448,7 +448,7 @@ mod tests {
                 let (tx, rx) = tokio::sync::mpsc::channel(8);
                 if api_error {
                     tx.send(
-                        crate::services::api::claude::QueryModelStreamItem::SystemError(
+                        crate::services::api::request::QueryModelStreamItem::SystemError(
                             crate::types::message::SystemApiErrorMessage {
                                 content: "boom".to_string(),
                                 api_error: "boom".to_string(),
@@ -461,7 +461,7 @@ mod tests {
                     .unwrap();
                 }
                 tx.send(
-                    crate::services::api::claude::QueryModelStreamItem::Assistant(
+                    crate::services::api::request::QueryModelStreamItem::Assistant(
                         crate::types::message::AssistantMessage {
                             uuid: uuid::Uuid::new_v4().to_string(),
                             timestamp: chrono::Utc::now(),

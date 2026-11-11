@@ -6,7 +6,7 @@
 //! boundary; matching/orchestration remains in the shared hook runner.
 
 use super::hook_helpers::{HookResponse, add_arguments_to_prompt};
-use crate::services::api::claude::{Options, SystemPrompt, query_model_without_streaming};
+use crate::services::api::request::{Options, SystemPrompt, query_model_without_streaming};
 use crate::services::hooks::{HookBlockingError, HookEvent, HookOutcome, HookResult};
 use crate::tool::ToolUseContext;
 use crate::types::message::{

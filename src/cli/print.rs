@@ -2284,7 +2284,7 @@ fn emit_result(
                 "webSearchRequests": 0,
                 "costUSD": usage.cost_usd,
                 "contextWindow": crate::utils::context::get_context_window_for_model(&model, &[]),
-                "maxOutputTokens": crate::services::api::claude::get_max_output_tokens_for_model(&model),
+                "maxOutputTokens": crate::services::api::request::get_max_output_tokens_for_model(&model),
             });
             (model, value)
         })

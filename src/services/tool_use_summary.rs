@@ -5,7 +5,7 @@
 //! completes. It is deliberately non-critical: failures are swallowed and the
 //! main Query Agent Turn continues unchanged, matching Claude Code.
 
-use crate::services::api::claude::{self, Options, SystemPrompt};
+use crate::services::api::request::{self, Options, SystemPrompt};
 use serde_json::Value;
 
 const TOOL_USE_SUMMARY_SYSTEM_PROMPT: &str = "Write a short summary label describing what these tool calls accomplished. It appears as a single-line row in a mobile app and truncates around 30 characters, so think git-commit-subject, not sentence.\n\nKeep the verb in past tense and the most distinctive noun. Drop articles, connectors, and long location context first.\n\nExamples:\n- Searched in auth/\n- Fixed NPE in UserService\n- Created signup endpoint\n- Read config.json\n- Ran failing tests";
@@ -45,7 +45,7 @@ pub async fn generate_tool_use_summary(params: GenerateToolUseSummaryParams) -> 
     options.has_append_system_prompt = false;
     options.mcp_tools = Vec::new();
 
-    let response = claude::query_haiku(&system_prompt, &user_prompt, None, &options)
+    let response = request::query_haiku(&system_prompt, &user_prompt, None, &options)
         .await
         .ok()?;
     let summary = response

@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 /// Maps to CC `utils/toolSearch.ts` `extractDiscoveredToolNames(...)`.
 ///
 /// Scans user `tool_result` blocks and compact-boundary carry-forward metadata
-/// so `services/api/claude.rs` can include only discovered deferred tools in
+/// so `services/api/request.rs` can include only discovered deferred tools in
 /// the next request.
 pub fn extract_discovered_tool_names(messages: &[Message]) -> BTreeSet<String> {
     let mut discovered = BTreeSet::new();

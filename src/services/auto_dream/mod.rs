@@ -57,7 +57,7 @@ fn suggestions(text: &str) -> Vec<String> {
         .collect()
 }
 
-fn usage_total(usage: &crate::services::api::claude::NonNullableUsage) -> u64 {
+fn usage_total(usage: &crate::services::api::request::NonNullableUsage) -> u64 {
     usage
         .input_tokens
         .saturating_add(usage.output_tokens)
@@ -575,7 +575,7 @@ mod tests {
             Box::pin(async move {
                 (before_answer)();
                 let (tx, rx) = tokio::sync::mpsc::channel(8);
-                tx.send(crate::services::api::claude::QueryModelStreamItem::Stream(
+                tx.send(crate::services::api::request::QueryModelStreamItem::Stream(
                     crate::types::message::StreamEvent::ApiEvent {
                         event: serde_json::json!({
                             "type": "message_delta",
@@ -588,7 +588,7 @@ mod tests {
                 .unwrap();
                 if api_error {
                     tx.send(
-                        crate::services::api::claude::QueryModelStreamItem::SystemError(
+                        crate::services::api::request::QueryModelStreamItem::SystemError(
                             crate::types::message::SystemApiErrorMessage {
                                 content: "boom".to_string(),
                                 api_error: "boom".to_string(),
@@ -601,7 +601,7 @@ mod tests {
                     .unwrap();
                 }
                 tx.send(
-                    crate::services::api::claude::QueryModelStreamItem::Assistant(
+                    crate::services::api::request::QueryModelStreamItem::Assistant(
                         crate::types::message::AssistantMessage {
                             uuid: uuid::Uuid::new_v4().to_string(),
                             timestamp: chrono::Utc::now(),

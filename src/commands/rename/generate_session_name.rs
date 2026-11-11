@@ -1,6 +1,6 @@
 //! Maps to: CC `commands/rename/generateSessionName.ts:10-67`.
 
-use crate::services::api::claude::{self, Options, SystemPrompt};
+use crate::services::api::request::{self, Options, SystemPrompt};
 use crate::tool::AbortController;
 use crate::types::message::{AssistantContent, Message};
 
@@ -41,7 +41,7 @@ pub async fn generate_session_name(
     options.mcp_tools = Vec::new();
     options.abort_signal = Some(abort_controller.signal());
 
-    match claude::query_haiku(
+    match request::query_haiku(
         &system_prompt,
         &conversation_text,
         Some(&output_format),

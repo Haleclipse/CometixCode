@@ -599,7 +599,7 @@ mod tests {
             *self.request.lock().unwrap() = Some(request);
             Box::pin(async move {
                 let (tx, rx) = tokio::sync::mpsc::channel(3);
-                tx.send(crate::services::api::claude::QueryModelStreamItem::Stream(
+                tx.send(crate::services::api::request::QueryModelStreamItem::Stream(
                     crate::types::message::StreamEvent::ApiEvent {
                         event: serde_json::json!({
                             "type": "message_start",
@@ -611,7 +611,7 @@ mod tests {
                 .await
                 .ok();
                 tx.send(
-                    crate::services::api::claude::QueryModelStreamItem::Assistant(
+                    crate::services::api::request::QueryModelStreamItem::Assistant(
                         crate::types::message::AssistantMessage {
                             uuid: uuid::Uuid::new_v4().to_string(),
                             timestamp: chrono::Utc::now(),
