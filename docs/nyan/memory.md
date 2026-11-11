@@ -28,7 +28,7 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
 | 能力 | 现状 | 位置 |
 |---|---|---|
 | Persistent Memory 存储 | **已有**：`<config>/projects/<sanitize(canonical git root)>/memory/`——先 `find_canonical_git_root`（worktree 解析到主仓库），非 git 目录退回原始 cwd；`MEMORY.md` 索引 + 每条一个带 frontmatter 的 `.md`；类型正好是 `user/feedback/project/reference` | `memdir/paths.rs:89-104`、`utils/git.rs:84-87`、`memdir/memdir.rs:27-104` |
-| 注入 | **已有**：系统提示只放行为指引；`MEMORY.md` 正文截断到 ≤200 行 / 25000 字节（`memdir/memdir.rs:11-12`）后作为 `claudeMd` 用户上下文注入首条消息 | `memdir/memdir.rs:416`、`utils/claudemd.rs:320-332,1328-1329`、`context.rs:98-180` |
+| 注入 | **已有**：系统提示只放行为指引；`MEMORY.md` 正文截断到 ≤200 行 / 25000 字节（`memdir/memdir.rs:11-12`）后作为 `claudeMd` 用户上下文注入首条消息 | `memdir/memdir.rs:416`、`utils/agents_md.rs:320-332,1328-1329`、`context.rs:98-180` |
 | 写入 | 只有"主模型自觉调用 Write"；权限层对 memdir 路径的写入**无条件放行**，Write / Edit 与 Bash（`>` 重定向、`sed -i`、`cp` 等）走同一个放行点 | `utils/permissions/filesystem.rs:626-631`（`check_editable_internal_path`），Bash 经 `utils/permissions/path_validation.rs:176` 命中同一放行 |
 | 提取 | **无**：`QuerySource::ExtractMemories` 只是枚举值（`constants/query_source.rs:77`）；`stop_hooks.rs:84-88` 注释标为 TODO 接缝 | `query/stop_hooks.rs:140`（`handle_stop_hooks`） |
 | 合并（auto-dream） | **无**：`dream_task.rs:10-13` "driver missing"；`autoDreamEnabled` 是死设置；consolidation lock 未移植（`dream_task.rs:19-21,198-201`），但 `/memory` 已在读 `.consolidate-lock` 的 mtime（`components/memory/memory_file_selector.rs:268`）；dream 任务不进后台任务列表（`background_task_items()`，`components/tasks/background_tasks_dialog.rs:37`，见 `dream_task.rs:14-16`） | `tasks/dream_task.rs` |
@@ -51,7 +51,7 @@ CC 现成部件（`run_forked_agent`、`dream_task`、secret scanner、`/memory`
   记忆记录的是用户偏好、项目背景、外部位置，与 worktree 的内容差异无关（检索索引则按 worktree 分开，见检索 4.8）。
 - **两台机器各自一份、不同步**（README 第一节第 7 条）：nyan-pc 与 corp-pc 的 `~/.nyan/projects/*/memory/` 互相独立；
   同一仓库在两机上的 key 也可能不同（路径含用户名）。不做同步、不做合并冲突处理；需要共享的记忆由用户手动复制。
-- **"候选"用 memdir 已有的结构表达，不加状态字段**：CC 只注入 `MEMORY.md` 索引（`utils/claudemd.rs:320-331`），
+- **"候选"用 memdir 已有的结构表达，不加状态字段**：CC 只注入 `MEMORY.md` 索引（`utils/agents_md.rs:320-331`），
   单条记忆文件不会自动进上下文。所以"已生效" = 文件存在且在索引里；"候选" = 文件存在但不在索引里。确认候选就是把
   它加进索引——用户在 `/memory` 里操作，或手动编辑 `MEMORY.md`，两种方式等价。
 - 提取 agent 写的记忆在 frontmatter 里多一行 `source: extract`（`@nyan`），用于 `/memory` 里区分来源；其余字段沿用
@@ -143,14 +143,14 @@ Bash 的路径校验经 `utils/permissions/path_validation.rs:176` 命中同一�
   `check_memory_content`（Edit 检查替换后的全文，不只看 `new_string`）；违规则拒绝整次写入，错误信息给出命中的规则 id，
   不回显命中内容。接入点：`is_auto_mem_path`（`memdir/paths.rs:124`）判定为 memdir 的写入。
 - **读时**（兜底，覆盖 Bash 与外部编辑）：记忆内容进入模型上下文只有两个入口，都在注入前调用 `check_memory_content`：
-  1. `MEMORY.md` 索引注入：`utils/claudemd.rs` 中 `ClaudeMdKind::AutoMem` 的读入处（`:1327` 解析后、`:1328-1329` 截断前）；
+  1. `MEMORY.md` 索引注入：`utils/agents_md.rs` 中 `AgentsMdKind::AutoMem` 的读入处（`:1327` 解析后、`:1328-1329` 截断前）；
   2. M6 `RelevantMemories` 的生产者（检索落地后），对每个候选文件。
 - 读时命中违规：该文件**不注入**（索引违规则整个索引本轮不注入，退化为"无记忆"），记 `memory_guard_blocked`
   日志，并在 `/memory` 里把该文件标为"已隔离：命中秘密规则 <id>"。**不删除、不改写文件**（删除需用户确认，Decision #11）。
 - 不拦截 Read / Grep 等工具对 memdir 的直接读取：这与读取工作区里任何含秘密的文件同性质，不属于记忆注入。
 - (b) 不做：它增加审批打断，却仍覆盖不全；(c) 已经让违规内容进不了上下文。
 
-接入点汇总：`tools/file_write_tool`、`tools/file_edit_tool`（写时），`utils/claudemd.rs`（读时），M6 生产者（读时，检索切片 I）。
+接入点汇总：`tools/file_write_tool`、`tools/file_edit_tool`（写时），`utils/agents_md.rs`（读时），M6 生产者（读时，检索切片 I）。
 
 ### M4 晋升：自动 + 候选（Decision #11）
 
@@ -294,7 +294,7 @@ CC 原有的 `autoMemoryEnabled = false` 时，提取与合并一并关闭。
 
 | 切片 | 内容 | 主要写集 | 依赖 |
 |---|---|---|---|
-| A | 写入安全：解开 secret 规则门控、启发式、`check_memory_content`；写时接入 Write / Edit（完整文件内容）；读时接入 `MEMORY.md` 注入；`/memory` 隔离标记的数据来源 | `services/team_memory_sync/secret_scanner.rs`、新 `memdir/write_guard.rs`、`tools/file_write_tool`、`tools/file_edit_tool`、`utils/claudemd.rs` | — |
+| A | 写入安全：解开 secret 规则门控、启发式、`check_memory_content`；写时接入 Write / Edit（完整文件内容）；读时接入 `MEMORY.md` 注入；`/memory` 隔离标记的数据来源 | `services/team_memory_sync/secret_scanner.rs`、新 `memdir/write_guard.rs`、`tools/file_write_tool`、`tools/file_edit_tool`、`utils/agents_md.rs` | — |
 | B | 候选机制：列出不在索引里的记忆文件；提取 agent 修改索引时的 `type: user` 检查 | `memdir/memdir.rs` | — |
 | C | 提取 agent：节流、cache 共享分叉、工具约束、提示词、费用（`total_usage` → `cost_tracker`）、提取游标条目与 `METADATA_MARKERS`、压缩前强制提取、`settings.nyan.memory` | 新 `services/extract_memories/`、`query/stop_hooks.rs`、`services/compact/auto_compact.rs`、`commands/compact/compact.rs`、`utils/session_storage.rs`（游标条目类型与 marker）、`utils/settings/types.rs` | A、B、公共（`is_cache_sharing_fork`，README 批次 0） |
 | D | 合并 agent：dream 驱动、空闲触发与阈值、`.consolidate-lock` 获取 / 完成 / 回滚 / 崩溃回收、禁止删除、建议删除清单、后台任务列表的 Dream 分支 | 新 `services/auto_dream/`（含 `lock.rs`）、`tasks/dream_task.rs`、`components/tasks/background_tasks_dialog.rs` | A、B、公共（`is_cache_sharing_fork`） |

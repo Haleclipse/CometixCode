@@ -8,7 +8,7 @@
 
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::dialog::Dialog;
-use crate::utils::claudemd::ExternalClaudeMdInclude;
+use crate::utils::agents_md::ExternalAgentsMdInclude;
 use crate::utils::theme::Theme;
 use iocraft::prelude::*;
 
@@ -54,7 +54,7 @@ fn choice_from_value(value: &str) -> ClaudeMdExternalIncludesChoice {
 pub struct ClaudeMdExternalIncludesDialogProps<'a> {
     pub on_done: HandlerMut<'a, ClaudeMdExternalIncludesChoice>,
     pub is_standalone_dialog: bool,
-    pub external_includes: Vec<ExternalClaudeMdInclude>,
+    pub external_includes: Vec<ExternalAgentsMdInclude>,
 }
 
 /// Maps to: CC `components/ClaudeMdExternalIncludesDialog.tsx`
@@ -180,8 +180,8 @@ mod tests {
                 ClaudeMdExternalIncludesDialog(
                     is_standalone_dialog: true,
                     external_includes: vec![
-                        ExternalClaudeMdInclude::new("/outside/AGENTS.md", "/repo/AGENTS.md"),
-                        ExternalClaudeMdInclude::new("/shared/rules.md", "/repo/AGENTS.md"),
+                        ExternalAgentsMdInclude::new("/outside/AGENTS.md", "/repo/AGENTS.md"),
+                        ExternalAgentsMdInclude::new("/shared/rules.md", "/repo/AGENTS.md"),
                     ],
                 )
             }

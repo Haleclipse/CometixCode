@@ -48,7 +48,7 @@ use serde::{Deserialize, Serialize};
 //     (state/app_state_store.rs)
 //   - `Task[]` (utils/tasks.ts:76-89) → `Vec<TaskRecord>` (utils/tasks.rs)
 //   - `MemoryFileInfo` (utils/claudemd.ts:229-243) → `MemoryFileInfo`
-//     (utils/claudemd.rs)
+//     (utils/agents_md.rs)
 //   - `HookBlockingError` (utils/hooks.ts:330-333) → `HookBlockingError`
 //     (services/hooks/mod.rs)
 //   - `MessageOrigin` (types/message.ts:6) → `MessageOrigin` alias
@@ -150,7 +150,7 @@ pub enum Attachment {
     #[serde(rename = "nested_memory", rename_all = "camelCase")]
     NestedMemory {
         path: String,
-        content: crate::utils::claudemd::MemoryFileInfo,
+        content: crate::utils::agents_md::MemoryFileInfo,
         #[serde(default)]
         display_path: String,
     },
@@ -2275,19 +2275,19 @@ fn get_directories_to_process(
     nested_dirs
 }
 
-fn claude_md_kind_name(kind: crate::utils::claudemd::ClaudeMdKind) -> &'static str {
+fn claude_md_kind_name(kind: crate::utils::agents_md::AgentsMdKind) -> &'static str {
     match kind {
-        crate::utils::claudemd::ClaudeMdKind::User => "User",
-        crate::utils::claudemd::ClaudeMdKind::Project => "Project",
-        crate::utils::claudemd::ClaudeMdKind::AutoMem => "AutoMem",
-        crate::utils::claudemd::ClaudeMdKind::TeamMem => "TeamMem",
+        crate::utils::agents_md::AgentsMdKind::User => "User",
+        crate::utils::agents_md::AgentsMdKind::Project => "Project",
+        crate::utils::agents_md::AgentsMdKind::AutoMem => "AutoMem",
+        crate::utils::agents_md::AgentsMdKind::TeamMem => "TeamMem",
     }
 }
 
 /// Maps to CC `memoryFilesToAttachments(...)` (:1724-1788).
 /// Maps to: CC `utils/attachments.ts:1710-1791` `memoryFilesToAttachments`.
 fn memory_files_to_attachments(
-    memory_files: Vec<crate::utils::claudemd::ClaudeMdFile>,
+    memory_files: Vec<crate::utils::agents_md::AgentsMdFile>,
     tool_use_context: &mut ToolUseContext,
     trigger_file_path: Option<&std::path::Path>,
 ) -> Vec<AttachmentContinuation> {
@@ -2304,12 +2304,12 @@ fn memory_files_to_attachments(
         }
         let display_path = relative_display_path(&cwd, &memory_file.path);
         let content = memory_file.content.clone();
-        let disk_projection = crate::utils::claudemd::claude_md_disk_projection(&memory_file);
+        let disk_projection = crate::utils::agents_md::agents_md_disk_projection(&memory_file);
         let instructions_hook = match memory_file.kind {
-            crate::utils::claudemd::ClaudeMdKind::User => Some("User"),
-            crate::utils::claudemd::ClaudeMdKind::Project => Some("Project"),
-            crate::utils::claudemd::ClaudeMdKind::AutoMem
-            | crate::utils::claudemd::ClaudeMdKind::TeamMem => None,
+            crate::utils::agents_md::AgentsMdKind::User => Some("User"),
+            crate::utils::agents_md::AgentsMdKind::Project => Some("Project"),
+            crate::utils::agents_md::AgentsMdKind::AutoMem
+            | crate::utils::agents_md::AgentsMdKind::TeamMem => None,
         }
         .map(|memory_type| {
             let load_reason = if disk_projection.globs.is_some() {
@@ -2334,7 +2334,7 @@ fn memory_files_to_attachments(
         // CC embeds the `MemoryFileInfo` object as `content`
         // (utils/attachments.ts:490-495,1710-1791); optional keys are present
         // only when set, matching JSON.stringify's undefined-omission.
-        let memory_info = crate::utils::claudemd::MemoryFileInfo {
+        let memory_info = crate::utils::agents_md::MemoryFileInfo {
             path: path.clone(),
             memory_type: claude_md_kind_name(memory_file.kind).to_string(),
             content,
@@ -2427,7 +2427,7 @@ async fn get_nested_memory_attachments(
         tokio::task::yield_now().await;
         for directory in get_directories_to_process(&target, &original_cwd) {
             tokio::task::yield_now().await;
-            let files = crate::utils::claudemd::get_memory_files_for_nested_directory(
+            let files = crate::utils::agents_md::get_memory_files_for_nested_directory(
                 &directory,
                 &target,
                 &original_cwd,
@@ -3183,7 +3183,7 @@ mod tests {
         let raw = "---\npaths: src/**/*.rs\n---\nrust instruction";
         std::fs::write(&agents, raw).unwrap();
         let mut processed = std::collections::HashSet::new();
-        let files = crate::utils::claudemd::get_memory_files_for_nested_directory(
+        let files = crate::utils::agents_md::get_memory_files_for_nested_directory(
             &nested,
             &target,
             &root,

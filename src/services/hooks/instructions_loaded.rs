@@ -74,7 +74,7 @@ pub async fn execute_instructions_loaded_hooks_with_config(
 /// only exports the plain async fn (`utils/hooks.ts:4335`). This port
 /// converges those caller-side voids into this one shared dispatcher (chosen:
 /// one detach point instead of two call sites), so the process-lifetime spawn
-/// rule lands HERE rather than in attachments.rs/claudemd.rs.
+/// rule lands HERE rather than in attachments.rs/agents_md.rs.
 pub fn dispatch_instructions_loaded_hooks(input: InstructionsLoadedInput) {
     let loaded = super::load_hooks_config();
     if loaded.disable_all_hooks

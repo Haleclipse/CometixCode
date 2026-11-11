@@ -6,10 +6,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, RwLock};
 
 #[derive(Debug, Clone)]
-pub struct ClaudeMdFile {
+pub struct AgentsMdFile {
     pub path: PathBuf,
-    pub source: ClaudeMdSource,
-    pub kind: ClaudeMdKind,
+    pub source: AgentsMdSource,
+    pub kind: AgentsMdKind,
     pub content: String,
     /// File that referenced this one through an `@path` include.
     pub parent: Option<PathBuf>,
@@ -20,7 +20,7 @@ pub struct ClaudeMdFile {
 /// Disk/content metadata used by nested-memory persistence. Keeping this as a
 /// derived projection avoids duplicating raw bytes on every startup memory.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaudeMdDiskProjection {
+pub struct AgentsMdDiskProjection {
     pub raw_content: String,
     pub content_differs_from_disk: bool,
     pub globs: Option<Vec<String>>,
@@ -30,7 +30,7 @@ pub struct ClaudeMdDiskProjection {
 /// embedded as `nested_memory` attachment `content`
 /// (utils/attachments.ts:490-495).
 ///
-/// [`ClaudeMdFile`] + [`ClaudeMdDiskProjection`] remain the in-memory model;
+/// [`AgentsMdFile`] + [`AgentsMdDiskProjection`] remain the in-memory model;
 /// this struct is the serde projection the attachment seam stores and
 /// round-trips through session JSONL.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -59,7 +59,7 @@ pub struct MemoryFileInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClaudeMdKind {
+pub enum AgentsMdKind {
     User,
     Project,
     AutoMem,
@@ -68,12 +68,12 @@ pub enum ClaudeMdKind {
 
 /// Maps to: CC `utils/claudemd.ts` `ExternalClaudeMdInclude`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExternalClaudeMdInclude {
+pub struct ExternalAgentsMdInclude {
     pub path: String,
     pub parent: String,
 }
 
-impl ExternalClaudeMdInclude {
+impl ExternalAgentsMdInclude {
     pub fn new(path: impl Into<String>, parent: impl Into<String>) -> Self {
         Self {
             path: path.into(),
@@ -84,22 +84,22 @@ impl ExternalClaudeMdInclude {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// @nyan: no `Managed` tier (CC's policy-path CLAUDE.md).
-pub enum ClaudeMdSource {
+pub enum AgentsMdSource {
     UserGlobal,
     Project,
 }
 
-impl ClaudeMdSource {
-    fn kind(self) -> ClaudeMdKind {
+impl AgentsMdSource {
+    fn kind(self) -> AgentsMdKind {
         match self {
-            Self::UserGlobal => ClaudeMdKind::User,
-            Self::Project => ClaudeMdKind::Project,
+            Self::UserGlobal => AgentsMdKind::User,
+            Self::Project => AgentsMdKind::Project,
         }
     }
 }
 
 /// Maps to CC `utils/claudemd.ts` memoized `getMemoryFiles()` owner.
-static MEMORY_FILES_CACHE: LazyLock<RwLock<Option<Vec<ClaudeMdFile>>>> =
+static MEMORY_FILES_CACHE: LazyLock<RwLock<Option<Vec<AgentsMdFile>>>> =
     LazyLock::new(|| RwLock::new(None));
 static SHOULD_FIRE_INSTRUCTIONS_LOADED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
@@ -111,7 +111,7 @@ static NEXT_EAGER_LOAD_REASON: LazyLock<RwLock<&'static str>> =
 /// rules directory are intentionally never discovered.
 const AGENTS_MEMORY_FILE: &str = "AGENTS.md";
 
-pub fn discover_claude_md_files() -> Vec<ClaudeMdFile> {
+pub fn discover_agents_md_files() -> Vec<AgentsMdFile> {
     #[cfg(not(test))]
     if let Ok(cache) = MEMORY_FILES_CACHE.read()
         && let Some(files) = cache.as_ref()
@@ -123,7 +123,7 @@ pub fn discover_claude_md_files() -> Vec<ClaudeMdFile> {
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     );
-    let files = discover_claude_md_files_with_options(include_default_discovery, &additional_dirs);
+    let files = discover_agents_md_files_with_options(include_default_discovery, &additional_dirs);
 
     #[cfg(not(test))]
     if let Ok(mut cache) = MEMORY_FILES_CACHE.write() {
@@ -175,11 +175,11 @@ pub(crate) fn memory_files_cache_is_populated_for_test() -> bool {
 /// `include_default_discovery=false` is the Rust equivalent of CC bare mode's
 /// "skip what I didn't ask for" behavior. Explicit add-dir AGENTS.md loading
 /// remains controlled by `NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD`.
-pub fn discover_claude_md_files_with_options(
+pub fn discover_agents_md_files_with_options(
     include_default_discovery: bool,
     additional_dirs: &[PathBuf],
-) -> Vec<ClaudeMdFile> {
-    discover_claude_md_files_with_external_policy(include_default_discovery, additional_dirs, false)
+) -> Vec<AgentsMdFile> {
+    discover_agents_md_files_with_external_policy(include_default_discovery, additional_dirs, false)
 }
 
 /// Maps to CC `getMemoryFiles(forceIncludeExternal)`.
@@ -187,11 +187,11 @@ pub fn discover_claude_md_files_with_options(
 /// When `force_include_external` is true, `@include` targets outside the
 /// original CWD are loaded even if the project has not approved them — used
 /// only by the external-includes approval check, not for context building.
-pub fn discover_claude_md_files_with_external_policy(
+pub fn discover_agents_md_files_with_external_policy(
     include_default_discovery: bool,
     additional_dirs: &[PathBuf],
     force_include_external: bool,
-) -> Vec<ClaudeMdFile> {
+) -> Vec<AgentsMdFile> {
     let mut files = Vec::new();
     let mut processed = HashSet::new();
     let cwd = std::env::current_dir().unwrap_or_default();
@@ -212,7 +212,7 @@ pub fn discover_claude_md_files_with_external_policy(
             // @nyan: only honor AGENTS.md; CLAUDE.md and rules variants are discarded
             process_memory_file(
                 &config_home.join(AGENTS_MEMORY_FILE),
-                ClaudeMdSource::UserGlobal,
+                AgentsMdSource::UserGlobal,
                 true,
                 0,
                 None,
@@ -246,7 +246,7 @@ pub fn discover_claude_md_files_with_external_policy(
                 crate::utils::settings::constants::SettingSource::Project,
             ) && !skip_project
             {
-                load_project_claude_md_files(
+                load_project_agents_md_files(
                     &directory,
                     include_project_external,
                     &cwd,
@@ -259,8 +259,8 @@ pub fn discover_claude_md_files_with_external_policy(
         if crate::memdir::paths::is_auto_memory_enabled() {
             process_memory_file_with_kind(
                 &crate::memdir::paths::get_auto_mem_entrypoint(),
-                ClaudeMdSource::UserGlobal,
-                ClaudeMdKind::AutoMem,
+                AgentsMdSource::UserGlobal,
+                AgentsMdKind::AutoMem,
                 true,
                 0,
                 None,
@@ -275,7 +275,7 @@ pub fn discover_claude_md_files_with_external_policy(
         crate::utils::process_env::var("NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD").as_deref(),
     ) {
         for dir in additional_dirs {
-            load_project_claude_md_files(
+            load_project_agents_md_files(
                 dir,
                 include_project_external,
                 &cwd,
@@ -297,14 +297,14 @@ pub fn discover_claude_md_files_with_external_policy(
         }
         for file in &files {
             let memory_type = match file.kind {
-                ClaudeMdKind::User => Some("User"),
-                ClaudeMdKind::Project => Some("Project"),
-                ClaudeMdKind::AutoMem | ClaudeMdKind::TeamMem => None,
+                AgentsMdKind::User => Some("User"),
+                AgentsMdKind::Project => Some("Project"),
+                AgentsMdKind::AutoMem | AgentsMdKind::TeamMem => None,
             };
             let Some(memory_type) = memory_type else {
                 continue;
             };
-            let projection = claude_md_disk_projection(file);
+            let projection = agents_md_disk_projection(file);
             crate::services::hooks::instructions_loaded::dispatch_instructions_loaded_hooks(
                 crate::services::hooks::instructions_loaded::InstructionsLoadedInput {
                     file_path: file.path.display().to_string(),
@@ -332,12 +332,12 @@ fn path_in_original_cwd(path: &Path) -> bool {
 }
 
 /// Maps to: CC `utils/claudemd.ts` `getExternalClaudeMdIncludes`.
-pub fn get_external_claude_md_includes(files: &[ClaudeMdFile]) -> Vec<ExternalClaudeMdInclude> {
+pub fn get_external_agents_md_includes(files: &[AgentsMdFile]) -> Vec<ExternalAgentsMdInclude> {
     let mut externals = Vec::new();
     for file in files {
         // User-global memories may always include outside CWD; they are not
         // part of the project trust warning surface.
-        if file.kind == ClaudeMdKind::User {
+        if file.kind == AgentsMdKind::User {
             continue;
         }
         let Some(parent) = file.parent.as_ref() else {
@@ -346,7 +346,7 @@ pub fn get_external_claude_md_includes(files: &[ClaudeMdFile]) -> Vec<ExternalCl
         if path_in_original_cwd(&file.path) {
             continue;
         }
-        externals.push(ExternalClaudeMdInclude::new(
+        externals.push(ExternalAgentsMdInclude::new(
             file.path.display().to_string(),
             parent.display().to_string(),
         ));
@@ -355,12 +355,12 @@ pub fn get_external_claude_md_includes(files: &[ClaudeMdFile]) -> Vec<ExternalCl
 }
 
 /// Maps to: CC `utils/claudemd.ts` `hasExternalClaudeMdIncludes`.
-pub fn has_external_claude_md_includes(files: &[ClaudeMdFile]) -> bool {
-    !get_external_claude_md_includes(files).is_empty()
+pub fn has_external_agents_md_includes(files: &[AgentsMdFile]) -> bool {
+    !get_external_agents_md_includes(files).is_empty()
 }
 
 /// Maps to: CC `utils/claudemd.ts` `shouldShowClaudeMdExternalIncludesWarning`.
-pub fn should_show_claude_md_external_includes_warning() -> bool {
+pub fn should_show_agents_md_external_includes_warning() -> bool {
     let project = config::get_current_project_config();
     if project
         .has_claude_md_external_includes_approved
@@ -376,16 +376,16 @@ pub fn should_show_claude_md_external_includes_warning() -> bool {
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     );
-    let files = discover_claude_md_files_with_external_policy(
+    let files = discover_agents_md_files_with_external_policy(
         include_default_discovery,
         &additional_dirs,
         true,
     );
-    has_external_claude_md_includes(&files)
+    has_external_agents_md_includes(&files)
 }
 
-pub fn build_claude_md_context() -> String {
-    let files = discover_claude_md_files();
+pub fn build_agents_md_context() -> String {
+    let files = discover_agents_md_files();
     if files.is_empty() {
         return String::new();
     }
@@ -393,8 +393,8 @@ pub fn build_claude_md_context() -> String {
     let mut parts = Vec::new();
     for file in &files {
         let source_label = match file.source {
-            ClaudeMdSource::UserGlobal => "user global",
-            ClaudeMdSource::Project => "project",
+            AgentsMdSource::UserGlobal => "user global",
+            AgentsMdSource::Project => "project",
         };
         parts.push(format!(
             "# Source: {} ({})\n\n{}",
@@ -416,7 +416,7 @@ pub fn get_memory_files_for_nested_directory(
     _target_path: &Path,
     original_cwd: &Path,
     processed: &mut HashSet<PathBuf>,
-) -> Vec<ClaudeMdFile> {
+) -> Vec<AgentsMdFile> {
     let mut files = Vec::new();
     let project_enabled = crate::utils::settings::constants::is_setting_source_enabled(
         crate::utils::settings::constants::SettingSource::Project,
@@ -424,7 +424,7 @@ pub fn get_memory_files_for_nested_directory(
     if project_enabled {
         process_memory_file(
             &dir.join(AGENTS_MEMORY_FILE),
-            ClaudeMdSource::Project,
+            AgentsMdSource::Project,
             false,
             0,
             None,
@@ -439,16 +439,16 @@ pub fn get_memory_files_for_nested_directory(
     files
 }
 
-fn load_project_claude_md_files(
+fn load_project_agents_md_files(
     dir: &Path,
     include_external: bool,
     cwd: &Path,
     processed: &mut HashSet<PathBuf>,
-    files: &mut Vec<ClaudeMdFile>,
+    files: &mut Vec<AgentsMdFile>,
 ) {
     process_memory_file(
         &dir.join(AGENTS_MEMORY_FILE),
-        ClaudeMdSource::Project,
+        AgentsMdSource::Project,
         include_external,
         0,
         None,
@@ -609,7 +609,7 @@ fn resolved_exclude_pattern(pattern: &str) -> Option<String> {
     })
 }
 
-fn claude_md_path_matches_excludes(path: &Path, patterns: &[String]) -> bool {
+fn agents_md_path_matches_excludes(path: &Path, patterns: &[String]) -> bool {
     if patterns.is_empty() {
         return false;
     }
@@ -648,14 +648,14 @@ fn claude_md_path_matches_excludes(path: &Path, patterns: &[String]) -> bool {
     })
 }
 
-fn is_claude_md_excluded(path: &Path, kind: ClaudeMdKind) -> bool {
-    if !matches!(kind, ClaudeMdKind::User | ClaudeMdKind::Project) {
+fn is_agents_md_excluded(path: &Path, kind: AgentsMdKind) -> bool {
+    if !matches!(kind, AgentsMdKind::User | AgentsMdKind::Project) {
         return false;
     }
     let patterns = crate::utils::settings::get_initial_settings()
         .claude_md_excludes
         .unwrap_or_default();
-    claude_md_path_matches_excludes(path, &patterns)
+    agents_md_path_matches_excludes(path, &patterns)
 }
 
 fn is_path_inside(path: &Path, root: &Path) -> bool {
@@ -951,10 +951,10 @@ fn truncate_memory_entrypoint(content: &str) -> String {
     )
 }
 
-pub fn claude_md_disk_projection(file: &ClaudeMdFile) -> ClaudeMdDiskProjection {
+pub fn agents_md_disk_projection(file: &AgentsMdFile) -> AgentsMdDiskProjection {
     let raw_content = std::fs::read_to_string(&file.path).unwrap_or_else(|_| file.content.clone());
     let (_, globs) = parsed_memory_content(&raw_content);
-    ClaudeMdDiskProjection {
+    AgentsMdDiskProjection {
         content_differs_from_disk: file.content != raw_content,
         raw_content,
         globs,
@@ -963,13 +963,13 @@ pub fn claude_md_disk_projection(file: &ClaudeMdFile) -> ClaudeMdDiskProjection 
 
 fn process_memory_file(
     path: &Path,
-    source: ClaudeMdSource,
+    source: AgentsMdSource,
     include_external: bool,
     depth: usize,
     parent: Option<PathBuf>,
     cwd: &Path,
     processed: &mut HashSet<PathBuf>,
-    files: &mut Vec<ClaudeMdFile>,
+    files: &mut Vec<AgentsMdFile>,
 ) {
     process_memory_file_with_kind(
         path,
@@ -987,17 +987,17 @@ fn process_memory_file(
 #[allow(clippy::too_many_arguments)]
 fn process_memory_file_with_kind(
     path: &Path,
-    source: ClaudeMdSource,
-    kind: ClaudeMdKind,
+    source: AgentsMdSource,
+    kind: AgentsMdKind,
     include_external: bool,
     depth: usize,
     parent: Option<PathBuf>,
     cwd: &Path,
     processed: &mut HashSet<PathBuf>,
-    files: &mut Vec<ClaudeMdFile>,
+    files: &mut Vec<AgentsMdFile>,
 ) {
     if depth >= MAX_INCLUDE_DEPTH
-        || is_claude_md_excluded(path, kind)
+        || is_agents_md_excluded(path, kind)
         || !memory_path_has_allowed_text_extension(path)
     {
         return;
@@ -1011,19 +1011,19 @@ fn process_memory_file_with_kind(
     };
     // @nyan: this is the read-time safety net for Bash/external-editor writes.
     // Do not delete or rewrite a blocked file; isolate this injection only.
-    if matches!(kind, ClaudeMdKind::AutoMem | ClaudeMdKind::TeamMem)
+    if matches!(kind, AgentsMdKind::AutoMem | AgentsMdKind::TeamMem)
         && !crate::memdir::write_guard::check_memory_injection(path, &raw_content)
     {
         return;
     }
     let (mut content, _) = parsed_memory_content(&raw_content);
-    if matches!(kind, ClaudeMdKind::AutoMem | ClaudeMdKind::TeamMem) {
+    if matches!(kind, AgentsMdKind::AutoMem | AgentsMdKind::TeamMem) {
         content = truncate_memory_entrypoint(&content);
     }
     if content.trim().is_empty() {
         return;
     }
-    files.push(ClaudeMdFile {
+    files.push(AgentsMdFile {
         path: path.to_path_buf(),
         source,
         kind,
@@ -1054,6 +1054,49 @@ fn process_memory_file_with_kind(
 mod tests {
     use super::*;
     use crate::utils::test_env::{EnvVarGuard, TEST_ENV_LOCK};
+
+    #[test]
+    fn instruction_types_belong_to_agents_md_module() {
+        assert!(module_path!().ends_with("::utils::agents_md::tests"));
+        assert!(std::any::type_name::<AgentsMdFile>().ends_with("::agents_md::AgentsMdFile"));
+    }
+
+    #[test]
+    fn memory_file_info_preserves_wire_shape_and_optional_field_omission() {
+        for wire in [
+            serde_json::json!({
+                "path": "/repo/AGENTS.md",
+                "type": "Project",
+                "content": "notes"
+            }),
+            serde_json::json!({
+                "path": "/repo/docs/AGENTS.md",
+                "type": "Project",
+                "content": "notes",
+                "parent": "/repo/AGENTS.md",
+                "globs": ["src/**"],
+                "contentDiffersFromDisk": true,
+                "rawContent": "<!-- raw -->notes"
+            }),
+            serde_json::json!({
+                "path": "/repo/AGENTS.md",
+                "type": "Project",
+                "content": "notes",
+                "globs": [],
+                "contentDiffersFromDisk": false,
+                "rawContent": ""
+            }),
+        ] {
+            let info: MemoryFileInfo = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(info.memory_type, "Project");
+            assert_eq!(serde_json::to_value(&info).unwrap(), wire);
+            let encoded = serde_json::to_string(&info).unwrap();
+            assert_eq!(
+                serde_json::from_str::<MemoryFileInfo>(&encoded).unwrap(),
+                info
+            );
+        }
+    }
 
     struct CurrentDirGuard(PathBuf);
 
@@ -1120,7 +1163,7 @@ mod tests {
     fn temp_dir(label: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
         path.push(format!(
-            "nyan-claudemd-{label}-{}-{}",
+            "nyan-agents-md-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1148,7 +1191,7 @@ mod tests {
         let mut files = Vec::new();
         process_memory_file(
             &parent,
-            ClaudeMdSource::Project,
+            AgentsMdSource::Project,
             true,
             0,
             None,
@@ -1255,7 +1298,7 @@ mod tests {
             crate::bootstrap::state::set_allowed_setting_sources(vec![
                 "projectSettings".to_string(),
             ]);
-            let files = discover_claude_md_files_with_options(true, &[]);
+            let files = discover_agents_md_files_with_options(true, &[]);
             assert!(files.iter().any(|file| {
                 normalize_for_dedup(&file.path) == normalize_for_dedup(&nested.join("AGENTS.md"))
             }));
@@ -1277,17 +1320,17 @@ mod tests {
         let extra = temp_dir("additional-gate");
         std::fs::write(extra.join("AGENTS.md"), "explicit memory").unwrap();
 
-        let disabled = discover_claude_md_files_with_options(false, std::slice::from_ref(&extra));
+        let disabled = discover_agents_md_files_with_options(false, std::slice::from_ref(&extra));
         assert!(disabled.is_empty());
 
         let enabled = {
             let _enabled = EnvVarGuard::set("NYAN_ADDITIONAL_DIRECTORIES_CLAUDE_MD", "1");
-            discover_claude_md_files_with_options(false, std::slice::from_ref(&extra))
+            discover_agents_md_files_with_options(false, std::slice::from_ref(&extra))
         };
 
         assert_eq!(enabled.len(), 1);
         assert_eq!(enabled[0].path, extra.join("AGENTS.md"));
-        assert_eq!(enabled[0].source, ClaudeMdSource::Project);
+        assert_eq!(enabled[0].source, AgentsMdSource::Project);
         assert_eq!(enabled[0].content, "explicit memory");
         let _ = std::fs::remove_dir_all(extra);
     }
@@ -1306,7 +1349,7 @@ mod tests {
         std::fs::write(extra.join(".claude/rules/a.md"), "rule a").unwrap();
         std::fs::write(extra.join(".claude/rules/b.md"), "rule b").unwrap();
 
-        let files = discover_claude_md_files_with_options(false, std::slice::from_ref(&extra));
+        let files = discover_agents_md_files_with_options(false, std::slice::from_ref(&extra));
 
         let normalized_extra = normalize_for_dedup(&extra);
         let relative_paths = files
@@ -1321,7 +1364,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(relative_paths, vec!["AGENTS.md"]);
         assert_eq!(files[0].content, "agents memory");
-        assert_eq!(files[0].source, ClaudeMdSource::Project);
+        assert_eq!(files[0].source, AgentsMdSource::Project);
         let _ = std::fs::remove_dir_all(extra);
     }
 
@@ -1351,7 +1394,7 @@ mod tests {
                 "projectSettings".to_string(),
             ]);
 
-            let files = discover_claude_md_files_with_options(true, &[]);
+            let files = discover_agents_md_files_with_options(true, &[]);
             let contents = files
                 .iter()
                 .map(|file| file.content.as_str())
@@ -1370,13 +1413,13 @@ mod tests {
                 files
                     .iter()
                     .any(|file| file.path.ends_with("AGENTS.md")
-                        && file.kind == ClaudeMdKind::User)
+                        && file.kind == AgentsMdKind::User)
             );
             assert!(
                 files
                     .iter()
                     .any(|file| file.path.ends_with("AGENTS.md")
-                        && file.kind == ClaudeMdKind::Project)
+                        && file.kind == AgentsMdKind::Project)
             );
         }
 
@@ -1384,7 +1427,7 @@ mod tests {
     }
 
     #[test]
-    fn get_external_claude_md_includes_skips_user_and_in_cwd_paths() {
+    fn get_external_agents_md_includes_skips_user_and_in_cwd_paths() {
         let _lock = TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(|error| error.into_inner());
@@ -1400,7 +1443,7 @@ mod tests {
 
         let inside = root.join("inside.md");
         let outside = root.parent().unwrap_or(Path::new("/tmp")).join(format!(
-            "nyan-claudemd-outside-{}-{}.md",
+            "nyan-agents-md-outside-{}-{}.md",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1412,33 +1455,33 @@ mod tests {
         let parent = root.join("AGENTS.md");
 
         let files = vec![
-            ClaudeMdFile {
+            AgentsMdFile {
                 path: outside.clone(),
-                source: ClaudeMdSource::Project,
-                kind: ClaudeMdKind::Project,
+                source: AgentsMdSource::Project,
+                kind: AgentsMdKind::Project,
                 content: "outside".into(),
                 parent: Some(parent.clone()),
                 is_nested: false,
             },
-            ClaudeMdFile {
+            AgentsMdFile {
                 path: inside.clone(),
-                source: ClaudeMdSource::Project,
-                kind: ClaudeMdKind::Project,
+                source: AgentsMdSource::Project,
+                kind: AgentsMdKind::Project,
                 content: "inside".into(),
                 parent: Some(parent.clone()),
                 is_nested: false,
             },
-            ClaudeMdFile {
+            AgentsMdFile {
                 path: outside.clone(),
-                source: ClaudeMdSource::UserGlobal,
-                kind: ClaudeMdKind::User,
+                source: AgentsMdSource::UserGlobal,
+                kind: AgentsMdKind::User,
                 content: "user outside".into(),
                 parent: Some(parent),
                 is_nested: false,
             },
         ];
 
-        let externals = get_external_claude_md_includes(&files);
+        let externals = get_external_agents_md_includes(&files);
         assert_eq!(externals.len(), 1);
         assert_eq!(externals[0].path, outside.display().to_string());
 
@@ -1447,14 +1490,14 @@ mod tests {
     }
 
     #[test]
-    fn claude_md_excludes_match_absolute_globs_and_real_paths() {
+    fn agents_md_excludes_match_absolute_globs_and_real_paths() {
         let root = temp_dir("excludes");
         let excluded = root.join("private/AGENTS.md");
         std::fs::create_dir_all(excluded.parent().unwrap()).unwrap();
         std::fs::write(&excluded, "private").unwrap();
         let patterns = vec![format!("{}/**/private/AGENTS.md", root.display())];
-        assert!(claude_md_path_matches_excludes(&excluded, &patterns));
-        assert!(!claude_md_path_matches_excludes(
+        assert!(agents_md_path_matches_excludes(&excluded, &patterns));
+        assert!(!agents_md_path_matches_excludes(
             &root.join("public/AGENTS.md"),
             &patterns
         ));
@@ -1474,7 +1517,7 @@ mod tests {
         let mut files = Vec::new();
         process_memory_file(
             &parent,
-            ClaudeMdSource::Project,
+            AgentsMdSource::Project,
             true,
             0,
             None,
@@ -1507,7 +1550,7 @@ mod tests {
         let mut files = Vec::new();
         process_memory_file(
             &linked,
-            ClaudeMdSource::Project,
+            AgentsMdSource::Project,
             true,
             0,
             None,
@@ -1578,7 +1621,7 @@ mod tests {
             ]);
 
             // Test normal startup discovery
-            let files = discover_claude_md_files_with_options(true, &[]);
+            let files = discover_agents_md_files_with_options(true, &[]);
             let contents = files
                 .iter()
                 .map(|file| file.content.as_str())

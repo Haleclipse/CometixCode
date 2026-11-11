@@ -221,13 +221,13 @@ fn extract_section_name(content: &str) -> String {
     }
 }
 
-fn memory_type_name(kind: crate::utils::claudemd::ClaudeMdKind) -> &'static str {
-    use crate::utils::claudemd::ClaudeMdKind;
+fn memory_type_name(kind: crate::utils::agents_md::AgentsMdKind) -> &'static str {
+    use crate::utils::agents_md::AgentsMdKind;
     match kind {
-        ClaudeMdKind::User => "User",
-        ClaudeMdKind::Project => "Project",
-        ClaudeMdKind::AutoMem => "Auto memory",
-        ClaudeMdKind::TeamMem => "Team memory",
+        AgentsMdKind::User => "User",
+        AgentsMdKind::Project => "Project",
+        AgentsMdKind::AutoMem => "Auto memory",
+        AgentsMdKind::TeamMem => "Team memory",
     }
 }
 
@@ -555,7 +555,7 @@ pub fn analyze_context_usage(input: AnalyzeContextUsageInput<'_>) -> ContextData
         .map(|section| section.tokens)
         .sum::<u64>();
 
-    let memory_files = crate::utils::claudemd::discover_claude_md_files()
+    let memory_files = crate::utils::agents_md::discover_agents_md_files()
         .into_iter()
         .map(|file| ContextMemoryFileInfo {
             path: file.path.display().to_string(),

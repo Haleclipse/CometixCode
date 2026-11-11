@@ -103,7 +103,7 @@ pub(crate) async fn enter_worktree_output(input: &serde_json::Value) -> Result<O
     // Clear cached system prompt sections so env_info_simple recomputes with
     // worktree context, plus the cwd-dependent memoized caches (CC :98-102).
     crate::constants::system_prompt_sections::clear_system_prompt_sections();
-    crate::utils::claudemd::clear_memory_file_caches();
+    crate::utils::agents_md::clear_memory_file_caches();
     crate::utils::plans::clear_plans_directory_cache();
 
     let branch_info = session

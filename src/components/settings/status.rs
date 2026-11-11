@@ -6,7 +6,7 @@
 use crate::constants::figures::figures;
 use crate::constants::product;
 use crate::services::mcp::types::{McpServerConnection, McpServerConnectionType};
-use crate::utils::claudemd::{ClaudeMdFile, discover_claude_md_files};
+use crate::utils::agents_md::{AgentsMdFile, discover_agents_md_files};
 use crate::utils::file::get_display_path;
 use crate::utils::format::format_number;
 use crate::utils::ide::IDEExtensionInstallationStatus;
@@ -318,7 +318,7 @@ fn status_diagnostics(
     let mut diagnostics = non_empty_diagnostics(installation_diagnostics);
     diagnostics.extend(settings_error_diagnostics(settings_errors));
     diagnostics.extend(non_empty_diagnostics(doctor_diagnostics));
-    diagnostics.extend(memory_diagnostics_from_files(&discover_claude_md_files()));
+    diagnostics.extend(memory_diagnostics_from_files(&discover_agents_md_files()));
     diagnostics
 }
 
@@ -331,7 +331,7 @@ fn non_empty_diagnostics(values: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn memory_diagnostics_from_files(files: &[ClaudeMdFile]) -> Vec<String> {
+fn memory_diagnostics_from_files(files: &[AgentsMdFile]) -> Vec<String> {
     files
         .iter()
         .filter_map(|file| {
@@ -533,18 +533,18 @@ mod tests {
     #[test]
     fn memory_diagnostics_match_official_large_file_message_readonly() {
         let diagnostics = memory_diagnostics_from_files(&[
-            ClaudeMdFile {
+            AgentsMdFile {
                 path: std::path::PathBuf::from("/tmp/AGENTS.md"),
-                source: crate::utils::claudemd::ClaudeMdSource::Project,
-                kind: crate::utils::claudemd::ClaudeMdKind::Project,
+                source: crate::utils::agents_md::AgentsMdSource::Project,
+                kind: crate::utils::agents_md::AgentsMdKind::Project,
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT),
                 parent: None,
                 is_nested: false,
             },
-            ClaudeMdFile {
+            AgentsMdFile {
                 path: std::path::PathBuf::from("/tmp/large-AGENTS.md"),
-                source: crate::utils::claudemd::ClaudeMdSource::Project,
-                kind: crate::utils::claudemd::ClaudeMdKind::Project,
+                source: crate::utils::agents_md::AgentsMdSource::Project,
+                kind: crate::utils::agents_md::AgentsMdKind::Project,
                 content: "x".repeat(MAX_MEMORY_CHARACTER_COUNT + 1),
                 parent: None,
                 is_nested: false,

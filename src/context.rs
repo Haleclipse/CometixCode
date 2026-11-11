@@ -104,7 +104,7 @@ pub fn get_user_context() -> BTreeMap<String, String> {
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let context = build_user_context(
         |key| crate::utils::process_env::var(key),
-        crate::utils::claudemd::build_claude_md_context,
+        crate::utils::agents_md::build_agents_md_context,
         crate::constants::common::get_local_iso_date,
         !additional_dirs.is_empty(),
     );

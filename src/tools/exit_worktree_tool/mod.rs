@@ -259,7 +259,7 @@ fn restore_session_to_original_cwd(original_cwd: &str) {
     crate::bootstrap::state::set_original_cwd(resolved);
     crate::utils::session_storage::save_worktree_state(serde_json::Value::Null);
     crate::constants::system_prompt_sections::clear_system_prompt_sections();
-    crate::utils::claudemd::clear_memory_file_caches();
+    crate::utils::agents_md::clear_memory_file_caches();
     crate::utils::plans::clear_plans_directory_cache();
 }
 

@@ -4978,7 +4978,7 @@ mod tests {
                 uuid: "nested-memory".to_string(),
                 kind: RenderableMessageKind::Attachment(Attachment::NestedMemory {
                     path: "project-memory.md".to_string(),
-                    content: crate::utils::claudemd::MemoryFileInfo {
+                    content: crate::utils::agents_md::MemoryFileInfo {
                         path: "project-memory.md".to_string(),
                         memory_type: "Project".to_string(),
                         content: String::new(),

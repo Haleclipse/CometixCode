@@ -20,10 +20,10 @@ use crate::components::trust_dialog::{
 use crate::services::mcp::config::get_mcp_configs_by_scope_readonly;
 use crate::services::mcp::types::ConfigScope;
 use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides;
-use crate::utils::claudemd::{ClaudeMdFile, discover_claude_md_files};
-use crate::utils::claudemd::{
-    ExternalClaudeMdInclude, discover_claude_md_files_with_external_policy,
-    get_external_claude_md_includes, should_show_claude_md_external_includes_warning,
+use crate::utils::agents_md::{AgentsMdFile, discover_agents_md_files};
+use crate::utils::agents_md::{
+    ExternalAgentsMdInclude, discover_agents_md_files_with_external_policy,
+    get_external_agents_md_includes, should_show_agents_md_external_includes_warning,
 };
 use crate::utils::config::{
     GlobalConfig, ProjectConfig, load_global_config, normalize_project_path,
@@ -98,7 +98,7 @@ pub fn setup_screens_snapshot_from_readonly_runtime(
     }
 }
 
-fn status_notice_memory_files(files: Vec<ClaudeMdFile>) -> Vec<MemoryFileInfo> {
+fn status_notice_memory_files(files: Vec<AgentsMdFile>) -> Vec<MemoryFileInfo> {
     files
         .into_iter()
         .map(|file| MemoryFileInfo {
@@ -111,7 +111,7 @@ fn status_notice_memory_files(files: Vec<ClaudeMdFile>) -> Vec<MemoryFileInfo> {
 pub fn status_notice_context_from_readonly_runtime(
     global_config: &GlobalConfig,
     cwd: &Path,
-    memory_files: Vec<ClaudeMdFile>,
+    memory_files: Vec<AgentsMdFile>,
     ide_installation_status: Option<&IDEExtensionInstallationStatus>,
 ) -> StatusNoticeContext {
     let ide_type = ide_installation_status.and_then(|status| status.ide_type.as_deref());
@@ -166,7 +166,7 @@ pub fn default_status_notice_context(
     status_notice_context_from_readonly_runtime(
         &load_global_config(),
         &cwd,
-        discover_claude_md_files(),
+        discover_agents_md_files(),
         ide_installation_status,
     )
 }
@@ -542,10 +542,10 @@ mod setup_screens_snapshot_tests {
     fn status_notice_context_from_readonly_runtime_builds_memory_and_ide_snapshot() {
         let mut global_config = GlobalConfig::default();
         global_config.auto_install_ide_extension = Some(true);
-        let memory_file = ClaudeMdFile {
+        let memory_file = AgentsMdFile {
             path: Path::new("/repo/AGENTS.md").to_path_buf(),
-            source: crate::utils::claudemd::ClaudeMdSource::Project,
-            kind: crate::utils::claudemd::ClaudeMdKind::Project,
+            source: crate::utils::agents_md::AgentsMdSource::Project,
+            kind: crate::utils::agents_md::AgentsMdKind::Project,
             content: "project memory".to_string(),
             parent: None,
             is_nested: false,
@@ -706,21 +706,21 @@ pub fn should_show_claude_md_external_includes_gate() -> bool {
     if should_skip_trust_dialog_for_env() {
         return false;
     }
-    should_show_claude_md_external_includes_warning()
+    should_show_agents_md_external_includes_warning()
 }
 
 /// Snapshot of external includes for the standalone setup dialog.
-pub fn load_claude_md_external_includes_for_setup() -> Vec<ExternalClaudeMdInclude> {
+pub fn load_claude_md_external_includes_for_setup() -> Vec<ExternalAgentsMdInclude> {
     let additional_dirs = crate::bootstrap::state::get_additional_directories_for_claude_md();
     let include_default_discovery = !crate::utils::env_utils::is_env_truthy(
         crate::utils::process_env::var("NYAN_SIMPLE").as_deref(),
     );
-    let files = discover_claude_md_files_with_external_policy(
+    let files = discover_agents_md_files_with_external_policy(
         include_default_discovery,
         &additional_dirs,
         true,
     );
-    get_external_claude_md_includes(&files)
+    get_external_agents_md_includes(&files)
 }
 
 fn paths_equal(a: &Path, b: &Path) -> bool {

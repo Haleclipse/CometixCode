@@ -3,7 +3,7 @@
 //! The selector owns file/folder options, toggle focus, settings writes, and
 //! local folder opening. Imported/nested AGENTS.md metadata and live dream-task
 //! state remain explicit upstream-service seams because Rust's current
-//! `ClaudeMdFile`/`AppState` projections do not expose those fields yet.
+//! `AgentsMdFile`/`AppState` projections do not expose those fields yet.
 
 use crate::components::custom_select::{Select, SelectLayout, SelectOptionData};
 use crate::components::design_system::list_item::ListItem;
@@ -12,8 +12,8 @@ use crate::keybindings::types::ContextName;
 use crate::keybindings::use_keybinding::use_keybinding;
 use crate::tools::agent_tool::agent_memory::get_agent_memory_dir;
 use crate::tools::agent_tool::load_agents_dir::get_agent_definitions_with_overrides;
-use crate::utils::claudemd::{
-    ClaudeMdFile, ClaudeMdKind, ClaudeMdSource, discover_claude_md_files,
+use crate::utils::agents_md::{
+    AgentsMdFile, AgentsMdKind, AgentsMdSource, discover_agents_md_files,
 };
 use crate::utils::format::format_relative_time_ago_millis;
 use crate::utils::settings::{SettingSource, get_initial_settings, update_settings_for_source};
@@ -85,7 +85,7 @@ fn auto_memory_snapshot() -> AutoMemorySnapshot {
 }
 
 fn memory_option_description(
-    source: ClaudeMdSource,
+    source: AgentsMdSource,
     path: &Path,
     user_memory_path: &Path,
     project_memory_path: &Path,
@@ -93,9 +93,9 @@ fn memory_option_description(
     parent: Option<&Path>,
     is_nested: bool,
 ) -> String {
-    if source == ClaudeMdSource::UserGlobal && !is_nested && path == user_memory_path {
+    if source == AgentsMdSource::UserGlobal && !is_nested && path == user_memory_path {
         "Saved in ~/.nyan/AGENTS.md".to_string()
-    } else if source == ClaudeMdSource::Project && !is_nested && path == project_memory_path {
+    } else if source == AgentsMdSource::Project && !is_nested && path == project_memory_path {
         if project_is_in_git_repo(cwd) {
             "Checked in at ./AGENTS.md".to_string()
         } else {
@@ -111,7 +111,7 @@ fn memory_option_description(
 }
 
 fn memory_option_label(
-    source: ClaudeMdSource,
+    source: AgentsMdSource,
     path: &Path,
     user_memory_path: &Path,
     project_memory_path: &Path,
@@ -119,9 +119,9 @@ fn memory_option_label(
     is_nested: bool,
     depth: usize,
 ) -> String {
-    if source == ClaudeMdSource::UserGlobal && !is_nested && path == user_memory_path {
+    if source == AgentsMdSource::UserGlobal && !is_nested && path == user_memory_path {
         "User memory".to_string()
-    } else if source == ClaudeMdSource::Project && !is_nested && path == project_memory_path {
+    } else if source == AgentsMdSource::Project && !is_nested && path == project_memory_path {
         "Project memory".to_string()
     } else {
         let exists_label = if exists { "" } else { " (new)" };
@@ -137,14 +137,14 @@ fn memory_option_label(
 fn memory_select_options(
     cwd: &Path,
     config_home: &Path,
-    existing_files: &[ClaudeMdFile],
+    existing_files: &[AgentsMdFile],
     auto_memory_path: Option<&Path>,
 ) -> Vec<SelectOptionData> {
     let user_memory_path = default_user_memory_path(config_home);
     let project_memory_path = default_project_memory_path(cwd);
     let selectable_files = existing_files
         .iter()
-        .filter(|file| !matches!(file.kind, ClaudeMdKind::AutoMem | ClaudeMdKind::TeamMem))
+        .filter(|file| !matches!(file.kind, AgentsMdKind::AutoMem | AgentsMdKind::TeamMem))
         .collect::<Vec<_>>();
     let mut seen = selectable_files
         .iter()
@@ -166,7 +166,7 @@ fn memory_select_options(
     if seen.insert(user_memory_path.clone()) {
         entries.push((
             user_memory_path.clone(),
-            ClaudeMdSource::UserGlobal,
+            AgentsMdSource::UserGlobal,
             false,
             None,
             false,
@@ -175,7 +175,7 @@ fn memory_select_options(
     if seen.insert(project_memory_path.clone()) {
         entries.push((
             project_memory_path.clone(),
-            ClaudeMdSource::Project,
+            AgentsMdSource::Project,
             false,
             None,
             false,
@@ -397,7 +397,7 @@ pub fn MemoryFileSelector<'a>(
         let enabled = initial_auto_memory.enabled;
         move || enabled
     });
-    let existing_files = hooks.use_state(discover_claude_md_files);
+    let existing_files = hooks.use_state(discover_agents_md_files);
     let auto_memory_option_path = auto_memory_on
         .get()
         .then_some(resolved_auto_memory_path.as_path());
@@ -755,18 +755,18 @@ mod tests {
         let parent = cwd.join("AGENTS.md");
         let child = cwd.join("rules.md");
         let files = vec![
-            ClaudeMdFile {
+            AgentsMdFile {
                 path: parent.clone(),
-                source: ClaudeMdSource::Project,
-                kind: ClaudeMdKind::Project,
+                source: AgentsMdSource::Project,
+                kind: AgentsMdKind::Project,
                 content: "parent".to_string(),
                 parent: None,
                 is_nested: false,
             },
-            ClaudeMdFile {
+            AgentsMdFile {
                 path: child.clone(),
-                source: ClaudeMdSource::Project,
-                kind: ClaudeMdKind::Project,
+                source: AgentsMdSource::Project,
+                kind: AgentsMdKind::Project,
                 content: "child".to_string(),
                 parent: Some(parent),
                 is_nested: false,
@@ -879,7 +879,7 @@ mod tests {
         let options = memory_select_options(
             &crate::bootstrap::state::get_original_cwd(),
             &crate::utils::env_utils::get_config_home_dir(),
-            &discover_claude_md_files(),
+            &discover_agents_md_files(),
             Some(Path::new("/tmp/nyan-auto-memory")),
         );
         assert!(
@@ -910,7 +910,7 @@ mod tests {
         let options = memory_select_options(
             &crate::bootstrap::state::get_original_cwd(),
             &crate::utils::env_utils::get_config_home_dir(),
-            &discover_claude_md_files(),
+            &discover_agents_md_files(),
             None,
         );
         assert!(

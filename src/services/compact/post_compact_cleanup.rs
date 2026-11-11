@@ -30,7 +30,7 @@ pub fn run_post_compact_cleanup(query_source: Option<&QuerySource>) {
         // memory-file discovery cache. Clearing only one leaves stale AGENTS.md
         // bytes reachable on the next turn.
         crate::context::clear_user_context_cache();
-        crate::utils::claudemd::reset_get_memory_files_cache("compact");
+        crate::utils::agents_md::reset_get_memory_files_cache("compact");
     }
 
     crate::constants::system_prompt_sections::clear_system_prompt_sections();
@@ -54,7 +54,7 @@ mod tests {
             Some("cached".to_string()),
         );
         crate::context::seed_context_caches_for_test();
-        crate::utils::claudemd::seed_memory_files_cache_for_test();
+        crate::utils::agents_md::seed_memory_files_cache_for_test();
         crate::utils::classifier_approvals::set_classifier_approval(
             "toolu-cleanup",
             "Bash(echo *)",
@@ -84,7 +84,7 @@ mod tests {
             crate::context::context_cache_presence_for_test(),
             (false, true)
         );
-        assert!(!crate::utils::claudemd::memory_files_cache_is_populated_for_test());
+        assert!(!crate::utils::agents_md::memory_files_cache_is_populated_for_test());
         assert!(
             crate::utils::classifier_approvals::get_classifier_approval("toolu-cleanup").is_none()
         );
@@ -110,7 +110,7 @@ mod tests {
             crate::context::context_cache_presence_for_test(),
             (true, true)
         );
-        assert!(crate::utils::claudemd::memory_files_cache_is_populated_for_test());
+        assert!(crate::utils::agents_md::memory_files_cache_is_populated_for_test());
         // System-prompt, classifier, speculative, and microcompact state are
         // cleared for every compact in the source.
         assert_eq!(
@@ -128,7 +128,7 @@ mod tests {
 
         crate::context::clear_user_context_cache();
         crate::context::clear_system_context_cache();
-        crate::utils::claudemd::reset_get_memory_files_cache("test_cleanup");
+        crate::utils::agents_md::reset_get_memory_files_cache("test_cleanup");
     }
 
     #[test]

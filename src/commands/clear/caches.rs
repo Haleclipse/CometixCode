@@ -43,7 +43,7 @@ pub fn clear_session_caches(preserved_agent_ids: &HashSet<String>) {
     // `/clear` uses the stronger session-start reason after compact cleanup;
     // the current cache owner treats both reasons identically while the future
     // InstructionsLoaded hook owner may distinguish them.
-    crate::utils::claudemd::reset_get_memory_files_cache("session_start");
+    crate::utils::agents_md::reset_get_memory_files_cache("session_start");
 
     crate::utils::attachments::reset_sent_skill_names();
     crate::bootstrap::state::clear_invoked_skills(Some(preserved_agent_ids));
