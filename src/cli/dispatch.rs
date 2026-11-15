@@ -37,6 +37,8 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
     if config.show_help {
         if config.subcommand.as_deref() == Some("update") {
             CliConfig::print_update_help();
+        } else if config.subcommand.as_deref() == Some("web") {
+            print!("{}", crate::cli::web::HELP);
         } else {
             CliConfig::print_help();
         }
@@ -62,6 +64,10 @@ pub fn dispatch(config: &CliConfig) -> Option<i32> {
 
     if config.subcommand.as_deref() == Some("update") {
         return Some(run_update_cli());
+    }
+
+    if config.subcommand.as_deref() == Some("web") {
+        return Some(crate::cli::web::run(&config.subcommand_args));
     }
 
     // Maps to CC `cli/print.ts`: print/SDK mode owns the query lifetime and

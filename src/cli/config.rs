@@ -117,6 +117,8 @@ pub struct CliConfig {
 
     // --- Worktree / tmux / bg / daemon / subcommands ---
     pub subcommand: Option<String>,
+    /// Words after a subcommand that parses its own arguments (`web`).
+    pub subcommand_args: Vec<String>,
     pub worktree: bool,
     pub tmux: bool,
     pub background: bool,
@@ -222,7 +224,7 @@ impl CliConfig {
         }
 
         if let Some(sub) = &self.subcommand {
-            if !matches!(sub.as_str(), "doctor" | "update") {
+            if !matches!(sub.as_str(), "doctor" | "update" | "web") {
                 reasons.push(sub.clone());
             }
         }
@@ -312,6 +314,7 @@ Live:
       --no-session-persistence  Disable transcript persistence in print mode
       Teammate flags         --agent-id/--agent-name/--team-name/...
       update                 Download and install the latest stable release
+      web search|fetch       Non-interactive web search / page fetch (`nyan web --help`)
 
 Unimplemented (parsed, then exit 1):
       --session-id / --fork-session

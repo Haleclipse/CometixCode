@@ -133,7 +133,7 @@ async fn run_nyan_web_fetch(
 /// supplies its own fetcher configuration.
 async fn fetch_once(
     url: &str,
-    context: &crate::tool::ToolUseContext,
+    abort_controller: &crate::tool::AbortController,
     web: &crate::utils::settings::nyan::WebSettings,
     config: Option<&crate::services::web::fetcher::FetchConfig>,
 ) -> Result<
@@ -148,16 +148,120 @@ async fn fetch_once(
     // page check, so a scripted provider in tests reaches both.
     let provider = crate::services::web::decision::provider();
     let decisions = provider.as_ref().map(|provider| {
-        crate::services::web::decision::WebDecisions::new(provider, &context.abort_controller)
+        crate::services::web::decision::WebDecisions::new(provider, abort_controller)
     });
     crate::services::web::fallback::fetch_chain(
         url,
-        &context.abort_controller,
+        abort_controller,
         web,
         &config,
         decisions.as_ref(),
     )
     .await
+}
+
+/// How [`read_page`] obtained its snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Origin {
+    Cached,
+    Continuation,
+    Fresh,
+}
+
+/// The verbatim page read shared by the WebFetch tool and `nyan web fetch`:
+/// the snapshot, the selected range (capped at `maxReturnChars`), and how the
+/// snapshot was obtained.
+#[derive(Debug)]
+pub(crate) struct PageRead {
+    pub snapshot: crate::services::web::snapshot::Snapshot,
+    pub selected: crate::services::web::snapshot::SelectedRange,
+    pub origin: Origin,
+    pub direct_reason: Option<String>,
+    pub challenge_fallback_failed: bool,
+}
+
+#[derive(Debug)]
+pub(crate) enum ReadError {
+    Target(crate::services::web::FetchError),
+    Budget(crate::services::web::budget::BudgetError),
+    Fetch(crate::services::web::fallback::FetchChainFailure),
+    Range(crate::services::web::snapshot::RangeError),
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Target(error) => error.fmt(f),
+            Self::Budget(error) => error.fmt(f),
+            Self::Fetch(error) => error.fmt(f),
+            Self::Range(error) => error.fmt(f),
+        }
+    }
+}
+
+/// `test_config` is the loopback-mock seam: only `#[cfg(test)]` callers pass it,
+/// so a production build cannot loosen the host guard.
+pub(crate) async fn read_page(
+    url: &str,
+    range: Option<&crate::services::web::snapshot::RangeSpec>,
+    web: &crate::utils::settings::nyan::WebSettings,
+    abort_controller: &crate::tool::AbortController,
+    test_config: Option<crate::services::web::fetcher::FetchConfig>,
+) -> Result<PageRead, ReadError> {
+    let _ = crate::services::web::snapshot::cleanup_retention(web.snapshot_retention_days());
+    let fetch_config = match &test_config {
+        Some(config) => config.clone(),
+        None => crate::services::web::fetcher::FetchConfig::from_settings(web),
+    };
+    let normalized_url = crate::services::web::fetcher::validate_target(url, &fetch_config)
+        .map_err(ReadError::Target)?
+        .url
+        .to_string();
+
+    // @nyan: a `range` continuation reads an existing snapshot for as long as
+    // the file exists and counts against neither the call nor the byte budget
+    // (external-search 3.5 / 4.3). Only a fresh fetch is budgeted.
+    let cached = if range.is_some() {
+        crate::services::web::snapshot::lookup_any(&normalized_url)
+            .map(|snapshot| (snapshot, Origin::Continuation))
+    } else {
+        crate::services::web::snapshot::lookup_latest(&normalized_url)
+            .map(|snapshot| (snapshot, Origin::Cached))
+    };
+    let (snapshot, direct_reason, origin, challenge_fallback_failed) = match cached {
+        Some((snapshot, origin)) => (snapshot, None, origin, false),
+        None => {
+            crate::services::web::budget::begin_fetch(&web.fetch()).map_err(ReadError::Budget)?;
+            let fetched = fetch_once(url, abort_controller, web, test_config.as_ref())
+                .await
+                .map_err(ReadError::Fetch)?;
+            crate::services::web::budget::add_fetch_bytes(
+                &web.fetch(),
+                fetched.snapshot.metadata.bytes as u64,
+            )
+            .map_err(ReadError::Budget)?;
+            (
+                fetched.snapshot,
+                fetched.direct_reason,
+                Origin::Fresh,
+                fetched.challenge_fallback_failed,
+            )
+        }
+    };
+
+    let selected = crate::services::web::snapshot::select_range(
+        &snapshot.text,
+        range,
+        web.max_return_chars() as usize,
+    )
+    .map_err(ReadError::Range)?;
+    Ok(PageRead {
+        snapshot,
+        selected,
+        origin,
+        direct_reason,
+        challenge_fallback_failed,
+    })
 }
 
 /// `test_config` is the loopback-mock seam: only `#[cfg(test)]` callers pass it,
@@ -182,71 +286,20 @@ async fn run_nyan_web_fetch_with(
     .map_err(|error| error.to_string())?;
     let web = crate::services::web::settings()
         .ok_or_else(|| "Error: nyan.web is not configured".to_string())?;
-    let _ = crate::services::web::snapshot::cleanup_retention(web.snapshot_retention_days());
-    let fetch_config = match &test_config {
-        Some(config) => config.clone(),
-        None => crate::services::web::fetcher::FetchConfig::from_settings(&web),
-    };
-    let normalized_url = crate::services::web::fetcher::validate_target(url, &fetch_config)
-        .map_err(|error| error.to_string())?
-        .url
-        .to_string();
-
-    // @nyan: a `range` continuation reads an existing snapshot for as long as
-    // the file exists and counts against neither the call nor the byte budget
-    // (external-search 3.5 / 4.3). Only a fresh fetch is budgeted.
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum Origin {
-        Cached,
-        Continuation,
-        Fresh,
-    }
-    let fresh = |fetched: crate::services::web::fallback::FetchChainResult| {
-        (
-            fetched.snapshot,
-            fetched.direct_reason,
-            Origin::Fresh,
-            fetched.challenge_fallback_failed,
-        )
-    };
-    let (snapshot, direct_reason, origin, challenge_fallback_failed) = if range.is_some() {
-        match crate::services::web::snapshot::lookup_any(&normalized_url) {
-            Some(snapshot) => (snapshot, None, Origin::Continuation, false),
-            None => {
-                crate::services::web::budget::begin_fetch(&web.fetch())
-                    .map_err(|error| error.to_string())?;
-                let fetched = fetch_once(url, context, &web, test_config.as_ref())
-                    .await
-                    .map_err(|error| error.to_string())?;
-                crate::services::web::budget::add_fetch_bytes(
-                    &web.fetch(),
-                    fetched.snapshot.metadata.bytes as u64,
-                )
-                .map_err(|error| error.to_string())?;
-                fresh(fetched)
-            }
-        }
-    } else if let Some(snapshot) = crate::services::web::snapshot::lookup_latest(&normalized_url) {
-        (snapshot, None, Origin::Cached, false)
-    } else {
-        crate::services::web::budget::begin_fetch(&web.fetch())
-            .map_err(|error| error.to_string())?;
-        let fetched = fetch_once(url, context, &web, test_config.as_ref())
-            .await
-            .map_err(|error| error.to_string())?;
-        crate::services::web::budget::add_fetch_bytes(
-            &web.fetch(),
-            fetched.snapshot.metadata.bytes as u64,
-        )
-        .map_err(|error| error.to_string())?;
-        fresh(fetched)
-    };
-
-    let selected = crate::services::web::snapshot::select_range(
-        &snapshot.text,
+    let PageRead {
+        snapshot,
+        selected,
+        origin,
+        direct_reason,
+        challenge_fallback_failed,
+    } = read_page(
+        url,
         range.as_ref(),
-        web.max_return_chars() as usize,
+        &web,
+        &context.abort_controller,
+        test_config,
     )
+    .await
     .map_err(|error| error.to_string())?;
     let body = if prompt.trim().is_empty() {
         selected.text.clone()
@@ -1258,7 +1311,6 @@ mod tests {
 
         #[tokio::test]
         async fn fetch_calls_and_bytes_are_budgeted_with_named_errors() {
-            budget::reset();
             let server = serve(vec![
                 ("/a", Route::text(&"a".repeat(400))),
                 ("/b", Route::text(&"b".repeat(400))),
@@ -1269,6 +1321,9 @@ mod tests {
                 let _settings_guard = WebSettingsGuard::install(settings(json!({
                     "fetch": {"maxPerSession": 1, "maxBytesPerSession": 1048576},
                 })));
+                // Reset under the env lock the guard holds: a reset taken
+                // before it lets a concurrent fetch test spend this budget.
+                budget::reset();
                 let (dir, _home_guard) = config_dir("budget-calls");
                 home = dir;
                 let _ = fetch(
@@ -1293,11 +1348,11 @@ mod tests {
             }
             let _ = std::fs::remove_dir_all(&home);
 
-            budget::reset();
             {
                 let _settings_guard = WebSettingsGuard::install(settings(json!({
                     "fetch": {"maxBytesPerSession": 300},
                 })));
+                budget::reset();
                 let (dir, _home_guard) = config_dir("budget-bytes");
                 let error = fetch(
                     json!({"url": server.url("/a")}),
@@ -1329,6 +1384,9 @@ mod tests {
     async fn web_fetch_tool_call_invalid_url_returns_error_without_network() {
         use crate::tool::ToolCall;
 
+        // The asserted copy is the no-`nyan.web` branch's; pin that settings
+        // state instead of inheriting whatever the cache holds.
+        let _settings = crate::services::web::test_support::WebSettingsGuard::none();
         let args = serde_json::json!({
             "url": "not a url",
             "prompt": "summarize"

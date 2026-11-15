@@ -10,6 +10,7 @@ pub mod print;
 /// CC `cli/structuredIO.ts`. Private to `cli`: `print` is its only consumer,
 /// mirroring `cli/print.ts` being the only file that constructs a `StructuredIO`.
 mod structured_io;
+pub mod web;
 
 pub use config::{CliConfig, ImplStatus};
 pub use dispatch::dispatch;

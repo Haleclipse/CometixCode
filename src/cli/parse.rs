@@ -30,6 +30,7 @@ const SUBCOMMANDS: &[&str] = &[
     "environment-runner",
     "self-hosted-runner",
     "daemon",
+    "web",
 ];
 
 fn take_value(args: &[String], index: &mut usize) -> Option<String> {
@@ -106,6 +107,10 @@ pub fn parse_cli_config(argv: &[String]) -> CliConfig {
                         _ => config.unknown_flags.push(arg.clone()),
                     }
                 }
+            }
+            if *sub == "web" {
+                // `cli::web` owns its own grammar, including `--help`.
+                config.subcommand_args = args[index + 1..].to_vec();
             }
             // Other subcommands still consume remaining arguments as opaque.
             index = args.len();
